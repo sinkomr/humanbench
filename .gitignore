@@ -141,3 +141,29 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- HumanBench additions ---
+
+# macOS / editors
+.DS_Store
+.idea/
+
+# Playwright output
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Python (tooling scripts; the bank repo is separate)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
