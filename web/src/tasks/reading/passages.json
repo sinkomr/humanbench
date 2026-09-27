@@ -1,0 +1,666 @@
+{
+  "version": "reading-passages-v2",
+  "passages": [
+    {
+      "id": "franklin-autobiography-1868",
+      "source": {
+        "title": "Autobiography of Benjamin Franklin",
+        "author": "Benjamin Franklin",
+        "year": 1868,
+        "era": "1860s",
+        "section": "XI. Interest in Public Affairs (Part Three, written 1788; Bigelow's text of 1868)",
+        "gutenberg_ebook": 20203,
+        "url": "https://www.gutenberg.org/ebooks/20203",
+        "text_url": "https://www.gutenberg.org/cache/epub/20203/pg20203.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "c5be0e49f68f0876be480074b9dc0712a8fdbc7faa7def3acc6765afba9bd128",
+        "offsets": {
+          "start": 243053,
+          "end": 245120
+        },
+        "first_words": "I began now to turn my",
+        "last_words": "and means proposed of avoiding them."
+      },
+      "paragraphs": [
+        "I began now to turn my thoughts a little to public affairs, beginning, however, with small matters. The city watch was one of the first things that I conceiv'd to want regulation. It was managed by the constables of the respective wards in turn; the constable warned a number of housekeepers to attend him for the night. Those who chose never to attend, paid him six shillings a year to be excus'd, which was suppos'd to be for hiring substitutes, but was, in reality, much more than was necessary for that purpose, and made the constableship a place of profit; and the constable, for a little drink, often got such ragamuffins about him as a watch, that respectable housekeepers did not choose to mix with. Walking the rounds, too, was often neglected, and most of the nights spent in tippling. I thereupon wrote a paper to be read in Junto, representing these irregularities, but insisting more particularly on the inequality of this six-shilling tax of the constables, respecting the circumstances of those who paid it, since a poor widow housekeeper, all whose property to be guarded by the watch did not perhaps exceed the value of fifty pounds, paid as much as the wealthiest merchant, who had thousands of pounds' worth of goods in his stores.",
+        "On the whole, I proposed as a more effectual watch, the hiring of proper men to serve constantly in that business; and as a more equitable way of supporting the charge, the levying a tax that should be proportion'd to the property. This idea, being approv'd by the Junto, was communicated to the other clubs, but as arising in each of them; and though the plan was not immediately carried into execution, yet, by preparing the minds of people for the change, it paved the way for the law obtained a few years after, when the members of our clubs were grown into more influence.",
+        "About this time I wrote a paper (first to be read in Junto, but it was afterward publish'd) on the different accidents and carelessnesses by which houses were set on fire, with cautions against them, and means proposed of avoiding them."
+      ],
+      "word_count": 362,
+      "questions": [
+        {
+          "id": "franklin-autobiography-1868#q1",
+          "stem": "How much did those who chose never to attend the watch pay the constable?",
+          "options": [
+            "Six shillings a year",
+            "Fifty pounds a year",
+            "One shilling a night",
+            "Ten shillings a quarter"
+          ],
+          "key_index": 0,
+          "evidence_span": "paid him six shillings a year to be excus'd",
+          "option_rationales": [
+            "Stated: they paid him six shillings a year.",
+            "Fifty pounds is the value of a poor widow's property.",
+            "A nightly payment is never mentioned.",
+            "A quarterly payment is never mentioned."
+          ]
+        },
+        {
+          "id": "franklin-autobiography-1868#q2",
+          "stem": "What did the author propose as a more effectual watch?",
+          "options": [
+            "Making every housekeeper attend in turn",
+            "Fining constables who neglected the rounds",
+            "Letting the Junto pick constables",
+            "Paying proper men to serve full time"
+          ],
+          "key_index": 3,
+          "evidence_span": "I proposed as a more effectual watch, the hiring of proper men to serve constantly in that business",
+          "option_rationales": [
+            "Housekeepers attending in turn was the old system he criticised.",
+            "Neglected rounds were one of the irregularities; no fines are proposed.",
+            "The Junto approved the idea; picking constables is never mentioned.",
+            "Stated: he proposed the hiring of proper men to serve constantly."
+          ]
+        },
+        {
+          "id": "franklin-autobiography-1868#q3",
+          "stem": "How was the author's plan for the watch passed on to the other clubs?",
+          "options": [
+            "By a vote of the Assembly",
+            "As if it had arisen in each club",
+            "In a printed pamphlet",
+            "Through the constables of each ward"
+          ],
+          "key_index": 1,
+          "evidence_span": "was communicated to the other clubs, but as arising in each of them",
+          "option_rationales": [
+            "The Assembly is never mentioned.",
+            "Stated: it was communicated to the other clubs as arising in each of them.",
+            "Only the later paper on fires was published.",
+            "The constables are criticised, not used to spread the plan."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "darwin-beagle-1845",
+      "source": {
+        "title": "The Voyage of the Beagle",
+        "author": "Charles Darwin",
+        "year": 1845,
+        "era": "1840s",
+        "section": "Chapter XIV (revised edition of 1845)",
+        "gutenberg_ebook": 944,
+        "url": "https://www.gutenberg.org/ebooks/944",
+        "text_url": "https://www.gutenberg.org/cache/epub/944/pg944.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "e13d57170a6dd9f7d97ddbc14cbde961dffbd95e8861ed199e5f00a525e7e52a",
+        "offsets": {
+          "start": 714257,
+          "end": 716345
+        },
+        "first_words": "The next day I landed at",
+        "last_words": "less than three hundred were counted."
+      },
+      "paragraphs": [
+        "The next day I landed at Talcahuano, and afterwards rode to Concepcion. Both towns presented the most awful yet interesting spectacle I ever beheld. To a person who had formerly known them, it possibly might have been still more impressive; for the ruins were so mingled together, and the whole scene possessed so little the air of a habitable place, that it was scarcely possible to imagine its former condition. The earthquake commenced at half-past eleven o'clock in the forenoon. If it had happened in the middle of the night, the greater number of the inhabitants (which in this one province must amount to many thousands) must have perished, instead of less than a hundred: as it was, the invariable practice of running out of doors at the first trembling of the ground, alone saved them. In Concepcion each house, or row of houses, stood by itself, a heap or line of ruins; but in Talcahuano, owing to the great wave, little more than one layer of bricks, tiles, and timber with here and there part of a wall left standing, could be distinguished. From this circumstance Concepcion, although not so completely desolated, was a more terrible, and if I may so call it, picturesque sight. The first shock was very sudden. The mayor-domo at Quiriquina told me, that the first notice he received of it, was finding both the horse he rode and himself, rolling together on the ground. Rising up, he was again thrown down. He also told me that some cows which were standing on the steep side of the island were rolled into the sea. The great wave caused the destruction of many cattle; on one low island near the head of the bay, seventy animals were washed off and drowned. It is generally thought that this has been the worst earthquake ever recorded in Chile; but as the very severe ones occur only after long intervals, this cannot easily be known; nor indeed would a much worse shock have made any difference, for the ruin was now complete. Innumerable small tremblings followed the great earthquake, and within the first twelve days no less than three hundred were counted."
+      ],
+      "word_count": 363,
+      "questions": [
+        {
+          "id": "darwin-beagle-1845#q1",
+          "stem": "At what time did the earthquake begin?",
+          "options": [
+            "In the middle of the night",
+            "At half-past eleven in the forenoon",
+            "Shortly after sunrise",
+            "Late in the afternoon"
+          ],
+          "key_index": 1,
+          "evidence_span": "The earthquake commenced at half-past eleven o'clock in the forenoon.",
+          "option_rationales": [
+            "The night is mentioned only as what would have been worse.",
+            "Stated: it commenced at half-past eleven o'clock in the forenoon.",
+            "Sunrise is never mentioned.",
+            "The afternoon is never mentioned."
+          ]
+        },
+        {
+          "id": "darwin-beagle-1845#q2",
+          "stem": "What did the mayor-domo at Quiriquina say was his first notice of the shock?",
+          "options": [
+            "His cows rolling into the sea",
+            "The great wave rising over the bay",
+            "A whole row of houses falling in ruins",
+            "Rolling on the ground with his horse"
+          ],
+          "key_index": 3,
+          "evidence_span": "the first notice he received of it, was finding both the horse he rode and himself, rolling together on the ground",
+          "option_rationales": [
+            "He told of cows rolled into the sea, but not as his first notice.",
+            "The great wave is described, but not as his first notice.",
+            "Rows of houses in ruins describe Concepcion, not his first notice.",
+            "Stated: he found the horse he rode and himself rolling on the ground."
+          ]
+        },
+        {
+          "id": "darwin-beagle-1845#q3",
+          "stem": "How many small tremblings were counted within the first twelve days?",
+          "options": [
+            "At least three hundred",
+            "About seventy",
+            "Somewhat fewer than a hundred",
+            "Nearly a thousand"
+          ],
+          "key_index": 0,
+          "evidence_span": "within the first twelve days no less than three hundred were counted",
+          "option_rationales": [
+            "Stated: no less than three hundred were counted.",
+            "Seventy is the number of animals drowned on a low island.",
+            "Less than a hundred is the number of people who perished.",
+            "A thousand is never mentioned."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dana-hide-curing-1840",
+      "source": {
+        "title": "Two Years Before the Mast",
+        "author": "Richard Henry Dana",
+        "year": 1840,
+        "era": "1840s",
+        "section": "Chapter XIX",
+        "gutenberg_ebook": 2055,
+        "url": "https://www.gutenberg.org/ebooks/2055",
+        "text_url": "https://www.gutenberg.org/cache/epub/2055/pg2055.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "e757ff0a09b37062818c2a5c570495d915d21d79b76bf563d69a24284382eb5d",
+        "offsets": {
+          "start": 334403,
+          "end": 336306
+        },
+        "first_words": "Then begins the hide-curer's duty. The",
+        "last_words": "the others, and clean my proportion--twenty-five."
+      },
+      "paragraphs": [
+        "Then begins the hide-curer's duty. The first thing is to put them in soak. This is done by carrying them down at low tide, and making them fast, in small piles, by ropes, and letting the tide come up and cover them. Every day we put in soak twenty-five for each man, which, with us, made an hundred and fifty. There they lie forty-eight hours, when they are taken out, and rolled up, in wheelbarrows, and thrown into the vats. These vats contain brine, made very strong; being sea-water, with great quantities of salt thrown in. This pickles the hides, and in this they lie forty-eight hours; the use of the sea-water, into which they are first put, being merely to soften and clean them. From these vats, they are taken, and lie on a platform twenty-four hours, and then are spread upon the ground, and carefully stretched and staked out, so that they may dry smooth. After they were staked, and while yet wet and soft, we used to go upon them with our knives, and carefully cut off all the bad parts:--the pieces of meat and fat, which would corrupt and infect the whole if stowed away in a vessel for many months, the large flippers, the ears, and all other parts which would prevent close stowage. This was the most difficult part of our duty: as it required much skill to take everything necessary off and not to cut or injure the hide. It was also a long process, as six of us had to clean an hundred and fifty, most of which required a great deal to be done to them, as the Spaniards are very careless in skinning their cattle. Then, too, as we cleaned them while they were staked out, we were obliged to kneel down upon them, which always gives beginners the back-ache. The first day, I was so slow and awkward that I cleaned only eight; at the end of a few days I doubled my number; and in a fortnight or three weeks, could keep up with the others, and clean my proportion--twenty-five."
+      ],
+      "word_count": 354,
+      "questions": [
+        {
+          "id": "dana-hide-curing-1840#q1",
+          "stem": "How long do the hides lie in the brine vats?",
+          "options": [
+            "Twenty-four hours",
+            "Three days",
+            "A fortnight",
+            "Forty-eight hours"
+          ],
+          "key_index": 3,
+          "evidence_span": "This pickles the hides, and in this they lie forty-eight hours",
+          "option_rationales": [
+            "Twenty-four hours is the time on the platform.",
+            "Three days is never mentioned.",
+            "A fortnight is how long the writer took to catch up.",
+            "Stated: in the brine they lie forty-eight hours."
+          ]
+        },
+        {
+          "id": "dana-hide-curing-1840#q2",
+          "stem": "According to the passage, what is the first soak in sea-water for?",
+          "options": [
+            "To pickle the hides",
+            "To dry them smooth",
+            "To soften and clean them",
+            "To wash out the salt"
+          ],
+          "key_index": 2,
+          "evidence_span": "the use of the sea-water, into which they are first put, being merely to soften and clean them",
+          "option_rationales": [
+            "Pickling is done by the brine in the vats.",
+            "Drying smooth is the purpose of staking them out.",
+            "Stated: the sea-water is merely to soften and clean them.",
+            "Washing out salt is never mentioned."
+          ]
+        },
+        {
+          "id": "dana-hide-curing-1840#q3",
+          "stem": "How many hides did the writer clean on his first day?",
+          "options": [
+            "Eight",
+            "Twelve",
+            "Twenty-five",
+            "A hundred and fifty"
+          ],
+          "key_index": 0,
+          "evidence_span": "The first day, I was so slow and awkward that I cleaned only eight",
+          "option_rationales": [
+            "Stated: on the first day he cleaned only eight.",
+            "Twelve is never mentioned.",
+            "Twenty-five is each man's share once he had caught up.",
+            "A hundred and fifty is the day's total for all six men."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "faraday-candle-1861",
+      "source": {
+        "title": "The Chemical History of a Candle",
+        "author": "Michael Faraday",
+        "year": 1861,
+        "era": "1860s",
+        "section": "Lecture I",
+        "gutenberg_ebook": 14474,
+        "url": "https://www.gutenberg.org/ebooks/14474",
+        "text_url": "https://www.gutenberg.org/cache/epub/14474/pg14474.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "c053ca4ae7880585a15001cd3ffdaf5f09cd08c3329b828ffd8c90ce335482b9",
+        "offsets": {
+          "start": 12953,
+          "end": 14806
+        },
+        "first_words": "Now, as to the light of",
+        "last_words": "hope you will do, at home."
+      },
+      "paragraphs": [
+        "Now, as to the light of the candle. We will light one or two, and set them at work in the performance of their proper functions. You observe a candle is a very different thing from a lamp. With a lamp you take a little oil, fill your vessel, put in a little moss or some cotton prepared by artificial means, and then light the top of the wick. When the flame runs down the cotton to the oil, it gets extinguished, but it goes on burning in the part above. Now, I have no doubt you will ask, how is it that the oil, which will not burn of itself, gets up to the top of the cotton, where it will burn? We shall presently examine that; but there is a much more wonderful thing about the burning of a candle than this. You have here a solid substance with no vessel to contain it; and how is it that this solid substance can get up to the place where the flame is? How is it that this solid gets there, it not being a fluid? or, when it is made a fluid, then how is it that it keeps together? This is a wonderful thing about a candle.",
+        "We have here a good deal of wind, which will help us in some of our illustrations, but tease us in others; for the sake, therefore, of a little regularity, and to simplify the matter, I shall make a quiet flame—for who can study a subject when there are difficulties in the way not belonging to it? Here is a clever invention of some costermonger or street stander in the market-place for the shading of their candles on Saturday nights, when they are selling their greens, or potatoes, or fish. I have very often admired it. They put a lamp-glass round the candle, supported on a kind of gallery, which clasps it, and it can be slipped up and down as required. By the use of this lamp-glass, employed in the same way, you have a steady flame, which you can look at, and carefully examine, as I hope you will do, at home."
+      ],
+      "word_count": 365,
+      "questions": [
+        {
+          "id": "faraday-candle-1861#q1",
+          "stem": "In a lamp, what happens when the flame runs down the cotton to the oil?",
+          "options": [
+            "It gets extinguished",
+            "It goes on burning in the oil",
+            "The oil begins to burn of itself",
+            "It draws more oil up the cotton"
+          ],
+          "key_index": 0,
+          "evidence_span": "When the flame runs down the cotton to the oil, it gets extinguished",
+          "option_rationales": [
+            "Stated: when the flame runs down the cotton to the oil, it gets extinguished.",
+            "It goes on burning in the part above, not in the oil.",
+            "The passage says the oil will not burn of itself.",
+            "How the oil gets up the cotton is left for later; at the oil the flame goes out."
+          ]
+        },
+        {
+          "id": "faraday-candle-1861#q2",
+          "stem": "What do the street sellers put round a candle to shade it?",
+          "options": [
+            "A lamp-glass standing in a vessel of oil",
+            "A cloth hood over their greens and fish",
+            "A lamp-glass held by a kind of gallery",
+            "A paper cone slipped up and down"
+          ],
+          "key_index": 2,
+          "evidence_span": "They put a lamp-glass round the candle, supported on a kind of gallery, which clasps it",
+          "option_rationales": [
+            "The lamp-glass rests on a gallery; the vessel of oil belongs to the lamp.",
+            "Greens and fish are what the sellers sell; no cloth hood is mentioned.",
+            "Stated: a lamp-glass round the candle, supported on a kind of gallery.",
+            "The lamp-glass is what slips up and down; no paper cone is mentioned."
+          ]
+        },
+        {
+          "id": "faraday-candle-1861#q3",
+          "stem": "According to the passage, when do the street sellers shade their candles?",
+          "options": [
+            "On Saturday mornings",
+            "On market-day mornings",
+            "On quiet nights",
+            "On Saturday nights"
+          ],
+          "key_index": 3,
+          "evidence_span": "for the shading of their candles on Saturday nights",
+          "option_rationales": [
+            "The passage says Saturday nights, not mornings.",
+            "The market-place is named, but mornings are not.",
+            "Quiet describes the flame the lecturer wants, not the sellers' time.",
+            "Stated: they shade their candles on Saturday nights."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "huxley-chalk-1870",
+      "source": {
+        "title": "Lay Sermons, Addresses and Reviews",
+        "author": "Thomas Henry Huxley",
+        "year": 1870,
+        "era": "1870s",
+        "section": "IX. On a Piece of Chalk",
+        "gutenberg_ebook": 16729,
+        "url": "https://www.gutenberg.org/ebooks/16729",
+        "text_url": "https://www.gutenberg.org/cache/epub/16729/pg16729.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "6e29ed9039c232d1300e39ea35072535ec56bff30f2c88b3b2e9205e623caa22",
+        "offsets": {
+          "start": 321950,
+          "end": 323900
+        },
+        "first_words": "Not only here, but over the",
+        "last_words": "Sea of Aral, in Central Asia."
+      },
+      "paragraphs": [
+        "Not only here, but over the whole county of Norfolk, the well-sinker might carry his shaft down many hundred feet without coming to the end of the chalk; and, on the sea-coast, where the waves have pared away the face of the land which breasts them, the scarped faces of the high cliffs are often wholly formed of the same material. Northward, the chalk may be followed as far as Yorkshire; on the south coast it appears abruptly in the picturesque western bays of Dorset, and breaks into the Needles of the Isle of Wight; while on the shores of Kent it supplies that long line of white cliffs to which England owes her name of Albion.",
+        "Were the thin soil which covers it all washed away, a curved band of white chalk, here broader, and there narrower, might be followed diagonally across England from Lulworth in Dorset, to Flamborough Head in Yorkshire--a distance of over 280 miles as the crow flies.",
+        "From this band to the North Sea, on the east, and the Channel, on the south, the chalk is largely hidden by other deposits; but, except in the Weald of Kent and Sussex, it enters into the very foundation of all the south-eastern counties.",
+        "Attaining, as it does in some places, a thickness of more than a thousand feet, the English chalk must be admitted to be a mass of considerable magnitude. Nevertheless, it covers but an insignificant portion of the whole area occupied by the chalk formation of the globe, which has precisely the same general characters as ours, and is found in detached patches, some less, and others more extensive, than the English.",
+        "Chalk occurs in north-west Ireland; it stretches over a large part of France,--the chalk which underlies Paris being, in fact, a continuation of that of the London basin; it runs through Denmark and Central Europe, and extends southward to North Africa; while, eastward, it appears in the Crimea and in Syria, and may be traced as far as the shores of the Sea of Aral, in Central Asia."
+      ],
+      "word_count": 347,
+      "questions": [
+        {
+          "id": "huxley-chalk-1870#q1",
+          "stem": "According to the passage, the curved band of chalk runs from Lulworth in Dorset to which place?",
+          "options": [
+            "The Needles of the Isle of Wight",
+            "The shores of Kent",
+            "Flamborough Head in Yorkshire",
+            "The Weald of Sussex"
+          ],
+          "key_index": 2,
+          "evidence_span": "from Lulworth in Dorset, to Flamborough Head in Yorkshire",
+          "option_rationales": [
+            "The Needles are where the chalk breaks off the south coast, not the band's end.",
+            "Kent is where the chalk forms white cliffs, not the band's end.",
+            "Stated: from Lulworth in Dorset to Flamborough Head in Yorkshire.",
+            "The Weald is named as an exception, not the band's end."
+          ]
+        },
+        {
+          "id": "huxley-chalk-1870#q2",
+          "stem": "According to the passage, how far east may the chalk be traced?",
+          "options": [
+            "As far as the Sea of Aral",
+            "As far as Syria",
+            "As far as the Caspian Sea",
+            "As far as Lake Baikal"
+          ],
+          "key_index": 0,
+          "evidence_span": "may be traced as far as the shores of the Sea of Aral, in Central Asia",
+          "option_rationales": [
+            "Stated: it may be traced as far as the shores of the Sea of Aral.",
+            "Syria is named on the way; the chalk is traced farther east, to the Sea of Aral.",
+            "The Caspian Sea is never mentioned.",
+            "Lake Baikal is never mentioned."
+          ]
+        },
+        {
+          "id": "huxley-chalk-1870#q3",
+          "stem": "What thickness does the English chalk reach in some places?",
+          "options": [
+            "About two hundred feet",
+            "More than a thousand feet",
+            "About 280 feet",
+            "Nearly five hundred feet"
+          ],
+          "key_index": 1,
+          "evidence_span": "Attaining, as it does in some places, a thickness of more than a thousand feet",
+          "option_rationales": [
+            "Two hundred feet is never given as a thickness.",
+            "Stated: a thickness of more than a thousand feet.",
+            "280 is the length of the band in miles, not a thickness.",
+            "Not a thickness given in the passage."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bird-rocky-mountains-1879",
+      "source": {
+        "title": "A Lady's Life in the Rocky Mountains",
+        "author": "Isabella L. Bird",
+        "year": 1879,
+        "era": "1870s",
+        "section": "Letter V",
+        "gutenberg_ebook": 755,
+        "url": "https://www.gutenberg.org/ebooks/755",
+        "text_url": "https://www.gutenberg.org/cache/epub/755/pg755.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "13c765d533321f1d536c9a77a8ab89b66b60e4fbfca5f59369971faf2f8ab856",
+        "offsets": {
+          "start": 91690,
+          "end": 93617
+        },
+        "first_words": "There is a most romantic place",
+        "last_words": "for the sun was very fierce."
+      },
+      "paragraphs": [
+        "There is a most romantic place called Estes Park, at a height of 7,500 feet, which can be reached by going down to the plains and then striking up the St. Vrain Canyon, but this is a distance of fifty-five miles, and as Chalmers was confident that he could take me over the mountains, a distance, as he supposed, of about twenty miles, we left at mid-day yesterday, with the fervent hope, on my part, that I might not return. Mrs. C. was busy the whole of Tuesday in preparing what she called \"grub,\" which, together with \"plenty of bedding,\" was to be carried on a pack mule; but when we started I was disgusted to find that Chalmers was on what should have been the pack animal, and that two thickly-quilted cotton \"spreads\" had been disposed of under my saddle, making it broad, high, and uncomfortable. Any human being must have laughed to see an expedition start so grotesquely \"ill found.\" I had a very old iron-grey horse, whose lower lip hung down feebly, showing his few teeth, while his fore-legs stuck out forwards, and matter ran from both his nearly-blind eyes. It is kindness to bring him up to abundant pasture. My saddle is an old McLellan cavalry saddle, with a battered brass peak, and the bridle is a rotten leather strap on one side and a strand of rope on the other. The cotton quilts covered the Rosinante from mane to tail. Mrs. C. wore an old print skirt, an old short-gown, a print apron, and a sun-bonnet, with a flap coming down to her waist, and looked as careworn and clean as she always does. The inside horn of her saddle was broken; to the outside one hung a saucepan and a bundle of clothes. The one girth was nearly at the breaking point when we started.",
+        "My pack, with my well-worn umbrella upon it, was behind my saddle. I wore my Hawaiian riding dress, with a handkerchief tied over my face and the sun-cover of my umbrella folded and tied over my hat, for the sun was very fierce."
+      ],
+      "word_count": 354,
+      "questions": [
+        {
+          "id": "bird-rocky-mountains-1879#q1",
+          "stem": "What was the author's bridle made of?",
+          "options": [
+            "A strand of rope on both sides",
+            "A new strap of cavalry leather",
+            "Half leather strap, half rope",
+            "A battered brass chain"
+          ],
+          "key_index": 2,
+          "evidence_span": "the bridle is a rotten leather strap on one side and a strand of rope on the other",
+          "option_rationales": [
+            "Rope is on one side only; the other side is a leather strap.",
+            "The strap is rotten, not new, and cavalry describes the saddle.",
+            "Stated: a rotten leather strap on one side and a strand of rope on the other.",
+            "Battered brass describes the saddle's peak; no chain is mentioned."
+          ]
+        },
+        {
+          "id": "bird-rocky-mountains-1879#q2",
+          "stem": "How far is the route to Estes Park by the plains and the St. Vrain Canyon?",
+          "options": [
+            "About twenty miles",
+            "Fifty-five miles",
+            "Thirty-five miles",
+            "Seventy-five miles"
+          ],
+          "key_index": 1,
+          "evidence_span": "but this is a distance of fifty-five miles",
+          "option_rationales": [
+            "About twenty miles is Chalmers's guess for the route over the mountains.",
+            "Stated: that route is a distance of fifty-five miles.",
+            "Not a distance given in the passage.",
+            "Not a distance given in the passage."
+          ]
+        },
+        {
+          "id": "bird-rocky-mountains-1879#q3",
+          "stem": "What had been put under the author's saddle?",
+          "options": [
+            "A bundle of clothes",
+            "Two flour bags",
+            "A buffalo robe",
+            "Two cotton quilts"
+          ],
+          "key_index": 3,
+          "evidence_span": "two thickly-quilted cotton \"spreads\" had been disposed of under my saddle",
+          "option_rationales": [
+            "The bundle of clothes hung from Mrs. C.'s saddle.",
+            "Flour bags are not mentioned in the passage.",
+            "A buffalo robe is not mentioned.",
+            "Stated: two thickly-quilted cotton spreads were put under her saddle."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "twain-mississippi-1883",
+      "source": {
+        "title": "Life on the Mississippi",
+        "author": "Mark Twain",
+        "year": 1883,
+        "era": "1880s",
+        "section": "Chapter 1",
+        "gutenberg_ebook": 245,
+        "url": "https://www.gutenberg.org/ebooks/245",
+        "text_url": "https://www.gutenberg.org/cache/epub/245/pg245.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "91388a58a49f9c321fc5b1611560b0302d043a7e955c2f3f6c619d91befc8f01",
+        "offsets": {
+          "start": 14513,
+          "end": 16598
+        },
+        "first_words": "It is a remarkable river in",
+        "last_words": "thirty miles at a single jump!"
+      },
+      "paragraphs": [
+        "It is a remarkable river in this: that instead of widening toward its mouth, it grows narrower; grows narrower and deeper. From the junction of the Ohio to a point half way down to the sea, the width averages a mile in high water: thence to the sea the width steadily diminishes, until, at the 'Passes,' above the mouth, it is but little over half a mile. At the junction of the Ohio the Mississippi's depth is eighty-seven feet; the depth increases gradually, reaching one hundred and twenty-nine just above the mouth.",
+        "The difference in rise and fall is also remarkable--not in the upper, but in the lower river. The rise is tolerably uniform down to Natchez (three hundred and sixty miles above the mouth)--about fifty feet. But at Bayou La Fourche the river rises only twenty-four feet; at New Orleans only fifteen, and just above the mouth only two and one half.",
+        "An article in the New Orleans 'Times-Democrat,' based upon reports of able engineers, states that the river annually empties four hundred and six million tons of mud into the Gulf of Mexico--which brings to mind Captain Marryat's rude name for the Mississippi--'the Great Sewer.' This mud, solidified, would make a mass a mile square and two hundred and forty-one feet high.",
+        "The mud deposit gradually extends the land--but only gradually; it has extended it not quite a third of a mile in the two hundred years which have elapsed since the river took its place in history. The belief of the scientific people is, that the mouth used to be at Baton Rouge, where the hills cease, and that the two hundred miles of land between there and the Gulf was built by the river. This gives us the age of that piece of country, without any trouble at all--one hundred and twenty thousand years. Yet it is much the youthfullest batch of country that lies around there anywhere.",
+        "The Mississippi is remarkable in still another way--its disposition to make prodigious jumps by cutting through narrow necks of land, and thus straightening and shortening itself. More than once it has shortened itself thirty miles at a single jump!"
+      ],
+      "word_count": 368,
+      "questions": [
+        {
+          "id": "twain-mississippi-1883#q1",
+          "stem": "According to the passage, how much does the river rise at New Orleans?",
+          "options": [
+            "About fifty feet",
+            "Twenty-four feet",
+            "Two and one half feet",
+            "Fifteen feet"
+          ],
+          "key_index": 3,
+          "evidence_span": "at New Orleans only fifteen",
+          "option_rationales": [
+            "About fifty feet is the rise down to Natchez.",
+            "Twenty-four feet is the rise at Bayou La Fourche.",
+            "Two and one half feet is the rise just above the mouth.",
+            "Stated: at New Orleans only fifteen."
+          ]
+        },
+        {
+          "id": "twain-mississippi-1883#q2",
+          "stem": "Where do the scientific people believe the river's mouth used to be?",
+          "options": [
+            "At Natchez",
+            "At Baton Rouge",
+            "At New Orleans",
+            "At Bayou La Fourche"
+          ],
+          "key_index": 1,
+          "evidence_span": "the mouth used to be at Baton Rouge, where the hills cease",
+          "option_rationales": [
+            "Natchez is named only for the river's rise.",
+            "Stated: the mouth used to be at Baton Rouge.",
+            "New Orleans is named for its rise and its newspaper.",
+            "Bayou La Fourche is named only for the river's rise."
+          ]
+        },
+        {
+          "id": "twain-mississippi-1883#q3",
+          "stem": "What age does the passage give for the land that the river built?",
+          "options": [
+            "Two hundred years",
+            "Four hundred and six thousand years",
+            "One hundred and twenty thousand years",
+            "Two hundred and forty-one thousand years"
+          ],
+          "key_index": 2,
+          "evidence_span": "This gives us the age of that piece of country, without any trouble at all--one hundred and twenty thousand years.",
+          "option_rationales": [
+            "Two hundred years is the time since the river took its place in history.",
+            "Four hundred and six million tons is the mud the river empties each year.",
+            "Stated: the age of that piece of country is one hundred and twenty thousand years.",
+            "Two hundred and forty-one is the height in feet of the solidified mud."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "muir-sierra-snow-1894",
+      "source": {
+        "title": "The Mountains of California",
+        "author": "John Muir",
+        "year": 1894,
+        "era": "1890s",
+        "section": "Chapter III. The Snow",
+        "gutenberg_ebook": 10012,
+        "url": "https://www.gutenberg.org/ebooks/10012",
+        "text_url": "https://www.gutenberg.org/cache/epub/10012/pg10012.txt",
+        "retrieved": "2026-09-26",
+        "sha256": "97de559c987a0380ddc5a81df16bb7f58d60a0270514fab5a67e47eeec0a242b",
+        "offsets": {
+          "start": 51469,
+          "end": 53350
+        },
+        "first_words": "The first snow that whitens the",
+        "last_words": "their steady sustained flow all winter."
+      },
+      "paragraphs": [
+        "The first snow that whitens the Sierra, usually falls about the end of October or early in November, to a depth of a few inches, after months of the most charming Indian summer weather imaginable. But in a few days, this light covering mostly melts from the slopes exposed to the sun and causes but little apprehension on the part of mountaineers who may be lingering among the high peaks at this time. The first general winter storm that yields snow that is to form a lasting portion of the season’s supply, seldom breaks on the mountains before the end of November. Then, warned by the sky, cautions mountaineers, together with the wild sheep, deer, and most of the birds and bears, make haste to the lowlands or foot-hills; and burrowing marmots, mountain beavers, wood-rats, and such people go into winter quarters, some of them not again to see the light of day until the general awakening and resurrection of the spring in June or July. The first heavy fall is usually from about two to four feet in depth. Then, with intervals of splendid sunshine, storm succeeds storm, heaping snow on snow, until thirty to fifty feet has fallen. But on account of its settling and compacting, and the almost constant waste from melting and evaporation, the average depth actually found at any time seldom exceeds ten feet in the forest region, or fifteen feet along the slopes of the summit peaks.",
+        "Even during the coldest weather evaporation never wholly ceases, and the sunshine that abounds between the storms is sufficiently powerful to melt the surface more or less through all the winter months. Waste from melting also goes on to some extent on the bottom from heat stored up in the rocks, and given off slowly to the snow in contact with them, as is shown by the rising of the streams on all the higher regions after the first snowfall, and their steady sustained flow all winter."
+      ],
+      "word_count": 330,
+      "questions": [
+        {
+          "id": "muir-sierra-snow-1894#q1",
+          "stem": "According to the passage, the first general winter storm seldom breaks before what time?",
+          "options": [
+            "The end of October",
+            "The end of November",
+            "Early in November",
+            "The middle of December"
+          ],
+          "key_index": 1,
+          "evidence_span": "seldom breaks on the mountains before the end of November",
+          "option_rationales": [
+            "The end of October is when the first light snow usually falls.",
+            "Stated: it seldom breaks before the end of November.",
+            "Early November is when the first light snow may fall.",
+            "December is never mentioned."
+          ]
+        },
+        {
+          "id": "muir-sierra-snow-1894#q2",
+          "stem": "How deep is the first heavy fall of snow usually?",
+          "options": [
+            "About two to four feet",
+            "A few inches",
+            "About ten feet",
+            "Thirty to fifty feet"
+          ],
+          "key_index": 0,
+          "evidence_span": "The first heavy fall is usually from about two to four feet in depth.",
+          "option_rationales": [
+            "Stated: the first heavy fall is usually about two to four feet.",
+            "A few inches is the depth of the first light snow.",
+            "Ten feet is the usual greatest depth in the forest region.",
+            "Thirty to fifty feet is the season's total fall."
+          ]
+        },
+        {
+          "id": "muir-sierra-snow-1894#q3",
+          "stem": "What does the passage say shows that melting goes on at the bottom of the snow?",
+          "options": [
+            "Hollows form in the snow around rocks",
+            "Pools of meltwater collect in the high valleys",
+            "The streams rise and keep flowing all winter",
+            "The snow sinks lower in the forests"
+          ],
+          "key_index": 2,
+          "evidence_span": "as is shown by the rising of the streams on all the higher regions after the first snowfall, and their steady sustained flow all winter",
+          "option_rationales": [
+            "Hollows in the snow are never mentioned.",
+            "Pools of meltwater are never mentioned.",
+            "Stated: the streams rise after the first snowfall and flow steadily all winter.",
+            "Settling explains the modest depth, not melting at the bottom."
+          ]
+        }
+      ]
+    }
+  ]
+}
