@@ -8,7 +8,9 @@
  * copy (`hb/gen/reading/passages.json`) and validates it independently.
  *
  * Editing a passage or question changes what existing item ids regenerate to: bump the family's
- * `generatorVersion` and re-dump for the bank (A11, A17).
+ * `generatorVersion`, update the sha256 pinned in `bank.test.ts` and in the twin's tests (so
+ * drift fails in either repo alone), copy the file to the bank, re-run the two independent
+ * solves (A14) and re-dump for the bank (A11, A17).
  */
 
 import raw from './passages.json'

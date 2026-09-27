@@ -16,6 +16,7 @@ describe('wpm = words / (t / 60)', () => {
   it('350 words in 60 s is 350 wpm; in 30 s 700 wpm', () => {
     expect(wordsPerMinute(350, 60_000)).toBe(350)
     expect(wordsPerMinute(350, 30_000)).toBe(700)
+    expect(wordsPerMinute(360, 24_000)).toBe(900)
     expect(wordsPerMinute(W, 90_000)).toBeCloseTo((W * 60) / 90, 12)
   })
 
@@ -55,31 +56,56 @@ describe('gate ≥ 2/3 (§3 row 10, A10)', () => {
   })
 })
 
-describe('skimming flag (wpm > 900) and the observation', () => {
-  it('flags strictly above 900 wpm and keeps the observation when the gate passed', () => {
-    const at900 = readingBlockObservation(item, resp((W / SKIM_WPM) * 60_000))
-    expect(at900.meta.wpm).toBeCloseTo(900, 9)
-    expect(at900.meta.flags).toEqual(at900.meta.wpm > 900 ? ['skimming'] : [])
-    const fast = readingBlockObservation(item, resp((W / 1_200) * 60_000))
-    expect(fast.meta.flags).toEqual(['skimming'])
-    expect(fast.status).toBe('ok')
-    const slow = readingBlockObservation(item, resp((W / 250) * 60_000))
-    expect(slow.meta.flags).toEqual([])
-    const fastFailed = readingBlockObservation(item, resp((W / 2_000) * 60_000, choicesWith(0)))
-    expect(fastFailed.meta.flags).toEqual(['skimming'])
-    expect(fastFailed.status).toBe('no_observation')
+describe('skimming flag (wpm > 900): recorded in meta, no observation', () => {
+  /** The block with its word count set to 360, so 24,000 ms is exactly 900 wpm. */
+  const item360: ReadingItem = { ...item, spec: { ...item.spec, word_count: 360 } }
+
+  it('exactly 900 wpm is not skimming; one millisecond faster is', () => {
+    expect(SKIM_WPM).toBe(900)
+    const at = readingBlockObservation(item360, resp(24_000))
+    expect(at.meta.wpm).toBe(900)
+    expect(at.meta.flags).toEqual([])
+    expect(at.status).toBe('ok')
+    const over = readingBlockObservation(item360, resp(23_999))
+    expect(over.meta.wpm).toBeGreaterThan(900)
+    expect(over.meta.flags).toEqual(['skimming'])
+    expect(over).toMatchObject({ status: 'no_observation', reason: 'skimming' })
   })
 
-  it('the observation is x = ln(wpm) with the item Gaussian params on PS (A10)', () => {
+  it('a skimmed block gives no observation and no score value, even with the gate passed', () => {
+    const fast = readingBlockObservation(item, resp((W / 1_200) * 60_000))
+    expect(fast.meta.flags).toEqual(['skimming'])
+    expect(fast.meta.gate_passed).toBe(true)
+    expect(fast).toMatchObject({ status: 'no_observation', reason: 'skimming' })
+    expect(reading.score(item, resp((W / 1_200) * 60_000))).toEqual({ correct: null })
+    // The review's probe: the whole passage "read" in 1 s with every key right (≈ 21,700 wpm).
+    expect(reading.score(item, resp(1_000))).toEqual({ correct: null })
+    const slow = readingBlockObservation(item, resp((W / 250) * 60_000))
+    expect(slow.meta.flags).toEqual([])
+    expect(slow.status).toBe('ok')
+    // A failed gate is reported first; the flag is still recorded.
+    const fastFailed = readingBlockObservation(item, resp((W / 2_000) * 60_000, choicesWith(0)))
+    expect(fastFailed.meta.flags).toEqual(['skimming'])
+    expect(fastFailed).toMatchObject({ status: 'no_observation', reason: 'gate_failed' })
+  })
+
+  it('a passed, unflagged block gives x = ln(wpm) with the item Gaussian params on PS (A10)', () => {
     fc.assert(
       fc.property(fc.double({ min: 1_000, max: 3_600_000, noNaN: true }), fc.integer({ min: 2, max: 3 }), (t, nRight) => {
         const r = readingBlockObservation(item, resp(t, choicesWith(nRight)))
+        const s = reading.score(item, resp(t, choicesWith(nRight)))
+        const wpm = (W * 60_000) / t
+        expect(r.meta.wpm).toBe(wpm)
+        expect(r.meta.norms_version).toBe('reading-v0')
+        if (wpm > SKIM_WPM) {
+          expect(r).toMatchObject({ status: 'no_observation', reason: 'skimming' })
+          expect(s).toEqual({ correct: null })
+          return
+        }
         expect(r.status).toBe('ok')
         if (r.status !== 'ok' || item.params.model !== 'gaussian') return
-        const wpm = W / (t / 60_000)
-        expect(r.meta.wpm).toBe(wpm)
         expect(r.observation).toEqual({ kind: 'gaussian', axis: 'PS', lam: item.params.lam, d: item.params.d, sigma: item.params.sigma, x: Math.log(wpm) })
-        expect(r.meta.norms_version).toBe('reading-v0')
+        expect(s).toEqual({ correct: null, value: Math.log(wpm) })
       }),
       { numRuns: 300 },
     )

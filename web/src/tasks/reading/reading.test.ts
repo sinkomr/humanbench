@@ -138,7 +138,7 @@ describe('reading family: identity, strata and randomisation', () => {
     if (r.status === 'ok') {
       const { sigma, ...rest } = r.observation
       expect(rest).toEqual({ kind: 'gaussian', axis: 'PS', lam: 0.25, d: Math.log(238) - 0.1, x: Math.log(238) })
-      expect(sigma).toBeCloseTo(Math.sqrt(0.15 ** 2 + 0.1 ** 2), 15)
+      expect(sigma).toBeCloseTo(Math.sqrt(0.15 ** 2 + 0.05 ** 2), 15)
     }
   })
 })

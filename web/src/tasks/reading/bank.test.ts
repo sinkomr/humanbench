@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import rawBank from './passages.json?raw'
 import { MAX_WORDS, MIN_PASSAGES, MIN_WORDS, PASSAGES, READING_BANK, bankProblems, countPassageWords, passageText, verifyPassage } from '.'
 
 /**
@@ -6,8 +7,8 @@ import { MAX_WORDS, MIN_PASSAGES, MIN_WORDS, PASSAGES, READING_BANK, bankProblem
  * and must be mirrored in the bank's Python twin (`hb.gen.reading`), which pins the same numbers.
  */
 const PINNED_WORDS: Readonly<Record<string, number>> = {
-  'franklin-autobiography-1791': 362,
-  'darwin-beagle-1839': 363,
+  'franklin-autobiography-1868': 362,
+  'darwin-beagle-1845': 363,
   'dana-hide-curing-1840': 354,
   'faraday-candle-1861': 365,
   'huxley-chalk-1870': 347,
@@ -16,14 +17,31 @@ const PINNED_WORDS: Readonly<Record<string, number>> = {
   'muir-sierra-snow-1894': 330,
 }
 
+/**
+ * sha256 of `passages.json` as committed. The bank keeps a byte-identical copy and pins the same
+ * hash (`tests/gen/test_reading.py`), so an edit in either repo alone fails its own tests even
+ * when the other checkout is absent. After an intended edit: bump `generatorVersion`, update
+ * both pins, copy the file over and re-run the independent solves (A14).
+ */
+const PASSAGES_SHA256 = '4c04c802fd5743bb0c348d27ca6b5820ea658afc2088c7ecd515c33d6dc9b83c'
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 describe('passage bank (A14, ROADMAP M1.12)', () => {
+  it('is the pinned file (the bank copy pins the same sha256)', async () => {
+    expect(await sha256Hex(rawBank)).toBe(PASSAGES_SHA256)
+  })
+
   it('is valid: every passage passes verifyPassage, ids and texts are unique', () => {
     expect(bankProblems()).toEqual([])
     for (const p of PASSAGES) expect(verifyPassage(p).reason, p.id).toBe('ok')
   })
 
   it(`holds ≥ ${MIN_PASSAGES} passages of ${MIN_WORDS}–${MAX_WORDS} words, with the pinned counts`, () => {
-    expect(READING_BANK.version).toBe('reading-passages-v1')
+    expect(READING_BANK.version).toBe('reading-passages-v2')
     expect(PASSAGES.length).toBeGreaterThanOrEqual(MIN_PASSAGES)
     const counts = Object.fromEntries(PASSAGES.map((p) => [p.id, countPassageWords(passageText(p.paragraphs))]))
     expect(counts).toEqual(PINNED_WORDS)

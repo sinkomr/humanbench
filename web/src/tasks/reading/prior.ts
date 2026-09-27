@@ -8,8 +8,9 @@
  * - d = ln 238 − s·b, where 238 wpm is Brysbaert's (2019) silent-reading norm for non-fiction
  *   [EST, §7.3] and b is the passage prior below; for pre-1928 prose b = 0.4, so
  *   d = ln 238 − 0.1 (the [SPEC] era adjustment of −0.1 ln-wpm, ≈ 215 wpm at θ = 0);
- * - sigma = √(0.15² + τ_res²): 0.15 is the §7.1 per-passage SD of ln wpm and τ_res = 0.10
- *   [SPEC] the passage-to-passage residual that d does not capture.
+ * - sigma = √(0.15² + τ_res²): 0.15 is the §7.1 per-passage SD of ln wpm (it already covers
+ *   passage-to-passage variation) and τ_res = 0.05 [SPEC] the model residual, the same
+ *   provisional value as the other A10 Gaussian blocks (RT, coding).
  *
  * The item's b (difficulty prior, M1.P) is on the θ scale: the θ at which a reader's expected
  * speed on this passage equals the 238-wpm norm, so d = ln 238 − s·b keeps the two consistent.
@@ -33,8 +34,8 @@ export const READING_S = 0.25
 export const PRE_1928_SHIFT = -0.1
 /** §7.1: SD of ln wpm per passage. */
 export const SIGMA_MEASUREMENT = 0.15
-/** [SPEC] passage-to-passage residual SD of ln wpm. */
-export const TAU_RES = 0.1
+/** [SPEC] residual SD of ln wpm beyond the §7.1 per-passage SD (as for the RT and coding blocks, A10). */
+export const TAU_RES = 0.05
 /** Works first published in or after this year are not public domain everywhere; excluded (§6.i). */
 export const PUBLIC_DOMAIN_BEFORE = 1928
 

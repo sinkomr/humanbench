@@ -7,8 +7,12 @@
  * and the provisional norms and priors (`prior.ts`).
  *
  * `score(item, response)` returns `{ correct: null, value: ln(wpm) }` when the gate passed
- * (≥ 2/3 correct), else `{ correct: null }`. The scorer input is
- * {@link readingBlockObservation}, which also returns the wpm, gate result and skimming flag.
+ * (≥ 2/3 correct) and the block is not flagged as skimming (wpm > 900), else `{ correct: null }`.
+ * The scorer input is {@link readingBlockObservation}, which also returns the wpm, gate result
+ * and flags (the integrity layer, M1.19, should take the §13 client flags from `meta.flags`).
+ *
+ * generatorVersion 1.1.0: the review rewrite of the bank (`reading-passages-v2`: three gate
+ * questions replaced, five re-optioned, two passages re-dated) and τ_res = 0.05 (A11, A17).
  */
 
 import { defineFamily, type ItemInstance } from '../family'
@@ -23,7 +27,7 @@ export const reading = defineFamily<ReadingSpec, ReadingKey, ReadingResponse>({
   name: 'reading',
   axis: 'PS',
   facet: 'reading_speed',
-  generatorVersion: '1.0.0',
+  generatorVersion: '1.1.0',
   itemType: 'reading_block',
   strata: [3],
   build: buildReading,

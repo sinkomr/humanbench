@@ -1,14 +1,14 @@
 {
-  "version": "reading-passages-v1",
+  "version": "reading-passages-v2",
   "passages": [
     {
-      "id": "franklin-autobiography-1791",
+      "id": "franklin-autobiography-1868",
       "source": {
         "title": "Autobiography of Benjamin Franklin",
         "author": "Benjamin Franklin",
-        "year": 1791,
-        "era": "1790s",
-        "section": "XI. Interest in Public Affairs",
+        "year": 1868,
+        "era": "1860s",
+        "section": "XI. Interest in Public Affairs (Part Three, written 1788; Bigelow's text of 1868)",
         "gutenberg_ebook": 20203,
         "url": "https://www.gutenberg.org/ebooks/20203",
         "text_url": "https://www.gutenberg.org/cache/epub/20203/pg20203.txt",
@@ -29,7 +29,7 @@
       "word_count": 362,
       "questions": [
         {
-          "id": "franklin-autobiography-1791#q1",
+          "id": "franklin-autobiography-1868#q1",
           "stem": "How much did those who chose never to attend the watch pay the constable?",
           "options": [
             "Six shillings a year",
@@ -47,25 +47,25 @@
           ]
         },
         {
-          "id": "franklin-autobiography-1791#q2",
-          "stem": "Where was the author's paper about the watch to be read?",
+          "id": "franklin-autobiography-1868#q2",
+          "stem": "What did the author propose as a more effectual watch?",
           "options": [
-            "In the Assembly",
-            "At a meeting of the constables",
-            "In the author's newspaper",
-            "In the Junto"
+            "Making every housekeeper attend in turn",
+            "Fining constables who neglected the rounds",
+            "Letting the Junto pick constables",
+            "Paying proper men to serve full time"
           ],
           "key_index": 3,
-          "evidence_span": "I thereupon wrote a paper to be read in Junto",
+          "evidence_span": "I proposed as a more effectual watch, the hiring of proper men to serve constantly in that business",
           "option_rationales": [
-            "The Assembly is never mentioned.",
-            "The constables are criticised, not addressed.",
-            "No newspaper is mentioned in the passage.",
-            "Stated: the paper was written to be read in Junto."
+            "Housekeepers attending in turn was the old system he criticised.",
+            "Neglected rounds were one of the irregularities; no fines are proposed.",
+            "The Junto approved the idea; picking constables is never mentioned.",
+            "Stated: he proposed the hiring of proper men to serve constantly."
           ]
         },
         {
-          "id": "franklin-autobiography-1791#q3",
+          "id": "franklin-autobiography-1868#q3",
           "stem": "How was the author's plan for the watch passed on to the other clubs?",
           "options": [
             "By a vote of the Assembly",
@@ -85,13 +85,13 @@
       ]
     },
     {
-      "id": "darwin-beagle-1839",
+      "id": "darwin-beagle-1845",
       "source": {
         "title": "The Voyage of the Beagle",
         "author": "Charles Darwin",
-        "year": 1839,
-        "era": "1830s",
-        "section": "Chapter XIV",
+        "year": 1845,
+        "era": "1840s",
+        "section": "Chapter XIV (revised edition of 1845)",
         "gutenberg_ebook": 944,
         "url": "https://www.gutenberg.org/ebooks/944",
         "text_url": "https://www.gutenberg.org/cache/epub/944/pg944.txt",
@@ -110,7 +110,7 @@
       "word_count": 363,
       "questions": [
         {
-          "id": "darwin-beagle-1839#q1",
+          "id": "darwin-beagle-1845#q1",
           "stem": "At what time did the earthquake begin?",
           "options": [
             "In the middle of the night",
@@ -128,25 +128,25 @@
           ]
         },
         {
-          "id": "darwin-beagle-1839#q2",
+          "id": "darwin-beagle-1845#q2",
           "stem": "What did the mayor-domo at Quiriquina say was his first notice of the shock?",
           "options": [
-            "Hearing his cattle bellow",
-            "Seeing the sea draw back",
-            "Watching a wall fall",
+            "His cows rolling into the sea",
+            "The great wave rising over the bay",
+            "A whole row of houses falling in ruins",
             "Rolling on the ground with his horse"
           ],
           "key_index": 3,
           "evidence_span": "the first notice he received of it, was finding both the horse he rode and himself, rolling together on the ground",
           "option_rationales": [
-            "Cows rolled into the sea, but no bellowing is mentioned.",
-            "The sea drawing back is not mentioned.",
-            "No falling wall is described at Quiriquina.",
+            "He told of cows rolled into the sea, but not as his first notice.",
+            "The great wave is described, but not as his first notice.",
+            "Rows of houses in ruins describe Concepcion, not his first notice.",
             "Stated: he found the horse he rode and himself rolling on the ground."
           ]
         },
         {
-          "id": "darwin-beagle-1839#q3",
+          "id": "darwin-beagle-1845#q3",
           "stem": "How many small tremblings were counted within the first twelve days?",
           "options": [
             "At least three hundred",
@@ -277,52 +277,52 @@
           "stem": "In a lamp, what happens when the flame runs down the cotton to the oil?",
           "options": [
             "It gets extinguished",
-            "It burns more brightly",
-            "It sets the oil alight",
-            "It begins to smoke heavily"
+            "It goes on burning in the oil",
+            "The oil begins to burn of itself",
+            "It draws more oil up the cotton"
           ],
           "key_index": 0,
           "evidence_span": "When the flame runs down the cotton to the oil, it gets extinguished",
           "option_rationales": [
-            "Stated: when the flame reaches the oil it gets extinguished.",
-            "Brighter burning is never mentioned.",
+            "Stated: when the flame runs down the cotton to the oil, it gets extinguished.",
+            "It goes on burning in the part above, not in the oil.",
             "The passage says the oil will not burn of itself.",
-            "Smoke is never mentioned."
+            "How the oil gets up the cotton is left for later; at the oil the flame goes out."
           ]
         },
         {
           "id": "faraday-candle-1861#q2",
           "stem": "What do the street sellers put round a candle to shade it?",
           "options": [
-            "A paper cone hung from a hook",
-            "A tin screen fixed to the stall",
+            "A lamp-glass standing in a vessel of oil",
+            "A cloth hood over their greens and fish",
             "A lamp-glass held by a kind of gallery",
-            "A cloth hood stretched on a frame"
+            "A paper cone slipped up and down"
           ],
           "key_index": 2,
           "evidence_span": "They put a lamp-glass round the candle, supported on a kind of gallery, which clasps it",
           "option_rationales": [
-            "No paper cone is mentioned.",
-            "No tin screen is mentioned.",
+            "The lamp-glass rests on a gallery; the vessel of oil belongs to the lamp.",
+            "Greens and fish are what the sellers sell; no cloth hood is mentioned.",
             "Stated: a lamp-glass round the candle, supported on a kind of gallery.",
-            "No cloth hood is mentioned."
+            "The lamp-glass is what slips up and down; no paper cone is mentioned."
           ]
         },
         {
           "id": "faraday-candle-1861#q3",
           "stem": "According to the passage, when do the street sellers shade their candles?",
           "options": [
-            "On Sunday evenings",
+            "On Saturday mornings",
             "On market-day mornings",
-            "On foggy winter nights",
+            "On quiet nights",
             "On Saturday nights"
           ],
           "key_index": 3,
           "evidence_span": "for the shading of their candles on Saturday nights",
           "option_rationales": [
-            "Sunday is never mentioned.",
-            "The passage mentions the market-place but not mornings.",
-            "Fog and winter are never mentioned.",
+            "The passage says Saturday nights, not mornings.",
+            "The market-place is named, but mornings are not.",
+            "Quiet describes the flame the lecturer wants, not the sellers' time.",
             "Stated: they shade their candles on Saturday nights."
           ]
         }
@@ -380,17 +380,17 @@
           "stem": "According to the passage, how far east may the chalk be traced?",
           "options": [
             "As far as the Sea of Aral",
+            "As far as Syria",
             "As far as the Caspian Sea",
-            "As far as the Persian Gulf",
-            "As far as the Ural Mountains"
+            "As far as Lake Baikal"
           ],
           "key_index": 0,
           "evidence_span": "may be traced as far as the shores of the Sea of Aral, in Central Asia",
           "option_rationales": [
             "Stated: it may be traced as far as the shores of the Sea of Aral.",
+            "Syria is named on the way; the chalk is traced farther east, to the Sea of Aral.",
             "The Caspian Sea is never mentioned.",
-            "The Persian Gulf is never mentioned.",
-            "The Ural Mountains are never mentioned."
+            "Lake Baikal is never mentioned."
           ]
         },
         {
@@ -441,20 +441,20 @@
       "questions": [
         {
           "id": "bird-rocky-mountains-1879#q1",
-          "stem": "According to the passage, at what height is Estes Park?",
+          "stem": "What was the author's bridle made of?",
           "options": [
-            "5,500 feet",
-            "9,000 feet",
-            "7,500 feet",
-            "10,500 feet"
+            "A strand of rope on both sides",
+            "A new strap of cavalry leather",
+            "Half leather strap, half rope",
+            "A battered brass chain"
           ],
           "key_index": 2,
-          "evidence_span": "Estes Park, at a height of 7,500 feet",
+          "evidence_span": "the bridle is a rotten leather strap on one side and a strand of rope on the other",
           "option_rationales": [
-            "Not the height given in the passage.",
-            "Not the height given in the passage.",
-            "Stated: Estes Park is at a height of 7,500 feet.",
-            "Not the height given in the passage."
+            "Rope is on one side only; the other side is a leather strap.",
+            "The strap is rotten, not new, and cavalry describes the saddle.",
+            "Stated: a rotten leather strap on one side and a strand of rope on the other.",
+            "Battered brass describes the saddle's peak; no chain is mentioned."
           ]
         },
         {
@@ -562,20 +562,20 @@
         },
         {
           "id": "twain-mississippi-1883#q3",
-          "stem": "What rude name did Captain Marryat give the Mississippi?",
+          "stem": "What age does the passage give for the land that the river built?",
           "options": [
-            "The Father of Waters",
-            "The Big Muddy",
-            "The Great Sewer",
-            "The Crooked River"
+            "Two hundred years",
+            "Four hundred and six thousand years",
+            "One hundred and twenty thousand years",
+            "Two hundred and forty-one thousand years"
           ],
           "key_index": 2,
-          "evidence_span": "Captain Marryat's rude name for the Mississippi--'the Great Sewer.'",
+          "evidence_span": "This gives us the age of that piece of country, without any trouble at all--one hundred and twenty thousand years.",
           "option_rationales": [
-            "A familiar nickname, but not the one in the passage.",
-            "A familiar nickname, but not the one in the passage.",
-            "Stated: Marryat's rude name was 'the Great Sewer.'",
-            "Not a name the passage mentions."
+            "Two hundred years is the time since the river took its place in history.",
+            "Four hundred and six million tons is the mud the river empties each year.",
+            "Stated: the age of that piece of country is one hundred and twenty thousand years.",
+            "Two hundred and forty-one is the height in feet of the solidified mud."
           ]
         }
       ]

@@ -2,14 +2,18 @@
  * Scoring of a reading block (ROADMAP A10; DESIGN §3 row 10, §7.1, §14.6 example 13).
  *
  * - Reading time t is from reveal to "Done" (the questions come after the passage is hidden);
- *   wpm = words / (t / 60 s) with the passage's WORD RULE count.
+ *   wpm = words / (t / 60 s) with the passage's WORD RULE count, computed as words·60000 / t_ms
+ *   so that whole-number inputs on the 900 boundary are exact.
  * - Gate: the three literal questions; passed iff ≥ 2 are answered correctly (an unanswered
  *   question counts as wrong).
- * - Skimming flag: wpm > 900. The flag is reported beside the observation; whether a flagged
- *   block counts is the integrity layer's call (M1.19), not the scorer's.
- * - Observation, only if the gate passed (A10: the reading observation is dropped otherwise):
+ * - Skimming flag: wpm > 900 (§14.6 example 13), recorded in `meta.flags` for the integrity
+ *   layer (M1.19, §13 client flags).
+ * - Observation, only if the gate passed (A10: the reading observation is dropped otherwise)
+ *   and the block is not flagged as skimming ([SPEC]: a skimmed time is not a reading time, and
+ *   x = ln(wpm) above ln 900 would put θ_PS beyond +5.7, so it is dropped like a failed gate):
  *   `{ kind: 'gaussian', axis: 'PS', lam: s, d, sigma, x: ln(wpm) }` with the item's params
  *   (`prior.ts`: s = 0.25, d = ln 238 − 0.1 for pre-1928 prose, sigma = √(0.15² + τ_res²)).
+ *   So `family.score()`, which has no channel for flags, never returns a skimmed wpm either.
  */
 
 import type { Observation } from '../../engine'
@@ -39,7 +43,7 @@ export interface ReadingBlockMeta {
 
 export type ReadingBlockResult =
   | { readonly status: 'ok'; readonly observation: Extract<Observation, { kind: 'gaussian' }>; readonly meta: ReadingBlockMeta }
-  | { readonly status: 'no_observation'; readonly reason: 'gate_failed'; readonly detail: string; readonly meta: ReadingBlockMeta }
+  | { readonly status: 'no_observation'; readonly reason: 'gate_failed' | 'skimming'; readonly detail: string; readonly meta: ReadingBlockMeta }
 
 /** Every way `response` fails to be a well-formed response to a block of `nQuestions` × `nOptions` (empty = ok). */
 export function readingResponseProblems(response: unknown, nQuestions: number, nOptions: number): string[] {
@@ -61,10 +65,10 @@ export function readingResponseProblems(response: unknown, nQuestions: number, n
   return out
 }
 
-/** Words per minute: words / (t / 60 s). */
+/** Words per minute: words / (t / 60 s), as words·60000 / t_ms (one rounding, exact at 360 words in 24 s). */
 export function wordsPerMinute(words: number, readingTimeMs: number): number {
   if (!(Number.isFinite(readingTimeMs) && readingTimeMs > 0)) throw new RangeError(`reading time must be finite and > 0, got ${readingTimeMs}`)
-  return words / (readingTimeMs / 60_000)
+  return (words * 60_000) / readingTimeMs
 }
 
 /** Score a block (see the module comment). Throws a RangeError on a malformed response. */
@@ -93,6 +97,9 @@ export function readingBlockObservation(item: ItemInstance<ReadingSpec, ReadingK
   }
   if (!gatePassed) {
     return { status: 'no_observation', reason: 'gate_failed', detail: `${nCorrect}/${nQ} gate questions correct < ${GATE_MIN_CORRECT} required`, meta }
+  }
+  if (meta.flags.includes('skimming')) {
+    return { status: 'no_observation', reason: 'skimming', detail: `${wpm.toFixed(1)} wpm > ${SKIM_WPM} (skimming)`, meta }
   }
   return { status: 'ok', observation: { kind: 'gaussian', axis: 'PS', lam: p.lam, d: p.d, sigma: p.sigma, x: Math.log(wpm) }, meta }
 }

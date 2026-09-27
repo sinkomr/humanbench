@@ -10,11 +10,14 @@
 export interface PassageSource {
   readonly title: string
   readonly author: string
-  /** Year the work was first published (must be < 1928, §6.i Gutenberg row). */
+  /**
+   * Year the excerpted wording was first published: the edition the Gutenberg text follows, not
+   * the work's first edition (e.g. Darwin's revised Beagle text of 1845). Must be < 1928 (§6.i).
+   */
   readonly year: number
   /** Decade tag of `year`, e.g. "1860s" (§6.i: "tag the era"). */
   readonly era: string
-  /** Chapter, lecture or letter the excerpt is taken from. */
+  /** Chapter, lecture or letter the excerpt is taken from (plus edition notes where useful). */
   readonly section: string
   readonly gutenberg_ebook: number
   /** `https://www.gutenberg.org/ebooks/<n>`. */
@@ -53,7 +56,7 @@ export interface PassageQuestion {
 
 /** One authored passage record of `passages.json`. */
 export interface PassageRecord {
-  /** Stable id, e.g. "darwin-beagle-1839"; the family structure (A11: one family per passage). */
+  /** Stable id, e.g. "darwin-beagle-1845"; the family structure (A11: one family per passage). */
   readonly id: string
   readonly source: PassageSource
   /**

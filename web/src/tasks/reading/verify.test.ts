@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   PASSAGES,
+  PUBLIC_DOMAIN_BEFORE,
   bankProblems,
   countPassageWords,
   passageChecks,
@@ -123,8 +124,11 @@ describe('verifyPassage: negative cases, one per failure reason', () => {
     expect(verifyPassage(badPassage((p) => ((p as AnyRecord).source = null))).ok).toBe(false)
   })
 
-  it('year_before_1928: a work first published in 1930', () => {
+  it('year_before_1928: 1928 and later fail, 1927 passes (the §6.i cutoff is strict)', () => {
+    expect(PUBLIC_DOMAIN_BEFORE).toBe(1928)
     expectFails(badPassage((p) => ((p.source.year = 1930), (p.source.era = '1930s'))), 'year_before_1928')
+    expectFails(badPassage((p) => ((p.source.year = 1928), (p.source.era = '1920s'))), 'year_before_1928')
+    expect(verifyPassage(badPassage((p) => ((p.source.year = 1927), (p.source.era = '1920s')))).ok).toBe(true)
   })
 
   it('era_matches_year: the era tag is not the decade of the year', () => {
@@ -287,7 +291,7 @@ describe('verifyReading: item-level negative cases', () => {
   })
 
   it('structure_matches: family structure of another passage', () => {
-    expectItemFails(badItem((x) => (x.structural_params = { passage_id: 'darwin-beagle-1839' })), 'structure_matches')
+    expectItemFails(badItem((x) => (x.structural_params = { passage_id: 'darwin-beagle-1845' })), 'structure_matches')
   })
 
   it('expected_time_matches: a changed expected time', () => {
