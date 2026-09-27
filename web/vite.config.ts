@@ -38,14 +38,15 @@ export default defineConfig(({ mode }) => {
     base,
     plugins: [svelte(), schemaAssets()],
     test: {
-      // Tests named *.dom.test.ts or *.svelte.test.ts run in jsdom; all other *.test.ts run in node.
+      // Tests named *.dom.test.ts or *.svelte.test.ts run in jsdom; all other *.test.ts (src/ and the
+      // Node scripts/ tests) run in node.
       projects: [
         {
           extends: true,
           test: {
             name: 'unit',
             environment: 'node',
-            include: ['src/**/*.test.ts'],
+            include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
             exclude: ['src/**/*.dom.test.ts', 'src/**/*.svelte.test.ts'],
           },
         },

@@ -54,7 +54,23 @@ Rerun the tests on every file change:
 npm run test:watch
 ```
 
-Test files live next to the code in `web/src/`. A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+
+### Procedural families
+
+Each procedural task family lives in `web/src/tasks/<family>/` and implements the contract in
+`web/src/tasks/family.ts` (ROADMAP A1, A11): a seeded generator, a verifier and a scorer, tested
+with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances. The private
+bank repo re-verifies at least 1,000 TS instances of every family with its Python twin. Dump them
+into the sibling bank checkout (`../humanbench-bank`, or `$HB_BANK_DIR`) with:
+
+```zsh
+cd web
+npm run dump:families -- --family rot --n 1000 --bank
+```
+
+Use `--module src/tasks/<family>/index.ts` in place of `--family` for a family that is not in
+`web/src/tasks/registry.ts` yet, or `--out <file>` in place of `--bank` to write elsewhere.
 
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 
