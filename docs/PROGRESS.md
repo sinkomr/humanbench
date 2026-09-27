@@ -28,7 +28,8 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- Next batch: M1.2b (Σ v2) → M1.3 (TS scorer parity); M1.4a (recovery sim); M1.F family contract → M1.5–M1.12 families + M1.P priors.
+- **In flight: workflow wf2** (run `wf_4db95169-5e8`, started 17:58 on 2026-09-26): M1.2b → M1.3 + M1.4a on branch `wf2/scorer`; M1.F on `wf2/contract` → 8 families on `wf2/<fam>`, each in a worktree under `~/code/wt/<name>/{humanbench,humanbench-bank}`. At the end an integrator merges `wf2/*` into `dev`.
+- **If interrupted:** run `git worktree list` and `git branch --list 'wf2/*'` in both repos. Each task commits on its own branch, so finish unfinished branches, then merge them into `dev` in the order scorer, contract, rotation, matrices, series, quant, span, rt, coding, reading. After that, register the families, regenerate `golden/ts_dumps`, run all gates, and remove the worktrees.
 
 ## Needs you (blocked on the user)
 
