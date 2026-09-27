@@ -15,20 +15,27 @@
 import type { ItemInstance } from '../family'
 
 /**
- * The 9 glyph ids (render in M1.13; ids only here). Simple line shapes, none a letter or digit:
- * ring = circle outline; cross = plus sign; wedge = upward triangle; bars = two vertical
- * strokes; bowtie = two triangles tip to tip; diamond = square on its corner; wave = one
- * horizontal sine period; chevron = right-pointing angle; dotbox = square with a centre dot.
+ * The 9 glyph ids (render in M1.13; ids only here). Simple solid or outline shapes chosen so
+ * that NONE reads as a digit 0–9, a letter or a keyboard symbol: the taker answers on digit
+ * keys (0 included, never right), so a glyph that looks like a key would invite a systematic
+ * error or a shortcut (symbol-digit tests use non-alphanumeric symbols for this reason). So no
+ * circle outline (0 / O), vertical strokes (1 / l / ||), plus (+), angle (< > ^ v) or wave (~).
+ * M1.13 must keep that property when it draws them:
+ * halfdisc = filled half-disc, flat side down; star = filled five-pointed star (not the thin
+ * asterisk); wedge = filled upward triangle; tridot = three filled dots at the corners of a
+ * triangle; bowtie = two filled triangles tip to tip; diamond = square on its corner, outline;
+ * trapezoid = outline, long side down; pentagon = regular pentagon outline, point up;
+ * dotbox = square outline with a centre dot.
  */
 export const CODING_SYMBOLS = Object.freeze([
-  'ring',
-  'cross',
+  'halfdisc',
+  'star',
   'wedge',
-  'bars',
+  'tridot',
   'bowtie',
   'diamond',
-  'wave',
-  'chevron',
+  'trapezoid',
+  'pentagon',
   'dotbox',
 ] as const)
 

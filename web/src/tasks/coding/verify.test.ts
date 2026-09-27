@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { validateItemInstance, type AnyFamily } from '../family'
 import { CODING_SYMBOLS, coding, codingStructure, verifyCoding, type CodingItem } from '.'
 
+/** Two glyph ids of the set, and an id that is not one. */
+const [G0, G1] = CODING_SYMBOLS as unknown as [string, string]
+const UNKNOWN = 'blob'
+
 type Mutable = { -readonly [K in keyof CodingItem]: unknown }
 
 const base = coding.generate('verify-negatives')
@@ -39,18 +43,18 @@ describe('verifyCoding (M1.11): each rule rejects a hand-built bad block', () =>
   })
 
   it('key_bijection: a repeated digit, a digit out of range, a non-integer', () => {
-    const dup = tamper((x) => (table(x).ring = table(x).cross))
+    const dup = tamper((x) => (table(x)[G0] = table(x)[G1]))
     expect(failed(dup)).toContain('key_bijection')
     expect(verifyCoding(dup).reason).toMatch(/key_bijection/)
-    expect(failed(tamper((x) => (table(x).ring = 0)))).toContain('key_bijection')
-    expect(failed(tamper((x) => (table(x).ring = 10)))).toContain('key_bijection')
-    expect(failed(tamper((x) => (table(x).ring = 2.5)))).toContain('key_bijection')
-    expect(failed(tamper((x) => (table(x).ring = '3')))).toContain('key_bijection')
+    expect(failed(tamper((x) => (table(x)[G0] = 0)))).toContain('key_bijection')
+    expect(failed(tamper((x) => (table(x)[G0] = 10)))).toContain('key_bijection')
+    expect(failed(tamper((x) => (table(x)[G0] = 2.5)))).toContain('key_bijection')
+    expect(failed(tamper((x) => (table(x)[G0] = '3')))).toContain('key_bijection')
   })
 
   it('key_well_formed: a missing or unknown glyph, an extra key field', () => {
-    expect(failed(tamper((x) => delete table(x).ring))).toContain('key_well_formed')
-    expect(failed(tamper((x) => (table(x).star = 5)))).toContain('key_well_formed')
+    expect(failed(tamper((x) => delete table(x)[G0]))).toContain('key_well_formed')
+    expect(failed(tamper((x) => (table(x)[UNKNOWN] = 5)))).toContain('key_well_formed')
     expect(failed(tamper((x) => (x.key.answers = [1])))).toContain('key_well_formed')
     expect(failed(tamper((x) => (x.key = { digits: table(x) })))).toContain('key_well_formed')
   })
@@ -68,7 +72,7 @@ describe('verifyCoding (M1.11): each rule rejects a hand-built bad block', () =>
   it('legend_matches_key: the key swapped under an unchanged legend', () => {
     const bad = tamper((x) => {
       const t = table(x)
-      ;[t.ring, t.cross] = [t.cross, t.ring]
+      ;[t[G0], t[G1]] = [t[G1], t[G0]]
     })
     expect(failed(bad)).toEqual(['legend_matches_key'])
   })
@@ -78,16 +82,16 @@ describe('verifyCoding (M1.11): each rule rejects a hand-built bad block', () =>
     expect(failed(tamper((x) => ((legend(x)[0] as { symbol: string }).symbol = (legend(x)[1] as { symbol: string }).symbol)))).toContain(
       'legend_glyphs_bijective',
     )
-    expect(failed(tamper((x) => ((legend(x)[0] as { symbol: string }).symbol = 'star')))).toContain('legend_glyphs_bijective')
+    expect(failed(tamper((x) => ((legend(x)[0] as { symbol: string }).symbol = UNKNOWN)))).toContain('legend_glyphs_bijective')
     expect(failed(tamper((x) => legend(x).pop()))).toContain('legend_well_formed')
-    expect(failed(tamper((x) => (x.spec.legend = 'ring=1')))).toContain('legend_well_formed')
+    expect(failed(tamper((x) => (x.spec.legend = `${G0}=1`)))).toContain('legend_well_formed')
   })
 
   it('no key leakage beyond the legend: extra spec fields, extra legend fields, digits in the stream', () => {
     // A per-stimulus digit list is exactly the leak this rule exists for.
     const digits = tamper((x) => (x.spec.digits = seq(x).map((s) => table(x)[s])))
     expect(failed(digits)).toEqual(['spec_fields_exact'])
-    expect(failed(tamper((x) => (x.spec.hint = 'ring is 1')))).toEqual(['spec_fields_exact'])
+    expect(failed(tamper((x) => (x.spec.hint = `${G0} is 1`)))).toEqual(['spec_fields_exact'])
     expect(failed(tamper((x) => delete x.spec.duration_s))).toContain('spec_fields_exact')
     const cell = tamper((x) => ((legend(x)[0] as Record<string, unknown>).next = 3))
     expect(failed(cell)).toContain('legend_well_formed')
@@ -172,6 +176,7 @@ describe('verifyCoding (M1.11): each rule rejects a hand-built bad block', () =>
     expect(failed(tamper((x) => (x.difficulty = { ...d, b_prior: 0.5 })))).toEqual(['difficulty_matches'])
     expect(failed(tamper((x) => (x.difficulty = { ...d, features: { ...d.features, n_symbols: 8 } })))).toEqual(['difficulty_matches'])
     expect(failed(tamper((x) => (x.difficulty = { ...d, sd_prior: 2 })))).toEqual(['difficulty_matches'])
+    expect(failed(tamper((x) => (x.difficulty = { ...d, provenance: 'made up' })))).toEqual(['difficulty_matches'])
     expect(failed(tamper((x) => (x.params = { ...base.params, lam: 0.3 })))).toEqual(['params_match'])
     expect(failed(tamper((x) => (x.params = { ...base.params, sigma: 0.05 })))).toEqual(['params_match'])
     expect(failed(tamper((x) => (x.params = { model: '2pl', a: 1, b: 0 })))).toEqual(['params_match'])
@@ -185,7 +190,7 @@ describe('verifyCoding (M1.11): each rule rejects a hand-built bad block', () =>
     for (const bad of [
       tamper((x) => ((x as Mutable).spec = null)),
       tamper((x) => ((x as Mutable).key = null)),
-      tamper((x) => (x.spec.sequence = 'ring,cross')),
+      tamper((x) => (x.spec.sequence = `${G0},${G1}`)),
       tamper((x) => (x.spec.legend = [null, 1, 'x'])),
       tamper((x) => (x.difficulty = null)),
       tamper((x) => (x.params = null)),

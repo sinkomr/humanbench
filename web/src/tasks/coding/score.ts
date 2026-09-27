@@ -3,6 +3,19 @@
  * correct responses per minute over the 90 s window, errors counted and flagged above 20%,
  * and the engine observation `{ kind: 'gaussian', axis: 'PS', lam, d, sigma, x }` with
  * x = ln(correct per minute) and sigma = √(SE² + τ_res²), SE = 1/√correct (see `prior.ts`).
+ *
+ * The observation's sigma is the block's OWN (1/correct), not `item.params.sigma` (the nominal
+ * σ at the norm count, 60 correct, for planning only): at 10 correct σ ≈ 0.32, not 0.138.
+ * Scorers must take the observation from {@link codingOutcome} (or the `observation` field
+ * of {@link scoreCoding}'s result), never rebuild it from `item.params` and `value`.
+ *
+ * [SPEC] No correct response ⇒ no observation (x = ln 0 is undefined), PS stays "not measured".
+ * This is deliberate, not a gap: with nothing attempted there is no speed evidence, and a
+ * block answered all wrong (flagged: error rate 100%) measured a misunderstanding or a refusal,
+ * not speed. Answering all wrong gains nothing over not responding (also no observation), and
+ * a taker may leave any block unmeasured anyway, so it is no route to a better estimate. A
+ * continuity-corrected x = ln((correct + ½)/1.5) is the alternative if M4.8 data say
+ * otherwise.
  */
 
 import type { Observation } from '../../engine'
@@ -77,7 +90,7 @@ export function codingOutcome(item: CodingItem, responses: CodingResponses): Cod
   }
 }
 
-/** The Gaussian observation for a block with `correct` ≥ 1 correct responses. */
+/** The Gaussian observation for a block with `correct` ≥ 1 correct responses (σ from its own count). */
 export function codingObservation(item: CodingItem, correctPerMin: number, correct: number): Observation {
   const p = item.params
   if (p.model !== 'gaussian') throw new RangeError(`coding item ${item.item_id} has params.model ${p.model}, not gaussian`)
@@ -85,10 +98,25 @@ export function codingObservation(item: CodingItem, correctPerMin: number, corre
 }
 
 /**
+ * `score()` result of a coding block. The contract's {@link ScoreResult} has room for the value
+ * only, but a block's observation needs its own σ (1/correct) and the error flag, so the result
+ * also carries them: `observation` (the engine observation, null when nothing was correct) and
+ * `outcome` (counts and flags). It is a ScoreResult subtype, so `ProceduralFamily.score` returns
+ * it unchanged; typing these fields in the contract is an integration follow-up.
+ */
+export interface CodingScoreResult extends ScoreResult {
+  readonly correct: null
+  readonly observation: Observation | null
+  readonly outcome: CodingOutcome
+}
+
+/**
  * `score()` of a coding block: `correct` is always null (a block, §8); `value` is
  * x = ln(correct per minute), omitted when nothing was correct (no observation).
  */
-export function scoreCoding(item: CodingItem, responses: CodingResponses): ScoreResult {
-  const o = codingOutcome(item, responses).observation
-  return o === null || o.kind !== 'gaussian' ? { correct: null } : { correct: null, value: o.x }
+export function scoreCoding(item: CodingItem, responses: CodingResponses): CodingScoreResult {
+  const outcome = codingOutcome(item, responses)
+  const o = outcome.observation
+  const base = { correct: null, observation: o, outcome } as const
+  return o === null || o.kind !== 'gaussian' ? base : { ...base, value: o.x }
 }

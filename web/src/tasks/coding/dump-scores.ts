@@ -13,7 +13,7 @@
 import { bankDumpsDir, nodeFs, nodeProcess, resolvePath } from './node-io'
 import { SCORE_DUMP_FILE, buildScoreDump, serializeScoreDump } from './synthetic'
 
-function parse(argv: readonly string[]): { n: number; out: string } {
+async function parse(argv: readonly string[]): Promise<{ n: number; out: string }> {
   let n = 1000
   let out: string | undefined
   let bank = false
@@ -27,10 +27,10 @@ function parse(argv: readonly string[]): { n: number; out: string } {
   }
   if (!(Number.isSafeInteger(n) && n >= 1)) throw new Error('--n must be a positive integer')
   if (bank === (out !== undefined)) throw new Error('give exactly one of --out <file>, --bank')
-  return { n, out: out === undefined ? `${bankDumpsDir()}${SCORE_DUMP_FILE}` : resolvePath(out) }
+  return { n, out: out === undefined ? `${await bankDumpsDir()}${SCORE_DUMP_FILE}` : resolvePath(out) }
 }
 
-const { n, out } = parse(nodeProcess().argv.slice(2))
+const { n, out } = await parse(nodeProcess().argv.slice(2))
 const fs = await nodeFs()
 fs.writeFileSync(out, serializeScoreDump(buildScoreDump(n)))
 console.log(`wrote ${n} coding parity cases to ${out}`)

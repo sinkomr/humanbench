@@ -40,7 +40,7 @@ describe('coding generation (M1.11)', () => {
     const legend = legendOf(t)
     expect(legend.map((e) => e.digit)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     for (const e of legend) expect(t[e.symbol]).toBe(e.digit)
-    expect(() => legendOf({ ...t, ring: t.cross })).toThrow(RangeError)
+    expect(() => legendOf({ ...t, [CODING_SYMBOLS[0]]: t[CODING_SYMBOLS[1]] })).toThrow(RangeError) // digit of glyph 0 shown twice
   })
 
   it('balancedCounts gives ⌊n/9⌋ or ⌈n/9⌉ of each glyph, summing to n', () => {
@@ -106,7 +106,7 @@ describe('coding generation (M1.11)', () => {
       }),
       { numRuns: 200 },
     )
-    expect(sequencePattern(['wave', 'ring', 'wave', 'bars'])).toEqual([0, 1, 0, 2])
+    expect(sequencePattern(['star', 'wedge', 'star', 'tridot'])).toEqual([0, 1, 0, 2])
     expect(sequencePattern([])).toEqual([])
   })
 })

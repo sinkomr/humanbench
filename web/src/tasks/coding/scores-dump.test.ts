@@ -6,12 +6,12 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { coding, codingOutcome } from '.'
+import { CODING_SEQUENCE_LENGTH, coding, codingOutcome } from '.'
 import { bankDumpsDir, nodeFs } from './node-io'
 import { DUMP_STREAMS, SCORE_DUMP_FILE, buildScoreDump, serializeScoreDump, type ScoreDump } from './synthetic'
 
 const fs = await nodeFs()
-const path = `${bankDumpsDir()}${SCORE_DUMP_FILE}`
+const path = `${await bankDumpsDir()}${SCORE_DUMP_FILE}`
 const present = fs.existsSync(path)
 
 describe('coding scoring parity dump (M1.11, A1, A17)', () => {
@@ -32,6 +32,10 @@ describe('coding scoring parity dump (M1.11, A1, A17)', () => {
     expect(outcomes.some((o) => !o.high_error_rate && o.error_rate === 0.2)).toBe(true)
     expect(outcomes.some((o) => o.exhausted)).toBe(true)
     expect(outcomes.some((o) => o.late > 0)).toBe(true)
+    // Every stimulus answered but some late: not exhausted (exhausted counts in-window responses).
+    const tails = dump.cases.filter((c) => c.responses.length === CODING_SEQUENCE_LENGTH && c.outcome.late > 0)
+    expect(tails.length).toBeGreaterThan(0)
+    expect(tails.every((c) => !c.outcome.exhausted)).toBe(true)
     expect(outcomes.filter((o) => o.observation !== null).length).toBeGreaterThan(outcomes.length / 2)
   })
 

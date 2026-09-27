@@ -8,6 +8,12 @@
  * dumped block (seeds `dump-<i>`) one response stream from a synthetic taker and the TS outcome
  * (counts, flags, rate and the engine observation). The bank's Python scorer recomputes every
  * outcome from the stream and must agree (integers and flags exactly, floats to 1e-12).
+ *
+ * This file sits beside the item dump but is NOT a family dump: the contract's A17 drift test
+ * (`scripts/ts-dumps-sync.test.ts`) skips it only because no family is named `coding_scores`,
+ * and the family file rules list `coding.json` only. Where response-stream parity dumps should
+ * live (e.g. `golden/ts_dumps/scores/<family>.json`, or a `dump:families` option) is an
+ * integration follow-up; `scores-dump.test.ts` checks this copy for drift meanwhile.
  */
 
 import { createRng, type Rng } from '../../engine'
@@ -92,6 +98,9 @@ export const DUMP_STREAMS: readonly { readonly name: string; readonly build: (it
   { name: 'over_threshold', build: (it) => scriptedResponses(it, evenTimes(60, 1_450), (k) => k % 5 === 4 || k === 0) },
   // Window edges: the response at 89,999.999 ms counts, those at 90,000 and 90,000.001 ms are late.
   { name: 'window_edge', build: (it) => scriptedResponses(it, [...evenTimes(57, 1_500), W - 0.001, W, W + 0.001], (k) => k % 7 === 3) },
+  // All 200 stimuli answered, the last 3 at or after the end of the window: NOT exhausted
+  // (exhausted counts in-window responses, not responses), attempted 197, late 3.
+  { name: 'late_tail', build: (it) => scriptedResponses(it, [...evenTimes(197, 456), W, W + 0.5, W + 700], (k) => k % 11 === 5) },
 ]
 
 /** One parity case: a dumped block's id, the stream and its TS outcome. */

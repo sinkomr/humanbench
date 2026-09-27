@@ -13,6 +13,7 @@ import {
   codingOutcome,
   scoreCoding,
   type CodingResponse,
+  type CodingScoreResult,
 } from '.'
 import { evenTimes, scriptedResponses, syntheticResponses } from './synthetic'
 
@@ -34,7 +35,20 @@ describe('coding scoring (M1.11, A10)', () => {
     })
     // A norm taker (40/min) sits exactly at θ = 0: x = lam·0 + d.
     expect(o.observation?.kind === 'gaussian' && o.observation.x - o.observation.d).toBe(0)
-    expect(scoreCoding(item, r)).toEqual({ correct: null, value: Math.log(40) })
+    expect(scoreCoding(item, r)).toEqual({ correct: null, value: Math.log(40), observation: o.observation, outcome: o })
+  })
+
+  it('score() carries the block observation with its own σ and the flags, not the nominal params.sigma', () => {
+    // 10 correct + 4 wrong: σ = √(1/10 + τ²) ≈ 0.32, far from params.sigma ≈ 0.138 (60 correct).
+    const r = scriptedResponses(item, evenTimes(14, 1_000), (k) => k < 4)
+    const s = coding.score(item, r) as CodingScoreResult
+    expect(s.correct).toBeNull()
+    expect(s.outcome).toEqual(codingOutcome(item, r))
+    expect(s.outcome).toMatchObject({ correct: 10, errors: 4, high_error_rate: true })
+    expect(s.observation).toMatchObject({ kind: 'gaussian', sigma: Math.sqrt(1 / 10 + CODING_TAU_RES ** 2) })
+    expect(s.value).toBe(s.observation?.kind === 'gaussian' ? s.observation.x : Number.NaN)
+    if (item.params.model !== 'gaussian' || s.observation?.kind !== 'gaussian') throw new Error('expected Gaussian params')
+    expect(s.observation.sigma).toBeGreaterThan(2 * item.params.sigma)
   })
 
   it('the rate is over the full window, however early the responses stop', () => {
@@ -82,7 +96,8 @@ describe('coding scoring (M1.11, A10)', () => {
     expect(none).toMatchObject({ attempted: 0, correct: 0, error_rate: 0, high_error_rate: false, correct_per_min: 0, observation: null })
     const wrong = scriptedResponses(item, evenTimes(30, 1_000), () => true)
     expect(codingOutcome(item, wrong)).toMatchObject({ correct: 0, errors: 30, high_error_rate: true, observation: null })
-    expect(scoreCoding(item, wrong)).toEqual({ correct: null })
+    expect(scoreCoding(item, wrong)).toEqual({ correct: null, observation: null, outcome: codingOutcome(item, wrong) })
+    expect(scoreCoding(item, wrong)).not.toHaveProperty('value')
     const one = codingOutcome(item, scriptedResponses(item, [100]))
     expect(one.observation).toMatchObject({ x: Math.log(1 / 1.5), sigma: Math.sqrt(1 + 0.0025) })
   })
@@ -103,6 +118,15 @@ describe('coding scoring (M1.11, A10)', () => {
     const all = scriptedResponses(item, evenTimes(CODING_SEQUENCE_LENGTH, 400))
     expect(codingOutcome(item, all)).toMatchObject({ attempted: 200, correct: 200, exhausted: true })
     expect(codingOutcome(item, all.slice(0, 199)).exhausted).toBe(false)
+  })
+
+  it('all 200 answered but the last ones at or after 90 s: not exhausted, the late ones not counted', () => {
+    const lastLate = scriptedResponses(item, [...evenTimes(199, 450), 90_000])
+    expect(codingOutcome(item, lastLate)).toMatchObject({ attempted: 199, correct: 199, late: 1, exhausted: false })
+    const tail = scriptedResponses(item, [...evenTimes(197, 456), 90_000, 90_000.5, 90_700], (k) => k >= 197)
+    expect(codingOutcome(item, tail)).toMatchObject({ attempted: 197, correct: 197, errors: 0, late: 3, exhausted: false })
+    const justIn = scriptedResponses(item, [...evenTimes(199, 450), 89_999.999])
+    expect(codingOutcome(item, justIn)).toMatchObject({ attempted: 200, late: 0, exhausted: true })
   })
 
   it('rejects malformed streams', () => {

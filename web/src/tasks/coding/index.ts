@@ -6,6 +6,13 @@
  * counts. Gaussian params per A10 (`prior.ts`), a single stratum (3). `score.ts` turns a
  * response stream into log(correct per minute), the error count and flag, and the engine
  * observation.
+ *
+ * INTEGRATORS: score a block with {@link codingOutcome} (or read `observation` / `outcome` off
+ * the {@link CodingScoreResult} that `coding.score()` returns). Do NOT build the Gaussian
+ * observation from `item.params` plus `score().value`: `params.sigma` is the nominal σ at the
+ * norm count (60 correct, ≈ 0.138, for planning), while a block's observation uses its own
+ * σ = √(1/correct + τ_res²) (≈ 0.32 at 10 correct), and the > 20% error flag lives in the
+ * outcome only.
  */
 
 import { defineFamily } from '../family'
@@ -32,7 +39,7 @@ export {
   codingSigma,
   codingStratum,
 } from './prior'
-export { checkResponses, codingObservation, codingOutcome, scoreCoding, type CodingOutcome } from './score'
+export { checkResponses, codingObservation, codingOutcome, scoreCoding, type CodingOutcome, type CodingScoreResult } from './score'
 export { glyphCounts, hasImmediateRepeat, verifyCoding } from './verify'
 
 /** Current generator version of the coding family. */

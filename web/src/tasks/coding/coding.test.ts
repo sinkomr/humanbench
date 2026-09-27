@@ -68,12 +68,18 @@ describe('family coding (M1.11)', () => {
     expect(leak({ ...item.spec, legend })).toMatch(/other than digit, symbol/)
     const swapped = item.spec.legend.map((e, i, all) => (i < 2 ? { digit: e.digit, symbol: (all[1 - i] as typeof e).symbol } : e))
     expect(leak({ ...item.spec, legend: swapped })).toMatch(/not the key's digit/)
-    expect(leak({ ...item.spec, sequence: ['ring', 'ring3'] })).toMatch(/carries a digit/)
+    expect(leak({ ...item.spec, sequence: ['star', 'star3'] })).toMatch(/carries a digit/)
   })
 
   it('every glyph id is a distinct lowercase id with no digit (they render in M1.13)', () => {
     expect(new Set(CODING_SYMBOLS).size).toBe(9)
     for (const s of CODING_SYMBOLS) expect(s).toMatch(/^[a-z]+$/)
+  })
+
+  it('no glyph is a shape that reads as a digit, a letter or a key (0 is a key the taker can press)', () => {
+    // Circle outline = 0/O, vertical strokes = 1/l/||, plus = +, angle = < > ^ v, wave = ~.
+    const lookalikes = ['ring', 'circle', 'bars', 'bar', 'line', 'cross', 'plus', 'chevron', 'angle', 'caret', 'wave', 'tilde', 'slash', 'hash']
+    for (const s of CODING_SYMBOLS) expect(lookalikes).not.toContain(s)
   })
 
   it('verify() accepts what generate() makes (spot check beside the property suite)', () => {
