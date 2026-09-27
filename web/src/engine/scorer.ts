@@ -125,13 +125,32 @@ function binary(y: unknown): void {
   if (y !== 0 && y !== 1) throw new RangeError(`binary response y must be 0 or 1, got ${String(y)}`)
 }
 
+/** The fields of each observation kind besides `kind` and `axis` (bank `_JSON_FIELDS`). */
+const OBSERVATION_FIELDS: Readonly<Record<Observation['kind'], readonly string[]>> = {
+  '2pl': ['a', 'b', 'y'],
+  '3pl': ['a', 'b', 'c', 'y'],
+  grm: ['a', 'b', 'y'],
+  gaussian: ['lam', 'd', 'sigma', 'x'],
+}
+
 /**
- * Validate one observation (the rules of bank `observation_from_json`: a known axis among the
- * first `k`, finite parameters, 0 < c < 1, increasing GRM thresholds with y ∈ 0..m, σ > 0) and
- * return its axis index. Throws a RangeError otherwise.
+ * Validate one observation (the rules of bank `observation_from_json`: exactly the fields of its
+ * kind, a known axis among the first `k`, finite parameters, 0 < c < 1, increasing GRM thresholds
+ * with y ∈ 0..m, σ > 0) and return its axis index. Throws a RangeError otherwise, so e.g. a 3PL
+ * item mislabelled `2pl` fails instead of being scored with c ignored.
  */
 export function checkObservation(o: Observation, k: number = N_AXES): number {
-  if (typeof o !== 'object' || o === null) throw new RangeError('observation must be an object')
+  if (typeof o !== 'object' || o === null || Array.isArray(o)) throw new RangeError('observation must be an object')
+  const kind: unknown = o.kind
+  if (typeof kind !== 'string' || !Object.hasOwn(OBSERVATION_FIELDS, kind)) {
+    throw new RangeError(`unknown observation kind ${JSON.stringify(kind)}`)
+  }
+  const want = new Set(['kind', 'axis', ...OBSERVATION_FIELDS[kind as Observation['kind']]])
+  const got = Object.keys(o)
+  if (got.length !== want.size || got.some((f) => !want.has(f))) {
+    const fields = (xs: Iterable<string>): string => [...xs].sort().join(', ')
+    throw new RangeError(`${kind} observation needs exactly the fields [${fields(want)}], got [${fields(got)}]`)
+  }
   if (!isAxisCode(o.axis)) throw new RangeError(`unknown axis code ${JSON.stringify(o.axis)}`)
   const axis = AXIS_INDEX[o.axis]
   if (axis >= k) throw new RangeError(`observation axis ${o.axis} (index ${axis}) outside 0..${k - 1}`)

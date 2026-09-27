@@ -5,8 +5,9 @@ import { createRng } from './prng'
 import { mapTheta } from './scorer'
 import type { Observation } from './types'
 
-/** The CI flag, read without Node typings (the app tsconfig has none). */
-const CI = Boolean((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI)
+/** The CI flag, read without Node typings (the app tsconfig has none); '', '0' and 'false' are unset. */
+const CI_ENV = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI
+const CI = CI_ENV !== undefined && !['', '0', 'false'].includes(CI_ENV.trim().toLowerCase())
 /** ROADMAP M1.3 acceptance: MAP with K = 17 and 150 observations < 10 ms in Node (50 ms on CI runners). */
 const BUDGET_MS = CI ? 50 : 10
 const N_OBS = 150

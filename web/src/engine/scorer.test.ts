@@ -185,12 +185,29 @@ describe('mapTheta', () => {
   })
 
   it('defaults to μ = 0 and the pinned Σ_init (A8) in scoreAll', () => {
-    const c = golden.cases.find((x) => x.inputs.sigma === undefined && x.inputs.mu.every((v) => v === 0))!
-    const obs = c.inputs.observations
-    expect(scoreAll(obs)).toEqual(scoreAll(obs, zeros(), initialSigma()))
-    const { eap, ...map } = scoreAll(obs)
-    expect(map).toEqual(mapTheta(obs, zeros(), initialSigma()))
-    expect(eap).toEqual(eapByAxis(obs, zeros(), initialSigma()))
+    // Every golden case on the default prior that has observations (so the EAP path is non-trivial).
+    const cases = golden.cases.filter(
+      (x) => x.inputs.sigma === undefined && x.inputs.mu.every((v) => v === 0) && x.inputs.observations.length > 0,
+    )
+    expect(cases.length).toBeGreaterThan(10)
+    for (const c of cases) {
+      const obs = c.inputs.observations
+      const got = scoreAll(obs)
+      expect(got).toEqual(scoreAll(obs, zeros(), initialSigma()))
+      const { eap, ...map } = got
+      expect(map).toEqual(mapTheta(obs, zeros(), initialSigma()))
+      expect(eap).toEqual(eapByAxis(obs, zeros(), initialSigma()))
+      // …and those defaults are the golden prior: the outputs match the bank.
+      expect(maxAbsVec(got.theta, c.outputs.theta_map)).toBeLessThanOrEqual(TOL)
+      expect(maxAbsDiff(got.cov, c.outputs.cov)).toBeLessThanOrEqual(TOL)
+      expect(Math.abs(got.logPosterior - c.outputs.log_posterior_at_map)).toBeLessThanOrEqual(TOL)
+      expect(Object.keys(eap)).toEqual(Object.keys(c.outputs.eap))
+      expect(Object.keys(eap).length).toBeGreaterThan(0)
+      for (const [code, e] of Object.entries(c.outputs.eap)) {
+        expect(Math.abs(eap[code as AxisCode]!.mean - e.mean)).toBeLessThanOrEqual(TOL)
+        expect(Math.abs(eap[code as AxisCode]!.sd - e.sd)).toBeLessThanOrEqual(TOL)
+      }
+    }
   })
 
   it('works for K < 17 (the first K axes)', () => {
@@ -253,11 +270,20 @@ describe('mapTheta', () => {
       { kind: 'grm', axis: 'WM', a: 1, b: [0.5], y: 2 },
       { kind: 'gaussian', axis: 'RT', lam: -1, d: 0, sigma: 0, x: 0 },
       { kind: 'gaussian', axis: 'RT', lam: -1, d: 0, sigma: 1, x: Infinity },
+      // Exactly the fields of the kind (bank observation_from_json): a 3PL mislabelled 2pl, a
+      // stray y on a Gaussian, a missing field.
+      { ...ok, axis: 'SPA', c: 0.25 },
+      { kind: 'gaussian', axis: 'RT', lam: -1, d: 0, sigma: 1, x: 0, y: 1 },
+      { kind: '2pl', axis: 'MAT', a: 1, y: 1 },
+      { kind: 'gaussian', axis: 'RT', lam: -1, sigma: 1, x: 0 },
+      [ok],
       null,
     ]) {
+      expect(() => checkObservation(o as Observation)).toThrow(RangeError)
       expect(() => mapTheta(bad(o), zeros(), S)).toThrow(RangeError)
       expect(() => logPosterior(zeros(), bad(o), zeros(), S)).toThrow(RangeError)
     }
+    expect(() => checkObservation({ ...ok, c: 0.25 } as Observation)).toThrow(/exactly the fields/)
     expect(() => logPosterior(zeros(3), [ok], zeros(), S)).toThrow(RangeError)
   })
 })
