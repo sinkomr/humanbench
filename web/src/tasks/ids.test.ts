@@ -90,6 +90,15 @@ describe('canonicalJson', () => {
     expect(() => canonicalJson(cyc)).toThrow(TypeError)
     expect(canonicalJson(-0)).toBe('0')
   })
+
+  it('throws on sparse arrays instead of writing invalid JSON such as "[,1]"', () => {
+    const holey = [, 1]
+    expect(() => canonicalJson(holey)).toThrow(/sparse array \(hole at index 0\)/)
+    expect(() => canonicalJson({ cells: new Array(9) })).toThrow(TypeError)
+    expect(() => familyId('mat', { cells: new Array<number>(2) as unknown as JsonValue })).toThrow(TypeError)
+    expect(canonicalJson([null, 1])).toBe('[null,1]')
+    expect(canonicalJson([])).toBe('[]')
+  })
 })
 
 describe('familyId (A11)', () => {

@@ -5,15 +5,20 @@ import { example, exampleSpecLeaksKey, type ExampleItem } from '.'
 /** 55 unordered digit pairs → at most 55 families, far below the default 50% ratio. */
 const TINY_SPACE = { min: 0.005, reason: '55 unordered digit pairs (toy family)' }
 
+/**
+ * 23,496 possible (operands, options) layouts (24 + 2·96 + 97·240 over the 100 ordered digit
+ * pairs), so 10,000 draws give only ~81% distinct contents, below the default 95%.
+ */
+const SMALL_CONTENT = { min: 0.75, reason: '23,496 possible (operands, options) layouts (toy family)' }
+
+const OPTS = { familyIdRatio: TINY_SPACE, contentRatio: SMALL_CONTENT, specLeaksKey: exampleSpecLeaksKey } as const
+
 describe('toy family "example" (contract end to end)', () => {
   it('passes runFamilyProperties at n = 10,000', () => {
-    const r = runFamilyProperties(example, {
-      familyIdRatio: TINY_SPACE,
-      specLeaksKey: exampleSpecLeaksKey,
-      correctResponse: (item) => item.key.index,
-    })
+    const r = runFamilyProperties(example, { ...OPTS, correctResponse: (item) => item.key.index })
     expect(r.n).toBe(10_000)
     expect(r.distinctItemIds).toBe(10_000)
+    expect(r.distinctContents).toBeGreaterThan(7_500)
     expect(r.distinctFamilyIds).toBe(55)
     expect(r.strataCounts[1] + r.strataCounts[2]).toBe(10_000)
     expect(r.strataCounts[1]).toBeGreaterThan(4_000)
@@ -21,7 +26,7 @@ describe('toy family "example" (contract end to end)', () => {
   }, 120_000)
 
   it('passes with requested strata', () => {
-    const r = runFamilyProperties(example, { n: 2_000, strata: example.strata, familyIdRatio: TINY_SPACE })
+    const r = runFamilyProperties(example, { ...OPTS, n: 2_000, strata: example.strata })
     expect(r.strataCounts).toEqual({ 1: 1_000, 2: 1_000, 3: 0, 4: 0, 5: 0, 6: 0 })
   }, 60_000)
 

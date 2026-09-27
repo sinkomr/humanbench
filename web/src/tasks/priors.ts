@@ -98,10 +98,18 @@ export function expectedTimeFromWords(words: number): number {
   return EXPECTED_TIME_BASE_S + (EXPECTED_TIME_PER_50_WORDS_S * words) / 50
 }
 
-/** Whitespace-separated word count of the given texts. */
+/**
+ * Word separators of {@link countWords}: exactly the characters of JS `\s`, spelled out so the
+ * bank's `count_words` uses the identical class (Python's `str.split()` also splits on
+ * U+001C–U+001F and U+0085 but not on U+FEFF, which would change expected_time_s). The bank
+ * test `test_word_separators_match_ts` compares this source line with the Python pattern.
+ */
+export const WORD_SEPARATOR_RE = /[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/
+
+/** Word count of the given texts, split on {@link WORD_SEPARATOR_RE}. */
 export function countWords(...texts: readonly string[]): number {
   let n = 0
-  for (const t of texts) n += t.split(/\s+/).filter((w) => w.length > 0).length
+  for (const t of texts) n += t.split(WORD_SEPARATOR_RE).filter((w) => w.length > 0).length
   return n
 }
 

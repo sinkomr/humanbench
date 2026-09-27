@@ -136,7 +136,11 @@ export async function familiesFromModule(path: string): Promise<AnyFamily[]> {
   return found
 }
 
-/** Generate, validate and verify seeds `dump-0 … dump-(n−1)`; throws listing the failures. */
+/**
+ * Generate, validate and verify seeds `dump-0 … dump-(n−1)`; throws listing the failures. Each
+ * instance must also survive the JSON round trip, so the canonical lines written by
+ * {@link serializeDump} are exactly what `JSON.stringify` (and the bank's loader) see.
+ */
 export function buildDump(family: AnyFamily, n: number): FamilyDump {
   const items: ItemInstance<object, object>[] = []
   const failures: string[] = []
@@ -146,7 +150,9 @@ export function buildDump(family: AnyFamily, n: number): FamilyDump {
       const item = family.generate(seed)
       const problems = validateItemInstance(item, family)
       if (problems.length > 0) failures.push(`${seed}: ${problems.join('; ')}`)
-      else {
+      else if (canonicalJson(JSON.parse(JSON.stringify(item))) !== canonicalJson(item)) {
+        failures.push(`${seed}: the JSON round trip changes the item`)
+      } else {
         const v = family.verify(item)
         if (!v.ok) failures.push(`${seed}: verify failed: ${v.reason}`)
         else items.push(item)

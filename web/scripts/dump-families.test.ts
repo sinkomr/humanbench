@@ -91,6 +91,19 @@ describe('buildDump / serializeDump', () => {
     const broken = { ...example, verify: () => ({ ok: false, reason: 'nope', checks: {} }) }
     expect(() => buildDump(broken, 5)).toThrow(/refusing to dump.*\n.*dump-0: verify failed: nope/)
   })
+
+  it('refuses instances that do not survive the JSON round trip', () => {
+    const hidden = {
+      ...example,
+      generate: (seed: string) => {
+        const item = example.generate(seed)
+        const spec = { ...item.spec }
+        Object.defineProperty(spec, 'toJSON', { value: () => ({}), enumerable: false })
+        return { ...item, spec }
+      },
+    }
+    expect(() => buildDump(hidden, 3)).toThrow(/dump-0: the JSON round trip changes the item/)
+  })
 })
 
 describe('family modules', () => {

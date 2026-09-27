@@ -9,6 +9,7 @@ import {
   SIGMA_B_DEFAULT,
   STRATUM_B_CUTS,
   STRATUM_LABELS,
+  WORD_SEPARATOR_RE,
   bFromP,
   clampPrior,
   countWords,
@@ -93,6 +94,18 @@ describe('expected time prior (§7.4)', () => {
     expect(countWords('')).toBe(0)
     expect(countWords('  7 + 5 = ?  ')).toBe(5)
     expect(countWords('one two', 'three\nfour\tfive')).toBe(5)
+  })
+
+  it('countWords splits on exactly the JS \\s class (the bank mirrors it character for character)', () => {
+    // Python's str.split() would give 2 for the first two and 1 for the third.
+    expect(countWords('a\x1cb')).toBe(1)
+    expect(countWords('a\u0085b')).toBe(1)
+    expect(countWords('a\ufeffb')).toBe(2)
+    expect(countWords('a\u00a0b\u2009c\u3000d')).toBe(4)
+    for (let c = 0; c <= 0xffff; c++) {
+      const ch = String.fromCharCode(c)
+      expect(WORD_SEPARATOR_RE.test(ch)).toBe(/\s/.test(ch))
+    }
   })
 })
 

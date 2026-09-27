@@ -67,12 +67,19 @@ export type ResponseTuple = [
   extra?: JsonValue,
 ]
 
-/** Runtime check that a value is plain JSON (finite numbers, plain objects, bounded depth). */
+/**
+ * Runtime check that a value is plain JSON (finite numbers, plain objects, dense arrays, bounded
+ * depth).
+ */
 export function isJsonValue(v: unknown, depth = 0): v is JsonValue {
   if (depth > 64) return false
   if (v === null || typeof v === 'string' || typeof v === 'boolean') return true
   if (typeof v === 'number') return Number.isFinite(v)
-  if (Array.isArray(v)) return v.every((x) => isJsonValue(x, depth + 1))
+  if (Array.isArray(v)) {
+    // An index loop, not every(): every() skips holes, and a hole (read as undefined) is not JSON.
+    for (let i = 0; i < v.length; i++) if (!isJsonValue(v[i], depth + 1)) return false
+    return true
+  }
   if (typeof v === 'object') {
     const proto = Object.getPrototypeOf(v) as unknown
     if (proto !== Object.prototype && proto !== null) return false

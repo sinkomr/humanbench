@@ -89,6 +89,13 @@ describe('isJsonValue', () => {
     for (let i = 0; i < 100; i++) deep = [deep]
     expect(isJsonValue(deep)).toBe(false)
   })
+
+  it('rejects sparse arrays (a hole is not JSON; it would serialise as null)', () => {
+    expect(isJsonValue([, 1])).toBe(false)
+    expect(isJsonValue({ cells: new Array(9) })).toBe(false)
+    expect(isJsonValue([null, 1])).toBe(true)
+    expect(isJsonValue([])).toBe(true)
+  })
 })
 
 /** Compile-time type equality (both directions). */

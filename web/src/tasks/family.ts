@@ -28,8 +28,9 @@
  * ```
  *
  * Then, in `<family>/<family>.test.ts`, run the shared property suite at n = 10,000
- * (`runFamilyProperties` in `../testing`, DESIGN §14.3 M1 acceptance 1), and dump ≥ 1,000
- * instances for the bank's Python cross-check (A1):
+ * (`runFamilyProperties` in `../testing`, DESIGN §14.3 M1 acceptance 1) with your own
+ * `specLeaksKey` check (e.g. `onlySpecFields(...)`; a documented `specLeaksKeyWaiver` otherwise),
+ * and dump ≥ 1,000 instances for the bank's Python cross-check (A1):
  *
  * ```
  * npm run dump:families -- --module src/tasks/<family>/index.ts --n 1000 --bank
@@ -42,11 +43,13 @@
  *   the clock or module state. `generate(item.seed)` must rebuild the same item, which is what
  *   makes `item_id` sufficient to regenerate it (A11).
  * - **The key stays out of `spec`.** `spec` is the render payload handed to the renderer and
- *   the DOM (M1.13). It must not contain the key or anything that trivially reveals it (no
- *   `key`/`answer`/`correct`/`solution` fields, no option order that encodes the answer, no
- *   precomputed result). `key`, `structural_params`, `params` and `difficulty` never reach the
- *   renderer. Keys are JSON objects, e.g. `{ index: 2 }` (MC) or `{ value: 42, tol: 0 }`
- *   (numeric entry), as in the §12 item record.
+ *   the DOM (M1.13). It must not contain the key or anything that trivially reveals it: no
+ *   field name containing the word key/ans/answer/correct/solution in any case style
+ *   (`correctIndex`, `is_correct`, `answerValue`, `keyTable`; call a legend `legend`), no
+ *   option order that encodes the answer, no precomputed result (a spec value that always
+ *   equals a key value is flagged across the run). `key`, `structural_params`, `params` and
+ *   `difficulty` never reach the renderer. Keys are JSON objects, e.g. `{ index: 2 }` (MC) or
+ *   `{ value: 42, tol: 0 }` (numeric entry), as in the §12 item record.
  * - **family_id** is `familyIdOf(structural_params)` (A11): the hash of the parameters that
  *   make two items isomorphs (canonical polycube, matrix rule set, series rule family +
  *   coefficient class, quant template). Canonicalise sets before hashing (sort cells, rules).

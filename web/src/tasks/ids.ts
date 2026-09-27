@@ -80,7 +80,8 @@ export function parseItemId(id: string): { family: string; generatorVersion: str
 /**
  * Canonical JSON: object keys sorted by UTF-16 code units (as RFC 8785), no whitespace, numbers
  * as `JSON.stringify` writes them (-0 becomes 0). Throws a TypeError on anything that is not
- * plain JSON (undefined, functions, non-finite numbers, class instances, cycles).
+ * plain JSON (undefined, functions, non-finite numbers, class instances, sparse-array holes,
+ * cycles).
  */
 export function canonicalJson(v: unknown): string {
   return canon(v, 0)
@@ -93,7 +94,15 @@ function canon(v: unknown, depth: number): string {
     if (!Number.isFinite(v)) throw new TypeError(`canonicalJson: non-finite number ${v}`)
     return JSON.stringify(v)
   }
-  if (Array.isArray(v)) return `[${v.map((x) => canon(x, depth + 1)).join(',')}]`
+  if (Array.isArray(v)) {
+    // An index loop, not map(): map() skips holes and would emit invalid JSON such as "[,1]".
+    const parts: string[] = []
+    for (let i = 0; i < v.length; i++) {
+      if (!(i in v)) throw new TypeError(`canonicalJson: sparse array (hole at index ${i})`)
+      parts.push(canon(v[i], depth + 1))
+    }
+    return `[${parts.join(',')}]`
+  }
   if (typeof v === 'object') {
     const proto = Object.getPrototypeOf(v) as unknown
     if (proto !== Object.prototype && proto !== null) {

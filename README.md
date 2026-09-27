@@ -60,7 +60,8 @@ Test files live next to the code in `web/src/` (and `web/scripts/` for the Node 
 
 Each procedural task family lives in `web/src/tasks/<family>/` and implements the contract in
 `web/src/tasks/family.ts` (ROADMAP A1, A11): a seeded generator, a verifier and a scorer, tested
-with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances. The private
+with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances (with the
+family's own key-leak check, `specLeaksKey`, or a documented waiver). The private
 bank repo re-verifies at least 1,000 TS instances of every family with its Python twin. Dump them
 into the sibling bank checkout (`../humanbench-bank`, or `$HB_BANK_DIR`) with:
 
