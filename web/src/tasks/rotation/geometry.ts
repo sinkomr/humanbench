@@ -263,6 +263,32 @@ export function symmetryOrder(cubes: readonly Cube[]): number {
   return groupElementsMapping(cubes, cubes).length
 }
 
+/**
+ * True if the two cube *lists* are index-aligned copies of one shape: b[k] = M·a[k] + t for every
+ * k, with one signed permutation M (a rotation, or a rotation after {@link mirror}) and one
+ * translation t. An option list aligned with the target's would reveal the key (or the mirror)
+ * with no mental rotation at all, which is why the generator shuffles every list (§4.2 no leak).
+ */
+export function indexAligned(a: readonly Cube[], b: readonly Cube[]): boolean {
+  const n = a.length
+  if (n === 0 || n !== b.length) return false
+  for (const src of [a, mirror(a)]) {
+    for (const op of GROUP_OPS) {
+      const m = (c: Cube): Cube => [op.s0 * (c[op.p0] as number), op.s1 * (c[op.p1] as number), op.s2 * (c[op.p2] as number)]
+      const m0 = m(src[0] as Cube)
+      const b0 = b[0] as Cube
+      let ok = true
+      for (let k = 1; k < n && ok; k++) {
+        const mk = m(src[k] as Cube)
+        const bk = b[k] as Cube
+        ok = bk[0] - mk[0] === b0[0] - m0[0] && bk[1] - mk[1] === b0[1] - m0[1] && bk[2] - mk[2] === b0[2] - m0[2]
+      }
+      if (ok) return true
+    }
+  }
+  return false
+}
+
 // --- adjacency, chains, arms ------------------------------------------------------------------
 
 // Cell codes (small integers) for |coordinate| < 127; the verifier bounds inputs by COORD_LIMIT

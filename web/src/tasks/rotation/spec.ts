@@ -4,7 +4,8 @@
  * Render payload (`spec`): `{ target: { cubes, quat }, options: [{ cubes, quat }] × 4, camera }`.
  * - `cubes`: the shape's unit cubes as integer [x, y, z], translated to the min corner (0, 0, 0),
  *   in shuffled order. Each option is re-expressed in its own frame (a non-identity element of
- *   the 24-element group), so no option's cube list equals the target's.
+ *   the 24-element group), so no option's cube set equals the target's, and no option's list is
+ *   index-aligned with the target's (`order_hidden`).
  * - `quat`: the display orientation, a unit quaternion [w, x, y, z] (w ≥ 0) applied to the shape
  *   about its centre (Three.js: `new Quaternion(x, y, z, w)`).
  * - `camera`: {@link CAMERA_ISO_V1}, a fixed orthographic camera on the +(1, 1, 1) diagonal
@@ -52,7 +53,7 @@ export interface PolycubeView {
 
 export interface RotationSpec {
   readonly target: PolycubeView
-  /** Four options in display order: the target rotated, its mirror image, two one-cube-moved variants. */
+  /** Four options in display order: the target rotated, its mirror image, a one-cube-moved variant and that variant's mirror image. */
   readonly options: readonly PolycubeView[]
   readonly camera: typeof CAMERA_ISO_V1
 }

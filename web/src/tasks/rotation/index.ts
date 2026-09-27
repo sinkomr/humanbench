@@ -5,8 +5,8 @@
  *
  * "Which figure is the same object as the target, rotated? (Not mirror-imaged.)" The target is a
  * chiral chain of 8–10 cubes with ≥ 3 arms; the options are the target rotated, its mirror image
- * (exactly one, A11) and two one-cube-moved variants (or their mirror images), all pairwise
- * distinct under the 24 rotations. Strata 2–5 are angle bins of the display rotation between the
+ * (exactly one, A11), a one-cube-moved variant and that variant's mirror image (two enantiomer
+ * pairs, so pairing options up gives no edge), all pairwise distinct under the 24 rotations. Strata 2–5 are angle bins of the display rotation between the
  * target and the correct option (20–60°, 60–100°, 100–140°, 140–180°), see `prior.ts`.
  *
  * - `gen.ts`: the generator; `verify.ts`: the verifier (§4.2 `verify_rotation_item` + A11 +

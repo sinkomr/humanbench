@@ -12,6 +12,7 @@ import {
   chainInfo,
   chainKey,
   groupElementsMapping,
+  indexAligned,
   isConnected,
   mat3FromQuat,
   mirror,
@@ -228,6 +229,31 @@ describe('symmetry', () => {
     expect(symmetryOrder(c2)).toBe(2)
     expect(canonKey(mirror(c2))).not.toBe(canonKey(c2))
     expect(symmetryOrder(S12)).toBe(1)
+  })
+})
+
+describe('index-aligned cube lists (the §4.2 no-leak rule behind the shuffles)', () => {
+  it('holds for a rotated or mirrored copy in the same order, never for a reordered one', () => {
+    fc.assert(
+      fc.property(targetArb, groupArb, shiftArb, (t, g, [dx, dy, dz]) => {
+        const move = (cs: readonly Cube[]): Cube[] => cs.map((c) => applyMat(ROTATION_GROUP[g]!, c)).map(([x, y, z]) => [x + dx, y + dy, z + dz])
+        expect(indexAligned(t, move(t))).toBe(true)
+        expect(indexAligned(t, move(mirror(t)))).toBe(true)
+        // A cyclic shift maps an end of the chain onto the other end's neighbour: no isometry.
+        expect(indexAligned(t, move([...t.slice(1), t[0]!]))).toBe(false)
+        expect(indexAligned(t, move([...t].reverse()))).toBe(false) // chiral and asymmetric
+        // A variant in another class than t and mirror(t) is not congruent to t at all.
+        const own = new Set([chainKey(t), chainKey(mirror(t))])
+        for (const v of movedVariants(t)) if (!own.has(chainKey(v))) expect(indexAligned(t, v)).toBe(false)
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('needs equal, non-empty lengths', () => {
+    expect(indexAligned([], [])).toBe(false)
+    expect(indexAligned(S12, S12.slice(1))).toBe(false)
+    expect(indexAligned(S12, S12)).toBe(true)
   })
 })
 

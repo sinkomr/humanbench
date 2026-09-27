@@ -6,15 +6,22 @@
  *    non-consecutive cubes touch), chiral (canon(mirror) ≠ canon, §4.2; this also rules out every
  *    planar chain) and asymmetric (no non-identity rotation maps it onto itself, so the angle
  *    between the target and the correct option is well defined).
- * 2. Distractors (A11): exactly one pure mirror image, plus two distinct one-cube-moved variants
- *    of the target or of its mirror (`movedVariants`), all with distinct canonical forms.
+ * 2. Distractors (A11): exactly one pure mirror image, plus a one-cube-moved variant V of the
+ *    target (`movedVariants`) and V's mirror image, all with distinct canonical forms. The four
+ *    options are then two enantiomer pairs, {target, mirror} and {V, mirror(V)}, so spotting
+ *    which two options are mirror images of each other no longer halves the choice (review
+ *    M1.5). V is itself target-like ({@link isTargetLike}), and the target is a moved variant of
+ *    V, so a fair coin swaps the roles of the target and V: the two pairs are then exchangeable,
+ *    and no option-only cue (arm counts, symmetry, …) prefers the key's pair.
  * 3. Display: the target gets a uniformly random orientation q_T. Every option i shows its base
- *    shape B_i (the target, its mirror, or a variant, all in the target's frame) as
+ *    shape B_i (the target, its mirror, V or mirror(V), all in the target's frame) as
  *    R_i · q_T · B_i: the target's pose followed by a rotation R_i whose angle is uniform in the
  *    stratum's angle bin and whose axis is in depth or in the picture plane with probability ½.
  *    The option's cubes are B_i re-expressed under a random non-identity group element h_i
  *    (min corner, shuffled), so its quat is R_i ⊗ q_T ⊗ h_i⁻¹. Every option is treated the same
- *    way, so neither the cube lists nor the orientations single out the key.
+ *    way, so neither the cube lists nor the orientations single out the key. The target's list
+ *    is shuffled too, and an option list that happens to be index-aligned with it
+ *    ({@link indexAligned}, p ≈ 1/n!) is reshuffled.
  * 4. The key index is uniform over 0–3 (the four options are shuffled).
  */
 
@@ -31,6 +38,8 @@ import {
   chainKey,
   chainKeyOf,
   dot,
+  indexAligned,
+  MIN_ARMS,
   mirror,
   movedVariantChains,
   normalise,
@@ -74,6 +83,8 @@ import {
 
 /** Arm counts of generated targets, drawn uniformly from this list (so 4–5 arms are favoured). */
 export const TARGET_ARM_CHOICES: readonly number[] = Object.freeze([3, 4, 4, 5, 5])
+/** Most arms of a generated target (the verifier requires only ≥ {@link MIN_ARMS}). */
+export const TARGET_MAX_ARMS = Math.max(...TARGET_ARM_CHOICES)
 
 const MAX_ATTEMPTS = 10_000
 
@@ -122,16 +133,51 @@ export function drawTarget(rng: Rng): Cube[] {
   throw new Error('rotation: no valid target after many attempts')
 }
 
+/**
+ * True if the shape could have been drawn as a target: a chain of 8–10 cubes with
+ * {@link MIN_ARMS}–{@link TARGET_MAX_ARMS} arms, chiral and asymmetric (the {@link drawTarget}
+ * rules; chirality by {@link chainKey}, which is canon equality for chains).
+ */
+export function isTargetLike(cubes: readonly Cube[]): boolean {
+  if (cubes.length < MIN_CUBES || cubes.length > MAX_CUBES) return false
+  const info = chainInfo(cubes)
+  if (info === null || info.arms < MIN_ARMS || info.arms > TARGET_MAX_ARMS) return false
+  return chainKey(mirror(cubes)) !== chainKeyOf(info) && symmetryOrder(cubes) === 1
+}
+
+/**
+ * The moved-distractor pairs the generator draws from (A11; review M1.5): every one-cube-moved
+ * variant V of the target that is target-like ({@link isTargetLike}) and not rotation-equivalent
+ * to the target or its mirror, one per class up to reflection. Each V is shown with its mirror
+ * image, which is a moved variant of the target's mirror; the four classes target, mirror, V and
+ * mirror(V) are then pairwise distinct (V is chiral). Every pair has a member that is a variant
+ * of the target itself, so the target's variants suffice.
+ */
+export function movedDistractorPairs(target: readonly Cube[]): Cube[][] {
+  const excluded = new Set([chainKey(target), chainKey(mirror(target))])
+  const seen = new Set<string>()
+  const out: Cube[][] = []
+  for (const v of movedVariantChains(target)) {
+    const k = chainKeyOf(v.info)
+    if (excluded.has(k) || seen.has(k) || !isTargetLike(v.cubes)) continue
+    seen.add(k)
+    seen.add(chainKey(mirror(v.cubes)) as string)
+    out.push(normalise(v.cubes))
+  }
+  return out
+}
+
 export interface Distractor {
   readonly cubes: readonly Cube[]
   readonly kind: DistractorKind
 }
 
 /**
- * Every admissible one-cube-moved distractor of `target`, one per rotation class: the variants
- * of the target ("moved") and of its mirror ("mirror_moved"; a shape in both sets counts as
- * "moved"), excluding anything rotation-equivalent to the target or its mirror. Classes are
- * compared by {@link chainKeyOf} (equivalent to §4.2 canon for chains, and O(n)).
+ * Every one-cube-moved distractor the verifier accepts for `target`, one per rotation class: the
+ * variants of the target ("moved") and of its mirror ("mirror_moved"; a shape in both sets counts
+ * as "moved"), excluding anything rotation-equivalent to the target or its mirror. Classes are
+ * compared by {@link chainKeyOf} (equivalent to §4.2 canon for chains, and O(n)). The generator
+ * draws from the narrower {@link movedDistractorPairs}; tests use this pool for bad items.
  */
 export function movedDistractorPool(target: readonly Cube[]): Distractor[] {
   const mirrored = normalise(mirror(target))
@@ -180,13 +226,19 @@ export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSp
   if (bin === undefined) throw new RangeError(`rotation cannot generate stratum ${stratum}`)
 
   let target: Cube[] = []
-  let pool: Distractor[] = []
-  for (let attempt = 0; pool.length < 2; attempt++) {
-    if (attempt >= MAX_ATTEMPTS) throw new Error('rotation: no target with two moved distractors')
+  let pairs: Cube[][] = []
+  for (let attempt = 0; pairs.length === 0; attempt++) {
+    if (attempt >= MAX_ATTEMPTS) throw new Error('rotation: no target with a moved distractor pair')
     target = drawTarget(rng)
-    pool = movedDistractorPool(target)
+    pairs = movedDistractorPairs(target)
   }
-  const [d1, d2] = rng.shuffle(pool).slice(0, 2) as [Distractor, Distractor]
+  let other = rng.pick(pairs)
+  // V is target-like and the target is a moved variant of V: swap them half the time, so the
+  // pairs {target, mirror} and {V, mirror(V)} are exchangeable (no option-only edge).
+  if (rng.next() < 0.5) [target, other] = [other, target]
+  const otherMirror = normalise(mirror(other))
+  const movedKeys = new Set(movedVariantChains(target).map((v) => chainKeyOf(v.info)))
+  const nMirrorMoved = [other, otherMirror].filter((d) => !movedKeys.has(chainKey(d) as string)).length
 
   // The correct option's angle fixes b and so the stratum; redraw the (measure-zero-ish) angles
   // whose b falls just outside the band (the exact cuts sit 4e-4° below the nominal bin edges).
@@ -194,14 +246,19 @@ export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSp
   while (stratumOfB(rotationBPrior({ angle_deg: angle })) !== stratum) angle = drawAngle(rng, bin)
 
   const qT = randomQuat(rng)
-  const bases: readonly (readonly Cube[])[] = [target, normalise(mirror(target)), d1.cubes, d2.cubes]
+  const bases: readonly (readonly Cube[])[] = [target, normalise(mirror(target)), other, otherMirror]
   const shown = bases.map((b, i) => display(rng, b, qT, i === 0 ? angle : drawAngle(rng, bin)))
   const order = rng.shuffle([0, 1, 2, 3])
-  const options = order.map((i) => (shown[i] as Display).view)
+  const targetCubes = rng.shuffle(target)
+  const options = order.map((i): PolycubeView => {
+    const { cubes, quat } = (shown[i] as Display).view
+    let list = cubes
+    while (indexAligned(targetCubes, list)) list = rng.shuffle(list) // p ≈ 1/n!: would leak the key or the mirror
+    return { cubes: list, quat }
+  })
 
   const correct = shown[0] as Display
   const axisViewCos = Math.abs(dot(correct.axis, ISO_V1_VIEW_AXIS))
-  const nMirrorMoved = [d1, d2].filter((d) => d.kind === 'mirror_moved').length
   const features: RotationFeatures = {
     angle_deg: correct.angleDeg,
     axis_view_cos: axisViewCos,
@@ -216,7 +273,7 @@ export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSp
   const structuralParams: JsonValue = { polycube: structure.polycube.map(([x, y, z]) => [x, y, z]) }
   return {
     stratum,
-    spec: { target: { cubes: rng.shuffle(target), quat: qT }, options, camera: CAMERA_ISO_V1 },
+    spec: { target: { cubes: targetCubes, quat: qT }, options, camera: CAMERA_ISO_V1 },
     key: { index: order.indexOf(0) },
     structural_params: structuralParams,
     options_count: ROTATION_OPTIONS,

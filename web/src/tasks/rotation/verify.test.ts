@@ -26,7 +26,7 @@ import {
   type Cube,
   type Vec3,
 } from './geometry'
-import { movedDistractorPool } from './gen'
+import { movedDistractorPairs, movedDistractorPool } from './gen'
 import { rotationBPrior, rotationExpectedTime } from './prior'
 import { ISO_V1_VIEW_AXIS, type RotationItem } from './spec'
 import { analyseRotation, rotationSpecLeaksKey, verifyRotation } from './verify'
@@ -54,6 +54,10 @@ const T12 = chain([X, X, Y, Y, Z, Z, X])
 const POOL = movedDistractorPool(T12)
 const MOVED = POOL.filter((d) => d.kind === 'moved')
 const MIRROR_MOVED = POOL.filter((d) => d.kind === 'mirror_moved')
+const MOVED_KEYS = new Set(MOVED.map((d) => chainKey(d.cubes)))
+/** The moved distractor V of the hand-built items: its mirror image is a "mirror_moved" one. */
+const V = movedDistractorPairs(T12).find((v) => !MOVED_KEYS.has(chainKey(mirror(v))))!
+const V_KEYS = new Set([chainKey(V), chainKey(mirror(V))])
 
 interface OptionPlan {
   readonly base: readonly Cube[]
@@ -61,7 +65,12 @@ interface OptionPlan {
   readonly h: number
   readonly angle: number
   readonly axis: Vec3
+  /** Keep the base's cube order (index-aligned with the target: `order_hidden` fails). */
+  readonly aligned?: boolean
 }
+
+/** A cyclic shift of a chain's list is never index-aligned with it (ends are not adjacent). */
+const rotateList = <T>(xs: readonly T[], by: number): T[] => [...xs.slice(by), ...xs.slice(0, by)]
 
 const AXIS_DEPTH: Vec3 = [Math.SQRT1_2, -Math.SQRT1_2, 0] // ⊥ line of sight
 const AXIS_PLANE: Vec3 = ISO_V1_VIEW_AXIS
@@ -72,7 +81,7 @@ function build(target: readonly Cube[], plans: readonly OptionPlan[], key: numbe
   base.spec = {
     target: { cubes: target.map((c) => [...c]), quat: [1, 0, 0, 0] },
     options: plans.map((p) => ({
-      cubes: normalise(p.base.map((c) => applyMat(ROTATION_GROUP[p.h]!, c))).map((c) => [...c]),
+      cubes: rotateList(normalise(p.base.map((c) => applyMat(ROTATION_GROUP[p.h]!, c))), p.aligned ? 0 : 3).map((c) => [...c]),
       quat: [...quatNormalize(quatMul(quatFromAxisAngle(p.axis, p.angle), quatConj(quatFromMat3(ROTATION_GROUP[p.h]!))))],
     })),
     camera: 'iso_v1',
@@ -107,12 +116,12 @@ function consistent(x: Loose): Loose {
   }
 }
 
-/** A good item on T12: key 2; options = mirror, moved, correct, mirror-moved. */
+/** A good item on T12: key 2; options = mirror, moved V, correct, mirror(V) (mirror-moved). */
 const goodPlans = (): OptionPlan[] => [
   { base: mirror(T12), h: 5, angle: 75, axis: AXIS_DEPTH },
-  { base: MOVED[0]!.cubes, h: 9, angle: 70, axis: AXIS_PLANE },
+  { base: V, h: 9, angle: 70, axis: AXIS_PLANE },
   { base: T12, h: 7, angle: 80, axis: AXIS_DEPTH },
-  { base: MIRROR_MOVED[0]!.cubes, h: 13, angle: 65, axis: AXIS_DEPTH },
+  { base: mirror(V), h: 13, angle: 65, axis: AXIS_DEPTH },
 ]
 const GOOD_KEY = 2
 const good = (): Loose => build(T12, goodPlans(), GOOD_KEY)
@@ -142,10 +151,11 @@ describe('rotation verifier: the hand-built baseline', () => {
   it('accepts a hand-built item with every check true', () => {
     expect(MOVED.length).toBeGreaterThan(0)
     expect(MIRROR_MOVED.length).toBeGreaterThan(0)
+    expect(V).toBeDefined()
     const v = verifyRotation(good() as RotationItem)
     expect(v.reason).toBe('ok')
     expect(v.checks.distractors).toEqual(['mirror', 'moved', 'mirror_moved'])
-    expect(Object.values(v.checks).filter((c) => typeof c === 'boolean')).toHaveLength(26)
+    expect(Object.values(v.checks).filter((c) => typeof c === 'boolean')).toHaveLength(28)
     expect(good().difficulty.features.angle_deg).toBeCloseTo(80, 9)
     expect(good().stratum).toBe(3)
   })
@@ -241,12 +251,12 @@ describe('rotation verifier rejects (one failure reason each)', () => {
   it('target_asymmetric: a chiral target with a C2 symmetry (x³y²z³)', () => {
     const c2 = chain([X, X, X, Y, Y, Z, Z, Z])
     expect(groupElementsMapping(c2, c2)).toHaveLength(2)
-    const pool = movedDistractorPool(c2)
+    const [p] = movedDistractorPairs(c2)
     const plans: OptionPlan[] = [
       { base: mirror(c2), h: 5, angle: 75, axis: AXIS_DEPTH },
-      { base: pool[0]!.cubes, h: 9, angle: 70, axis: AXIS_PLANE },
+      { base: p!, h: 9, angle: 70, axis: AXIS_PLANE },
       { base: c2, h: 7, angle: 40, axis: AXIS_DEPTH },
-      { base: pool[1]!.cubes, h: 13, angle: 65, axis: AXIS_DEPTH },
+      { base: mirror(p!), h: 13, angle: 65, axis: AXIS_DEPTH },
     ]
     failsOnly(build(c2, plans, GOOD_KEY), 'target_asymmetric')
   })
@@ -258,23 +268,37 @@ describe('rotation verifier rejects (one failure reason each)', () => {
   })
 
   it('options_pairwise_distinct: two distractors that are rotations of each other', () => {
-    failsOnly(build(T12, withPlan(3, { base: MOVED[0]!.cubes, h: 17 }), GOOD_KEY), 'options_pairwise_distinct')
+    failsOnly(build(T12, withPlan(3, { base: V, h: 17 }), GOOD_KEY), 'options_pairwise_distinct', 'distractors_paired')
   })
 
   it('one_mirror: no pure mirror distractor (a third moved one instead)', () => {
-    const third = POOL.find((d) => d !== MOVED[0] && d !== MIRROR_MOVED[0])!
-    failsOnly(build(T12, withPlan(0, { base: third.cubes }), GOOD_KEY), 'one_mirror', 'moved_distractors')
+    const third = POOL.find((d) => !V_KEYS.has(chainKey(d.cubes)))!
+    failsOnly(build(T12, withPlan(0, { base: third.cubes }), GOOD_KEY), 'one_mirror', 'moved_distractors', 'distractors_paired')
   })
 
   it('moved_distractors: a distractor two cubes away from the target', () => {
     const near = new Set([T12, mirror(T12), ...POOL.map((d) => d.cubes)].map((c) => chainKey(c)))
-    const twoMoved = movedVariants(MOVED[0]!.cubes).find((v) => !near.has(chainKey(v)))!
+    const twoMoved = movedVariants(V).find((v) => !near.has(chainKey(v)))!
     expect(twoMoved).toBeDefined()
-    failsOnly(build(T12, withPlan(1, { base: twoMoved }), GOOD_KEY), 'moved_distractors')
+    failsOnly(build(T12, withPlan(1, { base: twoMoved }), GOOD_KEY), 'moved_distractors', 'distractors_paired')
+  })
+
+  it('distractors_paired: two moved distractors that are not mirror images of each other', () => {
+    const unpaired = MIRROR_MOVED.find((d) => !V_KEYS.has(chainKey(d.cubes)))!
+    failsOnly(build(T12, withPlan(3, { base: unpaired.cubes }), GOOD_KEY), 'distractors_paired')
+    const otherMoved = MOVED.find((d) => !V_KEYS.has(chainKey(d.cubes)))!
+    failsOnly(build(T12, withPlan(1, { base: otherMoved.cubes }), GOOD_KEY), 'distractors_paired')
   })
 
   it('no_verbatim_target: the correct option shown in the target frame (identity element)', () => {
     failsOnly(build(T12, withPlan(GOOD_KEY, { h: 0 }), GOOD_KEY), 'no_verbatim_target')
+  })
+
+  it('order_hidden: the key or the mirror listed in the target\'s cube order', () => {
+    failsOnly(build(T12, withPlan(GOOD_KEY, { aligned: true }), GOOD_KEY), 'order_hidden')
+    failsOnly(build(T12, withPlan(0, { aligned: true }), GOOD_KEY), 'order_hidden')
+    // A moved distractor in its base order is no copy of the target: nothing to hide.
+    expect(verifyRotation(build(T12, withPlan(1, { aligned: true }), GOOD_KEY) as RotationItem).ok).toBe(true)
   })
 
   it('unit_quaternions: a quaternion off the unit sphere', () => {
@@ -342,12 +366,14 @@ describe('rotation verifier rejects (one failure reason each)', () => {
     }
   })
 
-  it('the leak predicate flags extra fields and a repeated target cube set', () => {
+  it('the leak predicate flags extra fields, a repeated target cube set and an aligned cube list', () => {
     const g = good()
     expect(rotationSpecLeaksKey(g as RotationItem)).toBeNull()
     expect(rotationSpecLeaksKey(tamper(g, (y) => (y.spec.hint = 2)) as RotationItem)).toMatch(/exactly/)
     expect(rotationSpecLeaksKey(tamper(g, (y) => (y.spec.options[0].is_mirror = true)) as RotationItem)).toMatch(/cubes and quat/)
-    expect(rotationSpecLeaksKey(build(T12, withPlan(GOOD_KEY, { h: 0 }), GOOD_KEY) as RotationItem)).toMatch(/option 2/)
+    expect(rotationSpecLeaksKey(build(T12, withPlan(GOOD_KEY, { h: 0 }), GOOD_KEY) as RotationItem)).toMatch(/option 2 repeats/)
+    expect(rotationSpecLeaksKey(build(T12, withPlan(GOOD_KEY, { aligned: true }), GOOD_KEY) as RotationItem)).toMatch(/option 2's cube list/)
+    expect(rotationSpecLeaksKey(build(T12, withPlan(0, { aligned: true }), GOOD_KEY) as RotationItem)).toMatch(/option 0's cube list/)
   })
 })
 

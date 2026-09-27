@@ -5,12 +5,17 @@
  *
  *     b = b_ICAR(rotation) + 0.025 · (angle_deg − 138)
  *
- * - Anchor: ICAR rotation mean p = .19 → b = −logit(.19) ≈ 1.45 (`ICAR_ANCHOR_B.rotation`).
+ * - Anchor: ICAR rotation mean p = .19 → b = −logit(.19) ≈ 1.45 (`ICAR_ANCHOR_B.rotation`),
+ *   placed at a *reference item* of 138° disparity, not at the family mean.
  * - Angle: +0.025 per degree of angular disparity (Shepard & Metzler 1971: RT and errors grow
  *   with angle), centred at 138° so that the default stratum bands (`STRATUM_B_CUTS`) cut the
  *   angle range at ≈ 20°, 60°, 100°, 140°, 180°: strata 2–5 are the angle bins
  *   20–60°, 60–100°, 100–140°, 140–180° ({@link ANGLE_BINS}). The exact cuts are 4·10⁻⁴° lower
  *   (the anchor is 1.45001), so the generator also checks `stratumOfB(b) = stratum`.
+ * - Consequences (review M1.5, for M4): with angles uniform over 20–180° the family's mean b is
+ *   ≈ 0.5, about one logit easier than the ICAR figure; and p = .19 lies below the 1/4 guessing
+ *   floor of this 4-option 3PL item (A9), so no b reproduces it under the item's own model. The
+ *   anchor is a location on the §6.ii −logit(p) link only; calibration replaces it.
  * - Recorded but not (yet) in b: in-depth vs picture-plane axis, cube and arm counts, and the
  *   distractor mix (mirror-of-moved vs moved); M4 fits them.
  *
@@ -47,7 +52,8 @@ export const ROTATION_PRIOR: LinearPriorModel = Object.freeze({
 export const ROTATION_SD_PRIOR = SIGMA_B_DEFAULT
 
 export const ROTATION_PROVENANCE =
-  '[SPEC] v0: b = b_ICAR(rotation, p=.19 → 1.45) + 0.025·(angle_deg − 138); sd 1.0; ' +
+  '[SPEC] v0: b = b_ICAR(rotation, p=.19 → 1.45) + 0.025·(angle_deg − 138), the ICAR anchor at a 138° ' +
+  'reference item (family mean b ≈ 0.5); sd 1.0; ' +
   'depth axis, cube/arm counts and distractor mix recorded for M4 calibration'
 
 /** b prior of an item with these features. */
@@ -55,12 +61,13 @@ export function rotationBPrior(features: Pick<RotationFeatures, 'angle_deg'>): n
   return clampPrior(linearB(ROTATION_PRIOR, features))
 }
 
-export const EXPECTED_TIME_BASE_S = 20
-export const EXPECTED_TIME_DEG_PER_S = 9
+/** Rotation-specific; not the shared length-based `EXPECTED_TIME_BASE_S` (25 s) of `../priors`. */
+export const ROTATION_EXPECTED_TIME_BASE_S = 20
+export const ROTATION_EXPECTED_TIME_DEG_PER_S = 9
 
 /** [SPEC] v0 E[T] in seconds: 20 + angle / 9 (20–40 s over 0–180°). */
 export function rotationExpectedTime(angleDeg: number): number {
-  return EXPECTED_TIME_BASE_S + angleDeg / EXPECTED_TIME_DEG_PER_S
+  return ROTATION_EXPECTED_TIME_BASE_S + angleDeg / ROTATION_EXPECTED_TIME_DEG_PER_S
 }
 
 /** Hard time limit per item (§12 example). */

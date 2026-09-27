@@ -19,9 +19,12 @@
  *   rotations of each other), `one_mirror` (exactly one option is the target's mirror image),
  *   `moved_distractors` (the other two distractors are one-cube-moved variants of the target or
  *   of its mirror, neither rotation-equivalent to the target: kind "moved" if a variant of the
- *   target, else "mirror_moved");
- * - no leak: `no_verbatim_target` (no option's cube set equals the target's);
- *   `unit_quaternions` (|‖q‖ − 1| ≤ 1e-9);
+ *   target, else "mirror_moved"), `distractors_paired` (those two are mirror images of each
+ *   other, so the options form two enantiomer pairs and "which two are mirror images?" does not
+ *   single out {key, mirror}; review M1.5);
+ * - no leak: `no_verbatim_target` (no option's cube set equals the target's), `order_hidden` (no
+ *   option's cube *list* is index-aligned with the target's under a rotation or reflection plus
+ *   a translation, {@link indexAligned}: shuffled lists); `unit_quaternions` (|‖q‖ − 1| ≤ 1e-9);
  * - bookkeeping: `structure_matches` (A11 polycube), `features_complete`, `angle_matches`,
  *   `depth_matches`, `counts_match`, `prior_matches`, `stratum_matches`, `time_matches`.
  */
@@ -41,6 +44,7 @@ import {
   chainKeyOf,
   dot,
   groupElementsMapping,
+  indexAligned,
   isConnected,
   mirror,
   movedVariantChains,
@@ -223,6 +227,7 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
   const tInfo = chainInfo(T)
   const oInfos = opts.map(chainInfo)
   const distractorKinds = a.kinds.filter((k) => k !== 'correct')
+  const movedIdx = a.kinds.flatMap((k, i) => (k === 'moved' || k === 'mirror_moved' ? [i] : []))
 
   const f: Readonly<Record<string, unknown>> = isPlainObject(item.difficulty?.features) ? item.difficulty.features : {}
   const featuresComplete =
@@ -258,7 +263,10 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
     moved_distractors:
       distractorKinds.length === ROTATION_OPTIONS - 1 &&
       distractorKinds.filter((k) => k === 'moved' || k === 'mirror_moved').length === ROTATION_OPTIONS - 2,
+    distractors_paired:
+      movedIdx.length === 2 && canonKey(mirror(opts[movedIdx[0] as number] as Cube[])) === a.optionCanons[movedIdx[1] as number],
     no_verbatim_target: opts.every((o) => sortedKey(o) !== sortedKey(T)),
+    order_hidden: opts.every((o) => !indexAligned(T, o)),
     unit_quaternions: [target, ...options].every((v) => Math.abs(quatNorm(v.quat) - 1) <= QUAT_NORM_TOL),
     structure_matches:
       canonicalJson(item.structural_params) === canonicalJson({ polycube: achiralCanon(T).map((c) => [...c]) }),
@@ -294,8 +302,9 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
 
 /**
  * The family's own `specLeaksKey` (runFamilyProperties): the spec holds only target, options and
- * camera, each view only cubes and quat, and no option's cube set equals the target's (the
- * correct option is always re-expressed under a non-identity rotation).
+ * camera, each view only cubes and quat, no option's cube set equals the target's (the correct
+ * option is always re-expressed under a non-identity rotation) and no option's cube list is
+ * index-aligned with the target's ({@link indexAligned}: the lists are shuffled).
  */
 export function rotationSpecLeaksKey(item: RotationItem): string | null {
   const spec = item.spec as unknown
@@ -306,5 +315,7 @@ export function rotationSpecLeaksKey(item: RotationItem): string | null {
   if (parsed === null) return 'malformed spec'
   const own = sortedKey(parsed.target.cubes)
   const same = parsed.options.findIndex((o) => sortedKey(o.cubes) === own)
-  return same < 0 ? null : `option ${same} repeats the target's cube set`
+  if (same >= 0) return `option ${same} repeats the target's cube set`
+  const aligned = parsed.options.findIndex((o) => indexAligned(parsed.target.cubes, o.cubes))
+  return aligned < 0 ? null : `option ${aligned}'s cube list is index-aligned with the target's`
 }
