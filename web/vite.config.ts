@@ -38,8 +38,9 @@ export default defineConfig(({ mode }) => {
     base,
     plugins: [svelte(), schemaAssets()],
     test: {
-      // Tests named *.dom.test.ts or *.svelte.test.ts run in jsdom; all other *.test.ts run in node.
-      // scripts/**/*.test.ts are Node-side tests (fixture sync, A17), type-checked by tsconfig.node.json.
+      // Tests named *.dom.test.ts or *.svelte.test.ts run in jsdom; all other *.test.ts (src/ and the
+      // Node scripts/ tests: dump CLI, fixture sync, A17) run in node. scripts/**/*.ts are
+      // type-checked by tsconfig.scripts.json.
       projects: [
         {
           extends: true,
