@@ -114,3 +114,40 @@ export const EXAMPLE1_CHAIN: readonly Cell[] = (() => {
   const d5 = withCell(d4, { shape: 4 })
   return [EXAMPLE1_KEY, d1, d2, d3, d4, d5]
 })()
+
+// --- a position-mode (xor) item ------------------------------------------------------------------
+
+/** Position xor along the rows, every scalar constant (square, small, black, 45°). */
+export const XOR_RULES: RuleSet = {
+  shape: 'constant',
+  size: 'constant',
+  color: 'constant',
+  orientation: 'constant',
+  count: 'derived',
+  position: 'xor',
+}
+
+const XOR_BASE = cell('square', 'small', 'black', 45, [4])
+
+/**
+ * The 8 visible cells of an xor grid, with row 1 = (x, y, x △ y) given as slot lists; rows 2
+ * and 3 are ({0}, {0,1}, {1}) and ({2,5}, {5,8}, ?), so the 9th cell is {2, 8}. No count rule
+ * fits (row counts (|x|, |y|, |x △ y|), (1, 2, 1), (2, 2)), so there is no count lure.
+ */
+export function xorVisible(x: readonly number[], y: readonly number[]): Cell[] {
+  const z = maskOf(x) ^ maskOf(y)
+  const rows = [x, y, [0, 1, 2, 3, 4, 5, 6, 7, 8].filter((s) => z & (1 << s)), [0], [0, 1], [1], [2, 5], [5, 8]]
+  return rows.map((p) => withCell(XOR_BASE, { positions: p }))
+}
+
+export const XOR_KEY: Cell = withCell(XOR_BASE, { positions: [2, 8] })
+
+/**
+ * A RAVEN-FAIR tree for the xor item (key first): K → +slot 0 → +slot 1 → `third` (one change
+ * from its parent), +slot 0 → triangle, and K → white.
+ */
+export function xorTree(third: (parent: Cell) => Cell): Cell[] {
+  const d1 = withCell(XOR_KEY, { positions: [0, 2, 8] })
+  const d2 = withCell(d1, { positions: [0, 1, 2, 8] })
+  return [XOR_KEY, d1, d2, third(d2), withCell(d1, { shape: 0 }), withCell(XOR_KEY, { color: 0 })]
+}

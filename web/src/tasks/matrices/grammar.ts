@@ -12,8 +12,8 @@
  * | size        | small, medium, large                                          | constant, progression ±1, distribution |
  * | color       | white, light_grey, dark_grey, black (4 greys, light → dark)   | constant, progression ±1, distribution |
  * | orientation | 0, 45, 90, 135 (degrees)                                      | constant, progression ±1, distribution |
- * | count       | 1–4 (count mode), else derived = number of positions          | constant, progression ±1, arithmetic ±, distribution |
- * | position    | a non-empty set of sub-grid slots                             | canonical (count mode), xor, or, distribution |
+ * | count       | 1–4 in every cell (count mode: ruled; position mode: derived) | constant, progression ±1, arithmetic ±, distribution |
+ * | position    | a set of 1–4 sub-grid slots                                   | canonical (count mode), xor, or, distribution |
  *
  * The layout (count + position) runs in one of two modes: in *count mode* a count rule governs
  * the number of objects and every cell uses the canonical layout of its count
@@ -41,10 +41,12 @@ export type Orientation = (typeof ORIENTATIONS)[number]
 
 /** Slots of a cell's 3×3 sub-grid. */
 export const SLOT_COUNT = 9
-/** Largest count in count mode (DESIGN §4.2: count 1–4). */
-export const MAX_COUNT_MODE = 4
-/** Most objects the generator puts in one cell in position mode (the verifier accepts up to 9). */
-export const MAX_OBJECTS = 6
+/**
+ * Most objects in a cell, in both layout modes (DESIGN §4.2: count 1–4). The generator keeps
+ * xor/or third cells and slot-toggle distractors within 1–4, and `verify` rejects any cell (grid
+ * or option) with more (`counts_in_range`).
+ */
+export const MAX_COUNT = 4
 /** Canonical layouts of counts 1–4 (count mode): centre, middle pair, diagonal, corners. */
 export const CANONICAL_LAYOUTS: readonly (readonly number[])[] = Object.freeze([
   Object.freeze([4]),
@@ -137,6 +139,12 @@ export function canonicalMask(count: number): number {
 
 export function isCanonical(mask: number): boolean {
   return CANONICAL_MASKS.includes(mask)
+}
+
+/** True if the cell holds 1–{@link MAX_COUNT} objects (DESIGN §4.2 count range). */
+export function countInRange(c: Cell): boolean {
+  const n = popcount(c.positions)
+  return n >= 1 && n <= MAX_COUNT
 }
 
 export function cellEquals(a: Cell, b: Cell): boolean {

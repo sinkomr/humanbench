@@ -5,16 +5,24 @@
  * Checks (all must hold):
  * - `spec_well_formed`: grid rows of 3, 3 and 2 cells and valid cells (`parseCell`);
  * - `six_options`, `key_in_range`;
+ * - `counts_in_range`: every grid cell and option holds 1–4 objects (DESIGN §4.2 count range);
  * - `rules_consistent`: some rule of every attribute fits the 8 visible cells;
  * - `unique_prediction`: every consistent rule assignment predicts the same 9th cell (`solve`);
  * - `key_matches_prediction`, `unique_correct` (exactly one option is the predicted cell),
  *   `options_distinct`;
  * - `distractors_violate_rules`: every other option breaks at least one declared rule;
  * - `options_form_tree`: the options are connected by one-component changes (RAVEN-FAIR tree);
- * - `modal_heuristic_not_unique`: the option-only modal picker does not single out the key;
+ * - `modal_heuristic_not_unique`: the option-only modal picker (all-ties reading of mode ties,
+ *   `heuristic.ts`) does not single out the key;
  * - `structure_matches`: `structural_params` is a rule set with 1–4 non-constant rules, and each
  *   declared rule holds along the rows of the grid completed by the keyed option;
  * - `features_match`, `prior_matches`, `stratum_matches`, `time_matches` (`prior.ts`).
+ *
+ * Informational: `predicted_cells` (distinct 9th cells the consistent rule assignments predict;
+ * 1 for a unique item, the §14.6 `consistent_rule_sets: 1`), `consistent_rule_fits` (all
+ * consistent (rule, direction) assignments, row and column fits counted separately),
+ * `inferred_rules`, `distractor_violations`, `modal_argmax`, and `modal_tie_reading` (`all_ties`:
+ * the M1.6 reading of mode ties that the picker checks use).
  */
 
 import type { JsonValue } from '../../engine'
@@ -26,6 +34,7 @@ import {
   MIN_RULES,
   OPTIONS_COUNT,
   cellEquals,
+  countInRange,
   differingComponents,
   nonConstantRules,
   parseCell,
@@ -34,7 +43,7 @@ import {
   type MatrixKey,
   type MatrixSpec,
 } from './grammar'
-import { modalArgmax, modalPicksKeyUniquely } from './heuristic'
+import { MODAL_TIE_READING, modalArgmax, modalPicksKeyUniquely } from './heuristic'
 import { SIGMA_B_DEFAULT, TIME_LIMIT_S, bPriorOf, expectedTimeOf, featuresOf } from './prior'
 import { solve, violatedRules } from './solver'
 
@@ -118,6 +127,7 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
       spec_well_formed: true,
       six_options: options.length === OPTIONS_COUNT && item.options_count === OPTIONS_COUNT,
       key_in_range: keyInRange,
+      counts_in_range: [...visible, ...options].every(countInRange),
       rules_consistent: sol.consistent,
       unique_prediction: sol.unique,
       key_matches_prediction: keyed !== null && predicted !== null && cellEquals(keyed, predicted),
@@ -133,10 +143,12 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
       stratum_matches: features !== null && item.stratum === stratumOfB(bPrior),
       time_matches: features !== null && item.expected_time_s === expectedTimeOf(nRules) && item.time_limit_s === TIME_LIMIT_S,
       method: 'rule_enumeration',
-      consistent_rule_sets: sol.consistentRuleSets,
+      predicted_cells: sol.predictedCells,
+      consistent_rule_fits: sol.consistentRuleFits,
       inferred_rules: inferred,
       distractor_violations: violations.filter((_, i) => i !== index),
       modal_argmax: argmax,
+      modal_tie_reading: MODAL_TIE_READING,
     })
   } catch (e) {
     return { ok: false, reason: `malformed item: ${String(e)}`, checks: {} }

@@ -14,7 +14,9 @@
  *   z = y ± 1, the prediction inside the domain); distribution (each line a permutation of the
  *   same 3 distinct values). Orientation is also tried as a cyclic progression ±1 mod 4
  *   (mod 180°), which a viewer may see for 180°-symmetric shapes.
- * - count (domain 1–9): constant; progression ±1; arithmetic ± (z = x ± y); distribution.
+ * - count (domain 1–9): constant; progression ±1; arithmetic ± (z = x ± y); distribution. The
+ *   domain is deliberately wider than the grammar's 1–4: a count rule that extrapolates to 5–9
+ *   objects is still a pattern a viewer may follow, so it counts as a lure (and rejects the grid).
  * - position (non-empty slot sets): constant; xor (z = x △ y); or (z = x ∪ y); and (z = x ∩ y,
  *   solver only); distribution; and canonical: every visible cell uses the canonical layout of
  *   its count and a count rule predicts n ≤ 4, which predicts the canonical layout of n.
@@ -27,7 +29,7 @@
 
 import {
   DOMAIN_SIZE,
-  MAX_COUNT_MODE,
+  MAX_COUNT,
   SCALAR_ATTRS,
   SLOT_COUNT,
   canonicalMask,
@@ -150,7 +152,7 @@ export const SCALAR_SOLVER_RULES: Readonly<Record<ScalarAttr, readonly SolverRul
   orientation: [...scalarRules(DOMAIN_SIZE.orientation), cyclic(1, DOMAIN_SIZE.orientation), cyclic(-1, DOMAIN_SIZE.orientation)],
 })
 
-/** The solver's count rules (domain 1–9, any number of objects a cell can hold). */
+/** The solver's count rules (domain 1–9, any number of objects a sub-grid can hold; see the module comment). */
 export const COUNT_SOLVER_RULES: readonly SolverRule[] = Object.freeze([
   constant,
   progression(1, 1, SLOT_COUNT),
@@ -211,8 +213,18 @@ export interface Solution {
   readonly noCountLure: boolean
   /** The predicted 9th cell when {@link unique}, else null. */
   readonly cell: Cell | null
-  /** Number of consistent rule assignments (product of the per-attribute fit counts). */
-  readonly consistentRuleSets: number
+  /**
+   * Number of consistent (rule, direction) assignments: the product of the per-attribute fit
+   * counts. Row and column fits of the same prediction count separately, so this is large even
+   * for a unique item (192 for §14.6 example 1); {@link predictedCells} is the §14.6 "1".
+   */
+  readonly consistentRuleFits: number
+  /**
+   * Number of distinct 9th cells the consistent assignments predict: the product of the distinct
+   * predictions of the scalar attributes and the positions (0 if inconsistent, 1 if they agree;
+   * a count lure additionally makes the item non-unique, see {@link noCountLure}).
+   */
+  readonly predictedCells: number
 }
 
 /** Enumerate every rule assignment consistent with the 8 visible cells (row-major). */
@@ -234,7 +246,7 @@ export function solve(visible: readonly Cell[]): Solution {
   )
   const posFits = [...sets.fits]
   if (visible.every((c) => isCanonical(c.positions))) {
-    for (const f of count.fits) if (f.value <= MAX_COUNT_MODE) posFits.push({ rule: `canonical(${f.rule})`, value: canonicalMask(f.value) })
+    for (const f of count.fits) if (f.value <= MAX_COUNT) posFits.push({ rule: `canonical(${f.rule})`, value: canonicalMask(f.value) })
   }
   const positions: AttributeSolution = {
     fits: posFits,
@@ -254,8 +266,9 @@ export function solve(visible: readonly Cell[]): Solution {
         positions: onlyP as number,
       }
     : null
-  const consistentRuleSets = [...scalars, positions].reduce((p, s) => p * s.fits.length, 1)
-  return { shape, size, color, orientation, count, positions, consistent, unique, noCountLure, cell, consistentRuleSets }
+  const consistentRuleFits = [...scalars, positions].reduce((p, s) => p * s.fits.length, 1)
+  const predictedCells = [...scalars, positions].reduce((p, s) => p * s.predictions.length, 1)
+  return { shape, size, color, orientation, count, positions, consistent, unique, noCountLure, cell, consistentRuleFits, predictedCells }
 }
 
 // --- declared (generator) rules -------------------------------------------------------------------

@@ -13,7 +13,9 @@
  * Shell (1990): pairwise progression < distribution-of-3 < figure addition/subtraction and
  * distribution-of-two (xor). The weights are guesses to be replaced by M4 calibration; σ_b = 1.0.
  * They put 1 progression at b ≈ −1.9, two progressions (§14.6 example 1) at −1.4, the anchor mix
- * at −0.08 and the hardest 4-rule sets at ≈ 1.0, so the family spans strata 1–4.
+ * at −0.08 and the hardest 4-rule sets at ≈ 1.0, so the family spans strata 1–4. §14.6 example 1
+ * says "b prior −1.2"; that figure is illustrative, and this v0 model gives it −1.43 (both in
+ * stratum 2, "easy"). The model, not the example's figure, is the [SPEC] v0 value.
  *
  * Time ([SPEC] v0, §7.4 E[T]): 30 s for one rule + 10 s per further rule (30–60 s); a generous
  * 180 s cap for this power item (§13: no limits on power items beyond a generous cap).

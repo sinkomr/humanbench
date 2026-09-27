@@ -6,11 +6,14 @@ import {
   EXAMPLE1_RULES,
   EXAMPLE1_STAR,
   EXAMPLE1_VISIBLE,
+  XOR_RULES,
   cell,
   handItem,
   specOf,
   tamper,
   withCell,
+  xorTree,
+  xorVisible,
 } from './fixtures'
 import { matrices, type MatrixItem } from '.'
 
@@ -29,7 +32,13 @@ describe('matrices verify: a hand-built §14.6 example 1', () => {
     const v = matrices.verify(GOOD)
     expect(v.reason).toBe('ok')
     expect(v.checks.method).toBe('rule_enumeration')
+    expect(v.checks.counts_in_range).toBe(true)
+    // §14.6 "consistent_rule_sets: 1" is the number of distinct predicted cells; the (rule,
+    // direction) fits are many more (e.g. shape: constant@row and distribution@col).
+    expect(v.checks.predicted_cells).toBe(1)
+    expect(v.checks.consistent_rule_fits).toBe(192)
     expect(v.checks.modal_argmax).toEqual([0, 4]) // chain nodes 3 and 2 (square, small, 2 and 3 objects)
+    expect(v.checks.modal_tie_reading).toBe('all_ties')
     expect(v.checks.distractor_violations).toEqual([
       ['shape', 'size', 'count'],
       ['size'],
@@ -37,6 +46,13 @@ describe('matrices verify: a hand-built §14.6 example 1', () => {
       ['shape', 'size'],
       ['shape', 'size', 'count'],
     ])
+  })
+
+  it('accepts a position-mode (xor) item with 1–4 objects per cell', () => {
+    const tree = xorTree((d2) => withCell(d2, { size: 1 }))
+    const v = matrices.verify(handItem(xorVisible([0, 1, 2], [3]), tree, 0, XOR_RULES))
+    expect(v.reason).toBe('ok')
+    expect(v.checks.inferred_rules).toMatchObject({ positions: ['xor@row'], count: [] })
   })
 
   it('scores the chosen option index', () => {
@@ -71,6 +87,23 @@ describe('matrices verify rejects (one test per failure reason)', () => {
     const five = handItem(EXAMPLE1_VISIBLE, OPTIONS.slice(0, 5), 2, EXAMPLE1_RULES)
     expect(failed(five)).toContain('six_options')
     expect(failed(tamper(GOOD, (x) => (x.options_count = 5)))).toEqual(['six_options'])
+  })
+
+  it('no options at all: a verdict (six_options, key_in_range), not a crash', () => {
+    const none = handItem(EXAMPLE1_VISIBLE, [], 0, EXAMPLE1_RULES)
+    const v = matrices.verify(none)
+    expect(v.reason).not.toMatch(/malformed/)
+    expect(failed(none)).toEqual(expect.arrayContaining(['six_options', 'key_in_range', 'unique_correct']))
+    expect(v.checks.modal_argmax).toEqual([])
+  })
+
+  it('a cell with more than 4 objects (DESIGN §4.2 count 1–4): counts_in_range', () => {
+    // Grid: row 1 is ({0,1,2}, {3,4}, {0,1,2,3,4}), a 5-object xor cell; otherwise a valid item.
+    const tree = xorTree((d2) => withCell(d2, { size: 1 }))
+    expect(failed(handItem(xorVisible([0, 1, 2], [3, 4]), tree, 0, XOR_RULES))).toEqual(['counts_in_range'])
+    // Option: a leaf distractor with 5 objects (one slot added to its 4-object parent).
+    const five = xorTree((d2) => withCell(d2, { positions: [0, 1, 2, 3, 8] }))
+    expect(failed(handItem(xorVisible([0, 1, 2], [3]), five, 0, XOR_RULES))).toEqual(['counts_in_range'])
   })
 
   it('a key index out of range: key_in_range', () => {
