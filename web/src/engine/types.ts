@@ -17,7 +17,8 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * Item parameters for the scoring model (DESIGN §7.1, §12 `item_parameters`), one variant per
  * model with every field it needs required:
  * - '2pl' / '2pl_testlet': a, b (the testlet's passage/setup id is {@link ItemBase.testlet_id});
- * - '3pl': a, b, c (c fixed at 1/k options, 0 < c < 1);
+ * - '3pl': a, b, c (only for items with k ≤ 4 options, c fixed at 1/k; k ≥ 5 options or
+ *   numeric entry → 2PL, ROADMAP A9);
  * - 'grm': a, b = strictly increasing thresholds b_1 < … < b_m;
  * - 'gaussian': lam, d, sigma (x ~ N(lam·θ + d, sigma²)); lam may be negative.
  */

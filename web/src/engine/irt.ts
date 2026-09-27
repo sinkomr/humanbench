@@ -4,7 +4,7 @@
  *
  * Conventions:
  * - 2pl: y ∈ {0,1}, P = σ(a(θ − b)).
- * - 3pl: y ∈ {0,1}, P = c + (1 − c)·σ(a(θ − b)), c fixed (1/k options), 0 < c < 1.
+ * - 3pl: y ∈ {0,1}, P = c + (1 − c)·σ(a(θ − b)), c fixed at 1/k for k ≤ 4 options (A9), 0 < c < 1.
  * - grm: Samejima graded response, y ∈ {0..m}, a > 0, thresholds b_1 < … < b_m,
  *   P*(≥j) = σ(a(θ − b_j)), P*(≥0) = 1, P*(≥m+1) = 0, P(y = j) = P*(≥j) − P*(≥j+1).
  * - gaussian: x ~ N(λθ + d, σ²) with σ > 0; λ (`lam`) may be negative (RT log-time has λ = −1).

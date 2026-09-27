@@ -3,7 +3,7 @@
  * src/engine/__fixtures__/ by scripts/sync-golden.sh must be byte-identical to the bank's own
  * copies whenever the sibling bank repo is present (skipped otherwise, e.g. in CI).
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -53,6 +53,25 @@ describe('scripts/sync-golden.sh', () => {
     for (const f of FILES) {
       expect(readFileSync(join(dest, f)).equals(readFileSync(join(bank, 'golden', f)))).toBe(true)
     }
+  })
+
+  it('copies nothing and fails when the bank lacks one of the files', () => {
+    const tmp = mkTmp()
+    const bank = join(tmp, 'bank')
+    const dest = join(tmp, 'dest')
+    mkdirSync(join(bank, 'golden'), { recursive: true })
+    mkdirSync(dest)
+    writeFileSync(join(bank, 'golden', 'sigma_v2.json'), '{"new": true}\n')
+    writeFileSync(join(dest, 'sigma_v2.json'), '{"old": true}\n')
+    const res = spawnSync('sh', [SCRIPT], {
+      env: { ...process.env, HB_BANK_DIR: bank, HB_FIXTURES_DIR: dest },
+      encoding: 'utf8',
+    })
+    expect(res.status).toBe(1)
+    expect(res.stderr).toContain('lacks: scoring_v1.json')
+    expect(res.stdout).toContain('not a git checkout')
+    expect(readdirSync(dest)).toEqual(['sigma_v2.json'])
+    expect(readFileSync(join(dest, 'sigma_v2.json'), 'utf8')).toBe('{"old": true}\n')
   })
 
   it('leaves the fixtures alone when there is no bank repo', () => {

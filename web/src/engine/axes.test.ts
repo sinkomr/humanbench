@@ -10,6 +10,7 @@ import {
   initialSigma,
   isAxisCode,
   N_AXES,
+  NEAREST_PD_TOL,
   nearestPD,
   R_LITERATURE,
   rawInitialSigma,
@@ -29,8 +30,14 @@ interface SigmaDoc {
   axes: string[]
   sigma: number[][]
 }
+interface NearestPDCase {
+  id: string
+  floor: number
+  input: number[][]
+  output: number[][]
+}
 const sigmaV2 = JSON.parse(sigmaV2Text) as SigmaDoc
-const scoringV1 = JSON.parse(scoringV1Text) as SigmaDoc & { version: string }
+const scoringV1 = JSON.parse(scoringV1Text) as SigmaDoc & { version: string; nearest_pd: NearestPDCase[] }
 
 const r = (a: AxisCode, b: AxisCode): number => {
   const S = initialSigma()
@@ -96,6 +103,9 @@ describe('axis registry (DESIGN §3)', () => {
   it('is frozen', () => {
     expect(Object.isFrozen(AXES)).toBe(true)
     expect(Object.isFrozen(AXES[0])).toBe(true)
+    // The Σ rule table too, tuples included: the pinned Σ cannot drift under one SIGMA_VERSION.
+    expect(Object.isFrozen(R_LITERATURE)).toBe(true)
+    for (const pair of R_LITERATURE) expect(Object.isFrozen(pair)).toBe(true)
   })
 
   it('isAxisCode accepts exactly the 17 codes', () => {
@@ -248,6 +258,29 @@ describe('initial Σ (DESIGN §3, §7.2)', () => {
 })
 
 describe('nearestPD', () => {
+  // Bank golden nearest_pd pairs (clip, rescale, shrink toward I; ROADMAP A8, §7.2).
+  it.each(scoringV1.nearest_pd.map((c) => [c.id, c] as const))('matches bank nearest_pd: %s', (_id, c) => {
+    expect(c.floor).toBe(SIGMA_EIGEN_FLOOR)
+    const out = nearestPD(c.input, c.floor)
+    expect(maxAbsDiff(out, c.output)).toBeLessThanOrEqual(1e-12)
+    out.forEach((row, i) => expect(row[i]).toBe(1))
+    expect(isSymmetric(out)).toBe(true)
+    expect(symmetricEigen(out).values[0]).toBeGreaterThanOrEqual(c.floor - NEAREST_PD_TOL)
+  })
+
+  it('shrinks toward I when the rescaling leaves the smallest eigenvalue below the floor', () => {
+    // Clipping lifts the diagonal above 1; rescaling back to 1 pulls λ_min below the floor again.
+    const chain = [
+      [1, 0.99, 0],
+      [0.99, 1, 0.99],
+      [0, 0.99, 1],
+    ]
+    const out = nearestPD(chain)
+    expect(symmetricEigen(out).values[0]).toBeCloseTo(SIGMA_EIGEN_FLOOR, 12)
+    expect(out[0]![1]).toBeGreaterThan(0)
+    expect(nearestPD(out)).toEqual(out) // idempotent
+  })
+
   it('repairs a non-PD correlation matrix', () => {
     // Pairwise-plausible but jointly impossible correlations: eigenvalues 1.9, 1.9, −0.8.
     const bad = [
@@ -293,7 +326,7 @@ describe('nearestPD', () => {
           expect(isSymmetric(out)).toBe(true)
           out.forEach((row, i) => expect(row[i]).toBe(1))
           expect(tryCholesky(out)).not.toBeNull()
-          expect(symmetricEigen(out).values[0]).toBeGreaterThan(0)
+          expect(symmetricEigen(out).values[0]).toBeGreaterThanOrEqual(SIGMA_EIGEN_FLOOR - 1e-11)
           for (const row of out) for (const v of row) expect(Math.abs(v)).toBeLessThanOrEqual(1)
         },
       ),
@@ -306,5 +339,6 @@ describe('nearestPD', () => {
     expect(() => nearestPD([[1, 0]])).toThrow(RangeError)
     expect(() => nearestPD([[Number.NaN]])).toThrow(RangeError)
     expect(() => nearestPD([[1]], 0)).toThrow(RangeError)
+    expect(() => nearestPD([[1]], 1)).toThrow(RangeError)
   })
 })

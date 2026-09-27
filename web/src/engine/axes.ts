@@ -137,6 +137,8 @@ export function axis(code: AxisCode): AxisDef {
 
 /** Eigenvalue floor for {@link nearestPD} (DESIGN §7.2). */
 export const SIGMA_EIGEN_FLOOR = 0.05
+/** Absolute tolerance on the floor in {@link nearestPD}; the same as bank `NEAREST_PD_TOL`. */
+export const NEAREST_PD_TOL = 1e-12
 
 /** Pinned version of the initial Σ (ROADMAP A8); seriation uses the pinned Σ (§9.4). */
 export const SIGMA_VERSION = 'sigma-v2-2026-09-26'
@@ -145,32 +147,37 @@ type LiteraturePair = readonly [AxisCode, AxisCode, number]
 
 /**
  * Rule (1) of Σ_init v2 (ROADMAP A8): pairs listed in the §3 expected-intercorrelation table,
- * at the midpoint of the quoted range.
+ * at the midpoint of the quoted range. Frozen all the way down: the pinned Σ must not change
+ * under a fixed {@link SIGMA_VERSION}.
  */
-export const R_LITERATURE: readonly LiteraturePair[] = Object.freeze([
-  ['MAT', 'QR', 0.6], // Matrix/Series ↔ Quant .5–.7
-  ['MAT', 'LG', 0.6], // Matrix/Series ↔ Logic Games .5–.7
-  ['MAT', 'SPA', 0.5], // Matrix ↔ Spatial .4–.6
-  ['RC', 'VOC', 0.6], // Reading Comp ↔ Vocabulary ↔ Humanities .5–.7
-  ['RC', 'KHU', 0.6],
-  ['VOC', 'KHU', 0.6],
-  ['LR', 'RC', 0.6], // Logical Reasoning ↔ Reading Comp .5–.7
-  ['WM', 'MAT', 0.4], // Working Memory ↔ Gf .3–.5
-  ['WM', 'LR', 0.4],
-  ['WM', 'LG', 0.4],
-  ['RT', 'MAT', 0.28], // Choice RT ↔ g |−.2 to −.35| (faster = higher θ_RT)
-  ['RT', 'LR', 0.28],
-  ['RT', 'LG', 0.28],
-  ['PS', 'RC', 0.3], // Reading speed ↔ Reading comp .2–.4
-  ['FER', 'QR', 0.4], // Fermi ↔ Quant, STEM knowledge .3–.5
-  ['FER', 'KST', 0.4],
-  ['EMO', 'VOC', 0.4], // Emotion understanding ↔ Gc .3–.5
-  ['EMO', 'KHU', 0.4],
-  // Divergent thinking ↔ g .15–.3
-  ...(['MAT', 'LR', 'LG', 'RC', 'VOC', 'QR', 'SPA', 'WM', 'FER', 'KST', 'KHU', 'KAP'] as const).map(
-    (x): LiteraturePair => ['CRE', x, 0.23],
-  ),
-] satisfies LiteraturePair[])
+export const R_LITERATURE: readonly LiteraturePair[] = Object.freeze(
+  (
+    [
+      ['MAT', 'QR', 0.6], // Matrix/Series ↔ Quant .5–.7
+      ['MAT', 'LG', 0.6], // Matrix/Series ↔ Logic Games .5–.7
+      ['MAT', 'SPA', 0.5], // Matrix ↔ Spatial .4–.6
+      ['RC', 'VOC', 0.6], // Reading Comp ↔ Vocabulary ↔ Humanities .5–.7
+      ['RC', 'KHU', 0.6],
+      ['VOC', 'KHU', 0.6],
+      ['LR', 'RC', 0.6], // Logical Reasoning ↔ Reading Comp .5–.7
+      ['WM', 'MAT', 0.4], // Working Memory ↔ Gf .3–.5
+      ['WM', 'LR', 0.4],
+      ['WM', 'LG', 0.4],
+      ['RT', 'MAT', 0.28], // Choice RT ↔ g |−.2 to −.35| (faster = higher θ_RT)
+      ['RT', 'LR', 0.28],
+      ['RT', 'LG', 0.28],
+      ['PS', 'RC', 0.3], // Reading speed ↔ Reading comp .2–.4
+      ['FER', 'QR', 0.4], // Fermi ↔ Quant, STEM knowledge .3–.5
+      ['FER', 'KST', 0.4],
+      ['EMO', 'VOC', 0.4], // Emotion understanding ↔ Gc .3–.5
+      ['EMO', 'KHU', 0.4],
+      // Divergent thinking ↔ g .15–.3
+      ...(['MAT', 'LR', 'LG', 'RC', 'VOC', 'QR', 'SPA', 'WM', 'FER', 'KST', 'KHU', 'KAP'] as const).map(
+        (x): LiteraturePair => ['CRE', x, 0.23],
+      ),
+    ] satisfies LiteraturePair[]
+  ).map((p): LiteraturePair => Object.freeze(p)),
+)
 
 const LITERATURE_R: ReadonlyMap<string, number> = new Map(
   R_LITERATURE.flatMap(([a, b, v]) => [
@@ -236,13 +243,18 @@ export function initialSigma(): Matrix {
 }
 
 /**
- * Project a symmetric matrix to a positive-definite correlation matrix (DESIGN §7.2):
- * symmetrise; Jacobi eigen-decomposition; if any eigenvalue is below `floor`, clip it up to
- * `floor` and reconstruct V·diag(w)·Vᵀ; rescale to unit diagonal D^{-1/2}·A·D^{-1/2}.
- * A valid correlation matrix whose eigenvalues all clear the floor is returned unchanged
- * (bit for bit, as in the Python reference `hb.axes.nearest_pd`). The rescaling is a
- * congruence, so the result stays PD, though its smallest eigenvalue can end up slightly
- * below `floor`.
+ * Project a symmetric matrix to a correlation matrix with eigenvalues ≥ `floor` (DESIGN §7.2),
+ * the same steps as the Python reference `hb.axes.nearest_pd` (tol = {@link NEAREST_PD_TOL}):
+ * 1. symmetrise, A = (M + Mᵀ)/2;
+ * 2. Jacobi eigen-decomposition A = V·diag(w)·Vᵀ; if min w < floor − tol, clip the eigenvalues
+ *    up to `floor` and reconstruct A = V·diag(max(w, floor))·Vᵀ, symmetrised again;
+ * 3. rescale to unit diagonal, C = D^{-1/2}·A·D^{-1/2} with D = diag(A), diagonal exactly 1;
+ * 4. the rescaling can push the smallest eigenvalue λ of C back below the floor. If
+ *    λ < floor − tol, shrink toward the identity (ROADMAP A8): C ← (1 − t)·C + t·I with
+ *    t = (floor − λ)/(1 − λ), which keeps the unit diagonal and the sign pattern and maps every
+ *    eigenvalue μ to (1 − t)·μ + t, so the smallest becomes `floor` (to rounding).
+ * A valid correlation matrix whose eigenvalues are all ≥ floor − tol comes back unchanged (bit
+ * for bit). Needs 0 < floor < 1.
  */
 export function nearestPD(m: Matrix, floor = SIGMA_EIGEN_FLOOR): Matrix {
   const n = m.length
@@ -252,11 +264,11 @@ export function nearestPD(m: Matrix, floor = SIGMA_EIGEN_FLOOR): Matrix {
   if (m.some((row) => row.some((v) => !Number.isFinite(v)))) {
     throw new RangeError('nearestPD needs a finite matrix')
   }
-  if (!(floor > 0)) throw new RangeError('nearestPD floor must be positive')
+  if (!(floor > 0 && floor < 1)) throw new RangeError('nearestPD floor must be in (0, 1)')
 
   let a: Matrix = m.map((row, i) => row.map((v, j) => (v + m[j]![i]!) / 2))
   const { values, vectors } = symmetricEigen(a)
-  if (values[0]! < floor) {
+  if (values[0]! < floor - NEAREST_PD_TOL) {
     const w = values.map((x) => Math.max(x, floor))
     const r: Matrix = Array.from({ length: n }, (_, i) =>
       Array.from({ length: n }, (_, j) => {
@@ -268,5 +280,11 @@ export function nearestPD(m: Matrix, floor = SIGMA_EIGEN_FLOOR): Matrix {
     a = r.map((row, i) => row.map((v, j) => (v + r[j]![i]!) / 2))
   }
   const d = a.map((row, i) => Math.sqrt(row[i]!))
-  return a.map((row, i) => row.map((v, j) => (i === j ? 1 : v / (d[i]! * d[j]!))))
+  const out = a.map((row, i) => row.map((v, j) => (i === j ? 1 : v / (d[i]! * d[j]!))))
+  const lam = symmetricEigen(out).values[0]!
+  if (lam < floor - NEAREST_PD_TOL) {
+    const t = (floor - lam) / (1 - lam)
+    return out.map((row, i) => row.map((v, j) => (i === j ? 1 : (1 - t) * v)))
+  }
+  return out
 }

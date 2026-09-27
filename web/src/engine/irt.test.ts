@@ -371,10 +371,10 @@ describe('observation dispatch', () => {
         info2pl(t, 1.2, 0.5),
       ],
       [
-        { kind: '3pl', axis: 'LR', a: 1.1, b: -0.2, c: 0.2, y: 0 },
-        loglik3pl(t, 1.1, -0.2, 0.2, 0),
-        score3pl(t, 1.1, -0.2, 0.2, 0),
-        info3pl(t, 1.1, -0.2, 0.2),
+        { kind: '3pl', axis: 'SPA', a: 1.1, b: -0.2, c: 0.25, y: 0 },
+        loglik3pl(t, 1.1, -0.2, 0.25, 0),
+        score3pl(t, 1.1, -0.2, 0.25, 0),
+        info3pl(t, 1.1, -0.2, 0.25),
       ],
       [
         { kind: 'grm', axis: 'WM', a: 1.5, b: [-1, 0, 1.2], y: 2 },
@@ -401,14 +401,14 @@ describe('observation dispatch', () => {
     // b-as-threshold-array included), parsed from JSON as the M1.3 golden test will do.
     const golden = JSON.parse(`[
       {"kind": "2pl", "axis": "MAT", "a": 1.0, "b": -1.5, "y": 1},
-      {"kind": "3pl", "axis": "LR", "a": 1.2, "b": -1.0, "c": 0.2, "y": 1},
+      {"kind": "3pl", "axis": "SPA", "a": 1.2, "b": -1.0, "c": 0.25, "y": 1},
       {"kind": "grm", "axis": "WM", "a": 1.5, "b": [-1.0, 0.0], "y": 2},
       {"kind": "gaussian", "axis": "RT", "lam": -1.0, "d": 0.0, "sigma": 0.5, "x": -0.641}
     ]`) as Observation[]
     const t = 0.4
     const direct = [
       [loglik2pl(t, 1, -1.5, 1), score2pl(t, 1, -1.5, 1), info2pl(t, 1, -1.5)],
-      [loglik3pl(t, 1.2, -1, 0.2, 1), score3pl(t, 1.2, -1, 0.2, 1), info3pl(t, 1.2, -1, 0.2)],
+      [loglik3pl(t, 1.2, -1, 0.25, 1), score3pl(t, 1.2, -1, 0.25, 1), info3pl(t, 1.2, -1, 0.25)],
       [loglikGrm(t, 1.5, [-1, 0], 2), scoreGrm(t, 1.5, [-1, 0], 2), infoGrm(t, 1.5, [-1, 0])],
       [loglikGaussian(t, -1, 0, 0.5, -0.641), scoreGaussian(t, -1, 0, 0.5, -0.641), infoGaussian(-1, 0.5)],
     ]
