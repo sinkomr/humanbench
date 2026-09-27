@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { validateItemInstance } from '../family'
 import { stratumOfB } from '../priors'
-import { runFamilyProperties, type FamilyPropertyOptions } from '../testing'
+import { KEY_ECHO_MAX_CHANCE, KEY_ECHO_MIN_SEEN, runFamilyProperties, type FamilyPropertyOptions } from '../testing'
 import { quant, quantSpecLeaksKey, type QuantItem, type QuantKey, type QuantResponse, type QuantSpec } from '.'
 import { Fraction } from './fraction'
 import { QUANT_PRIOR, QUANT_TIME_BASE_S, quantBPrior, quantFeatures } from './prior'
 import { HINTS, TEMPLATES_BY_STRATUM, VARIANTS, lin, listText, paren, ratTerm, signed } from './templates'
-import { clone, sampleOf, variantDef, withGiven } from './test-helpers'
+import {
+  QUANT_ECHO_MAX_CHANCE,
+  QUANT_ECHO_MIN_SEEN,
+  QuantKeyEcho,
+  clone,
+  sampleOf,
+  samplesOf,
+  stemNumbers,
+  variantDef,
+  withGiven,
+} from './test-helpers'
 import { quantSolve } from './verify'
 
 /** A11: family_id = the template variant, so the structural space is the 53 variants. */
@@ -26,6 +36,14 @@ const OPTS: FamilyPropertyOptions<QuantSpec, QuantKey, QuantResponse> = {
   correctResponse: (item) => item.key.value,
 }
 
+/** The family leak check, feeding every checked item to a run-level {@link QuantKeyEcho} too. */
+const echoing =
+  (echo: QuantKeyEcho) =>
+  (item: QuantItem): string | null => {
+    echo.observe(item)
+    return quantSpecLeaksKey(item)
+  }
+
 const variantKey = (item: QuantItem): string => {
   const sp = item.structural_params as { template: string; variant: string }
   return `${sp.template}/${sp.variant}`
@@ -33,14 +51,17 @@ const variantKey = (item: QuantItem): string => {
 
 describe('quant family (M1.8)', () => {
   it('passes runFamilyProperties at n = 10,000 across strata 1–4', () => {
-    const r = runFamilyProperties(quant, { ...OPTS, strata: quant.strata })
+    const echo = new QuantKeyEcho()
+    const r = runFamilyProperties(quant, { ...OPTS, strata: quant.strata, specLeaksKey: echoing(echo) })
+    expect(echo.problems()).toEqual([])
+    expect(echo.judged().length).toBe(VARIANTS.length)
     expect(r.n).toBe(10_000)
     expect(r.distinctItemIds).toBe(10_000)
     expect(r.strataCounts).toEqual({ 1: 2_500, 2: 2_500, 3: 2_500, 4: 2_500, 5: 0, 6: 0 })
     expect(r.distinctFamilyIds).toBe(VARIANTS.length)
     expect(r.distinctContents).toBeGreaterThan(8_500)
-    expect(r.bPrior.min).toBeGreaterThanOrEqual(-2.3)
-    expect(r.bPrior.max).toBeLessThanOrEqual(1.4)
+    expect(r.bPrior.min).toBeGreaterThanOrEqual(-1.8)
+    expect(r.bPrior.max).toBeLessThanOrEqual(1.9)
   }, 300_000)
 
   it('passes with the family choosing the stratum', () => {
@@ -75,7 +96,7 @@ describe('quant family (M1.8)', () => {
     expect(validateItemInstance(item, quant)).toEqual([])
     for (let i = 0; i < 400; i++) {
       const it = quant.generate(`tol-${i}`)
-      expect(it.key.tol).toEqual(it.spec.input_format === 'decimal' ? { rel: 0.005 } : { abs: 0 })
+      expect(it.key.tol).toEqual(it.spec.input_format === 'decimal' ? { abs: 0.005 } : { abs: 0 })
       expect(it.spec.hint).toBe(HINTS[it.spec.input_format])
       if (it.spec.input_format === 'integer') expect(it.key.value).toMatch(/^-?\d+$/)
     }
@@ -102,20 +123,63 @@ describe('quant family (M1.8)', () => {
     leaky.spec = { ...item.spec, worked: 'x = 3' }
     expect(quantSpecLeaksKey(leaky as unknown as QuantItem)).toMatch(/spec fields/)
   })
+
+  it('flags a given value or a stem number that is the key in every instance of a variant (run level)', () => {
+    expect([QUANT_ECHO_MIN_SEEN, QUANT_ECHO_MAX_CHANCE]).toEqual([KEY_ECHO_MIN_SEEN, KEY_ECHO_MAX_CHANCE])
+    type Loose = { spec: { stem: string; given: Record<string, unknown> } }
+    const leak = (items: QuantItem[], f: (x: Loose, item: QuantItem, i: number) => void): QuantKeyEcho => {
+      const echo = new QuantKeyEcho()
+      items.forEach((item, i) => {
+        const x = clone(item) as unknown as Loose
+        f(x, item, i)
+        echo.observe(x as unknown as QuantItem)
+      })
+      return echo
+    }
+    // A number field holding x₀ (the mutation the shared value checks cannot see: "8" vs 8).
+    const lin = samplesOf('linear_eq', 'both_sides', 30)
+    expect(leak(lin, (x, it) => (x.spec.given.root = Number(it.key.value))).problems()).toEqual([
+      'linear_eq/both_sides: given.root equals the key in all 30 instances',
+    ])
+    // A fraction key as text, a decimal key as a number, a nested leaf, and a stem that states it.
+    const prob = samplesOf('probability', 'same', 25)
+    expect(leak(prob, (x, it) => (x.spec.given.note = it.key.value)).problems()).toEqual([
+      'probability/same: given.note equals the key in all 25 instances',
+    ])
+    const dec = samplesOf('rate', 'avg_speed', 25)
+    expect(leak(dec, (x, it) => (x.spec.given.legs = [1, Fraction.parseCanonical(it.key.value)?.toNumber() ?? 0])).problems()).toEqual([
+      'rate/avg_speed: given.legs[1] equals the key in all 25 instances',
+    ])
+    expect(leak(lin, (x, it) => (x.spec.stem = `${x.spec.stem} (x = ${signed(Number(it.key.value))})`)).problems()).toEqual([
+      'linear_eq/both_sides: the stem shows the key in all 30 instances',
+    ])
+    // Not flagged: a copy in all but one instance, too few instances, or no copy at all.
+    expect(leak(lin, (x, it, i) => (x.spec.given.root = i === 17 ? 99 : Number(it.key.value))).problems()).toEqual([])
+    expect(leak(lin.slice(0, 19), (x, it) => (x.spec.given.root = Number(it.key.value))).problems()).toEqual([])
+    expect(leak(lin, () => undefined).problems()).toEqual([])
+    expect(stemNumbers('If x − 1/x = 5, what is x^3 − 1/x^3? Sum 12 + 4/3 + (−6) + 2.5.').map(String)).toEqual([
+      '1', '5', '3', '1', '3', '12', '4/3', '-6', '5/2',
+    ])
+  })
 })
 
 describe('quant prior and time (M1.P) [SPEC v0]', () => {
-  it('puts b in the stratum band: anchor −1.5, −0.5, 0.5, 1.5 plus a negative offset', () => {
+  it('centres b on the spec anchors −1.5, −0.5, 0.5, 1.5 with small template offsets', () => {
     expect(QUANT_PRIOR.anchorB).toBe(-1.5)
     for (const v of VARIANTS) {
-      expect(v.offset, `${v.template}/${v.variant}`).toBeGreaterThanOrEqual(-0.8)
-      expect(v.offset).toBeLessThanOrEqual(-0.2)
+      expect(v.offset, `${v.template}/${v.variant}`).toBeGreaterThanOrEqual(-0.3)
+      expect(v.offset).toBeLessThanOrEqual(0.3)
       for (const nonInteger of [false, true]) {
         const b = quantBPrior(quantFeatures(v.template, v.variant, v.stratum, v.offset, nonInteger))
         const anchor = -1.5 + (v.stratum - 1)
         expect(b).toBeCloseTo(anchor + v.offset + (nonInteger ? 0.1 : 0), 12)
-        expect(stratumOfB(b)).toBe(v.stratum)
+        // The spec's anchors are the upper cuts of the contract's default bands (followup).
+        expect([v.stratum, v.stratum + 1]).toContain(stratumOfB(b))
       }
+    }
+    for (const s of [1, 2, 3, 4] as const) {
+      const offsets = VARIANTS.filter((v) => v.stratum === s).map((v) => v.offset)
+      expect(Math.abs(offsets.reduce((a, o) => a + o, 0) / offsets.length), `stratum ${s}`).toBeLessThanOrEqual(0.1)
     }
   })
 

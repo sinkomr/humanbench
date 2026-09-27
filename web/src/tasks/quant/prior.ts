@@ -3,14 +3,17 @@
  * until M4; the bank's `hb.gen.quant` uses the same numbers.
  *
  * b regression v0:  b = −1.5 + 1.0·(stratum − 1) + template_offset + 0.1·non_integer
- * - stratum anchors −1.5, −0.5, 0.5, 1.5 for strata 1–4 (§6.ii content labels: middle school,
- *   high school, college entry, college);
- * - `template_offset` ∈ [−0.8, −0.2] per template variant (`VariantDef.offset`, e.g. percent
- *   change −0.3 vs percent-of −0.8), a judgement of relative step count within the stratum;
+ * - stratum anchors −1.5, −0.5, 0.5, 1.5 for strata 1–4 (the M1.8 spec; §6.ii content labels:
+ *   middle school, high school, college entry, college);
+ * - `template_offset` ∈ [−0.3, 0.3] per template variant (`VariantDef.offset`, mean ≈ 0), a small
+ *   judgement of relative step count within the stratum (e.g. percent-of −0.3, percent change +0.2);
  * - `non_integer` = the key is not an integer (fractions and decimals are harder to enter), +0.1.
- * The anchors are the upper cuts of the default stratum bands (`STRATUM_B_CUTS`: stratum k is
- * [anchor − 1, anchor)), and every offset is ≤ −0.1 in total, so b always lies inside its
- * stratum's band (`stratumOfB(b) === stratum`). σ_b = 1.0.
+ * So b ∈ [anchor − 0.3, anchor + 0.4] and the stratum means sit on the spec's anchors.
+ *
+ * Known conflict (escalated as a followup, not settled here): the spec's anchors are the *upper
+ * cuts* of the contract's default bands (`STRATUM_B_CUTS`, stratum k = [anchor − 1, anchor)), so
+ * about half of the items have `stratumOfB(b) === stratum + 1`. Nothing in the contract requires
+ * the two to agree; the engine selects on b, and σ_b = 1.0 spans both bands.
  *
  * Expected time v0: E[T] = {30, 45, 60, 75} s for strata 1–4 plus the §7.4 length term
  * 4 s per 50 words of stem, so 30–90 s.
@@ -34,7 +37,7 @@ export const QUANT_TIME_BASE_S: Readonly<Record<1 | 2 | 3 | 4, number>> = Object
 
 export const QUANT_PROVENANCE =
   'quant v0 [SPEC]: b = -1.5 + 1.0*(stratum - 1) + template_offset + 0.1*non_integer; ' +
-  'anchors -1.5/-0.5/0.5/1.5 for strata 1-4, offsets in [-0.8, -0.2] keep b inside the stratum band; uncalibrated until M4'
+  'anchors -1.5/-0.5/0.5/1.5 for strata 1-4, small template offsets in [-0.3, 0.3]; uncalibrated until M4'
 
 /** The regression features of an item (§12 difficulty_prior inputs). */
 export interface QuantFeatures {

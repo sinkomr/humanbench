@@ -303,6 +303,8 @@ const CHECKS: Readonly<Record<string, Check>> = {
     rules(g) {
       const [d1, t1, d2, t2] = [num(g, 'd1'), num(g, 't1'), num(g, 'd2'), num(g, 't2')]
       return {
+        // t1 = t2 would make the time-weighted mean the plain mean of the leg speeds (no trap).
+        distinct_times: t1 !== t2,
         leg_speeds: inRange(f(d1, t1), 5, 45) && inRange(f(d2, t2), 5, 45),
         legs_differ: d1 * t2 !== d2 * t1,
         average_range: inRange(f(d1 + d2, t1 + t2), 10, 30),
@@ -440,14 +442,14 @@ const CHECKS: Readonly<Record<string, Check>> = {
   'exponent/product': {
     rules: (g) => {
       const e = num(g, 'e1') + num(g, 'e2') - num(g, 'e3')
-      return { result_exponent: e >= 0 && e <= 4 }
+      return { result_exponent: e >= 2 && e <= 4 }
     },
     solve: (_g, stem) => computeExpr(stem),
   },
   'exponent/power': {
     rules: (g) => {
       const e = num(g, 'e1') * num(g, 'e2') - num(g, 'e3')
-      return { result_exponent: e >= 0 && e <= 4 }
+      return { result_exponent: e >= 2 && e <= 4 }
     },
     solve: (_g, stem) => computeExpr(stem),
   },
@@ -551,8 +553,9 @@ const CHECKS: Readonly<Record<string, Check>> = {
   'geom_series/infinite': {
     rules: (g) => ({ convergent: Math.abs(num(g, 'p')) < num(g, 'q'), ratio_reduced: gcd(num(g, 'p'), num(g, 'q')) === 1 }),
     solve(g) {
-      // S = a + r·S  ⇒  S = a·q / (q − p); substituted back.
+      // S = a + r·S  ⇒  S = a·q / (q − p); substituted back. Only a convergent series has a sum.
       const [a, p, q] = [num(g, 'first'), num(g, 'p'), num(g, 'q')]
+      if (Math.abs(p) >= q) throw new Error('geom_series: the series diverges')
       const S = f(a * q, q - p)
       if (!S.sub(f(p, q).mul(S)).eq(f(a))) throw new Error('geom_series: substitution failed')
       return S

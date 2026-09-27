@@ -20,7 +20,11 @@ import { Fraction } from './fraction'
 /** Longest entry parsed (longer ones are rejected, so a pasted essay cannot build a huge BigInt). */
 export const MAX_ENTRY_LENGTH = 32
 
-/** Per-item tolerance (§4.2): `{ abs: 0 }` for exact answers, `{ rel: 0.005 }` where decimals are expected. */
+/**
+ * Per-item tolerance (§4.2): an absolute or a relative bound. The v0 templates use `{ abs: 0 }` for
+ * integer and fraction answers and `{ abs: 0.005 }` for their exact two-place decimals (see
+ * `templates.ts`); `{ rel: 0.005 }` is for answers that need rounding.
+ */
 export type Tolerance = { readonly abs: number } | { readonly rel: number }
 
 const DEC_RE = /^(\d+(?:\.\d*)?|\.\d+)$/

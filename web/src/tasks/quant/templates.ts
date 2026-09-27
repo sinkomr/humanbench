@@ -4,7 +4,11 @@
  * agree on every rule, range and stem below (the A1 cross-check compares them on 1,000 items).
  *
  * An item is one *variant* of a *template*; `structural_params = { template, variant }`, so the
- * family_id is the template variant (A11: isomorphs differ only in their numbers). Its `spec` is
+ * family_id is the template variant (A11: isomorphs differ only in their numbers). A variant is
+ * a stem template in A11's sense (its own fields, stem and answer route); `template` groups
+ * variants by topic. Hashing the topic alone would leave 4 families in each of strata 1–3, below
+ * the 6S per stratum that per-user family exclusion needs (§7.7), so sibling variants of one
+ * trick (recip/*, system/*) are left to a session-level rule (followup). Its `spec` is
  * `{ stem, hint, input_format, given }`: `given` holds exactly the quantities the stem shows
  * (never the solution: no roots, no x₀), and the stem is rendered from it. Numbers are integers;
  * negatives render with "−" (U+2212); `lin` renders a linear combination ("3x − y", "x^2 − 5x + 6").
@@ -15,8 +19,12 @@
  * counting. Parameters are drawn so answers are "nice": integers, short fractions, or decimals
  * with at most two places.
  *
- * Answer formats: `integer` and `fraction` keys use tolerance `{ abs: 0 }` (exact); `decimal`
- * keys use `{ rel: 0.005 }` (±0.5%, §4.2).
+ * Answer formats: `integer` and `fraction` keys use tolerance `{ abs: 0 }` (exact). `decimal`
+ * keys are exact terminating decimals with at most two places (sale prices, half-unit speeds), so
+ * they use `{ abs: 0.005 }`: exactly the entries that round to the key at two places. §4.2's
+ * `{ rel: 0.005 }` is for answers that need rounding, which no v0 template has; on these answers it
+ * would accept rounding to the dollar and classic slips (the plain mean of the leg speeds), so it
+ * is not used (review fix; recorded as a followup against the spec).
  */
 
 import type { JsonValue, Rng } from '../../engine'
@@ -52,7 +60,8 @@ export interface VariantDef {
 }
 
 export const TOL_EXACT = Object.freeze({ abs: 0 })
-export const TOL_DECIMAL = Object.freeze({ rel: 0.005 })
+/** Half a hundredth: the key has ≤ 2 decimal places, so this accepts the entries that round to it. */
+export const TOL_DECIMAL = Object.freeze({ abs: 0.005 })
 
 /** Input hints shown under the entry box, by format. */
 export const HINTS: Readonly<Record<InputFormat, string>> = Object.freeze({
@@ -160,7 +169,7 @@ const V = (d: VariantDef): VariantDef => Object.freeze(d)
 const S1: VariantDef[] = [
   // (1) multi-step arithmetic
   V({
-    template: 'arith', variant: 'mul_sub_div', stratum: 1, format: 'integer', offset: -0.6,
+    template: 'arith', variant: 'mul_sub_div', stratum: 1, format: 'integer', offset: -0.1,
     fields: { a: int(12, 49), b: int(3, 9), c: int(12, 171), d: int(3, 9) },
     draw(rng) {
       const a = rng.int(12, 49), b = rng.int(3, 9), d = rng.int(3, 9)
@@ -170,7 +179,7 @@ const S1: VariantDef[] = [
     compute: (g) => frac(num(g, 'a') * num(g, 'b') - num(g, 'c') / num(g, 'd')),
   }),
   V({
-    template: 'arith', variant: 'group_mul', stratum: 1, format: 'integer', offset: -0.7,
+    template: 'arith', variant: 'group_mul', stratum: 1, format: 'integer', offset: -0.2,
     fields: { a: int(11, 59), b: int(11, 59), c: int(3, 9), e: int(10, 99) },
     draw: (rng) =>
       until(
@@ -182,7 +191,7 @@ const S1: VariantDef[] = [
     compute: (g) => frac((num(g, 'a') + num(g, 'b')) * num(g, 'c') - num(g, 'e')),
   }),
   V({
-    template: 'arith', variant: 'div_chain', stratum: 1, format: 'integer', offset: -0.5,
+    template: 'arith', variant: 'div_chain', stratum: 1, format: 'integer', offset: 0,
     fields: { a: int(12, 180), b: int(3, 12), c: int(2, 9), e: int(5, 50) },
     draw(rng) {
       const b = rng.int(3, 12)
@@ -193,7 +202,7 @@ const S1: VariantDef[] = [
   }),
   // (1) percentages
   V({
-    template: 'percent', variant: 'of', stratum: 1, format: 'integer', offset: -0.8,
+    template: 'percent', variant: 'of', stratum: 1, format: 'integer', offset: -0.3,
     fields: { p: int(5, 95), n: int(10, 999) },
     draw(rng) {
       const p = 5 * until(() => rng.int(1, 19), (i) => i !== 10, 'a percentage')
@@ -204,7 +213,7 @@ const S1: VariantDef[] = [
     compute: (g) => frac(num(g, 'p') * num(g, 'n'), 100),
   }),
   V({
-    template: 'percent', variant: 'discount', stratum: 1, format: 'decimal', offset: -0.5,
+    template: 'percent', variant: 'discount', stratum: 1, format: 'decimal', offset: 0,
     fields: { thing: oneOf(...THINGS), price: int(12, 250), p: oneOf(5, 10, 15, 20, 25, 30, 35, 40, 45, 60, 70) },
     draw: (rng) => ({ thing: rng.pick(THINGS), price: rng.int(12, 250), p: rng.pick([5, 10, 15, 20, 25, 30, 35, 40, 45, 60, 70]) }),
     render: (g) =>
@@ -212,7 +221,7 @@ const S1: VariantDef[] = [
     compute: (g) => frac(num(g, 'price') * (100 - num(g, 'p')), 100),
   }),
   V({
-    template: 'percent', variant: 'change', stratum: 1, format: 'integer', offset: -0.3,
+    template: 'percent', variant: 'change', stratum: 1, format: 'integer', offset: 0.2,
     fields: { thing: oneOf(...THINGS), before: int(10, 400), after: int(4, 720) },
     draw(rng) {
       const thing = rng.pick(THINGS)
@@ -230,7 +239,7 @@ const S1: VariantDef[] = [
   }),
   // (1) fractions
   V({
-    template: 'fraction', variant: 'add_sub', stratum: 1, format: 'fraction', offset: -0.6,
+    template: 'fraction', variant: 'add_sub', stratum: 1, format: 'fraction', offset: -0.1,
     fields: { a: int(1, 11), b: int(2, 12), c: int(1, 11), d: int(2, 12), op: oneOf('add', 'sub') },
     draw(rng) {
       let [a, b] = properFraction(rng, 2, 12)
@@ -248,7 +257,7 @@ const S1: VariantDef[] = [
     },
   }),
   V({
-    template: 'fraction', variant: 'mul_div', stratum: 1, format: 'fraction', offset: -0.5,
+    template: 'fraction', variant: 'mul_div', stratum: 1, format: 'fraction', offset: 0,
     fields: { a: int(1, 11), b: int(2, 12), c: int(1, 11), d: int(2, 12), op: oneOf('mul', 'div') },
     draw(rng) {
       const [a, b] = properFraction(rng, 2, 12)
@@ -265,7 +274,7 @@ const S1: VariantDef[] = [
   }),
   // (1) fractions of quantities
   V({
-    template: 'fraction_of', variant: 'rest', stratum: 1, format: 'integer', offset: -0.4,
+    template: 'fraction_of', variant: 'rest', stratum: 1, format: 'integer', offset: 0.1,
     fields: { total: int(12, 960), a: int(1, 5), b: int(2, 6), c: int(1, 5), d: int(2, 6) },
     draw(rng) {
       const [a, b] = properFraction(rng, 2, 6)
@@ -278,7 +287,7 @@ const S1: VariantDef[] = [
       frac(num(g, 'total')).mul(frac(1).sub(frac(num(g, 'a'), num(g, 'b')))).mul(frac(num(g, 'c'), num(g, 'd'))),
   }),
   V({
-    template: 'fraction_of', variant: 'spent', stratum: 1, format: 'integer', offset: -0.3,
+    template: 'fraction_of', variant: 'spent', stratum: 1, format: 'integer', offset: 0.2,
     fields: { name: oneOf(...NAMES), total: int(12, 960), a: int(1, 5), b: int(2, 6), c: int(1, 5), d: int(2, 6) },
     draw(rng) {
       const name = rng.pick(NAMES)
@@ -298,7 +307,7 @@ const S1: VariantDef[] = [
 const S2: VariantDef[] = [
   // (2) ratios
   V({
-    template: 'ratio', variant: 'share', stratum: 2, format: 'integer', offset: -0.7,
+    template: 'ratio', variant: 'share', stratum: 2, format: 'integer', offset: -0.2,
     fields: { name1: oneOf(...NAMES), name2: oneOf(...NAMES), total: int(6, 680), a: int(1, 9), b: int(1, 9) },
     draw(rng) {
       const [name1, name2] = rng.shuffle(NAMES).slice(0, 2) as [string, string]
@@ -310,7 +319,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'total') * num(g, 'b'), num(g, 'a') + num(g, 'b')),
   }),
   V({
-    template: 'ratio', variant: 'total', stratum: 2, format: 'integer', offset: -0.6,
+    template: 'ratio', variant: 'total', stratum: 2, format: 'integer', offset: -0.1,
     fields: { colour1: oneOf(...COLOURS), colour2: oneOf(...COLOURS), a: int(1, 9), b: int(1, 9), count: int(2, 270) },
     draw(rng) {
       const [colour1, colour2] = rng.shuffle(COLOURS).slice(0, 2) as [string, string]
@@ -322,7 +331,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'count') * (num(g, 'a') + num(g, 'b')), num(g, 'a')),
   }),
   V({
-    template: 'ratio', variant: 'three_way', stratum: 2, format: 'integer', offset: -0.5,
+    template: 'ratio', variant: 'three_way', stratum: 2, format: 'integer', offset: 0,
     fields: { total: int(8, 810), a: int(1, 9), b: int(1, 9), c: int(1, 9) },
     draw(rng) {
       const [a, b, c] = until(
@@ -339,7 +348,7 @@ const S2: VariantDef[] = [
   }),
   // (2) rates
   V({
-    template: 'rate', variant: 'unit', stratum: 2, format: 'integer', offset: -0.7,
+    template: 'rate', variant: 'unit', stratum: 2, format: 'integer', offset: -0.2,
     fields: { setting: oneOf('bottles', 'pages', 'labels'), count: int(6, 480), t1: int(2, 12), t2: int(3, 30) },
     draw(rng) {
       const setting = rng.pick(['bottles', 'pages', 'labels'])
@@ -361,7 +370,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'count') * num(g, 't2'), num(g, 't1')),
   }),
   V({
-    template: 'rate', variant: 'avg_speed', stratum: 2, format: 'decimal', offset: -0.3,
+    template: 'rate', variant: 'avg_speed', stratum: 2, format: 'decimal', offset: 0.2,
     fields: { d1: int(1, 180), t1: int(1, 4), d2: int(1, 180), t2: int(1, 4) },
     draw: (rng) =>
       until(
@@ -374,7 +383,8 @@ const S2: VariantDef[] = [
           const d1 = rng.int(Math.max(1, 5 * t1), Math.max(1, Math.min(45 * t1, D - 1)))
           return { d1, t1, d2: D - d1, t2 }
         },
-        (g) => g.d2 >= 5 * g.t2 && g.d2 <= 45 * g.t2 && g.d1 * g.t2 !== g.d2 * g.t1 && g.d1 < 181 && g.d2 < 181,
+        // t1 ≠ t2, or the time-weighted mean is the plain mean of the leg speeds (no trap).
+        (g) => g.t1 !== g.t2 && g.d2 >= 5 * g.t2 && g.d2 <= 45 * g.t2 && g.d1 * g.t2 !== g.d2 * g.t1 && g.d1 < 181 && g.d2 < 181,
         'avg_speed',
       ),
     render: (g) =>
@@ -382,7 +392,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'd1') + num(g, 'd2'), num(g, 't1') + num(g, 't2')),
   }),
   V({
-    template: 'rate', variant: 'together', stratum: 2, format: 'fraction', offset: -0.2,
+    template: 'rate', variant: 'together', stratum: 2, format: 'fraction', offset: 0.3,
     fields: { setting: oneOf('pipes', 'painters'), a: int(2, 24), b: int(2, 24) },
     draw(rng) {
       const setting = rng.pick(['pipes', 'painters'])
@@ -399,7 +409,7 @@ const S2: VariantDef[] = [
   }),
   // (2) simple linear equations
   V({
-    template: 'linear_eq', variant: 'both_sides', stratum: 2, format: 'integer', offset: -0.6,
+    template: 'linear_eq', variant: 'both_sides', stratum: 2, format: 'integer', offset: -0.1,
     fields: { a: int(2, 12), b: int(-30, 30, true), c: int(1, 11), d: int(-200, 200, true) },
     draw: (rng) =>
       until(
@@ -418,7 +428,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'd') - num(g, 'b'), num(g, 'a') - num(g, 'c')),
   }),
   V({
-    template: 'linear_eq', variant: 'brackets', stratum: 2, format: 'integer', offset: -0.4,
+    template: 'linear_eq', variant: 'brackets', stratum: 2, format: 'integer', offset: 0.1,
     fields: { a: int(2, 9), b: int(-12, 12, true), c: int(1, 12), d: int(-300, 300, true) },
     draw: (rng) =>
       until(
@@ -437,7 +447,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'd') - num(g, 'a') * num(g, 'b'), num(g, 'a') - num(g, 'c')),
   }),
   V({
-    template: 'linear_eq', variant: 'over', stratum: 2, format: 'integer', offset: -0.8,
+    template: 'linear_eq', variant: 'over', stratum: 2, format: 'integer', offset: -0.3,
     fields: { p: int(2, 9), b: int(-20, 20, true), c: int(-40, 40) },
     draw(rng) {
       const p = rng.int(2, 9)
@@ -449,7 +459,7 @@ const S2: VariantDef[] = [
   }),
   // (2) averages
   V({
-    template: 'mean', variant: 'missing', stratum: 2, format: 'integer', offset: -0.6,
+    template: 'mean', variant: 'missing', stratum: 2, format: 'integer', offset: -0.1,
     fields: { count: int(4, 7), mean: int(8, 40), known: { kind: 'ints', minLen: 3, maxLen: 6, lo: 1, hi: 60 } },
     draw: (rng) =>
       until(
@@ -469,7 +479,7 @@ const S2: VariantDef[] = [
     compute: (g) => frac(num(g, 'count') * num(g, 'mean') - nums(g, 'known').reduce((s, v) => s + v, 0)),
   }),
   V({
-    template: 'mean', variant: 'target', stratum: 2, format: 'integer', offset: -0.5,
+    template: 'mean', variant: 'target', stratum: 2, format: 'integer', offset: 0,
     fields: { name: oneOf(...NAMES), scores: { kind: 'ints', minLen: 3, maxLen: 5, lo: 50, hi: 100 }, mean: int(60, 95) },
     draw: (rng) =>
       until(
@@ -547,14 +557,14 @@ function vietaRoots(a: number, b: number, c: number): [Fraction, Fraction] {
 const S3: VariantDef[] = [
   // (3) systems of two linear equations
   V({
-    template: 'system', variant: 'solve', stratum: 3, format: 'integer', offset: -0.6,
+    template: 'system', variant: 'solve', stratum: 3, format: 'integer', offset: -0.1,
     fields: { ...SYSTEM_FIELDS, ask: oneOf('x', 'y') },
     draw: (rng) => ({ ...systemGiven(drawSystem(rng)), ask: rng.pick(['x', 'y']) }),
     render: (g) => `If ${eqText(g, 1)} and ${eqText(g, 2)}, what is the value of ${str(g, 'ask')}?`,
     compute: (g) => eliminate(g)[str(g, 'ask') === 'x' ? 0 : 1],
   }),
   V({
-    template: 'system', variant: 'sum', stratum: 3, format: 'integer', offset: -0.5,
+    template: 'system', variant: 'sum', stratum: 3, format: 'integer', offset: 0,
     fields: SYSTEM_FIELDS,
     draw: (rng) => systemGiven(drawSystem(rng)),
     render: (g) => `If ${eqText(g, 1)} and ${eqText(g, 2)}, what is the value of x + y?`,
@@ -564,7 +574,7 @@ const S3: VariantDef[] = [
     },
   }),
   V({
-    template: 'system', variant: 'product', stratum: 3, format: 'integer', offset: -0.4,
+    template: 'system', variant: 'product', stratum: 3, format: 'integer', offset: 0.1,
     fields: SYSTEM_FIELDS,
     draw: (rng) => systemGiven(drawSystem(rng)),
     render: (g) => `If ${eqText(g, 1)} and ${eqText(g, 2)}, what is the value of xy?`,
@@ -575,7 +585,7 @@ const S3: VariantDef[] = [
   }),
   // (3) quadratics with integer roots
   V({
-    template: 'quadratic', variant: 'root', stratum: 3, format: 'integer', offset: -0.6,
+    template: 'quadratic', variant: 'root', stratum: 3, format: 'integer', offset: -0.1,
     fields: { b: int(-30, 30), c: int(-225, 225), ask: oneOf('larger', 'smaller') },
     draw(rng) {
       const [r, s] = drawRoots(rng, -15, 15)
@@ -586,7 +596,7 @@ const S3: VariantDef[] = [
     compute: (g) => vietaRoots(1, num(g, 'b'), num(g, 'c'))[str(g, 'ask') === 'larger' ? 1 : 0],
   }),
   V({
-    template: 'quadratic', variant: 'scaled', stratum: 3, format: 'integer', offset: -0.5,
+    template: 'quadratic', variant: 'scaled', stratum: 3, format: 'integer', offset: 0,
     fields: { a: int(2, 4), b: int(-80, 80), c: int(-400, 400), ask: oneOf('larger', 'smaller') },
     draw(rng) {
       const a = rng.int(2, 4)
@@ -598,7 +608,7 @@ const S3: VariantDef[] = [
     compute: (g) => vietaRoots(num(g, 'a'), num(g, 'b'), num(g, 'c'))[str(g, 'ask') === 'larger' ? 1 : 0],
   }),
   V({
-    template: 'quadratic', variant: 'sum_squares', stratum: 3, format: 'integer', offset: -0.3,
+    template: 'quadratic', variant: 'sum_squares', stratum: 3, format: 'integer', offset: 0.2,
     fields: { b: int(-30, 30), c: int(-225, 225) },
     draw(rng) {
       const [r, s] = drawRoots(rng, -15, 15)
@@ -614,12 +624,13 @@ const S3: VariantDef[] = [
   }),
   // (3) exponent rules
   V({
-    template: 'exponent', variant: 'product', stratum: 3, format: 'integer', offset: -0.7,
+    template: 'exponent', variant: 'product', stratum: 3, format: 'integer', offset: -0.2,
     fields: { base: int(2, 7), e1: int(2, 12), e2: int(2, 12), e3: int(2, 24) },
     draw: (rng) =>
       until(
         () => {
-          const [base, e1, e2, e] = [rng.int(2, 7), rng.int(2, 12), rng.int(2, 12), rng.int(0, 4)]
+          // The result is base^e with e in 2..4, never 1 or the base itself.
+          const [base, e1, e2, e] = [rng.int(2, 7), rng.int(2, 12), rng.int(2, 12), rng.int(2, 4)]
           return { base, e1, e2, e3: e1 + e2 - e }
         },
         (g) => g.e3 >= 2,
@@ -630,12 +641,12 @@ const S3: VariantDef[] = [
     compute: (g) => ipow(num(g, 'base'), num(g, 'e1') + num(g, 'e2') - num(g, 'e3')),
   }),
   V({
-    template: 'exponent', variant: 'power', stratum: 3, format: 'integer', offset: -0.6,
+    template: 'exponent', variant: 'power', stratum: 3, format: 'integer', offset: -0.1,
     fields: { base: int(2, 7), e1: int(2, 5), e2: int(2, 5), e3: int(2, 25) },
     draw: (rng) =>
       until(
         () => {
-          const [base, e1, e2, e] = [rng.int(2, 7), rng.int(2, 5), rng.int(2, 5), rng.int(0, 4)]
+          const [base, e1, e2, e] = [rng.int(2, 7), rng.int(2, 5), rng.int(2, 5), rng.int(2, 4)]
           return { base, e1, e2, e3: e1 * e2 - e }
         },
         (g) => g.e3 >= 2,
@@ -645,7 +656,7 @@ const S3: VariantDef[] = [
     compute: (g) => ipow(num(g, 'base'), num(g, 'e1') * num(g, 'e2') - num(g, 'e3')),
   }),
   V({
-    template: 'exponent', variant: 'root', stratum: 3, format: 'fraction', offset: -0.4,
+    template: 'exponent', variant: 'root', stratum: 3, format: 'fraction', offset: 0.1,
     fields: { base: int(4, 729), p: oneOf(1, 2, 3, 4), q: oneOf(2, 3), negative: oneOf(false, true) },
     draw(rng) {
       const q = rng.pick([2, 3])
@@ -662,7 +673,7 @@ const S3: VariantDef[] = [
     },
   }),
   V({
-    template: 'exponent', variant: 'solve', stratum: 3, format: 'integer', offset: -0.5,
+    template: 'exponent', variant: 'solve', stratum: 3, format: 'integer', offset: 0,
     fields: { base: oneOf(2, 3, 5, 7), m: int(1, 4), k: int(-5, 5), value: int(2, 10_000_000) },
     draw: (rng) =>
       until(
@@ -674,7 +685,11 @@ const S3: VariantDef[] = [
         (g) => g.value >= 2 && g.value <= 10_000_000,
         'exponent/solve',
       ),
-    render: (g) => `Solve for x: ${num(g, 'base')}^(${lin([[num(g, 'm'), 'x'], [num(g, 'k'), '']])}) = ${num(g, 'value')}.`,
+    render(g) {
+      // "2^x" for the bare exponent x, else "2^(3x − 1)".
+      const e = lin([[num(g, 'm'), 'x'], [num(g, 'k'), '']])
+      return `Solve for x: ${num(g, 'base')}^${e === 'x' ? e : `(${e})`} = ${num(g, 'value')}.`
+    },
     compute(g) {
       const E = Math.round(Math.log(num(g, 'value')) / Math.log(num(g, 'base')))
       return frac(E - num(g, 'k'), num(g, 'm'))
@@ -682,7 +697,7 @@ const S3: VariantDef[] = [
   }),
   // (3) simple probability, exact fractions
   V({
-    template: 'probability', variant: 'both', stratum: 3, format: 'fraction', offset: -0.5,
+    template: 'probability', variant: 'both', stratum: 3, format: 'fraction', offset: 0,
     fields: { red: int(2, 9), blue: int(2, 9), green: int(2, 9), colour: oneOf('red', 'blue', 'green') },
     draw: (rng) => ({ red: rng.int(2, 9), blue: rng.int(2, 9), green: rng.int(2, 9), colour: rng.pick(['red', 'blue', 'green']) }),
     render: (g) =>
@@ -694,7 +709,7 @@ const S3: VariantDef[] = [
     },
   }),
   V({
-    template: 'probability', variant: 'same', stratum: 3, format: 'fraction', offset: -0.2,
+    template: 'probability', variant: 'same', stratum: 3, format: 'fraction', offset: 0.3,
     fields: { red: int(2, 9), blue: int(2, 9), green: int(2, 9) },
     draw: (rng) => ({ red: rng.int(2, 9), blue: rng.int(2, 9), green: rng.int(2, 9) }),
     render: (g) =>
@@ -706,7 +721,7 @@ const S3: VariantDef[] = [
     },
   }),
   V({
-    template: 'probability', variant: 'dice', stratum: 3, format: 'fraction', offset: -0.6,
+    template: 'probability', variant: 'dice', stratum: 3, format: 'fraction', offset: -0.1,
     fields: { faces: oneOf(4, 6, 8, 10, 12), total: int(3, 23), at_least: oneOf(false, true) },
     draw(rng) {
       const faces = rng.pick([4, 6, 8, 10, 12])
@@ -765,18 +780,18 @@ const LETTERS = ['A', 'B', 'C', 'D'] as const
 
 const S4: VariantDef[] = [
   // (4) symmetric-function tricks: x ± 1/x = k (§14.6 example 3)
-  recip('plus2', 3, 30, -0.8, 'If x + 1/x = {k}, what is the value of x^2 + 1/x^2?'),
-  recip('plus3', 3, 20, -0.5, 'If x + 1/x = {k}, what is the value of x^3 + 1/x^3?'),
-  recip('plus4', 3, 12, -0.4, 'If x + 1/x = {k}, what is the value of x^4 + 1/x^4?'),
-  recip('minus2', 1, 30, -0.7, 'If x − 1/x = {k}, what is the value of x^2 + 1/x^2?'),
-  recip('minus3', 1, 20, -0.5, 'If x − 1/x = {k}, what is the value of x^3 − 1/x^3?'),
+  recip('plus2', 3, 30, -0.3, 'If x + 1/x = {k}, what is the value of x^2 + 1/x^2?'),
+  recip('plus3', 3, 20, 0, 'If x + 1/x = {k}, what is the value of x^3 + 1/x^3?'),
+  recip('plus4', 3, 12, 0.1, 'If x + 1/x = {k}, what is the value of x^4 + 1/x^4?'),
+  recip('minus2', 1, 30, -0.2, 'If x − 1/x = {k}, what is the value of x^2 + 1/x^2?'),
+  recip('minus3', 1, 20, 0, 'If x − 1/x = {k}, what is the value of x^3 − 1/x^3?'),
   // (4) symmetric functions of a, b from a + b and ab
-  symmetric('sum_sq', 12, 40, -0.7, 'a^2 + b^2', (s, p) => s * s - 2 * p),
-  symmetric('diff_sq', 12, 40, -0.6, '(a − b)^2', (s, p) => s * s - 4 * p),
-  symmetric('sum_cube', 9, 30, -0.4, 'a^3 + b^3', (s, p) => s ** 3 - 3 * p * s),
+  symmetric('sum_sq', 12, 40, -0.2, 'a^2 + b^2', (s, p) => s * s - 2 * p),
+  symmetric('diff_sq', 12, 40, -0.1, '(a − b)^2', (s, p) => s * s - 4 * p),
+  symmetric('sum_cube', 9, 30, 0.1, 'a^3 + b^3', (s, p) => s ** 3 - 3 * p * s),
   // (4) arithmetic series
   V({
-    template: 'arith_series', variant: 'sum', stratum: 4, format: 'integer', offset: -0.6,
+    template: 'arith_series', variant: 'sum', stratum: 4, format: 'integer', offset: -0.1,
     fields: { first: int(-20, 30), diff: int(2, 12), count: int(8, 50) },
     draw: (rng) => ({ first: rng.int(-20, 30), diff: rng.int(2, 12), count: rng.int(8, 50) }),
     render: (g) =>
@@ -784,7 +799,7 @@ const S4: VariantDef[] = [
     compute: (g) => frac(num(g, 'count') * (apTerm(g, 0) + apTerm(g, num(g, 'count') - 1)), 2),
   }),
   V({
-    template: 'arith_series', variant: 'first_n', stratum: 4, format: 'integer', offset: -0.5,
+    template: 'arith_series', variant: 'first_n', stratum: 4, format: 'integer', offset: 0,
     fields: { first: int(-30, 30), diff: int(-9, 9), count: int(10, 60) },
     draw: (rng) => ({
       first: rng.int(-30, 30),
@@ -796,7 +811,7 @@ const S4: VariantDef[] = [
     compute: (g) => frac(num(g, 'count') * (2 * num(g, 'first') + (num(g, 'count') - 1) * num(g, 'diff')), 2),
   }),
   V({
-    template: 'arith_series', variant: 'multiples', stratum: 4, format: 'integer', offset: -0.3,
+    template: 'arith_series', variant: 'multiples', stratum: 4, format: 'integer', offset: 0.2,
     fields: { m: int(3, 15), lo: int(10, 200), hi: int(25, 1100) },
     draw: (rng) =>
       until(
@@ -818,7 +833,7 @@ const S4: VariantDef[] = [
   }),
   // (4) geometric series
   V({
-    template: 'geom_series', variant: 'finite', stratum: 4, format: 'integer', offset: -0.5,
+    template: 'geom_series', variant: 'finite', stratum: 4, format: 'integer', offset: 0,
     fields: { first: int(1, 30), ratio: oneOf(-3, -2, 2, 3, 4, 5), count: int(5, 10) },
     draw: (rng) =>
       until(
@@ -831,7 +846,7 @@ const S4: VariantDef[] = [
     compute: (g) => frac(num(g, 'first') * (num(g, 'ratio') ** num(g, 'count') - 1), num(g, 'ratio') - 1),
   }),
   V({
-    template: 'geom_series', variant: 'infinite', stratum: 4, format: 'fraction', offset: -0.4,
+    template: 'geom_series', variant: 'infinite', stratum: 4, format: 'fraction', offset: 0.1,
     fields: { first: int(2, 90), p: int(-4, 4, true), q: int(2, 5) },
     draw(rng) {
       const q = rng.int(2, 5)
@@ -846,7 +861,7 @@ const S4: VariantDef[] = [
   }),
   // (4) modular arithmetic
   V({
-    template: 'modular', variant: 'power', stratum: 4, format: 'integer', offset: -0.4,
+    template: 'modular', variant: 'power', stratum: 4, format: 'integer', offset: 0.1,
     fields: { base: int(2, 30), exp: int(10, 500), mod: int(3, 13) },
     draw: (rng) =>
       until(() => ({ base: rng.int(2, 30), exp: rng.int(10, 500), mod: rng.int(3, 13) }), (g) => g.base % g.mod !== 0, 'modular/power'),
@@ -854,14 +869,14 @@ const S4: VariantDef[] = [
     compute: (g) => frac(cyclePowMod(num(g, 'base'), num(g, 'exp'), num(g, 'mod'))),
   }),
   V({
-    template: 'modular', variant: 'last_digit', stratum: 4, format: 'integer', offset: -0.6,
+    template: 'modular', variant: 'last_digit', stratum: 4, format: 'integer', offset: -0.1,
     fields: { base: int(2, 99), exp: int(10, 2026) },
     draw: (rng) => ({ base: 10 * rng.int(0, 9) + rng.pick([2, 3, 4, 7, 8, 9]), exp: rng.int(10, 2026) }),
     render: (g) => `What is the last digit of ${num(g, 'base')}^${num(g, 'exp')}?`,
     compute: (g) => frac(cyclePowMod(num(g, 'base'), num(g, 'exp'), 10)),
   }),
   V({
-    template: 'modular', variant: 'congruence', stratum: 4, format: 'integer', offset: -0.2,
+    template: 'modular', variant: 'congruence', stratum: 4, format: 'integer', offset: 0.3,
     fields: { a: int(2, 16), c: int(1, 16), mod: int(5, 17) },
     draw(rng) {
       const mod = rng.int(5, 17)
@@ -885,7 +900,7 @@ const S4: VariantDef[] = [
   }),
   // (4) counting
   V({
-    template: 'counting', variant: 'choose', stratum: 4, format: 'integer', offset: -0.6,
+    template: 'counting', variant: 'choose', stratum: 4, format: 'integer', offset: -0.1,
     fields: { setting: oneOf('committee', 'books', 'toppings'), n: int(6, 20), k: int(2, 6) },
     draw(rng) {
       const n = rng.int(6, 20)
@@ -905,7 +920,7 @@ const S4: VariantDef[] = [
     compute: (g) => frac(nCr(num(g, 'n'), num(g, 'k'))),
   }),
   V({
-    template: 'counting', variant: 'two_groups', stratum: 4, format: 'integer', offset: -0.4,
+    template: 'counting', variant: 'two_groups', stratum: 4, format: 'integer', offset: 0.1,
     fields: { adults: int(4, 12), children: int(4, 12), pick_adults: int(1, 11), pick_children: int(1, 11) },
     draw: (rng) =>
       until(
@@ -924,7 +939,7 @@ const S4: VariantDef[] = [
     compute: (g) => frac(nCr(num(g, 'adults'), num(g, 'pick_adults')) * nCr(num(g, 'children'), num(g, 'pick_children'))),
   }),
   V({
-    template: 'counting', variant: 'arrange', stratum: 4, format: 'integer', offset: -0.3,
+    template: 'counting', variant: 'arrange', stratum: 4, format: 'integer', offset: 0.2,
     fields: { counts: { kind: 'ints', minLen: 2, maxLen: 4, lo: 1, hi: 4 } },
     draw: (rng) =>
       until(
@@ -986,6 +1001,6 @@ export function variantsOf(template: string): VariantDef[] {
   return VARIANTS.filter((v) => v.template === template)
 }
 
-/** The exact tolerance of a format: `{ abs: 0 }` for integer and fraction answers, `{ rel: 0.005 }` for decimals. */
+/** The tolerance of a format: `{ abs: 0 }` for integer and fraction answers, `{ abs: 0.005 }` for decimals. */
 export const toleranceFor = (format: InputFormat): { abs: number } | { rel: number } =>
   format === 'decimal' ? { ...TOL_DECIMAL } : { ...TOL_EXACT }
