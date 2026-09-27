@@ -268,6 +268,13 @@ describe('nearestPD', () => {
     expect(symmetricEigen(out).values[0]).toBeGreaterThanOrEqual(c.floor - NEAREST_PD_TOL)
   })
 
+  it('is idempotent on every golden output, bit for bit (as bank nearest_pd)', () => {
+    for (const c of scoringV1.nearest_pd) {
+      const once = nearestPD(c.input, c.floor)
+      expect(nearestPD(once, c.floor)).toEqual(once)
+    }
+  })
+
   it('shrinks toward I when the rescaling leaves the smallest eigenvalue below the floor', () => {
     // Clipping lifts the diagonal above 1; rescaling back to 1 pulls λ_min below the floor again.
     const chain = [

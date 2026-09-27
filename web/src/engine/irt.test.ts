@@ -19,7 +19,10 @@ import {
   logLogistic,
   observationInfo,
   observationLoglik,
+  observationObservedInfo,
   observationScore,
+  observedInfo3pl,
+  observedInfoGrm,
   p2pl,
   p3pl,
   score2pl,
@@ -427,5 +430,118 @@ describe('observation dispatch', () => {
       expect(() => observationScore(obs, 0)).toThrow(RangeError)
       expect(() => observationInfo(obs, 0)).toThrow(RangeError)
     }
+  })
+})
+
+describe('observed information (the MAP Newton curvature, ROADMAP A2)', () => {
+  it('is −d² log-likelihood/dθ² for the 3PL (both responses) and the GRM (every category)', () => {
+    fc.assert(
+      fc.property(theta, disc, diff, guess, binary, (t, a, b, c, y) => {
+        close(observedInfo3pl(t, a, b, c, y), -d2((u) => loglik3pl(u, a, b, c, y), t), 1e-4)
+      }),
+    )
+    fc.assert(
+      fc.property(theta, grmArb, (t, [a, bs, y]) => {
+        close(observedInfoGrm(t, a, bs, y), -d2((u) => loglikGrm(u, a, bs, y), t), 1e-4)
+      }),
+    )
+  })
+
+  it('averages to the expected information: Σ_y P(y)·observed(y) = info', () => {
+    fc.assert(
+      fc.property(theta, disc, diff, guess, (t, a, b, c) => {
+        const P = p3pl(t, a, b, c)
+        close(P * observedInfo3pl(t, a, b, c, 1) + (1 - P) * observedInfo3pl(t, a, b, c, 0), info3pl(t, a, b, c), 1e-10)
+      }),
+    )
+    fc.assert(
+      fc.property(theta, grmArb, (t, [a, bs]) => {
+        const probs = grmProbs(t, a, bs)
+        const e = probs.reduce((s, p, j) => s + p * observedInfoGrm(t, a, bs, j), 0)
+        close(e, infoGrm(t, a, bs), 1e-10)
+      }),
+    )
+  })
+
+  it('3PL: y = 0 gives the 2PL value; y = 1 is negative exactly where σ(z)·(u + 2c) < c', () => {
+    fc.assert(
+      fc.property(theta, disc, diff, guess, (t, a, b, c) => {
+        expect(observedInfo3pl(t, a, b, c, 0)).toBe(info2pl(t, a, b))
+        const s = logistic(a * (t - b))
+        const margin = s * ((1 - c) * s + 2 * c) - c
+        const o = observedInfo3pl(t, a, b, c, 1)
+        if (margin < -1e-12) expect(o).toBeLessThan(0)
+        if (margin > 1e-12) expect(o).toBeGreaterThan(0)
+      }),
+    )
+    // A correct answer far below b: the 3PL likelihood is not concave there.
+    expect(observedInfo3pl(-2.5, 2, 0.5, 1 / 3, 1)).toBeLessThan(0)
+  })
+
+  it('GRM: never negative, and with one threshold it is the 2PL information', () => {
+    fc.assert(
+      fc.property(theta, grmArb, (t, [a, bs, y]) => {
+        expect(observedInfoGrm(t, a, bs, y)).toBeGreaterThanOrEqual(0)
+      }),
+    )
+    fc.assert(
+      fc.property(theta, disc, diff, fc.constantFrom(0, 1), (t, a, b, y) => {
+        close(observedInfoGrm(t, a, [b], y), info2pl(t, a, b), 1e-15)
+      }),
+    )
+  })
+
+  it('matches bank hb.calib.irt observed_info_3pl / observed_info_grm spot values', () => {
+    // Values printed by the Python reference (repr), ROADMAP A2.
+    const threePl: [number, number, number, number, 0 | 1, number][] = [
+      [0.3, 1.2, -0.4, 0.25, 1, 0.17666937825765616],
+      [0.3, 1.2, -0.4, 0.25, 0, 0.3032806435733745],
+      [-2.5, 2.0, 0.5, 1 / 3, 1, -0.019441491703567227],
+      [-1.0, 0.8, 0.2, 0.5, 1, -0.029046388720791586],
+      [1.7, 1.5, 0.3, 0.25, 1, 0.15383779181810878],
+    ]
+    for (const [t, a, b, c, y, want] of threePl) close(observedInfo3pl(t, a, b, c, y), want, 1e-14)
+    const grm: [number, number, number[], number, number][] = [
+      [0.3, 1.5, [-1, 0, 1.2], 0, 0.24533959309122047],
+      [0.3, 1.5, [-1, 0, 1.2], 1, 0.7802972528912615],
+      [0.3, 1.5, [-1, 0, 1.2], 2, 0.9028051238848869],
+      [0.3, 1.5, [-1, 0, 1.2], 3, 0.36784746408484587],
+      [-0.7, 2.1, [0.9], 1, 0.14307067763624373],
+      [-0.7, 2.1, [0.9], 0, 0.14307067763624373],
+    ]
+    for (const [t, a, bs, y, want] of grm) close(observedInfoGrm(t, a, bs, y), want, 1e-14)
+  })
+
+  it('stays finite (0 in the limit) at extreme |z|', () => {
+    zero(observedInfo3pl(-3000, 100, 50, 0.25, 1))
+    zero(observedInfo3pl(3000, 100, -50, 0.25, 0))
+    zero(observedInfoGrm(5000, 100, [-60, 0, 60], 1))
+    for (const T of [1e4, -1e4, 1e6, -1e6]) {
+      for (const y of [0, 1] as const) expect(Number.isFinite(observedInfo3pl(T, 1, 0, 0.25, y))).toBe(true)
+      for (const y of [0, 1, 2]) expect(Number.isFinite(observedInfoGrm(T, 1.5, [-1, 1], y))).toBe(true)
+    }
+  })
+
+  it('rejects invalid parameters', () => {
+    expect(() => observedInfo3pl(0, 1, 0, 1, 1)).toThrow(RangeError)
+    expect(() => observedInfo3pl(0, 1, 0, 0.25, 2 as unknown as 0 | 1)).toThrow(RangeError)
+    expect(() => observedInfoGrm(0, 1, [0.5, 0.2], 0)).toThrow(RangeError)
+    expect(() => observedInfoGrm(0, -1, [0.5], 0)).toThrow(RangeError)
+    expect(() => observedInfoGrm(0, 1, [0.5], 2)).toThrow(RangeError)
+    expect(() => observedInfoGrm(0, 1, [0.5], 0.5)).toThrow(RangeError)
+  })
+
+  it('dispatches by kind: 2PL and Gaussian equal the expected information', () => {
+    const t = -0.4
+    const o2: Observation = { kind: '2pl', axis: 'MAT', a: 1.3, b: 0.2, y: 1 }
+    const o3: Observation = { kind: '3pl', axis: 'SPA', a: 1.1, b: 0.4, c: 0.25, y: 1 }
+    const og: Observation = { kind: 'grm', axis: 'WM', a: 1.5, b: [-1, 0, 1.2], y: 2 }
+    const on: Observation = { kind: 'gaussian', axis: 'RT', lam: -1.3, d: 0.1, sigma: 0.4, x: -0.2 }
+    expect(observationObservedInfo(o2, t)).toBe(observationInfo(o2, t))
+    expect(observationObservedInfo(on, t)).toBe(observationInfo(on, t))
+    expect(observationObservedInfo(o3, t)).toBe(observedInfo3pl(t, 1.1, 0.4, 0.25, 1))
+    expect(observationObservedInfo(og, t)).toBe(observedInfoGrm(t, 1.5, [-1, 0, 1.2], 2))
+    const bad = { kind: '2pl_testlet', axis: 'LG', a: 1, b: 0, y: 1 } as unknown as Observation
+    expect(() => observationObservedInfo(bad, t)).toThrow(RangeError)
   })
 })

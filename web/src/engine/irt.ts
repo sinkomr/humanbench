@@ -12,8 +12,12 @@
  * Parameters outside these domains (c ∉ (0, 1), σ ≤ 0, unordered GRM thresholds, y outside the
  * category set, an unknown observation kind) throw a RangeError instead of returning NaN.
  *
- * "Score" is d log p(y | θ)/dθ. "Information" is the expected (Fisher) information used by
- * Fisher scoring in the MAP (§7.2); for 2PL and Gaussian terms it equals the observed information.
+ * "Score" is d log p(y | θ)/dθ. "Information" (`info*`) is the expected (Fisher) information,
+ * which the Laplace covariance uses (§7.2) and the MAP falls back to where the observed information
+ * is not usable. "Observed information" (`observedInfo*`) is −d² log p(y | θ)/dθ², which the MAP's
+ * Newton step uses (ROADMAP A2). For 2PL and Gaussian terms the two coincide. For GRM terms the
+ * observed information is never negative (the logistic GRM log-likelihood is concave in θ); for a
+ * correct 3PL response it is negative where σ(z)·(u + 2c) < c with u = (1 − c)·σ(z), i.e. at low θ.
  *
  * Numerical stability: nothing overflows or divides by zero for logits |z| = |a(θ − b)| up to
  * 1e4 and beyond. 3PL quantities are written in σ(z), σ(−z) rather than differences like P − c,
@@ -117,6 +121,23 @@ export function info3pl(theta: number, a: number, b: number, c: number): number 
   return (a * a * s * s * (1 - c) * logistic(-z)) / p
 }
 
+/**
+ * Observed information −d² log P(y | θ)/dθ² under the 3PL (bank `observed_info_3pl`); can be
+ * negative for y = 1. y = 0: a²·σ(z)·σ(−z) (as for the 2PL). y = 1: with s = σ(z),
+ * u = (1 − c)·s and P = c + u, a²·u·σ(−z)·(s·(u + 2c) − c)/P².
+ */
+export function observedInfo3pl(theta: number, a: number, b: number, c: number, y: 0 | 1): number {
+  check3pl(c)
+  checkBinary(y)
+  const z = a * (theta - b)
+  const s = logistic(z)
+  const q = logistic(-z)
+  if (y === 0) return a * a * s * q
+  const u = (1 - c) * s
+  const p = c + u
+  return (a * a * u * q * (s * (u + 2 * c) - c)) / (p * p)
+}
+
 // ---------------------------------------------------------------------------------- GRM
 
 /** Throws unless a > 0 and the thresholds are non-empty, finite and strictly increasing. */
@@ -187,6 +208,24 @@ export function infoGrm(theta: number, a: number, thresholds: readonly number[])
   let s = 0
   for (let j = 0; j < probs.length; j++) s += probs[j]! * scores[j]! * scores[j]!
   return s
+}
+
+/**
+ * Observed information −d² log P(y | θ)/dθ² = a²·(v_y + v_{y+1}) ≥ 0 under the GRM (bank
+ * `observed_info_grm`), with v_j = σ(z_j)·σ(−z_j), z_j = a(θ − b_j) for the inner boundaries
+ * j = 1..m and v_0 = v_{m+1} = 0 (the boundaries P*(≥0) = 1 and P*(≥m+1) = 0 are constant).
+ */
+export function observedInfoGrm(theta: number, a: number, thresholds: readonly number[], y: number): number {
+  checkGrm(a, thresholds)
+  const m = thresholds.length
+  checkCategory(y, m)
+  let total = 0
+  for (let j = y; j <= y + 1; j++) {
+    if (j < 1 || j > m) continue
+    const z = a * (theta - thresholds[j - 1]!)
+    total += logistic(z) * logistic(-z)
+  }
+  return a * a * total
 }
 
 // ----------------------------------------------------------------------------- Gaussian
@@ -265,6 +304,25 @@ export function observationInfo(obs: Observation, theta: number): number {
       return info3pl(theta, obs.a, obs.b, obs.c)
     case 'grm':
       return infoGrm(theta, obs.a, obs.b)
+    case 'gaussian':
+      return infoGaussian(obs.lam, obs.sigma)
+    default:
+      return unknownKind(obs)
+  }
+}
+
+/**
+ * Observed information −d² log p(obs | θ_axis)/dθ_axis² of one observation, the MAP's Newton
+ * curvature (ROADMAP A2). Equal to {@link observationInfo} for 2PL and Gaussian terms.
+ */
+export function observationObservedInfo(obs: Observation, theta: number): number {
+  switch (obs.kind) {
+    case '2pl':
+      return info2pl(theta, obs.a, obs.b)
+    case '3pl':
+      return observedInfo3pl(theta, obs.a, obs.b, obs.c, obs.y)
+    case 'grm':
+      return observedInfoGrm(theta, obs.a, obs.b, obs.y)
     case 'gaussian':
       return infoGaussian(obs.lam, obs.sigma)
     default:
