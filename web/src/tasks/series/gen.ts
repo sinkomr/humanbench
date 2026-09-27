@@ -17,6 +17,7 @@ import {
   TERM_BOUND,
   analyse,
   inRuleDomain,
+  keyConfirmations,
   mod,
   positionLetter,
   uniquenessChecks,
@@ -53,7 +54,6 @@ const MENUS: Readonly<Record<number, readonly (readonly [RuleName, number])[]>> 
     ['quadratic', 3],
     ['interleaved', 3],
     ['fibonacci', 3],
-    ['letter', 1],
     ['arithmetic', 1],
   ],
   4: [
@@ -182,8 +182,15 @@ const SAMPLERS: Readonly<Record<RuleName, Sampler>> = {
   },
 }
 
-/** Draw one series of `rule` with m visible terms (not yet checked). */
-export function sampleDraft(rng: Rng, rule: RuleName, m = rng.int(MIN_VISIBLE, MAX_VISIBLE)): Draft {
+/** The fewest visible terms a key rule of `rule` may show: its t_m must be confirmed (`keyConfirmations` ≥ 1). */
+export function minVisibleFor(rule: RuleName): number {
+  let m = MIN_VISIBLE
+  while (keyConfirmations(rule, m) < 1) m++
+  return m
+}
+
+/** Draw one series of `rule` with m visible terms (not yet checked); interleaved shows 6–7. */
+export function sampleDraft(rng: Rng, rule: RuleName, m = rng.int(minVisibleFor(rule), MAX_VISIBLE)): Draft {
   return SAMPLERS[rule](rng, m)
 }
 

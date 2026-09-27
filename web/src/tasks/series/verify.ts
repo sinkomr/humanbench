@@ -2,15 +2,16 @@
  * Series verifier (gates G2/G3, DESIGN §4.1, §4.2 "Series"; ROADMAP M1.7). Recomputes everything
  * from the item alone: the terms and key are well formed and in bounds, the key rule in
  * `structural_params` is in its domain and fits, the uniqueness analysis of `rules.ts` holds
- * (one next term across the minimum-DL set, key rule of minimal DL, strictly simpler than the
- * interpolating polynomial), and the features, b prior, stratum and expected time match the v0
- * prior. The bank's `hb.gen.series.verify_series` implements the same checks independently.
+ * (one next term across the minimum-DL set, key rule of minimal DL and confirmed by the terms,
+ * strictly simpler than the interpolating polynomial), and the features, b prior, provenance,
+ * stratum and expected time match the v0 prior. The bank's `hb.gen.series.verify_series`
+ * implements the same checks independently.
  */
 
 import { verdict, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
 import { SIGMA_B_DEFAULT, stratumOfB } from '../priors'
-import { seriesB, seriesExpectedTime, seriesFeatures } from './prior'
+import { SERIES_PROVENANCE, seriesB, seriesExpectedTime, seriesFeatures } from './prior'
 import { MAX_VISIBLE, MIN_VISIBLE, TERM_BOUND, analyse, inRuleDomain, isRuleName, letterPosition, uniquenessChecks } from './rules'
 import type { SeriesItem } from './types'
 import { SERIES_STRATA } from './gen'
@@ -83,6 +84,7 @@ export function verifySeries(item: SeriesItem): VerifyResult {
       features_match: canonicalJson(item.difficulty.features) === canonicalJson(features),
       prior_matches: typeof b === 'number' && Math.abs(b - seriesB(features)) <= PRIOR_TOLERANCE,
       prior_sd_matches: item.difficulty.sd_prior === SIGMA_B_DEFAULT,
+      provenance_matches: item.difficulty.provenance === SERIES_PROVENANCE,
       stratum_matches: typeof b === 'number' && Number.isFinite(b) && item.stratum === stratumOfB(b) && SERIES_STRATA.includes(item.stratum),
       expected_time_matches: item.expected_time_s === seriesExpectedTime(features),
       no_options: item.options_count === undefined,

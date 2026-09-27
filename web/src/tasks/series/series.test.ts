@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
-import { itemId } from '../ids'
+import { itemId, structuralHash } from '../ids'
 import { ICAR_ANCHOR_B, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
-import { SERIES_STRATA, acceptDraft, renderDraft, type Draft } from './gen'
+import { ANALYSIS_FIXTURE_N, analysisCase, analysisFixture, serializeAnalysisFixture } from './analysis-fixture'
+import { SERIES_STRATA, acceptDraft, minVisibleFor, renderDraft, type Draft } from './gen'
 import { SERIES_ITEM_TYPE, series, seriesSpecLeaksKey, type SeriesItem, type SeriesKey, type SeriesSpec } from '.'
-import { SERIES_PRIOR, seriesDifficulty, seriesExpectedTime, seriesFeatures } from './prior'
+import { SERIES_PRIOR, SERIES_PROVENANCE, seriesB, seriesDifficulty, seriesExpectedTime, seriesFeatures } from './prior'
 import {
   EPSILON_BITS,
   RULE_NAMES,
@@ -22,12 +23,20 @@ import {
   fitPolynomial,
   inRuleDomain,
   interpolantDl,
+  keyConfirmations,
   letterStep,
   toPosition,
   uniquenessChecks,
   type RuleName,
 } from './rules'
-import { parseIntegerResponse, parseLetterResponse } from './score'
+import { parseIntegerResponse, parseLetterResponse, stripSpace } from './score'
+
+/**
+ * Digest (`structuralHash`) of `serializeAnalysisFixture()`, the TS → bank analysis fixture in the
+ * bank's `golden/ts_dumps/series.analysis.json`. When `analyse()` or the fixture changes, refresh
+ * the bank file with the command in `analysis-fixture.ts` and update this digest.
+ */
+const ANALYSIS_FIXTURE_DIGEST = '4842d55c344c'
 
 /** A11 isomorph classes: family_id = rule + non-start coefficients, so ~1,700 families per 10k items. */
 const FAMILY_ID_RATIO = {
@@ -35,7 +44,7 @@ const FAMILY_ID_RATIO = {
   reason: 'family_id = rule family + non-start coefficients (A11): e.g. every quadratic with 2nd difference 2 is one family',
 }
 /**
- * ~95.5% (natural mix) and ~93.6% (strata requested evenly) distinct at n = 10,000: letter series
+ * ~95.6% (natural mix) and ~94.3% (strata requested evenly) distinct at n = 10,000: letter series
  * have 1,248 possible contents (26 starts × 16 steps × 3 lengths), and the small-number
  * arithmetic/geometric series of strata 1–2 a few hundred to ~1,500 each.
  */
@@ -102,16 +111,21 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
     expect(r.strataCounts[6]).toBe(0)
     expect(r.bPrior.min).toBeLessThan(-1.5)
     expect(r.bPrior.max).toBeGreaterThan(1.5)
+    // The natural mix centres on stratum 3, above the ICAR anchor (an ICAR-like item, see prior.ts).
+    expect(r.bPrior.mean).toBeGreaterThan(-0.5)
+    expect(r.bPrior.mean).toBeLessThan(0.5)
   }, 180_000)
 
-  it('generates every rule family, numbers and letters, with 5–7 terms', () => {
+  it('generates every rule family, numbers and letters, with 5–7 terms (interleaved 6–7)', () => {
     const rules = new Set<string>()
     const lengths = new Set<number>()
     const formats = new Set<string>()
     for (let i = 0; i < 2_000; i++) {
       const item = series.generate(`mix-${i}`)
-      rules.add((item.structural_params as { rule: string }).rule)
+      const rule = (item.structural_params as { rule: RuleName }).rule
+      rules.add(rule)
       lengths.add(item.spec.terms.length)
+      expect(item.spec.terms.length).toBeGreaterThanOrEqual(minVisibleFor(rule))
       formats.add(item.spec.input_format)
       expect(item.expected_time_s).toBeGreaterThanOrEqual(20)
       expect(item.expected_time_s).toBeLessThanOrEqual(45)
@@ -264,6 +278,28 @@ describe('series rule fitting', () => {
     expect(new Set(a.minSet.map((f) => f.rule))).toEqual(new Set(['interleaved', 'fibonacci']))
   })
 
+  it('puts fits within ε (but not tied) of the minimum into the minimum-DL set', () => {
+    // interleaved 3, 0, −3 | 1, −1 → −3 costs 14.58 bits; the cubic → −7 one bit more
+    const a = analyse([3, 1, 0, -1, -3], false)
+    expect(a.predictions).toEqual([-7, -3])
+    expect(new Set(a.minSet.map((f) => f.rule))).toEqual(new Set(['interleaved', 'cubic']))
+    const cubic = a.minSet.find((f) => f.rule === 'cubic')!
+    expect(compareDl(cubic.dl, a.min!)).toBe(1)
+    expect(compareDl(cubic.dl, a.min!, 1)).toBe(0)
+    // cubic → 43 (24.22 bits) and interleaved → 75 (24.73 bits)
+    expect(analyse([58, 55, 60, 65, 62], false).predictions).toEqual([43, 75])
+  })
+
+  it('counts the visible terms that confirm the part of the key rule producing t_m', () => {
+    expect([5, 6, 7].map((m) => keyConfirmations('interleaved', m))).toEqual([0, 1, 1])
+    expect([5, 6, 7].map((m) => keyConfirmations('composite_alt', m))).toEqual([1, 1, 2])
+    expect([5, 6, 7].map((m) => keyConfirmations('arithmetic', m))).toEqual([3, 4, 5])
+    expect(keyConfirmations('quadratic', 5)).toBe(2)
+    expect(keyConfirmations('fibonacci', 5)).toBe(2)
+    expect(keyConfirmations('composite_aff', 5)).toBe(2)
+    for (const rule of RULE_NAMES) expect(minVisibleFor(rule)).toBe(rule === 'interleaved' ? 6 : 5)
+  })
+
   it('checks key-rule domains', () => {
     expect(inRuleDomain('arithmetic', { d: 0 })).toBe(false)
     expect(inRuleDomain('geometric', { r: 1 })).toBe(false)
@@ -282,6 +318,8 @@ describe('series rule fitting', () => {
     expect(acceptDraft({ rule: 'fibonacci', coefficients: { c: -3 }, values: [2, 4, 3, 4, 4, 5] })).toBe(false)
     expect(acceptDraft({ rule: 'arithmetic', coefficients: { d: 3000 }, values: [1, 3001, 6001, 9001, 12001, 15001] })).toBe(false)
     expect(acceptDraft({ rule: 'arithmetic', coefficients: { d: 0 }, values: [7, 7, 7, 7, 7, 7] })).toBe(false)
+    expect(acceptDraft({ rule: 'interleaved', coefficients: { da: -8, db: -8 }, values: [43, 4, 35, -4, 27, -12] })).toBe(false)
+    expect(acceptDraft({ rule: 'interleaved', coefficients: { da: 2, db: 3 }, values: [3, 10, 5, 13, 7, 16, 9] })).toBe(true)
   })
 })
 
@@ -296,6 +334,7 @@ describe('series verify: hand-built items', () => {
     expect(letter.difficulty.features.wraps).toBe(true)
     expect(series.verify(letter)).toMatchObject({ ok: true })
     expect(series.verify(makeItem('quadratic', { s: 2 }, [2, 6, 12, 20, 30, 42])).ok).toBe(true)
+    expect(series.verify(makeItem('interleaved', { da: 2, db: 3 }, [3, 10, 5, 13, 7, 16, 9])).ok).toBe(true)
   })
 
   it('rejects malformed items without throwing', () => {
@@ -362,6 +401,23 @@ describe('series verify: hand-built items', () => {
     expect(r).not.toMatch(/key_rule_is_min_dl|key_rule_fits|key_is_rule_prediction/)
   })
 
+  it('rejects fits inside the ε band that disagree, although the key rule alone is the minimum', () => {
+    // Fibonacci-type c = −5 → 39 (16.21 bits) vs the cubic → 38 (16.75 bits): 0.54 bits apart
+    const item = makeItem('fibonacci', { c: -5 }, [8, 10, 13, 18, 26, 39])
+    expect(series.verify(item).reason).toBe('failed: min_dl_rules_agree')
+    const a = analyse([8, 10, 13, 18, 26], false)
+    const cubic = a.fits.find((f) => f.rule === 'cubic')!
+    expect(cubic.next).toBe(38)
+    expect(compareDl(cubic.dl, a.min!)).toBe(1)
+    expect(compareDl(cubic.dl, a.min!, EPSILON_BITS)).toBe(-1)
+  })
+
+  it('rejects an interleaved key resting on a two-term subsequence (m = 5)', () => {
+    // t_5 continues 4, −4 (t_1, t_3) only: any step fits two terms, and "flip the sign" gives 4
+    expect(series.verify(makeItem('interleaved', { da: -8, db: -8 }, [43, 4, 35, -4, 27, -12])).reason).toBe('failed: key_rule_confirmed')
+    expect(series.verify(makeItem('interleaved', { da: -6, db: -6 }, [13, -3, 7, -9, 1, -15])).reason).toBe('failed: key_rule_confirmed')
+  })
+
   it('rejects a key rule that is not of minimal DL', () => {
     // 1, 4, 7, 10, 13 is arithmetic (8.3 bits), not the pricier alternating +3, +3
     const item = makeItem('composite_alt', { op_a: 'add', by_a: 3, op_b: 'add', by_b: 3 }, [1, 4, 7, 10, 13, 16])
@@ -371,8 +427,8 @@ describe('series verify: hand-built items', () => {
   })
 
   it('rejects a key rule that is not strictly simpler than the interpolating polynomial', () => {
-    // interleaved 36, 27, 18 | 32, 21 → 10 costs 25.16 bits; the degree-4 interpolant 23.85
-    const item = makeItem('interleaved', { da: -9, db: -11 }, [36, 32, 27, 21, 18, 10])
+    // interleaved 900, 903, 906 | 901, 905, 909 → 909 costs 31.95 bits; the degree-5 interpolant 31.14
+    const item = makeItem('interleaved', { da: 3, db: 4 }, [900, 901, 903, 905, 906, 909, 909])
     const v = series.verify(item)
     expect(v.reason).toBe('failed: simpler_than_interpolant')
   })
@@ -381,6 +437,7 @@ describe('series verify: hand-built items', () => {
     expect(failed(tamper(good, (x) => ((x.difficulty as { features: Record<string, unknown> }).features.max_digits = 3)))).toMatch(/features_match/)
     expect(failed(tamper(good, (x) => ((x.difficulty as { b_prior: number }).b_prior += 0.01)))).toMatch(/prior_matches/)
     expect(failed(tamper(good, (x) => ((x.difficulty as { sd_prior: number }).sd_prior = 0.5)))).toMatch(/prior_sd_matches/)
+    expect(failed(tamper(good, (x) => ((x.difficulty as { provenance: string }).provenance = 'hand-tuned')))).toBe('failed: provenance_matches')
     expect(failed(tamper(good, (x) => (x.stratum = good.stratum === 1 ? 2 : 1)))).toMatch(/stratum_matches/)
     expect(failed(tamper(good, (x) => (x.expected_time_s = 30)))).toMatch(/expected_time_matches/)
     expect(failed(tamper(good, (x) => (x.options_count = 6)))).toMatch(/no_options/)
@@ -412,6 +469,20 @@ describe('series score', () => {
     expect(parseIntegerResponse('4 2')).toBeUndefined()
   })
 
+  it('strips the same edge space as the bank scorer (JS \\s, not Python str.strip())', () => {
+    // U+FEFF is space to JS trim() but not to str.strip(); U+001C and U+0085 the other way round
+    expect(series.score(num, '\ufeff-10')).toEqual({ correct: 1 })
+    expect(series.score(num, '-10\u3000\n')).toEqual({ correct: 1 })
+    expect(series.score(num, '\u001c-10')).toEqual({ correct: 0 })
+    expect(series.score(num, '\u0085-10')).toEqual({ correct: 0 })
+    expect(series.score(num, '-10\u001f')).toEqual({ correct: 0 })
+    expect(series.score(let_, '\ufeffk')).toEqual({ correct: 1 })
+    expect(series.score(let_, '\u001ck')).toEqual({ correct: 0 })
+    expect(series.score(let_, 'k\u0085')).toEqual({ correct: 0 })
+    expect(stripSpace(' \t\u00a0 7 \u2028')).toBe('7')
+    expect(stripSpace('7 7')).toBe('7 7')
+  })
+
   it('accepts upper- or lower-case letters', () => {
     expect(let_.key).toEqual({ letter: 'K' })
     expect(series.score(let_, 'K')).toEqual({ correct: 1 })
@@ -425,9 +496,22 @@ describe('series score', () => {
 })
 
 describe('series prior (M1.P v0)', () => {
-  it('is anchored at ICAR series p = .59', () => {
+  it('is anchored at ICAR series p = .59 on the ICAR-like reference item', () => {
     expect(SERIES_PRIOR.anchorB).toBe(ICAR_ANCHOR_B.series)
     expect(SERIES_PRIOR.anchorB).toBeCloseTo(-0.364, 3)
+    // 2, 3, 5, 8, 12, 17 → 23: a two-part (cost 4) rule, 6 terms, 2 digits, ascending
+    const ref = makeItem('quadratic', { s: 1 }, [2, 3, 5, 8, 12, 17, 23])
+    expect(series.verify(ref).ok).toBe(true)
+    expect(ref.difficulty.b_prior).toBe(ICAR_ANCHOR_B.series)
+    expect(ref.difficulty.provenance).toBe(SERIES_PROVENANCE)
+  })
+
+  it('counts a letter as one symbol, whatever its alphabet position', () => {
+    const early = seriesFeatures('letter', { d: 1 }, [1, 2, 3, 4, 5, 6])
+    const late = seriesFeatures('letter', { d: 1 }, [18, 19, 20, 21, 22, 23])
+    expect(early.max_digits).toBe(1)
+    expect(late.max_digits).toBe(1)
+    expect(seriesB(late)).toBe(seriesB(early))
   })
 
   it('orders families by complexity and puts features in the right direction', () => {
@@ -455,5 +539,26 @@ describe('series prior (M1.P v0)', () => {
     expect(seriesSpecLeaksKey(item)).toBeNull()
     const leaky = { ...item, spec: { ...item.spec, next: 1 } } as unknown as ItemInstance<SeriesSpec, SeriesKey>
     expect(seriesSpecLeaksKey(leaky)).toMatch(/next/)
+  })
+})
+
+describe('series analysis fixture (TS → bank differential, A1)', () => {
+  it('is pinned: refresh the bank copy when analyse() changes', () => {
+    expect(structuralHash(serializeAnalysisFixture())).toBe(ANALYSIS_FIXTURE_DIGEST)
+  })
+
+  it('covers accepted and rejected sequences, ties, the ε band, letters and every fit family', () => {
+    const f = analysisFixture()
+    expect(f.count).toBe(f.cases.length)
+    expect(f.cases.length).toBeGreaterThan(ANALYSIS_FIXTURE_N)
+    const rules = new Set(f.cases.flatMap((c) => c.fits.map((x) => x.rule)))
+    expect([...rules].sort()).toEqual([...RULE_NAMES, 'cubic'].sort())
+    const ambiguous = f.cases.filter((c) => c.predictions.length > 1).length
+    const unique = f.cases.filter((c) => c.predictions.length === 1).length
+    const none = f.cases.filter((c) => c.min_dl === null).length
+    const letters = f.cases.filter((c) => c.letter).length
+    for (const count of [ambiguous, unique, none, letters]) expect(count).toBeGreaterThan(50)
+    // a fit inside the ε band but not tied with the minimum
+    expect(analysisCase([3, 1, 0, -1, -3], false).fits.filter((x) => x.in_min_set).map((x) => x.rule).sort()).toEqual(['cubic', 'interleaved'])
   })
 })

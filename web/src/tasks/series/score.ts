@@ -5,15 +5,28 @@
  */
 
 import type { ScoreResult } from '../family'
+import { WORD_SEPARATOR_RE } from '../priors'
 import type { SeriesItem, SeriesResponse } from './types'
 
 const INTEGER_TEXT = /^[+-]?[0-9]+$/
+
+/**
+ * Leading and trailing space, as an explicit class shared with the bank's scorer: the characters
+ * of `WORD_SEPARATOR_RE` (JS `\s`, so the same as `trim()`), not Python's `str.strip()` set, which
+ * also strips U+001C–U+001F and U+0085 but keeps U+FEFF (A1: from M2 on the server's score counts).
+ */
+const EDGE_SPACE = new RegExp(`^${WORD_SEPARATOR_RE.source}|${WORD_SEPARATOR_RE.source}$`, 'g')
+
+/** `text` without leading and trailing {@link EDGE_SPACE}. */
+export function stripSpace(text: string): string {
+  return text.replace(EDGE_SPACE, '')
+}
 
 /** The integer a response denotes, or undefined. */
 export function parseIntegerResponse(response: unknown): number | undefined {
   if (typeof response === 'number') return Number.isSafeInteger(response) ? response : undefined
   if (typeof response !== 'string') return undefined
-  const text = response.trim().replace(/^[−–]/, '-')
+  const text = stripSpace(response).replace(/^[−–]/, '-')
   if (!INTEGER_TEXT.test(text)) return undefined
   const v = Number(text)
   return Number.isSafeInteger(v) ? v + 0 : undefined
@@ -22,7 +35,7 @@ export function parseIntegerResponse(response: unknown): number | undefined {
 /** The uppercase letter a response denotes, or undefined. */
 export function parseLetterResponse(response: unknown): string | undefined {
   if (typeof response !== 'string') return undefined
-  const text = response.trim()
+  const text = stripSpace(response)
   return /^[A-Za-z]$/.test(text) ? text.toUpperCase() : undefined
 }
 

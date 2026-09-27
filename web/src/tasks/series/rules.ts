@@ -43,6 +43,10 @@
  * iff (§4.2 uniqueness check)
  * - every rule in the minimum-DL set predicts the same next term (for letters: the same letter);
  * - the key rule (`structural_params`) fits the terms, has DL = min and predicts the key;
+ * - the part of the key rule that produces t_m is confirmed: it reproduces at least one visible
+ *   term (or step) beyond those that determine it ({@link keyConfirmations}). This only bites
+ *   for `interleaved` with m = 5, where t_5 would rest on the two-term subsequence t_1, t_3
+ *   (any step fits two terms), so interleaved items show 6 or 7 terms;
  * - DL(key rule) < DL of the degree-(n − 2) interpolating polynomial through the visible terms,
  *   where n = m + 1 is the series length counting the blank, so the degree is m − 1 and it
  *   always fits (cost 2(m − 1), coefficients t0, Δt0, …, Δ^{m−1} t0).
@@ -117,6 +121,8 @@ export interface Fit {
 
 /** The uniqueness analysis of a series (see the module comment). */
 export interface Analysis {
+  /** The visible values analysed (letters as positions 1–26). */
+  readonly terms: readonly number[]
   readonly fits: readonly Fit[]
   /** The least DL of any fit (undefined when nothing fits). */
   readonly min?: Dl
@@ -341,11 +347,35 @@ export function analyse(values: readonly number[], letter: boolean): Analysis {
   const interpolant = interpolantDl(values)
   let min: Dl | undefined
   for (const f of fits) if (min === undefined || compareDl(f.dl, min) < 0) min = f.dl
-  if (min === undefined) return { fits, minSet: [], predictions: [], interpolant }
+  const terms = [...values]
+  if (min === undefined) return { terms, fits, minSet: [], predictions: [], interpolant }
   const floor = min
   const minSet = fits.filter((f) => compareDl(f.dl, floor, EPSILON_BITS) <= 0)
   const predictions = [...new Set(minSet.map((f) => f.next))].sort((a, b) => a - b)
-  return { fits, min, minSet, predictions, interpolant }
+  return { terms, fits, min, minSet, predictions, interpolant }
+}
+
+/** Visible values that determine a rule's coefficients and start terms (interleaved and composite_alt: see below). */
+const DETERMINING_TERMS: Readonly<Record<Exclude<RuleName, 'interleaved' | 'composite_alt'>, number>> = Object.freeze({
+  arithmetic: 2, // t0, d
+  letter: 2, // p0, d
+  geometric: 2, // t0, r
+  quadratic: 3, // t0, Δt0, s
+  fibonacci: 3, // t0, t1, c
+  composite_aff: 3, // t0, m, c (two steps fix m and c)
+})
+
+/**
+ * How many visible terms (or steps) confirm the part of the key rule that produces t_m, beyond
+ * those that determine it, with m visible terms. `interleaved`: t_m continues the subsequence of
+ * its own parity, which shows ⌊m/2⌋ terms, two of which fix its start and step. `composite_alt`:
+ * t_m comes from op_{(m−1) mod 2}, seen on ⌊(m−1)/2⌋ visible steps, one of which fixes it. Every
+ * other family: m minus its determining terms. An item needs ≥ 1 (§4.2, [SPEC] v0).
+ */
+export function keyConfirmations(rule: RuleName, m: number): number {
+  if (rule === 'interleaved') return Math.floor(m / 2) - 2
+  if (rule === 'composite_alt') return Math.floor((m - 1) / 2) - 1
+  return m - DETERMINING_TERMS[rule]
 }
 
 /** The fit of the key rule (same family and structural coefficients), if it fits. */
@@ -361,6 +391,7 @@ export function uniquenessChecks(analysis: Analysis, keyRule: KeyRule, key: numb
     key_rule_fits: fit !== undefined,
     key_is_rule_prediction: fit !== undefined && fit.next === key,
     key_rule_is_min_dl: fit !== undefined && analysis.min !== undefined && compareDl(fit.dl, analysis.min) <= 0,
+    key_rule_confirmed: keyConfirmations(keyRule.rule, analysis.terms.length) >= 1,
     min_dl_rules_agree: analysis.predictions.length === 1,
     simpler_than_interpolant: fit !== undefined && compareDl(fit.dl, analysis.interpolant) < 0,
     fits: analysis.fits.length,
