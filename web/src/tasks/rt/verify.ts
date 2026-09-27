@@ -10,12 +10,15 @@
  * - `foreperiods_in_range`: every foreperiod, practice included, is an integer 800–2,000 ms;
  * - `positions_in_range`: every position is 0 (simple) or 0–3 (choice);
  * - `positions_balanced`: each position exactly n_trials / n_positions times (10 each in choice);
- * - `max_run_ok`: choice: no position on more than 3 consecutive scored trials;
+ * - `max_run_ok`: choice: no position on more than 3 consecutive trials as shown, the practice
+ *   trials included (`max_run` is the longest run over practice + scored trials), so no run of 4
+ *   forms across the practice → scored boundary either;
  * - `practice_positions_distinct`: choice: the 3 practice trials use 3 different positions;
  * - `key_matches_stimuli`: key.positions equals the stimulus positions (§14.6 ex. 12: key = position);
  * - `structure_matches`: structural_params is the mode's structure (A11);
  * - `params_match_norms`: Gaussian lam = −s, d = β, sigma = τ_res of the mode's norm (A10);
- * - `stratum_matches`, `prior_matches`, `expected_time_matches`: the M1.P priors recomputed;
+ * - `stratum_matches`, `prior_matches`, `expected_time_matches`: the M1.P priors recomputed
+ *   (`prior_matches` includes the provenance string);
  * - `reference_well_formed`: the key's reference responses are a well-formed response;
  * - `reference_scores_match`: scoring them again gives the recorded status, counts, reason or
  *   observation and SE (floats to {@link REFERENCE_TOL}).
@@ -25,7 +28,7 @@ import type { JsonValue } from '../../engine'
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
 import { maxRunLength } from './gen'
-import { RT_STRATUM, rtDifficulty, rtExpectedTimeS, rtItemParams, rtStructure } from './prior'
+import { RT_PROVENANCE, RT_STRATUM, rtDifficulty, rtExpectedTimeS, rtItemParams, rtStructure } from './prior'
 import { expectedOf, rtResponseProblems, scoreRtResponse } from './score'
 import {
   FOREPERIOD_MAX_MS,
@@ -112,7 +115,7 @@ function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
   const trialCount = fp.length === cfg.n_trials && pos.length === cfg.n_trials
   const perPosition = cfg.n_trials / cfg.n_positions
   const counts = Array.from({ length: cfg.n_positions }, (_, p) => pos.filter((x) => x === p).length)
-  const maxRun = maxRunLength(pos)
+  const maxRun = maxRunLength([...pp, ...pos]) // as shown: practice, then scored (no break assumed)
 
   const key: unknown = item.key
   const keyPositions = isPlainObject(key) ? key.positions : undefined
@@ -128,7 +131,8 @@ function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
     prior !== undefined &&
     canonicalJson(d.features as JsonValue) === canonicalJson(prior.features as JsonValue) &&
     d.b_prior === prior.b_prior &&
-    d.sd_prior === prior.sd_prior
+    d.sd_prior === prior.sd_prior &&
+    d.provenance === RT_PROVENANCE
 
   const ref = isPlainObject(key) ? key.reference : undefined
   const refProblems = referenceProblems(mode, ref)

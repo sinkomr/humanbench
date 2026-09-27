@@ -15,6 +15,10 @@
  * absolute deviation from x. The Gaussian observation is
  * `{ kind: 'gaussian', axis: 'RT', lam: −s, d: β, sigma: √(SE² + τ_res²), x }` with the
  * provisional norms of `prior.ts`; the device class and trial counts travel beside it.
+ *
+ * As A10 specifies, SE has no floor: it is 0 when more than half of the valid log RTs are equal
+ * (likely only with a coarse, quantised performance.now()), and sigma then falls to τ_res. The
+ * clock-resolution check and any SE floor belong to the device check / M4.8 calibration.
  */
 
 import type { ItemInstance } from '../family'

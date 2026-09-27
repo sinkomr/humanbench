@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   COMMON_REFRESH_RATES_HZ,
   MIN_REFRESH_DELTAS,
+  PRE_ONSET_MAX_RT_MS,
   browserFrameSource,
+  classifyTrial,
   createOnsetScheduler,
   estimateRefreshRate,
   firstFrameAtOrAfter,
@@ -224,25 +226,59 @@ describe('RT = response timestamp (performance.now) − onset frame timestamp', 
     expect(() => reactionTimeMs(Number.NaN, 0)).toThrow(RangeError)
   })
 
-  it('a whole trial with an injected clock: onset frame, then a response 312.5 ms later', () => {
+  it('a whole trial with an injected clock: RT is measured from the onset frame, not the target', () => {
     const frames = new FakeFrames()
     const clock = new FakeClock()
-    const onset = createOnsetScheduler(frames).schedule(1200, 5000, () => {})
+    // 1210 ms is not a multiple of the 60 Hz period, so the onset frame lands well after the target.
+    const onset = createOnsetScheduler(frames).schedule(1210, 5000, () => {})
     for (let ts = 5000 + 1000 / 60; onset.onsetFrameTs === null; ts += 1000 / 60) frames.frame(ts)
-    clock.t = (onset.onsetFrameTs as number) + 312.5
+    const shownAt = onset.onsetFrameTs as number
+    expect(shownAt - onset.target).toBeGreaterThan(1)
+    clock.t = shownAt + 312.5
     expect(responseRtMs(onset, responseTimestamp(clock))).toBeCloseTo(312.5, 9)
+    expect(classifyTrial('simple', responseRtMs(onset, shownAt + 312.5), 0, 0)).toBe('valid')
   })
 
-  it('a press before onset is negative (an anticipation) and measured from the target', () => {
+  it('a press before the target is negative (an anticipation), measured from the target', () => {
     const frames = new FakeFrames()
     const onset = createOnsetScheduler(frames).schedule(1500, 0, () => {})
     frames.frame(16.7)
     expect(responseRtMs(onset, 1400)).toBe(-100)
     onset.cancel()
     expect(onset.cancelled).toBe(true)
-    // In the sub-frame gap after the target but before the onset frame: 0 ≤ RT < 1 frame (trimmed as too fast).
-    const late = createOnsetScheduler(frames).schedule(20, 0, () => {})
-    expect(responseRtMs(late, 25)).toBe(5)
+    expect(responseRtMs(onset, 1400)).toBe(-100) // still before onset after the cancel
+  })
+
+  it('a press after the target but before the onset frame ran is an anticipation, not a fast RT', () => {
+    const frames = new FakeFrames()
+    // The sub-frame gap: target 20, next frame at 33.3, pressed at 25.
+    const gap = createOnsetScheduler(frames).schedule(20, 0, () => {})
+    frames.frame(16.7)
+    expect(responseRtMs(gap, 25)).toBe(PRE_ONSET_MAX_RT_MS)
+    expect(responseRtMs(gap, 20)).toBe(PRE_ONSET_MAX_RT_MS) // exactly at the target, not yet drawn
+    expect(classifyTrial('simple', responseRtMs(gap, 25), 0, 0)).toBe('anticipation')
+    // A press just before the target keeps its measured (more negative) RT.
+    expect(responseRtMs(gap, 19.5)).toBe(-0.5)
+  })
+
+  it('a stalled main thread: no onset frame yet, a press 200 ms after the target is still an anticipation', () => {
+    const frames = new FakeFrames()
+    const onset = createOnsetScheduler(frames).schedule(800, 0, () => {})
+    for (let k = 1; k <= 47; k++) frames.frame((k * 1000) / 60) // frames up to ≈ 783.3 ms, then a stall
+    expect(onset.onsetFrameTs).toBeNull()
+    const rtMs = responseRtMs(onset, 1000)
+    expect(rtMs).toBeLessThan(0)
+    for (const mode of ['simple', 'choice4'] as const) expect(classifyTrial(mode, rtMs, 0, 0)).toBe('anticipation')
+    // The late frame finally runs: a press after it is measured from that frame.
+    frames.frame(1016.7)
+    expect(onset.onsetFrameTs).toBe(1016.7)
+    expect(responseRtMs(onset, 1316.7)).toBeCloseTo(300, 9)
+  })
+
+  it('PRE_ONSET_MAX_RT_MS is strictly negative and survives rounding to 0.1 ms and JSON', () => {
+    expect(PRE_ONSET_MAX_RT_MS).toBeLessThan(0)
+    expect(Math.round(PRE_ONSET_MAX_RT_MS * 10) / 10).toBeLessThan(0)
+    expect(JSON.parse(JSON.stringify(PRE_ONSET_MAX_RT_MS))).toBeLessThan(0)
   })
 
   it('the default clock is performance.now()', () => {

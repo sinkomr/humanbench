@@ -43,7 +43,10 @@ export const RT_PRACTICE_TRIALS = 3
 export const FOREPERIOD_MIN_MS = 800
 export const FOREPERIOD_MAX_MS = 2000
 
-/** Choice blocks: the same position on at most this many consecutive scored trials. */
+/**
+ * Choice blocks: the same position on at most this many consecutive trials as shown, i.e. over
+ * the practice trials followed by the scored trials (no run of 4 across that boundary either).
+ */
 export const MAX_POSITION_RUN = 3
 
 /**
@@ -62,7 +65,8 @@ export interface RtSpec {
 /**
  * A block's responses as parallel arrays over the scored trials (and, optionally, the practice
  * trials, which scoring ignores). `rt_ms[i]` is the response time from the onset frame in ms
- * (negative = pressed before onset, an anticipation) or null for no response; `choice[i]` is
+ * (negative = pressed before the onset frame ran, an anticipation: `responseRtMs` in
+ * `timing.ts`) or null for no response; `choice[i]` is
  * the position pressed (always 0 in simple blocks), null exactly when `rt_ms[i]` is null.
  */
 export interface RtResponse {

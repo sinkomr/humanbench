@@ -31,6 +31,16 @@ describe('rt timing lint', () => {
     expect(hits).toEqual([])
   })
 
+  it('the generator uses no engine-approximated math, so items regenerate bit for bit (A11)', () => {
+    // ECMA-262 lets Math.exp/log/sin/cos/pow (and so rng.normal) differ by an ULP between engines.
+    const approx = new RegExp(['Math\\.(exp|expm1|log|log1p|log2|log10|sin|cos|tan|pow)\\(', '\\.normal\\('].join('|'))
+    expect(approx.test(['Math', 'exp(1)'].join('.'))).toBe(true)
+    expect(approx.test(['rng', 'normal(0, 1)'].join('.'))).toBe(true)
+    const gen = SOURCES['./gen.ts']
+    expect(gen).toBeDefined()
+    expect(gen?.split('\n').filter((line) => approx.test(line))).toEqual([])
+  })
+
   it('the patterns do match the banned calls', () => {
     const [clock, date, random] = BANNED.map(([, re]) => re)
     expect(clock?.test(['Date', 'now()'].join('.'))).toBe(true)

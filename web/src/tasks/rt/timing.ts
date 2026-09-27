@@ -11,6 +11,8 @@
  * - RT = response timestamp − onset frame timestamp, where the response timestamp comes from
  *   `performance.now()` (the monotonic high-resolution clock that rAF and event timestamps
  *   share). The wall clock is never used: it is coarse and jumps when the system clock is set.
+ *   A press before the onset frame has run is an anticipation (negative RT), even when it comes
+ *   after the target time ({@link responseRtMs}).
  */
 
 import { median } from './score'
@@ -219,11 +221,22 @@ export function reactionTimeMs(responseTs: number, onsetFrameTs: number): number
 }
 
 /**
- * The RT to record for a response at `responseTs` to a scheduled onset: from the onset frame once
- * the stimulus is shown; before that, from the target time, so a press before the target is
- * negative (an anticipation, `rt_ms < 0`). A press in the sub-frame gap between the target and
- * the onset frame gives 0 ≤ RT < one frame, which trimming rejects as too fast.
+ * The largest RT {@link responseRtMs} records for a press before the onset frame: strictly
+ * negative, and still negative on the 0.1 ms grid, so such a press is always an anticipation.
+ */
+export const PRE_ONSET_MAX_RT_MS = -0.1
+
+/**
+ * The RT to record for a response at `responseTs` to a scheduled onset (§11.6). Once the
+ * stimulus is shown: response timestamp − onset frame timestamp. Before that, the stimulus has
+ * not been drawn, so the press is an anticipation (§7.1) and the RT is negative whatever the
+ * clock says: responseTs − target when the press precedes the target, else
+ * {@link PRE_ONSET_MAX_RT_MS}. The second case is a press after the target whose onset frame has
+ * not run yet (the sub-frame gap before the next frame, or a stalled main thread: GC, a long
+ * task); measuring it from the target would give it a positive RT and could score it as valid.
  */
 export function responseRtMs(onset: ScheduledOnset, responseTs: number): number {
-  return reactionTimeMs(responseTs, onset.onsetFrameTs ?? onset.target)
+  const shownAt = onset.onsetFrameTs
+  if (shownAt !== null) return reactionTimeMs(responseTs, shownAt)
+  return Math.min(reactionTimeMs(responseTs, onset.target), PRE_ONSET_MAX_RT_MS)
 }

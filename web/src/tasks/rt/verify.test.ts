@@ -47,7 +47,7 @@ describe('verifyRt accepts generated blocks', () => {
       const r = check(base(mode))
       expect(r.ok, r.reason).toBe(true)
       expect(failed(r)).toEqual([])
-      expect(r.checks.max_run).toBeLessThanOrEqual(mode === 'simple' ? 30 : 3)
+      expect(r.checks.max_run).toBeLessThanOrEqual(mode === 'simple' ? 33 : 3) // practice + scored
     }
   })
 
@@ -62,10 +62,18 @@ describe('verifyRt accepts generated blocks', () => {
     const seq = cyclic()
     // [0,0,0,1,2,3,1,2,3,…]: move two 0s to the front to make one run of three.
     seq.splice(0, 12, 0, 0, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3)
+    x.spec.practice_positions = [1, 2, 3]
     x.spec.positions = seq
     const r = check(rederive(x))
     expect(r.checks.max_run).toBe(3)
     expect(r.ok, r.reason).toBe(true)
+    // Across the boundary: practice ending in 0, then two 0s, is a run of 3 too.
+    const y = base('choice4')
+    y.spec.practice_positions = [2, 1, 0]
+    y.spec.positions = [0, 0, 1, 2, 3, 1, 2, 3, ...cyclic().slice(0, 32)]
+    const ry = check(rederive(y))
+    expect(ry.checks.max_run).toBe(3)
+    expect(ry.ok, ry.reason).toBe(true)
   })
 })
 
@@ -178,10 +186,22 @@ describe('verifyRt rejects each failure reason (negative tests)', () => {
   it('max_run_ok: a balanced sequence with a run of 4', () => {
     const x = base('choice4')
     const seq = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, ...cyclic().slice(0, 24)]
+    x.spec.practice_positions = [1, 2, 3]
     x.spec.positions = seq
     const r = check(rederive(x))
     expect(r.checks.max_run).toBe(4)
     expect(failed(r)).toEqual(['max_run_ok'])
+  })
+
+  it('max_run_ok: a run of 4 across the practice → scored boundary (scored runs all ≤ 3)', () => {
+    const x = base('choice4')
+    x.spec.practice_positions = [1, 2, 0]
+    x.spec.positions = [0, 0, 0, 1, 2, 3, 1, 2, 3, 1, 2, 3, ...cyclic().slice(0, 28)]
+    const r = check(rederive(x))
+    expect(r.checks.max_run).toBe(4)
+    expect(failed(r)).toEqual(['max_run_ok'])
+    x.spec.practice_positions = [0, 2, 1] // the same scored trials after a practice ending in 1
+    expect(check(rederive(x)).ok).toBe(true)
   })
 
   it('practice_positions_distinct: choice practice at [2, 2, 1]', () => {
@@ -236,8 +256,10 @@ describe('verifyRt rejects each failure reason (negative tests)', () => {
     expect(failed(check(x))).toEqual(['stratum_matches'])
   })
 
-  it('prior_matches: b_prior, sd_prior or a feature changed', () => {
+  it('prior_matches: b_prior, sd_prior, a feature or the provenance changed', () => {
     const muts: ((d: J) => void)[] = [
+      (d) => (d.provenance = 'calibrated from 10,000 users (M4.8)'),
+      (d) => (d.provenance = `${d.provenance} `),
       (d) => (d.b_prior = 0.5),
       (d) => (d.sd_prior = 0.8),
       (d) => (d.features.mean_foreperiod_ms += 1),

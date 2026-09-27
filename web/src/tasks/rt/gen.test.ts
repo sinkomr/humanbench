@@ -8,6 +8,7 @@ import {
   drawBalancedPositions,
   drawForeperiods,
   drawSchedule,
+  generateRtBlock,
   maxRunLength,
   modeOfSeed,
   rt,
@@ -87,6 +88,14 @@ describe('balanced positions', () => {
     expect(firsts.size).toBe(4)
   })
 
+  it('counts runs across a prefix (the practice positions shown first)', () => {
+    for (let i = 0; i < 300; i++) {
+      const prefix = [3, 1, i % 4]
+      const seq = drawBalancedPositions(createRng(`pre-${i}`), 4, 10, 3, prefix)
+      expect(maxRunLength([...prefix, ...seq])).toBeLessThanOrEqual(3)
+    }
+  })
+
   it('gives up (rather than looping forever) when the constraint is unsatisfiable', () => {
     expect(() => drawBalancedPositions(createRng('x'), 1, 5, 3)).toThrow(/no sequence/)
   })
@@ -115,8 +124,38 @@ describe('drawSchedule', () => {
     }
   })
 
+  it('choice: no run of 4 across the practice → scored boundary either', () => {
+    // Drawn independently, about 1% of blocks would show the last practice position 4 times running.
+    let boundaryRun3 = 0
+    for (let i = 0; i < 5_000; i++) {
+      const s = generateRtBlock(`p-${i}`, 'choice4').spec
+      const shown = [...s.practice_positions, ...s.positions]
+      expect(maxRunLength(shown)).toBeLessThanOrEqual(3)
+      if (s.positions[0] === s.practice_positions[2] && s.positions[1] === s.positions[0]) boundaryRun3++
+    }
+    expect(boundaryRun3).toBeGreaterThan(0) // runs of 3 across the boundary still occur
+  })
+
   it('is deterministic in the stream', () => {
     expect(drawSchedule(rng(), 'choice4')).toEqual(drawSchedule(rng(), 'choice4'))
+  })
+})
+
+describe('reference responses', () => {
+  it('are whole tenths of a ms (integer draws, the same on every engine), with every lapse kind', () => {
+    const kinds = new Set<string>()
+    for (let i = 0; i < 200; i++) {
+      const ref = rt.generate(`tenths-${i}`).key.reference
+      for (const v of [...ref.practice_rt_ms, ...ref.rt_ms]) {
+        if (v === null) {
+          kinds.add('miss')
+          continue
+        }
+        expect(Math.round(v * 10) / 10).toBe(v)
+        kinds.add(v < 0 ? 'anticipation' : v === 0 ? 'zero' : 'rt')
+      }
+    }
+    expect([...kinds].sort()).toEqual(['anticipation', 'miss', 'rt', 'zero'])
   })
 })
 
