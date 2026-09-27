@@ -5,7 +5,7 @@ results as a "jagged blob": one spike per ability, with its uncertainty shown, i
 a single score. It is for curiosity and self-reflection. It is not an IQ test, a clinical
 assessment, or a basis for decisions about education, employment, or health.
 
-Status: early scaffolding (milestone M0). The design spec is in
+Status: static MVP in progress (milestone M1). The design spec is in
 [docs/DESIGN.md](docs/DESIGN.md), and the build backlog is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Layout
@@ -61,17 +61,37 @@ Test files live next to the code in `web/src/` (and `web/scripts/` for the Node 
 Each procedural task family lives in `web/src/tasks/<family>/` and implements the contract in
 `web/src/tasks/family.ts` (ROADMAP A1, A11): a seeded generator, a verifier and a scorer, tested
 with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances (with the
-family's own key-leak check, `specLeaksKey`, or a documented waiver). The private
-bank repo re-verifies at least 1,000 TS instances of every family with its Python twin. Dump them
-into the sibling bank checkout (`../humanbench-bank`, or `$HB_BANK_DIR`) with:
+family's own key-leak check, `specLeaksKey`, or a documented waiver). The families registered
+in `web/src/tasks/registry.ts` are rotation, matrices, series, span_fwd, span_bwd, corsi, rt,
+coding and reading; `registry.test.ts` runs every registered family through the property suite
+at n = 500. The private bank repo re-verifies at least 1,000 TS instances of every family with
+its Python twin. Dump them into the sibling bank checkout (`../humanbench-bank`, or
+`$HB_BANK_DIR`) with:
 
 ```zsh
 cd web
-npm run dump:families -- --family rot --n 1000 --bank
+npm run dump:families -- --family rotation --n 1000 --bank
 ```
 
-Use `--module src/tasks/<family>/index.ts` in place of `--family` for a family that is not in
+Use `--all` in place of `--family <name>` to dump every registered family,
+`--module src/tasks/<family>/index.ts` in place of `--family` for a family that is not in
 `web/src/tasks/registry.ts` yet, or `--out <file>` in place of `--bank` to write elsewhere.
+
+After changing a generator, refresh every bank fixture that comes from this repo: the family
+dumps, the toy family dump, the coding scoring parity dump and the series analysis fixture
+(then update `ANALYSIS_FIXTURE_DIGEST` in `series.test.ts` if it changed):
+
+```zsh
+cd web
+npm run dump:families -- --all --n 1000 --bank
+npm run dump:families -- --module src/tasks/_example/index.ts --family example --n 1000 --bank
+npx tsx src/tasks/coding/dump-scores.ts --n 1000 --bank
+npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ../../humanbench-bank/golden/ts_dumps/series.analysis.json
+```
+
+The other direction, the bank's golden scoring files into `web/src/engine/__fixtures__/`, is
+`npm run sync:golden` (ROADMAP A17). When the bank checkout is present, `npm test` fails if any
+of these copies is stale.
 
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 
