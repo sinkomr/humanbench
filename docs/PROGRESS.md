@@ -28,8 +28,15 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: workflow wf2** (run `wf_4db95169-5e8`, started 17:58 on 2026-09-26): M1.2b → M1.3 + M1.4a on branch `wf2/scorer`; M1.F on `wf2/contract` → 8 families on `wf2/<fam>`, each in a worktree under `~/code/wt/<name>/{humanbench,humanbench-bank}`. At the end an integrator merges `wf2/*` into `dev`.
-- **If interrupted:** run `git worktree list` and `git branch --list 'wf2/*'` in both repos. Each task commits on its own branch, so finish unfinished branches, then merge them into `dev` in the order scorer, contract, rotation, matrices, series, quant, span, rt, coding, reading. After that, register the families, regenerate `golden/ts_dumps`, run all gates, and remove the worktrees.
+- **wf2 was interrupted** at about 20:12 on 2026-09-26 by the usage limit. Scorer, contract, series, span and rt had finished their review fixes. The fixes for matrices, quant, rotation and coding, and the reading review, had not finished.
+- **In flight: recovery workflow wf2b** (run `wf_598bf613-59c` in session `fc164352`, started 21:58). It does four things in order:
+  1. finishes those fixes on each `wf2/<fam>` branch;
+  2. runs an integrator that merges `wf2/*` into `dev` in both repos, registers the families, regenerates `golden/ts_dumps` and removes the worktrees;
+  3. runs a 4-lens audit of the merged `dev`;
+  4. repairs what the audit finds.
+  The prior findings are saved in the session scratchpad (`wf2/findings.json`).
+- **If interrupted:** run `git worktree list` and `git branch --list 'wf2/*'` in both repos. A branch that is still unmerged and has a dirty worktree is a fix left half-done: finish it, then merge into `dev` in this order: scorer, contract, rotation, matrices, series, quant, span, rt, coding, reading. After that, register the families, regenerate the dumps, run all gates, and remove the worktrees.
+- Resume ticks were re-created in this session (the old session's crons died with it), with the same schedule: `23 22-23 26 9 *` and `23 0-9 27 9 *`.
 
 ## Needs you (blocked on the user)
 
