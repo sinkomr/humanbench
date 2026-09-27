@@ -18,12 +18,15 @@
  * (start + max)/2, i.e. the mean GRM threshold, with σ_b = 1.0; its stratum follows from the
  * default bands (`stratumOfB`), so each span family has exactly one stratum.
  *
- * [SPEC] v0 expected time (§7.4 E[T] for a block): 12 s of instructions plus, for the lengths a
- * median taker is given (3 … ⌈μ⌉), 2 trials × (L elements × (1 s presentation + r s entry) +
- * 1.5 s between trials), with r = 0.5 s (forward), 0.8 s (backward), 0.6 s (Corsi): 102 s,
- * 64.2 s and 81.6 s.
+ * [SPEC] v0 expected time (§7.4 E[T], the median taker θ = 0) under the block's own GRM: 12 s
+ * of instructions plus, for each length L = 3 … max, P(L is given | θ = 0) × 2 trials ×
+ * (L elements × (1 s presentation + r s entry) + 1.5 s between trials), with r = 0.5 s
+ * (forward), 0.8 s (backward), 0.6 s (Corsi). The block always gives one length past the
+ * longest passed one, so L is given iff longest ≥ L − 1: P = P(y ≥ L − 3 | θ = 0), i.e. 1 at
+ * L = 3 and σ(−a·b_{L−1}) above. That is ≈ 117.0 s, 87.0 s and 96.2 s.
  */
 
+import { grmCumulative } from '../../engine'
 import type { DifficultyPrior } from '../family'
 import { SIGMA_B_DEFAULT, clampPrior, stratumOfB } from '../priors'
 import type { Stratum } from '../ids'
@@ -93,13 +96,18 @@ export function spanStratum(cfg: SpanTaskConfig): Stratum {
   return stratumOfB(clampPrior(spanB(cfg, meanLength(cfg))))
 }
 
-/** [SPEC] v0 E[T] of a block in seconds (see the module comment). */
+/**
+ * [SPEC] v0 E[T] of a block in seconds at θ = 0 (see the module comment): each length's trial
+ * time weighted by the GRM probability that the block reaches it.
+ */
 export function spanExpectedTime(cfg: SpanTaskConfig): number {
   const soaS = (SPAN_TIMING.on_ms + SPAN_TIMING.off_ms) / 1000
-  const lastLength = Math.min(cfg.maxLength, Math.ceil(cfg.norm.mu))
+  // reach[k] = P(y ≥ k | θ = 0); length L is given iff y ≥ L − START_LENGTH (reach[0] = 1).
+  const reach = grmCumulative(0, SPAN_GRM_A, grmThresholds(cfg))
   let t = SPAN_INSTRUCTIONS_S
-  for (let length = START_LENGTH; length <= lastLength; length++) {
-    t += TRIALS_PER_LENGTH * (length * (soaS + cfg.responseSPerElement) + SPAN_INTER_TRIAL_S)
+  for (let length = START_LENGTH; length <= cfg.maxLength; length++) {
+    const given = reach[length - START_LENGTH] as number
+    t += given * TRIALS_PER_LENGTH * (length * (soaS + cfg.responseSPerElement) + SPAN_INTER_TRIAL_S)
   }
   return t
 }

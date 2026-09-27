@@ -15,7 +15,9 @@
  *   key as responses reaches the top category m = #thresholds; failing both trials at length F
  *   after passing everything before stops there with category F − 3; one pass per length is
  *   enough; the stop categories are exactly 0 … m; and the stimuli as typed (no reversal)
- *   score m forward but fail at once backward.
+ *   score m forward but fail at once backward. Given the checks above it depends only on
+ *   `protocol.ts`, so it never fails alone on a bad block: it is a per-item self-test of the
+ *   state machine that every gate run (G2/G3) repeats, not an extra item rule.
  */
 
 import { canonicalJson } from '../ids'
@@ -40,7 +42,9 @@ export const SPAN_FLOAT_TOL = 1e-9
 export const SPAN_TIME_RANGE_S: readonly [number, number] = Object.freeze([60, 120])
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
-const isIntArray = (v: unknown): v is number[] => Array.isArray(v) && v.every(isInt)
+/** Every index of a dense array passes `f` (Array.from turns holes into undefined; `every` skips them). */
+const isArrayOf = <T>(v: unknown, f: (x: unknown) => x is T): v is T[] => Array.isArray(v) && Array.from(v as unknown[]).every(f)
+const isIntArray = (v: unknown): v is number[] => isArrayOf(v, isInt)
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b)
 const close = (a: unknown, b: number): boolean => typeof a === 'number' && Math.abs(a - b) <= SPAN_FLOAT_TOL
@@ -110,11 +114,11 @@ export function verifySpan(cfg: SpanTaskConfig, item: SpanItem): VerifyResult {
     const spec = item.spec as unknown
     if (!isRecord(spec)) return verdict({ spec_fields: false })
     const trials = spec.trials
-    if (!(Array.isArray(trials) && trials.every(isIntArray))) return verdict({ trials_well_formed: false })
+    if (!isArrayOf(trials, isIntArray)) return verdict({ trials_well_formed: false })
     const key = item.key as unknown
     const seqs = isRecord(key) ? key.sequences : undefined
     const keyOk =
-      isRecord(key) && Object.keys(key).length === 1 && Array.isArray(seqs) && seqs.every(isIntArray) && seqs.length === trials.length
+      isRecord(key) && Object.keys(key).length === 1 && isArrayOf(seqs, isIntArray) && seqs.length === trials.length
     const p = protocolOf(cfg)
     const n = trialCount(p)
     const symbols = new Set(cfg.symbols)

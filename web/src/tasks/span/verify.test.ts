@@ -115,6 +115,10 @@ describe('span verifier rejects each failure reason (hand-built bad blocks)', ()
     expectRejected(SPAN_FWD, tamper(fwd, (x) => (x.spec.trials = 'abc')), ['trials_well_formed'])
     expectRejected(SPAN_FWD, tamper(fwd, (x) => ((x.spec.trials as unknown[][])[3] = [1, '2', 3, 4])), ['trials_well_formed'])
     expectRejected(SPAN_FWD, tamper(fwd, (x) => ((x.spec.trials as unknown[][])[3] = [1, 2.5, 3, 4])), ['trials_well_formed'])
+    // A hole in memory (`every` would skip it) and its JSON form, null.
+    expectRejected(SPAN_FWD, tamper(fwd, (x) => ((x.spec.trials as unknown[][])[3] = new Array(4))), ['trials_well_formed'])
+    expectRejected(SPAN_FWD, tamper(fwd, (x) => ((x.spec.trials as unknown[][])[3] = [1, null, 3, 4])), ['trials_well_formed'])
+    expectRejected(SPAN_FWD, tamper(fwd, (x) => delete (x.spec.trials as unknown[][])[3]), ['trials_well_formed'])
   })
 
   it('trial_count: a missing length', () => {
@@ -171,6 +175,10 @@ describe('span verifier rejects each failure reason (hand-built bad blocks)', ()
     expectRejected(SPAN_FWD, short, ['key_well_formed', 'key_matches_rule', 'state_machine_consistent'])
     const text = tamper(cor, (x) => (x.key = { sequences: cor.key.sequences.map((s) => s.join('')) }))
     expectRejected(SPAN_CORSI, text, ['key_well_formed', 'key_matches_rule', 'state_machine_consistent'])
+    const holey = tamper(bwd, (x) => ((x.key.sequences as unknown[][])[0] = new Array(3)))
+    expectRejected(SPAN_BWD, holey, ['key_well_formed', 'key_matches_rule', 'state_machine_consistent'])
+    const nulls = tamper(bwd, (x) => ((x.key.sequences as unknown[][])[0] = [null, null, null]))
+    expectRejected(SPAN_BWD, nulls, ['key_well_formed', 'key_matches_rule', 'state_machine_consistent'])
   })
 
   it('key_matches_rule: a wrong forward key; an unreversed backward key', () => {

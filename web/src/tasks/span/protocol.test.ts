@@ -179,6 +179,15 @@ describe('exact match and response streams (§14.6 examples 10–11)', () => {
     expect(isExactMatch([], [])).toBe(true)
   })
 
+  it('never matches a sparse (holey) response: blank or slot-filled entries are wrong', () => {
+    expect(isExactMatch(new Array(3), [1, 2, 3])).toBe(false)
+    const lastSlot: number[] = []
+    lastSlot[2] = 3
+    expect(isExactMatch(lastSlot, [1, 2, 3])).toBe(false)
+    expect(isExactMatch([1, , 3], [1, 2, 3])).toBe(false)
+    expect(isExactMatch([1, 2, undefined], [1, 2, 3])).toBe(false)
+  })
+
   it('advances on raw responses and refuses streams longer than the block', () => {
     const p: SpanProtocol = { start_length: 3, trials_per_length: 2, max_length: 3 }
     const key = [

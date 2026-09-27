@@ -26,6 +26,9 @@ import {
 
 const WRONG: number[] = []
 
+/** Any seed except one ending in `@s<k>`, which would target a stratum the family may not have. */
+const SEEDS = fc.string({ minLength: 1 }).filter((s) => !/@s[1-6]$/.test(s))
+
 /** Responses of a taker who gets exactly the trials with length ≤ span right, until the block stops. */
 function takerResponses(item: SpanItem, span: number): number[][] {
   const out: number[][] = []
@@ -84,14 +87,30 @@ describe('difficulty and time priors (M1.P, [SPEC] v0)', () => {
     expect(spanStratum(cfg)).toBe(stratumOfB(d.b_prior))
   })
 
-  it('expected block times are 102 s, 64.2 s and 81.6 s, all within 60–120 s', () => {
-    expect(spanExpectedTime(SPAN_FWD)).toBeCloseTo(102, 9)
-    expect(spanExpectedTime(SPAN_BWD)).toBeCloseTo(64.2, 9)
-    expect(spanExpectedTime(SPAN_CORSI)).toBeCloseTo(81.6, 9)
+  it('expected block times are ≈ 117.0 s, 87.0 s and 96.2 s, all within 60–120 s', () => {
+    expect(spanExpectedTime(SPAN_FWD)).toBeCloseTo(117.03284212767, 9)
+    expect(spanExpectedTime(SPAN_BWD)).toBeCloseTo(86.99549880062, 9)
+    expect(spanExpectedTime(SPAN_CORSI)).toBeCloseTo(96.16566943478, 9)
     for (const cfg of SPAN_TASKS) {
       expect(spanExpectedTime(cfg)).toBeGreaterThanOrEqual(SPAN_TIME_RANGE_S[0])
       expect(spanExpectedTime(cfg)).toBeLessThanOrEqual(SPAN_TIME_RANGE_S[1])
     }
+  })
+
+  it.each([spanFwd, spanBwd, corsi])('$name: E[T] is the GRM-weighted time of the trials the state machine gives at θ = 0', (family) => {
+    // Independent of spanExpectedTime: run the block for a taker of each category, time the
+    // trials it was actually given (one length past the longest passed), weight by P(y | θ = 0).
+    const cfg = cfgOf(family.name)
+    const item = family.generate('time')
+    const probs = grmProbs(0, SPAN_GRM_A, grmThresholds(cfg))
+    let expected = 0
+    for (let y = 0; y < probs.length; y++) {
+      const responses = takerResponses(item, y === 0 ? 0 : y + 2)
+      expect(outcomeOf(item, responses).category).toBe(y)
+      const trialS = responses.map((_, i) => (item.spec.trials[i] as number[]).length * (1 + cfg.responseSPerElement) + 1.5)
+      expected += (probs[y] as number) * (12 + trialS.reduce((a, b) => a + b, 0))
+    }
+    expect(spanExpectedTime(cfg)).toBeCloseTo(expected, 9)
   })
 })
 
@@ -117,7 +136,7 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
 
   it('a taker with true span S scores y = min(S, max) − 2 (0 below 3), for every task (property)', () => {
     fc.assert(
-      fc.property(fc.constantFrom(spanFwd, spanBwd, corsi), fc.integer({ min: 0, max: 12 }), fc.string({ minLength: 1 }), (family, span, seed) => {
+      fc.property(fc.constantFrom(spanFwd, spanBwd, corsi), fc.integer({ min: 0, max: 12 }), SEEDS, (family, span, seed) => {
         const item = family.generate(seed)
         const max = item.spec.max_length
         const responses = takerResponses(item, span)
@@ -144,6 +163,24 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
     const k = item.key.sequences[0] as number[]
     expect(spanFwd.score(item, [k.join(''), k.map(String)])).toEqual({ correct: null, value: 0 })
     expect(spanFwd.score(item, [null, { digits: k }])).toEqual({ correct: null, value: 0 })
+  })
+
+  it('gives no credit for blank or partly filled entry slots (sparse arrays)', () => {
+    // A UI that fills slots by index (resp[pos] = digit) leaves holes where nothing was entered.
+    for (const family of [spanFwd, spanBwd, corsi]) {
+      const item = family.generate('holes')
+      const blank = item.key.sequences.map((s) => new Array<number>(s.length))
+      expect(family.score(item, blank.slice(0, 2))).toEqual({ correct: null, value: 0 })
+      const lastOnly = item.key.sequences.slice(0, 2).map((s) => {
+        const r = new Array<number>(s.length)
+        r[s.length - 1] = s[s.length - 1] as number
+        return r
+      })
+      expect(family.score(item, lastOnly)).toEqual({ correct: null, value: 0 })
+      // A hole in the response stream itself is a missing, hence wrong, trial.
+      expect(runBlock(item, [, item.key.sequences[1]])).toMatchObject({ finished: false, trial: 2, longest_passed: 3 })
+      expect(outcomeOf(item, new Array(2))).toMatchObject({ longest_passed: 0, category: 0, trials_given: 2 })
+    }
   })
 })
 

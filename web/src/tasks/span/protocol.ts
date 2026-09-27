@@ -111,9 +111,15 @@ export function spanStatus(p: SpanProtocol, results: readonly boolean[]): SpanSt
   return finish(trialCount(p), 'max_length')
 }
 
-/** Exact match (§14.6 ex. 10–11): the response is an array equal element for element to `expected`. */
+/**
+ * Exact match (§14.6 ex. 10–11): the response is an array equal element for element to `expected`.
+ * Compared index by index, not with `every`, which skips the holes of a sparse array: a blank
+ * `new Array(n)` or a slot-filled `[ , , 6]` must not match.
+ */
 export function isExactMatch(response: unknown, expected: readonly number[]): boolean {
-  return Array.isArray(response) && response.length === expected.length && response.every((x, i) => x === expected[i])
+  if (!Array.isArray(response) || response.length !== expected.length) return false
+  for (let i = 0; i < expected.length; i++) if (response[i] !== expected[i]) return false
+  return true
 }
 
 /**
@@ -123,7 +129,8 @@ export function isExactMatch(response: unknown, expected: readonly number[]): bo
  */
 export function advanceSpan(p: SpanProtocol, expected: readonly (readonly number[])[], responses: readonly unknown[]): SpanStatus {
   if (!Array.isArray(responses)) throw new TypeError('span responses must be an array (one entry per trial given)')
-  const results = responses.map((r, i) => {
+  // Array.from visits every index (a hole is an undefined, i.e. wrong, response); map would skip it.
+  const results = Array.from(responses, (r, i) => {
     const exp = expected[i]
     if (exp === undefined) throw new RangeError(`span response ${i} has no trial (the block has ${expected.length})`)
     return isExactMatch(r, exp)
