@@ -9,6 +9,7 @@ describe('engine barrel (index.ts)', () => {
       // axes.ts
       'AXES', 'AXIS_CODES', 'AXIS_INDEX', 'CLUSTERS', 'N_AXES', 'TIER_GLYPH', 'axis', 'isAxisCode',
       'initialCorrelation', 'initialSigma', 'rawInitialSigma', 'nearestPD', 'SIGMA_EIGEN_FLOOR',
+      'SIGMA_VERSION', 'SIGMA_NEAREST_PD_CHANGED', 'R_LITERATURE', 'R_DEFAULT',
       // linalg.ts
       'cholesky', 'tryCholesky', 'choleskySolve', 'choleskyInverse', 'choleskyLogDet', 'solve',
       'inverse', 'spdSolve', 'spdInverse', 'matmul', 'matvec', 'transpose', 'symmetricEigen',
