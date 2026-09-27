@@ -10,13 +10,34 @@ import {
   initialSigma,
   isAxisCode,
   N_AXES,
+  NEAREST_PD_TOL,
   nearestPD,
+  R_LITERATURE,
   rawInitialSigma,
   SIGMA_EIGEN_FLOOR,
+  SIGMA_NEAREST_PD_CHANGED,
+  SIGMA_VERSION,
   TIER_GLYPH,
   type AxisCode,
 } from './axes'
 import { isPositiveDefinite, isSymmetric, maxAbsDiff, symmetricEigen, tryCholesky } from './linalg'
+// Bank golden files, copied by scripts/sync-golden.sh (ROADMAP A17).
+import scoringV1Text from './__fixtures__/scoring_v1.json?raw'
+import sigmaV2Text from './__fixtures__/sigma_v2.json?raw'
+
+interface SigmaDoc {
+  sigma_version: string
+  axes: string[]
+  sigma: number[][]
+}
+interface NearestPDCase {
+  id: string
+  floor: number
+  input: number[][]
+  output: number[][]
+}
+const sigmaV2 = JSON.parse(sigmaV2Text) as SigmaDoc
+const scoringV1 = JSON.parse(scoringV1Text) as SigmaDoc & { version: string; nearest_pd: NearestPDCase[] }
 
 const r = (a: AxisCode, b: AxisCode): number => {
   const S = initialSigma()
@@ -41,7 +62,7 @@ describe('axis registry (DESIGN §3)', () => {
     const spec = AXES.map((a) => [a.code, a.name, a.cluster, a.chc, a.tier, a.modelKind, a.status].join(' | '))
     expect(spec).toEqual([
       'MAT | Matrix & Series | Reasoning | Gf | a | 2pl | active',
-      'LR | Logical Reasoning | Reasoning | Gf-verbal | a | 3pl | active',
+      'LR | Logical Reasoning | Reasoning | Gf-verbal | a | 2pl | active',
       'LG | Analytical/Logic Games | Reasoning | Gf-RQ | a | 2pl_testlet | active',
       'RC | Reading Comprehension | Verbal | Grw | a | 2pl_testlet | active',
       'VOC | Vocabulary & Verbal Analogies | Verbal | Gc | a | 2pl | active',
@@ -74,9 +95,17 @@ describe('axis registry (DESIGN §3)', () => {
     expect([...new Set(AXES.map((a) => a.cluster))]).toEqual([...CLUSTERS])
   })
 
+  it('models LR as 2PL (A9: k ≤ 4 options → 3PL c = 1/k; k ≥ 5 or numeric entry → 2PL)', () => {
+    expect(axis('LR').modelKind).toBe('2pl')
+    expect(AXES.filter((a) => a.modelKind === '3pl')).toEqual([])
+  })
+
   it('is frozen', () => {
     expect(Object.isFrozen(AXES)).toBe(true)
     expect(Object.isFrozen(AXES[0])).toBe(true)
+    // The Σ rule table too, tuples included: the pinned Σ cannot drift under one SIGMA_VERSION.
+    expect(Object.isFrozen(R_LITERATURE)).toBe(true)
+    for (const pair of R_LITERATURE) expect(Object.isFrozen(pair)).toBe(true)
   })
 
   it('isAxisCode accepts exactly the 17 codes', () => {
@@ -96,56 +125,113 @@ describe('initial Σ (DESIGN §3, §7.2)', () => {
     S.forEach((row, i) => expect(row[i]).toBe(1))
   })
 
-  it('follows the precedence rules (spot checks)', () => {
-    expect(r('MAT', 'LR')).toBe(0.55) // same cluster (Reasoning)
-    expect(r('MAT', 'KST')).toBe(0.45) // Reasoning ↔ Knowledge
-    expect(r('KHU', 'LG')).toBe(0.45)
-    expect(r('RT', 'PS')).toBe(0.55) // Speed, same cluster
-    expect(r('RT', 'MAT')).toBe(0.2) // Speed ↔ other
-    expect(r('CAL', 'FER')).toBe(0.2) // CAL beats same cluster
-    expect(r('CAL', 'RT')).toBe(0.2)
-    expect(r('CAL', 'EMO')).toBe(0.2) // CAL beats Social-Creative
-    expect(r('PS', 'EMO')).toBe(0.2) // Speed beats Social-Creative
-    expect(r('EMO', 'CRE')).toBe(0.55) // Social-Creative, same cluster
-    expect(r('EMO', 'MAT')).toBe(0.3) // Social-Creative ↔ other
-    expect(r('SPA', 'RC')).toBe(0.4) // default [SPEC]
-    expect(r('SPA', 'WM')).toBe(0.55)
-    expect(r('KST', 'KAP')).toBe(0.55)
-    expect(r('QR', 'FER')).toBe(0.4)
+  it('is pinned as sigma-v2-2026-09-26', () => {
+    expect(SIGMA_VERSION).toBe('sigma-v2-2026-09-26')
   })
 
-  it('matches an independently written 17×17 matrix on all 289 pairs', () => {
-    // Written out from the shared spec rules (×100), not generated from initialCorrelation.
-    // prettier-ignore
-    const expected100 = [
-      //        MAT   LR   LG   RC  VOC   QR  SPA   WM   RT   PS  FER  CAL  KST  KHU  KAP  EMO  CRE
-      /* MAT */ [100,  55,  55,  40,  40,  40,  40,  40,  20,  20,  40,  20,  45,  45,  45,  30,  30],
-      /*  LR */ [ 55, 100,  55,  40,  40,  40,  40,  40,  20,  20,  40,  20,  45,  45,  45,  30,  30],
-      /*  LG */ [ 55,  55, 100,  40,  40,  40,  40,  40,  20,  20,  40,  20,  45,  45,  45,  30,  30],
-      /*  RC */ [ 40,  40,  40, 100,  55,  40,  40,  40,  20,  20,  40,  20,  40,  40,  40,  30,  30],
-      /* VOC */ [ 40,  40,  40,  55, 100,  40,  40,  40,  20,  20,  40,  20,  40,  40,  40,  30,  30],
-      /*  QR */ [ 40,  40,  40,  40,  40, 100,  40,  40,  20,  20,  40,  20,  40,  40,  40,  30,  30],
-      /* SPA */ [ 40,  40,  40,  40,  40,  40, 100,  55,  20,  20,  40,  20,  40,  40,  40,  30,  30],
-      /*  WM */ [ 40,  40,  40,  40,  40,  40,  55, 100,  20,  20,  40,  20,  40,  40,  40,  30,  30],
-      /*  RT */ [ 20,  20,  20,  20,  20,  20,  20,  20, 100,  55,  20,  20,  20,  20,  20,  20,  20],
-      /*  PS */ [ 20,  20,  20,  20,  20,  20,  20,  20,  55, 100,  20,  20,  20,  20,  20,  20,  20],
-      /* FER */ [ 40,  40,  40,  40,  40,  40,  40,  40,  20,  20, 100,  20,  40,  40,  40,  30,  30],
-      /* CAL */ [ 20,  20,  20,  20,  20,  20,  20,  20,  20,  20,  20, 100,  20,  20,  20,  20,  20],
-      /* KST */ [ 45,  45,  45,  40,  40,  40,  40,  40,  20,  20,  40,  20, 100,  55,  55,  30,  30],
-      /* KHU */ [ 45,  45,  45,  40,  40,  40,  40,  40,  20,  20,  40,  20,  55, 100,  55,  30,  30],
-      /* KAP */ [ 45,  45,  45,  40,  40,  40,  40,  40,  20,  20,  40,  20,  55,  55, 100,  30,  30],
-      /* EMO */ [ 30,  30,  30,  30,  30,  30,  30,  30,  20,  20,  30,  20,  30,  30,  30, 100,  55],
-      /* CRE */ [ 30,  30,  30,  30,  30,  30,  30,  30,  20,  20,  30,  20,  30,  30,  30,  55, 100],
-    ]
+  // Rule (1) of Σ_init v2 (ROADMAP A8): every pair of the §3 expected-r table, at its midpoint.
+  // Written out from A8, not derived from R_LITERATURE.
+  const literaturePairs: [AxisCode, AxisCode, number][] = [
+    ['MAT', 'QR', 0.6],
+    ['MAT', 'LG', 0.6], // beats same cluster (.55)
+    ['MAT', 'SPA', 0.5],
+    ['RC', 'VOC', 0.6], // beats same cluster (.55)
+    ['RC', 'KHU', 0.6],
+    ['VOC', 'KHU', 0.6],
+    ['LR', 'RC', 0.6],
+    ['WM', 'MAT', 0.4],
+    ['WM', 'LR', 0.4],
+    ['WM', 'LG', 0.4],
+    ['RT', 'MAT', 0.28], // beats Speed (.20)
+    ['RT', 'LR', 0.28],
+    ['RT', 'LG', 0.28],
+    ['PS', 'RC', 0.3], // beats Speed (.20)
+    ['FER', 'QR', 0.4],
+    ['FER', 'KST', 0.4],
+    ['EMO', 'VOC', 0.4], // beats Social-Creative (.30)
+    ['EMO', 'KHU', 0.4],
+    ['CRE', 'MAT', 0.23], // beats Social-Creative (.30)
+    ['CRE', 'LR', 0.23],
+    ['CRE', 'LG', 0.23],
+    ['CRE', 'RC', 0.23],
+    ['CRE', 'VOC', 0.23],
+    ['CRE', 'QR', 0.23],
+    ['CRE', 'SPA', 0.23],
+    ['CRE', 'WM', 0.23],
+    ['CRE', 'FER', 0.23],
+    ['CRE', 'KST', 0.23],
+    ['CRE', 'KHU', 0.23],
+    ['CRE', 'KAP', 0.23],
+  ]
+
+  // One pair per branch of rules (2) and (3), plus the precedence between them (same as bank).
+  const rulePairs: [AxisCode, AxisCode, number, string][] = [
+    ['CAL', 'FER', 0.2, '(2) CAL, beats same cluster'],
+    ['CAL', 'RT', 0.2, '(2) CAL before Speed'],
+    ['CAL', 'CRE', 0.2, '(2) CAL before Social-Creative'],
+    ['PS', 'MAT', 0.2, '(2) exactly one in Speed'],
+    ['RT', 'EMO', 0.2, '(2) Speed before Social-Creative'],
+    ['RT', 'CRE', 0.2, '(2) Speed before Social-Creative'],
+    ['EMO', 'MAT', 0.3, '(2) exactly one in Social-Creative'],
+    ['CRE', 'EMO', 0.55, '(2) same cluster, Social-Creative'],
+    ['RT', 'PS', 0.55, '(2) same cluster, Speed'],
+    ['SPA', 'WM', 0.55, '(2) same cluster'],
+    ['KST', 'KAP', 0.55, '(2) same cluster'],
+    ['LR', 'LG', 0.55, '(2) same cluster'],
+    ['MAT', 'KST', 0.45, '(2) Reasoning ↔ Knowledge'],
+    ['KHU', 'LG', 0.45, '(2) Reasoning ↔ Knowledge'],
+    ['SPA', 'RC', 0.35, '(3) otherwise'],
+    ['QR', 'KHU', 0.35, '(3) otherwise'],
+    ['FER', 'KAP', 0.35, '(3) otherwise'],
+  ]
+
+  it.each(literaturePairs)('rule (1): %s ↔ %s = %s', (a, b, want) => {
+    expect(r(a, b)).toBe(want)
+    expect(r(b, a)).toBe(want)
+    expect(initialCorrelation(a, b)).toBe(want)
+    expect(initialCorrelation(b, a)).toBe(want)
+  })
+
+  it.each(rulePairs)('rules (2)/(3): %s ↔ %s = %s %s', (a, b, want) => {
+    expect(r(a, b)).toBe(want)
+    expect(r(b, a)).toBe(want)
+    expect(initialCorrelation(a, b)).toBe(want)
+    expect(initialCorrelation(b, a)).toBe(want)
+  })
+
+  it('lists exactly the 30 A8 literature pairs, none with CAL', () => {
+    const key = (a: string, b: string): string => [a, b].sort().join('|')
+    const got = new Map(R_LITERATURE.map(([a, b, v]) => [key(a, b), v]))
+    const want = new Map(literaturePairs.map(([a, b, v]) => [key(a, b), v]))
+    expect(R_LITERATURE).toHaveLength(30)
+    expect(got).toEqual(want)
+    expect(R_LITERATURE.some(([a, b]) => a === 'CAL' || b === 'CAL')).toBe(false)
+  })
+
+  it('uses only the A8 values off the diagonal, with CAL at .20 to every axis', () => {
     const S = initialSigma()
-    for (const [i, a] of AXIS_CODES.entries()) {
-      for (const [j, b] of AXIS_CODES.entries()) {
-        const want = expected100[i]![j]! / 100
-        expect(initialCorrelation(a, b), `${a}↔${b}`).toBe(want)
-        expect(initialCorrelation(b, a), `${b}↔${a}`).toBe(want)
-        expect(S[i]![j], `Σ[${a}][${b}]`).toBe(want)
-      }
-    }
+    const off = new Set(S.flatMap((row, i) => row.filter((_, j) => j !== i)))
+    expect([...off].sort((x, y) => x - y)).toEqual([0.2, 0.23, 0.28, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6])
+    expect(new Set(S[AXIS_INDEX.CAL])).toEqual(new Set([0.2, 1]))
+  })
+
+  it('equals bank golden/sigma_v2.json on all 289 entries (to 1e-12, and exactly)', () => {
+    expect(sigmaV2.sigma_version).toBe(SIGMA_VERSION)
+    expect(sigmaV2.axes).toEqual([...AXIS_CODES])
+    const S = initialSigma()
+    expect(sigmaV2.sigma).toHaveLength(17)
+    for (const row of sigmaV2.sigma) expect(row).toHaveLength(17)
+    expect(maxAbsDiff(S, sigmaV2.sigma)).toBeLessThanOrEqual(1e-12)
+    // Σ v2 is not repaired by nearestPD, so both repos hold the very same doubles.
+    expect(S).toEqual(sigmaV2.sigma)
+  })
+
+  it('equals the Σ and sigma_version pinned in bank golden/scoring_v1.json', () => {
+    expect(scoringV1.version).toBe('scoring_v1')
+    expect(scoringV1.sigma_version).toBe(SIGMA_VERSION)
+    expect(scoringV1.axes).toEqual([...AXIS_CODES])
+    expect(maxAbsDiff(initialSigma(), scoringV1.sigma)).toBeLessThanOrEqual(1e-12)
+    expect(scoringV1.sigma).toEqual(sigmaV2.sigma)
   })
 
   it('is positive definite with every eigenvalue above the floor', () => {
@@ -155,9 +241,12 @@ describe('initial Σ (DESIGN §3, §7.2)', () => {
     expect(symmetricEigen(S).values[0]).toBeGreaterThan(SIGMA_EIGEN_FLOOR)
   })
 
-  it('nearestPD leaves it unchanged (bit for bit)', () => {
+  it('nearestPD leaves it unchanged (bit for bit), as SIGMA_NEAREST_PD_CHANGED records', () => {
     const raw = rawInitialSigma()
-    expect(nearestPD(raw)).toEqual(raw)
+    expect(symmetricEigen(raw).values[0]).toBeGreaterThan(SIGMA_EIGEN_FLOOR)
+    const changed = maxAbsDiff(nearestPD(raw), raw) !== 0
+    expect(changed).toBe(SIGMA_NEAREST_PD_CHANGED)
+    expect(SIGMA_NEAREST_PD_CHANGED).toBe(false)
     expect(initialSigma()).toEqual(raw)
   })
 
@@ -169,6 +258,36 @@ describe('initial Σ (DESIGN §3, §7.2)', () => {
 })
 
 describe('nearestPD', () => {
+  // Bank golden nearest_pd pairs (clip, rescale, shrink toward I; ROADMAP A8, §7.2).
+  it.each(scoringV1.nearest_pd.map((c) => [c.id, c] as const))('matches bank nearest_pd: %s', (_id, c) => {
+    expect(c.floor).toBe(SIGMA_EIGEN_FLOOR)
+    const out = nearestPD(c.input, c.floor)
+    expect(maxAbsDiff(out, c.output)).toBeLessThanOrEqual(1e-12)
+    out.forEach((row, i) => expect(row[i]).toBe(1))
+    expect(isSymmetric(out)).toBe(true)
+    expect(symmetricEigen(out).values[0]).toBeGreaterThanOrEqual(c.floor - NEAREST_PD_TOL)
+  })
+
+  it('is idempotent on every golden output, bit for bit (as bank nearest_pd)', () => {
+    for (const c of scoringV1.nearest_pd) {
+      const once = nearestPD(c.input, c.floor)
+      expect(nearestPD(once, c.floor)).toEqual(once)
+    }
+  })
+
+  it('shrinks toward I when the rescaling leaves the smallest eigenvalue below the floor', () => {
+    // Clipping lifts the diagonal above 1; rescaling back to 1 pulls λ_min below the floor again.
+    const chain = [
+      [1, 0.99, 0],
+      [0.99, 1, 0.99],
+      [0, 0.99, 1],
+    ]
+    const out = nearestPD(chain)
+    expect(symmetricEigen(out).values[0]).toBeCloseTo(SIGMA_EIGEN_FLOOR, 12)
+    expect(out[0]![1]).toBeGreaterThan(0)
+    expect(nearestPD(out)).toEqual(out) // idempotent
+  })
+
   it('repairs a non-PD correlation matrix', () => {
     // Pairwise-plausible but jointly impossible correlations: eigenvalues 1.9, 1.9, −0.8.
     const bad = [
@@ -214,7 +333,7 @@ describe('nearestPD', () => {
           expect(isSymmetric(out)).toBe(true)
           out.forEach((row, i) => expect(row[i]).toBe(1))
           expect(tryCholesky(out)).not.toBeNull()
-          expect(symmetricEigen(out).values[0]).toBeGreaterThan(0)
+          expect(symmetricEigen(out).values[0]).toBeGreaterThanOrEqual(SIGMA_EIGEN_FLOOR - 1e-11)
           for (const row of out) for (const v of row) expect(Math.abs(v)).toBeLessThanOrEqual(1)
         },
       ),
@@ -227,5 +346,6 @@ describe('nearestPD', () => {
     expect(() => nearestPD([[1, 0]])).toThrow(RangeError)
     expect(() => nearestPD([[Number.NaN]])).toThrow(RangeError)
     expect(() => nearestPD([[1]], 0)).toThrow(RangeError)
+    expect(() => nearestPD([[1]], 1)).toThrow(RangeError)
   })
 })

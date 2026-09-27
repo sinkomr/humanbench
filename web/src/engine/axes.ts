@@ -5,7 +5,7 @@
  * reference scorer (bank `hb.axes`). Every θ vector and Σ matrix is indexed in this order.
  */
 
-import { symmetricEigen, type Matrix } from './linalg'
+import { symmetricEigen, tryCholesky, type Matrix } from './linalg'
 
 /** Axis codes in canonical order (DESIGN §3). */
 export const AXIS_CODES = [
@@ -47,7 +47,10 @@ export type Cluster = (typeof CLUSTERS)[number]
 /** Gold-verification tier (DESIGN §4): a = machine-verifiable key, b = cited/continuous, c = consensus. */
 export type GoldTier = 'a' | 'b' | 'c'
 
-/** Person-scoring model family for an axis (DESIGN §7.1). */
+/**
+ * Person-scoring model family for an axis (DESIGN §7.1). Keyed MC by option count (ROADMAP A9,
+ * §7.1 wins over §3): k ≤ 4 options → 3PL with c = 1/k; k ≥ 5 options or numeric entry → 2PL.
+ */
 export type ModelKind = '2pl' | '3pl' | '2pl_testlet' | 'grm' | 'gaussian'
 
 /** 'active' = measured in v1; 'v2' = shown as "not yet measured" in v1 (DESIGN §3). */
@@ -77,7 +80,7 @@ type Row = [AxisCode, string, Cluster, string, GoldTier, ModelKind, AxisStatus, 
 // code | name | cluster | CHC | tier | model | status | embedded  (DESIGN §3 table rows 1–17)
 const ROWS: readonly Row[] = [
   ['MAT', 'Matrix & Series', 'Reasoning', 'Gf', 'a', '2pl', 'active'],
-  ['LR', 'Logical Reasoning', 'Reasoning', 'Gf-verbal', 'a', '3pl', 'active'],
+  ['LR', 'Logical Reasoning', 'Reasoning', 'Gf-verbal', 'a', '2pl', 'active'], // 5-option MC → 2PL (A9)
   ['LG', 'Analytical/Logic Games', 'Reasoning', 'Gf-RQ', 'a', '2pl_testlet', 'active'],
   ['RC', 'Reading Comprehension', 'Verbal', 'Grw', 'a', '2pl_testlet', 'active'],
   ['VOC', 'Vocabulary & Verbal Analogies', 'Verbal', 'Gc', 'a', '2pl', 'active'],
@@ -134,40 +137,88 @@ export function axis(code: AxisCode): AxisDef {
 
 /** Eigenvalue floor for {@link nearestPD} (DESIGN §7.2). */
 export const SIGMA_EIGEN_FLOOR = 0.05
+/** Absolute tolerance on the floor in {@link nearestPD}; the same as bank `NEAREST_PD_TOL`. */
+export const NEAREST_PD_TOL = 1e-12
+
+/** Pinned version of the initial Σ (ROADMAP A8); seriation uses the pinned Σ (§9.4). */
+export const SIGMA_VERSION = 'sigma-v2-2026-09-26'
+
+type LiteraturePair = readonly [AxisCode, AxisCode, number]
+
+/**
+ * Rule (1) of Σ_init v2 (ROADMAP A8): pairs listed in the §3 expected-intercorrelation table,
+ * at the midpoint of the quoted range. Frozen all the way down: the pinned Σ must not change
+ * under a fixed {@link SIGMA_VERSION}.
+ */
+export const R_LITERATURE: readonly LiteraturePair[] = Object.freeze(
+  (
+    [
+      ['MAT', 'QR', 0.6], // Matrix/Series ↔ Quant .5–.7
+      ['MAT', 'LG', 0.6], // Matrix/Series ↔ Logic Games .5–.7
+      ['MAT', 'SPA', 0.5], // Matrix ↔ Spatial .4–.6
+      ['RC', 'VOC', 0.6], // Reading Comp ↔ Vocabulary ↔ Humanities .5–.7
+      ['RC', 'KHU', 0.6],
+      ['VOC', 'KHU', 0.6],
+      ['LR', 'RC', 0.6], // Logical Reasoning ↔ Reading Comp .5–.7
+      ['WM', 'MAT', 0.4], // Working Memory ↔ Gf .3–.5
+      ['WM', 'LR', 0.4],
+      ['WM', 'LG', 0.4],
+      ['RT', 'MAT', 0.28], // Choice RT ↔ g |−.2 to −.35| (faster = higher θ_RT)
+      ['RT', 'LR', 0.28],
+      ['RT', 'LG', 0.28],
+      ['PS', 'RC', 0.3], // Reading speed ↔ Reading comp .2–.4
+      ['FER', 'QR', 0.4], // Fermi ↔ Quant, STEM knowledge .3–.5
+      ['FER', 'KST', 0.4],
+      ['EMO', 'VOC', 0.4], // Emotion understanding ↔ Gc .3–.5
+      ['EMO', 'KHU', 0.4],
+      // Divergent thinking ↔ g .15–.3
+      ...(['MAT', 'LR', 'LG', 'RC', 'VOC', 'QR', 'SPA', 'WM', 'FER', 'KST', 'KHU', 'KAP'] as const).map(
+        (x): LiteraturePair => ['CRE', x, 0.23],
+      ),
+    ] satisfies LiteraturePair[]
+  ).map((p): LiteraturePair => Object.freeze(p)),
+)
+
+const LITERATURE_R: ReadonlyMap<string, number> = new Map(
+  R_LITERATURE.flatMap(([a, b, v]) => [
+    [`${a}|${b}`, v],
+    [`${b}|${a}`, v],
+  ]),
+)
 
 export const R_CAL = 0.2
 export const R_SPEED = 0.2
 export const R_SOCIAL_CREATIVE = 0.3
 export const R_SAME_CLUSTER = 0.55
 export const R_REASONING_KNOWLEDGE = 0.45
-/**
- * [SPEC] DESIGN §3 states no default for the remaining cross-cluster pairs; .40 is the value
- * fixed by the shared axis spec (both repos). It is a deliberately conservative starting point,
- * not a reading of §3: it sits *below* the .5–.7 that §3 quotes for Matrix/Series↔Quant (MAT↔QR),
- * LR↔RC and Reading Comp↔Vocabulary↔Humanities (RC↔KHU, VOC↔KHU). §3 re-estimates Σ nightly
- * from person posteriors once N ≥ 500, so this is only a starting value.
- */
-export const R_DEFAULT = 0.4
+/** Rule (3) of Σ_init v2 (ROADMAP A8): every pair that neither the §3 table nor a §3 rule covers. */
+export const R_DEFAULT = 0.35
 
 /**
- * Initial correlation between two axes (DESIGN §3: "within-cluster .55, Reasoning↔Knowledge
- * .45, Speed↔others .2, Social-Creative↔others .3"), by the first matching rule:
- * 1. either axis is CAL → .20 (§3: "Calibration ↔ ability .1–.3");
- * 2. either axis in Speed → .20, except RT↔PS (same cluster) → .55;
- * 3. either axis in Social-Creative → .30, except EMO↔CRE (same cluster) → .55;
- * 4. same cluster → .55;
- * 5. Reasoning↔Knowledge → .45;
- * 6. otherwise → .40 [SPEC].
+ * Whether {@link nearestPD} changed the raw Σ_init v2 (ROADMAP A8). It does not: the raw matrix
+ * is PD with every eigenvalue above the floor (smallest ≈ 0.195), so the stored Σ is the rule
+ * matrix itself, identical to bank `golden/sigma_v2.json` (tested).
+ */
+export const SIGMA_NEAREST_PD_CHANGED = false
+
+/**
+ * Initial correlation between two axes, Σ_init v2 (ROADMAP A8), by the first matching rule:
+ * 1. the pair is listed in the §3 expected-r table → its midpoint ({@link R_LITERATURE});
+ * 2. the §3 "Initial Σ" rules, in order: either axis is CAL → .20; exactly one axis in Speed
+ *    (RT, PS) → .20; exactly one axis in Social-Creative (EMO, CRE) → .30; same cluster (the
+ *    8 cluster labels of A7) → .55; one Reasoning and one Knowledge axis → .45;
+ * 3. otherwise → .35.
  */
 export function initialCorrelation(a: AxisCode, b: AxisCode): number {
   if (a === b) return 1
+  const lit = LITERATURE_R.get(`${a}|${b}`)
+  if (lit !== undefined) return lit
   const ca = axis(a).cluster
   const cb = axis(b).cluster
-  const same = ca === cb
   if (a === 'CAL' || b === 'CAL') return R_CAL
-  if (ca === 'Speed' || cb === 'Speed') return same ? R_SAME_CLUSTER : R_SPEED
-  if (ca === 'Social-Creative' || cb === 'Social-Creative') return same ? R_SAME_CLUSTER : R_SOCIAL_CREATIVE
-  if (same) return R_SAME_CLUSTER
+  if ((ca === 'Speed') !== (cb === 'Speed')) return R_SPEED
+  if ((ca === 'Social-Creative') !== (cb === 'Social-Creative')) return R_SOCIAL_CREATIVE
+  if (ca === cb) return R_SAME_CLUSTER
   if ((ca === 'Reasoning' && cb === 'Knowledge') || (ca === 'Knowledge' && cb === 'Reasoning')) {
     return R_REASONING_KNOWLEDGE
   }
@@ -180,22 +231,30 @@ export function rawInitialSigma(): Matrix {
 }
 
 /**
- * The initial 17×17 prior correlation matrix Σ (DESIGN §3), passed through {@link nearestPD}.
- * The raw matrix is already PD with every eigenvalue above the floor, so it comes back unchanged.
+ * The initial 17×17 prior correlation matrix Σ_init v2 (ROADMAP A8), passed through
+ * {@link nearestPD} and checked to be positive definite (throws otherwise). The raw matrix is
+ * already PD above the floor, so it comes back unchanged ({@link SIGMA_NEAREST_PD_CHANGED}).
  * Returns a fresh copy on every call.
  */
 export function initialSigma(): Matrix {
-  return nearestPD(rawInitialSigma())
+  const sigma = nearestPD(rawInitialSigma())
+  if (tryCholesky(sigma) === null) throw new Error('initial Σ is not positive definite')
+  return sigma
 }
 
 /**
- * Project a symmetric matrix to a positive-definite correlation matrix (DESIGN §7.2):
- * symmetrise; Jacobi eigen-decomposition; if any eigenvalue is below `floor`, clip it up to
- * `floor` and reconstruct V·diag(w)·Vᵀ; rescale to unit diagonal D^{-1/2}·A·D^{-1/2}.
- * A valid correlation matrix whose eigenvalues all clear the floor is returned unchanged
- * (bit for bit, as in the Python reference `hb.axes.nearest_pd`). The rescaling is a
- * congruence, so the result stays PD, though its smallest eigenvalue can end up slightly
- * below `floor`.
+ * Project a symmetric matrix to a correlation matrix with eigenvalues ≥ `floor` (DESIGN §7.2),
+ * the same steps as the Python reference `hb.axes.nearest_pd` (tol = {@link NEAREST_PD_TOL}):
+ * 1. symmetrise, A = (M + Mᵀ)/2;
+ * 2. Jacobi eigen-decomposition A = V·diag(w)·Vᵀ; if min w < floor − tol, clip the eigenvalues
+ *    up to `floor` and reconstruct A = V·diag(max(w, floor))·Vᵀ, symmetrised again;
+ * 3. rescale to unit diagonal, C = D^{-1/2}·A·D^{-1/2} with D = diag(A), diagonal exactly 1;
+ * 4. the rescaling can push the smallest eigenvalue λ of C back below the floor. If
+ *    λ < floor − tol, shrink toward the identity (ROADMAP A8): C ← (1 − t)·C + t·I with
+ *    t = (floor − λ)/(1 − λ), which keeps the unit diagonal and the sign pattern and maps every
+ *    eigenvalue μ to (1 − t)·μ + t, so the smallest becomes `floor` (to rounding).
+ * A valid correlation matrix whose eigenvalues are all ≥ floor − tol comes back unchanged (bit
+ * for bit). Needs 0 < floor < 1.
  */
 export function nearestPD(m: Matrix, floor = SIGMA_EIGEN_FLOOR): Matrix {
   const n = m.length
@@ -205,11 +264,11 @@ export function nearestPD(m: Matrix, floor = SIGMA_EIGEN_FLOOR): Matrix {
   if (m.some((row) => row.some((v) => !Number.isFinite(v)))) {
     throw new RangeError('nearestPD needs a finite matrix')
   }
-  if (!(floor > 0)) throw new RangeError('nearestPD floor must be positive')
+  if (!(floor > 0 && floor < 1)) throw new RangeError('nearestPD floor must be in (0, 1)')
 
   let a: Matrix = m.map((row, i) => row.map((v, j) => (v + m[j]![i]!) / 2))
   const { values, vectors } = symmetricEigen(a)
-  if (values[0]! < floor) {
+  if (values[0]! < floor - NEAREST_PD_TOL) {
     const w = values.map((x) => Math.max(x, floor))
     const r: Matrix = Array.from({ length: n }, (_, i) =>
       Array.from({ length: n }, (_, j) => {
@@ -221,5 +280,11 @@ export function nearestPD(m: Matrix, floor = SIGMA_EIGEN_FLOOR): Matrix {
     a = r.map((row, i) => row.map((v, j) => (v + r[j]![i]!) / 2))
   }
   const d = a.map((row, i) => Math.sqrt(row[i]!))
-  return a.map((row, i) => row.map((v, j) => (i === j ? 1 : v / (d[i]! * d[j]!))))
+  const out = a.map((row, i) => row.map((v, j) => (i === j ? 1 : v / (d[i]! * d[j]!))))
+  const lam = symmetricEigen(out).values[0]!
+  if (lam < floor - NEAREST_PD_TOL) {
+    const t = (floor - lam) / (1 - lam)
+    return out.map((row, i) => row.map((v, j) => (i === j ? 1 : (1 - t) * v)))
+  }
+  return out
 }
