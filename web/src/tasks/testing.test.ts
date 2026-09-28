@@ -65,7 +65,7 @@ const healthy: ItemFamilyDefinition<Spec, Key, number> = {
       spec: { stem: `${x} plus ${y}`, operands: [x, y] },
       key: { value: x + y, tol: 0 },
       structural_params: { x, y },
-      difficulty: { features: { digits: String(x).length }, b_prior: stratum - 2, sd_prior: 1, provenance: 'test' },
+      difficulty: { features: { digits: String(x).length }, b_prior: stratum - 3, sd_prior: 1, provenance: 'test' },
       expected_time_s: 30,
     }
   },
@@ -109,8 +109,8 @@ describe('runFamilyProperties', () => {
     expect(r.distinctItemIds).toBe(500)
     expect(r.distinctContents).toBe(500)
     expect(r.distinctFamilyIds).toBeGreaterThan(495)
-    expect(r.bPrior.min).toBe(-1)
-    expect(r.bPrior.max).toBe(1)
+    expect(r.bPrior.min).toBe(-2)
+    expect(r.bPrior.max).toBe(0)
     const s = runFamilyProperties(fam, { ...W, n: 300, strata: [1, 3] })
     expect(s.strataCounts).toEqual({ 1: 150, 2: 0, 3: 150, 4: 0, 5: 0, 6: 0 })
     expect(VERIFY_INSTANCES).toBe(10_000)
@@ -282,7 +282,10 @@ describe('runFamilyProperties', () => {
       ...good,
       generate: (seed, opts) => {
         const item = good.generate(seed, opts)
-        return opts?.stratum === undefined ? item : { ...item, stratum: ((opts.stratum % 3) + 1) as Stratum }
+        if (opts?.stratum === undefined) return item
+        // Another stratum with a b in its band, so only the requested-stratum check fails (M1.P).
+        const other = ((opts.stratum % 3) + 1) as Stratum
+        return { ...item, stratum: other, difficulty: { ...item.difficulty, b_prior: other - 3 }, params: { model: '2pl', a: 1, b: other - 3 } }
       },
     }
     const msg = failuresOf(() => runFamilyProperties(wrongStratum, { ...W, n: 5, strata: [2] }))

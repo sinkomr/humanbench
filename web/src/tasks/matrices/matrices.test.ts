@@ -5,7 +5,7 @@ import { VERIFY_INSTANCES, runFamilyProperties } from '../testing'
 import { LAYOUT_RULES, MAX_COUNT, RULE_ATTRS, SCALAR_ATTRS, SCALAR_RULES, allRuleSets, parseRuleSet, popcount, type Cell } from './grammar'
 import { sampleAccepted } from './gen'
 import { modalHitProbability, modalPicksKeyUniquely, oneModeCertain, oneModeHitProbability } from './heuristic'
-import { MATRIX_PRIOR, MATRIX_STRATA, RULE_SETS_BY_STRATUM, bPriorOf, expectedTimeOf, featuresOf } from './prior'
+import { ALL_RULE_SETS, MATRIX_PRIOR, MATRIX_STRATA, POOL_RULE_MEANS, RULE_SETS_BY_STRATUM, bPriorOf, expectedTimeOf, featuresOf } from './prior'
 import { solve, violatedRules } from './solver'
 import { parseSpec } from './verify'
 import { EXAMPLE1_RULES } from './fixtures'
@@ -34,13 +34,18 @@ describe('matrices family (M1.6)', () => {
     expect(r.distinctContents).toBe(VERIFY_INSTANCES)
     expect(r.strataCounts).toEqual({ 1: 2_500, 2: 2_500, 3: 2_500, 4: 2_500, 5: 0, 6: 0 })
     expect(r.distinctFamilyIds).toBeGreaterThan(900)
-    expect(r.bPrior.min).toBeCloseTo(-1.88, 2)
-    expect(r.bPrior.max).toBeCloseTo(0.97, 2)
+    expect(r.bPrior.min).toBeCloseTo(-1.76, 2)
+    expect(r.bPrior.max).toBeCloseTo(1.09, 2)
   }, 300_000)
 
-  it('passes runFamilyProperties when the family picks the strata', () => {
+  it('passes runFamilyProperties when the family picks the rule set (the natural pool, M1.P)', () => {
     const r = runFamilyProperties(matrices, { ...OPTS, n: 2_000, seedPrefix: 'free-' })
-    for (const s of [1, 2, 3, 4] as const) expect(r.strataCounts[s]).toBeGreaterThan(400)
+    // Rule sets uniform over all 1,655: strata in proportion to their rule sets (10, 368, 1,156, 121).
+    expect(r.strataCounts[3]).toBeGreaterThan(1_200)
+    expect(r.strataCounts[2]).toBeGreaterThan(300)
+    expect(r.strataCounts[4]).toBeGreaterThan(80)
+    expect(r.strataCounts[1]).toBeLessThan(40)
+    expect(Math.abs(r.bPrior.mean - ICAR_ANCHOR_B.matrix)).toBeLessThan(0.1)
   }, 120_000)
 
   it('keeps the modal-attribute picker at ≤ 1.5 × chance over 10k items (both tie readings), the key position uniform', () => {
@@ -108,18 +113,25 @@ describe('matrices family (M1.6)', () => {
 })
 
 describe('matrices prior (M1.P, [SPEC] v0)', () => {
-  it('is anchored at the ICAR matrix mean p = .52', () => {
+  it('is anchored at the ICAR matrix mean p = .52 as the mean over the natural pool of all rule sets (M1.P)', () => {
     expect(MATRIX_PRIOR.anchorB).toBe(ICAR_ANCHOR_B.matrix)
     expect(MATRIX_PRIOR.anchorB).toBeCloseTo(-0.08, 2)
-    const anchorMix = { n_rules: 3, n_progression: 1, n_distribution: 1, n_arithmetic: 0.5, n_logic: 0.5 }
-    expect(bPriorOf(anchorMix)).toBeCloseTo(ICAR_ANCHOR_B.matrix, 12)
+    const all = ALL_RULE_SETS.map(featuresOf)
+    expect(all).toHaveLength(1_655)
+    for (const k of ['n_progression', 'n_distribution', 'n_arithmetic', 'n_logic'] as const) {
+      expect(all.reduce((s, f) => s + f[k], 0) / all.length, k).toBeCloseTo(POOL_RULE_MEANS[k], 12)
+    }
+    const meanB = all.reduce((s, f) => s + bPriorOf(f), 0) / all.length
+    expect(meanB).toBeCloseTo(ICAR_ANCHOR_B.matrix, 12) // exact: the pool mean is the anchor
+    const poolMix = { n_rules: 0, ...POOL_RULE_MEANS }
+    expect(bPriorOf(poolMix)).toBeCloseTo(ICAR_ANCHOR_B.matrix, 12)
   })
 
   it('orders difficulty by number and type of rules', () => {
     const one = (rule: 'progression+1' | 'distribution') => bPriorOf(featuresOf({ ...EXAMPLE1_RULES, size: rule, count: 'constant' }))
-    expect(one('progression+1')).toBeCloseTo(-1.88, 2)
-    expect(one('distribution')).toBeCloseTo(-1.58, 2)
-    expect(bPriorOf(featuresOf(EXAMPLE1_RULES))).toBeCloseTo(-1.43, 2) // §14.6 example 1: "easy"
+    expect(one('progression+1')).toBeCloseTo(-1.76, 2)
+    expect(one('distribution')).toBeCloseTo(-1.46, 2)
+    expect(bPriorOf(featuresOf(EXAMPLE1_RULES))).toBeCloseTo(-1.31, 2) // §14.6 example 1: "easy"
     const xor = featuresOf({ ...EXAMPLE1_RULES, count: 'derived', position: 'xor' })
     const arith = featuresOf({ ...EXAMPLE1_RULES, count: 'arithmetic+' })
     expect(bPriorOf(xor)).toBeCloseTo(bPriorOf(arith), 12)
@@ -132,7 +144,7 @@ describe('matrices prior (M1.P, [SPEC] v0)', () => {
     expect(allRuleSets()).toHaveLength(1_655)
     expect(MATRIX_STRATA).toEqual([1, 2, 3, 4])
     const sizes = MATRIX_STRATA.map((s) => RULE_SETS_BY_STRATUM.get(s)?.length)
-    expect(sizes).toEqual([16, 458, 1_060, 121])
+    expect(sizes).toEqual([10, 368, 1_156, 121])
   })
 
   it('expects 30–60 s', () => {

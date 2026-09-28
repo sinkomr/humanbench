@@ -17,6 +17,9 @@
  *    shape B_i (the target, its mirror, V or mirror(V), all in the target's frame) as
  *    R_i · q_T · B_i: the target's pose followed by a rotation R_i whose angle is uniform in the
  *    stratum's angle bin and whose axis is in depth or in the picture plane with probability ½.
+ *    The correct option's angle sets b and so the stratum (M1.P): without a requested stratum it
+ *    is uniform on the whole {@link ANGLE_RANGE} (the natural pool, whose mean b is the ICAR
+ *    anchor) and the stratum is its band; with one, it is uniform in that stratum's bin.
  *    The option's cubes are B_i re-expressed under a random non-identity group element h_i
  *    (min corner, shuffled), so its quat is R_i ⊗ q_T ⊗ h_i⁻¹. Every option is treated the same
  *    way, so neither the cube lists nor the orientations single out the key. The target's list
@@ -27,7 +30,7 @@
 
 import type { JsonValue, Rng } from '../../engine'
 import type { BuildContext, BuiltItem } from '../family'
-import { stratumOfB } from '../priors'
+import type { Stratum } from '../ids'
 import {
   AXIS_STEPS,
   ROTATION_GROUP,
@@ -58,12 +61,12 @@ import {
 } from './geometry'
 import {
   ANGLE_BINS,
+  ANGLE_RANGE,
   ROTATION_PROVENANCE,
   ROTATION_SD_PRIOR,
-  ROTATION_STRATA,
   rotationBPrior,
   rotationExpectedTime,
-  type RotationStratum,
+  rotationStratumOf,
 } from './prior'
 import {
   IN_DEPTH_MAX_COS,
@@ -220,9 +223,7 @@ function display(rng: Rng, base: readonly Cube[], qT: Quat, angleDeg: number): D
 const drawAngle = (rng: Rng, [lo, hi]: readonly [number, number]): number => lo + (hi - lo) * rng.next()
 
 export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSpec, RotationKey> {
-  const stratum = (ctx.stratum ?? rng.pick(ROTATION_STRATA)) as RotationStratum
-  const bin = ANGLE_BINS[stratum]
-  if (bin === undefined) throw new RangeError(`rotation cannot generate stratum ${stratum}`)
+  if (ctx.stratum !== undefined && ANGLE_BINS[ctx.stratum] === undefined) throw new RangeError(`rotation cannot generate stratum ${ctx.stratum}`)
 
   let target: Cube[] = []
   let pairs: Cube[][] = []
@@ -239,10 +240,21 @@ export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSp
   const movedKeys = new Set(movedVariantChains(target).map((v) => chainKeyOf(v.info)))
   const nMirrorMoved = [other, otherMirror].filter((d) => !movedKeys.has(chainKey(d) as string)).length
 
-  // The correct option's angle fixes b and so the stratum; redraw the (measure-zero-ish) angles
-  // whose b falls just outside the band (the exact cuts sit 4e-4° below the nominal bin edges).
-  let angle = drawAngle(rng, bin)
-  while (stratumOfB(rotationBPrior({ angle_deg: angle })) !== stratum) angle = drawAngle(rng, bin)
+  // The correct option's angle fixes b and so the stratum (M1.P): the natural pool draws it on
+  // the whole range; a requested stratum draws it in its bin, redrawing a (measure-zero) draw
+  // whose b falls on the other side of a float bin edge.
+  let angle: number
+  let stratum: Stratum
+  if (ctx.stratum === undefined) {
+    angle = drawAngle(rng, ANGLE_RANGE)
+    stratum = rotationStratumOf(angle)
+  } else {
+    stratum = ctx.stratum
+    const target = ANGLE_BINS[stratum] as readonly [number, number]
+    angle = drawAngle(rng, target)
+    while (rotationStratumOf(angle) !== stratum) angle = drawAngle(rng, target)
+  }
+  const bin = ANGLE_BINS[stratum] as readonly [number, number]
 
   const qT = randomQuat(rng)
   const bases: readonly (readonly Cube[])[] = [target, normalise(mirror(target)), other, otherMirror]

@@ -2,9 +2,18 @@
  * Difficulty and time priors for procedural families (ROADMAP M1.P, DESIGN §6.ii, §7.4).
  *
  * Every procedural item carries a prior on its 2PL location, b ~ N(b_prior, sd_prior²), from a
- * v0 linear feature → b model anchored to published ICAR proportion-correct values, and a
- * length-based expected time E[T] for information-per-second selection. All values are
- * provisional until online calibration replaces them (§6.iii, M4).
+ * v0 linear feature → b model anchored to published ICAR proportion-correct values, and an
+ * expected time E[T] for information-per-second selection. All values are provisional until
+ * online calibration replaces them (§6.iii, M4).
+ *
+ * Anchoring (M1.P): an ICAR mean p is the mean over ICAR's items of a type, so it anchors the
+ * POOL of the matching family, not a reference item: each v0 regression centres its features
+ * at their means over the family's natural pool (what `generate(seed)` makes without a
+ * requested stratum), so the pool mean b is the ICAR anchor and the slopes keep the spread
+ * ({@link ICAR_ANCHORED_FAMILIES}; tested at n = 2,000 per family). Quant has no ICAR anchor
+ * (ICAR has no quantitative items): it keeps the default band centres. Blocks use their A10
+ * norms. Every item's stratum is the default band of its b ({@link stratumOfB}), a contract
+ * rule (`validateItemInstance`).
  *
  * The p → b link is b ≈ −logit(p)/a with a = 1 and an anchor population θ mean of 0, a [SPEC]
  * link (§6.ii step 5). It ignores guessing, so for 3PL items it slightly overstates difficulty.
@@ -31,6 +40,21 @@ export function bFromP(p: number): number {
 export const ICAR_MEAN_P = Object.freeze({ rotation: 0.19, matrix: 0.52, series: 0.59 } as const)
 
 export type IcarType = keyof typeof ICAR_MEAN_P
+
+/**
+ * The families whose pool mean b is an ICAR anchor (M1.P), and the ICAR item type of each. The
+ * bank's `hb.gen.priors.ICAR_ANCHORED_FAMILIES` is the same map.
+ */
+export const ICAR_ANCHORED_FAMILIES: Readonly<Record<string, IcarType>> = Object.freeze({
+  rotation: 'rotation',
+  matrices: 'matrix',
+  series: 'series',
+})
+
+/** Pool size of the pool-mean anchoring check (M1.P: |mean b − anchor| < {@link POOL_MEAN_TOL} at n = 2,000). */
+export const POOL_MEAN_N = 2_000
+/** Largest accepted |pool mean b − ICAR anchor| (M1.P). */
+export const POOL_MEAN_TOL = 0.1
 
 /** The ICAR anchors on the b scale, bFromP(ICAR_MEAN_P[type]): rotation ≈ 1.45, matrix ≈ −0.08, series ≈ −0.36. */
 export const ICAR_ANCHOR_B: Readonly<Record<IcarType, number>> = Object.freeze({
@@ -156,10 +180,101 @@ export const STRATUM_LABELS: Readonly<Record<Stratum, string>> = Object.freeze({
  */
 export const STRATUM_B_CUTS: readonly number[] = Object.freeze([-1.5, -0.5, 0.5, 1.5, 2.5])
 
-/** The stratum whose default b band contains `b` ({@link STRATUM_B_CUTS}). */
+/**
+ * The stratum whose default b band contains `b` ({@link STRATUM_B_CUTS}). Every item's stratum is
+ * `stratumOfB(difficulty.b_prior)` (M1.P contract rule, `validateItemInstance`).
+ */
 export function stratumOfB(b: number): Stratum {
   if (!Number.isFinite(b)) throw new RangeError(`stratumOfB(): b must be finite, got ${b}`)
   let k = 1
   for (const cut of STRATUM_B_CUTS) if (b >= cut) k++
   return k as Stratum
+}
+
+/**
+ * Provisional location/scale of the non-2PL models (A10, M1.P; every value is [SPEC] and is
+ * replaced by the M4.8 calibration). The A10 blocks keep theirs with their families: RT
+ * (`rt/prior.ts` RT_WEB_NORMS: β = ln 300 / ln 450 ms, s = 0.15, τ_res = 0.05), PS coding
+ * (`coding/prior.ts`: β = ln 40 correct/min, s = 0.25, τ_res = 0.05), PS reading
+ * (`reading/prior.ts`: ln 238 wpm, Brysbaert 2019, s = 0.25, per-passage SD 0.15, τ_res = 0.05) and
+ * WM span (`span/config.ts` norms: forward 6.5 ± 1.2, backward 4.8 ± 1.3, Corsi 5.5 ± 1.1). The
+ * two below have no family yet (M5 Fermi items, the embedded calibration slider of M1.15), so
+ * they live here; the bank mirrors both in `hb.gen.priors`.
+ */
+
+/**
+ * [SPEC, provisional until M4.8] Fermi estimation (DESIGN §3 row 11, §5, §7.1): a response's log
+ * error e = log10(estimate / truth) enters as x = −|e| in dex, a Gaussian observation on θ_FER,
+ *
+ *     x ~ N(lam·θ + d, sigma²),  lam = scale_dex,  d = −(median_abs_error_dex + scale_dex·δ),
+ *     sigma = residual_sd_dex,
+ *
+ * the §7.1 model −|e_ij| = θ_F − δ_j + ε on the dex scale, with the item's δ in θ units (0 until
+ * calibrated). A θ = 0 taker misses a δ = 0 item by 0.5 dex (a factor ≈ 3) at the median; one SD
+ * of θ is 0.2 dex; the residual 0.35 dex makes one item worth lam²/sigma² ≈ 0.33 of information,
+ * about one 2PL item.
+ */
+export const FERMI_NORMS = Object.freeze({
+  version: 'fermi-v0',
+  median_abs_error_dex: 0.5,
+  scale_dex: 0.2,
+  residual_sd_dex: 0.35,
+})
+
+/** The observation x = −|log10(estimate / truth)| of a Fermi answer; throws a RangeError unless both are finite and > 0. */
+export function fermiX(estimate: number, truth: number): number {
+  if (!(Number.isFinite(estimate) && estimate > 0 && Number.isFinite(truth) && truth > 0)) {
+    throw new RangeError(`fermiX(): estimate and truth must be finite and > 0, got ${estimate}, ${truth}`)
+  }
+  return 0 - Math.abs(Math.log10(estimate / truth))
+}
+
+/** The Gaussian params of a Fermi item of difficulty δ (θ units, default 0): see {@link FERMI_NORMS}. */
+export function fermiParams(delta = 0): { model: 'gaussian'; lam: number; d: number; sigma: number } {
+  if (!Number.isFinite(delta)) throw new RangeError(`fermiParams(): delta must be finite, got ${delta}`)
+  const n = FERMI_NORMS
+  return { model: 'gaussian', lam: n.scale_dex, d: -(n.median_abs_error_dex + n.scale_dex * delta), sigma: n.residual_sd_dex }
+}
+
+/**
+ * [SPEC, provisional until M4.8] Calibration (DESIGN §3 row 12, §7.1 "Score = −Brier,
+ * standardised within user population", §14.6 ex. 9): a session's mean Brier score B over its
+ * confidence-rated answers (≥ `min_responses`) enters as x = −B, a Gaussian observation on θ_CAL
+ * standardised by the population location/scale of −B,
+ *
+ *     x ~ N(lam·θ + d, sigma²),  d = −brier_mean,  lam = brier_sd·√reliability,
+ *     sigma = brier_sd·√(1 − reliability),
+ *
+ * so that −B has mean −0.21 and SD 0.06 in the population and a session's Brier reflects θ_CAL
+ * with the given reliability. [SPEC] values: confident-but-fallible adults on mixed-difficulty
+ * items score Brier ≈ 0.2 (0.25 is always-50% on a coin flip).
+ */
+export const CAL_NORMS = Object.freeze({
+  version: 'cal-v0',
+  brier_mean: 0.21,
+  brier_sd: 0.06,
+  reliability: 0.6,
+  min_responses: 10,
+})
+
+/** Mean Brier score (1/N) Σ (c − y)² of confidences c ∈ [0, 1] and outcomes y ∈ {0, 1} (§7.1, §14.6 ex. 9). */
+export function brierScore(confidences: readonly number[], outcomes: readonly (0 | 1)[]): number {
+  if (confidences.length === 0 || confidences.length !== outcomes.length) {
+    throw new RangeError('brierScore(): need one outcome per confidence, at least one')
+  }
+  let s = 0
+  confidences.forEach((c, i) => {
+    const y = outcomes[i]
+    if (!(Number.isFinite(c) && c >= 0 && c <= 1) || (y !== 0 && y !== 1)) {
+      throw new RangeError(`brierScore(): confidence ${c} or outcome ${String(y)} out of range`)
+    }
+    s += (c - y) * (c - y)
+  })
+  return s / confidences.length
+}
+
+/** The Gaussian params of the session calibration observation x = −Brier: see {@link CAL_NORMS}. */
+export function calibrationParams(): { model: 'gaussian'; lam: number; d: number; sigma: number } {
+  const n = CAL_NORMS
+  return { model: 'gaussian', lam: n.brier_sd * Math.sqrt(n.reliability), d: -n.brier_mean, sigma: n.brier_sd * Math.sqrt(1 - n.reliability) }
 }

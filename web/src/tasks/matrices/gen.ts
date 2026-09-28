@@ -1,9 +1,10 @@
 /**
  * Matrices generator (DESIGN §4.2 "Matrices", §14.6 example 1; ROADMAP M1.6, A1, A11).
  *
- * 1. Pick the stratum (requested, else uniform over {@link MATRIX_STRATA}) and, once per item, a
- *    rule set uniformly among those whose v0 prior falls in it (`prior.ts`); steps 2–5 retry with
- *    that rule set, so the draw is not weighted by a rule set's acceptance rate.
+ * 1. Pick the rule set once per item: without a requested stratum uniformly among all 1,655
+ *    (the natural pool, whose mean b is the ICAR anchor, M1.P; the stratum is the band of its b),
+ *    else uniformly among those whose v0 prior falls in the requested stratum (`prior.ts`); steps
+ *    2–5 retry with that rule set, so the draw is not weighted by its acceptance rate.
  * 2. Sample the full 3×3 grid row by row from the rules (`grammar.ts`): constant rows take a
  *    random value per row, progressions a random valid start per row, distributions a Latin
  *    square over 3 random values, count arithmetic a random (x, y) per row, xor/or random slot
@@ -23,6 +24,7 @@
 
 import type { Rng } from '../../engine'
 import type { BuildContext, BuiltItem } from '../family'
+import { stratumOfB } from '../priors'
 import {
   CANONICAL_LAYOUTS,
   COMPONENTS,
@@ -47,8 +49,8 @@ import {
 } from './grammar'
 import { modalPicksKeyUniquely } from './heuristic'
 import {
+  ALL_RULE_SETS,
   MATRIX_PROVENANCE,
-  MATRIX_STRATA,
   RULE_SETS_BY_STRATUM,
   SIGMA_B_DEFAULT,
   bPriorOf,
@@ -243,10 +245,15 @@ export function sampleAccepted(rng: Rng, rules: RuleSet): AcceptedSample | null 
 
 /** `build()` of the matrices family (see the module comment). */
 export function buildMatrix(rng: Rng, ctx: BuildContext): BuiltItem<MatrixSpec, MatrixKey> {
-  const stratum = ctx.stratum ?? rng.pick(MATRIX_STRATA)
-  const pool = RULE_SETS_BY_STRATUM.get(stratum)
-  if (!pool) throw new RangeError(`matrices cannot generate stratum ${stratum}`)
-  const rules = rng.pick(pool)
+  let rules: RuleSet
+  if (ctx.stratum === undefined) {
+    rules = rng.pick(ALL_RULE_SETS)
+  } else {
+    const pool = RULE_SETS_BY_STRATUM.get(ctx.stratum)
+    if (!pool) throw new RangeError(`matrices cannot generate stratum ${ctx.stratum}`)
+    rules = rng.pick(pool)
+  }
+  const stratum = stratumOfB(bPriorOf(featuresOf(rules)))
   const sample = sampleAccepted(rng, rules)
   if (!sample) throw new Error(`matrices: no valid item in ${MAX_GRID_ATTEMPTS} attempts (seed ${ctx.seed})`)
   const { visible, tree } = sample

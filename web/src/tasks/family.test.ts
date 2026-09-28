@@ -90,6 +90,7 @@ describe('validateItemInstance', () => {
     ['axis', (x) => (x.axis = 'IQ'), /unknown axis/],
     ['stratum', (x) => (x.stratum = 7), /stratum must be/],
     ['stratum outside family strata', (x) => (x.stratum = 5), /family's strata/],
+    ['stratum not the band of b_prior (M1.P)', (x) => (x.stratum = x.stratum === 1 ? 2 : 1), /is not the default band of b_prior -?\d/],
     ['spec not object', (x) => (x.spec = [1, 2]), /spec must be a JSON object/],
     ['key not object', (x) => (x.key = 2), /key must be a JSON object/],
     ['options_count', (x) => (x.options_count = 1), /options_count must be/],
@@ -176,7 +177,8 @@ describe('defineFamily', () => {
     spec: { stem: 'x' },
     key: { value: 1 },
     structural_params: { t: 'const' },
-    difficulty: { features: {}, b_prior: 0.5, sd_prior: 1, provenance: 'test' },
+    // b in the default band of the stratum (M1.P): −2 for stratum 1, −1 for stratum 2
+    difficulty: { features: {}, b_prior: stratum - 3, sd_prior: 1, provenance: 'test' },
     expected_time_s: 30,
   })
   const base = {
@@ -208,7 +210,7 @@ describe('defineFamily', () => {
     expect(item.family_id).toBe(fam.familyIdOf({ t: 'const' }))
     expect(item.sibling_group).toBe(item.family_id) // a family is its own sibling group by default
     expect(item.facet).toBe('toy') // the only facet
-    expect(item.params).toEqual({ model: '2pl', a: 1.3, b: 0.5 })
+    expect(item.params).toEqual({ model: '2pl', a: 1.3, b: -2 })
     expect('options_count' in item).toBe(false)
     expect(item.time_limit_s).toBe(powerTimeLimit(30))
     expect(validateItemInstance(item, fam)).toEqual([])

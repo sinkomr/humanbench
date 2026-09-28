@@ -105,9 +105,12 @@
  *   a block's `time_limit_s`, if present, is its own timed window (coding's 90 s).
  * - **JSON.** An instance is plain JSON with snake_case keys and survives a JSON round trip.
  *   Optional fields are omitted, never `undefined`.
- * - **Strata.** `stratum` ∈ `family.strata`. `generate(seed, { stratum: k })` returns an item
- *   in stratum k (seed `<seed>@s<k>`, see `resolveSeed`) or throws a RangeError if the family
- *   cannot target k.
+ * - **Strata.** `stratum` ∈ `family.strata`, and `stratum = stratumOfB(difficulty.b_prior)`,
+ *   the default band of the item's b (M1.P: one meaning of a stratum across families).
+ *   `generate(seed, { stratum: k })` returns an item in stratum k (seed `<seed>@s<k>`, see
+ *   `resolveSeed`) or throws a RangeError if the family cannot target k.
+ * - **Pool anchoring (M1.P).** An ICAR-anchored family's pool (`generate(seed)` without a
+ *   stratum) has mean b = its ICAR anchor (`priors.ts` ICAR_ANCHORED_FAMILIES).
  *
  * ## Scoring rules (checked by the suite)
  *
@@ -135,7 +138,7 @@ import {
   type Rng,
 } from '../engine'
 import { FAMILY_ID_RE, FAMILY_NAME_RE, GENERATOR_VERSION_RE, familyId, isStratum, itemId, resolveSeed, type Stratum } from './ids'
-import { B_PRIOR_LIMIT, powerTimeLimit } from './priors'
+import { B_PRIOR_LIMIT, powerTimeLimit, stratumOfB } from './priors'
 
 /** A JSON object (the shape of `spec` and `key` once parsed from JSON). */
 export type JsonObject = { [key: string]: JsonValue }
@@ -755,6 +758,8 @@ export function validateItemInstance(x: unknown, family?: AnyFamily): string[] {
     const b = d.b_prior
     if (!(typeof b === 'number' && Number.isFinite(b) && Math.abs(b) <= B_PRIOR_LIMIT)) {
       out.push(`difficulty.b_prior must be finite with |b| ≤ ${B_PRIOR_LIMIT}`)
+    } else if (isStratum(x.stratum) && stratumOfB(b) !== x.stratum) {
+      out.push(`stratum ${x.stratum} is not the default band of b_prior ${b}: stratumOfB = ${stratumOfB(b)} (M1.P)`)
     }
     if (!isFinitePositive(d.sd_prior)) out.push('difficulty.sd_prior must be finite and > 0')
     if (!isNonEmptyString(d.provenance)) out.push('difficulty.provenance must be a non-empty string')

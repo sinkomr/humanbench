@@ -17,6 +17,12 @@ import {
   linearB,
   logit,
   stratumOfB,
+  CAL_NORMS,
+  FERMI_NORMS,
+  brierScore,
+  calibrationParams,
+  fermiParams,
+  fermiX,
 } from './priors'
 
 describe('p → b link (§6.ii)', () => {
@@ -134,5 +140,56 @@ describe('strata', () => {
         expect(stratumOfB(lo)).toBeLessThanOrEqual(stratumOfB(hi))
       }),
     )
+  })
+})
+
+describe('provisional FER and CAL location/scale (M1.P, A10; replaced at M4.8)', () => {
+  it('Fermi: x = −|log10(estimate / truth)| with the §7.1 δ model on the dex scale', () => {
+    expect(FERMI_NORMS).toEqual({ version: 'fermi-v0', median_abs_error_dex: 0.5, scale_dex: 0.2, residual_sd_dex: 0.35 })
+    expect(fermiX(3e7, 3.156e7)).toBeCloseTo(-0.022, 3) // §14.6 ex. 8
+    expect(fermiX(10, 1)).toBe(-1)
+    expect(fermiX(0.1, 1)).toBe(-1)
+    expect(fermiX(5, 5)).toBe(0)
+    for (const [e, t] of [[0, 1], [1, 0], [-1, 1], [Number.NaN, 1], [1, Number.POSITIVE_INFINITY]]) {
+      expect(() => fermiX(e as number, t as number)).toThrow(RangeError)
+    }
+    expect(fermiParams()).toEqual({ model: 'gaussian', lam: 0.2, d: -0.5, sigma: 0.35 })
+    // δ in θ units: an item one SD harder moves the expected −|e| down by one scale_dex.
+    expect(fermiParams(1).d).toBeCloseTo(-0.7, 12)
+    expect(() => fermiParams(Number.NaN)).toThrow(RangeError)
+    // A θ = 0 taker on a δ = 0 item: E[x] = d = −0.5 dex; about one 2PL item's information.
+    const p = fermiParams()
+    expect((p.lam * p.lam) / (p.sigma * p.sigma)).toBeCloseTo(0.327, 3)
+  })
+
+  it('property: −|e| is symmetric in over- and under-estimation and never positive', () => {
+    fc.assert(
+      fc.property(fc.double({ min: 1e-6, max: 1e9, noNaN: true }), fc.double({ min: 1e-6, max: 1e9, noNaN: true }), (e, t) => {
+        const x = fermiX(e, t)
+        expect(x).toBeLessThanOrEqual(0)
+        expect(x).toBeCloseTo(fermiX(t, e), 9)
+      }),
+    )
+  })
+
+  it('Calibration: x = −Brier, standardised by the provisional population location/scale', () => {
+    expect(CAL_NORMS).toEqual({ version: 'cal-v0', brier_mean: 0.21, brier_sd: 0.06, reliability: 0.6, min_responses: 10 })
+    // §14.6 ex. 9: c = 0.9, y = 0 → 0.81; c = 0.6, y = 1 → 0.16.
+    expect(brierScore([0.9], [0])).toBeCloseTo(0.81, 12)
+    expect(brierScore([0.6], [1])).toBeCloseTo(0.16, 12)
+    expect(brierScore([0.9, 0.6], [0, 1])).toBeCloseTo(0.485, 12)
+    const bad: [number[], number[]][] = [
+      [[], []],
+      [[0.5], []],
+      [[1.2], [1]],
+      [[0.5], [2]],
+    ]
+    for (const [c, y] of bad) expect(() => brierScore(c, y as (0 | 1)[])).toThrow(RangeError)
+    const p = calibrationParams()
+    expect(p.model).toBe('gaussian')
+    expect(p.d).toBe(-0.21)
+    // lam² + sigma² = brier_sd²: −B has the population SD 0.06, with the given reliability.
+    expect(p.lam * p.lam + p.sigma * p.sigma).toBeCloseTo(0.0036, 12)
+    expect((p.lam * p.lam) / 0.0036).toBeCloseTo(0.6, 12)
   })
 })

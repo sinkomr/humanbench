@@ -64,7 +64,6 @@ import {
   ROTATION_STRATA,
   rotationBPrior,
   rotationExpectedTime,
-  type RotationStratum,
 } from './prior'
 import {
   ANGLE_TOL_DEG,
@@ -238,7 +237,7 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
   const angle = featuresComplete ? (f.angle_deg as number) : NaN
   const cos = featuresComplete ? (f.axis_view_cos as number) : NaN
   const bPrior = item.difficulty?.b_prior
-  const stratum = item.stratum as RotationStratum
+  const stratum = item.stratum
   const bin = ANGLE_BINS[stratum] as readonly [number, number] | undefined
 
   return verdict({
