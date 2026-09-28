@@ -168,15 +168,59 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
     expect(() => spanFwd.score(item, [...item.key.sequences, WRONG])).toThrow(MalformedResponseError)
   })
 
-  it('treats missing trials and wrong element types as wrong, and non-array trial entries as malformed (M1.F2)', () => {
+  it('treats missing trials, blank slots and wrong symbols as wrong; non-array entries and non-symbol elements as malformed (M1.F2)', () => {
     const item = spanFwd.generate('malformed')
     const k = item.key.sequences[0] as number[]
-    expect(spanFwd.score(item, [k.map(String), null])).toEqual(grmScore(item, 0))
     expect(spanFwd.score(item, [null, undefined])).toEqual(grmScore(item, 0))
+    // Well-formed but wrong: other digits, the wrong length, blank (null) slots as JSON writes holes.
+    expect(spanFwd.score(item, [[...k].reverse(), k.slice(1)])).toEqual(grmScore(item, 0))
+    expect(spanFwd.score(item, [k.map(() => null), [null, ...k.slice(1)]])).toEqual(grmScore(item, 0))
     for (const bad of [k.join(''), { digits: k }, 123, true]) {
       expect(() => spanFwd.score(item, [bad, k]), JSON.stringify(bad)).toThrow(MalformedResponseError)
     }
     for (const bad of ['123', null, undefined, { 0: k }]) expect(() => spanFwd.score(item, bad as never)).toThrow(MalformedResponseError)
+    // An element that is not a symbol of the task is a renderer bug, not a wrong answer.
+    for (const el of [10, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '3', {}, [], true]) {
+      expect(() => spanFwd.score(item, [[el, ...k.slice(1)], k]), String(el)).toThrow(MalformedResponseError)
+      expect(() => spanFwd.score(item, [k, [...k.slice(1), el]]), String(el)).toThrow(MalformedResponseError)
+    }
+    expect(() => spanFwd.score(item, [k.map(String), null])).toThrow(MalformedResponseError)
+  })
+
+  it('checks elements against each task\'s alphabet: digits 1–9, Corsi blocks 0–8 (M1.F2)', () => {
+    const c = corsi.generate('alphabet')
+    const k = c.key.sequences[0] as number[]
+    // Corsi block 0 is a symbol (a well-formed, here wrong, answer); block 9 or 99 is not.
+    expect(corsi.score(c, [[0, 0, 0], [0, 0, 0]])).toEqual(grmScore(c, 0))
+    for (const el of [9, 99, -5, 1.5]) expect(() => corsi.score(c, [[el, ...k.slice(1)], k]), String(el)).toThrow(MalformedResponseError)
+    const b = spanBwd.generate('alphabet')
+    expect(spanBwd.score(b, [[9, 9, 9], [1, 1, 1]])).toEqual(grmScore(b, 0))
+    for (const el of [0, 10]) expect(() => spanBwd.score(b, [[el, 1, 2], null]), String(el)).toThrow(MalformedResponseError)
+  })
+
+  it('property: a stream of well-formed entries never throws; one non-symbol element always does (M1.F2)', () => {
+    const entry = (symbols: readonly number[]) =>
+      fc.oneof(fc.constant(null), fc.array(fc.oneof(fc.constantFrom(...symbols), fc.constant(null)), { maxLength: 12 }))
+    fc.assert(
+      fc.property(
+        fc.constantFrom(spanFwd, spanBwd, corsi),
+        fc.string(),
+        fc.integer({ min: 0, max: 1 }),
+        fc.oneof(fc.integer({ min: -100, max: 100 }), fc.double(), fc.string(), fc.boolean()),
+        (family, seed, pos, el) => {
+          const item = family.generate(`p-${seed}`)
+          const symbols = SPAN_TASKS.find((c) => c.task === item.spec.task)?.symbols as readonly number[]
+          const stream = fc.sample(fc.array(entry(symbols), { minLength: 2, maxLength: 2 }), { numRuns: 1, seed: seed.length })[0] as unknown[][]
+          const s = family.score(item, stream)
+          expect(s.reasons.length > 0 || s.observation !== undefined).toBe(true)
+          if (typeof el === 'number' && symbols.includes(el)) return
+          const bad = stream.map((t) => (t === null ? [] : [...t]))
+          ;(bad[pos] as unknown[]).push(el)
+          expect(() => family.score(item, bad)).toThrow(MalformedResponseError)
+        },
+      ),
+      { numRuns: 300 },
+    )
   })
 
   it('gives no credit for blank or partly filled entry slots (sparse arrays)', () => {

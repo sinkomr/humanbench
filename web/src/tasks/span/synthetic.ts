@@ -5,13 +5,17 @@
  */
 
 import type { Rng } from '../../engine'
-import type { SpanItem } from './config'
+import { spanSymbols, type SpanItem } from './config'
 import { runBlock } from './score'
 
-/** A wrong entry for `expected`: the same length, first element changed (never an exact match). */
-function wrongEntry(expected: readonly number[]): number[] {
+/**
+ * A wrong entry for `expected`: the same length, first element changed to another symbol of
+ * the task (never an exact match, never malformed: Corsi 8 → 7, digit 9 → 8).
+ */
+function wrongEntry(item: SpanItem, expected: readonly number[]): number[] {
   const out = [...expected]
-  out[0] = (expected[0] as number) === 9 ? 8 : (expected[0] as number) + 1
+  const top = Math.max(...spanSymbols(item.spec.task))
+  out[0] = (expected[0] as number) === top ? top - 1 : (expected[0] as number) + 1
   return out
 }
 
@@ -27,7 +31,7 @@ export function spanValidResponse(item: SpanItem, rng: Rng): number[][] {
     const status = runBlock(item, out)
     if (status.finished) return out
     const expected = item.key.sequences[status.trial] as readonly number[]
-    out.push(status.length <= level && rng.next() < 0.95 ? [...expected] : wrongEntry(expected))
+    out.push(status.length <= level && rng.next() < 0.95 ? [...expected] : wrongEntry(item, expected))
   }
 }
 
@@ -37,8 +41,21 @@ export function spanInvalidResponse(item: SpanItem, rng: Rng): (number[] | null)
   return rng.next() < 0.5 ? [] : [rng.next() < 0.5 ? [...first] : null]
 }
 
-/** Malformed streams (M1.F2): not an array, a non-array trial entry, a response after the block finished. */
+/**
+ * Malformed streams (M1.F2): not an array, a non-array trial entry, an entered element outside
+ * the task's symbols (the first key with one element replaced: 10, −1, 1.5, "3", {}), a response
+ * after the block finished.
+ */
 export function spanMalformedResponses(item: SpanItem, rng: Rng): unknown[] {
   const done = spanValidResponse(item, rng)
-  return ['1 2 3', [123], [{ digits: [1, 2, 3] }], [...done, [...(item.key.sequences[0] as readonly number[])]], item.key.sequences.map((s) => [...s]).concat([[1]])]
+  const first = item.key.sequences[0] as readonly number[]
+  const withElement = (v: unknown): unknown[] => [[v, ...first.slice(1)]]
+  return [
+    '1 2 3',
+    [123],
+    [{ digits: [1, 2, 3] }],
+    ...[10, -1, 9.5, Number.NaN, '3', {}, true].map(withElement),
+    [...done, [...first]],
+    item.key.sequences.map((s) => [...s]).concat([[1]]),
+  ]
 }

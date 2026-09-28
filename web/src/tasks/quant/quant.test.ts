@@ -5,7 +5,7 @@ import { KEY_ECHO_MAX_CHANCE, KEY_ECHO_MIN_SEEN, runFamilyProperties, type Famil
 import { quant, quantSpecLeaksKey, type QuantItem, type QuantKey, type QuantResponse, type QuantSpec } from '.'
 import { Fraction } from './fraction'
 import { QUANT_PRIOR, QUANT_TIME_BASE_S, quantBPrior, quantFeatures } from './prior'
-import { HINTS, TEMPLATES_BY_STRATUM, VARIANTS, lin, listText, paren, ratTerm, signed } from './templates'
+import { HINTS, QUANT_TEMPLATES, TEMPLATES_BY_STRATUM, VARIANTS, lin, listText, paren, ratTerm, signed } from './templates'
 import {
   QUANT_ECHO_MAX_CHANCE,
   QUANT_ECHO_MIN_SEEN,
@@ -104,6 +104,31 @@ describe('quant family (M1.8)', () => {
       expect(it.key.tol).toEqual(it.spec.input_format === 'decimal' ? { abs: 0.005 } : { abs: 0 })
       expect(it.spec.hint).toBe(HINTS[it.spec.input_format])
       if (it.spec.input_format === 'integer') expect(it.key.value).toMatch(/^-?\d+$/)
+    }
+  })
+
+  it('groups the variants of a template into one sibling group g:quant:<template>, the facet (M1.F2, A11 amended)', () => {
+    // Pinned as literals, not through quantSiblingGroup(), so a wrong grouping fails here too.
+    const groups = new Map<string, Set<string>>()
+    for (const v of VARIANTS) {
+      const item = sampleOf(v.template, v.variant)
+      expect(item.facet).toBe(v.template)
+      expect(item.sibling_group, variantKey(item)).toBe(`g:quant:${v.template}`)
+      expect(item.sibling_group).not.toBe(item.family_id)
+      const g = groups.get(item.sibling_group) ?? new Set<string>()
+      groups.set(item.sibling_group, g.add(v.variant))
+    }
+    expect([...groups.keys()].sort()).toEqual(QUANT_TEMPLATES.map((t) => `g:quant:${t}`).sort())
+    expect(groups.size).toBe(QUANT_TEMPLATES.length)
+    expect(quant.facets).toEqual(QUANT_TEMPLATES)
+    const sizes = [...groups.values()].map((g) => g.size)
+    expect(sizes.reduce((a, b) => a + b, 0)).toBe(VARIANTS.length)
+    // Near-isomorph variants of one template share a group: at least one template has several.
+    expect(Math.max(...sizes)).toBeGreaterThan(1)
+    for (let i = 0; i < 300; i++) {
+      const item = quant.generate(`sib-${i}`)
+      expect(item.sibling_group).toBe(`g:quant:${item.facet}`)
+      expect(item.sibling_group).toBe(`g:quant:${(item.structural_params as { template: string }).template}`)
     }
   })
 

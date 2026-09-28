@@ -463,6 +463,36 @@ describe('block-aware scoring suite (M1.F2)', () => {
     expect(failuresOf(() => runFamilyProperties(defineFamily(moved), { ...blockOpts, n: 2 }))).toMatch(/lam\/d must be the item params/)
   })
 
+  it('checks observations against the engine schema: exactly the fields of their kind (M1.F2)', () => {
+    const cases: [string, (it: ItemInstance<Spec, Key>) => object][] = [
+      ['extra field', (it) => ({ ...grmOf(it, 1), se: 0.1 })],
+      ['missing field', (it) => {
+        const { y: _y, ...rest } = grmOf(it, 1)
+        return rest
+      }],
+    ]
+    for (const [name, obs] of cases) {
+      const fam = makeBlock((it, r) => {
+        toyTrials(r)
+        return r.length === 4 ? ({ correct: null, observation: obs(it), flags: [], reasons: [] } as unknown as BlockScore) : blockScore(null, [], ['unfinished'])
+      })
+      expect(failuresOf(() => runFamilyProperties(fam, { ...blockOpts, n: 2 })), name).toMatch(/the engine rejects the observation: grm observation needs exactly the fields/)
+    }
+    // A Gaussian observation with a stray SE field passes every param check but not the engine.
+    const gauss: BlockFamilyDefinition<Spec, Key, number[]> = {
+      ...blockToy,
+      build: (rng, ctx) => ({ ...blockToy.build(rng, ctx), params: { model: 'gaussian', lam: 0.25, d: 3, sigma: 0.05 } }),
+      score: (_it, r) => {
+        toyTrials(r)
+        const o = { kind: 'gaussian', axis: 'WM', lam: 0.25, d: 3, sigma: 0.1, x: 1, se: 0.08 }
+        return r.length < 4 ? blockScore(null, [], ['unfinished']) : ({ correct: null, observation: o, flags: [], reasons: [] } as unknown as BlockScore)
+      },
+    }
+    expect(failuresOf(() => runFamilyProperties(defineFamily(gauss), { ...blockOpts, n: 2 }))).toMatch(
+      /the engine rejects the observation: gaussian observation needs exactly the fields \[axis, d, kind, lam, sigma, x\], got \[axis, d, kind, lam, se, sigma, x\]/,
+    )
+  })
+
   it('scores the family-specific malformed responses of blocks too', () => {
     const lenient = makeBlock((it, r) => (Array.isArray(r) && r.length > 4 ? blockScore(null, [], ['too_long']) : blockToy.score(it, r)))
     expect(failuresOf(() => runFamilyProperties(lenient, { ...blockOpts, n: 2 }))).toMatch(/score\(malformed \[0,0,0,0,0\]\) did not throw/)

@@ -33,7 +33,7 @@
  */
 
 import { canonicalJson, parseItemId, resolveSeed, type Stratum } from './ids'
-import { createRng, type Rng } from '../engine'
+import { checkObservation, createRng, type Observation, type Rng } from '../engine'
 import {
   CANONICAL_RATIONAL_RE,
   MalformedResponseError,
@@ -368,7 +368,9 @@ const needsReason = (what: string, v: { readonly reason: string } | string | und
  * `invalidResponse` (no observation and ≥ 1 reason). Empty = fine. Checks: `correct` null; flags
  * and reasons are arrays of {@link SCORE_TOKEN_RE} tokens; an observation matches the item's
  * model kind, axis and params (GRM: a, thresholds, integer y in 0 … m; Gaussian: lam, d, a finite
- * x and sigma ≥ `params.sigma` = τ_res, the one meaning of params.sigma); plain JSON.
+ * x and sigma ≥ `params.sigma` = τ_res, the one meaning of params.sigma) and passes the engine's
+ * closed observation schema (`checkObservation`: exactly the fields of its kind, as the bank
+ * suite checks with `observation_from_json`); plain JSON.
  */
 export function blockScoreProblems(item: ItemInstance<object, object>, s: BlockScore, valid: boolean): string[] {
   const out: string[] = []
@@ -391,6 +393,11 @@ export function blockScoreProblems(item: ItemInstance<object, object>, s: BlockS
     out.push(`a valid block response must yield an observation (reasons: ${reasons.join(', ')})`)
   } else {
     if (reasons.length > 0) out.push('a block with an observation must give no reasons')
+    try {
+      checkObservation(o as Observation)
+    } catch (e) {
+      out.push(`the engine rejects the observation: ${e instanceof Error ? e.message : String(e)}`)
+    }
     const p = item.params
     if (o.axis !== item.axis) out.push(`observation axis ${String(o.axis)} is not the item's ${item.axis}`)
     if (o.kind === 'grm' && p.model === 'grm') {

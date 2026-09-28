@@ -212,7 +212,9 @@ export function stratumOfB(b: number): Stratum {
  * the §7.1 model −|e_ij| = θ_F − δ_j + ε on the dex scale, with the item's δ in θ units (0 until
  * calibrated). A θ = 0 taker misses a δ = 0 item by 0.5 dex (a factor ≈ 3) at the median; one SD
  * of θ is 0.2 dex; the residual 0.35 dex makes one item worth lam²/sigma² ≈ 0.33 of information,
- * about one 2PL item.
+ * about one 2PL item. `sigma` has the one meaning of params.sigma (M1.F2, `family.ts`): τ_res.
+ * One answer has no sampling error of its own (SE = 0), so its observation sigma is
+ * √(0² + τ_res²) = residual_sd_dex (`gaussianObservationSigma(0, params)`).
  */
 export const FERMI_NORMS = Object.freeze({
   version: 'fermi-v0',
@@ -221,12 +223,16 @@ export const FERMI_NORMS = Object.freeze({
   residual_sd_dex: 0.35,
 })
 
-/** The observation x = −|log10(estimate / truth)| of a Fermi answer; throws a RangeError unless both are finite and > 0. */
+/**
+ * The observation x = −|log10(estimate / truth)| of a Fermi answer, finite for every finite
+ * positive pair (computed as a difference of logs: the ratio itself can overflow or underflow,
+ * e.g. 1e308 / 1e-308); throws a RangeError unless both are finite and > 0.
+ */
 export function fermiX(estimate: number, truth: number): number {
   if (!(Number.isFinite(estimate) && estimate > 0 && Number.isFinite(truth) && truth > 0)) {
     throw new RangeError(`fermiX(): estimate and truth must be finite and > 0, got ${estimate}, ${truth}`)
   }
-  return 0 - Math.abs(Math.log10(estimate / truth))
+  return 0 - Math.abs(Math.log10(estimate) - Math.log10(truth))
 }
 
 /** The Gaussian params of a Fermi item of difficulty δ (θ units, default 0): see {@link FERMI_NORMS}. */
@@ -242,18 +248,24 @@ export function fermiParams(delta = 0): { model: 'gaussian'; lam: number; d: num
  * confidence-rated answers (≥ `min_responses`) enters as x = −B, a Gaussian observation on θ_CAL
  * standardised by the population location/scale of −B,
  *
- *     x ~ N(lam·θ + d, sigma²),  d = −brier_mean,  lam = brier_sd·√reliability,
- *     sigma = brier_sd·√(1 − reliability),
+ *     x ~ N(lam·θ + d, SE² + τ_res²),  d = −brier_mean,  lam = brier_sd·√reliability,
+ *     params.sigma = τ_res = residual_sd,  SE = {@link brierStandardError}(session),
  *
- * so that −B has mean −0.21 and SD 0.06 in the population and a session's Brier reflects θ_CAL
- * with the given reliability. [SPEC] values: confident-but-fallible adults on mixed-difficulty
- * items score Brier ≈ 0.2 (0.25 is always-50% on a coin flip).
+ * with the one meaning of params.sigma (M1.F2, `family.ts`): `calibrationParams().sigma` is τ_res,
+ * the residual beyond the session's own sampling error, and the M1.15 scorer adds that error:
+ * observation sigma = `gaussianObservationSigma(brierStandardError(c, y), calibrationParams())`.
+ * −B has mean −0.21 and SD 0.06 in the population, and `reliability` is that of a reference
+ * session of ≈ 30 rated answers: with a per-answer SD of (c − y)² ≈ 0.18, SE ≈ 0.18/√30 ≈ 0.033
+ * and √(SE² + 0.02²) ≈ 0.038 = brier_sd·√(1 − reliability) (tested). Longer sessions measure more
+ * precisely through their smaller SE. [SPEC] values: confident-but-fallible adults on
+ * mixed-difficulty items score Brier ≈ 0.2 (0.25 is always-50% on a coin flip).
  */
 export const CAL_NORMS = Object.freeze({
   version: 'cal-v0',
   brier_mean: 0.21,
   brier_sd: 0.06,
   reliability: 0.6,
+  residual_sd: 0.02,
   min_responses: 10,
 })
 
@@ -273,8 +285,27 @@ export function brierScore(confidences: readonly number[], outcomes: readonly (0
   return s / confidences.length
 }
 
-/** The Gaussian params of the session calibration observation x = −Brier: see {@link CAL_NORMS}. */
+/**
+ * The session's own standard error of B: the sample SD (n − 1) of the per-answer terms (c − y)²
+ * over √n, the SE that the calibration observation adds to τ_res ({@link CAL_NORMS}). Throws a
+ * RangeError on fewer than 2 answers or out-of-range values (as {@link brierScore}).
+ */
+export function brierStandardError(confidences: readonly number[], outcomes: readonly (0 | 1)[]): number {
+  if (confidences.length < 2) throw new RangeError('brierStandardError(): need at least two answers')
+  const mean = brierScore(confidences, outcomes)
+  let ss = 0
+  confidences.forEach((c, i) => {
+    const y = outcomes[i] as number
+    ss += ((c - y) * (c - y) - mean) ** 2
+  })
+  return Math.sqrt(ss / (confidences.length - 1) / confidences.length)
+}
+
+/**
+ * The Gaussian params of the session calibration observation x = −Brier: see {@link CAL_NORMS}.
+ * `sigma` is τ_res (not an observation sigma): add the session's {@link brierStandardError}.
+ */
 export function calibrationParams(): { model: 'gaussian'; lam: number; d: number; sigma: number } {
   const n = CAL_NORMS
-  return { model: 'gaussian', lam: n.brier_sd * Math.sqrt(n.reliability), d: -n.brier_mean, sigma: n.brier_sd * Math.sqrt(1 - n.reliability) }
+  return { model: 'gaussian', lam: n.brier_sd * Math.sqrt(n.reliability), d: -n.brier_mean, sigma: n.residual_sd }
 }

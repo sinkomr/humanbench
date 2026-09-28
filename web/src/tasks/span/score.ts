@@ -5,7 +5,7 @@
  */
 
 import { blockScore, type BlockObservation, type BlockScore } from '../family'
-import type { SpanItem, SpanResponse } from './config'
+import { spanSymbols, type SpanItem, type SpanResponse } from './config'
 import { advanceSpan, type SpanOutcome, type SpanProtocol, type SpanStatus } from './protocol'
 
 /** The protocol recorded in a block's spec. */
@@ -16,11 +16,11 @@ export function itemProtocol(item: SpanItem): SpanProtocol {
 
 /**
  * Run a block's response stream (one entry per trial given, in order) through the state
- * machine: the next trial to give, or the finished outcome. Throws a RangeError on a response
- * after the block finished.
+ * machine: the next trial to give, or the finished outcome. Throws a `MalformedResponseError`
+ * on a malformed stream, including an entered element outside the task's symbols (M1.F2).
  */
 export function runBlock(item: SpanItem, responses: SpanResponse): SpanStatus {
-  return advanceSpan(itemProtocol(item), item.key.sequences, responses)
+  return advanceSpan(itemProtocol(item), item.key.sequences, responses, spanSymbols(item.spec.task))
 }
 
 /**

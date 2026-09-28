@@ -16,6 +16,11 @@
  *   with angle). b spans ≈ −0.55 … 3.45 over 20–180°, and the stratum is its default band
  *   (`stratumOfB`): strata 2–6 are the angle bins ≈ 20–22°, 22–62°, 62–102°, 102–142°, 142–180°
  *   ({@link ANGLE_BINS}, derived from the band cuts, so a bin and its band always agree).
+ *   Stratum 2 is a 2° sliver: ≈ 1% of the natural pool, and a requested stratum 2 draws the key's
+ *   and the distractors' angles all in 20–22° (valid, but thin). It stays in the strata because
+ *   natural-pool items at 20–22° are stratum 2 by the M1.P rule. The natural pool's stratum mix
+ *   follows the angle distribution (≈ 1 : 24 : 25 : 25 : 24 over 2–6), not the strata, so the
+ *   M1.14 selector requests a stratum when it needs one.
  * - Recorded but not (yet) in b: in-depth vs picture-plane axis, cube and arm counts, and the
  *   distractor mix (mirror-of-moved vs moved); M4 fits them.
  *

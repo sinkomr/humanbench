@@ -1,5 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { gaussianObservationSigma } from './family'
 import {
   B_PRIOR_LIMIT,
   EXPECTED_TIME_BASE_S,
@@ -20,6 +21,7 @@ import {
   CAL_NORMS,
   FERMI_NORMS,
   brierScore,
+  brierStandardError,
   calibrationParams,
   fermiParams,
   fermiX,
@@ -168,12 +170,30 @@ describe('provisional FER and CAL location/scale (M1.P, A10; replaced at M4.8)',
         const x = fermiX(e, t)
         expect(x).toBeLessThanOrEqual(0)
         expect(x).toBeCloseTo(fermiX(t, e), 9)
+        expect(x).toBeCloseTo(-Math.abs(Math.log10(e / t)), 9)
       }),
     )
   })
 
+  it('property: finite for every finite positive double pair, where the ratio over- or underflows too', () => {
+    expect(fermiX(1e308, 1e-308)).toBeCloseTo(-616, 9)
+    expect(fermiX(1e-308, 1e308)).toBeCloseTo(-616, 9)
+    expect(fermiX(5e-324, 1e10)).toBeCloseTo(-333.306, 3)
+    expect(fermiX(Number.MAX_VALUE, Number.MIN_VALUE)).toBe(fermiX(Number.MIN_VALUE, Number.MAX_VALUE))
+    const positive = fc.double({ min: Number.MIN_VALUE, max: Number.MAX_VALUE, noNaN: true, noDefaultInfinity: true })
+    fc.assert(
+      fc.property(positive, positive, (e, t) => {
+        const x = fermiX(e, t)
+        expect(Number.isFinite(x)).toBe(true)
+        expect(x).toBeLessThanOrEqual(0)
+        expect(x).toBe(fermiX(t, e))
+      }),
+      { numRuns: 1_000 },
+    )
+  })
+
   it('Calibration: x = −Brier, standardised by the provisional population location/scale', () => {
-    expect(CAL_NORMS).toEqual({ version: 'cal-v0', brier_mean: 0.21, brier_sd: 0.06, reliability: 0.6, min_responses: 10 })
+    expect(CAL_NORMS).toEqual({ version: 'cal-v0', brier_mean: 0.21, brier_sd: 0.06, reliability: 0.6, residual_sd: 0.02, min_responses: 10 })
     // §14.6 ex. 9: c = 0.9, y = 0 → 0.81; c = 0.6, y = 1 → 0.16.
     expect(brierScore([0.9], [0])).toBeCloseTo(0.81, 12)
     expect(brierScore([0.6], [1])).toBeCloseTo(0.16, 12)
@@ -188,8 +208,39 @@ describe('provisional FER and CAL location/scale (M1.P, A10; replaced at M4.8)',
     const p = calibrationParams()
     expect(p.model).toBe('gaussian')
     expect(p.d).toBe(-0.21)
-    // lam² + sigma² = brier_sd²: −B has the population SD 0.06, with the given reliability.
-    expect(p.lam * p.lam + p.sigma * p.sigma).toBeCloseTo(0.0036, 12)
+    // lam² is the reliable share of the population variance of −B …
     expect((p.lam * p.lam) / 0.0036).toBeCloseTo(0.6, 12)
+    // … and sigma is τ_res (M1.F2's one meaning), not an observation sigma: at the reference
+    // session (30 answers, per-answer SD 0.18) √(SE² + τ_res²) is brier_sd·√(1 − reliability).
+    expect(p.sigma).toBe(CAL_NORMS.residual_sd)
+    const refSe = 0.18 / Math.sqrt(30)
+    const total = Math.sqrt(refSe * refSe + p.sigma * p.sigma)
+    expect(Math.abs(total / (0.06 * Math.sqrt(0.4)) - 1)).toBeLessThan(0.02)
+    expect(gaussianObservationSigma(refSe, p)).toBeCloseTo(total, 15)
+  })
+
+  it('brierStandardError: the sample SD of (c − y)² over √n', () => {
+    // Terms 0.81 and 0.16: mean 0.485, sample SD √(2·0.325²) = 0.4596, over √2 = 0.325.
+    expect(brierStandardError([0.9, 0.6], [0, 1])).toBeCloseTo(0.325, 12)
+    expect(brierStandardError([0.7, 0.7, 0.7], [1, 1, 1])).toBe(0)
+    for (const [c, y] of [[[0.5], [1]], [[], []], [[0.5, 1.5], [1, 0]], [[0.5, 0.5], [1]]] as [number[], (0 | 1)[]][]) {
+      expect(() => brierStandardError(c, y)).toThrow(RangeError)
+    }
+  })
+
+  it('property: brierStandardError is finite, ≥ 0 and 0 exactly when every answer has the same term', () => {
+    const answer = fc.tuple(fc.double({ min: 0, max: 1, noNaN: true }), fc.constantFrom<0 | 1>(0, 1))
+    fc.assert(
+      fc.property(fc.array(answer, { minLength: 2, maxLength: 60 }), (xs) => {
+        const c = xs.map(([v]) => v)
+        const y = xs.map(([, o]) => o)
+        const se = brierStandardError(c, y)
+        expect(Number.isFinite(se) && se >= 0).toBe(true)
+        // An SE never exceeds the largest possible term spread (1) over √n.
+        expect(se).toBeLessThanOrEqual(1 / Math.sqrt(xs.length - 1) + 1e-12)
+        const same = brierStandardError([c[0] as number, c[0] as number], [y[0] as 0 | 1, y[0] as 0 | 1])
+        expect(same).toBe(0)
+      }),
+    )
   })
 })

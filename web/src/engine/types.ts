@@ -20,7 +20,11 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
  * - '3pl': a, b, c (only for items with k ≤ 4 options, c fixed at 1/k; k ≥ 5 options or
  *   numeric entry → 2PL, ROADMAP A9);
  * - 'grm': a, b = strictly increasing thresholds b_1 < … < b_m;
- * - 'gaussian': lam, d, sigma (x ~ N(lam·θ + d, sigma²)); lam may be negative.
+ * - 'gaussian': lam, d, sigma; lam may be negative. `sigma` here is τ_res, the residual SD of
+ *   the statistic x around lam·θ + d beyond a block's own sampling error (M1.F2: the one meaning
+ *   of params.sigma, `tasks/family.ts`); the scored observation is x ~ N(lam·θ + d, SE² + τ_res²),
+ *   its sigma from `gaussianObservationSigma(SE, params)` (`tasks/family.ts`). An observation's
+ *   own `sigma` ({@link Observation}) is that full SD.
  */
 export type ItemParams =
   | { model: '2pl'; a: number; b: number }

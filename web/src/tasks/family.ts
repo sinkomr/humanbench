@@ -110,13 +110,17 @@
  *   `generate(seed, { stratum: k })` returns an item in stratum k (seed `<seed>@s<k>`, see
  *   `resolveSeed`) or throws a RangeError if the family cannot target k.
  * - **Pool anchoring (M1.P).** An ICAR-anchored family's pool (`generate(seed)` without a
- *   stratum) has mean b = its ICAR anchor (`priors.ts` ICAR_ANCHORED_FAMILIES).
+ *   stratum) has mean b = its ICAR anchor (`priors.ts` ICAR_ANCHORED_FAMILIES). The pool's
+ *   stratum mix is whatever that distribution gives, not uniform (at n = 2,000: rotation ≈ 1%
+ *   in its 20–22° stratum 2, matrices ≈ 70% in stratum 3), so a selector that needs a stratum
+ *   requests it with `generate(seed, { stratum })` (M1.14).
  *
  * ## Scoring rules (checked by the suite)
  *
  * - `score(item, response)` takes a response of the family's response type. A response that
  *   is not one (wrong JSON type, out of range, the wrong length, a response after a block
- *   finished) throws a {@link MalformedResponseError}, a RangeError, in every family (the bank
+ *   finished; in span, an entered element outside the task's symbols) throws a
+ *   {@link MalformedResponseError}, a RangeError, in every family (the bank
  *   twins raise `hb.gen.base.MalformedResponseError`, a ValueError). A well-formed but wrong
  *   answer is not malformed: it scores 0 (an unparseable typed entry is a wrong answer). A
  *   skipped or timed-out item is the session's record (§13), not a `score()` call.

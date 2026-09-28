@@ -168,3 +168,10 @@ export const SPAN_CORSI: SpanTaskConfig = Object.freeze({
 })
 
 export const SPAN_TASKS: readonly SpanTaskConfig[] = Object.freeze([SPAN_FWD, SPAN_BWD, SPAN_CORSI])
+
+/** The alphabet of a span task (digits 1–9, Corsi blocks 0–8); throws a RangeError on an unknown task. */
+export function spanSymbols(task: SpanTask): readonly number[] {
+  const cfg = SPAN_TASKS.find((c) => c.task === task)
+  if (cfg === undefined) throw new RangeError(`unknown span task ${JSON.stringify(task)}`)
+  return cfg.symbols
+}
