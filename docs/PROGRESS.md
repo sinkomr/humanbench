@@ -4,10 +4,12 @@
 
 The user's Claude plan has a rolling 5-hour usage limit. Work continues across limits like this:
 
-- **Hourly resume ticks** fire at minute :23, **from 17:23 on 2026-09-26 through 09:23 on 2026-09-27, then stop**, as the user asked. They are two session-only CronCreate jobs: `23 17-23 26 9 *` and `23 0-9 27 9 *`.
+- **Hourly resume ticks** fire at minute :23.
+  - The first window ran from 17:23 on 2026-09-26 to 09:23 on 2026-09-27.
+  - The user renewed the ticks at about 19:50 on 2026-09-27, and they **now run until 06:23 on 2026-09-28, then stop**. They are two session-only CronCreate jobs: `23 20-23 27 9 *` and `23 0-6 28 9 *`.
   - A tick fires only while the session is idle.
   - If the limit is still active, the tick fails cheaply. The first tick after the reset picks the work back up.
-  - Don't extend past 10:00 on 2026-09-27 without asking.
+  - Don't extend past 07:00 on 2026-09-28 without asking.
 - If the session was closed, the user can run `cd ~/code/humanbench` then `claude --continue`, and type `resume`.
 
 ### Resume protocol (run on every tick or "resume")
@@ -29,7 +31,7 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 ## Now
 
 - **wf2b** (`wf_598bf613-59c`) finished its fixes and merged `wf2/*` into `dev` in both repos. Quant was merged later, and is **not yet registered**. The 4-lens audit ran; its findings are in the scratchpad file `wf2/audit_findings.json`. The repair step then failed: the stall watchdog kills an agent after 3 minutes with no progress, and the serial bank pytest run takes about 5.5 minutes.
-- **In flight: wf2c** (`wf_47425241-a4c`, started 2026-09-27 05:35). It runs in order:
+- **In flight: wf2c** (`wf_47425241-a4c`, started 2026-09-27 19:43). It runs in order:
   - **base:** on bank `dev`, finish the id-scheme work (shared cyrb128 `family_id`, Python twin versions tagged `+py`) and add pytest-xdist.
   - **4 scoped repairs**, each in its own worktree on branch `wf2c/<name>`: `quantreg`, `infra`, `rules`, `rtfix`.
   - **reading:** re-solve the A14 questions with 2 independent solvers, then fix them on `wf2c/reading2`.
