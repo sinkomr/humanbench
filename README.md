@@ -193,6 +193,19 @@ npm run lint:language
 npm run lint:language -- src/App.svelte ../README.md
 ```
 
+This repo owns the banned vocabulary. The private bank's item lint (gate G6, ROADMAP M3.2) reads a
+copy of it: `web/scripts/language-terms.json`, which `language-terms.test.ts` keeps equal to the
+lists in `language-lint.ts` (and, when the bank checkout is present, to the bank's
+`golden/language_terms.json`, A17). After changing the lists, refresh the export here and copy it
+in the bank:
+
+```zsh
+cd web
+npm run dump:language-terms
+cd ../../humanbench-bank
+uv run hb sync language-terms
+```
+
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 
 ```zsh
