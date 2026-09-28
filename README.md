@@ -2,8 +2,9 @@
 
 HumanBench is a free, browser-based battery of short cognitive tasks that draws your
 results as a "jagged blob": one spike per ability, with its uncertainty shown, instead of
-a single score. It is for curiosity and self-reflection. It is not an IQ test, a clinical
-assessment, or a basis for decisions about education, employment, or health.
+a single score. Its disclaimer (DESIGN §13):
+
+> For curiosity and self-reflection. Not an IQ test, a clinical assessment, or a basis for decisions about education, employment, or health.
 
 Status: static MVP in progress (milestone M1). The design spec is in
 [docs/DESIGN.md](docs/DESIGN.md), and the build backlog is in [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -118,6 +119,23 @@ App code imports the task helpers from `web/src/tasks` (the barrel) and the fami
 and fails if a bundle carries reading authoring data. `web/scripts/timing-lint.test.ts` fails on
 any wall-clock read under `web/src` (`Date.now`, argless `new Date()`) and on unseeded
 randomness in `web/src/engine` and `web/src/tasks`: timing uses `performance.now()`.
+
+### Language lint
+
+`npm test` also runs the language lint (ROADMAP A13, DESIGN R-5.6.x) in
+`web/scripts/language-lint.test.ts`. It reads the user-facing text of the app: string and template
+literals and Svelte markup under `web/src`, JSON copy, `web/public`, `web/index.html` and this
+README (not tests, test data or code comments). It fails on the banned terms listed, each with its
+reason, in `web/scripts/language-lint.ts`. Matching ignores case and respects word boundaries. Only
+two texts may carry a banned word: the §13 disclaimer, quoted exactly, and the R-5.6.5 resource
+sentence, which is spelled out only in `web/src/copy.ts` as `RESOURCE_LINE` (import it; only the
+results footer renders it). To lint the repo, or just some files, and print each hit:
+
+```zsh
+cd web
+npm run lint:language
+npm run lint:language -- src/App.svelte ../README.md
+```
 
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 

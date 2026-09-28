@@ -13,6 +13,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json && tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint:language": "tsx scripts/lint-language.ts",
     "sync:golden": "sh scripts/sync-golden.sh",
     "dump:families": "tsx scripts/dump-families.ts",
     "dump:coding-scores": "tsx scripts/dump-coding-scores.ts",
