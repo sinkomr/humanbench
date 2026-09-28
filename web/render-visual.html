@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visual renderer gallery (development only)</title>
+  </head>
+  <body>
+    <!--
+      Dev-only gallery of the visual renderers (ROADMAP M1.13). Served by `npm run dev` at
+      <base>render-visual.html; `vite build` only builds index.html, and the entry refuses to run
+      outside a dev server (import.meta.env.DEV). scripts/render-bundle.test.ts checks the
+      production build does not contain it.
+    -->
+    <div id="app"></div>
+    <script type="module" src="/src/render/visual-gallery/main.ts"></script>
+  </body>
+</html>
