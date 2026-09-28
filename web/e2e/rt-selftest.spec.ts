@@ -78,10 +78,11 @@ test.describe('RT timing self-test page (M1.23)', () => {
     // Focus moves to the key-press instructions (the Start button is disabled during the run).
     await expect(page.getByText(/^Press the space bar/)).toBeFocused()
     for (let i = 0; i < 3; i++) await page.keyboard.press('Space')
-    await expect(page.getByRole('heading', { name: 'Pointer presses' })).toBeVisible()
+    // Each new section takes the focus (the old one, with the focused element, is removed).
+    await expect(page.getByRole('heading', { name: 'Pointer presses' })).toBeFocused()
     const target = page.getByRole('button', { name: 'Tap target' })
     for (let i = 0; i < 3; i++) await target.click()
-    await expect(page.getByRole('heading', { name: 'Results' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Results' })).toBeFocused()
     await expect(page.getByRole('table')).toContainText('Stimulus onset error')
 
     const r = await readReport(page)
@@ -117,6 +118,20 @@ test.describe('RT timing self-test page (M1.23)', () => {
     expect(r.metrics.key_latency_ms).toEqual({ summary: null, pass: null, note: 'skipped' })
     expect(r.metrics.pointer_latency_ms).toEqual({ summary: null, pass: null, note: 'skipped' })
     await expect(page.getByRole('table')).toContainText('Skipped')
+  })
+
+  test('keyboard only: Enter on a Skip button skips (it is not a key-press sample), focus follows', async ({ page }) => {
+    await runAutomaticPart(page)
+    await page.getByRole('button', { name: 'Skip: no keyboard' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { name: 'Pointer presses' })).toBeFocused()
+    await expect(page.getByRole('status').first()).toHaveText(/^Pointer presses: 0 of 3$/)
+    await page.getByRole('button', { name: 'Skip: no mouse or touch' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('heading', { name: 'Results' })).toBeFocused()
+    const r = await readReport(page)
+    expect(r.metrics.key_latency_ms).toEqual({ summary: null, pass: null, note: 'skipped' })
+    expect(r.metrics.pointer_latency_ms).toEqual({ summary: null, pass: null, note: 'skipped' })
   })
 
   test('the rendered page passes the language lint (A13)', async ({ page }) => {

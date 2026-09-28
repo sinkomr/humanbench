@@ -112,8 +112,10 @@ Test files live next to the code in `web/src/` (and `web/scripts/` for the Node 
 display can time reaction-time trials. It measures the refresh rate, rAF frame-interval jitter, the
 `performance.now()` resolution, the onset scheduling error (the frame a stimulus appears in versus
 the first refresh at or after its target), and the delay from key and pointer events to their
-handlers. Each check shows p50, p95 and max; it passes when its p95 is below 5 ms. The page ends
-with a JSON report to copy. It is linked from nowhere else and asks search engines not to index it.
+handlers. Each check shows p50, p95 and max; it passes when its p95 is below 5 ms. The pass rule is
+the p95, not the max, so up to 5% of samples may be slower: a few dropped frames at 120 Hz (8.3 ms)
+still pass, and the max column shows them. The page ends with a JSON report to copy. It is linked
+from nowhere else and asks search engines not to index it.
 
 To run it on a local production build, open http://localhost:4173/humanbench/rt-selftest.html
 after:

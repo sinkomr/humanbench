@@ -61,6 +61,9 @@
 
   let dot: HTMLDivElement | undefined = $state()
   let keyZone: HTMLElement | undefined = $state()
+  let pointerHeading: HTMLElement | undefined = $state()
+  let resultsHeading: HTMLElement | undefined = $state()
+  let startButton: HTMLButtonElement | undefined = $state()
   let jsonBox: HTMLTextAreaElement | undefined = $state()
 
   let frameTimestamps: number[] = []
@@ -137,25 +140,46 @@
     }
   }
 
+  /**
+   * After a phase change, move focus to the new section (the element that had it, e.g. the key
+   * zone or a Skip button, is removed with the old one and focus would fall to the body).
+   */
+  async function focusAfterRender(target: () => HTMLElement | undefined): Promise<void> {
+    await tick()
+    target()?.focus()
+  }
+
+  function toPointerPhase(): void {
+    phase = 'pointer'
+    void focusAfterRender(() => pointerHeading)
+  }
+
   function fail(e: unknown): void {
     showDot(false)
     errorText = e instanceof Error ? e.message : String(e)
     phase = 'error'
+    void focusAfterRender(() => startButton)
   }
+
+  /** Keys aimed at a control (Enter or Space on "Skip: no keyboard") operate it; they are not samples. */
+  const onControl = (e: Event): boolean => e.target instanceof Element && e.target.closest('button, a, input, textarea, select') !== null
 
   function onKeyDown(e: KeyboardEvent): void {
     if (phase !== 'keys') return
     const sample = sampleEvent(e, performanceClock) // read the clock first thing in the handler
-    if (e.repeat || e.key === 'Tab' || e.key === 'Shift') return
+    if (e.repeat || e.key === 'Tab' || e.key === 'Shift' || onControl(e)) return
     if (e.key === ' ' || e.key === 'Enter') e.preventDefault()
     keys?.push(sample)
     keyCount += 1
-    if (keyCount >= plan.presses) phase = 'pointer'
+    if (keyCount >= plan.presses) toPointerPhase()
   }
 
   function onPointerDown(e: PointerEvent): void {
     if (phase !== 'pointer') return
     const sample = sampleEvent(e, performanceClock)
+    // No compatibility mousedown: its default action would move focus off the Results heading
+    // once the last press ends the phase (the press still counts; click is unaffected).
+    e.preventDefault()
     pointers?.push(sample)
     pointerCount += 1
     if (pointerCount >= plan.presses) finish()
@@ -163,7 +187,7 @@
 
   function skipKeys(): void {
     keys = null
-    phase = 'pointer'
+    toPointerPhase()
   }
 
   function skipPointer(): void {
@@ -188,6 +212,7 @@
       })
       json = reportJson(report)
       phase = 'done'
+      void focusAfterRender(() => resultsHeading)
     } catch (e) {
       fail(e)
     }
@@ -236,7 +261,7 @@
   </p>
 
   <div class="controls">
-    <button type="button" onclick={start} disabled={running}>{phase === 'done' || phase === 'error' ? 'Run again' : 'Start'}</button>
+    <button type="button" bind:this={startButton} onclick={start} disabled={running}>{phase === 'done' || phase === 'error' ? 'Run again' : 'Start'}</button>
   </div>
 
   <p class="status" role="status" aria-live="polite">{statusText}</p>
@@ -255,7 +280,7 @@
     </section>
   {:else if phase === 'pointer'}
     <section class="task" aria-labelledby="pointer-heading">
-      <h2 id="pointer-heading">Pointer presses</h2>
+      <h2 id="pointer-heading" bind:this={pointerHeading} tabindex="-1">Pointer presses</h2>
       <p>Click or tap the button below {plan.presses} times ({pointerCount} of {plan.presses}).</p>
       <button type="button" class="target" onpointerdown={onPointerDown}>Tap target</button>
       <button type="button" class="secondary" onclick={skipPointer}>Skip: no mouse or touch</button>
@@ -264,7 +289,7 @@
 
   {#if report !== null}
     <section aria-labelledby="results-heading">
-      <h2 id="results-heading">Results</h2>
+      <h2 id="results-heading" bind:this={resultsHeading} tabindex="-1">Results</h2>
       <p class="overall">
         Overall: <strong>{report.pass ? 'Pass' : 'Fail'}</strong>
         (p{Math.round(GATE_QUANTILE * 100)} below {report.threshold_ms} ms on every timing check). Refresh rate: {report.refresh.hz} Hz (measured
@@ -375,6 +400,7 @@
 
   button:focus-visible,
   .zone:focus-visible,
+  h2:focus-visible,
   textarea:focus-visible {
     outline: 3px solid var(--text-strong);
     outline-offset: 2px;
