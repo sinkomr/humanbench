@@ -16,7 +16,7 @@
  * ```ts
  * export const series = defineFamily<SeriesSpec, SeriesKey, number>({
  *   name: 'ser', axis: 'MAT', facet: 'series', generatorVersion: '1.0.0',
- *   itemType: 'numeric_entry', strata: [1, 2, 3, 4, 5, 6],
+ *   itemType: NUMERIC_ITEM_TYPE, strata: [1, 2, 3, 4, 5, 6],
  *   build(rng, ctx) {
  *     const stratum = ctx.stratum ?? pickStratum(rng)   // honour a requested stratum
  *     ...                                               // draw only from rng
@@ -49,7 +49,7 @@
  *   option order that encodes the answer, no precomputed result (a spec value that always
  *   equals a key value is flagged across the run). `key`, `structural_params`, `params` and
  *   `difficulty` never reach the renderer. Keys are JSON objects, e.g. `{ index: 2 }` (MC) or
- *   `{ value: 42, tol: 0 }` (numeric entry), as in the §12 item record.
+ *   the shared numeric-entry {@link NumericKey} `{ value: "42", tol: { abs: 0 } }`.
  * - **family_id** is `familyIdOf(structural_params)` (A11): the hash of the parameters that
  *   make two items isomorphs (canonical polycube, matrix rule set, series rule family +
  *   coefficient class, quant template). Canonicalise sets before hashing (sort cells, rules).
@@ -93,6 +93,35 @@ export type JsonObject = { [key: string]: JsonValue }
 /** A named input of the difficulty regression. */
 export type Feature = number | string | boolean
 
+/**
+ * `item_type` of every typed-entry item (series, quant): "numeric", as in DESIGN §14.6 ex. 2. The
+ * renderer picks the entry box from `spec.input_format` ({@link EntryFormat}).
+ */
+export const NUMERIC_ITEM_TYPE = 'numeric'
+
+/**
+ * `spec.input_format` of a {@link NUMERIC_ITEM_TYPE} item, one vocabulary for every entry family:
+ * an integer, a decimal, a fraction `a/b` (or an integer), or one letter A–Z (letter series).
+ */
+export type EntryFormat = 'integer' | 'decimal' | 'fraction' | 'letter'
+
+/**
+ * Per-item tolerance of a {@link NumericKey} (§4.2, §12 `item_keys.tolerance`): an absolute or a
+ * relative bound, a finite JSON number ≥ 0 read exactly as its decimal text.
+ */
+export type Tolerance = { readonly abs: number } | { readonly rel: number }
+
+/**
+ * The numeric-entry key shared by the entry families (series, quant; §12, §14.6 ex. 2–3): the
+ * exact answer as a canonical rational string ("42", "-7", "3/8": lowest terms, positive
+ * denominator, no "+"), so fractions stay exact, and its {@link Tolerance}. A letter answer uses
+ * `{ letter }` instead (series).
+ */
+export interface NumericKey {
+  readonly value: string
+  readonly tol: Tolerance
+}
+
 /** The item's difficulty prior b ~ N(b_prior, sd_prior²) and where it came from (§6.ii, §12). */
 export interface DifficultyPrior {
   readonly features: Readonly<Record<string, Feature>>
@@ -119,13 +148,13 @@ export interface ItemInstance<Spec extends object = JsonObject, Key extends obje
   readonly axis: AxisCode
   /** Drill-down sub-facet (§3), e.g. "3d_rotation", "series". */
   readonly facet: string
-  /** Renderer / response format, e.g. "mc_image_spec", "numeric_entry", "span". */
+  /** Renderer / response format, e.g. "mc_image_spec", "numeric" ({@link NUMERIC_ITEM_TYPE}), "span". */
   readonly item_type: string
   /** Difficulty stratum 1–6 (§6.ii). */
   readonly stratum: Stratum
   /** Render payload. Must not contain or trivially reveal the key. */
   readonly spec: Spec
-  /** The answer key, a JSON object such as `{ index: 2 }` or `{ value: 42, tol: 0 }`. */
+  /** The answer key, a JSON object such as `{ index: 2 }` or a {@link NumericKey}. */
   readonly key: Key
   /** The structure hashed into `family_id` (A11); isomorphs share it. */
   readonly structural_params: JsonValue

@@ -2,18 +2,19 @@
  * Difficulty and time priors of the quant family (M1.P, DESIGN §6.ii, §7.4). [SPEC] v0, uncalibrated
  * until M4; the bank's `hb.gen.quant` uses the same numbers.
  *
- * b regression v0:  b = −1.5 + 1.0·(stratum − 1) + template_offset + 0.1·non_integer
- * - stratum anchors −1.5, −0.5, 0.5, 1.5 for strata 1–4 (the M1.8 spec; §6.ii content labels:
- *   middle school, high school, college entry, college);
+ * b regression v0:  b = −2.0 + 1.0·(stratum − 1) + template_offset + 0.1·non_integer
+ * - stratum anchors −2, −1, 0, 1 for strata 1–4 (§6.ii content labels: middle school, high
+ *   school, college entry, college): the centres of the shared default b bands
+ *   (`STRATUM_B_CUTS` in `priors.ts`: b < −1.5, −1.5…−0.5, −0.5…0.5, 0.5…1.5);
  * - `template_offset` ∈ [−0.3, 0.3] per template variant (`VariantDef.offset`, mean ≈ 0), a small
  *   judgement of relative step count within the stratum (e.g. percent-of −0.3, percent change +0.2);
  * - `non_integer` = the key is not an integer (fractions and decimals are harder to enter), +0.1.
- * So b ∈ [anchor − 0.3, anchor + 0.4] and the stratum means sit on the spec's anchors.
+ * So b ∈ [anchor − 0.3, anchor + 0.4], inside the stratum's band: `stratumOfB(b) === stratum` for
+ * every item, as for the other families (the verifier checks it).
  *
- * Known conflict (escalated as a followup, not settled here): the spec's anchors are the *upper
- * cuts* of the contract's default bands (`STRATUM_B_CUTS`, stratum k = [anchor − 1, anchor)), so
- * about half of the items have `stratumOfB(b) === stratum + 1`. Nothing in the contract requires
- * the two to agree; the engine selects on b, and σ_b = 1.0 spans both bands.
+ * The M1.8 spec put the anchors at −1.5, −0.5, 0.5, 1.5, the *upper cuts* of those bands, so about
+ * half of the items fell in the next band; they are moved down half a logit to the band centres
+ * so that a requested stratum means the same b range in every family (audit: quant conventions).
  *
  * Expected time v0: E[T] = {30, 45, 60, 75} s for strata 1–4 plus the §7.4 length term
  * 4 s per 50 words of stem, so 30–90 s.
@@ -24,7 +25,7 @@ import { EXPECTED_TIME_PER_50_WORDS_S, SIGMA_B_DEFAULT, clampPrior, countWords, 
 
 /** [SPEC v0] The b regression (see the module comment). */
 export const QUANT_PRIOR: LinearPriorModel = Object.freeze({
-  anchorB: -1.5,
+  anchorB: -2.0,
   terms: Object.freeze({
     stratum: { beta: 1.0, centre: 1 },
     template_offset: { beta: 1.0, centre: 0 },
@@ -36,8 +37,8 @@ export const QUANT_PRIOR: LinearPriorModel = Object.freeze({
 export const QUANT_TIME_BASE_S: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({ 1: 30, 2: 45, 3: 60, 4: 75 })
 
 export const QUANT_PROVENANCE =
-  'quant v0 [SPEC]: b = -1.5 + 1.0*(stratum - 1) + template_offset + 0.1*non_integer; ' +
-  'anchors -1.5/-0.5/0.5/1.5 for strata 1-4, small template offsets in [-0.3, 0.3]; uncalibrated until M4'
+  'quant v0 [SPEC]: b = -2 + 1.0*(stratum - 1) + template_offset + 0.1*non_integer; ' +
+  'anchors -2/-1/0/1 (the default b-band centres) for strata 1-4, small template offsets in [-0.3, 0.3]; uncalibrated until M4'
 
 /** The regression features of an item (§12 difficulty_prior inputs). */
 export interface QuantFeatures {

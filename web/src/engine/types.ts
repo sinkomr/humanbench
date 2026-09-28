@@ -38,7 +38,7 @@ export interface ItemBase {
   axis: AxisCode
   /** Sub-facet reported only in drill-down (§3), e.g. "3d_rotation". */
   facet?: string
-  /** Renderer / response format, e.g. "mc", "mc_image_spec", "numeric_entry", "span". */
+  /** Renderer / response format, e.g. "mc", "mc_image_spec", "numeric", "span". */
   item_type: string
   gold_tier: GoldTier
   /**

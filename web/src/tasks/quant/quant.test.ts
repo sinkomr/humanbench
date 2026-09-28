@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateItemInstance } from '../family'
+import { NUMERIC_ITEM_TYPE, validateItemInstance } from '../family'
 import { stratumOfB } from '../priors'
 import { KEY_ECHO_MAX_CHANCE, KEY_ECHO_MIN_SEEN, runFamilyProperties, type FamilyPropertyOptions } from '../testing'
 import { quant, quantSpecLeaksKey, type QuantItem, type QuantKey, type QuantResponse, type QuantSpec } from '.'
@@ -60,8 +60,8 @@ describe('quant family (M1.8)', () => {
     expect(r.strataCounts).toEqual({ 1: 2_500, 2: 2_500, 3: 2_500, 4: 2_500, 5: 0, 6: 0 })
     expect(r.distinctFamilyIds).toBe(VARIANTS.length)
     expect(r.distinctContents).toBeGreaterThan(8_500)
-    expect(r.bPrior.min).toBeGreaterThanOrEqual(-1.8)
-    expect(r.bPrior.max).toBeLessThanOrEqual(1.9)
+    expect(r.bPrior.min).toBeGreaterThanOrEqual(-2.3)
+    expect(r.bPrior.max).toBeLessThanOrEqual(1.4)
   }, 300_000)
 
   it('passes with the family choosing the stratum', () => {
@@ -88,7 +88,8 @@ describe('quant family (M1.8)', () => {
   it('is a 2PL numeric-entry item on QR (A9) with an exact key and per-item tolerance', () => {
     const item = quant.generate('shape', { stratum: 3 })
     expect(item.axis).toBe('QR')
-    expect(item.item_type).toBe('numeric_entry')
+    expect(item.item_type).toBe(NUMERIC_ITEM_TYPE)
+    expect(NUMERIC_ITEM_TYPE).toBe('numeric') // DESIGN §14.6 ex. 2, shared with series
     expect(item.options_count).toBeUndefined()
     expect(item.params).toEqual({ model: '2pl', a: 1, b: item.difficulty.b_prior })
     expect(Fraction.parseCanonical(item.key.value)).not.toBeNull()
@@ -164,17 +165,17 @@ describe('quant family (M1.8)', () => {
 })
 
 describe('quant prior and time (M1.P) [SPEC v0]', () => {
-  it('centres b on the spec anchors −1.5, −0.5, 0.5, 1.5 with small template offsets', () => {
-    expect(QUANT_PRIOR.anchorB).toBe(-1.5)
+  it('centres b on the default band centres −2, −1, 0, 1 with small template offsets, inside the band', () => {
+    expect(QUANT_PRIOR.anchorB).toBe(-2)
     for (const v of VARIANTS) {
       expect(v.offset, `${v.template}/${v.variant}`).toBeGreaterThanOrEqual(-0.3)
       expect(v.offset).toBeLessThanOrEqual(0.3)
       for (const nonInteger of [false, true]) {
         const b = quantBPrior(quantFeatures(v.template, v.variant, v.stratum, v.offset, nonInteger))
-        const anchor = -1.5 + (v.stratum - 1)
+        const anchor = -2 + (v.stratum - 1)
         expect(b).toBeCloseTo(anchor + v.offset + (nonInteger ? 0.1 : 0), 12)
-        // The spec's anchors are the upper cuts of the contract's default bands (followup).
-        expect([v.stratum, v.stratum + 1]).toContain(stratumOfB(b))
+        // The shared stratum convention (priors.ts STRATUM_B_CUTS): the stratum is b's band.
+        expect(stratumOfB(b), `${v.template}/${v.variant}`).toBe(v.stratum)
       }
     }
     for (const s of [1, 2, 3, 4] as const) {

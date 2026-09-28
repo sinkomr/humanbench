@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { coding, codingSpecLeaksKey } from './coding'
-import { validateItemInstance, type ProceduralFamily } from './family'
+import { NUMERIC_ITEM_TYPE, validateItemInstance, type AnyFamily, type ProceduralFamily } from './family'
 import { FAMILY_NAME_RE, GENERATOR_VERSION_RE, isPyTwinVersion } from './ids'
 import { matrices, matricesSpecLeaksKey } from './matrices'
+import { stratumOfB } from './priors'
+import { quant, quantSpecLeaksKey } from './quant'
 import { reading, type ReadingKey, type ReadingSpec } from './reading'
 import { FAMILIES, FAMILY_NAMES, getFamily } from './registry'
 import { rotation } from './rotation'
@@ -51,7 +53,13 @@ const CHECKS: Readonly<Record<string, Check>> = {
     specLeaksKey: seriesSpecLeaksKey,
     familyIdRatio: { min: 0.1, reason: 'family_id = rule family + non-start coefficients (A11)' },
     contentRatio: { min: 0.9, reason: 'letter series and small-number strata have small content spaces' },
-    correctResponse: (item: SeriesItem) => ('letter' in item.key ? item.key.letter : String(item.key.value)),
+    correctResponse: (item: SeriesItem) => ('letter' in item.key ? item.key.letter : item.key.value),
+  }),
+  quant: check(quant, {
+    specLeaksKey: quantSpecLeaksKey,
+    familyIdRatio: { min: 0.005, reason: 'family_id = the quant template variant (A11): 53 variants' },
+    contentRatio: { min: 0.85, reason: 'x ± 1/x = k, dice sums, rational powers and letter arrangements have < 200 stems each' },
+    correctResponse: (item) => item.key.value,
   }),
   span_fwd: check(spanFwd, { allowKeyInSpec: SPAN_KEY_IN_SPEC, specLeaksKey: spanSpecLeaksKey(SPAN_FWD) }),
   span_bwd: check(spanBwd, { allowKeyInSpec: SPAN_KEY_IN_SPEC, specLeaksKey: spanSpecLeaksKey(SPAN_BWD) }),
@@ -85,7 +93,7 @@ describe('family registry (M1.F)', () => {
   })
 
   it('registers every M1 family, each with a registration check here', () => {
-    expect(Object.keys(FAMILIES).sort()).toEqual(['coding', 'corsi', 'matrices', 'reading', 'rotation', 'rt', 'series', 'span_bwd', 'span_fwd'])
+    expect(Object.keys(FAMILIES).sort()).toEqual(['coding', 'corsi', 'matrices', 'quant', 'reading', 'rotation', 'rt', 'series', 'span_bwd', 'span_fwd'])
     // FAMILY_NAMES is the literal the bank registry test reads (A17); it must match the registry.
     expect(Object.keys(FAMILIES)).toEqual([...FAMILY_NAMES])
     expect(Object.keys(CHECKS).sort()).toEqual(Object.keys(FAMILIES).sort())
@@ -97,6 +105,37 @@ describe('family registry (M1.F)', () => {
         const item = fam.generate(`registry-smoke-${i}`)
         expect(validateItemInstance(item, fam)).toEqual([])
         expect(fam.verify(item).ok).toBe(true)
+      }
+    }
+  })
+
+  it('every registered family puts each item in the default b band of its b_prior (priors.ts STRATUM_B_CUTS)', () => {
+    // The shared stratum convention, "so families agree on what a requested stratum means".
+    for (const [name, fam] of entries) {
+      for (const s of fam.strata) {
+        for (let i = 0; i < 20; i++) {
+          const item = fam.generate(`registry-band-${i}`, { stratum: s })
+          expect(stratumOfB(item.difficulty.b_prior), `${name} ${item.item_id} b = ${item.difficulty.b_prior}`).toBe(item.stratum)
+        }
+      }
+      for (let i = 0; i < 50; i++) {
+        const item = fam.generate(`registry-band-free-${i}`)
+        expect(stratumOfB(item.difficulty.b_prior), `${name} ${item.item_id}`).toBe(item.stratum)
+      }
+    }
+  }, 120_000)
+
+  it('numeric-entry families share one item_type and the NumericKey shape (family.ts)', () => {
+    const entry = entries.filter(([, fam]) => fam.itemType === NUMERIC_ITEM_TYPE).map(([name]) => name)
+    expect(entry.sort()).toEqual(['quant', 'series'])
+    for (const name of entry) {
+      for (let i = 0; i < 100; i++) {
+        const key = (getFamily(name) as AnyFamily).generate(`registry-key-${i}`).key as Record<string, unknown>
+        if ('letter' in key) continue // letter series: { letter }
+        expect(Object.keys(key).sort(), name).toEqual(['tol', 'value'])
+        expect(key.value, name).toMatch(/^-?(?:0|[1-9][0-9]*)(?:\/[1-9][0-9]*)?$/)
+        expect(Object.keys(key.tol as object).length, name).toBe(1)
+        expect(['abs', 'rel'], name).toContain(Object.keys(key.tol as object)[0])
       }
     }
   })

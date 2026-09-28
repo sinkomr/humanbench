@@ -15,12 +15,14 @@
  *   residues by square-and-multiply or brute force; counts by Pascal's triangle or a recursion.
  *
  * It also checks the key format (canonical rational, tolerance for the input format), that the
- * answer fits the format (integers are integers; decimals have ≤ 2 places), and the prior and
- * expected time. Failure reasons are the names of the failed checks; template rules appear as
- * `rule_<name>`.
+ * answer fits the format (integers are integers; decimals have ≤ 2 places), the prior and
+ * expected time, and that the stratum is the template's and the default b band of b_prior
+ * (`stratumOfB`, as every family). Failure reasons are the names of the failed checks; template
+ * rules appear as `rule_<name>`.
  */
 
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
+import { stratumOfB } from '../priors'
 import { Fraction, Surd, exactRoot, frac } from './fraction'
 import { evaluate } from './expr'
 import { HINTS, variantOf, toleranceFor, num, nums, str, bool, type FieldSpec, type Given, type VariantDef } from './templates'
@@ -754,7 +756,7 @@ export function verifyQuant(item: ItemInstance<QuantSpec, QuantKey>): VerifyResu
       structure_known: true,
       spec_fields: true,
       given_fields: true,
-      stratum_matches: item.stratum === variant.stratum,
+      stratum_matches: item.stratum === variant.stratum && Number.isFinite(d.b_prior) && stratumOfB(d.b_prior) === item.stratum,
       input_format_matches: format === variant.format,
       hint_matches: hint === HINTS[variant.format],
       ...rules,

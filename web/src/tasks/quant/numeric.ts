@@ -15,17 +15,19 @@
  * `6/8` are the same entry. The bank's `hb.gen.quant` implements the same grammar.
  */
 
+import type { Tolerance } from '../family'
 import { Fraction } from './fraction'
 
 /** Longest entry parsed (longer ones are rejected, so a pasted essay cannot build a huge BigInt). */
 export const MAX_ENTRY_LENGTH = 32
 
 /**
- * Per-item tolerance (§4.2): an absolute or a relative bound. The v0 templates use `{ abs: 0 }` for
- * integer and fraction answers and `{ abs: 0.005 }` for their exact two-place decimals (see
+ * Per-item tolerance (§4.2), the shared {@link Tolerance} of the contract's `NumericKey`
+ * (`family.ts`): an absolute or a relative bound. The v0 templates use `{ abs: 0 }` for integer
+ * and fraction answers and `{ abs: 0.005 }` for their exact two-place decimals (see
  * `templates.ts`); `{ rel: 0.005 }` is for answers that need rounding.
  */
-export type Tolerance = { readonly abs: number } | { readonly rel: number }
+export type { Tolerance }
 
 const DEC_RE = /^(\d+(?:\.\d*)?|\.\d+)$/
 const THOUSANDS_RE = /^\d{1,3}(?:,\d{3})+(?:\.\d*)?$/

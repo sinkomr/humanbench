@@ -14,6 +14,7 @@
 import { coding } from './coding'
 import type { AnyFamily } from './family'
 import { matrices } from './matrices'
+import { quant } from './quant'
 import { reading } from './reading'
 import { rotation } from './rotation'
 import { rt } from './rt'
@@ -22,10 +23,10 @@ import { corsi, spanBwd, spanFwd } from './span'
 
 /**
  * M1 procedural families (§4.2, §14.3 M1), keyed by `family.name`: power items rotation (M1.5),
- * matrices (M1.6) and series (M1.7); blocks span_fwd, span_bwd and corsi (M1.9), rt (M1.10),
- * coding (M1.11) and reading (M1.12). quant (M1.8) joins when its branch is merged.
+ * matrices (M1.6), series (M1.7) and quant (M1.8); blocks span_fwd, span_bwd and corsi (M1.9),
+ * rt (M1.10), coding (M1.11) and reading (M1.12).
  */
-const REGISTERED: readonly AnyFamily[] = [rotation, matrices, series, spanFwd, spanBwd, corsi, rt, coding, reading]
+const REGISTERED: readonly AnyFamily[] = [rotation, matrices, series, quant, spanFwd, spanBwd, corsi, rt, coding, reading]
 
 /**
  * The registered names, in registry order. Kept as a string literal on purpose: the bank's
@@ -33,7 +34,7 @@ const REGISTERED: readonly AnyFamily[] = [rotation, matrices, series, spanFwd, s
  * `golden/ts_dumps/<name>.json` dumps cover the same families (A1, A17). `registry.test.ts`
  * checks it equals the keys of {@link FAMILIES}.
  */
-export const FAMILY_NAMES = ['rotation', 'matrices', 'series', 'span_fwd', 'span_bwd', 'corsi', 'rt', 'coding', 'reading'] as const
+export const FAMILY_NAMES = ['rotation', 'matrices', 'series', 'quant', 'span_fwd', 'span_bwd', 'corsi', 'rt', 'coding', 'reading'] as const
 
 export const FAMILIES: Readonly<Record<string, AnyFamily>> = Object.freeze(Object.fromEntries(REGISTERED.map((f) => [f.name, f])))
 

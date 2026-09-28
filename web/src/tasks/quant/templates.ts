@@ -28,10 +28,12 @@
  */
 
 import type { JsonValue, Rng } from '../../engine'
+import type { EntryFormat } from '../family'
 import type { Stratum } from '../ids'
 import { Fraction, bigGcd, frac } from './fraction'
 
-export type InputFormat = 'integer' | 'decimal' | 'fraction'
+/** The quant entry formats: the shared {@link EntryFormat} vocabulary without letters. */
+export type InputFormat = Exclude<EntryFormat, 'letter'>
 
 /** The `given` object of an item's spec: the quantities its stem shows. */
 export type Given = { readonly [k: string]: JsonValue }

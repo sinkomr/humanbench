@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
+import { NUMERIC_ITEM_TYPE, itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
 import { itemId, structuralHash } from '../ids'
 import { ICAR_ANCHOR_B, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
 import { ANALYSIS_FIXTURE_N, analysisCase, analysisFixture, serializeAnalysisFixture } from './analysis-fixture'
 import { SERIES_STRATA, acceptDraft, minVisibleFor, renderDraft, type Draft } from './gen'
-import { SERIES_ITEM_TYPE, series, seriesSpecLeaksKey, type SeriesItem, type SeriesKey, type SeriesSpec } from '.'
+import { series, seriesSpecLeaksKey, type SeriesItem, type SeriesKey, type SeriesSpec } from '.'
 import { SERIES_PRIOR, SERIES_PROVENANCE, seriesB, seriesDifficulty, seriesExpectedTime, seriesFeatures } from './prior'
 import {
   EPSILON_BITS,
@@ -51,7 +51,7 @@ const FAMILY_ID_RATIO = {
 const CONTENT_RATIO = { min: 0.9, reason: 'letter series (1,248 possible) and small-number arithmetic/geometric strata have small content spaces' }
 
 const correctResponse = (item: SeriesItem): string =>
-  'letter' in item.key ? item.key.letter.toLowerCase() : ` ${String(item.key.value)} `
+  'letter' in item.key ? item.key.letter.toLowerCase() : ` ${item.key.value} `
 
 const OPTS = { specLeaksKey: seriesSpecLeaksKey, familyIdRatio: FAMILY_ID_RATIO, contentRatio: CONTENT_RATIO, correctResponse } as const
 
@@ -66,14 +66,14 @@ function makeItem(rule: RuleName, coefficients: Record<string, number | string>,
   const seed = `hand-${rule}-${values.join('_')}`
   const { spec, key } = renderDraft(draft)
   return {
-    item_id: itemId('series', '1.0.0', seed),
+    item_id: itemId('series', series.generatorVersion, seed),
     family_id: series.familyIdOf({ rule, coefficients }),
     family: 'series',
-    generator_version: '1.0.0',
+    generator_version: series.generatorVersion,
     seed,
     axis: 'MAT',
     facet: 'series',
-    item_type: SERIES_ITEM_TYPE,
+    item_type: NUMERIC_ITEM_TYPE,
     stratum,
     spec,
     key,
@@ -137,11 +137,12 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
 })
 
 describe('series family: identity, strata and params', () => {
-  it('is axis MAT, facet series, one entry item type, strata 1–5', () => {
+  it('is axis MAT, facet series, the shared entry item type "numeric" (as quant), strata 1–5', () => {
     expect(series.name).toBe('series')
     expect(series.axis).toBe('MAT')
     expect(series.facet).toBe('series')
-    expect(series.itemType).toBe('series_entry')
+    expect(series.itemType).toBe('numeric')
+    expect(series.itemType).toBe(NUMERIC_ITEM_TYPE)
     expect(series.strata).toEqual([1, 2, 3, 4, 5])
   })
 
@@ -161,7 +162,7 @@ describe('series family: identity, strata and params', () => {
     expect(item.difficulty.provenance).toMatch(/\[SPEC\]/)
   })
 
-  it('keys integers as { value, tol: 0 } and letters as { letter }', () => {
+  it('keys integers as the shared NumericKey { value: "<int>", tol: { abs: 0 } } and letters as { letter }', () => {
     for (let i = 0; i < 300; i++) {
       const item = series.generate(`keys-${i}`)
       if (item.spec.input_format === 'letter') {
@@ -169,7 +170,9 @@ describe('series family: identity, strata and params', () => {
         expect((item.key as { letter: string }).letter).toMatch(/^[A-Z]$/)
         for (const t of item.spec.terms) expect(t).toMatch(/^[A-Z]$/)
       } else {
-        expect(item.key).toEqual({ value: (item.key as { value: number }).value, tol: 0 })
+        const value = (item.key as { value: string }).value
+        expect(item.key).toEqual({ value, tol: { abs: 0 } })
+        expect(value).toMatch(/^(?:0|-?[1-9][0-9]*)$/)
       }
     }
   })
@@ -361,13 +364,22 @@ describe('series verify: hand-built items', () => {
 
   it('rejects malformed keys', () => {
     const key = (k: unknown, base: SeriesItem = good): SeriesItem => tamper(base, (x) => (x.key = k))
-    expect(failed(key({ value: 20, tol: 1 }))).toMatch(/key_well_formed/)
-    expect(failed(key({ value: 20.5, tol: 0 }))).toMatch(/key_well_formed/)
-    expect(failed(key({ value: 20_000, tol: 0 }))).toMatch(/key_well_formed/)
-    expect(failed(key({ value: 20, tol: 0, letter: 'T' }))).toMatch(/key_well_formed/)
+    expect(series.verify(key({ value: '17', tol: { abs: 0 } })).ok).toBe(true)
+    expect(failed(key({ value: '20', tol: { abs: 1 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '20', tol: { rel: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '20', tol: { abs: 0, rel: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '20', tol: 0 }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: 20, tol: { abs: 0 } }))).toMatch(/key_well_formed/) // the pre-1.1.0 number shape
+    expect(failed(key({ value: '20.5', tol: { abs: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '41/2', tol: { abs: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '+20', tol: { abs: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '020', tol: { abs: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '-0', tol: { abs: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '20000', tol: { abs: 0 } }))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '20', tol: { abs: 0 }, letter: 'T' }))).toMatch(/key_well_formed/)
     expect(failed(key({ letter: 'm' }, letter))).toMatch(/key_well_formed/)
     expect(failed(key({ letter: 'MM' }, letter))).toMatch(/key_well_formed/)
-    expect(failed(key({ value: 13, tol: 0 }, letter))).toMatch(/key_well_formed/)
+    expect(failed(key({ value: '13', tol: { abs: 0 } }, letter))).toMatch(/key_well_formed/)
   })
 
   it('rejects malformed or out-of-domain key rules', () => {
@@ -383,7 +395,7 @@ describe('series verify: hand-built items', () => {
   })
 
   it('rejects a key that is not the rule’s next term', () => {
-    const r = failed(tamper(good, (x) => (x.key = { value: 21, tol: 0 })))
+    const r = failed(tamper(good, (x) => (x.key = { value: '21', tol: { abs: 0 } })))
     expect(r).toMatch(/key_is_rule_prediction/)
     expect(r).not.toMatch(/key_rule_fits/)
     expect(failed(tamper(letter, (x) => (x.key = { letter: 'N' })))).toMatch(/key_is_rule_prediction/)
