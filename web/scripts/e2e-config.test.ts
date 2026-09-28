@@ -1,13 +1,15 @@
 /**
  * Guards the Playwright harness wiring (ROADMAP M1.A, A3; CLAUDE.md: e2e incl. WebKit/iOS
  * emulation) without launching a browser: the three projects, the /humanbench/ base path against a
- * fresh `vite preview` of the production build, the npm scripts, and the CI job.
+ * fresh `vite preview` of the production build, the dev server for dev-only pages (M1.13), the npm
+ * scripts, and the CI job.
  */
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { BLOCKING_IMPACTS, WCAG_AA_TAGS } from '../e2e/axe'
+import { visualGalleryUrl } from '../e2e/dev-server'
 import config from '../playwright.config'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
@@ -35,6 +37,19 @@ describe('Playwright config (M1.A)', () => {
     expect(server?.env).toEqual({ VITE_BASE: '/humanbench/' })
     expect(server?.reuseExistingServer).toBe(false)
     expect(server?.url).toBe(config.use?.baseURL)
+  })
+
+  it('also starts a fresh Vite dev server for the dev-only pages (M1.13 renderer gallery)', () => {
+    const servers = Array.isArray(config.webServer) ? config.webServer : []
+    expect(servers).toHaveLength(2)
+    const dev = servers[1]
+    expect(dev?.command).toMatch(/^npm run dev -- .*--strictPort/)
+    expect(dev?.env).toEqual({ VITE_BASE: '/humanbench/' })
+    expect(dev?.reuseExistingServer).toBe(false)
+    expect(dev?.url).toBe(visualGalleryUrl())
+    expect(dev?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/humanbench\/render-visual\.html$/)
+    // A different port from the preview's.
+    expect(new URL(dev?.url ?? '').port).not.toBe(new URL(config.use?.baseURL ?? '').port)
   })
 
   it('checks axe against WCAG 2.0, 2.1 and 2.2 at A and AA, failing on serious and critical (§13)', () => {
