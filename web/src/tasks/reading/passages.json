@@ -1,5 +1,5 @@
 {
-  "version": "reading-passages-v3",
+  "version": "reading-passages-v4",
   "passages": [
     {
       "id": "franklin-autobiography-1868",
@@ -66,20 +66,20 @@
         },
         {
           "id": "franklin-autobiography-1868#q3",
-          "stem": "How was the author's plan for the watch passed on to the other clubs?",
+          "stem": "According to the passage, when was the law on the watch obtained?",
           "options": [
-            "By a vote of the Assembly",
-            "As if it had arisen in each club",
-            "In a printed pamphlet",
-            "Through the constables of each ward"
+            "Within a few months",
+            "A few years afterward",
+            "About ten years afterward",
+            "Some twenty years afterward"
           ],
           "key_index": 1,
-          "evidence_span": "was communicated to the other clubs, but as arising in each of them",
+          "evidence_span": "it paved the way for the law obtained a few years after",
           "option_rationales": [
-            "The Assembly is never mentioned.",
-            "Stated: it was communicated to the other clubs as arising in each of them.",
-            "Only the later paper on fires was published.",
-            "The constables are criticised, not used to spread the plan."
+            "The plan was not immediately carried into execution; months are never mentioned.",
+            "Stated: it paved the way for the law obtained a few years after.",
+            "Ten years is never mentioned; the law came a few years after.",
+            "Twenty years is never mentioned; the law came a few years after."
           ]
         }
       ]
@@ -210,20 +210,20 @@
         },
         {
           "id": "dana-hide-curing-1840#q2",
-          "stem": "According to the passage, what is the first soak in sea-water for?",
+          "stem": "What does the passage say always gives beginners the back-ache?",
           "options": [
-            "To pickle the hides",
-            "To dry them smooth",
-            "To soften and clean them",
-            "To wash out the salt"
+            "Carrying the hides down at low tide",
+            "Wheeling the hides up to the vats",
+            "Kneeling on the staked-out hides",
+            "Bending over the brine vats"
           ],
           "key_index": 2,
-          "evidence_span": "the use of the sea-water, into which they are first put, being merely to soften and clean them",
+          "evidence_span": "we were obliged to kneel down upon them, which always gives beginners the back-ache",
           "option_rationales": [
-            "Pickling is done by the brine in the vats.",
-            "Drying smooth is the purpose of staking them out.",
-            "Stated: the sea-water is merely to soften and clean them.",
-            "Washing out salt is never mentioned."
+            "The hides are carried down at low tide to soak; no back-ache is mentioned.",
+            "The hides go to the vats in wheelbarrows; no back-ache is mentioned.",
+            "Stated: cleaning the staked hides, they had to kneel on them, which always gives beginners the back-ache.",
+            "The hides are thrown into the vats; bending over the vats is never mentioned."
           ]
         },
         {
@@ -274,20 +274,20 @@
       "questions": [
         {
           "id": "faraday-candle-1861#q1",
-          "stem": "In a lamp, what happens when the flame runs down the cotton to the oil?",
+          "stem": "How many candles does the lecturer say he will light?",
           "options": [
-            "It gets extinguished",
-            "It goes on burning in the oil",
-            "The oil begins to burn of itself",
-            "It draws more oil up the cotton"
+            "One or two",
+            "Two or three",
+            "Four or five",
+            "A dozen"
           ],
           "key_index": 0,
-          "evidence_span": "When the flame runs down the cotton to the oil, it gets extinguished",
+          "evidence_span": "We will light one or two, and set them at work",
           "option_rationales": [
-            "Stated: when the flame runs down the cotton to the oil, it gets extinguished.",
-            "It goes on burning in the part above, not in the oil.",
-            "The passage says the oil will not burn of itself.",
-            "How the oil gets up the cotton is left for later; at the oil the flame goes out."
+            "Stated: we will light one or two.",
+            "Two or three is never said; he will light one or two.",
+            "Four or five is never said; he will light one or two.",
+            "A dozen is never said; he will light one or two."
           ]
         },
         {
@@ -359,20 +359,20 @@
       "questions": [
         {
           "id": "huxley-chalk-1870#q1",
-          "stem": "According to the passage, the curved band of chalk runs from Lulworth in Dorset to which place?",
+          "stem": "According to the passage, in which part of Ireland does chalk occur?",
           "options": [
-            "The Needles of the Isle of Wight",
-            "The shores of Kent",
-            "Flamborough Head in Yorkshire",
-            "The Weald of Sussex"
+            "North-east Ireland",
+            "South-west Ireland",
+            "North-west Ireland",
+            "South-east Ireland"
           ],
           "key_index": 2,
-          "evidence_span": "from Lulworth in Dorset, to Flamborough Head in Yorkshire",
+          "evidence_span": "Chalk occurs in north-west Ireland",
           "option_rationales": [
-            "The Needles are where the chalk breaks off the south coast, not the band's end.",
-            "Kent is where the chalk forms white cliffs, not the band's end.",
-            "Stated: from Lulworth in Dorset to Flamborough Head in Yorkshire.",
-            "The Weald is named as an exception, not the band's end."
+            "North-east is not the part named; the passage says north-west Ireland.",
+            "South-west Ireland is never mentioned.",
+            "Stated: chalk occurs in north-west Ireland.",
+            "South-east Ireland is never mentioned; the south-eastern counties are English."
           ]
         },
         {

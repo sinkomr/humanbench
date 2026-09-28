@@ -23,9 +23,10 @@ const PINNED_WORDS: Readonly<Record<string, number>> = {
  * sha256 of `passages.json` as committed. The bank keeps a byte-identical copy and pins the same
  * hash (`tests/gen/test_reading.py`), so an edit in either repo alone fails its own tests even
  * when the other checkout is absent. After an intended edit: bump `generatorVersion`, update
- * both pins, copy the file over and re-run the independent solves (A14).
+ * both pins, copy the file over, re-run the independent solves and record them in the bank's
+ * `golden/reading_solves.json` (A14).
  */
-const PASSAGES_SHA256 = '6e965fb169d9fc634df911def637fad4f0fbb986f35b3a25d2be8d363ef04947'
+const PASSAGES_SHA256 = '956ce015b5838af10338d6b9f73b57db3f82e7290fbbe509284ce0e7eca6290a'
 
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
@@ -52,7 +53,7 @@ describe('passage bank (A14, ROADMAP M1.12)', () => {
   })
 
   it(`holds ≥ ${MIN_PASSAGES} passages of ${MIN_WORDS}–${MAX_WORDS} words, with the pinned counts`, () => {
-    expect(READING_BANK.version).toBe('reading-passages-v3')
+    expect(READING_BANK.version).toBe('reading-passages-v4')
     expect(PASSAGES.length).toBeGreaterThanOrEqual(MIN_PASSAGES)
     const counts = Object.fromEntries(PASSAGES.map((p) => [p.id, countPassageWords(passageText(p.paragraphs))]))
     expect(counts).toEqual(PINNED_WORDS)

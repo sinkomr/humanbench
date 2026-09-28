@@ -20,6 +20,8 @@
  * the independent solves found them guessable without the passage (franklin q2, darwin q1,
  * faraday q3; A14). 1.4.0 (contract v2, M1.F2): kind 'block', `sibling_group`, params.sigma =
  * τ_res (the observation sigma √(0.15² + τ_res²) is unchanged), `score()` returns a `BlockScore`.
+ * 1.5.0: bank `reading-passages-v4`, the four questions the round-2 solvers still flagged as
+ * guessable rewritten (franklin q3, dana q2, faraday q1, huxley q1; A14).
  */
 
 import { defineFamily, type ItemInstance } from '../family'
@@ -35,7 +37,7 @@ export const reading = defineFamily<ReadingSpec, ReadingKey, ReadingResponse>({
   kind: 'block',
   axis: 'PS',
   facets: ['reading_speed'],
-  generatorVersion: '1.4.0',
+  generatorVersion: '1.5.0',
   itemType: 'reading_block',
   strata: [3],
   build: buildReading,

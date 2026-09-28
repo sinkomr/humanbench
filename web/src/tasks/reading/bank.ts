@@ -16,7 +16,8 @@
  * `generatorVersion`, run `npm run sync:reading-render` (the drift test in `bank.test.ts` fails
  * until you do), update the sha256 pinned in `bank.test.ts` and in the twin's tests (so drift
  * fails in either repo alone), copy the file to the bank, re-run the two independent solves
- * (A14) and re-dump for the bank (A11, A17).
+ * and record them in the bank's `golden/reading_solves.json` (A14; its test fails until ≥ 2 clean
+ * solves of the edited question set are there), and re-dump for the bank (A11, A17).
  */
 
 import raw from './passages.render.json'
