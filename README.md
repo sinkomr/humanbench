@@ -17,7 +17,6 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/tasks/`: task families
   - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
-
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/viz/`: blob and bar views, export
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`

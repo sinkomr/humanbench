@@ -1,24 +1,27 @@
 /**
- * HTML pages of the build (ROADMAP M1.23, M1.20, M1.A): every `web/*.html` is a Vite build input
- * (`PAGES` in vite.config.ts), so `vite preview` and GitHub Pages serve it, and is scanned by the
- * language lint (A13). The RT timing self-test is one such page, `<base>rt-selftest.html`, and
- * is not indexed by search engines.
+ * HTML pages of the build (ROADMAP M1.23, M1.20, M1.A, M1.13, M1.G7): every `web/*.html` is either
+ * a Vite build input (`PAGES` in vite.config.ts), so `vite preview` and GitHub Pages serve it, or a
+ * dev-only page (`DEV_ONLY_PAGES`) that no build includes; every one is scanned by the language
+ * lint (A13). The RT timing self-test is a build page, `<base>rt-selftest.html`, and is not indexed
+ * by search engines.
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PAGES } from '../vite.config'
+import { DEV_ONLY_PAGES, PAGES } from '../vite.config'
 import { SCAN_FILES } from './language-lint'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const HTML = readdirSync(WEB).filter((f) => f.endsWith('.html'))
 
 describe('HTML pages', () => {
-  it('every web/*.html is a build input, and every input exists', () => {
-    expect(HTML.sort()).toEqual(Object.values(PAGES).map((p) => basename(p)).sort())
-    expect(HTML).toEqual(expect.arrayContaining(['index.html', 'rt-selftest.html']))
+  it('every web/*.html is a build input or a dev-only page, and every listed page exists', () => {
+    const built = Object.values(PAGES).map((p) => basename(p))
+    expect(HTML.sort()).toEqual([...built, ...DEV_ONLY_PAGES].sort())
+    expect(built.filter((p) => DEV_ONLY_PAGES.includes(p))).toEqual([])
+    expect(built.sort()).toEqual(['index.html', 'rt-selftest.html'])
   })
 
   it('every web/*.html is scanned by the language lint (A13)', () => {

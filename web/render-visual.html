@@ -9,9 +9,9 @@
   <body>
     <!--
       Dev-only gallery of the visual renderers (ROADMAP M1.13). Served by `npm run dev` at
-      <base>render-visual.html; `vite build` only builds index.html, and the entry refuses to run
-      outside a dev server (import.meta.env.DEV). scripts/render-bundle.test.ts checks the
-      production build does not contain it.
+      <base>render-visual.html; `vite build` builds only the PAGES of vite.config.ts (this page is
+      in DEV_ONLY_PAGES), and the entry refuses to run outside a dev server (import.meta.env.DEV).
+      scripts/render-bundle.test.ts checks the production build does not contain it.
     -->
     <div id="app"></div>
     <script type="module" src="/src/render/visual-gallery/main.ts"></script>

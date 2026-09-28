@@ -7,8 +7,8 @@
  * **What is scanned** ({@link collectFiles}), as repo-relative posix paths: every text file under
  * `web/src` (the share-card renderer, M1.18, will land there too) except tests (`*.test.*`,
  * `*.spec.*`) and `__fixtures__/` test data; `web/public`; the repo-root `schema/` (the build
- * publishes its JSON at `<base>schema/`, DESIGN §8); `web/index.html`; `README.md` and
- * `web/README.md`. Per file type ({@link segmentsOf}):
+ * publishes its JSON at `<base>schema/`, DESIGN §8); every `web/*.html` ({@link SCAN_FILES},
+ * `pages.test.ts`); `README.md` and `web/README.md`. Per file type ({@link segmentsOf}):
  * - `.ts`/`.js` (and `.tsx`/`.jsx`) and the `<script>` blocks of `.svelte`/`.html`: string
  *   literals, template literal text and JSX text, parsed with the TypeScript compiler, so comments,
  *   identifiers and import paths never match;
@@ -448,7 +448,7 @@ export function lintFiles(files: readonly SourceFile[], { checkHomes = true }: {
 
 /** Directories scanned recursively, and single files, relative to the repo root. */
 export const SCAN_DIRS: readonly string[] = ['web/src', 'web/public', 'schema']
-export const SCAN_FILES: readonly string[] = ['README.md', 'web/README.md', 'web/index.html', 'web/rt-selftest.html']
+export const SCAN_FILES: readonly string[] = ['README.md', 'web/README.md', 'web/index.html', 'web/rt-selftest.html', 'web/render-visual.html', 'web/review.html']
 /** Tests and their data are not copy (they must name banned words to test them). */
 export const EXCLUDE: readonly RegExp[] = [/\.(test|spec)\.[cm]?[jt]sx?$/, /(^|\/)__fixtures__\//]
 

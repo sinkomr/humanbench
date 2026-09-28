@@ -8,6 +8,14 @@
  * `onrespond(response)` with exactly the response type of its family's `score()` (checked at
  * compile time and by `entry.dom.test.ts` at run time), shows options in `spec.options` / spec
  * order, and puts nothing key-dependent in the DOM (`entry-leak.dom.test.ts`).
+ *
+ * Relative to `visual.ts`'s `ItemRendererProps` (§11.6, §13): these renderers always draw (DOM text
+ * and inline SVG), so none declares `onunavailable`. The typed-entry item renderers (series, quant)
+ * report `onshown` once per mount and do not lock the entry until it fires, since a response needs
+ * typing plus a submit in a field that did not exist before the mount, which cannot happen within
+ * the single frame between mount and the frame that draws the item. The session must therefore
+ * mount them afresh for each item (`{#key}`), as the review page does. The block renderers take
+ * each trial's onset from their own rAF-locked phases.
  */
 
 import type { Component } from 'svelte'

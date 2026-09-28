@@ -16,6 +16,13 @@ export const PAGES: Readonly<Record<string, string>> = {
 }
 
 /**
+ * The other web/*.html: dev-only pages the dev server serves and no build includes (ROADMAP M1.13,
+ * M1.G7): the visual renderer gallery and the renderer gallery / G7 review page. Their entries
+ * refuse to run outside `import.meta.env.DEV` (scripts/render-bundle.test.ts, review-build.test.ts).
+ */
+export const DEV_ONLY_PAGES: readonly string[] = ['render-visual.html', 'review.html']
+
+/**
  * Publishes the repo-root schema/*.json files at <base>schema/ in the build, so the
  * save file's "$schema" URL (DESIGN §8, .../humanbench/schema/save-v1.json) resolves.
  */
