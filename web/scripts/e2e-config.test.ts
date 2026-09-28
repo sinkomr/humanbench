@@ -32,7 +32,8 @@ describe('Playwright config (M1.A)', () => {
     expect(config.use?.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/humanbench\/$/)
     const server = Array.isArray(config.webServer) ? config.webServer[0] : config.webServer
     expect(server?.command).toMatch(/^npm run build && npm run preview -- .*--strictPort/)
-    expect(server?.env).toEqual({ VITE_BASE: '/humanbench/' })
+    // Plus the dev-only routes (M1.16 blob demo); scripts/dev-routes.test.ts keeps them out of Pages.
+    expect(server?.env).toEqual({ VITE_BASE: '/humanbench/', VITE_HB_DEV_ROUTES: '1' })
     expect(server?.reuseExistingServer).toBe(false)
     expect(server?.url).toBe(config.use?.baseURL)
   })
