@@ -36,7 +36,9 @@ const SRC = join(PUB_ROOT, 'web', 'src')
  * Files allowed to use a banned API, by path under `web/src` (posix) → rule → why. Keep it empty
  * unless there is no clock-free or seeded alternative.
  */
-const ALLOW: Readonly<Record<string, Partial<Record<Rule, string>>>> = {}
+const ALLOW: Readonly<Record<string, Partial<Record<Rule, string>>>> = {
+  'save/clock.ts': { clock: 'save-file metadata only (§8 created_utc, started_utc, session-id time prefix); never RT' },
+}
 
 /** Directories (under `web/src`) where the random rule applies. */
 const SEEDED_DIRS = ['engine/', 'tasks/']

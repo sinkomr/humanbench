@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sinkomr.github.io/humanbench/schema/save-v1.json",
+  "title": "HumanBench save file, schema v1",
+  "description": "DESIGN §8 (R-8.x) save file: sessions of raw responses, seen item and family ids, and an optional posterior cache. Strings are I-JSON (RFC 7493: no lone surrogates) so every valid file has an RFC 8785 canonical form. Signatures: the static MVP writes none, so its files are unverified; the per-session MAC of ROADMAP A16 (`sessions[].sig`, which names the anon_id it binds so it survives a merge) supersedes the file-level `sig` of the §8 example, which stays valid here. Versions: minor and patch bumps are additive within a major; a reader that cannot validate a file from a newer minor reports it as made by a newer version rather than dropping unknown fields. The TypeScript validator web/src/save/validate.ts mirrors this schema exactly and additionally rejects JSON nested deeper than 64 levels.",
+  "type": "object",
+  "required": ["schema_version", "bank_version", "anon_id", "created_utc", "sessions", "seen_items", "seen_families"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "$ref": "#/$defs/text", "maxLength": 512 },
+    "schema_version": {
+      "description": "Semver of this format. Major 1 is this schema; older majors are migrated (§8 merge step 5).",
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$"
+    },
+    "bank_version": { "$ref": "#/$defs/version_tag" },
+    "anon_id": { "$ref": "#/$defs/anon_id" },
+    "created_utc": { "$ref": "#/$defs/utc_seconds" },
+    "sessions": { "type": "array", "items": { "$ref": "#/$defs/session" } },
+    "seen_items": { "type": "array", "items": { "$ref": "#/$defs/item_id" } },
+    "seen_families": { "type": "array", "items": { "$ref": "#/$defs/family_id" } },
+    "posterior_cache": { "$ref": "#/$defs/posterior_cache" },
+    "sig": { "$ref": "#/$defs/sig" }
+  },
+  "$defs": {
+    "anon_id": {
+      "description": "96 random bits in base62 behind an hb_ prefix (§8 privacy).",
+      "type": "string",
+      "pattern": "^hb_[0-9A-Za-z]{16,17}$"
+    },
+    "text": {
+      "description": "An I-JSON string: no unpaired UTF-16 surrogate (RFC 7493 §2.1, required by RFC 8785).",
+      "type": "string",
+      "pattern": "^[^\\uD800-\\uDFFF]*$"
+    },
+    "json": {
+      "description": "Any I-JSON value (response payloads and tuple extras are stored verbatim).",
+      "anyOf": [
+        { "type": ["null", "boolean", "number"] },
+        { "$ref": "#/$defs/text" },
+        { "type": "array", "items": { "$ref": "#/$defs/json" } },
+        {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/text" },
+          "additionalProperties": { "$ref": "#/$defs/json" }
+        }
+      ]
+    },
+    "version_tag": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$"
+    },
+    "utc_seconds": {
+      "description": "UTC timestamp to the second, e.g. 2026-10-03T18:22:11Z (fixed width, so it sorts as text).",
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "item_id": {
+      "description": "An item id, i:<fam>:<genver>:<seed> for procedural items (ROADMAP A11).",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^i:[^\\uD800-\\uDFFF]+$"
+    },
+    "family_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256,
+      "pattern": "^f:[^\\uD800-\\uDFFF]+$"
+    },
+    "session": {
+      "type": "object",
+      "required": ["session_id", "started_utc", "duration_s", "device", "flags", "responses"],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": { "type": "string", "pattern": "^s_[0-9A-Za-z]{8,32}$" },
+        "started_utc": { "$ref": "#/$defs/utc_seconds" },
+        "duration_s": { "type": "number", "minimum": 0 },
+        "device": { "$ref": "#/$defs/device" },
+        "flags": { "$ref": "#/$defs/flags" },
+        "responses": { "type": "array", "items": { "$ref": "#/$defs/response" } },
+        "sig": { "$ref": "#/$defs/session_sig" }
+      }
+    },
+    "device": {
+      "description": "Coarse device class only (§8 privacy): no precise user agent.",
+      "type": "object",
+      "required": ["class", "input", "os_family", "browser_family", "refresh_hz_est", "timer_res_ms", "viewport"],
+      "additionalProperties": false,
+      "properties": {
+        "class": { "enum": ["desktop", "tablet", "phone", "other"] },
+        "input": { "enum": ["mouse", "touch", "keyboard", "pen", "other"] },
+        "os_family": { "$ref": "#/$defs/family_name" },
+        "browser_family": { "$ref": "#/$defs/family_name" },
+        "refresh_hz_est": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "timer_res_ms": { "type": ["number", "null"], "minimum": 0 },
+        "viewport": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "integer", "minimum": 0 }
+          ],
+          "items": false
+        }
+      }
+    },
+    "family_name": {
+      "description": "A family such as macOS or Safari, never a version string (§8 privacy): no digits or dots.",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z _-]{0,31}$"
+    },
+    "flags": {
+      "description": "Integrity flag counters (§13); M1.19 adds more, so unknown snake_case flags are allowed.",
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+      "properties": {
+        "visibility_hidden_s": { "type": "number", "minimum": 0 },
+        "paste_events": { "type": "integer", "minimum": 0 },
+        "fast_guess_n": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": { "type": ["number", "boolean", "null"] }
+    },
+    "response": {
+      "description": "[item_id, pretest (0/1), response, correct (0/1/null), rt_ms, confidence_pct, extra?] (§8).",
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 7,
+      "prefixItems": [
+        { "$ref": "#/$defs/item_id" },
+        { "enum": [0, 1] },
+        { "$ref": "#/$defs/json" },
+        { "enum": [0, 1, null] },
+        { "type": "number", "minimum": 0 },
+        { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+        { "$ref": "#/$defs/json" }
+      ],
+      "items": false
+    },
+    "posterior_cache": {
+      "description": "A cache only (§7.8): readers re-score from responses and drop it when param_version differs or its shapes disagree.",
+      "type": "object",
+      "required": ["param_version", "axes", "mean", "cov_lower"],
+      "additionalProperties": false,
+      "properties": {
+        "param_version": { "$ref": "#/$defs/version_tag" },
+        "axes": {
+          "type": "array",
+          "items": { "type": "string", "$ref": "#/$defs/text", "minLength": 1, "maxLength": 16 }
+        },
+        "mean": { "type": "array", "items": { "type": "number" } },
+        "cov_lower": { "type": "array", "items": { "type": "number" } }
+      }
+    },
+    "sig": {
+      "description": "Server HMAC over the file body (§8 example; superseded by ROADMAP A16). Only the server can verify it.",
+      "type": "object",
+      "required": ["alg", "kid", "mac"],
+      "additionalProperties": false,
+      "properties": {
+        "alg": { "const": "HMAC-SHA256" },
+        "kid": { "type": "string", "pattern": "^[0-9A-Za-z._-]{1,64}$" },
+        "mac": { "type": "string", "pattern": "^[0-9A-Za-z+/=._-]{1,512}$" }
+      }
+    },
+    "session_sig": {
+      "description": "ROADMAP A16 per-session server HMAC (M2.3) over the session without sig together with anon_id, the id it was issued to. A merge may change the file's anon_id, so the bound id travels with the sig. Only the server can verify it.",
+      "type": "object",
+      "required": ["alg", "kid", "mac", "anon_id"],
+      "additionalProperties": false,
+      "properties": {
+        "alg": { "const": "HMAC-SHA256" },
+        "kid": { "type": "string", "pattern": "^[0-9A-Za-z._-]{1,64}$" },
+        "mac": { "type": "string", "pattern": "^[0-9A-Za-z+/=._-]{1,512}$" },
+        "anon_id": { "$ref": "#/$defs/anon_id" }
+      }
+    }
+  }
+}

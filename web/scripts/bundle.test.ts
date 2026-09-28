@@ -20,6 +20,7 @@ import { AUTHORED_PASSAGES } from '../src/tasks/reading/authoring'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const TASKS = fileURLToPath(new URL('../src/tasks/', import.meta.url))
+const SAVE = fileURLToPath(new URL('../src/save/', import.meta.url))
 
 const RATIONALES = AUTHORED_PASSAGES.flatMap((p) => p.questions.flatMap((q) => q.option_rationales))
 const EVIDENCE = AUTHORED_PASSAGES.flatMap((p) => p.questions.map((q) => q.evidence_span))
@@ -78,6 +79,16 @@ describe('production bundles (A14)', () => {
     expect(text.length).toBeLessThan(40_000)
     for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
     expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
+  }, 60_000)
+
+  it('the save module (M1.17, DESIGN §8) is light: no ajv, no fast-check, no task families', async () => {
+    const text = await bundle(`export * from ${JSON.stringify(`${SAVE}index.ts`)}`)
+    // Runtime validation is the hand-written mirror of schema/save-v1.json (save/validate.ts), and
+    // gzip falls back to save/gzip.ts, so the whole module stays small.
+    expect(text).toContain('HMAC-SHA256')
+    expect(text.length).toBeLessThan(45_000)
+    expect(text).not.toMatch(/ajv|fast-check|json-schema-traverse/i)
+    for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
   }, 60_000)
 
   it('the registry ships the passages but none of their verifier-only data', async () => {
