@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { cyrb128, type JsonValue } from '../engine'
 import {
   FAMILY_ID_RE,
+  PY_TWIN_BUILD,
   STRATA,
   canonicalJson,
   familyId,
+  isPyTwinVersion,
   isStratum,
   itemId,
   parseItemId,
@@ -47,6 +49,18 @@ describe('itemId / parseItemId (A11)', () => {
     expect(() => itemId('rot', '1:0', 's')).toThrow(RangeError)
     expect(() => itemId('rot', '', 's')).toThrow(RangeError)
     expect(() => itemId('rot', '1', '')).toThrow(RangeError)
+  })
+
+  it('accepts the bank twin build tag `+py` (A11): one id per implementation', () => {
+    expect(PY_TWIN_BUILD).toBe('+py')
+    const twin = itemId('rotation', '1.0.0+py', 'a:b@s3')
+    expect(twin).toBe('i:rotation:1.0.0+py:a:b@s3')
+    expect(parseItemId(twin)).toEqual({ family: 'rotation', generatorVersion: '1.0.0+py', seed: 'a:b@s3' })
+    expect(parseItemId('i:rotation:1.0.0:a:b@s3')?.generatorVersion).toBe('1.0.0')
+    expect(isPyTwinVersion('1.0.0+py')).toBe(true)
+    for (const v of ['1.0.0', '1.0.0+ts', '1.0.0+py+py', '+py', '1.0.0+PY', '1:0+py']) {
+      expect(isPyTwinVersion(v)).toBe(false)
+    }
   })
 
   it('parseItemId returns null for non-procedural ids', () => {
@@ -111,6 +125,19 @@ describe('familyId (A11)', () => {
   it('pins a known value (a change here re-keys every family: bump generator versions)', () => {
     expect(familyId('example', { pair: [7, 9] })).toBe('f:example:d2b8aab8a215')
     expect(structuralHash({ pair: [7, 9] })).toBe('d2b8aab8a215')
+  })
+
+  // The bank pins the same vectors (tests/gen/test_gen_base.py TS_FAMILY_IDS): its Python port
+  // must give one structure the same family_id (A11, §8 seen_families across repos).
+  it('pins vectors shared with the bank', () => {
+    expect(familyId('rot', { n: 2, cells: [[0, 0, 0], [1, 0, 0]] })).toBe('f:rot:e326cc4d9849')
+    expect(familyId('rt', { mode: 'choice4', n: 60 })).toBe('f:rt:2e5e49799d33')
+    const keys = { b: 1, a: [true, false, null, 'é'], é: 0.5, Z: -0, '\uffff': 1, '😀': 2, '\ue000': 3 }
+    expect(canonicalJson(keys)).toBe('{"Z":0,"a":[true,false,null,"é"],"b":1,"é":0.5,"😀":2,"\ue000":3,"\uffff":1}')
+    expect(familyId('x', keys)).toBe('f:x:8ce5a82b0deb')
+    const odd = ['\ud800', 'a\u2028b', '\u0000\u001f\u007f', '"\\/', 1e-7, 1e21, 2.0]
+    expect(canonicalJson(odd)).toBe('["\\ud800","a\u2028b","\\u0000\\u001f\u007f","\\"\\\\/",1e-7,1e+21,2]')
+    expect(familyId('x', odd)).toBe('f:x:0c73f55e61ae')
   })
 
   it('is deterministic, key-order invariant and well-formed', () => {

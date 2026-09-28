@@ -9,8 +9,17 @@
  *   matrix rule set, the series rule family + coefficient class, the quant template, ...). Items
  *   with the same structure are isomorphs, and a user never sees two of one family (§7.7).
  *
- * The bank's Python twins use the same formats but hash with sha256, so a Python family_id need
- * not equal the TypeScript one for the same structure (Python twins generate their own items).
+ * Across repos (A1, A11): the bank's Python twins (`hb.gen.base`) port `canonicalJson` and cyrb128
+ * bit-exactly, so `family_id` is ONE function in both repos. A structure has one family_id
+ * whichever twin generated the item, and the §8 `seen_families` exclusion holds across repos.
+ * Both repos pin the same vectors (`ids.test.ts` here, `tests/gen/test_gen_base.py` in the
+ * bank, which also compares against this module live and recomputes family_id for every dumped
+ * TS item); changing either function re-keys every family in both repos.
+ * The twins are independent re-derivations and do NOT reproduce TS content for a seed, so an
+ * `item_id` names one implementation: TS generators own the bare version (`1.0.0`, never a `+`
+ * build tag) and a twin's items carry `<TS version>+py` ({@link PY_TWIN_BUILD}). So
+ * `i:rotation:1.0.0:s` regenerates only with this TS generator and `i:rotation:1.0.0+py:s` only
+ * with the bank twin (R-8.1 re-scoring): match `generator_version` exactly, never just the family.
  *
  * Stratum-targeted seeds: `generate(seed, { stratum: k })` must be reproducible from the item id
  * alone, so the requested stratum is folded into the seed as a `@s<k>` suffix
@@ -33,8 +42,24 @@ export function isStratum(v: unknown): v is Stratum {
 /** Family names: short lowercase codes used in ids, e.g. "rot", "mat", "ser", "span". */
 export const FAMILY_NAME_RE = /^[a-z][a-z0-9_]{0,23}$/
 
-/** Generator versions (semver-like; no colon, so item ids parse unambiguously), e.g. "1.0.0". */
+/**
+ * Generator versions (semver-like; no colon, so item ids parse unambiguously), e.g. "1.0.0".
+ * TS generators use no `+` build tag; `+py` marks the bank's Python twin (A11).
+ */
 export const GENERATOR_VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/
+
+/** Build tag of a bank Python twin's generator version: TS `1.0.0` ↔ twin `1.0.0+py` (A11). */
+export const PY_TWIN_BUILD = '+py'
+
+/** True iff `ver` is a bank Python twin's version (`<ver>+py`), which no TS generator rebuilds. */
+export function isPyTwinVersion(ver: string): boolean {
+  return (
+    typeof ver === 'string' &&
+    GENERATOR_VERSION_RE.test(ver) &&
+    ver.endsWith(PY_TWIN_BUILD) &&
+    !ver.slice(0, -PY_TWIN_BUILD.length).includes('+')
+  )
+}
 
 /** A family id: `f:<fam>:<12 lowercase hex>` (A11). */
 export const FAMILY_ID_RE = /^f:([a-z][a-z0-9_]{0,23}):([0-9a-f]{12})$/

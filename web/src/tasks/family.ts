@@ -53,6 +53,11 @@
  * - **family_id** is `familyIdOf(structural_params)` (A11): the hash of the parameters that
  *   make two items isomorphs (canonical polycube, matrix rule set, series rule family +
  *   coefficient class, quant template). Canonicalise sets before hashing (sort cells, rules).
+ *   The bank computes the same hash (see `ids.ts`), so its Python twin must build the same
+ *   `structural_params` for the same structure: one structure, one family_id in both repos.
+ * - **Versions.** `generatorVersion` has no `+` build tag; bump it whenever `generate` output
+ *   changes for any seed (old ids then no longer regenerate), and bump the bank twin to
+ *   `<new>+py`. A twin's items carry `+py` because its content per seed differs (A11).
  * - **params (A9).** Options k ≤ 4 → 3PL with c = 1/k; k ≥ 5 or numeric entry → 2PL; with
  *   b = `difficulty.b_prior` and a = the family's default discrimination. Blocks use the
  *   A10 models (GRM for span, Gaussian for RT/PS) and omit `options_count`.
@@ -163,7 +168,10 @@ export interface ProceduralFamily<Spec extends object = JsonObject, Key extends 
   readonly name: string
   readonly axis: AxisCode
   readonly facet: string
-  /** Bump when the output for any seed changes; old ids then no longer regenerate. */
+  /**
+   * Bump when the output for any seed changes; old ids then no longer regenerate. No `+` build
+   * tag: `<ver>+py` names the bank's Python twin (A11, `PY_TWIN_BUILD` in `ids.ts`).
+   */
   readonly generatorVersion: string
   readonly itemType: string
   /** Strata this family can generate (and target via `generate(seed, { stratum })`). */

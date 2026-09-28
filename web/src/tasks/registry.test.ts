@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { coding, codingSpecLeaksKey } from './coding'
 import { validateItemInstance, type ProceduralFamily } from './family'
-import { FAMILY_NAME_RE, GENERATOR_VERSION_RE } from './ids'
+import { FAMILY_NAME_RE, GENERATOR_VERSION_RE, isPyTwinVersion } from './ids'
 import { matrices, matricesSpecLeaksKey } from './matrices'
 import { reading, type ReadingKey, type ReadingSpec } from './reading'
 import { FAMILIES, FAMILY_NAMES, getFamily } from './registry'
@@ -75,6 +75,9 @@ describe('family registry (M1.F)', () => {
       expect(fam.name).toBe(key)
       expect(key).toMatch(FAMILY_NAME_RE)
       expect(fam.generatorVersion).toMatch(GENERATOR_VERSION_RE)
+      // A11: TS versions carry no build tag; `<ver>+py` names the bank's Python twin.
+      expect(fam.generatorVersion).not.toContain('+')
+      expect(isPyTwinVersion(fam.generatorVersion)).toBe(false)
       expect(getFamily(key)).toBe(fam)
     }
     expect(getFamily('toString')).toBeUndefined()
