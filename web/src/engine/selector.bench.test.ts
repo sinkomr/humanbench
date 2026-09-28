@@ -10,10 +10,19 @@ import { series } from '../tasks/series'
 /** The CI flag, read without Node typings (the app tsconfig has none); '', '0' and 'false' are unset. */
 const CI_ENV = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI
 const CI = CI_ENV !== undefined && !['', '0', 'false'].includes(CI_ENV.trim().toLowerCase())
-/** ROADMAP M1.14: one selection (posterior + pool + pick) < 20 ms in Node (100 ms on CI runners, as M1.3's bench). */
+/**
+ * ROADMAP M1.14: one selection (posterior + pool + pick) < 20 ms in Node (100 ms on CI runners, as
+ * M1.3's bench). This is the steady state, after {@link WARMUP} discarded runs.
+ */
 const BUDGET_MS = CI ? 100 : 20
 const RUNS = 20
 const WARMUP = 5
+/**
+ * The first selection of a process also pays the family-role probes (`isCatFamily` generates one
+ * item per CAT family) and JIT warm-up, about 30 ms in Node. It is bounded loosely here; the
+ * session flow (M1.15) can move the probes off the first item by calling `catFamilies()` early.
+ */
+const COLD_BUDGET_MS = CI ? 1000 : 150
 
 /**
  * A realistic mid-session state: 24 CAT items already administered over MAT, QR and SPA with
@@ -49,7 +58,17 @@ function midSession(): { state: SelectorState; obs: Observation[] } {
 }
 
 describe('selector bench (ROADMAP M1.14)', () => {
-  it(`one selection over every CAT axis: median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
+  // Must stay the first test of this file: the module graph is fresh per file, so this is cold.
+  it(`the first (cold) selection over every CAT axis < ${COLD_BUDGET_MS} ms`, () => {
+    const t0 = performance.now()
+    const sel = selectNext({ sessionSeed: 'cold', posterior: sessionPosterior([]), administered: [] }, selectionRng('cold', 0))
+    const ms = performance.now() - t0
+    if (CI) console.info(`selector bench: cold first selection ${ms.toFixed(1)} ms`)
+    expect(sel.kind).toBe('item')
+    expect(ms).toBeLessThan(COLD_BUDGET_MS)
+  })
+
+  it(`one selection over every CAT axis (steady state): median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
     const { state, obs } = midSession()
     const once = () => selectNext({ ...state, posterior: sessionPosterior(obs) }, selectionRng(state.sessionSeed, state.administered.length))
     for (let i = 0; i < WARMUP; i++) once()

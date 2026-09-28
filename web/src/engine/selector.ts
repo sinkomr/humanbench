@@ -25,8 +25,11 @@
  *    `<sessionSeed>.<counter>.<j>` (counter = CAT items administered so far this session), each
  *    generated with `{ stratum }`, so `item_id` regenerates the item (A11). Skipped while drawing:
  *    a family seen this session or in an earlier one (§7.7, §8 `seen_families`), a sibling group
- *    already used this session (A11 amended: quant templates, {@link siblingGroupOf}), and an item
- *    whose E[T] exceeds the remaining time. Duplicate family_ids in the pool keep the best score.
+ *    already used this session (A11 amended: quant near-isomorph variants,
+ *    {@link QUANT_SIBLING_GROUPS}), and an item whose E[T] exceeds the remaining time. Duplicate
+ *    family_ids in the pool keep the best score. If fewer than top-k candidates compete, the next
+ *    nearest strata are added one at a time; 'exhausted' is reported only after a
+ *    {@link SWEEP_ATTEMPTS}-seed sweep of every stratum finds nothing.
  * 3. **Criterion** (§7.4 L573): score_j = w_k · I_j(θ̂_k) · Var(θ_k) / E[T_j], where I_j is the
  *    Fisher information of the ITEM's own model (A9: 2PL a²P(1−P), 3PL with c = 1/k, 2PL-testlet
  *    discounted by 20% per §7.1), never the axis default; θ̂_k and Var(θ_k) are the current
@@ -64,12 +67,18 @@ export const RANDOMESQUE_K = 5
 export const COVERAGE_FLOOR = 3
 /** Per-axis early stop: an axis is done once its posterior SD < 0.3 (§7.4 L588, A15). */
 export const STOP_SD = 0.3
-/** Strata per family in a candidate pool: those whose b-band centre is nearest θ̂. */
+/** Strata per family in a candidate pool: those whose b-band centre is nearest θ̂ (widened when the pool is short). */
 export const NEAR_STRATA = 3
 /** Candidate items per (family, stratum). */
 export const CANDIDATES_PER_STRATUM = 4
 /** Seeds tried per (family, stratum) before giving up on excluded or over-time draws. */
 export const ATTEMPTS_PER_STRATUM = 3 * CANDIDATES_PER_STRATUM
+/**
+ * Seeds per (family, stratum) of the sweep that runs before a pool is reported 'exhausted'. The
+ * rarest quant variant (a recip one) is 1 in 30 draws of its stratum, so 576 draws miss a lone
+ * unseen one with p ≈ 3·10⁻⁹.
+ */
+export const SWEEP_ATTEMPTS = 48 * ATTEMPTS_PER_STRATUM
 /** Information multiplier of a '2pl_testlet' item: the §7.1 testlet effect γ ~ N(0, 0.3²) discounts it by ~20%. */
 export const TESTLET_INFO_FACTOR = 0.8
 /** Default M1 session length for {@link planSession}: A15's target of about 25–30 min, taken at the midpoint. */
@@ -145,7 +154,7 @@ export type NoItemReason =
   | 'axes_done'
   /** No time left, or no candidate fits in the remaining time. */
   | 'time'
-  /** Every candidate was excluded (family / sibling exclusion). */
+  /** Every candidate in every stratum was excluded (family / sibling exclusion), after the sweep. */
   | 'exhausted'
 
 /** The ranked candidate pool of one selection. */
@@ -255,17 +264,51 @@ export function axisWeight(weights: AxisWeights | undefined, k: AxisCode): numbe
 }
 
 /**
- * The per-session sibling group of an item (A11 amended), or null. Quant `family_id` is per stem
- * variant, so near-isomorph variants of one template (recip/plus2 and recip/plus3, system/solve
- * and system/sum) are different families; the template is the sibling group, excluded for the
- * rest of the session once one of its variants is shown. Other families have no groups.
+ * The quant near-isomorph sibling sets (A11 amended), by group name, as `template/variant` ids.
+ * Quant `family_id` is per stem variant, so each variant below is its own family; these variants
+ * show the same givens in the same stem and differ only in the quantity asked (or a rescaling),
+ * so solving one hands over the method for the others. A template is NOT a group by itself:
+ * variants such as arith/group_mul and arith/div_chain, or percent/of and percent/change, are
+ * different routes. Grouping whole templates would leave only 4 groups in each of quant strata
+ * 1–3, so the near strata run dry after about a dozen items and selection drifts off θ (review
+ * fix); with these sets a stratum keeps 8–11 exclusion units (39 in all).
+ */
+export const QUANT_SIBLING_GROUPS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  // same story (a fraction, then a fraction of the rest); asks the part vs what is left
+  fraction_of: ['fraction_of/rest', 'fraction_of/spent'],
+  // the same two equations; asks x or y, x + y, or xy
+  system: ['system/solve', 'system/sum', 'system/product'],
+  // x² + bx + c = 0 with integer roots; scaled is root × a, sum_squares asks p² + q² of the roots
+  quadratic: ['quadratic/root', 'quadratic/scaled', 'quadratic/sum_squares'],
+  // the same bag of marbles; "both red" is a term of "same colour"
+  'probability/bag': ['probability/both', 'probability/same'],
+  // x ± 1/x = k (§14.6 example 3); only the power asked differs
+  recip: ['recip/plus2', 'recip/plus3', 'recip/plus4', 'recip/minus2', 'recip/minus3'],
+  // a + b and ab given; only the symmetric function asked differs
+  symmetric: ['symmetric/sum_sq', 'symmetric/diff_sq', 'symmetric/sum_cube'],
+  // the sum of an arithmetic sequence from (first, diff, count), shown by last term vs count
+  'arith_series/terms': ['arith_series/sum', 'arith_series/first_n'],
+  // base^exp mod m; the last digit is the remainder mod 10
+  'modular/remainder': ['modular/power', 'modular/last_digit'],
+})
+
+const QUANT_SIBLING_OF: ReadonlyMap<string, string> = new Map(
+  Object.entries(QUANT_SIBLING_GROUPS).flatMap(([g, ids]) => ids.map((id) => [id, `quant/${g}`] as const)),
+)
+
+/**
+ * The per-session sibling group of an item (A11 amended), or null: `quant/<group>` for a quant
+ * variant in {@link QUANT_SIBLING_GROUPS}, excluded for the rest of the session once one of its
+ * variants is shown. Other quant variants and other families have no group (family exclusion
+ * covers them).
  */
 export function siblingGroupOf(item: Pick<AnyItem, 'family' | 'structural_params'>): string | null {
   if (item.family !== 'quant') return null
   const sp = item.structural_params
   if (typeof sp !== 'object' || sp === null || Array.isArray(sp)) return null
-  const template = (sp as { template?: unknown }).template
-  return typeof template === 'string' ? `quant/${template}` : null
+  const { template, variant } = sp as { template?: unknown; variant?: unknown }
+  if (typeof template !== 'string' || typeof variant !== 'string') return null
+  return QUANT_SIBLING_OF.get(`${template}/${variant}`) ?? null
 }
 
 /** Centre of stratum k's default b band (`STRATUM_B_CUTS`): −2, −1, 0, 1, 2, 3 for strata 1–6. */
@@ -305,7 +348,9 @@ const roleCache = new WeakMap<AnyFamily, boolean>()
 /**
  * True if `f` serves CAT items: it is not an A15 fixed block and its items are keyed dichotomous
  * (A9). A family whose items are GRM or Gaussian is a block even if the A15 schedule does not
- * name it, so it is never selected (the registry test flags it as unscheduled).
+ * name it, so it is never selected (the registry test flags it as unscheduled). The probe runs
+ * once per family object; calling {@link catFamilies} early (M1.15, session start) moves the
+ * probes off the first selection.
  */
 export function isCatFamily(f: AnyFamily): boolean {
   let v = roleCache.get(f)
@@ -397,6 +442,8 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   if (!Number.isInteger(floor) || floor < 0) throw new RangeError(`floor must be an integer ≥ 0, got ${floor}`)
   const stopSd = opts.stopSd ?? STOP_SD
   finite('stopSd', stopSd)
+  const topK = opts.topK ?? RANDOMESQUE_K
+  if (!Number.isInteger(topK) || topK < 1) throw new RangeError(`topK must be an integer ≥ 1, got ${topK}`)
   const families = catFamilies(opts.families ?? Object.values(FAMILIES))
   const allowed = opts.axes ?? AXIS_CODES
   for (const k of allowed) if (!isAxisCode(k)) throw new RangeError(`unknown axis ${JSON.stringify(k)}`)
@@ -422,39 +469,64 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   }
   const counter = state.administered.length
 
-  // 2–3. Candidates per (family, near stratum), scored by the §7.4 criterion; one per family_id.
+  // 2–3. Candidates per (family, stratum), scored by the §7.4 criterion; one per family_id.
   const best = new Map<string, Candidate>()
   let overTime = 0
-  for (const fam of families) {
-    if (!eligible.includes(fam.axis)) continue
-    const post = state.posterior[fam.axis]!
-    const w = axisWeight(opts.weights, fam.axis)
-    for (const k of nearestStrata(fam.strata, post.mean)) {
-      let accepted = 0
-      for (let j = 0; j < ATTEMPTS_PER_STRATUM && accepted < CANDIDATES_PER_STRATUM; j++) {
-        const item = fam.generate(candidateSeed(state.sessionSeed, counter, j), { stratum: k })
-        if (!isDichotomousParams(item.params)) continue // defensive: blocks are never CAT items (A10)
-        if (seenFamilies.has(item.family_id)) continue
-        const g = siblingGroupOf(item)
-        if (g !== null && usedSiblings.has(g)) continue
-        if (item.expected_time_s > remaining) {
-          overTime++
-          continue
-        }
-        accepted++
-        const info = itemInformation(item.params, post.mean)
-        const c: Candidate = { item, axis: fam.axis, info, score: criterion(item, post, w) }
-        const prev = best.get(item.family_id)
-        if (prev === undefined || byRank(c, prev) < 0) best.set(item.family_id, c)
+  const plans = families
+    .filter((fam) => eligible.includes(fam.axis))
+    .map((fam) => {
+      const post = state.posterior[fam.axis]!
+      return { fam, post, w: axisWeight(opts.weights, fam.axis), strata: nearestStrata(fam.strata, post.mean, fam.strata.length) }
+    })
+  const draw = (p: (typeof plans)[number], k: Stratum, from: number, to: number): void => {
+    let accepted = 0
+    for (let j = from; j < to && accepted < CANDIDATES_PER_STRATUM; j++) {
+      const item = p.fam.generate(candidateSeed(state.sessionSeed, counter, j), { stratum: k })
+      if (!isDichotomousParams(item.params)) continue // defensive: blocks are never CAT items (A10)
+      if (seenFamilies.has(item.family_id)) continue
+      const g = siblingGroupOf(item)
+      if (g !== null && usedSiblings.has(g)) continue
+      if (item.expected_time_s > remaining) {
+        overTime++
+        continue
       }
+      accepted++
+      const info = itemInformation(item.params, p.post.mean)
+      const c: Candidate = { item, axis: p.fam.axis, info, score: criterion(item, p.post, p.w) }
+      const prev = best.get(item.family_id)
+      if (prev === undefined || byRank(c, prev) < 0) best.set(item.family_id, c)
     }
   }
-  let ranked = [...best.values()]
-
   // 4. Coverage floor (§7.4 L584): under-floor axes with candidates compete alone.
-  const under = eligible.filter((k) => (counts.get(k) ?? 0) < floor && ranked.some((c) => c.axis === k))
-  if (under.length > 0) ranked = ranked.filter((c) => under.includes(c.axis))
-  ranked.sort(byRank)
+  const rank = (): { ranked: Candidate[]; under: AxisCode[] } => {
+    let ranked = [...best.values()]
+    const under = eligible.filter((k) => (counts.get(k) ?? 0) < floor && ranked.some((c) => c.axis === k))
+    if (under.length > 0) ranked = ranked.filter((c) => under.includes(c.axis))
+    return { ranked: ranked.sort(byRank), under }
+  }
+
+  // The NEAR_STRATA nearest strata first; while fewer than topK candidates compete (the near
+  // strata ran dry under exclusion), widen one stratum at a time, so the randomesque top k is
+  // that of every stratum the families have (review fix).
+  const rings = Math.max(0, ...plans.map((p) => p.strata.length))
+  const near = Math.min(NEAR_STRATA, rings)
+  let pool = rank()
+  for (let ring = 0; ring < rings; ring++) {
+    for (const p of plans) {
+      const k = p.strata[ring]
+      if (k !== undefined) draw(p, k, 0, ATTEMPTS_PER_STRATUM)
+    }
+    if (ring + 1 < near) continue
+    pool = rank()
+    if (pool.ranked.length >= topK) break
+  }
+  // 'exhausted' must mean nothing is left: before reporting it, sweep every stratum with
+  // SWEEP_ATTEMPTS seeds, so a lone unseen variant is not missed by a few unlucky draws.
+  if (pool.ranked.length === 0 && overTime === 0) {
+    for (const p of plans) for (const k of p.strata) draw(p, k, ATTEMPTS_PER_STRATUM, SWEEP_ATTEMPTS)
+    pool = rank()
+  }
+  const { ranked, under } = pool
   if (ranked.length === 0) return { ranked, eligibleAxes: eligible, floorAxes: [], reason: overTime > 0 ? 'time' : 'exhausted' }
   return { ranked, eligibleAxes: eligible, floorAxes: under }
 }
@@ -520,7 +592,7 @@ export type PlannedStep =
       readonly segment: SegmentId
       readonly family: string
       readonly axis: AxisCode
-      /** The block instance (seed `<sessionSeed>.blk.<family>`, RT `…#<mode>`), so its id regenerates it. */
+      /** The block instance (seed {@link blockSeed}, RT `…#<mode>`), so its id regenerates it. */
       readonly item: AnyItem
     }
   | {
@@ -537,57 +609,71 @@ export interface PlanOptions {
   readonly weights?: AxisWeights
   /** Session length in seconds (default {@link A15_TARGET_S}). */
   readonly targetS?: number
-}
-
-/** Seed of a fixed block: `<sessionSeed>.blk.<family>`. */
-export function blockSeed(sessionSeed: string, family: string): string {
-  return `${sessionSeed}.blk.${family}`
-}
-
-function blockItem(sessionSeed: string, b: BlockDef): AnyItem {
-  if (b.family === 'rt') return generateRtBlock(blockSeed(sessionSeed, 'rt'), b.mode ?? 'simple')
-  const fam = getFamily(b.family)
-  if (fam === undefined) throw new Error(`A15 block family ${b.family} is not registered`)
-  return fam.generate(blockSeed(sessionSeed, b.family))
+  /**
+   * family_ids seen in earlier sessions (§8 `seen_families`, §7.7). A block whose family was seen
+   * is re-drawn from the next {@link blockSeed}; if none of {@link BLOCK_SEED_ATTEMPTS} seeds gives
+   * an unseen family (e.g. every reading passage has been read), the block is dropped and its time
+   * goes to the CAT segments. RT is exempt: an RT mode is one family by design (`rtStructure`),
+   * measured every session (A15).
+   */
+  readonly seenFamilies?: Iterable<string>
 }
 
 /**
- * The session plan in A15 order: every fixed block (skipping axes with w_k = 0) as a generated
- * instance, and a CAT segment for each power axis with w_k > 0. The time left after the blocks'
- * E[T] is shared equally by the CAT segments (never below 0), so a skipped axis's time goes to the
- * others. Deterministic in the options.
+ * Seeds tried per fixed block before it is dropped as seen (§7.7). With 8 reading passages, 128
+ * uniform draws miss a lone unseen passage with p ≈ 4·10⁻⁸.
+ */
+export const BLOCK_SEED_ATTEMPTS = 128
+
+/** Seed of a fixed block: `<sessionSeed>.blk.<family>`, then `….<n>` for the n-th re-draw (n ≥ 1). */
+export function blockSeed(sessionSeed: string, family: string, n = 0): string {
+  return n === 0 ? `${sessionSeed}.blk.${family}` : `${sessionSeed}.blk.${family}.${n}`
+}
+
+/** The block instance of `b`: the first seed whose family is unseen (RT exempt), or null. */
+function blockItem(sessionSeed: string, b: BlockDef, seen: ReadonlySet<string>): AnyItem | null {
+  if (b.family === 'rt') return generateRtBlock(blockSeed(sessionSeed, 'rt'), b.mode ?? 'simple')
+  const fam = getFamily(b.family)
+  if (fam === undefined) throw new Error(`A15 block family ${b.family} is not registered`)
+  for (let n = 0; n < BLOCK_SEED_ATTEMPTS; n++) {
+    const item = fam.generate(blockSeed(sessionSeed, b.family, n))
+    if (!seen.has(item.family_id)) return item
+  }
+  return null
+}
+
+/**
+ * The session plan in A15 order: every fixed block (skipping axes with w_k = 0, and blocks whose
+ * every draw was seen, see {@link PlanOptions.seenFamilies}) as a generated instance, and a CAT
+ * segment for each power axis with w_k > 0. The time left after the blocks' E[T] is shared
+ * equally by the CAT segments (never below 0), so a skipped axis's or dropped block's time goes
+ * to the others. Deterministic in the options.
  */
 export function planSession(opts: PlanOptions): PlannedStep[] {
   checkSeed(opts.sessionSeed)
   const target = opts.targetS ?? A15_TARGET_S
   finite('targetS', target)
   if (target < 0) throw new RangeError(`targetS must be ≥ 0, got ${target}`)
-  const blocks: PlannedStep[] = []
+  const seen = new Set<string>(opts.seenFamilies ?? [])
+  const kept = A15_SEGMENTS.filter((s) => (s.kind === 'block' ? axisWeight(opts.weights, s.axis) > 0 : s.axes.some((k) => axisWeight(opts.weights, k) > 0)))
+  const steps: (PlannedStep | { kind: 'cat'; segment: SegmentId; axes: readonly AxisCode[] })[] = []
   let blockTime = 0
   let nCat = 0
-  const kept = A15_SEGMENTS.filter((s) => (s.kind === 'block' ? axisWeight(opts.weights, s.axis) > 0 : s.axes.some((k) => axisWeight(opts.weights, k) > 0)))
   for (const s of kept) {
     if (s.kind === 'cat') {
       nCat++
+      steps.push({ kind: 'cat', segment: s.id, axes: s.axes.filter((k) => axisWeight(opts.weights, k) > 0) })
       continue
     }
     for (const b of s.blocks) {
-      const item = blockItem(opts.sessionSeed, b)
+      const item = blockItem(opts.sessionSeed, b, seen)
+      if (item === null) continue
       blockTime += item.expected_time_s
-      blocks.push({ kind: 'block', segment: s.id, family: b.family, axis: s.axis, item })
+      steps.push({ kind: 'block', segment: s.id, family: b.family, axis: s.axis, item })
     }
   }
   const budget = nCat === 0 ? 0 : Math.max(0, target - blockTime) / nCat
-  const out: PlannedStep[] = []
-  let bi = 0
-  for (const s of kept) {
-    if (s.kind === 'cat') {
-      out.push({ kind: 'cat', segment: s.id, axes: s.axes.filter((k) => axisWeight(opts.weights, k) > 0), budget_s: budget })
-    } else {
-      for (let n = 0; n < s.blocks.length; n++) out.push(blocks[bi++]!)
-    }
-  }
-  return out
+  return steps.map((s): PlannedStep => (s.kind === 'cat' ? { kind: 'cat', segment: s.segment, axes: s.axes, budget_s: budget } : s))
 }
 
 /** The fixed blocks of {@link planSession}, in A15 order (the block scheduler; never CAT items). */

@@ -9,12 +9,16 @@ import {
   A15_TARGET_S,
   COVERAGE_FLOOR,
   FIXED_BLOCK_FAMILIES,
+  QUANT_SIBLING_GROUPS,
   RANDOMESQUE_K,
   STOP_SD,
+  SWEEP_ATTEMPTS,
   TESTLET_INFO_FACTOR,
   axisDone,
   axisWeight,
+  blockSeed,
   candidatePool,
+  candidateSeed,
   catAxes,
   catFamilies,
   coverageFloor,
@@ -40,8 +44,9 @@ import {
 import type { Observation } from './types'
 import { parseItemId } from '../tasks/ids'
 import { quant } from '../tasks/quant'
-import { VARIANTS } from '../tasks/quant/templates'
+import { VARIANTS, variantOf } from '../tasks/quant/templates'
 import { FAMILIES, FAMILY_NAMES, getFamily } from '../tasks/registry'
+import { PASSAGES, reading, readingStructure } from '../tasks/reading'
 import { rotation } from '../tasks/rotation'
 import { corsi } from '../tasks/span'
 
@@ -165,16 +170,42 @@ describe('strata and sibling groups', () => {
     expect(nearestStrata([2], 3, 3)).toEqual([2])
   })
 
-  it('quant variants of one template are siblings (A11 amended); other families have none', () => {
+  it('quant near-isomorph variants are siblings (A11 amended); other variants and families have none', () => {
+    const ids = new Set(VARIANTS.map((v) => `${v.template}/${v.variant}`))
+    const members = Object.values(QUANT_SIBLING_GROUPS).flat()
+    expect(new Set(members).size).toBe(members.length) // disjoint
+    for (const [g, group] of Object.entries(QUANT_SIBLING_GROUPS)) {
+      expect(group.length, g).toBeGreaterThanOrEqual(2)
+      for (const id of group) expect(ids.has(id), id).toBe(true)
+      expect(new Set(group.map((id) => variantOf(...(id.split('/') as [string, string]))!.stratum)).size, g).toBe(1)
+    }
+    const sib = (template: string, variant: string) => siblingGroupOf({ family: 'quant', structural_params: { template, variant } })
+    expect(sib('recip', 'plus2')).toBe('quant/recip')
+    expect(sib('recip', 'minus3')).toBe(sib('recip', 'plus2'))
+    expect(sib('system', 'sum')).toBe(sib('system', 'solve'))
+    expect(sib('modular', 'last_digit')).toBe(sib('modular', 'power'))
+    // A template is not a group by itself: different routes of one topic stay separate.
+    expect(sib('arith', 'group_mul')).toBeNull()
+    expect(sib('percent', 'change')).toBeNull()
+    expect(sib('modular', 'congruence')).toBeNull()
+    expect(sib('recip', 'nope')).toBeNull()
     const q = quant.generate('sib', { stratum: 4 })
-    const template = (q.structural_params as { template: string }).template
-    expect(siblingGroupOf(q)).toBe(`quant/${template}`)
+    const { template, variant } = q.structural_params as { template: string; variant: string }
+    expect(siblingGroupOf(q)).toBe(sib(template, variant))
     expect(siblingGroupOf(rotation.generate('sib'))).toBeNull()
     expect(siblingGroupOf({ family: 'quant', structural_params: null })).toBeNull()
     expect(siblingGroupOf({ family: 'quant', structural_params: [1] })).toBeNull()
-    // Every variant maps to its template, so recip/plus2 and recip/plus3 share a group.
-    const groups = new Set(VARIANTS.map((v) => siblingGroupOf({ family: 'quant', structural_params: { template: v.template, variant: v.variant } })))
-    expect(groups.size).toBe(new Set(VARIANTS.map((v) => v.template)).size)
+  })
+
+  it('every quant stratum keeps ≥ 8 exclusion units (groups + ungrouped variants), so the near strata do not run dry', () => {
+    for (const k of [1, 2, 3, 4] as const) {
+      const units = new Set(
+        VARIANTS.filter((v) => v.stratum === k).map(
+          (v) => siblingGroupOf({ family: 'quant', structural_params: { template: v.template, variant: v.variant } }) ?? `${v.template}/${v.variant}`,
+        ),
+      )
+      expect(units.size, `stratum ${k}`).toBeGreaterThanOrEqual(8)
+    }
   })
 })
 
@@ -314,6 +345,38 @@ describe('selectNext', () => {
     expect(none(state({ seenFamilies: allQuant }), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
   })
 
+  it('widens to farther strata when the near strata run dry, instead of reporting exhausted', () => {
+    const familyOf = (v: (typeof VARIANTS)[number]) => quant.familyIdOf({ template: v.template, variant: v.variant })
+    // θ̂ = 0: the near quant strata are 3, 2, 4. All of 2–4 seen: only stratum 1 is left.
+    const s = state({ posterior: posteriorWith({ QR: { mean: 0, sd: 0.5 } }), seenFamilies: VARIANTS.filter((v) => v.stratum > 1).map(familyOf) })
+    const pool = candidatePool(s, { axes: ['QR'] })
+    expect(pool.reason).toBeUndefined()
+    expect(pool.ranked.length).toBeGreaterThan(0)
+    for (const c of pool.ranked) expect(c.item.stratum).toBe(1)
+    // Only strata 2 and 3 seen: stratum 4 alone gives < 5 candidates, so stratum 1 joins the pool.
+    const short = candidatePool(state({ ...s, seenFamilies: VARIANTS.filter((v) => v.stratum === 2 || v.stratum === 3).map(familyOf) }), { axes: ['QR'] })
+    expect(short.ranked.length).toBeGreaterThanOrEqual(RANDOMESQUE_K)
+    expect(new Set(short.ranked.map((c) => c.item.stratum))).toEqual(new Set([1, 4]))
+  })
+
+  it("'exhausted' means no unseen, non-sibling family is left in any stratum", () => {
+    const all = VARIANTS.map((v) => ({ v, id: quant.familyIdOf({ template: v.template, variant: v.variant }) }))
+    // Every variant but one seen, θ̂ as far from its stratum as possible: that one is still found.
+    for (const { v, id } of all) {
+      const mean = v.stratum <= 2 ? 3 : -3
+      const s = state({ posterior: posteriorWith({ QR: { mean, sd: 0.5 } }), seenFamilies: all.filter((x) => x.id !== id).map((x) => x.id) })
+      const sel = selectNext(s, createRng('x'), { axes: ['QR'] })
+      expect(sel.kind === 'item' && sel.item.family_id, `${v.template}/${v.variant}`).toBe(id)
+    }
+    // The one left is a sibling of an item administered this session: nothing is left.
+    const sum = all.find((x) => x.v.template === 'system' && x.v.variant === 'sum')!
+    const administered: AdministeredItem[] = [
+      { item_id: 'i:quant:1.1.0:x', family_id: 'f:quant:elsewhere', family: 'quant', axis: 'QR', structural_params: { template: 'system', variant: 'solve' } },
+    ]
+    const s = state({ administered, seenFamilies: all.filter((x) => x.id !== sum.id).map((x) => x.id) })
+    expect(selectNext(s, createRng('x'), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
+  })
+
   it('skips items that would not finish in the remaining time', () => {
     const pool = candidatePool(state({ remainingS: 35 }))
     expect(pool.ranked.length).toBeGreaterThan(0)
@@ -334,6 +397,8 @@ describe('selectNext', () => {
     expect(() => selectNext(state({ remainingS: Number.NaN }), rng)).toThrow(RangeError)
     expect(() => selectNext(state(), rng, { axes: ['XYZ' as AxisCode] })).toThrow(RangeError)
     expect(() => selectNext(state(), rng, { floor: -1 })).toThrow(RangeError)
+    expect(() => candidatePool(state(), { topK: 0 })).toThrow(RangeError)
+    expect(() => candidatePool(state(), { topK: 2.5 })).toThrow(RangeError)
     expect(() => selectNext(state(), rng, { weights: { SPA: -1 } })).toThrow(RangeError)
   })
 })
@@ -514,13 +579,44 @@ describe('randomesque top-5 uniformity (chi-square, α = .001)', () => {
   })
 })
 
+// ------------------------------------------------------------------------------ counters
+
+describe('seeds follow the session counter', () => {
+  it('every selection of a session draws from <sessionSeed>.<counter>.<j>@s<k>', () => {
+    const seed = 'ctr-session'
+    const obs: Observation[] = []
+    const administered: AdministeredItem[] = []
+    const resp = createRng('ctr-resp')
+    for (let n = 0; n < 12; n++) {
+      const sel = selectNext({ sessionSeed: seed, posterior: sessionPosterior(obs), administered }, selectionRng(seed, n))
+      if (sel.kind !== 'item') throw new Error(sel.reason)
+      const itemSeed = parseItemId(sel.item.item_id)!.seed
+      const m = /^ctr-session\.(\d+)\.(\d+)@s([1-6])$/.exec(itemSeed)
+      expect(m, itemSeed).not.toBeNull()
+      const [counter, j, k] = [Number(m![1]), Number(m![2]), Number(m![3])]
+      expect(counter).toBe(n)
+      expect(j).toBeLessThan(SWEEP_ATTEMPTS)
+      expect(k).toBe(sel.item.stratum)
+      expect(itemSeed).toBe(`${candidateSeed(seed, n, j)}@s${k}`)
+      administered.push(sel.item)
+      obs.push(respond(sel.item, 0.3, resp.next()))
+    }
+  })
+
+  it('the randomesque draw is uniform across the selections of one session (chi-square, α = .001)', () => {
+    const ranked = [9, 8, 7, 6, 5, 4, 3, 2]
+    const counts = new Array<number>(RANDOMESQUE_K).fill(0)
+    for (let n = 0; n < 10_000; n++) counts[pickRandomesque(ranked, selectionRng('one-session', n)).rank]!++
+    expect(chiSquare(counts)).toBeLessThan(CHI2_DF4_A001)
+  })
+})
+
 // --------------------------------------------------------------------------- simulation
 
 describe('simulation: selected b tracks a known θ', () => {
-  /** Mean |b − θ| by position over simulees at θ ∈ {−2, −1.5, 1.5, 2}, `n` items on one axis. */
-  function trajectory(axis: AxisCode, n: number, perTheta: number): number[] {
+  /** Mean |b − θ| by position over `perTheta` simulees at each θ, `n` items on one axis. */
+  function trajectory(axis: AxisCode, thetas: readonly number[], n: number, perTheta: number): number[] {
     const dev = new Array<number>(n).fill(0)
-    const thetas = [-2, -1.5, 1.5, 2]
     for (const theta of thetas) {
       for (let s = 0; s < perTheta; s++) {
         const seed = `sim/${axis}/${theta}/${s}`
@@ -540,13 +636,23 @@ describe('simulation: selected b tracks a known θ', () => {
   }
   const mean = (xs: readonly number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
 
-  for (const axis of ['MAT', 'SPA'] as const) {
-    it(`${axis}: mean |b − θ| shrinks over a 12-item session`, () => {
-      const dev = trajectory(axis, 12, 8)
+  for (const axis of CAT_AXES) {
+    it(`${axis}: from a far θ, mean |b − θ| shrinks over a 12-item session`, () => {
+      const dev = trajectory(axis, [-2, -1.5, 1.5, 2], 12, 8)
       const first = mean(dev.slice(0, 3))
       const last = mean(dev.slice(-3))
       expect(last).toBeLessThan(0.8 * first)
       expect(mean(dev.slice(4, 8))).toBeLessThan(first)
+    })
+
+    // From a mid θ the first items (at the prior θ̂ = 0) are already on target: b must stay there,
+    // not drift off as the near strata run dry under exclusion (review fix: QR drifted to ~1.2).
+    it(`${axis}: from a mid θ, mean |b − θ| stays on target over a 12-item session`, () => {
+      const dev = trajectory(axis, [-1, -0.5, 0, 0.5], 12, 6)
+      const first = mean(dev.slice(0, 3))
+      const last = mean(dev.slice(-3))
+      expect(last).toBeLessThan(0.9)
+      expect(last).toBeLessThan(first + 0.3)
     })
   }
 })
@@ -606,6 +712,62 @@ describe('block scheduler (A15)', () => {
     for (const s of plan) if (s.kind === 'cat') expect(s.budget_s).toBeCloseTo((A15_TARGET_S - blockTime) / 2, 9)
     const none = planSession({ sessionSeed: 'plan', weights: Object.fromEntries(AXIS_CODES.map((k) => [k, 0])) })
     expect(none).toEqual([])
+  })
+
+  it('block seeds are <sessionSeed>.blk.<family>, then .<n> for the n-th re-draw', () => {
+    expect(blockSeed('s', 'reading')).toBe('s.blk.reading')
+    expect(blockSeed('s', 'reading', 0)).toBe('s.blk.reading')
+    expect(blockSeed('s', 'reading', 3)).toBe('s.blk.reading.3')
+  })
+
+  it('re-draws a block whose family was seen in an earlier session (§7.7)', () => {
+    const first = scheduleBlocks({ sessionSeed: 'plan' })
+    const r0 = first.find((b) => b.family === 'reading')!.item
+    const again = scheduleBlocks({ sessionSeed: 'plan', seenFamilies: [r0.family_id] })
+    const r1 = again.find((b) => b.family === 'reading')!.item
+    expect(r1.family_id).not.toBe(r0.family_id)
+    const id = parseItemId(r1.item_id)!
+    expect(id.seed).toMatch(/^plan\.blk\.reading\.\d+$/)
+    expect(reading.generate(id.seed)).toEqual(r1)
+    expect(again.filter((b) => b.family !== 'reading')).toEqual(first.filter((b) => b.family !== 'reading'))
+    expect(scheduleBlocks({ sessionSeed: 'plan', seenFamilies: [r0.family_id] })).toEqual(again)
+  })
+
+  it('a returning user never reads a seen passage (property), and each session reads a new one', () => {
+    const all = PASSAGES.map((p) => reading.familyIdOf(readingStructure(p.id)))
+    fc.assert(
+      fc.property(seedArb, fc.subarray(all, { maxLength: all.length - 1 }), (seed, seen) => {
+        const r = scheduleBlocks({ sessionSeed: seed, seenFamilies: seen }).find((b) => b.family === 'reading')
+        expect(r).toBeDefined()
+        expect(seen).not.toContain(r!.item.family_id)
+      }),
+      { numRuns: 50 },
+    )
+    const seen: string[] = []
+    for (let n = 1; n <= all.length; n++) {
+      const r = scheduleBlocks({ sessionSeed: `user/${n}`, seenFamilies: seen }).find((b) => b.family === 'reading')!
+      expect(seen).not.toContain(r.item.family_id)
+      seen.push(r.item.family_id)
+    }
+    expect(new Set(seen)).toEqual(new Set(all))
+  })
+
+  it('drops the reading block once every passage is seen, and gives its time to the CAT segments', () => {
+    const all = PASSAGES.map((p) => reading.familyIdOf(readingStructure(p.id)))
+    const plan = planSession({ sessionSeed: 'plan', seenFamilies: all })
+    const blocks = plan.flatMap((s) => (s.kind === 'block' ? [s] : []))
+    expect(blocks.map((b) => b.family)).toEqual(['rt', 'rt', 'span_fwd', 'span_bwd', 'corsi', 'coding'])
+    const blockTime = blocks.reduce((t, b) => t + b.item.expected_time_s, 0)
+    for (const s of plan) if (s.kind === 'cat') expect(s.budget_s).toBeCloseTo((A15_TARGET_S - blockTime) / 3, 9)
+  })
+
+  it('RT is exempt: an RT mode is one family, measured every session; every other block is re-drawn', () => {
+    const first = scheduleBlocks({ sessionSeed: 'plan' })
+    const seen = first.map((b) => b.item.family_id)
+    const again = scheduleBlocks({ sessionSeed: 'plan', seenFamilies: seen })
+    expect(again.map((b) => b.family)).toEqual(first.map((b) => b.family))
+    expect(again.filter((b) => b.family === 'rt')).toEqual(first.filter((b) => b.family === 'rt'))
+    for (const b of again) if (b.family !== 'rt') expect(seen).not.toContain(b.item.family_id)
   })
 
   it('rejects invalid options', () => {

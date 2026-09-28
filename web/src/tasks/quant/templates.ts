@@ -8,8 +8,8 @@
  * a stem template in A11's sense (its own fields, stem and answer route); `template` groups
  * variants by topic. Hashing the topic alone would leave 4 families in each of strata 1–3, below
  * the 6S per stratum that per-user family exclusion needs (§7.7), so sibling variants of one
- * trick (recip/*, system/*) are excluded per session instead: the selector treats a template as
- * one sibling group (`siblingGroupOf` in `engine/selector.ts`, M1.14, A11). Its `spec` is
+ * trick (recip/*, system/*, symmetric/*, …) are excluded per session instead: the near-isomorph
+ * sets are `QUANT_SIBLING_GROUPS` in `engine/selector.ts` (M1.14, A11). Its `spec` is
  * `{ stem, hint, input_format, given }`: `given` holds exactly the quantities the stem shows
  * (never the solution: no roots, no x₀), and the stem is rendered from it. Numbers are integers;
  * negatives render with "−" (U+2212); `lin` renders a linear combination ("3x − y", "x^2 − 5x + 6").
