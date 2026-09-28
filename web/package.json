@@ -14,6 +14,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json && tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:slow": "HB_SLOW=1 vitest run scripts/sim-cat.slow.test.ts",
     "lint:language": "tsx scripts/lint-language.ts",
     "e2e": "playwright test",
     "e2e:install": "playwright install --with-deps chromium webkit",
@@ -21,7 +22,8 @@
     "dump:families": "tsx scripts/dump-families.ts",
     "dump:coding-scores": "tsx scripts/dump-coding-scores.ts",
     "dump:rt-scores": "tsx scripts/dump-rt-scores.ts",
-    "sync:reading-render": "tsx scripts/sync-reading-render.ts"
+    "sync:reading-render": "tsx scripts/sync-reading-render.ts",
+    "sim:cat": "tsx scripts/sim-cat.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

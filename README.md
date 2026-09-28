@@ -61,6 +61,24 @@ Rerun the tests on every file change:
 npm run test:watch
 ```
 
+### θ-recovery simulation (ROADMAP M1.4b)
+
+`npm run sim:cat` runs the TS simulations on the bank's M1.4a simulees
+(`web/src/engine/__fixtures__/sim_m14a_v1.json`, copied by `npm run sync:golden`): (a) the
+non-adaptive M1.4a replication, whose per-axis r must match the bank's Python result within 0.02,
+and (b) adaptive first sessions with the real selector, scorer and families, under the A15 time
+rule (each block takes the simulated taker's own time; every session must end within 30 min) and
+with a fixed 20 items per CAT axis. It prints one table per run with its acceptance
+verdict; the full N = 2,000 run takes several minutes. `npm test` runs N = 300 versions;
+`npm run test:slow` runs the full size.
+
+```zsh
+npm run sim:cat
+npm run sim:cat -- --part a --n 300
+npm run sim:cat -- --part b --n 300 --target-min 45 --fixed 0 --json sim.json
+npm run test:slow
+```
+
 ### End-to-end and accessibility tests
 
 The Playwright suite in `web/e2e/` (ROADMAP M1.A) builds the app, serves the production build with

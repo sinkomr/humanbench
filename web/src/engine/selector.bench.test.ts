@@ -67,7 +67,9 @@ describe('selector bench (ROADMAP M1.14)', () => {
     expect(ms).toBeLessThan(COLD_BUDGET_MS)
   })
 
-  it(`one selection over every CAT axis (steady state): median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
+  // Wall-clock: a load spike from parallel test files (e.g. the M1.4b simulation) or other processes
+  // can push one median over; a real regression fails every attempt (M1.4b review).
+  it(`one selection over every CAT axis (steady state): median of ${RUNS} runs < ${BUDGET_MS} ms`, { retry: 2 }, () => {
     const { state, obs } = midSession()
     const once = () => selectNext({ ...state, posterior: sessionPosterior(obs) }, selectionRng(state.sessionSeed, state.administered.length))
     for (let i = 0; i < WARMUP; i++) once()
