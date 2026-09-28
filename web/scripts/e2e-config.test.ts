@@ -37,6 +37,18 @@ describe('Playwright config (M1.A)', () => {
     expect(server?.url).toBe(config.use?.baseURL)
   })
 
+  it('also serves the dev-only renderer gallery / G7 review page from a fresh vite dev server (M1.13, M1.G7)', () => {
+    const servers = Array.isArray(config.webServer) ? config.webServer : []
+    expect(servers).toHaveLength(2)
+    const dev = servers[1]
+    expect(dev?.command).toMatch(/^npx vite --host 127\.0\.0\.1 --port \d+ --strictPort$/)
+    expect(dev?.command).not.toMatch(/build|preview/)
+    expect(dev?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/humanbench\/review\.html$/)
+    expect(dev?.env).toEqual({ VITE_BASE: '/humanbench/' })
+    expect(dev?.reuseExistingServer).toBe(false)
+    expect(dev?.url).not.toContain(String(new URL(config.use?.baseURL ?? 'http://x').port))
+  })
+
   it('checks axe against WCAG 2.0, 2.1 and 2.2 at A and AA, failing on serious and critical (§13)', () => {
     // §13 asks for WCAG 2.2 AA; axe tags each rule with the WCAG version that added it, so dropping a
     // version's tags silently drops its rules (the e2e helper test covers 2.1 AA and 2.2 AA by example).

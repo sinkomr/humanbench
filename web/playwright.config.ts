@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { DEV_PORT, REVIEW_URL } from './e2e/dev-server'
 
 /**
  * Playwright + axe-core harness (ROADMAP M1.A, A3; DESIGN §13 accessibility, §14.3 M1 acceptance 4).
@@ -8,6 +9,10 @@ import { defineConfig, devices } from '@playwright/test'
  * `e2e/*.spec.ts` in desktop Chromium, desktop WebKit and an emulated iPhone 13 (WebKit). A fresh
  * server is started each run, so a stale build is never tested; set E2E_PORT if 4174 is taken.
  * Browsers: `npm run e2e:install`. Run: `npm run e2e` (or `npm run e2e -- --project=webkit`).
+ *
+ * A second server, `vite` (dev) on E2E_DEV_PORT (default 4175), serves the dev-only renderer
+ * gallery / G7 review page (`review.html`, ROADMAP M1.13, M1.G7), which no production build
+ * contains; `e2e/gallery.spec.ts` browses it there.
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 4174)
@@ -42,13 +47,24 @@ export default defineConfig({
     // iOS emulation (WebKit engine, iPhone 13 viewport, touch, mobile UA): CLAUDE.md, M1.22.
     { name: 'iphone', use: { ...devices['iPhone 13'] }, timeout: WEBKIT_TIMEOUT },
   ],
-  webServer: {
-    command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
-    url: `${ORIGIN}${BASE}`,
-    env: { VITE_BASE: BASE },
-    reuseExistingServer: false,
-    timeout: 120_000,
-    stdout: 'ignore',
-    stderr: 'pipe',
-  },
+  webServer: [
+    {
+      command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
+      url: `${ORIGIN}${BASE}`,
+      env: { VITE_BASE: BASE },
+      reuseExistingServer: false,
+      timeout: 120_000,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+    {
+      command: `npx vite --host 127.0.0.1 --port ${DEV_PORT} --strictPort`,
+      url: REVIEW_URL,
+      env: { VITE_BASE: BASE },
+      reuseExistingServer: false,
+      timeout: 120_000,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+  ],
 })
