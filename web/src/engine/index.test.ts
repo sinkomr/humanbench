@@ -27,4 +27,8 @@ describe('engine barrel (index.ts)', () => {
     ]
     for (const n of names) expect(engine, n).toHaveProperty(n)
   })
+
+  it('does not re-export the selector, which imports the task registry (import cycle, M1.14)', () => {
+    for (const n of ['selectNext', 'candidatePool', 'planSession', 'scheduleBlocks']) expect(engine).not.toHaveProperty(n)
+  })
 })

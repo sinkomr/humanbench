@@ -6,8 +6,9 @@
  * - the real app (`index.html`, this repo's `vite.config.ts`);
  * - an entry that imports a helper from the tasks barrel: it must not pull in any family or
  *   passage data (the barrel does not re-export the registry);
- * - an entry that imports the registry (what the selector, M1.14, will do): it must carry the
- *   reading passages (so the check is not vacuous) but none of the verifier-only authoring data
+ * - an entry that imports the registry and the selector (`engine/selector.ts`, M1.14, which
+ *   imports the registry): it must carry the reading passages (so the check is not vacuous)
+ *   but none of the verifier-only authoring data
  *   of `passages.json`: no `option_rationales` / `evidence_span` fields, no rationale line, and no
  *   evidence span as a string of its own (the spans are substrings of the passage text, which is
  *   shipped, so only a standalone copy would reveal which sentence keys a question).
@@ -20,6 +21,7 @@ import { AUTHORED_PASSAGES } from '../src/tasks/reading/authoring'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const TASKS = fileURLToPath(new URL('../src/tasks/', import.meta.url))
+const ENGINE = fileURLToPath(new URL('../src/engine/', import.meta.url))
 
 const RATIONALES = AUTHORED_PASSAGES.flatMap((p) => p.questions.flatMap((q) => q.option_rationales))
 const EVIDENCE = AUTHORED_PASSAGES.flatMap((p) => p.questions.map((q) => q.evidence_span))
@@ -80,8 +82,11 @@ describe('production bundles (A14)', () => {
     expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
   }, 60_000)
 
-  it('the registry ships the passages but none of their verifier-only data', async () => {
-    const text = await bundle(`export { FAMILIES } from ${JSON.stringify(`${TASKS}registry.ts`)}`)
+  it('the registry and the selector ship the passages but none of their verifier-only data', async () => {
+    const text = await bundle(
+      `export { FAMILIES } from ${JSON.stringify(`${TASKS}registry.ts`)}\n` +
+        `export { selectNext, planSession } from ${JSON.stringify(`${ENGINE}selector.ts`)}`,
+    )
     for (const s of PASSAGE_OPENINGS) expect(text).toContain(s)
     expect(authoringLeaks(text)).toEqual([])
   }, 60_000)
