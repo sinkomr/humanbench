@@ -141,24 +141,6 @@ describe('drawSchedule', () => {
   })
 })
 
-describe('reference responses', () => {
-  it('are whole tenths of a ms (integer draws, the same on every engine), with every lapse kind', () => {
-    const kinds = new Set<string>()
-    for (let i = 0; i < 200; i++) {
-      const ref = rt.generate(`tenths-${i}`).key.reference
-      for (const v of [...ref.practice_rt_ms, ...ref.rt_ms]) {
-        if (v === null) {
-          kinds.add('miss')
-          continue
-        }
-        expect(Math.round(v * 10) / 10).toBe(v)
-        kinds.add(v < 0 ? 'anticipation' : v === 0 ? 'zero' : 'rt')
-      }
-    }
-    expect([...kinds].sort()).toEqual(['anticipation', 'miss', 'rt', 'zero'])
-  })
-})
-
 describe('priors and expected time (M1.P, [SPEC] v0)', () => {
   it('b = 0 for both modes (stratum 3), σ_b = 1, provenance says [SPEC] v0', () => {
     for (const mode of ['simple', 'choice4'] as const) {

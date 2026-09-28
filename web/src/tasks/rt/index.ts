@@ -22,7 +22,9 @@ export const rt = defineFamily<RtSpec, RtKey, RtResponse>({
   name: 'rt',
   axis: 'RT',
   facet: 'reaction_time',
-  generatorVersion: '1.0.0',
+  // 1.1.0: the key is the stimulus positions only (the scoring parity responses moved to
+  // `synthetic.ts` / `rt_scores.json`); the schedule of every seed is unchanged.
+  generatorVersion: '1.1.0',
   itemType: 'rt_block',
   strata: [3],
   build: buildRt,
@@ -56,6 +58,6 @@ export {
 export { MAD_TO_SD, SE_MEDIAN_FACTOR, classifyTrial, expectedOf, median, rtBlockObservation, rtEstimate, rtResponseProblems, scoreRtResponse } from './score'
 export * from './timing'
 export * from './types'
-export { REFERENCE_TOL, RT_SPEC_FIELDS, expectedMatches, referenceProblems, verifyRt } from './verify'
+export { RT_SPEC_FIELDS, verifyRt } from './verify'
 
 export default rt

@@ -78,7 +78,7 @@ Use `--all` in place of `--family <name>` to dump every registered family,
 `web/src/tasks/registry.ts` yet, or `--out <file>` in place of `--bank` to write elsewhere.
 
 After changing a generator, refresh every bank fixture that comes from this repo: the family
-dumps, the toy family dump, the coding scoring parity dump and the series analysis fixture
+dumps, the toy family dump, the coding and rt scoring parity dumps and the series analysis fixture
 (then update `ANALYSIS_FIXTURE_DIGEST` in `series.test.ts` if it changed):
 
 ```zsh
@@ -86,6 +86,7 @@ cd web
 npm run dump:families -- --all --n 1000 --bank
 npm run dump:families -- --module src/tasks/_example/index.ts --family example --n 1000 --bank
 npx tsx src/tasks/coding/dump-scores.ts --n 1000 --bank
+npx tsx scripts/dump-rt-scores.ts --n 1000 --bank
 npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ../../humanbench-bank/golden/ts_dumps/series.analysis.json
 ```
 

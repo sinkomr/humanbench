@@ -1,12 +1,12 @@
 /**
  * Every verification rule of the rt family with hand-built NEGATIVE instances (M1.10). Bad
- * schedules are re-derived (key, reference expectation, priors, time) wherever the rule allows,
- * so the rule under test is the only one that fails.
+ * schedules are re-derived (key, priors, time) wherever the rule allows, so the rule under test
+ * is the only one that fails.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { VerifyResult } from '../family'
-import { expectedOf, generateRtBlock, rt, rtDifficulty, rtExpectedTimeS, rtStructure, scoreRtResponse, verifyRt, type RtItem, type RtMode, type RtResponse, type RtSpec } from '.'
+import { generateRtBlock, rt, rtDifficulty, rtExpectedTimeS, rtStructure, verifyRt, type RtItem, type RtMode, type RtSpec } from '.'
 
 /** Mutable JSON view of an item. */
 type J = any
@@ -16,21 +16,10 @@ const base = (mode: RtMode, seed = 'neg'): J => JSON.parse(JSON.stringify(genera
 /** The boolean checks that failed. */
 const failed = (r: VerifyResult): string[] => Object.entries(r.checks).filter(([, v]) => v === false).map(([k]) => k)
 
-/** Re-derive key.positions, the reference responses/expectation, the prior and E[T] from x.spec. */
+/** Re-derive key.positions, the prior and E[T] from x.spec. */
 function rederive(x: J, opts: { keepKey?: boolean } = {}): J {
   const spec = x.spec as RtSpec
-  const mode = spec.mode
-  const ref = x.key.reference
   if (!opts.keepKey) x.key.positions = [...spec.positions]
-  const n = spec.positions.length
-  const rts: (number | null)[] = Array.from({ length: n }, (_, i) => (i < ref.rt_ms.length ? (ref.rt_ms[i] as number | null) : 300))
-  ref.rt_ms = rts
-  ref.choice = rts.map((v, i) => (v === null ? null : mode === 'simple' ? 0 : Math.min(3, Math.max(0, spec.positions[i] as number))))
-  try {
-    ref.expected = expectedOf(scoreRtResponse(mode, x.key.positions, ref as RtResponse, { device_class: ref.device_class }))
-  } catch {
-    // A schedule of the wrong length cannot be scored; leave the old expectation.
-  }
   x.difficulty = rtDifficulty(spec)
   x.expected_time_s = rtExpectedTimeS(spec)
   return x
@@ -221,7 +210,23 @@ describe('verifyRt rejects each failure reason (negative tests)', () => {
     expect(failed(check(rederive(y, { keepKey: true })))).toEqual(['key_matches_stimuli'])
     const z = base('simple')
     delete z.key.positions
-    expect(failed(check(z))).toEqual(['key_matches_stimuli', 'reference_scores_match'])
+    expect(failed(check(z))).toEqual(['key_matches_stimuli', 'key_fields_exact'])
+  })
+
+  it('key_fields_exact: a key that carries anything besides positions (e.g. a test fixture)', () => {
+    const muts: ((k: J) => void)[] = [
+      (k) => (k.reference = { device_class: 'desktop', rt_ms: [], choice: [] }),
+      (k) => (k.expected = { status: 'ok' }),
+      (k) => (k.note = ''),
+    ]
+    for (const m of muts) {
+      const x = base('choice4')
+      m(x.key)
+      expect(failed(check(x))).toEqual(['key_fields_exact'])
+    }
+    const y = base('simple')
+    y.key = [...y.key.positions] // the positions, but not as { positions }
+    expect(failed(check(y))).toEqual(['key_matches_stimuli', 'key_fields_exact'])
   })
 
   it('structure_matches: the other mode\'s structure', () => {
@@ -282,71 +287,12 @@ describe('verifyRt rejects each failure reason (negative tests)', () => {
     expect(check(y).ok).toBe(true)
   })
 
-  it('reference_well_formed: bad RT, unpaired null, choice out of range, no practice, no device class', () => {
-    const muts: ((r: J) => void)[] = [
-      (r) => (r.rt_ms[0] = 'fast'),
-      (r) => (r.rt_ms[r.rt_ms.findIndex((v: number | null) => v !== null)] = null),
-      (r) => (r.choice[2] = 7),
-      (r) => delete r.practice_rt_ms,
-      (r) => (r.device_class = ''),
-      (r) => r.rt_ms.pop(),
-      (r) => (r.expected = null),
-    ]
-    for (const m of muts) {
-      const x = base('choice4')
-      m(x.key.reference)
-      expect(failed(check(x))).toEqual(['reference_well_formed', 'reference_scores_match'])
-    }
-  })
-
-  it('reference_scores_match: tampered x, SE, sigma, a count, the status, the reason or an extra field', () => {
-    const findItem = (status: 'ok' | 'no_observation'): J => {
-      for (let i = 0; ; i++) {
-        const x = base(i % 2 ? 'simple' : 'choice4', `find-${i}`)
-        if (x.key.reference.expected.status === status) return x
-      }
-    }
-    const okMuts: ((e: J) => void)[] = [
-      (e) => (e.observation.x += 1e-9),
-      (e) => (e.se += 1e-9),
-      (e) => (e.observation.sigma *= 1.001),
-      (e) => (e.observation.axis = 'PS'),
-      (e) => (e.observation.lam = -0.2),
-      (e) => (e.n_valid -= 1),
-      (e) => (e.n_errors += 1),
-      (e) => (e.status = 'no_observation'),
-      (e) => (e.note = 'extra'),
-      (e) => delete e.se,
-    ]
-    for (const m of okMuts) {
-      const x = findItem('ok')
-      m(x.key.reference.expected)
-      expect(failed(check(x))).toEqual(['reference_scores_match'])
-    }
-    const noneMuts: ((e: J) => void)[] = [(e) => (e.reason = 'device_lag'), (e) => (e.status = 'ok'), (e) => (e.n_misses += 1)]
-    for (const m of noneMuts) {
-      const x = findItem('no_observation')
-      m(x.key.reference.expected)
-      expect(failed(check(x))).toEqual(['reference_scores_match'])
-    }
-    const y = findItem('ok')
-    y.key.reference.expected.observation.x += 1e-13 // within the 1e-12 parity bound
-    expect(check(y).ok).toBe(true)
-  })
-
-  it('a changed reference response changes the recomputed expectation', () => {
-    const x = base('simple', 'resp')
-    const i = x.key.reference.rt_ms.findIndex((v: number | null) => v !== null && v >= 150 && v <= 1500)
-    x.key.reference.rt_ms[i] = -40 // valid → anticipation
-    expect(failed(check(x))).toEqual(['reference_scores_match'])
-  })
-
   it('never throws on malformed instances', () => {
     const muts: ((x: J) => void)[] = [
       (x) => (x.params = null),
       (x) => (x.difficulty = null),
       (x) => (x.key = null),
-      (x) => (x.key.reference = []),
+      (x) => (x.key.positions = 'abc'),
       (x) => (x.spec.foreperiods_ms = []),
     ]
     for (const m of muts) {
