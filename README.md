@@ -16,7 +16,8 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/tasks/`: task families
   - `web/src/viz/`: blob and bar views, export
 - `schema/`: JSON Schemas (the save file, from M1); the build publishes each `schema/*.json` at `/humanbench/schema/`
-- `.github/workflows/`: `ci.yml` (typecheck, tests, build) and `pages.yml` (deploy on push to `main`)
+- `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
+- `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
 
 ## Development
 
@@ -54,6 +55,44 @@ Rerun the tests on every file change:
 ```zsh
 npm run test:watch
 ```
+
+### End-to-end and accessibility tests
+
+The Playwright suite in `web/e2e/` (ROADMAP M1.A) builds the app, serves the production build with
+`vite preview` under `/humanbench/`, and runs every `*.spec.ts` in three browsers: desktop Chromium,
+desktop WebKit, and an emulated iPhone 13 (WebKit). Each UI page must have no serious or critical
+axe-core violations of WCAG 2.0, 2.1 or 2.2 at levels A and AA (DESIGN §13): call
+`expectNoSeriousAxe(page)` from `web/e2e/axe.ts` once the page has rendered.
+
+Download the browsers once (on Linux this also installs their system libraries):
+
+```zsh
+cd web
+npm run e2e:install
+```
+
+Run the suite, or one browser, or one file:
+
+```zsh
+npm run e2e
+npm run e2e -- --project=webkit
+npm run e2e -- e2e/smoke.spec.ts
+```
+
+It serves on port 4174. If that port is taken, pick another:
+
+```zsh
+E2E_PORT=4185 npm run e2e
+```
+
+After a failure, open the report, which links each failed test's trace:
+
+```zsh
+npx playwright show-report
+```
+
+The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `main` and `dev` and on
+pull requests, with the browsers cached, and uploads the report as an artifact.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
 
