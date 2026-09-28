@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { axis, AXIS_CODES, type ModelKind } from './axes'
+import { axis, AXIS_CODES, modelFamilyOf, type ModelKind } from './axes'
 import {
   isJsonValue,
   isResponseTuple,
@@ -131,6 +131,7 @@ describe('item and observation types', () => {
   })
 
   it('models the §12 item record, including a testlet id for 2pl_testlet items', () => {
+    // The §12 example has 4 options (A–D), so A9 makes it 3PL with c = 1/4 (§7.1 wins over §3).
     const rotation: ItemBase = {
       item_id: 'i:rot:f0042:v1',
       family_id: 'f:rot:0042',
@@ -140,7 +141,7 @@ describe('item and observation types', () => {
       gold_tier: 'a',
       time_limit_s: 60,
       expected_time_s: 28,
-      params: { model: '2pl', a: 1.2, b: 0.6 },
+      params: { model: '3pl', a: 1.2, b: 0.6, c: 0.25 },
     }
     const passageQ: ItemBase = {
       item_id: 'i:rc:f0007:q2',
@@ -154,7 +155,8 @@ describe('item and observation types', () => {
     }
     for (const item of [rotation, passageQ]) {
       expect(AXIS_CODES).toContain(item.axis)
-      expect(axis(item.axis).modelKind).toBe(item.params.model)
+      // The item carries its own model (A9); it need only share its axis default's family.
+      expect(modelFamilyOf(item.params.model)).toBe(modelFamilyOf(axis(item.axis).defaultModelKind))
     }
   })
 })

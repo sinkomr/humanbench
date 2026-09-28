@@ -1,7 +1,7 @@
 /**
  * Synthetic response streams for coding blocks and the TS → bank scoring parity dump
- * (ROADMAP M1.11, A1, A17). TEST SUPPORT ONLY: used by the coding tests and `dump-scores.ts`,
- * never by the app.
+ * (ROADMAP M1.11, A1, A17). TEST SUPPORT ONLY: used by the coding tests and the Node CLI
+ * `web/scripts/dump-coding-scores.ts` (`npm run dump:coding-scores`), never by the app.
  *
  * The item dump (`golden/ts_dumps/coding.json`, `npm run dump:families`) carries instances only,
  * so the observation parity has its own dump, `golden/ts_dumps/coding_scores.json`: for each
@@ -13,7 +13,7 @@
  * (`scripts/ts-dumps-sync.test.ts`) skips it only because no family is named `coding_scores`,
  * and the family file rules list `coding.json` only. Where response-stream parity dumps should
  * live (e.g. `golden/ts_dumps/scores/<family>.json`, or a `dump:families` option) is an
- * integration follow-up; `scores-dump.test.ts` checks this copy for drift meanwhile.
+ * integration follow-up; `web/scripts/coding-scores-dump.test.ts` checks this copy for drift.
  */
 
 import { createRng, type Rng } from '../../engine'

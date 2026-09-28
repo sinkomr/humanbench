@@ -19,7 +19,7 @@
  */
 
 import type { Observation } from '../../engine'
-import type { ScoreResult } from '../family'
+import type { ItemScore } from '../family'
 import { CODING_ERROR_FLAG_DENOM, type CodingItem, type CodingResponses, type CodingSymbol } from './config'
 import { codingSigma } from './prior'
 
@@ -98,13 +98,13 @@ export function codingObservation(item: CodingItem, correctPerMin: number, corre
 }
 
 /**
- * `score()` result of a coding block. The contract's {@link ScoreResult} has room for the value
+ * `score()` result of a coding block. The contract's {@link ItemScore} has room for the value
  * only, but a block's observation needs its own σ (1/correct) and the error flag, so the result
  * also carries them: `observation` (the engine observation, null when nothing was correct) and
- * `outcome` (counts and flags). It is a ScoreResult subtype, so `ProceduralFamily.score` returns
+ * `outcome` (counts and flags). It is an ItemScore subtype, so `ProceduralFamily.score` returns
  * it unchanged; typing these fields in the contract is an integration follow-up.
  */
-export interface CodingScoreResult extends ScoreResult {
+export interface CodingScoreResult extends ItemScore {
   readonly correct: null
   readonly observation: Observation | null
   readonly outcome: CodingOutcome

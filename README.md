@@ -85,13 +85,30 @@ dumps, the toy family dump, the coding scoring parity dump and the series analys
 cd web
 npm run dump:families -- --all --n 1000 --bank
 npm run dump:families -- --module src/tasks/_example/index.ts --family example --n 1000 --bank
-npx tsx src/tasks/coding/dump-scores.ts --n 1000 --bank
+npm run dump:coding-scores -- --n 1000 --bank
 npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ../../humanbench-bank/golden/ts_dumps/series.analysis.json
 ```
 
 The other direction, the bank's golden scoring files into `web/src/engine/__fixtures__/`, is
 `npm run sync:golden` (ROADMAP A17). When the bank checkout is present, `npm test` fails if any
 of these copies is stale.
+
+The reading passages are authored in `web/src/tasks/reading/passages.json`, with evidence spans
+and option rationales that only the verifier and tests read (ROADMAP A14). The app ships
+`passages.render.json`, the same bank without those fields. After editing `passages.json`,
+regenerate it (`npm test` fails until you do), then copy `passages.json` to the bank:
+
+```zsh
+cd web
+npm run sync:reading-render
+cp src/tasks/reading/passages.json ../../humanbench-bank/src/hb/gen/reading/passages.json
+```
+
+App code imports the task helpers from `web/src/tasks` (the barrel) and the families only from
+`web/src/tasks/registry.ts`. `web/scripts/bundle.test.ts` builds the app and both entry points
+and fails if a bundle carries reading authoring data. `web/scripts/timing-lint.test.ts` fails on
+any wall-clock read under `web/src` (`Date.now`, argless `new Date()`) and on unseeded
+randomness in `web/src/engine` and `web/src/tasks`: timing uses `performance.now()`.
 
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 

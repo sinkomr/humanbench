@@ -99,6 +99,20 @@ export function expectedTimeFromWords(words: number): number {
 }
 
 /**
+ * The one hard time cap of power items, in seconds (DESIGN §13: "no time limits on power items
+ * beyond a generous cap"; the §12 record's `time_limit_s`). A power family either leaves its
+ * items untimed (series, quant: numeric entry, nothing to pace) or caps them at exactly this
+ * value (rotation, matrices), and the cap must stay ≥ {@link POWER_TIME_LIMIT_MIN_RATIO} × E[T]
+ * of every item (`power-time.test.ts`), so it only ends a stalled item and never paces a slow
+ * but engaged taker. Timed blocks (coding's 90 s window, RT trials) are speed tasks, not power
+ * items, and keep their own durations.
+ */
+export const POWER_TIME_LIMIT_S = 180
+
+/** A capped power item's limit is at least this multiple of its expected time E[T]. */
+export const POWER_TIME_LIMIT_MIN_RATIO = 2.5
+
+/**
  * Word separators of {@link countWords}: exactly the characters of JS `\s`, spelled out so the
  * bank's `count_words` uses the identical class (Python's `str.split()` also splits on
  * U+001C–U+001F and U+0085 but not on U+FEFF, which would change expected_time_s). The bank

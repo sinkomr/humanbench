@@ -150,9 +150,11 @@ export interface VerifyResult {
 /**
  * Result of scoring a response. `correct` is 0/1 for keyed items and null for blocks and
  * continuous responses (§8 response tuple); `value` carries a continuous score (e.g. GRM
- * category for span, median log-RT for RT, log correct/min for coding).
+ * category for span, median log-RT for RT, log correct/min for coding). Named `ItemScore`, not
+ * `ScoreResult`: that is the engine's person-level MAP/EAP result (`engine/scorer.ts`), and code
+ * that imports both barrels needs the two apart. The bank twin is `hb.gen.base.ScoreResult`.
  */
-export interface ScoreResult {
+export interface ItemScore {
   readonly correct: 0 | 1 | null
   readonly value?: number
 }
@@ -180,7 +182,7 @@ export interface ProceduralFamily<Spec extends object = JsonObject, Key extends 
   generate(seed: string, opts?: GenerateOptions): ItemInstance<Spec, Key>
   /** Programmatic key check + uniqueness/ambiguity (G2, G3). Must not throw on a well-formed item. */
   verify(item: ItemInstance<Spec, Key>): VerifyResult
-  score(item: ItemInstance<Spec, Key>, response: Resp): ScoreResult
+  score(item: ItemInstance<Spec, Key>, response: Resp): ItemScore
   /** `familyId(name, structuralParams)` for this family. */
   familyIdOf(structuralParams: JsonValue): string
 }
@@ -258,7 +260,7 @@ export interface FamilyDefinition<Spec extends object, Key extends object, Resp>
    */
   build(rng: Rng, ctx: BuildContext): BuiltItem<Spec, Key>
   verify(item: ItemInstance<Spec, Key>): VerifyResult
-  score(item: ItemInstance<Spec, Key>, response: Resp): ScoreResult
+  score(item: ItemInstance<Spec, Key>, response: Resp): ItemScore
 }
 
 /**

@@ -3,9 +3,9 @@
  * tuple). Anything but the key index, including a malformed response, scores 0.
  */
 
-import type { ScoreResult } from '../family'
+import type { ItemScore } from '../family'
 import type { RotationItem, RotationResponse } from './spec'
 
-export function scoreRotation(item: RotationItem, response: RotationResponse): ScoreResult {
+export function scoreRotation(item: RotationItem, response: RotationResponse): ItemScore {
   return { correct: Number.isInteger(response) && response === item.key.index ? 1 : 0 }
 }

@@ -48,10 +48,28 @@ export type Cluster = (typeof CLUSTERS)[number]
 export type GoldTier = 'a' | 'b' | 'c'
 
 /**
- * Person-scoring model family for an axis (DESIGN §7.1). Keyed MC by option count (ROADMAP A9,
- * §7.1 wins over §3): k ≤ 4 options → 3PL with c = 1/k; k ≥ 5 options or numeric entry → 2PL.
+ * An item's scoring model (DESIGN §7.1; `ItemParams.model`, `Observation.kind`). The model belongs
+ * to the ITEM, not the axis: keyed MC by option count (ROADMAP A9, §7.1 wins over §3), k ≤ 4
+ * options → 3PL with c = 1/k, k ≥ 5 options or numeric entry → 2PL; blocks per A10.
  */
 export type ModelKind = '2pl' | '3pl' | '2pl_testlet' | 'grm' | 'gaussian'
+
+/** Response-model family of a {@link ModelKind}: keyed right/wrong, graded categories, or continuous. */
+export type ModelFamily = 'dichotomous' | 'graded' | 'continuous'
+
+/** The {@link ModelFamily} of a model: 2PL, 3PL and 2PL-testlet are dichotomous, GRM graded, Gaussian continuous. */
+export function modelFamilyOf(kind: ModelKind): ModelFamily {
+  switch (kind) {
+    case '2pl':
+    case '3pl':
+    case '2pl_testlet':
+      return 'dichotomous'
+    case 'grm':
+      return 'graded'
+    case 'gaussian':
+      return 'continuous'
+  }
+}
 
 /** 'active' = measured in v1; 'v2' = shown as "not yet measured" in v1 (DESIGN §3). */
 export type AxisStatus = 'active' | 'v2'
@@ -69,7 +87,15 @@ export interface AxisDef {
   readonly chc: string
   readonly tier: GoldTier
   readonly glyph: string
-  readonly modelKind: ModelKind
+  /**
+   * The model of the axis's typical item: DESIGN §3's "Scoring model" column as amended by A9
+   * (LR: 5 options → 2PL; SPA: 4-option rotation → 3PL, c = 1/4). Informational only (labels,
+   * the shared axis spec, simulations). Items carry their own model and one axis may mix models
+   * (A9 decides per item by option count), so likelihood and information are always taken from
+   * the item's `params.model` / the observation's `kind`, never from this field. An item's model
+   * must only share its {@link modelFamilyOf family} (tested per registered task family).
+   */
+  readonly defaultModelKind: ModelKind
   readonly status: AxisStatus
   /** True for axes scored from other items at no separate time cost (Calibration). */
   readonly embedded: boolean
@@ -77,7 +103,7 @@ export interface AxisDef {
 
 type Row = [AxisCode, string, Cluster, string, GoldTier, ModelKind, AxisStatus, boolean?]
 
-// code | name | cluster | CHC | tier | model | status | embedded  (DESIGN §3 table rows 1–17)
+// code | name | cluster | CHC | tier | default model | status | embedded  (DESIGN §3 rows 1–17, A9)
 const ROWS: readonly Row[] = [
   ['MAT', 'Matrix & Series', 'Reasoning', 'Gf', 'a', '2pl', 'active'],
   ['LR', 'Logical Reasoning', 'Reasoning', 'Gf-verbal', 'a', '2pl', 'active'], // 5-option MC → 2PL (A9)
@@ -85,7 +111,7 @@ const ROWS: readonly Row[] = [
   ['RC', 'Reading Comprehension', 'Verbal', 'Grw', 'a', '2pl_testlet', 'active'],
   ['VOC', 'Vocabulary & Verbal Analogies', 'Verbal', 'Gc', 'a', '2pl', 'active'],
   ['QR', 'Quantitative Reasoning', 'Quantitative', 'Gq/RQ', 'a', '2pl', 'active'],
-  ['SPA', 'Spatial', 'Spatial/Memory', 'Gv', 'a', '2pl', 'active'],
+  ['SPA', 'Spatial', 'Spatial/Memory', 'Gv', 'a', '3pl', 'active'], // 4-option rotation → 3PL, no RT covariate (A9)
   ['WM', 'Working Memory', 'Spatial/Memory', 'Gwm', 'b', 'grm', 'active'],
   ['RT', 'Reaction Time', 'Speed', 'Gt', 'b', 'gaussian', 'active'],
   ['PS', 'Processing & Reading Speed', 'Speed', 'Gs', 'b', 'gaussian', 'active'],
@@ -100,7 +126,7 @@ const ROWS: readonly Row[] = [
 
 /** The 17 axes in canonical order (DESIGN §3). */
 export const AXES: readonly AxisDef[] = Object.freeze(
-  ROWS.map(([code, name, cluster, chc, tier, modelKind, status, embedded], index) =>
+  ROWS.map(([code, name, cluster, chc, tier, defaultModelKind, status, embedded], index) =>
     Object.freeze({
       code,
       index,
@@ -109,7 +135,7 @@ export const AXES: readonly AxisDef[] = Object.freeze(
       chc,
       tier,
       glyph: TIER_GLYPH[tier],
-      modelKind,
+      defaultModelKind,
       status,
       embedded: embedded ?? false,
     }),

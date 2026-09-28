@@ -1,17 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  PASSAGES,
-  PUBLIC_DOMAIN_BEFORE,
-  bankProblems,
-  countPassageWords,
-  passageChecks,
-  passageText,
-  reading,
-  verifyPassage,
-  verifyReading,
-  type PassageRecord,
-  type ReadingItem,
-} from '.'
+import { PUBLIC_DOMAIN_BEFORE, countPassageWords, passageChecks, passageText, reading, verifyReading, type PassageRecord, type ReadingItem } from '.'
+import { AUTHORED_PASSAGES as PASSAGES, bankProblems, verifyPassage } from './authoring'
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] extends object ? Mutable<T[K]> : T[K] }
 type AnyRecord = Record<string, unknown>
@@ -229,14 +218,20 @@ describe('verifyReading: item-level negative cases', () => {
     expectItemFails(badItem((x) => ((x.key.indices as number[])[1] = (((x.key.indices as number[])[1] as number) + 1) % 4)), 'key_matches_bank')
   })
 
-  it('key_matches_bank + evidence_in_passage: a forged evidence span', () => {
-    expectItemFails(badItem((x) => ((x.key.evidence as string[])[0] = 'a span that is not in the passage')), 'key_matches_bank', 'evidence_in_passage')
+  it('key_shape: missing, extra or short key fields (the key is { indices } only, 1.2.0)', () => {
+    expectItemFails(badItem((x) => (x.key = {})), 'key_shape')
+    expectItemFails(badItem((x) => (x.key = { ...x.key, answer: 1 })), 'key_shape')
+    // An evidence list in the key is the pre-1.2.0 shape: evidence spans stay out of items (A14).
+    expectItemFails(badItem((x) => (x.key = { ...x.key, evidence: ['a', 'b', 'c'] })), 'key_shape')
+    expectItemFails(badItem((x) => (x.key.indices = (x.key.indices as number[]).slice(0, 2))), 'key_shape')
   })
 
-  it('key_shape: missing, extra or short key fields', () => {
-    expectItemFails(badItem((x) => (x.key = { indices: x.key.indices })), 'key_shape')
-    expectItemFails(badItem((x) => (x.key = { ...x.key, answer: 1 })), 'key_shape')
-    expectItemFails(badItem((x) => (x.key.indices = (x.key.indices as number[]).slice(0, 2))), 'key_shape')
+  it('items carry no evidence spans or rationales, and the item checks do not need them', () => {
+    expect(Object.keys(item.key)).toEqual(['indices'])
+    const text = JSON.stringify(item)
+    expect(text).not.toMatch(/"(evidence|evidence_span|option_rationales)"/)
+    expect(Object.keys(passageChecks(base))).not.toContain('evidence_in_passage')
+    expect(Object.keys(verifyPassage(base).checks)).toEqual(expect.arrayContaining(['evidence_in_passage', 'rationales_complete']))
   })
 
   it('key_in_range: an index past the options', () => {

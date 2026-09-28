@@ -2,7 +2,8 @@
  * The `reading` family: reading-speed blocks gated by comprehension (ROADMAP M1.12, A10, A14;
  * DESIGN §3 row 10, §6.i Gutenberg row, §7.1, §14.6 example 13). One instance is one block
  * (item_type `reading_block`): a public-domain Gutenberg passage of 330–370 words from the
- * authored bank (`passages.json`, `bank.ts`), three literal gate questions with seeded option
+ * runtime bank (`passages.render.json`, `bank.ts`, projected from the authored `passages.json`
+ * that only `authoring.ts` reads), three literal gate questions with seeded option
  * order (`gen.ts`), its verifier (`verify.ts`), the gate / wpm / skimming scorer (`score.ts`)
  * and the provisional norms and priors (`prior.ts`).
  *
@@ -13,6 +14,8 @@
  *
  * generatorVersion 1.1.0: the review rewrite of the bank (`reading-passages-v2`: three gate
  * questions replaced, five re-optioned, two passages re-dated) and τ_res = 0.05 (A11, A17).
+ * 1.2.0: the key is `{ indices }` only; the evidence spans stay in the authored bank, out of the
+ * runtime payload (A14).
  */
 
 import { defineFamily, type ItemInstance } from '../family'
@@ -27,7 +30,7 @@ export const reading = defineFamily<ReadingSpec, ReadingKey, ReadingResponse>({
   name: 'reading',
   axis: 'PS',
   facet: 'reading_speed',
-  generatorVersion: '1.1.0',
+  generatorVersion: '1.2.0',
   itemType: 'reading_block',
   strata: [3],
   build: buildReading,
@@ -38,7 +41,7 @@ export const reading = defineFamily<ReadingSpec, ReadingKey, ReadingResponse>({
   },
 })
 
-export { PASSAGES, READING_BANK, passageById } from './bank'
+export { PASSAGES, READING_BANK, passageById, serializeRenderBank, toRenderBank } from './bank'
 export { READING_OPTIONS, READING_QUESTIONS, READING_STRATUM, buildFromPassage, buildReading, readingStructure } from './gen'
 export {
   NORM_WPM,
@@ -61,7 +64,7 @@ export { GATE_MIN_CORRECT, SKIM_WPM, readingBlockObservation, readingResponsePro
 export type { ReadingBlockMeta, ReadingBlockResult, ReadingFlag } from './score'
 export * from './text'
 export type * from './types'
-export { FLOAT_TOL, MAX_WORDS, MIN_PASSAGES, MIN_WORDS, bankProblems, passageChecks, verifyPassage, verifyReading } from './verify'
+export { FLOAT_TOL, MAX_WORDS, MIN_PASSAGES, MIN_WORDS, passageChecks, verifyReading } from './verify'
 export type { PassageUnderTest } from './verify'
 
 export default reading

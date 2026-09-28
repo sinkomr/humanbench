@@ -2,8 +2,11 @@
  * Types of the `reading` family (ROADMAP M1.12, A10, A14; DESIGN §3 row 10, §14.6 example 13).
  *
  * The authored passage bank (`passages.json`, {@link PassageBankFile}) holds public-domain
- * Project Gutenberg excerpts with three literal gate questions each. One item instance is one
- * reading block: a passage, its questions with the option order shuffled per seed, and the key.
+ * Project Gutenberg excerpts with three literal gate questions each, with the verifier-only
+ * evidence spans and option rationales. The runtime reads only its projection
+ * `passages.render.json` ({@link RenderBankFile}), which drops those two fields. One item
+ * instance is one reading block: a passage, its questions with the option order shuffled per
+ * seed, and the key.
  */
 
 /** Where an excerpt comes from (A14: Gutenberg header stripped, provenance recorded). */
@@ -39,8 +42,8 @@ export interface PassageSource {
   readonly last_words: string
 }
 
-/** One authored gate question (bank only; the item's spec carries {@link SpecQuestion}). */
-export interface PassageQuestion {
+/** A gate question as the runtime bank holds it (`passages.render.json`): no evidence, no rationales. */
+export interface RenderQuestion {
   /** `<passage id>#q<k>`, k = 1, 2, 3. */
   readonly id: string
   readonly stem: string
@@ -48,14 +51,37 @@ export interface PassageQuestion {
   readonly options: readonly string[]
   /** Index of the keyed option in `options` (authored order). */
   readonly key_index: number
+}
+
+/**
+ * One authored gate question (`passages.json`; the item's spec carries {@link SpecQuestion}). The
+ * evidence span and rationales are authoring/verification data only (A14): they never reach the
+ * runtime bank, the item or its key.
+ */
+export interface PassageQuestion extends RenderQuestion {
   /** A verbatim substring of the passage text that supports the key. */
   readonly evidence_span: string
   /** One line per option (aligned with `options`): why it is the key, or why it is wrong. */
   readonly option_rationales: readonly string[]
 }
 
+/** One passage as the runtime bank holds it (`passages.render.json`). */
+export interface RenderPassage {
+  readonly id: string
+  readonly source: PassageSource
+  readonly paragraphs: readonly string[]
+  readonly word_count: number
+  readonly questions: readonly RenderQuestion[]
+}
+
+/** The shape of `passages.render.json`: {@link PassageBankFile} without evidence or rationales. */
+export interface RenderBankFile {
+  readonly version: string
+  readonly passages: readonly RenderPassage[]
+}
+
 /** One authored passage record of `passages.json`. */
-export interface PassageRecord {
+export interface PassageRecord extends RenderPassage {
   /** Stable id, e.g. "darwin-beagle-1845"; the family structure (A11: one family per passage). */
   readonly id: string
   readonly source: PassageSource
@@ -92,10 +118,12 @@ export interface ReadingSpec {
   readonly questions: readonly SpecQuestion[]
 }
 
-/** The key: per question (spec order) the keyed option's index in the shuffled options, and its evidence span. */
+/**
+ * The key: per question (spec order) the keyed option's index in the shuffled options. Scoring
+ * needs nothing else; the evidence spans stay in the authored bank (generator 1.2.0).
+ */
 export interface ReadingKey {
   readonly indices: readonly number[]
-  readonly evidence: readonly string[]
 }
 
 /**

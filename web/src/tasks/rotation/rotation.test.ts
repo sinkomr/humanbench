@@ -90,7 +90,7 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     expect(item.params).toEqual({ model: '3pl', a: 1, b: item.difficulty.b_prior, c: 0.25 })
     expect(item.difficulty.sd_prior).toBe(1)
     expect(item.difficulty.provenance).toMatch(/\[SPEC\] v0/)
-    expect(item.time_limit_s).toBe(60)
+    expect(item.time_limit_s).toBe(180) // the shared power-item cap (§13, POWER_TIME_LIMIT_S)
     expect(item.spec.camera).toBe('iso_v1')
     expect(Object.keys(item.difficulty.features).sort()).toEqual(
       ['angle_deg', 'axis_view_cos', 'in_depth', 'n_arms', 'n_cubes', 'n_mirror_moved', 'n_moved'],

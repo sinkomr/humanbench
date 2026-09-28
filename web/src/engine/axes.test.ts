@@ -9,6 +9,7 @@ import {
   initialCorrelation,
   initialSigma,
   isAxisCode,
+  modelFamilyOf,
   N_AXES,
   NEAREST_PD_TOL,
   nearestPD,
@@ -59,7 +60,7 @@ describe('axis registry (DESIGN §3)', () => {
   })
 
   it('matches the shared axis spec row by row', () => {
-    const spec = AXES.map((a) => [a.code, a.name, a.cluster, a.chc, a.tier, a.modelKind, a.status].join(' | '))
+    const spec = AXES.map((a) => [a.code, a.name, a.cluster, a.chc, a.tier, a.defaultModelKind, a.status].join(' | '))
     expect(spec).toEqual([
       'MAT | Matrix & Series | Reasoning | Gf | a | 2pl | active',
       'LR | Logical Reasoning | Reasoning | Gf-verbal | a | 2pl | active',
@@ -67,7 +68,7 @@ describe('axis registry (DESIGN §3)', () => {
       'RC | Reading Comprehension | Verbal | Grw | a | 2pl_testlet | active',
       'VOC | Vocabulary & Verbal Analogies | Verbal | Gc | a | 2pl | active',
       'QR | Quantitative Reasoning | Quantitative | Gq/RQ | a | 2pl | active',
-      'SPA | Spatial | Spatial/Memory | Gv | a | 2pl | active',
+      'SPA | Spatial | Spatial/Memory | Gv | a | 3pl | active',
       'WM | Working Memory | Spatial/Memory | Gwm | b | grm | active',
       'RT | Reaction Time | Speed | Gt | b | gaussian | active',
       'PS | Processing & Reading Speed | Speed | Gs | b | gaussian | active',
@@ -95,9 +96,19 @@ describe('axis registry (DESIGN §3)', () => {
     expect([...new Set(AXES.map((a) => a.cluster))]).toEqual([...CLUSTERS])
   })
 
-  it('models LR as 2PL (A9: k ≤ 4 options → 3PL c = 1/k; k ≥ 5 or numeric entry → 2PL)', () => {
-    expect(axis('LR').modelKind).toBe('2pl')
-    expect(AXES.filter((a) => a.modelKind === '3pl')).toEqual([])
+  it('gives the A9 default models: LR (5 options) 2PL, SPA (4-option rotation) 3PL', () => {
+    expect(axis('LR').defaultModelKind).toBe('2pl')
+    expect(AXES.filter((a) => a.defaultModelKind === '3pl').map((a) => a.code)).toEqual(['SPA'])
+  })
+
+  it('groups models into families; an item only has to share its axis default\'s family (A9 is per item)', () => {
+    expect(modelFamilyOf('2pl')).toBe('dichotomous')
+    expect(modelFamilyOf('3pl')).toBe('dichotomous')
+    expect(modelFamilyOf('2pl_testlet')).toBe('dichotomous')
+    expect(modelFamilyOf('grm')).toBe('graded')
+    expect(modelFamilyOf('gaussian')).toBe('continuous')
+    expect(AXES.filter((a) => modelFamilyOf(a.defaultModelKind) === 'graded').map((a) => a.code)).toEqual(['WM'])
+    expect(AXES.filter((a) => modelFamilyOf(a.defaultModelKind) === 'continuous').map((a) => a.code)).toEqual(['RT', 'PS', 'FER', 'CAL'])
   })
 
   it('is frozen', () => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import rawBank from './passages.json?raw'
-import { MAX_WORDS, MIN_PASSAGES, MIN_WORDS, PASSAGES, READING_BANK, bankProblems, countPassageWords, passageText, verifyPassage } from '.'
+import rawRender from './passages.render.json?raw'
+import { MAX_WORDS, MIN_PASSAGES, MIN_WORDS, PASSAGES as RUNTIME_PASSAGES, READING_BANK as RUNTIME_BANK, countPassageWords, passageText, serializeRenderBank, toRenderBank } from '.'
+import { AUTHORED_BANK as READING_BANK, AUTHORED_PASSAGES as PASSAGES, bankProblems, verifyPassage } from './authoring'
 
 /**
  * Pinned word counts (WORD RULE, `text.ts`): a change to the rule or to a passage shows up here
@@ -33,6 +35,15 @@ async function sha256Hex(text: string): Promise<string> {
 describe('passage bank (A14, ROADMAP M1.12)', () => {
   it('is the pinned file (the bank copy pins the same sha256)', async () => {
     expect(await sha256Hex(rawBank)).toBe(PASSAGES_SHA256)
+  })
+
+  it('ships only its render projection: passages.render.json is passages.json without evidence and rationales', () => {
+    // After editing passages.json: npm run sync:reading-render (from web/).
+    expect(rawRender === serializeRenderBank(toRenderBank(READING_BANK)), 'stale: npm run sync:reading-render').toBe(true)
+    expect(RUNTIME_BANK).toEqual(toRenderBank(READING_BANK))
+    expect(RUNTIME_PASSAGES.map((p) => p.id)).toEqual(PASSAGES.map((p) => p.id))
+    expect(rawRender).not.toMatch(/"(evidence_span|option_rationales)"/)
+    for (const q of RUNTIME_PASSAGES.flatMap((p) => p.questions)) expect(Object.keys(q)).toEqual(['id', 'stem', 'options', 'key_index'])
   })
 
   it('is valid: every passage passes verifyPassage, ids and texts are unique', () => {

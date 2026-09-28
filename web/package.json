@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sync:golden": "sh scripts/sync-golden.sh",
-    "dump:families": "tsx scripts/dump-families.ts"
+    "dump:families": "tsx scripts/dump-families.ts",
+    "dump:coding-scores": "tsx scripts/dump-coding-scores.ts",
+    "sync:reading-render": "tsx scripts/sync-reading-render.ts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
