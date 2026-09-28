@@ -24,7 +24,7 @@
  *     {
  *       "item_id": "i:series:1.3.0:review-series-1", "family": "series", "generator_version": "1.3.0",
  *       "seed": "review-series-1", "family_id": "f:series:0123456789ab", "sibling_group": "f:series:0123456789ab",
- *       "verdict": "pass", "note": "", "reviewed_utc": "2026-10-01T09:12:44Z"
+ *       "verdict": "pass", "note": "", "reviewer": "sinkomr", "reviewed_utc": "2026-10-01T09:12:44Z"
  *     }
  *   ]
  * }
@@ -36,9 +36,12 @@
  *   versions (their ids no longer regenerate, A11; the bank keeps or drops them by version).
  * - `verdict` ∈ pass | fail | unsure; `note` is free text (≤ 2,000 characters); times are UTC
  *   whole seconds (`save/clock.ts`), the wall-clock date of the audit, never a response time.
+ * - `reviewer` (top level): who exported the file; `verdicts[].reviewer`: who gave that verdict
+ *   (merged files keep each verdict's own reviewer). Both are non-empty: the page records no
+ *   verdict and exports nothing until a reviewer name is entered.
  * - Bank ingestion (§12): each verdict becomes the item's `verification.human_audit` =
- *   `{ "by": reviewer, "date": reviewed_utc[0:10], "result": verdict }`, and the family's audit
- *   passes for that generator version iff `planned` = `reviewed` = `pass`.
+ *   `{ "by": verdicts[].reviewer, "date": reviewed_utc[0:10], "result": verdict }`, and the
+ *   family's audit passes for that generator version iff `planned` = `reviewed` = `pass`.
  */
 
 import { utcSeconds, wallClockMs } from '../save/clock'
@@ -70,6 +73,8 @@ export interface VerdictRecord {
   readonly sibling_group: string
   readonly verdict: Verdict
   readonly note: string
+  /** Who gave this verdict (§12 `human_audit.by`); never empty. */
+  readonly reviewer: string
   readonly reviewed_utc: string
 }
 
@@ -121,12 +126,14 @@ const ITEM_ID_RE = /^i:([a-z][a-z0-9_]{0,23}):([^:]+):(.+)$/
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isStr = (v: unknown): v is string => typeof v === 'string'
+/** A reviewer name: a string with something besides white space in it. */
+export const isReviewer = (v: unknown): v is string => isStr(v) && v.trim() !== ''
 
 /** Every way `v` fails to be a {@link VerdictRecord} (empty = valid). */
 export function verdictProblems(v: unknown, where = 'verdict'): string[] {
   if (!isObj(v)) return [`${where} must be an object`]
   const out: string[] = []
-  const fields = ['item_id', 'family', 'generator_version', 'seed', 'family_id', 'sibling_group', 'verdict', 'note', 'reviewed_utc']
+  const fields = ['item_id', 'family', 'generator_version', 'seed', 'family_id', 'sibling_group', 'verdict', 'note', 'reviewer', 'reviewed_utc']
   for (const k of Object.keys(v)) if (!fields.includes(k)) out.push(`${where}: unknown field ${k}`)
   for (const k of fields) if (!isStr(v[k])) out.push(`${where}.${k} must be a string`)
   if (out.length > 0) return out
@@ -135,6 +142,7 @@ export function verdictProblems(v: unknown, where = 'verdict'): string[] {
   else if (m[1] !== v.family || m[2] !== v.generator_version || m[3] !== v.seed) out.push(`${where}: item_id does not match family, generator_version and seed`)
   if (!(VERDICTS as readonly string[]).includes(v.verdict as string)) out.push(`${where}.verdict must be pass, fail or unsure`)
   if ((v.note as string).length > NOTE_MAX) out.push(`${where}.note is longer than ${NOTE_MAX} characters`)
+  if (!isReviewer(v.reviewer)) out.push(`${where}.reviewer must not be empty`)
   if (!UTC_RE.test(v.reviewed_utc as string)) out.push(`${where}.reviewed_utc must be YYYY-MM-DDTHH:MM:SSZ`)
   return out
 }
@@ -185,8 +193,9 @@ export function summarize(store: ReviewStore, planned: readonly PlannedFamily[])
   })
 }
 
-/** The export document (see the module comment). */
+/** The export document (see the module comment); throws without a reviewer name (§12 `human_audit.by`). */
 export function buildExport(store: ReviewStore, planned: readonly PlannedFamily[], exportedUtc: string): ReviewExport {
+  if (!isReviewer(store.reviewer)) throw new RangeError('enter a reviewer name before exporting')
   return {
     schema: REVIEW_SCHEMA,
     exported_utc: exportedUtc,
@@ -205,7 +214,7 @@ export function exportProblems(x: unknown): string[] {
   const out: string[] = []
   if (x.schema !== REVIEW_SCHEMA) out.push(`schema must be ${REVIEW_SCHEMA}`)
   if (!isStr(x.exported_utc) || !UTC_RE.test(x.exported_utc)) out.push('exported_utc must be YYYY-MM-DDTHH:MM:SSZ')
-  if (!isStr(x.reviewer)) out.push('reviewer must be a string')
+  if (!isReviewer(x.reviewer)) out.push('reviewer must be a non-empty string')
   if (x.per_family !== REVIEW_PER_FAMILY) out.push(`per_family must be ${REVIEW_PER_FAMILY}`)
   if (!Array.isArray(x.families)) out.push('families must be an array')
   if (!Array.isArray(x.verdicts)) out.push('verdicts must be an array')
@@ -222,7 +231,11 @@ export function storeFromExport(text: string): ReviewStore {
   return { schema: REVIEW_STORE_SCHEMA, reviewer: e.reviewer, verdicts: Object.fromEntries(e.verdicts.map((v) => [v.item_id, v])) }
 }
 
-/** `base` with `incoming`'s verdicts added; on the same item the later `reviewed_utc` wins (ties keep `base`). */
+/**
+ * `base` with `incoming`'s verdicts added; on the same item the later `reviewed_utc` wins (ties
+ * keep `base`). Each verdict keeps its own reviewer; the store's reviewer (who works in this
+ * browser) stays `base`'s unless it has none.
+ */
 export function mergeStores(base: ReviewStore, incoming: ReviewStore): ReviewStore {
   const verdicts: Record<string, VerdictRecord> = { ...base.verdicts }
   for (const [id, v] of Object.entries(incoming.verdicts)) {

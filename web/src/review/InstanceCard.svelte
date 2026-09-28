@@ -15,14 +15,21 @@
     readonly instance: ReviewInstance
     readonly renderer: { readonly component: AnyRenderer; readonly source: 'entry' | 'visual' } | null
     readonly record: VerdictRecord | undefined
+    /** False until the page has a reviewer name: every verdict records who gave it (§12). */
+    readonly canMark: boolean
     readonly onverdict: (verdict: Verdict | null, note: string) => void
   }
 
-  let { family, instance, renderer, record, onverdict }: Props = $props()
+  let { family, instance, renderer, record, canMark, onverdict }: Props = $props()
 
   const uid = $props.id()
-  // svelte-ignore state_referenced_locally
-  let note = $state(record?.note ?? '')
+  let note = $state('')
+  // The note field follows the stored note whenever that changes (a save here, an import, Clear
+  // all), and otherwise keeps what the reviewer is typing. A string: an unchanged note re-runs nothing.
+  const storedNote = $derived(record?.note)
+  $effect.pre(() => {
+    note = storedNote ?? ''
+  })
   let lastResponse: string | null = $state(null)
   let lastScore: string | null = $state(null)
   let run = $state(0)
@@ -129,13 +136,13 @@
     <legend>Verdict for #{instance.index}</legend>
     <div class="choices">
       {#each VERDICTS as v (v)}
-        <label><input type="radio" name="{uid}-verdict" value={v} checked={record?.verdict === v} onchange={() => setVerdict(v)} /> {v}</label>
+        <label><input type="radio" name="{uid}-verdict" value={v} checked={record?.verdict === v} disabled={!canMark} onchange={() => setVerdict(v)} /> {v}</label>
       {/each}
       <button type="button" class="btn" disabled={!record} onclick={() => setVerdict(null)}>Clear</button>
     </div>
     <label class="note-label" for="{uid}-note">Note (what is wrong, or why unsure)</label>
     <textarea id="{uid}-note" rows="2" maxlength={NOTE_MAX} bind:value={note} onchange={() => record && setVerdict(record.verdict)}></textarea>
-    {#if record}<p class="small-text">Saved {record.reviewed_utc}</p>{/if}
+    {#if record}<p class="small-text">Saved {record.reviewed_utc} by {record.reviewer}</p>{/if}
   </fieldset>
 </article>
 

@@ -3,7 +3,9 @@
   the fixed board coordinates of the spec (`CORSI_BOARD`), the same for every item. Each trial
   lights blocks one at a time at the spec's rate, locked to animation frames, then the taker
   repeats the order by clicking or tapping blocks, or from the keyboard (arrow keys move between
-  blocks, Enter or Space picks one, 1–9 pick a block by its number, Backspace undoes). The family's
+  blocks, Enter or Space picks one, 1–9 pick a block by its number, Backspace undoes; held keys do
+  not repeat a pick). The numbers are the blocks' accessible names only: they are not drawn, so a
+  sighted taker cannot recode the positions as a digit string (the task stays visuospatial). The family's
   state machine (`advanceSpan`, via `run.ts`) picks the next trial and ends the block; the response
   is the list of picked block indices per trial given (`SpanResponse`). Blocks carry only their
   fixed number, and nothing marks the target order in the DOM.
@@ -116,6 +118,9 @@
       event.preventDefault()
       focusIndex = nearestInDirection(board.blocks, focusIndex, dir)
       blockButtons()[focusIndex]?.focus()
+    } else if (event.repeat) {
+      // A held key picks, undoes or finishes once, as the coding and RT renderers do.
+      if (d !== null || event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter') event.preventDefault()
     } else if (d !== null && d >= 1 && d <= board.blocks.length) {
       event.preventDefault()
       pick(d - 1)
@@ -139,8 +144,8 @@
   {#if phase === 'intro'}
     <p class="hb-instructions">
       Blocks on the board will light up one at a time. When the sequence ends, select the blocks in the same order: click or tap
-      them, or use the arrow keys and Enter (each block also has a number, 1 to 9, reading roughly from the top). Then choose Done.
-      Sequences get longer as you go.
+      them, or use the arrow keys and Enter. Then choose Done. Sequences get longer as you go. With a screen reader, the blocks are
+      named Block 1 to Block 9, and the number keys 1 to 9 select the block of that name.
     </p>
     <button type="button" class="hb-btn hb-primary" onclick={start}>Start</button>
   {:else}

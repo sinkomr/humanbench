@@ -19,6 +19,9 @@
   const clock = $derived((timing ?? browserTiming()).clock)
   const parts = $derived(stemParts(spec.stem))
   const accepts = (t: string): boolean => parseEntry(t) !== null
+  // An expression, not literal text: Svelte trims the edge spaces of a text-only element's content,
+  // which ran the words into the stem ("xto the power2").
+  const SPOKEN_POWER = ' to the power '
 
   onMount(() => {
     if (!onshown) return
@@ -30,7 +33,7 @@
 
 <section class="hb-render quant" aria-label="Quantitative question">
   <p class="stem">
-    {#each parts as part, i (i)}{#if 'sup' in part}<span class="hb-sr-only"> to the power </span><sup>{part.sup}</sup>{:else}{part.text}{/if}{/each}
+    {#each parts as part, i (i)}{#if 'sup' in part}<span class="hb-sr-only">{SPOKEN_POWER}</span><sup>{part.sup}</sup>{:else}{part.text}{/if}{/each}
   </p>
   <NumericEntry
     format={spec.input_format}

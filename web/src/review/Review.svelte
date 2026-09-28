@@ -15,6 +15,7 @@
     REVIEW_STORAGE_KEY,
     buildExport,
     emptyStore,
+    isReviewer,
     mergeStores,
     nowUtc,
     parseStore,
@@ -26,6 +27,8 @@
   } from './verdicts'
 
   const PER_OPTIONS = [1, 5, 10, 30] as const
+  /** Visible verdict marks on the instance chips (§13: never colour alone). */
+  const VERDICT_MARKS: Readonly<Record<Verdict, string>> = { pass: '✓', fail: '✗', unsure: '?' }
   /** Visual renderers may hold a WebGL context each (rotation); browsers keep about 16 alive. */
   const MAX_VISUAL_PER = 10
 
@@ -66,6 +69,8 @@
   const current = $derived(Math.min(Math.max(page, 1), pages))
   const shown = $derived(instances.slice((current - 1) * perPage, current * perPage))
   const summaries = $derived(summarize(store, planned))
+  // Every verdict records who gave it (§12 human_audit.by), so none is taken before a name is entered.
+  const hasReviewer = $derived(isReviewer(store.reviewer))
 
   $effect(() => {
     const q = new URLSearchParams({ family: familyName, page: String(current), per: String(per) })
@@ -89,6 +94,10 @@
   function setVerdict(index: number, verdict: Verdict | null, note: string): void {
     const inst = instances[index - 1]
     if (!family || !inst || !inst.ok) return
+    if (verdict !== null && !hasReviewer) {
+      status = 'Enter your name as the reviewer first: each verdict records who gave it.'
+      return
+    }
     const item = inst.item
     persist(
       withVerdict(
@@ -105,6 +114,7 @@
               sibling_group: item.sibling_group,
               verdict,
               note,
+              reviewer: store.reviewer,
               reviewed_utc: nowUtc(),
             },
       ),
@@ -117,6 +127,10 @@
   }
 
   function exportJson(): void {
+    if (!hasReviewer) {
+      status = 'Enter your name as the reviewer before exporting.'
+      return
+    }
     const stamp = nowUtc()
     const doc = buildExport(store, planned, stamp)
     const blob = new Blob([`${JSON.stringify(doc, null, 2)}\n`], { type: 'application/json' })
@@ -174,6 +188,7 @@
   </p>
   <div class="toolbar">
     <label>Reviewer <input type="text" value={store.reviewer} onchange={setReviewer} autocomplete="off" /></label>
+    {#if !hasReviewer}<span class="need">Enter your name to record verdicts.</span>{/if}
     <button type="button" class="btn" onclick={exportJson}>Export JSON</button>
     <label class="btn file">Import JSON <input bind:this={fileInput} type="file" accept="application/json,.json" onchange={(e) => void importJson(e)} /></label>
     <button type="button" class="btn" onclick={clearAll}>Clear all</button>
@@ -205,7 +220,9 @@
           {@const v = verdictOf(inst.ok ? inst.item.item_id : undefined)}
           <li>
             <a href="#inst-{inst.index}" class="chip {v?.verdict ?? 'open'}" onclick={(e) => goTo(inst.index, e)}>
-              {inst.index}<span class="hb-sr-only">: {v?.verdict ?? (inst.ok ? 'not reviewed' : 'failed to generate')}</span>
+              {inst.index}{#if v}<span class="mark" aria-hidden="true">{VERDICT_MARKS[v.verdict]}</span>{/if}<span class="hb-sr-only"
+                >: {v?.verdict ?? (inst.ok ? 'not reviewed' : 'failed to generate')}</span
+              >
             </a>
           </li>
         {/each}
@@ -230,6 +247,7 @@
             instance={inst}
             {renderer}
             record={verdictOf(inst.ok ? inst.item.item_id : undefined)}
+            canMark={hasReviewer}
             onverdict={(v, note) => setVerdict(inst.index, v, note)}
           />
         </div>
@@ -372,6 +390,8 @@
 
   .chip {
     display: inline-grid;
+    grid-auto-flow: column;
+    gap: 0.125rem;
     place-items: center;
     min-width: 2.75rem;
     min-height: 2.75rem;
@@ -381,6 +401,14 @@
     text-decoration: none;
     font-variant-numeric: tabular-nums;
     box-sizing: border-box;
+  }
+
+  .mark {
+    font-weight: 700;
+  }
+
+  .need {
+    font-weight: 600;
   }
 
   .chip.pass {

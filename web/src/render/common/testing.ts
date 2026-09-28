@@ -102,10 +102,15 @@ export function click(el: Element | null | undefined): void {
   flushSync()
 }
 
-/** A pointerdown on an element (jsdom has no PointerEvent: a MouseEvent of that type). */
-export function pointerDown(el: Element | null | undefined): void {
+/**
+ * A pointerdown on an element (jsdom has no PointerEvent: a MouseEvent of that type, with
+ * `pointerType` set when given, e.g. 'mouse' or 'touch').
+ */
+export function pointerDown(el: Element | null | undefined, pointerType?: string): void {
   if (!(el instanceof HTMLElement)) throw new Error(`pointerDown(): no element (${String(el)})`)
-  el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }))
+  const ev = new MouseEvent('pointerdown', { bubbles: true, cancelable: true })
+  if (pointerType !== undefined) Object.defineProperty(ev, 'pointerType', { value: pointerType })
+  el.dispatchEvent(ev)
   flushSync()
 }
 

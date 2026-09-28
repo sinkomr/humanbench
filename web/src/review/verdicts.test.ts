@@ -29,7 +29,7 @@ const planned = [
   { family: 'quant', generator_version: '1.3.0' },
 ]
 
-function rec(family: string, i: number, verdict: Verdict, utc = '2026-10-01T09:00:00Z', version = '1.3.0'): VerdictRecord {
+function rec(family: string, i: number, verdict: Verdict, utc = '2026-10-01T09:00:00Z', version = '1.3.0', reviewer = 'sinkomr'): VerdictRecord {
   const seed = reviewSeed(family, i)
   return {
     item_id: `i:${family}:${version}:${seed}`,
@@ -40,6 +40,7 @@ function rec(family: string, i: number, verdict: Verdict, utc = '2026-10-01T09:0
     sibling_group: `f:${family}:0123456789ab`,
     verdict,
     note: '',
+    reviewer,
     reviewed_utc: utc,
   }
 }
@@ -52,6 +53,11 @@ describe('verdict records', () => {
     expect(verdictProblems({ ...rec('series', 1, 'pass'), reviewed_utc: '2026-10-01' })).not.toEqual([])
     expect(verdictProblems({ ...rec('series', 1, 'pass'), note: 'x'.repeat(2001) })).not.toEqual([])
     expect(verdictProblems({ ...rec('series', 1, 'pass'), extra: 1 })).not.toEqual([])
+    expect(verdictProblems({ ...rec('series', 1, 'pass'), reviewer: '' })).not.toEqual([])
+    expect(verdictProblems({ ...rec('series', 1, 'pass'), reviewer: '  ' })).not.toEqual([])
+    const noReviewer: Record<string, unknown> = { ...rec('series', 1, 'pass') }
+    delete noReviewer.reviewer
+    expect(verdictProblems(noReviewer)).not.toEqual([])
     expect(verdictProblems(null)).not.toEqual([])
   })
 
@@ -109,6 +115,15 @@ describe('summaries and export', () => {
     expect(exportProblems(JSON.parse(JSON.stringify(doc)))).toEqual([])
     expect(exportProblems({ ...doc, schema: 'x' })).not.toEqual([])
     expect(exportProblems({ ...doc, verdicts: [{}] })).not.toEqual([])
+    expect(exportProblems({ ...doc, reviewer: '' })).not.toEqual([])
+  })
+
+  it('refuses to export without a reviewer name (§12 human_audit.by)', () => {
+    const r = rec('quant', 2, 'pass')
+    const s = withVerdict(emptyStore(), r.item_id, r)
+    expect(() => buildExport(s, planned, '2026-10-02T10:00:00Z')).toThrow(RangeError)
+    expect(() => buildExport({ ...s, reviewer: ' ' }, planned, '2026-10-02T10:00:00Z')).toThrow(RangeError)
+    expect(buildExport({ ...s, reviewer: 'me' }, planned, '2026-10-02T10:00:00Z').reviewer).toBe('me')
   })
 
   it('an export imports back to the same verdicts; bad files are refused', () => {
@@ -118,6 +133,22 @@ describe('summaries and export', () => {
     expect(back).toEqual(s)
     expect(() => storeFromExport('{"schema":"hb.g7_review.v1"}')).toThrow(RangeError)
     expect(() => storeFromExport('not json')).toThrow()
+  })
+
+  it('merge keeps each verdict\'s own reviewer and this browser\'s reviewer name', () => {
+    const mine = rec('quant', 1, 'pass', '2026-09-10T00:00:00Z', '1.3.0', 'alice')
+    const theirs = [rec('quant', 1, 'fail', '2026-09-11T00:00:00Z', '1.3.0', 'bob'), rec('series', 2, 'unsure', '2026-09-11T00:00:00Z', '1.3.0', 'bob')]
+    const a = withVerdict({ ...emptyStore(), reviewer: 'alice' }, mine.item_id, mine)
+    const b = theirs.reduce((s, r) => withVerdict(s, r.item_id, r), { ...emptyStore(), reviewer: 'bob' })
+    const m = mergeStores(a, storeFromExport(JSON.stringify(buildExport(b, planned, '2026-09-12T00:00:00Z'))))
+    expect(m.reviewer).toBe('alice')
+    expect(Object.values(m.verdicts).map((v) => [v.item_id, v.reviewer])).toEqual([
+      ['i:quant:1.3.0:review-quant-1', 'bob'],
+      ['i:series:1.3.0:review-series-2', 'bob'],
+    ])
+    const doc = buildExport(m, planned, '2026-09-13T00:00:00Z')
+    expect(doc.reviewer).toBe('alice')
+    expect(doc.verdicts.every((v) => v.reviewer === 'bob')).toBe(true)
   })
 
   it('merge keeps the later review of an item, and is idempotent (property)', () => {

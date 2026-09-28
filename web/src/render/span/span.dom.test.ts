@@ -124,6 +124,19 @@ describe('DigitSpanRenderer', () => {
     expect(spanFwd.score(item, m.responses[0] as SpanResponse).observation).toMatchObject({ y: 0 })
   })
 
+  it('a held key (auto-repeat) enters its digit once', () => {
+    const item = spanFwd.generate('render-span-repeat')
+    const m = mountSpan(item, DigitSpanRenderer)
+    click(buttonByText(m.container, 'Start'))
+    until(m.display, () => inEntry(m.container))
+    press('6')
+    press('6', null, { repeat: true })
+    press('6', null, { repeat: true })
+    expect([...m.container.querySelectorAll('.slot')].map((s) => s.textContent)).toEqual(['6', '', ''])
+    press('Enter', null, { repeat: true })
+    expect(m.container.textContent).not.toMatch(/Next sequence coming up/)
+  })
+
   it('ignores keys meant for another element outside the renderer', () => {
     const item = spanFwd.generate('render-span-own-keys')
     const m = mountSpan(item, DigitSpanRenderer)
@@ -196,6 +209,31 @@ describe('CorsiRenderer', () => {
     }
     expect(m.responses[0]).toEqual(targets)
     expect(corsi.score(item, m.responses[0] as SpanResponse).observation).toMatchObject({ kind: 'grm', y: 8 })
+  })
+
+  it('a held number key picks its block once; held arrows still move', () => {
+    const item = corsi.generate('render-corsi-repeat')
+    const m = mountSpan(item, CorsiRenderer)
+    click(buttonByText(m.container, 'Start'))
+    until(m.display, () => inEntry(m.container))
+    press('4')
+    press('4', null, { repeat: true })
+    expect(m.container.textContent).toContain('Selected 1 of 3.')
+    const blocks = [...m.container.querySelectorAll<HTMLButtonElement>('button.block')]
+    const board = item.spec.board?.blocks ?? []
+    press('ArrowRight', null, { repeat: true })
+    expect(document.activeElement).toBe(blocks[nearestInDirection(board, 3, 'right')])
+  })
+
+  it('names the blocks by number for screen readers, draws no numbers, and says so accurately', () => {
+    const m = mountSpan(corsi.generate('render-corsi-copy'), CorsiRenderer)
+    const intro = m.container.querySelector('.hb-instructions')?.textContent ?? ''
+    expect(intro).not.toMatch(/from the top/)
+    expect(intro).toMatch(/screen reader/)
+    click(buttonByText(m.container, 'Start'))
+    const blocks = [...m.container.querySelectorAll<HTMLButtonElement>('button.block')]
+    expect(blocks.map((b) => b.getAttribute('aria-label'))).toEqual(blocks.map((_, i) => `Block ${i + 1}`))
+    expect(blocks.every((b) => (b.textContent ?? '').trim() === '')).toBe(true)
   })
 
   it('arrow keys move focus to the nearest block that way', () => {

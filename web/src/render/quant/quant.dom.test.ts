@@ -52,9 +52,29 @@ describe('QuantRenderer', () => {
   it('shows the stem text and the spec hint', () => {
     const item = quant.generate('render-quant-1')
     const { container } = mountItem(item)
-    const stemText = (container.querySelector('.stem')?.textContent ?? '').replace(/ to the power /g, '^')
-    expect(stemText.replace(/\s+/g, ' ').trim()).toBe(item.spec.stem.replace(/\^\(([^()]+)\)/g, '^$1'))
+    expect(container.querySelector('.stem')?.textContent).toBe(item.spec.stem)
     expect(container.querySelector('.hint')?.textContent).toBe(item.spec.hint)
+  })
+
+  it('reads powers as " to the power " with the spaces kept (x^2, 9^(3/2), (3^5)^2 in generated stems)', () => {
+    const spoken = (stem: string): string => stem.replace(/\^\(([^()]+)\)/g, ' to the power $1').replace(/\^([0-9A-Za-z]+)/g, ' to the power $1')
+    const found = { plain: 0, bracketed: 0, grouped: 0 }
+    for (let i = 0; i < 400; i++) {
+      const item = quant.generate(`render-quant-stem-${i}`)
+      const stem = item.spec.stem
+      if (!stem.includes('^')) continue
+      if (/\^[0-9A-Za-z]/.test(stem)) found.plain++
+      if (stem.includes('^(')) found.bracketed++
+      if (stem.includes(')^')) found.grouped++
+      const m = mountItem(item)
+      const text = m.container.querySelector('.stem')?.textContent ?? ''
+      expect(text, item.item_id).toBe(spoken(stem))
+      expect(text, item.item_id).not.toMatch(/\Sto the power|to the power\S/)
+      m.destroy()
+    }
+    expect(found.plain).toBeGreaterThan(0)
+    expect(found.bracketed).toBeGreaterThan(0)
+    expect(found.grouped).toBeGreaterThan(0)
   })
 
   it('typing the key (and its decimal form) sends that text, and score() marks it correct', () => {

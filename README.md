@@ -115,7 +115,10 @@ the response the family's `score()` takes (`web/src/render/common/props.ts`). `w
 maps the typed-entry and block families (series, quant, span_fwd, span_bwd, corsi, rt_simple,
 rt_choice4, coding, reading) to their renderers; `web/src/render/visual.ts` maps the image
 families. Timing uses animation frames for onsets and `performance.now()` for responses, through
-the RT timing utilities (`web/src/tasks/rt/timing.ts`). `web/src/render/entry-leak.dom.test.ts`
+the RT timing utilities (`web/src/tasks/rt/timing.ts`). The RT renderer also reports, through
+`oninputtype`, whether a block's responses came from the keyboard, a mouse or touch (from each
+tap's `pointerType`), for the RT observation's `input_type` (DESIGN §11.6 norms them separately).
+`web/src/render/entry-leak.dom.test.ts`
 renders hundreds of generated instances and fails if the key, or anything that tells the keyed
 option apart, reaches the DOM.
 
@@ -138,11 +141,13 @@ npm run review
 ```
 
 Choose a family at the top, set "Per page" (1, 5, 10 or 30), and enter your name as the
-reviewer. Verdicts are saved in this browser (localStorage) as you go. "Export JSON" downloads
+reviewer: the verdict buttons and the export stay off until you do, because every verdict
+records who gave it. Verdicts are saved in this browser (localStorage) as you go. "Export JSON" downloads
 them as a `hb.g7_review.v1` file for the bank; "Import JSON" merges such a file back in (for
 example on another machine). The file format is documented in `web/src/review/verdicts.ts`: a
 summary row per family (planned, reviewed, pass, fail, unsure) and one row per verdict (item id,
-family, generator version, seed, family_id, sibling_group, verdict, note, UTC time). A family
+family, generator version, seed, family_id, sibling_group, verdict, note, reviewer, UTC time;
+an imported verdict keeps its own reviewer). A family
 passes when all 30 of its instances pass; after a fail, fix the cause and audit the family again
 (a generator fix bumps its version, which gives new instance ids, so old verdicts do not carry
 over).

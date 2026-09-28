@@ -97,22 +97,26 @@ test.describe('renderer gallery (dev server)', () => {
 
   test('verdicts persist across reloads and export as hb.g7_review.v1 JSON', async ({ page }) => {
     await openFamily(page, 'quant', 1)
+    // No verdict before a reviewer name: every verdict records who gave it (§12 human_audit.by).
+    await expect(page.getByRole('radio', { name: 'fail' })).toBeDisabled()
     await page.getByLabel('Reviewer').fill('e2e-reviewer')
     await page.getByLabel('Reviewer').press('Tab')
     await page.getByRole('radio', { name: 'fail' }).check()
     await page.getByLabel(/^Note/).fill('stem typo')
     await page.getByLabel(/^Note/).press('Tab')
     await expect(page.getByRole('status')).toContainText('Saved #1: fail')
+    // The chip shows the verdict by a sign too, not by colour alone (§13).
+    await expect(page.getByRole('navigation', { name: 'Instances of quant' }).getByRole('link', { name: /^1 ?: fail$/ })).toContainText('✗')
     await page.reload()
     await expect(page.getByRole('radio', { name: 'fail' })).toBeChecked()
     await expect(page.getByLabel(/^Note/)).toHaveValue('stem typo')
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export JSON' }).click()])
     const path = await download.path()
     const { readFileSync } = await import('node:fs')
-    const doc = JSON.parse(readFileSync(path, 'utf8')) as { schema: string; reviewer: string; verdicts: { item_id: string; verdict: string; note: string }[]; families: { family: string; fail: number }[] }
+    const doc = JSON.parse(readFileSync(path, 'utf8')) as { schema: string; reviewer: string; verdicts: { item_id: string; verdict: string; note: string; reviewer: string }[]; families: { family: string; fail: number }[] }
     expect(doc.schema).toBe('hb.g7_review.v1')
     expect(doc.reviewer).toBe('e2e-reviewer')
-    expect(doc.verdicts).toEqual([expect.objectContaining({ item_id: expect.stringMatching(/^i:quant:[^:]+:review-quant-1$/), verdict: 'fail', note: 'stem typo' })])
+    expect(doc.verdicts).toEqual([expect.objectContaining({ item_id: expect.stringMatching(/^i:quant:[^:]+:review-quant-1$/), verdict: 'fail', note: 'stem typo', reviewer: 'e2e-reviewer' })])
     expect(doc.families.find((f) => f.family === 'quant')?.fail).toBe(1)
   })
 })

@@ -102,6 +102,11 @@
   function onkey(event: KeyboardEvent): void {
     if (phase !== 'entry' || !isOwnKey(root, event)) return
     const d = digitOfKey(event)
+    if (event.repeat) {
+      // A held key enters, erases or finishes once, as the coding and RT renderers do.
+      if (d !== null || event.key === 'Backspace' || event.key === 'Delete' || event.key === 'Enter') event.preventDefault()
+      return
+    }
     if (d !== null && d >= 1) {
       event.preventDefault()
       add(d)

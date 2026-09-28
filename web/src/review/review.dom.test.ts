@@ -6,12 +6,12 @@
  */
 
 import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ENTRY_RENDERERS } from '../render/entry'
 import { FAMILY_NAMES, getFamily } from '../tasks/registry'
 import { plannedFamilies, rendererFor, rendererMapsOf, reviewFamilies, reviewInstance, reviewInstances } from './instances'
 import Review from './Review.svelte'
-import { REVIEW_PER_FAMILY, REVIEW_STORAGE_KEY, parseStore, reviewSeed } from './verdicts'
+import { REVIEW_PER_FAMILY, REVIEW_STORAGE_KEY, buildExport, emptyStore, parseStore, reviewSeed, withVerdict, type ReviewStore, type VerdictRecord } from './verdicts'
 
 describe('review instances', () => {
   it('covers every registered family with its current generator version', () => {
@@ -80,9 +80,104 @@ describe('Review page', () => {
     expect(location.search).toContain('family=quant')
   })
 
+  function setReviewer(name: string): void {
+    const input = [...document.querySelectorAll('label')].find((l) => l.textContent?.trim().startsWith('Reviewer'))?.querySelector('input') as HTMLInputElement
+    input.value = name
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    flushSync()
+  }
+
+  const firstCard = (): HTMLElement => document.querySelector('article') as HTMLElement
+  const noteOf = (card: HTMLElement): HTMLTextAreaElement => card.querySelector('textarea') as HTMLTextAreaElement
+  const radio = (card: HTMLElement, v: string): HTMLInputElement => card.querySelector(`input[type="radio"][value="${v}"]`) as HTMLInputElement
+
+  function mark(card: HTMLElement, verdict: string, note: string): void {
+    const t = noteOf(card)
+    t.value = note
+    t.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+    radio(card, verdict).click()
+    flushSync()
+  }
+
+  function quantRecord(i: number, patch: Partial<VerdictRecord>): VerdictRecord {
+    const inst = reviewInstances(getFamily('quant') as Parameters<typeof reviewInstances>[0])[i - 1]
+    if (!inst?.ok) throw new Error('no instance')
+    const it = inst.item
+    return { item_id: it.item_id, family: 'quant', generator_version: it.generator_version, seed: it.seed, family_id: it.family_id, sibling_group: it.sibling_group, verdict: 'pass', note: '', reviewer: 'someone', reviewed_utc: '2026-09-01T00:00:00Z', ...patch }
+  }
+
+  it('takes no verdict and exports nothing before a reviewer name is entered', () => {
+    app = mount(Review, { target: document.body })
+    flushSync()
+    expect(radio(firstCard(), 'pass').disabled).toBe(true)
+    expect(document.body.textContent).toContain('Enter your name to record verdicts.')
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Export JSON')?.click()
+    flushSync()
+    expect(document.querySelector('[role="status"]')?.textContent).toMatch(/reviewer before exporting/)
+    setReviewer('tester')
+    expect(radio(firstCard(), 'pass').disabled).toBe(false)
+    expect(parseStore(localStorage.getItem(REVIEW_STORAGE_KEY)).reviewer).toBe('tester')
+  })
+
+  it('marks each chip with a visible sign, not colour alone (§13)', () => {
+    app = mount(Review, { target: document.body })
+    flushSync()
+    setReviewer('tester')
+    mark(firstCard(), 'fail', '')
+    const chip = document.querySelector('nav[aria-label="Instances of quant"] a.fail') as HTMLElement
+    expect(chip.querySelector('.mark')?.textContent).toBe('✗')
+    expect(chip.querySelector('.mark')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('the note field follows the stored note after an import and after Clear all', async () => {
+    app = mount(Review, { target: document.body })
+    flushSync()
+    setReviewer('tester')
+    mark(firstCard(), 'pass', 'local note')
+    expect(noteOf(firstCard()).value).toBe('local note')
+    // Import a later review of the same instance, by someone else.
+    const later = quantRecord(1, { verdict: 'fail', note: 'imported note', reviewer: 'other', reviewed_utc: '2099-01-01T00:00:00Z' })
+    const incoming: ReviewStore = withVerdict({ ...emptyStore(), reviewer: 'other' }, later.item_id, later)
+    const file = new File([JSON.stringify(buildExport(incoming, [], '2099-01-01T00:00:01Z'))], 'in.json', { type: 'application/json' })
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', { value: [file], configurable: true })
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await vi.waitFor(() => expect(document.querySelector('[role="status"]')?.textContent).toContain('Imported 1'))
+    flushSync()
+    expect(noteOf(firstCard()).value).toBe('imported note')
+    expect(radio(firstCard(), 'fail').checked).toBe(true)
+    expect(firstCard().textContent).toContain('by other')
+    // A new verdict now keeps the imported note, and is credited to this reviewer.
+    radio(firstCard(), 'unsure').click()
+    flushSync()
+    expect(parseStore(localStorage.getItem(REVIEW_STORAGE_KEY)).verdicts[later.item_id]).toMatchObject({ verdict: 'unsure', note: 'imported note', reviewer: 'tester' })
+    // Clear all empties the field.
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Clear all')?.click()
+    flushSync()
+    confirmSpy.mockRestore()
+    expect(noteOf(firstCard()).value).toBe('')
+    expect(radio(firstCard(), 'unsure').checked).toBe(false)
+  })
+
+  it('keeps an unsaved note while other cards are marked', () => {
+    app = mount(Review, { target: document.body })
+    flushSync()
+    setReviewer('tester')
+    const [one, two] = [...document.querySelectorAll('article')] as HTMLElement[]
+    const t = noteOf(two as HTMLElement)
+    t.value = 'draft'
+    t.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+    mark(one as HTMLElement, 'pass', '')
+    expect(noteOf(two as HTMLElement).value).toBe('draft')
+  })
+
   it('saves a verdict with its note to localStorage and shows it after a remount', () => {
     app = mount(Review, { target: document.body })
     flushSync()
+    setReviewer('tester')
     const card = document.querySelector('article') as HTMLElement
     const note = card.querySelector('textarea') as HTMLTextAreaElement
     note.value = 'hint wording'
@@ -93,7 +188,7 @@ describe('Review page', () => {
     const stored = parseStore(localStorage.getItem(REVIEW_STORAGE_KEY))
     const rows = Object.values(stored.verdicts)
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ family: 'quant', seed: 'review-quant-1', verdict: 'unsure', note: 'hint wording' })
+    expect(rows[0]).toMatchObject({ family: 'quant', seed: 'review-quant-1', verdict: 'unsure', note: 'hint wording', reviewer: 'tester' })
     expect(document.querySelector('[role="status"]')?.textContent).toContain('Saved #1: unsure')
     void unmount(app)
     document.body.innerHTML = ''

@@ -6,12 +6,13 @@
  * well-formed `RtResponse` that the family's score() turns into its observation; plus snapshots.
  */
 
+import fc from 'fast-check'
 import { afterEach, describe, expect, it } from 'vitest'
 import { rtChoice4, rtResponseProblems, rtSimple, type RtItem } from '../../tasks/rt'
 import type { RtResponse } from '../../tasks/rt/types'
 import { normalizeIds } from '../common/leak'
 import { buttonByText, click, fakeDisplay, pointerDown, press, render, type FakeDisplay } from '../common/testing'
-import { CHOICE_KEYS, RT_EARLY_ITI_MS, RT_ITI_MS, positionOfKey, responseWindowMs, type RtInputMode } from './keys'
+import { CHOICE_KEYS, RT_EARLY_ITI_MS, RT_ITI_MS, pointerInputType, positionOfKey, responseWindowMs, type RtInputMode, type RtInputType } from './keys'
 import RtRenderer from './RtRenderer.svelte'
 
 const FRAME = 1000 / 60
@@ -26,11 +27,20 @@ function mountRt(item: RtItem, inputMode?: RtInputMode) {
   const display = fakeDisplay()
   const responses: RtResponse[] = []
   const modes: RtInputMode[] = []
-  const props: Record<string, unknown> = { spec: item.spec, onrespond: (x: RtResponse) => responses.push(x), timing: display, oninputmode: (m: RtInputMode) => modes.push(m) }
+  const types: RtInputType[] = []
+  /** Callback order: 'type' (oninputtype) must come before 'respond'. */
+  const calls: string[] = []
+  const props: Record<string, unknown> = {
+    spec: item.spec,
+    onrespond: (x: RtResponse) => (calls.push('respond'), responses.push(x)),
+    timing: display,
+    oninputmode: (m: RtInputMode) => modes.push(m),
+    oninputtype: (x: RtInputType) => (calls.push('type'), types.push(x)),
+  }
   if (inputMode) props.inputMode = inputMode
   const r = render(RtRenderer, props as never)
   cleanup.push(r.destroy)
-  return { ...r, display, responses, modes }
+  return { ...r, display, responses, modes, types, calls }
 }
 
 const stimulusOn = (root: HTMLElement): boolean => root.querySelector('.pad.on') !== null
@@ -54,6 +64,25 @@ function answerTrial(m: ReturnType<typeof mountRt>, key: string | null, rtMs: nu
     press(key)
   }
   return onsetTs
+}
+
+/** Run a whole tap-or-click block, each response a pointerdown of `pointerTypes(stage, i)` 300 ms after onset. */
+function tapBlock(m: ReturnType<typeof mountRt>, item: RtItem, pointerTypes: (practice: boolean, i: number) => string | undefined): RtResponse {
+  click(buttonByText(m.container, 'Start practice'))
+  for (const practice of [true, false]) {
+    const pos = practice ? item.spec.practice_positions : item.spec.positions
+    for (let i = 0; i < pos.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      m.display.advance(300)
+      pointerDown(m.container.querySelectorAll('button.pad')[pos[i] ?? 0], pointerTypes(practice, i))
+    }
+    if (practice) {
+      until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+      click(buttonByText(m.container, 'Start'))
+    }
+  }
+  until(m.display, () => m.responses.length === 1, 20_000)
+  return m.responses[0] as RtResponse
 }
 
 function keyFor(item: RtItem, practice: boolean, i: number): string {
@@ -168,6 +197,45 @@ describe('RtRenderer', () => {
     pointerDown(m.container.querySelectorAll('button.pad')[p])
     expect(stimulusOn(m.container)).toBe(false)
     expect(m.container.querySelector('.hb-status')?.textContent).toBe('320 ms')
+  })
+
+  it('pointerInputType: mouse iff most responses were mouse; pen, unknown and ties count as touch (property)', () => {
+    expect(pointerInputType([], 'mouse')).toBe('mouse')
+    expect(pointerInputType([], 'touch')).toBe('touch')
+    expect(pointerInputType(['mouse', 'mouse'], 'touch')).toBe('mouse')
+    expect(pointerInputType(['touch'], 'mouse')).toBe('touch')
+    expect(pointerInputType(['pen', ''], 'mouse')).toBe('touch')
+    expect(pointerInputType(['mouse', 'touch'], 'mouse')).toBe('touch')
+    fc.assert(
+      fc.property(fc.array(fc.constantFrom('mouse', 'touch', 'pen', ''), { minLength: 1, maxLength: 60 }), fc.constantFrom<'mouse' | 'touch'>('mouse', 'touch'), (types, fallback) => {
+        const mice = types.filter((t) => t === 'mouse').length
+        expect(pointerInputType(types, fallback)).toBe(2 * mice > types.length ? 'mouse' : 'touch')
+      }),
+    )
+  })
+
+  it('reports the input type the responses came from, before the response (§11.6: mouse is not touch)', () => {
+    const item = rtSimple.generate('render-rt-input-type')
+    const mouse = mountRt(item, 'touch')
+    const r = tapBlock(mouse, item, () => 'mouse')
+    expect(rtResponseProblems('simple', r)).toEqual([])
+    expect(mouse.modes).toEqual(['touch'])
+    expect(mouse.types).toEqual(['mouse'])
+    expect(mouse.calls).toEqual(['type', 'respond'])
+    mouse.destroy()
+    // Scored taps decide: practice with a mouse, then fingers.
+    const touch = mountRt(item, 'touch')
+    tapBlock(touch, item, (practice) => (practice ? 'mouse' : 'touch'))
+    expect(touch.types).toEqual(['touch'])
+    touch.destroy()
+    const keys = mountRt(item, 'keyboard')
+    click(buttonByText(keys.container, 'Start practice'))
+    for (let i = 0; i < item.spec.practice_positions.length; i++) answerTrial(keys, ' ', 300)
+    until(keys.display, () => keys.container.textContent?.includes('Practice done') === true)
+    click(buttonByText(keys.container, 'Start'))
+    for (let i = 0; i < item.spec.positions.length; i++) answerTrial(keys, ' ', 300)
+    until(keys.display, () => keys.responses.length === 1, 20_000)
+    expect(keys.types).toEqual(['keyboard'])
   })
 
   it('the taker picks the input mode on the intro when none is given', () => {

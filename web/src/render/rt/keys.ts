@@ -1,12 +1,33 @@
 /**
- * Input and pacing of the RT renderer (ROADMAP M1.10, M1.13; DESIGN §7.1, §11.6, §13: keyboard or
- * touch mode, stored and normed separately).
+ * Input and pacing of the RT renderer (ROADMAP M1.10, M1.13; DESIGN §7.1, §11.6, §13: keyboard,
+ * mouse or touch input, stored and normed separately).
  */
 
 import { RT_MODE_CONFIG, type RtMode } from '../../tasks/rt/types'
 
-/** How the taker responds: keys, or tapping / clicking the stimulus positions (§13). */
+/**
+ * How the taker responds: keys, or tapping / clicking the stimulus positions (§13). This is the
+ * control scheme only; the input type stored with the block is {@link RtInputType}.
+ */
 export type RtInputMode = 'keyboard' | 'touch'
+
+/**
+ * The input type stored with a block's observation (§11.6 items 2 and 5: touch, mouse and
+ * keyboard latencies differ and get separate norms; `RtDevice.input_type`).
+ */
+export type RtInputType = 'keyboard' | 'mouse' | 'touch'
+
+/**
+ * The input type of a tap-or-click block, from the `PointerEvent.pointerType` of its responses:
+ * 'mouse' when most of them came from a mouse, else 'touch' (a pen, or a device that reports no
+ * type, is screen contact too; a tie goes to touch). With no pointer response at all, `fallback`
+ * (the device's primary pointer).
+ */
+export function pointerInputType(pointerTypes: readonly string[], fallback: 'mouse' | 'touch'): 'mouse' | 'touch' {
+  if (pointerTypes.length === 0) return fallback
+  const mouse = pointerTypes.filter((t) => t === 'mouse').length
+  return mouse > pointerTypes.length - mouse ? 'mouse' : 'touch'
+}
 
 /** Keys of the 4 choice positions, left to right (D F J K, or 1–4). */
 export const CHOICE_KEYS: readonly (readonly string[])[] = Object.freeze([

@@ -6,7 +6,9 @@
   `performance.now()` response time minus that frame's timestamp (`responseRtMs`), so a press
   before the target is drawn is an anticipation. Keyboard mode: Space (simple) or D F J K / 1–4
   (choice); touch mode: tap or click the position. The response is the family's `RtResponse`
-  (scored and practice trials as parallel arrays), sent once at the end of the block.
+  (scored and practice trials as parallel arrays), sent once at the end of the block, just after
+  `oninputtype` reports the input type the responses came from (keyboard, mouse or touch, from
+  each tap's `pointerType`; §11.6 items 2 and 5 norm them separately).
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
@@ -16,16 +18,22 @@
   import { afterFrames } from '../common/sequence'
   import { createOnsetScheduler, responseRtMs, responseTimestamp, type ScheduledOnset } from '../../tasks/rt/timing'
   import { RT_PRACTICE_TRIALS, type RtResponse, type RtSpec } from '../../tasks/rt/types'
-  import { CHOICE_KEY_LABELS, RT_EARLY_ITI_MS, RT_ITI_MS, positionOfKey, responseWindowMs, type RtInputMode } from './keys'
+  import { CHOICE_KEY_LABELS, RT_EARLY_ITI_MS, RT_ITI_MS, pointerInputType, positionOfKey, responseWindowMs, type RtInputMode, type RtInputType } from './keys'
 
   interface Props extends RendererProps<RtSpec, RtResponse> {
     /** Fixed input mode (the session's device check); omitted = the taker chooses on the intro. */
     readonly inputMode?: RtInputMode
-    /** Called with the mode used when the block starts (§11.6: stored with the observation). */
+    /** Called with the control scheme (keys, or tap or click) when the block starts. */
     readonly oninputmode?: (mode: RtInputMode) => void
+    /**
+     * Called once at the end of the block, just before `onrespond`, with the input type the
+     * responses came from: store it as the observation's `RtDevice.input_type` (§11.6: keyboard,
+     * mouse and touch are normed separately; a mouse click in tap-or-click mode is 'mouse').
+     */
+    readonly oninputtype?: (type: RtInputType) => void
   }
 
-  let { spec, onrespond, timing, inputMode, oninputmode }: Props = $props()
+  let { spec, onrespond, timing, inputMode, oninputmode, oninputtype }: Props = $props()
 
   type Phase = 'intro' | 'running' | 'ready' | 'done'
   type Stage = 'practice' | 'main'
@@ -49,6 +57,9 @@
   const choices: (number | null)[] = []
   const practiceRts: (number | null)[] = []
   const practiceChoices: (number | null)[] = []
+  // PointerEvent.pointerType of each tap-or-click response, practice and scored apart.
+  const practicePointers: string[] = []
+  const scoredPointers: string[] = []
 
   let onset: ScheduledOnset | null = null
   let deadline: ScheduledOnset | null = null
@@ -93,11 +104,19 @@
     })
   }
 
-  function respond(position: number): void {
-    if (phase !== 'running' || trialState === 'blank' || onset === null) return
+  /** Record a response to the running trial; false when no trial is waiting for one. */
+  function respond(position: number): boolean {
+    if (phase !== 'running' || trialState === 'blank' || onset === null) return false
     const ts = responseTimestamp(t.clock)
     const rt = responseRtMs(onset, ts)
     record(rt, spec.mode === 'simple' ? 0 : position)
+    return true
+  }
+
+  /** The input type of this block's responses (§11.6); scored taps decide, else the practice ones. */
+  function inputType(): RtInputType {
+    if (mode === 'keyboard') return 'keyboard'
+    return pointerInputType(scoredPointers.length > 0 ? scoredPointers : practicePointers, coarse ? 'touch' : 'mouse')
   }
 
   function record(rt: number | null, choice: number | null): void {
@@ -140,6 +159,7 @@
     }
     phase = 'done'
     flushSync()
+    oninputtype?.(inputType())
     onrespond({
       rt_ms: [...rts],
       choice: [...choices],
@@ -167,9 +187,12 @@
     respond(p)
   }
 
-  function ontap(event: Event, position: number): void {
+  function ontap(event: PointerEvent, position: number): void {
     event.preventDefault()
-    if (mode === 'touch') respond(position)
+    if (mode !== 'touch') return
+    const stageNow = stage
+    const pointerType = typeof event.pointerType === 'string' ? event.pointerType : ''
+    if (respond(position)) (stageNow === 'practice' ? practicePointers : scoredPointers).push(pointerType)
   }
 
   onDestroy(stopTimers)
