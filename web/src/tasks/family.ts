@@ -79,8 +79,9 @@
  *   shows at most once: the selector excludes a candidate whose `sibling_group` was already
  *   served in the session (and, across sessions, every seen `family_id`, §7.7). It is the
  *   item's `family_id` (a family is its own group) unless the family groups sibling families
- *   explicitly as `g:<family>:<label>` ({@link siblingGroupId}); quant groups its template
- *   variants by template. Items of one family_id always share one sibling_group.
+ *   explicitly as `g:<family>:<label>` ({@link siblingGroupId}); quant groups its
+ *   near-isomorph variants (`QUANT_SIBLING_SETS`: the same givens, only the question
+ *   differs). Items of one family_id always share one sibling_group.
  * - **Facets** (§3 drill-down). A family declares its `facets`; each item's `facet` is one of
  *   them (quant: the template, e.g. "percent"; most families have exactly one).
  * - **Versions.** `generatorVersion` has no `+` build tag; bump it whenever `generate` output

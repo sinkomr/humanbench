@@ -5,7 +5,7 @@ import { KEY_ECHO_MAX_CHANCE, KEY_ECHO_MIN_SEEN, runFamilyProperties, type Famil
 import { quant, quantSpecLeaksKey, type QuantItem, type QuantKey, type QuantResponse, type QuantSpec } from '.'
 import { Fraction } from './fraction'
 import { QUANT_PRIOR, QUANT_TIME_BASE_S, quantBPrior, quantFeatures } from './prior'
-import { HINTS, QUANT_TEMPLATES, TEMPLATES_BY_STRATUM, VARIANTS, lin, listText, paren, ratTerm, signed } from './templates'
+import { HINTS, QUANT_SIBLING_SETS, QUANT_TEMPLATES, TEMPLATES_BY_STRATUM, VARIANTS, lin, listText, paren, quantSiblingGroup, ratTerm, signed, variantOf } from './templates'
 import {
   QUANT_ECHO_MAX_CHANCE,
   QUANT_ECHO_MIN_SEEN,
@@ -107,29 +107,51 @@ describe('quant family (M1.8)', () => {
     }
   })
 
-  it('groups the variants of a template into one sibling group g:quant:<template>, the facet (M1.F2, A11 amended)', () => {
+  it('groups near-isomorph variants into sibling groups g:quant:<label>; every other variant is its own group (M1.F2, A11 amended)', () => {
     // Pinned as literals, not through quantSiblingGroup(), so a wrong grouping fails here too.
-    const groups = new Map<string, Set<string>>()
+    const PINNED: Readonly<Record<string, readonly string[]>> = {
+      'g:quant:fraction_of': ['fraction_of/rest', 'fraction_of/spent'],
+      'g:quant:system': ['system/product', 'system/solve', 'system/sum'],
+      'g:quant:quadratic': ['quadratic/root', 'quadratic/scaled', 'quadratic/sum_squares'],
+      'g:quant:probability_bag': ['probability/both', 'probability/same'],
+      'g:quant:recip': ['recip/minus2', 'recip/minus3', 'recip/plus2', 'recip/plus3', 'recip/plus4'],
+      'g:quant:symmetric': ['symmetric/diff_sq', 'symmetric/sum_cube', 'symmetric/sum_sq'],
+      'g:quant:arith_series_terms': ['arith_series/first_n', 'arith_series/sum'],
+      'g:quant:modular_remainder': ['modular/last_digit', 'modular/power'],
+    }
+    const groups = new Map<string, string[]>()
     for (const v of VARIANTS) {
       const item = sampleOf(v.template, v.variant)
       expect(item.facet).toBe(v.template)
-      expect(item.sibling_group, variantKey(item)).toBe(`g:quant:${v.template}`)
-      expect(item.sibling_group).not.toBe(item.family_id)
-      const g = groups.get(item.sibling_group) ?? new Set<string>()
-      groups.set(item.sibling_group, g.add(v.variant))
+      if (item.sibling_group === item.family_id) continue
+      groups.set(item.sibling_group, [...(groups.get(item.sibling_group) ?? []), variantKey(item)])
     }
-    expect([...groups.keys()].sort()).toEqual(QUANT_TEMPLATES.map((t) => `g:quant:${t}`).sort())
-    expect(groups.size).toBe(QUANT_TEMPLATES.length)
+    expect(Object.fromEntries([...groups].map(([g, ids]) => [g, ids.sort()]))).toEqual(PINNED)
+    expect(Object.keys(QUANT_SIBLING_SETS).map((l) => `g:quant:${l}`).sort()).toEqual(Object.keys(PINNED).sort())
     expect(quant.facets).toEqual(QUANT_TEMPLATES)
-    const sizes = [...groups.values()].map((g) => g.size)
-    expect(sizes.reduce((a, b) => a + b, 0)).toBe(VARIANTS.length)
-    // Near-isomorph variants of one template share a group: at least one template has several.
-    expect(Math.max(...sizes)).toBeGreaterThan(1)
+    // A group stays inside one template and one stratum (the same givens, only the question differs).
+    for (const ids of Object.values(PINNED)) {
+      expect(new Set(ids.map((id) => id.split('/')[0])).size).toBe(1)
+      expect(new Set(ids.map((id) => variantOf(...(id.split('/') as [string, string]))!.stratum)).size).toBe(1)
+    }
+    // A template is not a group by itself: different routes of one topic stay separate.
+    expect(quantSiblingGroup('arith', 'group_mul')).toBeUndefined()
+    expect(quantSiblingGroup('percent', 'change')).toBeUndefined()
+    expect(quantSiblingGroup('modular', 'congruence')).toBeUndefined()
+    expect(quantSiblingGroup('recip', 'nope')).toBeUndefined()
     for (let i = 0; i < 300; i++) {
       const item = quant.generate(`sib-${i}`)
-      expect(item.sibling_group).toBe(`g:quant:${item.facet}`)
-      expect(item.sibling_group).toBe(`g:quant:${(item.structural_params as { template: string }).template}`)
+      const { template, variant } = item.structural_params as { template: string; variant: string }
+      expect(item.sibling_group).toBe(quantSiblingGroup(template, variant) ?? item.family_id)
     }
+  })
+
+  it('every quant stratum keeps ≥ 8 exclusion units (sibling groups), so the selector\'s near strata do not run dry (M1.14)', () => {
+    for (const k of [1, 2, 3, 4] as const) {
+      const units = new Set(VARIANTS.filter((v) => v.stratum === k).map((v) => sampleOf(v.template, v.variant).sibling_group))
+      expect(units.size, `stratum ${k}`).toBeGreaterThanOrEqual(8)
+    }
+    expect(new Set(VARIANTS.map((v) => sampleOf(v.template, v.variant).sibling_group)).size).toBe(39)
   })
 
   it('targets strata through the seed and refuses 5–6', () => {

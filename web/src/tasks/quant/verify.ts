@@ -775,7 +775,7 @@ export function verifyQuant(item: ItemInstance<QuantSpec, QuantKey>): VerifyResu
         Math.abs(item.expected_time_s - quantExpectedTime(variant.stratum as 1 | 2 | 3 | 4, stem)) <= 1e-9 &&
         item.time_limit_s === powerTimeLimit(item.expected_time_s),
       facet_matches: item.facet === variant.template,
-      sibling_group_matches: item.sibling_group === quantSiblingGroup(variant.template),
+      sibling_group_matches: item.sibling_group === (quantSiblingGroup(variant.template, variant.variant) ?? item.family_id),
       no_options: item.options_count === undefined,
     })
   } catch (e) {

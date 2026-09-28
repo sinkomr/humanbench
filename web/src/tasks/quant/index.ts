@@ -8,10 +8,12 @@
  * `prior.ts`; the bank's `hb.gen.quant` is the Python twin.
  *
  * Facets and siblings (M1.F2): an item's facet is its template ("percent", "system", …; the
- * family declares them all, `QUANT_TEMPLATES`), and the variants of one template form one
- * sibling group `g:quant:<template>`, so a session serves at most one item per template (M1.14)
- * while family_id stays per variant (A11 amended). Version 1.2.0: facet by template,
- * `sibling_group`, and the shared power-item cap `time_limit_s` (§13).
+ * family declares them all, `QUANT_TEMPLATES`). Near-isomorph variants of one trick form one
+ * sibling group `g:quant:<label>` (`QUANT_SIBLING_SETS`), so a session serves at most one of them
+ * (M1.14), while family_id stays per variant (A11 amended); every other variant is its own group.
+ * Version 1.2.0: facet by template, `sibling_group` (then per template), and the shared
+ * power-item cap `time_limit_s` (§13). 1.3.0: sibling groups are the near-isomorph sets, not
+ * whole templates, so each quant stratum keeps ≥ 8 exclusion units (M1.14 review).
  */
 
 import { NUMERIC_ITEM_TYPE, defineFamily, type ItemInstance } from '../family'
@@ -22,7 +24,7 @@ import { variantOf } from './templates'
 import { verifyQuant } from './verify'
 
 export type { QuantKey, QuantSpec } from './gen'
-export { QUANT_TEMPLATES, quantSiblingGroup } from './templates'
+export { QUANT_SIBLING_SETS, QUANT_TEMPLATES, quantSiblingGroup } from './templates'
 export type { QuantResponse } from './score'
 export type QuantItem = ItemInstance<QuantSpec, QuantKey>
 
@@ -31,7 +33,7 @@ export const quant = defineFamily<QuantSpec, QuantKey, QuantResponse>({
   kind: 'item',
   axis: 'QR',
   facets: QUANT_TEMPLATES,
-  generatorVersion: '1.2.0',
+  generatorVersion: '1.3.0',
   itemType: NUMERIC_ITEM_TYPE,
   strata: QUANT_STRATA,
   build: buildQuant,

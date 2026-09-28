@@ -25,6 +25,12 @@ export interface QuantSpec {
 /** Exact rational key ("p" or "p/q", lowest terms) and its tolerance (§4.2): the shared {@link NumericKey}. */
 export type QuantKey = NumericKey
 
+/** `{ sibling_group }` for a grouped near-isomorph variant; nothing (its family_id) otherwise (M1.F2). */
+function siblingOf(template: string, variant: string): { sibling_group?: string } {
+  const g = quantSiblingGroup(template, variant)
+  return g === undefined ? {} : { sibling_group: g }
+}
+
 export function buildQuant(rng: Rng, ctx: BuildContext): BuiltItem<QuantSpec, QuantKey> {
   const stratum = (ctx.stratum ?? rng.pick(QUANT_STRATA)) as 1 | 2 | 3 | 4
   const template = rng.pick(TEMPLATES_BY_STRATUM[stratum])
@@ -36,7 +42,7 @@ export function buildQuant(rng: Rng, ctx: BuildContext): BuiltItem<QuantSpec, Qu
   return {
     stratum,
     facet: variant.template,
-    sibling_group: quantSiblingGroup(variant.template),
+    ...siblingOf(variant.template, variant.variant),
     spec: { stem, hint: HINTS[variant.format], input_format: variant.format, given },
     key: { value: value.toString(), tol: toleranceFor(variant.format) },
     structural_params: { template: variant.template, variant: variant.variant },

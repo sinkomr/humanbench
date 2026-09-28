@@ -6,10 +6,12 @@
  * An item is one *variant* of a *template*; `structural_params = { template, variant }`, so the
  * family_id is the template variant (A11: isomorphs differ only in their numbers). A variant is
  * a stem template in A11's sense (its own fields, stem and answer route); `template` groups
- * variants by topic. Hashing the topic alone would leave 4 families in each of strata 1–3, below
- * the 6S per stratum that per-user family exclusion needs (§7.7), so the variants of one template
- * form a sibling group (`sibling_group = g:quant:<template>`, M1.F2): the selector serves at most
- * one item of a template per session (M1.14), and the template is the item's facet. Its `spec` is
+ * variants by topic, and the template is the item's facet (M1.F2). Hashing the topic alone would
+ * leave 4 families in each of strata 1–3, below the 6S per stratum that per-user family exclusion
+ * needs (§7.7), so near-isomorph variants of one trick (recip/*, system/*, symmetric/*, …) form a
+ * sibling group instead (`sibling_group = g:quant:<label>`, {@link QUANT_SIBLING_SETS}; A11
+ * amended, M1.F2), which the selector serves at most once per session (M1.14); every other
+ * variant is its own group (its family_id). Its `spec` is
  * `{ stem, hint, input_format, given }`: `given` holds exactly the quantities the stem shows
  * (never the solution: no roots, no x₀), and the stem is rendered from it. Numbers are integers;
  * negatives render with "−" (U+2212); `lin` renders a linear combination ("3x − y", "x^2 − 5x + 6").
@@ -984,15 +986,51 @@ function cyclePowMod(base: number, exp: number, m: number): number {
 /** Every variant, in a fixed order (the generator's draw order depends on it). */
 export const VARIANTS: readonly VariantDef[] = Object.freeze([...S1, ...S2, ...S3, ...S4])
 
-/**
- * Every template id, in table order: the family's facets (M1.F2: an item's facet is its template)
- * and the labels of its sibling groups (`g:quant:<template>`, A11 amended, M1.14).
- */
+/** Every template id, in table order: the family's facets (M1.F2: an item's facet is its template). */
 export const QUANT_TEMPLATES: readonly string[] = Object.freeze([...new Set(VARIANTS.map((v) => v.template))])
 
-/** The sibling group of a template's variants (M1.F2, A11 amended): `g:quant:<template>`. */
-export function quantSiblingGroup(template: string): string {
-  return siblingGroupId('quant', template)
+/**
+ * The quant near-isomorph sibling sets (A11 amended, M1.14), by group label, as `template/variant`
+ * ids; the bank twin keeps the same table (`hb.gen.quant.spec.QUANT_SIBLING_SETS`). Quant
+ * `family_id` is per stem variant, so each variant below is its own family; these variants show
+ * the same givens in the same stem and differ only in the quantity asked (or a rescaling), so
+ * solving one hands over the method for the others. A template is NOT a group by itself:
+ * variants such as arith/group_mul and arith/div_chain, or percent/of and percent/change, are
+ * different routes. Grouping whole templates would leave only 4 groups in each of quant strata
+ * 1–3, so the selector's near strata run dry after about a dozen items and selection drifts off
+ * θ (M1.14 review); with these sets a stratum keeps 8–11 exclusion units (39 in all).
+ */
+export const QUANT_SIBLING_SETS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  // same story (a fraction, then a fraction of the rest); asks the part vs what is left
+  fraction_of: ['fraction_of/rest', 'fraction_of/spent'],
+  // the same two equations; asks x or y, x + y, or xy
+  system: ['system/solve', 'system/sum', 'system/product'],
+  // x² + bx + c = 0 with integer roots; scaled is root × a, sum_squares asks p² + q² of the roots
+  quadratic: ['quadratic/root', 'quadratic/scaled', 'quadratic/sum_squares'],
+  // the same bag of marbles; "both red" is a term of "same colour"
+  probability_bag: ['probability/both', 'probability/same'],
+  // x ± 1/x = k (§14.6 example 3); only the power asked differs
+  recip: ['recip/plus2', 'recip/plus3', 'recip/plus4', 'recip/minus2', 'recip/minus3'],
+  // a + b and ab given; only the symmetric function asked differs
+  symmetric: ['symmetric/sum_sq', 'symmetric/diff_sq', 'symmetric/sum_cube'],
+  // the sum of an arithmetic sequence from (first, diff, count), shown by last term vs count
+  arith_series_terms: ['arith_series/sum', 'arith_series/first_n'],
+  // base^exp mod m; the last digit is the remainder mod 10
+  modular_remainder: ['modular/power', 'modular/last_digit'],
+})
+
+const SIBLING_LABEL_OF: ReadonlyMap<string, string> = new Map(
+  Object.entries(QUANT_SIBLING_SETS).flatMap(([label, ids]) => ids.map((id) => [id, label] as const)),
+)
+
+/**
+ * The explicit sibling group of variant `template/variant` (M1.F2, A11 amended): `g:quant:<label>`
+ * for a variant in {@link QUANT_SIBLING_SETS}, else undefined (the variant is its own group, its
+ * family_id).
+ */
+export function quantSiblingGroup(template: string, variant: string): string | undefined {
+  const label = SIBLING_LABEL_OF.get(`${template}/${variant}`)
+  return label === undefined ? undefined : siblingGroupId('quant', label)
 }
 
 /** Template ids by stratum, in table order. */
