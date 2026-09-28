@@ -7,16 +7,19 @@
  * contract gives a family exactly one `item_type` (`defineFamily`, `validateItemInstance`). A
  * separate letter family is no way out: constant-step letter series have only 1,248 possible
  * contents (26 starts × 16 steps × 3 lengths) and reach strata 1–2 only, so it could not pass the
- * 10,000-instance property suite. Number and letter series therefore share `series_entry`, and
- * the renderer picks numeric or single-letter entry from `spec.input_format` ("integer" or
- * "letter"); a per-instance item type is a contract follow-up for the integrator.
+ * 10,000-instance property suite. Number and letter series therefore share the typed-entry item
+ * type "numeric" (`NUMERIC_ITEM_TYPE`, DESIGN §14.6 ex. 2, as quant), and the renderer picks
+ * numeric or single-letter entry from `spec.input_format` ("integer" or "letter", the shared
+ * `EntryFormat` vocabulary). Integer keys are the shared `NumericKey` `{ value: "42", tol:
+ * { abs: 0 } }`; letter keys are `{ letter: "K" }`. Version 1.1.0: that item type and key shape
+ * (was `series_entry` and `{ value: 42, tol: 0 }`; audit: quant conventions).
  *
  * Rules, DL and uniqueness: `rules.ts`; generator: `gen.ts`; verifier: `verify.ts`; scoring:
  * `score.ts`; the TS → bank analysis fixture: `analysis-fixture.ts`. Python twin: the bank's
  * `hb.gen.series`.
  */
 
-import { defineFamily } from '../family'
+import { NUMERIC_ITEM_TYPE, defineFamily } from '../family'
 import { SERIES_STRATA, buildSeries } from './gen'
 import { scoreSeries } from './score'
 import type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec } from './types'
@@ -25,14 +28,12 @@ import { verifySeries } from './verify'
 
 export type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec, SeriesStructure } from './types'
 
-export const SERIES_ITEM_TYPE = 'series_entry'
-
 export const series = defineFamily<SeriesSpec, SeriesKey, SeriesResponse>({
   name: 'series',
   axis: 'MAT',
   facet: 'series',
-  generatorVersion: '1.0.0',
-  itemType: SERIES_ITEM_TYPE,
+  generatorVersion: '1.1.0',
+  itemType: NUMERIC_ITEM_TYPE,
   strata: SERIES_STRATA,
   build: buildSeries,
   verify: verifySeries,

@@ -6,9 +6,8 @@
  */
 
 import type { Rng } from '../../engine'
-import type { BuildContext, BuiltItem } from '../family'
+import type { BuildContext, BuiltItem, NumericKey } from '../family'
 import type { Stratum } from '../ids'
-import type { Tolerance } from './numeric'
 import { QUANT_PROVENANCE, QUANT_SD_PRIOR, quantBPrior, quantExpectedTime, quantFeatures } from './prior'
 import { HINTS, TEMPLATES_BY_STRATUM, toleranceFor, variantsOf, type Given, type InputFormat } from './templates'
 
@@ -23,11 +22,8 @@ export interface QuantSpec {
   readonly given: Given
 }
 
-/** Exact rational key ("p" or "p/q", lowest terms) and its tolerance (§4.2). */
-export interface QuantKey {
-  readonly value: string
-  readonly tol: Tolerance
-}
+/** Exact rational key ("p" or "p/q", lowest terms) and its tolerance (§4.2): the shared {@link NumericKey}. */
+export type QuantKey = NumericKey
 
 export function buildQuant(rng: Rng, ctx: BuildContext): BuiltItem<QuantSpec, QuantKey> {
   const stratum = (ctx.stratum ?? rng.pick(QUANT_STRATA)) as 1 | 2 | 3 | 4

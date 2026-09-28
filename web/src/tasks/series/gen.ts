@@ -202,7 +202,7 @@ export function renderDraft(draft: Draft): { spec: SeriesSpec; key: SeriesKey } 
   if (draft.rule === 'letter') {
     return { spec: { input_format: 'letter', terms: visible.map(positionLetter) }, key: { letter: positionLetter(next) } }
   }
-  return { spec: { input_format: 'integer', terms: visible }, key: { value: next, tol: 0 } }
+  return { spec: { input_format: 'integer', terms: visible }, key: { value: String(next), tol: { abs: 0 } } }
 }
 
 /** Whether a draft is in bounds, in its rule's domain and unique under the analysis with its own rule as key. */

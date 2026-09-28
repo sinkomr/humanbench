@@ -64,7 +64,12 @@ describe('quant verify: generic checks (negative)', () => {
     rejects(withGiven(sampleOf('mean', 'missing'), { known: [1, 2, 61] }), 'given_fields')
   })
 
-  it('stratum_matches', () => rejects(mutate(item, (x) => (x.stratum = 3)), 'stratum_matches'))
+  it('stratum_matches: the template stratum and the default b band of b_prior (priors.ts)', () => {
+    rejects(mutate(item, (x) => (x.stratum = 3)), 'stratum_matches')
+    // b = −1.1 (stratum 2, band −1.5…−0.5) moved to −0.4, in stratum 3's band.
+    expect(item.difficulty.b_prior).toBeCloseTo(-1.1, 12)
+    rejects(mutate(item, (x) => (x.difficulty = { ...item.difficulty, b_prior: item.difficulty.b_prior + 0.7 })), 'stratum_matches')
+  })
 
   it('input_format_matches and hint_matches', () => {
     rejects(mutate(item, (x) => (x.spec = { ...item.spec, input_format: 'decimal' })), 'input_format_matches')

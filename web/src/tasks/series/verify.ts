@@ -22,6 +22,16 @@ export const PRIOR_TOLERANCE = 1e-9
 const isBoundedInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && Math.abs(v) <= TERM_BOUND
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/** A canonical integer `NumericKey.value` ("42", "-7", "0"; no "+", "-0" or leading zeros). */
+const CANONICAL_INTEGER = /^(?:0|-?[1-9][0-9]*)$/
+
+/** The bounded integer a key value string denotes, or undefined unless it is canonical. */
+const keyInteger = (v: unknown): number | undefined =>
+  typeof v === 'string' && CANONICAL_INTEGER.test(v) && isBoundedInt(Number(v)) ? Number(v) : undefined
+
+/** The exact tolerance `{ abs: 0 }`. */
+const isExactTol = (t: unknown): boolean => isPlainObject(t) && canonicalJson(Object.keys(t)) === '["abs"]' && t.abs === 0
+
 export function verifySeries(item: SeriesItem): VerifyResult {
   try {
     const spec = item.spec as unknown
@@ -51,8 +61,8 @@ export function verifySeries(item: SeriesItem): VerifyResult {
       next = letterPosition(key.letter)
       keyOk = next !== undefined && canonicalJson(Object.keys(key).sort()) === '["letter"]'
     } else {
-      next = isBoundedInt(key.value) ? key.value : undefined
-      keyOk = next !== undefined && key.tol === 0 && canonicalJson(Object.keys(key).sort()) === '["tol","value"]'
+      next = keyInteger(key.value)
+      keyOk = next !== undefined && isExactTol(key.tol) && canonicalJson(Object.keys(key).sort()) === '["tol","value"]'
     }
     const rule = structure.rule
     const coefficients = structure.coefficients
