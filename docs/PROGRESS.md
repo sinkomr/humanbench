@@ -30,17 +30,17 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **Nothing is in flight.** wf3 is merged, audited, repaired and pushed.
-- **Next batch (wf4):**
-  - M1.13 renderers;
-  - M1.16 blob viz;
-  - the procedural review page for the G7 audits;
-  - M1.23 RT jitter page;
-  - M1.Q retest priors;
-  - M1.4b CAT simulation;
-  - bank M3.2/M3.6/M3.7 and M4.3–M4.5.
+- **In flight: wf4** (`wf_aea602a7-86e`, started 2026-09-28 02:30). Its chains each run in a worktree on branch `wf4/<name>`:
+  - `render-visual`: M1.13 rotation and matrices.
+  - `render-entry`: M1.13 entry/span/RT/coding/reading, plus the dev-only G7 review page.
+  - `blob`: M1.16.
+  - `rtself-retest`: M1.23, then M1.Q.
+  - `catsim`: M1.4b.
+  - `m32`: M3.2.
+  - `calib2`: M4.3–M4.5.
 
-  After it: M1.15 session flow, M1.R, M1.18, M1.21, M1.22.
+  After the chains come the merger, the audit (acceptance and UI-rules lenses) and repair.
+- **If interrupted:** check `git branch --list 'wf4/*'` and `git worktree list`. Finish each chain on its own branch, then merge them in the order above. Then run all gates plus `npm run e2e`.
 - **Process note:** each task has a task commit, then a "review fixes" commit, then a merge commit. It is not squashed, because squashing would rewrite pushed history. Ask the user before changing this.
 
 ## Needs you (blocked on the user)
