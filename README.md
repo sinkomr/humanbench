@@ -63,7 +63,8 @@ npm run test:watch
 (`web/src/engine/__fixtures__/sim_m14a_v1.json`, copied by `npm run sync:golden`): (a) the
 non-adaptive M1.4a replication, whose per-axis r must match the bank's Python result within 0.02,
 and (b) adaptive first sessions with the real selector, scorer and families, under the A15 time
-rule and with a fixed 20 items per CAT axis. It prints one table per run with its acceptance
+rule (each block takes the simulated taker's own time; every session must end within 30 min) and
+with a fixed 20 items per CAT axis. It prints one table per run with its acceptance
 verdict; the full N = 2,000 run takes several minutes. `npm test` runs N = 300 versions;
 `npm run test:slow` runs the full size.
 

@@ -24,8 +24,11 @@ function fakeRun(over: Partial<Record<AxisCode, Partial<AxisRecovery>>> = {}, ex
     fixedLength: null,
     axes,
     itemsPerAxis: { MAT: spread(10), SPA: spread(12), QR: spread(6) },
-    timeS: { min: 1600, mean: 1640, max: 1650 },
+    timeS: { min: 1600, mean: 1640, max: 1700 },
     catTimeS: spread(900),
+    overTarget: 0.5,
+    targeting: { MAT: 0.6, SPA: 0.5, QR: 0.55 },
+    floorShort: { MAT: 0, SPA: 0, QR: 0.05 },
     blockObserved: { coding: 1 },
     segmentEnds: { time: 6 },
     sessions: [session, session],
@@ -46,11 +49,21 @@ describe('catAcceptanceFailures', () => {
     expect(catAcceptanceFailures(fakeRun({ SPA: { r: Number.NaN } }))).toEqual(['SPA: r = NaN < 0.85'])
   })
 
-  it('checks the time budget of an A15 run, not of a fixed-length run', () => {
-    const late = { timeS: { min: 1600, mean: 1700, max: 1800 } }
-    expect(catAcceptanceFailures(fakeRun({}, late))).toEqual(['time: max session 30.00 min > budget 27.50 min'])
-    expect(catAcceptanceFailures(fakeRun({}, late), { budgetS: 1800 })).toEqual([])
+  it("checks an A15 run's simulated time against A15's upper end (30 min), not a fixed-length run's", () => {
+    expect(catAcceptanceFailures(fakeRun({}, { timeS: { min: 1600, mean: 1700, max: 1800 } }))).toEqual([]) // over the 27.5 target, within 30
+    const late = { timeS: { min: 1600, mean: 1700, max: 1830 } }
+    expect(catAcceptanceFailures(fakeRun({}, late))).toEqual(['time: max session 30.50 min > budget 30.00 min'])
+    expect(catAcceptanceFailures(fakeRun({}, late), { budgetS: 1830 })).toEqual([])
     expect(catAcceptanceFailures(fakeRun({}, { ...late, fixedLength: 20 }))).toEqual([])
+  })
+
+  it('reports targeting, coverage-floor shortfalls and the share over the target', () => {
+    const text = formatCat(fakeRun())
+    expect(text).toContain('selector targeting, r(mean administered b, θ): MAT 0.60, SPA 0.50, QR 0.55')
+    expect(text).toContain('sessions under the 3-item coverage floor: MAT 0.0%, SPA 0.0%, QR 5.0%')
+    expect(text).toContain('min (min / mean / max): 26.7 / 27.3 / 28.3; over the 27.5-min target 50.0%; CAT part 15.0 mean')
+    expect(text).toContain('every session ≤ 30.0 min')
+    expect(formatCat(fakeRun({}, { fixedLength: 20 }))).not.toContain('over the')
   })
 
   it('formats the verdict with every failure', () => {

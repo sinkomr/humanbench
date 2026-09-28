@@ -7,25 +7,34 @@
  * full N = 2,000 runs (A15 and the DESIGN §14.3 fixed length of 20 items per axis) are
  * `scripts/sim-cat.slow.test.ts` (`npm run test:slow`) and `npm run sim:cat`.
  *
- * What holds and is asserted: every session stays within the A15 target, 90% coverage is in
- * [0.85, 0.95] on every observed axis, every block yields its observation, the coverage floor
- * holds. What does NOT hold, and is recorded as an expected failure: r ≥ .85 on MAT, SPA and QR
- * within the A15 budget. With the families' provisional parameters (a = 1.0 for every item, 3PL
- * c = 1/4 for 4-option rotation, A9) and ≈ 5 min per CAT axis (6–13 items), a first session
- * gives r = .82 / .80 / .75 (MAT / SPA / QR) at N = 300 and .833 / .814 / .770 at N = 2,000, in
- * line with DESIGN §7.6's projected session-1 SE of ≈ 0.57. r ≥ .85 on all three needs about a
- * 45-minute session; DESIGN §14.3's "at 20 items/axis" (≈ 48 min) passes at N = 2,000 (.903 /
- * .868 / .905, the slow test). The r floor below guards against regressions meanwhile.
+ * Each block takes the simulated taker's own time (the family's block-time model on the
+ * response), and the difference from its E[T] moves the next CAT segment's budget.
+ *
+ * What holds and is asserted: every session's simulated time is within A15's 25–30 min (26.2–29.3
+ * min at N = 300, 26.0–29.6 at N = 2,000, mean 27.3), 90% coverage is in [0.85, 0.95] on every
+ * observed axis, every block yields its observation, the selector targets difficulty to the
+ * person, MAT and SPA get the §7.4 coverage floor. QR, which follows the span blocks, misses the
+ * floor in ≈ 5–6% of sessions (high-WM takers whose longer span blocks use up its time): bounded
+ * here, a follow-up for M1.15's session clock. What does NOT hold, and is recorded as an expected
+ * failure: r ≥ .85 on MAT, SPA and QR within the A15 budget. With the families' provisional
+ * parameters (a = 1.0 for every item, 3PL c = 1/4 for 4-option rotation, A9) and ≈ 5 min per CAT
+ * axis (6–13 items), a first session gives r = .815 / .798 / .743 (MAT / SPA / QR) at N = 300
+ * and .831 / .813 / .766 at N = 2,000, in line with DESIGN §7.6's projected session-1 SE of
+ * ≈ 0.57. r ≥ .85 on all three needs about a 45-minute session; DESIGN §14.3's "at 20 items/axis"
+ * (≈ 48 min) passes at N = 2,000 (.903 / .868 / .905, the slow test). The r floor below guards
+ * against regressions meanwhile.
  */
 
 import { beforeAll, describe, expect, it } from 'vitest'
 import { AXIS_INDEX, N_AXES } from '../engine/axes'
 import simText from '../engine/__fixtures__/sim_m14a_v1.json?raw'
-import { A15_TARGET_S, COVERAGE_FLOOR, planSession } from '../engine/selector'
+import type { Observation } from '../engine/types'
+import { A15_TARGET_S, COVERAGE_FLOOR } from '../engine/selector'
 import { resolveItem } from '../tasks/registry'
-import { BLOCK_AXES, CAT_AXES, observedAxes, runCat, sessionSeedOf, simulateSession, type CatRun } from './cat'
+import { A15_MAX_S, BLOCK_AXES, CAT_AXES, administeredB, observedAxes, runCat, sessionSeedOf, simulateSession, targetingR, type CatRun } from './cat'
 import type { M14aFixture } from './m14a'
 import { catAcceptanceFailures, formatCat } from './report'
+import { SPAN_FAMILIES } from './responders'
 import { COVERAGE_HI, COVERAGE_LO, R_MIN } from './stats'
 
 const FIXTURE = JSON.parse(simText) as M14aFixture
@@ -33,10 +42,19 @@ const THETAS = FIXTURE.simulees.map((s) => s[0])
 /** The fast test's sample size (marked: the full run is N = 2,000, `scripts/sim-cat.slow.test.ts`). */
 const N_FAST = 300
 /**
- * Regression floor of r on the CAT axes at the A15 budget: well below the measured .82 / .80 /
- * .75 (N = 300), far above what a broken selector or scorer gives. NOT the acceptance (R_MIN).
+ * Regression floor of r on the CAT axes at the A15 budget, well below the measured values: it
+ * catches a broken scorer or a selector serving the wrong axis, NOT the acceptance (R_MIN). Nor
+ * does it catch a selector blind to the responses: with the provisional a = 1.0 items and ≈ 5 min
+ * per axis such a selector gives about the same r (M1.4b review); {@link TARGETING_MIN} does.
  */
 const R_FLOOR_A15 = 0.7
+/**
+ * Minimum r(mean administered b, θ) on each CAT axis: the selector must target difficulty to the
+ * person (§7.4). Measured .66 / .53 / .45 (MAT / SPA / QR, N = 300); a selector blind to the
+ * responses (the in-session posterior replaced by the prior; M1.4b review mutation) gives
+ * .16 / .01 / −.05 and fails this test.
+ */
+const TARGETING_MIN = 0.3
 
 const BLOCK_ORDER = ['rt_simple', 'rt_choice4', 'span_fwd', 'span_bwd', 'corsi', 'coding', 'reading']
 
@@ -65,15 +83,28 @@ describe('simulateSession', () => {
     expect(new Set(families).size).toBe(families.length) // §7.7 family exclusion
   })
 
-  it('charges E[T] and never exceeds the session target; unused CAT time carries over', () => {
-    const plan = planSession({ sessionSeed: 'unit-session' })
-    const blockTime = plan.reduce((t, p) => t + (p.kind === 'block' ? p.item.expected_time_s : 0), 0)
-    expect(s.timeS).toBeCloseTo(blockTime + s.catTimeS, 9)
-    expect(s.timeS).toBeLessThanOrEqual(A15_TARGET_S)
-    expect(A15_TARGET_S - s.timeS).toBeLessThan(80) // the last segment uses what the others left
+  it("charges each block the taker's own time and moves the difference into the next CAT segment", () => {
+    expect(s.timeS).toBeCloseTo(s.blocks.reduce((t, b) => t + b.time_s, 0) + s.catTimeS, 9)
+    expect(s.blocks.some((b) => Math.abs(b.time_s - b.expected_time_s) > 1)).toBe(true) // not the planned E[T]
+    // The last CAT segment (QR) gets the target minus every earlier step's actual time and the later
+    // blocks' E[T], and stops with less than one item's time unused; so the session ends at the
+    // target plus what the blocks after it (coding, reading) overran, minus that unused time.
+    const trailing = s.blocks.filter((b) => b.family === 'coding' || b.family === 'reading').reduce((t, b) => t + b.time_s - b.expected_time_s, 0)
+    const unused = A15_TARGET_S + trailing - s.timeS
+    expect(unused).toBeGreaterThanOrEqual(-1e-9)
+    expect(unused).toBeLessThan(80)
     const short = simulateSession(theta, 'unit-session', { targetS: 15 * 60 })
-    expect(short.timeS).toBeLessThanOrEqual(15 * 60)
     expect(short.itemIds.length).toBeLessThan(s.itemIds.length)
+  })
+
+  it('a high-WM taker runs longer span blocks and so has less time for QR', () => {
+    const wm = AXIS_INDEX.WM
+    const lo = simulateSession(theta.map((v, k) => (k === wm ? -2.5 : v)), 'unit-wm')
+    const hi = simulateSession(theta.map((v, k) => (k === wm ? 2.5 : v)), 'unit-wm')
+    const spanTime = (r: typeof s): number => r.blocks.filter((b) => SPAN_FAMILIES.has(b.family)).reduce((t, b) => t + b.time_s, 0)
+    expect(spanTime(hi)).toBeGreaterThan(spanTime(lo) + 120)
+    const qrTime = (r: typeof s): number => r.itemIds.map((id) => resolveItem(id)!).filter((i) => i.axis === 'QR').reduce((t, i) => t + i.expected_time_s, 0)
+    expect(qrTime(hi)).toBeLessThan(qrTime(lo))
   })
 
   it('finishes with the correlated MAP over all 17 axes', () => {
@@ -102,6 +133,23 @@ describe('simulateSession', () => {
   })
 })
 
+describe('targetingR', () => {
+  const sess = (axis: 'MAT' | 'QR', bs: readonly number[]): { observations: Observation[] } => ({
+    observations: bs.map((b) => ({ kind: '2pl', axis, a: 1, b, y: 1 })),
+  })
+  const th = (v: number): number[] => Array.from({ length: N_AXES }, (_, k) => (k === AXIS_INDEX.MAT ? v : 0))
+
+  it('is 1 when the difficulty given follows θ, ≈ 0 when it ignores θ, and skips sessions without items', () => {
+    const thetas = [-2, -1, 0, 1, 2].map(th)
+    expect(targetingR(thetas, [-2, -1, 0, 1, 2].map((v) => sess('MAT', [v - 0.5, v + 0.5])), 'MAT')).toBeCloseTo(1, 12)
+    expect(targetingR(thetas, [0.3, -0.2, 0.4, -0.3, 0.1].map((v) => sess('MAT', [v])), 'MAT')).toBeLessThan(0.5)
+    const withGap = [sess('MAT', [-2]), sess('QR', [5]), sess('MAT', [0]), sess('MAT', [1]), sess('MAT', [2])]
+    expect(targetingR(thetas, withGap, 'MAT')).toBeCloseTo(1, 12)
+    expect(targetingR(thetas, withGap, 'SPA')).toBeNaN()
+    expect(administeredB(withGap[1]!, 'QR')).toEqual([5])
+  })
+})
+
 describe(`M1.4b (b): adaptive session under the A15 time rule, N = ${N_FAST} (fast)`, () => {
   let run: CatRun
 
@@ -117,9 +165,12 @@ describe(`M1.4b (b): adaptive session under the A15 time rule, N = ${N_FAST} (fa
     expect(run.targetS).toBe(A15_TARGET_S)
   })
 
-  it('keeps every session within the A15 time budget', () => {
-    expect(run.timeS.max).toBeLessThanOrEqual(A15_TARGET_S)
-    expect(run.timeS.min).toBeGreaterThan(A15_TARGET_S - 120)
+  it("every session's simulated time is within A15's 25–30 min, around the 27.5-min target", () => {
+    expect(run.timeS.max).toBeLessThanOrEqual(A15_MAX_S)
+    expect(run.timeS.min).toBeGreaterThanOrEqual(25 * 60)
+    expect(Math.abs(run.timeS.mean - A15_TARGET_S)).toBeLessThan(60)
+    // time is the taker's, not charged by construction: slow blocks carry some sessions past the target
+    expect(run.overTarget).toBeGreaterThan(0)
     expect(run.segmentEnds).toEqual({ time: 3 * N_FAST })
   })
 
@@ -133,10 +184,30 @@ describe(`M1.4b (b): adaptive session under the A15 time rule, N = ${N_FAST} (fa
     }
   })
 
-  it('every fixed block yields its observation, and each CAT axis gets at least the coverage floor', () => {
+  it('every fixed block yields its observation', () => {
     expect(Object.keys(run.blockObserved).sort()).toEqual([...BLOCK_ORDER].sort())
     expect(Object.values(run.blockObserved).every((p) => p === 1)).toBe(true)
-    for (const k of CAT_AXES) expect(run.itemsPerAxis[k]!.min, k).toBeGreaterThanOrEqual(COVERAGE_FLOOR)
+  })
+
+  // MAT and SPA always reach the §7.4 session-1 floor of 3 items. QR does not always: it follows
+  // the span blocks, and a high-WM taker's longer span blocks can use up its time (the selector
+  // stops on time before the floor, M1.14). Measured 5.3% of sessions (N = 300); a follow-up for
+  // M1.15's session clock. Bounded here so it cannot grow unnoticed.
+  it('MAT and SPA always get the coverage floor; QR misses it only after span blocks overran', () => {
+    expect(run.floorShort.MAT).toBe(0)
+    expect(run.floorShort.SPA).toBe(0)
+    expect(run.itemsPerAxis.MAT!.min).toBeGreaterThanOrEqual(COVERAGE_FLOOR)
+    expect(run.itemsPerAxis.SPA!.min).toBeGreaterThanOrEqual(COVERAGE_FLOOR)
+    expect(run.floorShort.QR).toBeLessThan(0.1)
+    for (const s of run.sessions) {
+      if ((s.items.QR ?? 0) >= COVERAGE_FLOOR) continue
+      const spanOver = s.blocks.filter((b) => SPAN_FAMILIES.has(b.family)).reduce((t, b) => t + b.time_s - b.expected_time_s, 0)
+      expect(spanOver, s.sessionSeed).toBeGreaterThan(60)
+    }
+  })
+
+  it(`the selector adapts: r(mean administered b, θ) ≥ ${TARGETING_MIN} on every CAT axis`, () => {
+    for (const k of CAT_AXES) expect(run.targeting[k], k).toBeGreaterThanOrEqual(TARGETING_MIN)
   })
 
   it(`block axes recover θ with r ≥ ${R_MIN}; CAT axes stay above the regression floor ${R_FLOOR_A15}`, () => {

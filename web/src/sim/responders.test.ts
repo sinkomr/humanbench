@@ -10,6 +10,9 @@ import { grmProbs, p2pl, p3pl } from '../engine/irt'
 import { createRng } from '../engine/prng'
 import type { BlockScore, ItemInstance } from '../tasks/family'
 import { FAMILIES, getFamily } from '../tasks/registry'
+import { RT_WEB_NORMS } from '../tasks/rt/prior'
+import type { RtResponse, RtSpec } from '../tasks/rt/types'
+import type { ReadingKey, ReadingSpec } from '../tasks/reading/types'
 import type { SpanItem } from '../tasks/span/config'
 import { categoryOf } from '../tasks/span/protocol'
 import { itemProtocol } from '../tasks/span/score'
@@ -18,11 +21,14 @@ import {
   SPAN_FAMILIES,
   answerBlock,
   answerItem,
+  blockTimeS,
   grmCategory,
   itemObservation,
   itemResponse,
   pCorrect,
   poisson,
+  rtBlockTimeS,
+  spanBlockTimeS,
   spanStream,
   type AnyItem,
 } from './responders'
@@ -207,5 +213,66 @@ describe('poisson', () => {
     expect(poisson(0, createRng('z'))).toBe(0)
     expect(() => poisson(-1, createRng('z'))).toThrow(RangeError)
     expect(() => poisson(701, createRng('z'))).toThrow(RangeError)
+  })
+})
+
+describe("block time: the family's time model on the taker's response (M1.4b review fix)", () => {
+  const spans = BLOCK_FAMILIES.filter((f) => SPAN_FAMILIES.has(f.name))
+
+  it.each(spans.map((f) => f.name))('%s: the mean over the GRM categories at θ = 0 is the block E[T]', (name) => {
+    const item = getFamily(name)!.generate('time-e') as unknown as SpanItem
+    const p = item.params
+    if (p.model !== 'grm') throw new Error('span must be GRM')
+    const expected = grmProbs(0, p.a, p.b).reduce((t, prob, y) => t + prob * spanBlockTimeS(item, spanStream(item, y === 0 ? 0 : item.spec.start_length + y - 1)), 0)
+    expect(expected).toBeCloseTo(item.expected_time_s, 9)
+  })
+
+  it('a span block takes longer the longer the span passed (property)', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...spans), fc.string({ maxLength: 6 }), fc.integer({ min: 0, max: 12 }), (fam, seed, raw) => {
+        const item = fam.generate(`span-t.${seed}`) as unknown as SpanItem
+        const at = (l: number): number => spanBlockTimeS(item, spanStream(item, l < item.spec.start_length ? 0 : Math.min(l, item.spec.max_length)))
+        expect(at(raw + 1)).toBeGreaterThanOrEqual(at(raw))
+        expect(at(item.spec.max_length)).toBeGreaterThan(at(0))
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it('RT: every trial at the norm median RT takes the block E[T]; slower trials take longer', () => {
+    for (const name of RT_FAMILIES) {
+      const item = getFamily(name)!.generate('time-rt') as unknown as ItemInstance<RtSpec, object>
+      const med = RT_WEB_NORMS[item.spec.mode].median_rt_ms
+      const at = (ms: number): RtResponse => ({ rt_ms: item.spec.positions.map(() => ms), choice: item.spec.positions.map((pos) => (item.spec.n_positions === 1 ? 0 : pos)) })
+      expect(rtBlockTimeS(item, at(med)), name).toBeCloseTo(item.expected_time_s, 9)
+      const nTrials = item.spec.positions.length + item.spec.practice_foreperiods_ms.length
+      expect(rtBlockTimeS(item, at(med + 100)), name).toBeCloseTo(item.expected_time_s + (100 * nTrials) / 1000, 9)
+    }
+  })
+
+  it('coding takes its window; reading at the norm speed exp(d) takes the block E[T], at half speed the reading time more', () => {
+    const coding = getFamily('coding')!.generate('time-code')
+    expect(blockTimeS(coding, [])).toBe(coding.expected_time_s)
+    const reading = getFamily('reading')!.generate('time-read') as unknown as ItemInstance<ReadingSpec, ReadingKey>
+    if (reading.params.model !== 'gaussian') throw new Error('reading must be Gaussian')
+    const normS = (60 * reading.spec.word_count) / Math.exp(reading.params.d)
+    const read = (s: number) => ({ reading_time_ms: s * 1000, choices: [...reading.key.indices] })
+    expect(blockTimeS(reading as unknown as AnyItem, read(normS))).toBeCloseTo(reading.expected_time_s, 9)
+    expect(blockTimeS(reading as unknown as AnyItem, read(2 * normS))).toBeCloseTo(reading.expected_time_s + normS, 9)
+  })
+
+  it.each(BLOCK_FAMILIES.map((f) => f.name))('%s: answerBlock reports the time of the response it gave', (name) => {
+    const fam = getFamily(name)!
+    const item = fam.generate('time-ans')
+    for (const t of [-2, 0, 2]) {
+      const ans = answerBlock(fam, item, t, createRng(`time-ans.${name}.${t}`))
+      expect(ans.timeS).toBe(blockTimeS(item, ans.response))
+      expect(ans.timeS).toBeGreaterThan(0)
+    }
+  })
+
+  it('rejects an unknown block family', () => {
+    const coding = getFamily('coding')!
+    expect(() => blockTimeS({ ...coding.generate('x'), family: 'mystery' }, [])).toThrow(/no block-time model/)
   })
 })

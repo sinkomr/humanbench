@@ -11,8 +11,9 @@
  *   fixture within 0.02 (n must be 300 or 2000, the sizes the fixture has Python results for).
  * - **(b)** the adaptive session (`src/sim/cat.ts`) for the same n people: the real selector,
  *   scorer and registered families (blocks included) under the A15 time rule with the session
- *   target `--target-min` (default A15's 27.5 min), then, unless `--fixed 0`, the same with a
- *   fixed length of `--fixed` items per CAT axis (DESIGN §14.3 "r ≥ .85 at 20 items/axis").
+ *   target `--target-min` (default 27.5 min, the midpoint of A15's 25–30; the time acceptance is
+ *   every simulated session ≤ 30 min), then, unless `--fixed 0`, the same with a fixed length of
+ *   `--fixed` items per CAT axis (DESIGN §14.3 "r ≥ .85 at 20 items/axis").
  *
  * Prints one table per run with its acceptance verdict (progress goes to stderr). `--json` writes
  * the numbers; a relative path resolves against the directory npm was run from. Exit codes: 0 (or
@@ -99,6 +100,9 @@ function catJson(run: CatRun, fails: readonly string[]): object {
     items_per_axis: run.itemsPerAxis,
     time_s: run.timeS,
     cat_time_s: run.catTimeS,
+    over_target: run.overTarget,
+    targeting: run.targeting,
+    floor_short: run.floorShort,
     block_observed: run.blockObserved,
     segment_ends: run.segmentEnds,
     acceptance_failures: fails,

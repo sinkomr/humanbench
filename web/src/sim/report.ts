@@ -4,7 +4,8 @@
  */
 
 import { AXIS_CODES, type AxisCode } from '../engine/axes'
-import { CAT_AXES, observedAxes, type CatRun } from './cat'
+import { COVERAGE_FLOOR } from '../engine/selector'
+import { A15_MAX_S, CAT_AXES, observedAxes, type CatRun } from './cat'
 import { M14A_VERSION, PARITY_R_TOL, type M14aRun, type ParityRow } from './m14a'
 import { COVERAGE_HI, COVERAGE_LO, R_MIN, Z_COVERAGE, type AxisRecovery } from './stats'
 
@@ -13,18 +14,19 @@ export interface CatAcceptanceOptions {
   readonly rMin?: number
   /** Axes the r criterion applies to (default {@link CAT_AXES}: MAT, SPA, QR). */
   readonly rAxes?: readonly AxisCode[]
-  /** Session time limit in seconds (default: the run's A15 target; none for a fixed-length run). */
+  /** Session time limit in seconds (default {@link A15_MAX_S}, A15's upper end; none for a fixed-length run). */
   readonly budgetS?: number
 }
 
 /**
  * The M1.4b (b) checks a CAT run fails (empty = pass): r ≥ rMin on each CAT axis; 90% coverage in
- * [0.85, 0.95] on every axis observed in every session; and, for an A15 run, every session within
- * the time budget. A fixed-length run (DESIGN §14.3 "at 20 items/axis") has no time criterion.
+ * [0.85, 0.95] on every axis with observations; and, for an A15 run, every session's
+ * simulated time within the A15 budget (≤ 30 min, the upper end of A15's "about 25–30 min"; the
+ * plan targets 27.5). A fixed-length run (DESIGN §14.3 "at 20 items/axis") has no time criterion.
  */
 export function catAcceptanceFailures(run: CatRun, opts: CatAcceptanceOptions = {}): string[] {
   const rMin = opts.rMin ?? R_MIN
-  const budget = opts.budgetS ?? (run.fixedLength === null ? run.targetS : undefined)
+  const budget = opts.budgetS ?? (run.fixedLength === null ? A15_MAX_S : undefined)
   const by = new Map(run.axes.map((a) => [a.code, a]))
   const fails: string[] = []
   for (const k of opts.rAxes ?? CAT_AXES) {
@@ -40,6 +42,8 @@ export function catAcceptanceFailures(run: CatRun, opts: CatAcceptanceOptions = 
 }
 
 const f3 = (x: number): string => (Number.isFinite(x) ? x.toFixed(3) : String(x))
+const f2 = (x: number): string => (Number.isFinite(x) ? x.toFixed(2) : String(x))
+const pct = (x: number): string => `${(100 * x).toFixed(1)}%`
 const pad = (s: string, n: number): string => s.padStart(n)
 
 function axisLines(axes: readonly AxisRecovery[], note: (code: AxisCode) => string = () => ''): string[] {
@@ -76,13 +80,17 @@ export function formatCat(run: CatRun, opts: CatAcceptanceOptions = {}): string 
       const s = run.itemsPerAxis[k]!
       return `${k} ${s.min} / ${s.mean.toFixed(1)} / ${s.max}`
     }).join(', '),
-    `session time, min (min / mean / max): ${(run.timeS.min / 60).toFixed(1)} / ${(run.timeS.mean / 60).toFixed(1)} / ${(run.timeS.max / 60).toFixed(1)}; CAT part ${(run.catTimeS.mean / 60).toFixed(1)} mean`,
+    'selector targeting, r(mean administered b, θ): ' + CAT_AXES.map((k) => `${k} ${f2(run.targeting[k]!)}`).join(', '),
+    `sessions under the ${COVERAGE_FLOOR}-item coverage floor: ` + CAT_AXES.map((k) => `${k} ${pct(run.floorShort[k]!)}`).join(', '),
+    `session time (blocks as simulated, CAT items at E[T]), min (min / mean / max): ${(run.timeS.min / 60).toFixed(1)} / ${(run.timeS.mean / 60).toFixed(1)} / ${(run.timeS.max / 60).toFixed(1)}` +
+      (run.fixedLength === null ? `; over the ${(run.targetS / 60).toFixed(1)}-min target ${pct(run.overTarget)}` : '') +
+      `; CAT part ${(run.catTimeS.mean / 60).toFixed(1)} mean`,
     'blocks with an observation: ' + Object.entries(run.blockObserved).map(([f, p]) => `${f} ${(100 * p).toFixed(0)}%`).join(', '),
     'CAT segment ends: ' + Object.entries(run.segmentEnds).map(([k, v]) => `${k} ${v}`).join(', '),
   ]
   const fails = catAcceptanceFailures(run, opts)
   const rMin = opts.rMin ?? R_MIN
-  const timeRule = run.fixedLength === null ? `, every session ≤ ${((opts.budgetS ?? run.targetS) / 60).toFixed(1)} min` : ''
+  const timeRule = run.fixedLength === null ? `, every session ≤ ${((opts.budgetS ?? A15_MAX_S) / 60).toFixed(1)} min` : ''
   lines.push(`acceptance (r ≥ ${rMin} on ${(opts.rAxes ?? CAT_AXES).join('/')}; cov90 in [${COVERAGE_LO}, ${COVERAGE_HI}] where observed${timeRule}): ${fails.length === 0 ? 'PASS' : 'FAIL'}`)
   for (const f of fails) lines.push(`  FAIL ${f}`)
   return lines.join('\n')

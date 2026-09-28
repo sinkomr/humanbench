@@ -26,6 +26,9 @@
  * - **Reading** (Gaussian on ln wpm, A10): ln wpm = d + lam·θ_PS + √(0.15² + τ_res²)·ε, the §7.1
  *   per-passage SD and the residual; every gate question answered correctly.
  *
+ * A block also takes this taker's own time ({@link blockTimeS}): the family's block-time model
+ * (the one its E[T] evaluates for the norm taker) applied to the simulated response.
+ *
  * All randomness comes from the injected seeded stream (engine PRNG), never `Math.random`.
  */
 
@@ -35,10 +38,12 @@ import type { Observation } from '../engine/types'
 import type { AnyFamily, BlockScore, ItemInstance, NumericKey } from '../tasks/family'
 import type { CodingItem, CodingResponse } from '../tasks/coding/config'
 import type { ReadingKey, ReadingResponse, ReadingSpec } from '../tasks/reading/types'
-import { RT_MODE_CONFIG, type RtResponse, type RtSpec } from '../tasks/rt/types'
-import { spanSymbols, type SpanItem } from '../tasks/span/config'
+import { RT_TIME_MODEL, RT_WEB_NORMS } from '../tasks/rt/prior'
+import { RT_MODE_CONFIG, RT_PRACTICE_TRIALS, type RtResponse, type RtSpec } from '../tasks/rt/types'
+import { SPAN_TASKS, spanSymbols, type SpanItem } from '../tasks/span/config'
+import { SPAN_INSTRUCTIONS_S, SPAN_INTER_TRIAL_S } from '../tasks/span/prior'
 import { runBlock } from '../tasks/span/score'
-import { SIGMA_MEASUREMENT } from '../tasks/reading/prior'
+import { SIGMA_MEASUREMENT, readingExpectedTimeS } from '../tasks/reading/prior'
 
 /** Any family's item instance. */
 export type AnyItem = ItemInstance<object, object>
@@ -202,15 +207,86 @@ export function blockResponse(item: AnyItem, theta: number, rng: Rng): unknown {
   throw new RangeError(`no simulated taker for block family ${item.family}`)
 }
 
+// ------------------------------------------------------------------------------ block time
+
+/**
+ * Seconds a span block takes (`span/prior.ts` [SPEC] v0 time model): instructions, then per trial
+ * actually given (one per entry of `stream`, in presentation order) L elements × (SOA + the
+ * task's entry time per element) + the inter-trial gap. Its mean over the GRM categories at θ = 0
+ * is the block's E[T] (`spanExpectedTime`).
+ */
+export function spanBlockTimeS(item: SpanItem, stream: readonly unknown[]): number {
+  const cfg = SPAN_TASKS.find((c) => c.task === item.spec.task)
+  if (cfg === undefined) throw new RangeError(`${item.item_id}: unknown span task ${item.spec.task}`)
+  if (stream.length > item.spec.trials.length) throw new RangeError(`${item.item_id}: ${stream.length} responses for ${item.spec.trials.length} trials`)
+  const soaS = (item.spec.timing.on_ms + item.spec.timing.off_ms) / 1000
+  let t = SPAN_INSTRUCTIONS_S
+  for (let i = 0; i < stream.length; i++) t += item.spec.trials[i]!.length * (soaS + cfg.responseSPerElement) + SPAN_INTER_TRIAL_S
+  return t
+}
+
+function median(xs: readonly number[]): number {
+  const s = [...xs].sort((a, b) => a - b)
+  const m = s.length >> 1
+  return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2
+}
+
+/**
+ * Seconds an RT block takes (`rt/prior.ts` `RT_TIME_MODEL`): instructions, then every trial's
+ * foreperiod, its RT and the ITI. The scored trials use the response's RTs; the practice trials
+ * (not simulated) the taker's median, and a missed trial the mode's timeout. At the norm median RT
+ * on every trial this is the block's E[T] (`rtExpectedTimeS`).
+ */
+export function rtBlockTimeS(item: ItemInstance<RtSpec, object>, response: RtResponse): number {
+  const { spec } = item
+  const cfg = RT_MODE_CONFIG[spec.mode]
+  const ms = (v: number | null): number => (v === null ? cfg.max_rt_ms : Math.max(0, v))
+  const scored = response.rt_ms.map(ms)
+  const answered = response.rt_ms.filter((v): v is number => v !== null)
+  const typical = answered.length > 0 ? median(answered) : RT_WEB_NORMS[spec.mode].median_rt_ms
+  const practiceRt = response.practice_rt_ms?.map(ms) ?? new Array<number>(RT_PRACTICE_TRIALS).fill(typical)
+  const sum = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0)
+  const fp = sum(spec.practice_foreperiods_ms) + sum(spec.foreperiods_ms)
+  const nTrials = spec.practice_foreperiods_ms.length + spec.foreperiods_ms.length
+  return RT_TIME_MODEL.instructions_s + (fp + sum(practiceRt) + sum(scored) + nTrials * RT_TIME_MODEL.iti_ms) / 1000
+}
+
+/**
+ * Seconds a block takes this taker (M1.4b review fix: the session is charged the taker's own
+ * time, not the block's E[T] at the norm): the family's own [SPEC] v0 block-time model, the one
+ * its `expected_time_s` evaluates for the norm taker, applied to the simulated response. So a
+ * high-WM taker who runs through more span lengths, or a slow reader, takes longer than E[T].
+ *
+ * - span: {@link spanBlockTimeS} over the trials actually given;
+ * - RT: {@link rtBlockTimeS} with the taker's RTs;
+ * - coding: the fixed window `duration_s` (= its E[T]);
+ * - reading: `readingExpectedTimeS` at the taker's own speed 60·W / reading time (instructions,
+ *   reading, the gate questions).
+ */
+export function blockTimeS(item: AnyItem, response: unknown): number {
+  if (SPAN_FAMILIES.has(item.family)) return spanBlockTimeS(item as SpanItem, response as readonly unknown[])
+  if (RT_FAMILIES.has(item.family)) return rtBlockTimeS(item as ItemInstance<RtSpec, object>, response as RtResponse)
+  if (item.family === 'coding') return (item as CodingItem).spec.duration_s
+  if (item.family === 'reading') {
+    const { spec } = item as ItemInstance<ReadingSpec, ReadingKey>
+    const readingS = (response as ReadingResponse).reading_time_ms / 1000
+    if (!(readingS > 0)) throw new RangeError(`${item.item_id}: reading time must be > 0`)
+    return readingExpectedTimeS(spec.word_count, Math.log((60 * spec.word_count) / readingS), spec.questions)
+  }
+  throw new RangeError(`no block-time model for block family ${item.family}`)
+}
+
 /** Result of running one fixed block. */
 export interface BlockAnswer {
   readonly response: unknown
   readonly score: BlockScore
+  /** Seconds the block took this taker ({@link blockTimeS}). */
+  readonly timeS: number
 }
 
-/** Run a fixed block as a taker with θ on its axis and score it with the family's `score()`. */
+/** Run a fixed block as a taker with θ on its axis, score it with the family's `score()` and time it. */
 export function answerBlock(family: AnyFamily, item: AnyItem, theta: number, rng: Rng): BlockAnswer {
   if (family.kind !== 'block') throw new RangeError(`${family.name} is an item family`)
   const response = blockResponse(item, theta, rng)
-  return { response, score: family.score(item, response) }
+  return { response, score: family.score(item, response), timeS: blockTimeS(item, response) }
 }
