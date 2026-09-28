@@ -45,6 +45,13 @@ describe('blob palette (§9.8, §13)', () => {
     expect(contrastRatio(MUTED_GREY, THEMES.light.bg)).toBeLessThan(MIN_MARK_CONTRAST)
   })
 
+  it('swaps the two blue roles in dark mode (documented): #0072B2 is below 4.5:1 there', () => {
+    expect(THEMES.dark).toMatchObject({ blob: OKABE_ITO.skyBlue, band: OKABE_ITO.blue, textAccent: OKABE_ITO.skyBlue })
+    expect(contrastRatio(OKABE_ITO.blue, THEMES.dark.bg)).toBeLessThan(MIN_TEXT_CONTRAST)
+    expect(contrastRatio(OKABE_ITO.blue, THEMES.dark.bg)).toBeGreaterThanOrEqual(MIN_MARK_CONTRAST)
+    expect(THEMES.dark.textAccent).toBe(THEMES.dark.blob)
+  })
+
   it('exposes every token as a --hb-* custom property', () => {
     const vars = themeVars(THEMES.light)
     expect(vars['--hb-blob']).toBe('#0072B2')

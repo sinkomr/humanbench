@@ -13,6 +13,9 @@ import type { Observation } from '../engine/types'
 import type { FacetObservation } from './facets'
 import type { ProfileInput } from './profile'
 
+/** Facets of block families (A18 `kind: 'block'`): each observation is one administration. */
+const BLOCK_FACETS: ReadonlySet<string> = new Set(['digits_forward', 'digits_backward', 'corsi', 'simple_rt', 'choice_rt', 'coding', 'reading_speed'])
+
 /** How many observations of which facet an axis gets. */
 type AxisPlan = Partial<Record<AxisCode, readonly (readonly [facet: string, n: number])[]>>
 
@@ -54,7 +57,10 @@ function build(id: string, label: string, truth: Partial<Record<AxisCode, number
   const facetObservations: FacetObservation[] = []
   for (const a of AXES) {
     for (const [facet, n] of plan[a.code] ?? []) {
-      for (let i = 0; i < n; i++) facetObservations.push({ facet, obs: simulate(rng, a.code, truth[a.code] ?? 0) })
+      for (let i = 0; i < n; i++) {
+        const obs = simulate(rng, a.code, truth[a.code] ?? 0)
+        facetObservations.push(BLOCK_FACETS.has(facet) ? { facet, obs, block: true } : { facet, obs })
+      }
     }
   }
   const score = scoreAll(facetObservations.map((o) => o.obs))

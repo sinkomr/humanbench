@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBlob } from './blob'
+import { buildBlob, fitLayout } from './blob'
 import { axisEstimates, axisSamples, N_FUZZ } from './profile'
 import { syntheticProfile } from './synthetic'
 
@@ -12,12 +12,14 @@ const RUNS = 15
 const WARMUP = 3
 
 describe('blob bench (ROADMAP M1.16)', () => {
-  it(`K = 17 with ${N_FUZZ} fuzz curves: estimates + posterior draws + every path, median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
+  it(`K = 17 with ${N_FUZZ} fuzz curves: estimates + posterior draws + phone text fit + every path, median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
     const input = syntheticProfile('full')!.input
     const run = (seed: string): number => {
       const t0 = performance.now()
       const est = axisEstimates(input)
-      const model = buildBlob(est, axisSamples(input, est, N_FUZZ, seed))
+      // The worst case: a phone-width chart, where the text layout is searched for (fitLayout).
+      const layout = fitLayout(est, 328)
+      const model = buildBlob(est, axisSamples(input, est, N_FUZZ, seed), { layout })
       const ms = performance.now() - t0
       expect(model.spokes).toHaveLength(17)
       expect(model.fuzz).toHaveLength(N_FUZZ)

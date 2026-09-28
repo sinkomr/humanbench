@@ -2,7 +2,9 @@
   /**
    * Dev-only blob demo (`#/dev/blob?profile=<id>`; ROADMAP M1.16): the profile view on synthetic
    * profiles scored by the real engine, for e2e, axe and render timing. Never in a production
-   * build (routes.ts). `data-render-ms` on <main> is the last render time (M1.16 bench).
+   * build (routes.ts). `data-render-ms` on <main> is the last render time (M1.16 bench) and
+   * `data-render-seq` counts finished renders, so a test can wait for the next one (two renders
+   * can take the same time: Chromium rounds performance.now() to 0.1 ms).
    */
   import { onMount, tick, untrack } from 'svelte'
   import { DISCLAIMER } from '../copy'
@@ -17,11 +19,13 @@
   const first = untrack(() => syntheticProfile(params.get('profile') ?? '')) ?? SYNTHETIC_PROFILES[0]!
   let profileId = $state(first.id)
   let renderMs = $state<number | null>(null)
+  let renderSeq = $state(0)
   const profile = $derived(syntheticProfile(profileId) ?? first)
 
   onMount(() => {
     document.title = 'HumanBench — blob demo (development only)'
     renderMs = performance.now() - t0
+    renderSeq += 1
   })
 
   async function choose(id: string): Promise<void> {
@@ -29,10 +33,11 @@
     profileId = id
     await tick()
     renderMs = performance.now() - start
+    renderSeq += 1
   }
 </script>
 
-<main data-render-ms={renderMs === null ? undefined : renderMs.toFixed(2)}>
+<main data-render-ms={renderMs === null ? undefined : renderMs.toFixed(2)} data-render-seq={renderSeq}>
   <h1>Blob demo (development only)</h1>
   <p class="intro">Synthetic profiles scored by the engine, for tests. These are not anyone's results.</p>
   <div class="profiles" role="group" aria-label="Synthetic profile">

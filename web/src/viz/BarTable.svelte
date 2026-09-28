@@ -7,6 +7,7 @@
    * shown, so it is what screen readers get by default.
    */
   import { formatTheta, THETA_MAX, THETA_MIN } from './geometry'
+  import type { CountUnit } from './facets'
   import type { SpokeEstimate } from './profile'
   import {
     notMeasuredText,
@@ -18,7 +19,7 @@
   } from './copy'
 
   interface Props {
-    rows: readonly (SpokeEstimate & { readonly nItems?: number })[]
+    rows: readonly (SpokeEstimate & { readonly nItems?: number; readonly unit?: CountUnit })[]
     caption: string
     skillHeader: string
     groupHeader: string
@@ -76,7 +77,7 @@
           </td>
           <td>{RELATION_TEXT[row.relation]}</td>
         {:else}
-          <td colspan="3" class="stub">{notMeasuredText(row.reason, row.nItems)}</td>
+          <td colspan="3" class="stub">{notMeasuredText(row.reason, row.nItems, row.unit)}</td>
         {/if}
       </tr>
     {/each}

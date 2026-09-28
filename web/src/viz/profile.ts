@@ -46,6 +46,8 @@ export interface SpokeEstimate {
   readonly name: string
   /** One or two short lines for the chart label. */
   readonly shortLabel: readonly string[]
+  /** One short line for the chart label on narrow screens (`blob.ts` fitLayout); axes have one. */
+  readonly compactLabel?: string
   /** Contiguous group of the spoke: the A7 cluster of an axis, the axis name of a facet. */
   readonly group: string
   readonly tier: GoldTier
@@ -87,6 +89,30 @@ export const SHORT_LABELS: Readonly<Record<AxisCode, readonly string[]>> = Objec
   KAP: ['Arts & Practical', 'Knowledge'],
   EMO: ['Emotion Reading', '(text scenarios)'],
   CRE: ['Creative', 'Thinking'],
+})
+
+/**
+ * One-line chart labels for narrow screens, where 17 full labels cannot all fit around the circle
+ * at a legible size (M1.16 review). Plain words; the table and the full labels keep the names.
+ */
+export const COMPACT_LABELS: Readonly<Record<AxisCode, string>> = Object.freeze({
+  MAT: 'Matrices',
+  LR: 'Arguments',
+  LG: 'Logic games',
+  RC: 'Reading',
+  VOC: 'Vocabulary',
+  QR: 'Quantitative',
+  SPA: 'Spatial',
+  WM: 'Memory',
+  RT: 'Reaction',
+  PS: 'Speed',
+  FER: 'Estimation',
+  CAL: 'Calibration',
+  KST: 'STEM',
+  KHU: 'Humanities',
+  KAP: 'Arts & life',
+  EMO: 'Emotion',
+  CRE: 'Creative',
 })
 
 /** The 90% interval and relation of an estimate (§9.5, A12). */
@@ -131,7 +157,17 @@ export function axisEstimates(input: ProfileInput): AxisEstimate[] {
   const byCode = new Map<AxisCode, AxisDef>(AXES.map((a) => [a.code, a]))
   return spokeOrder(input.sigmaVersion).map((code): AxisEstimate => {
     const a = byCode.get(code)!
-    const base = { id: code, code, name: a.name, shortLabel: SHORT_LABELS[code], group: a.cluster, cluster: a.cluster, tier: a.tier, glyph: a.glyph }
+    const base = {
+      id: code,
+      code,
+      name: a.name,
+      shortLabel: SHORT_LABELS[code],
+      compactLabel: COMPACT_LABELS[code],
+      group: a.cluster,
+      cluster: a.cluster,
+      tier: a.tier,
+      glyph: a.glyph,
+    }
     const observed = Object.hasOwn(input.score.eap, code)
     if (skipped.has(code) || !observed) {
       const reason: NotMeasuredReason = skipped.has(code) ? 'skipped' : a.status === 'v2' ? 'not_yet_available' : 'no_data'

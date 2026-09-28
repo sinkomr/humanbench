@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { AXIS_INDEX } from '../engine/axes'
 import { eapAxis, scoreAll } from '../engine/scorer'
 import type { Observation } from '../engine/types'
-import { clusterFacets, FACET_MIN_ITEMS, facetLabel, type FacetObservation } from './facets'
+import { countText, notMeasuredText } from './copy'
+import { clusterFacets, FACET_MIN_ITEMS, facetLabel, unmeasuredReasons, type FacetObservation } from './facets'
+import { axisEstimates } from './profile'
 import { syntheticProfile } from './synthetic'
 
 function items(facet: string, n: number, y: (i: number) => 0 | 1): FacetObservation[] {
@@ -49,8 +51,49 @@ describe('facet drill-down (§9.6, A12)', () => {
     expect(rows.map((r) => r.id)).toEqual(['MAT:matrix', 'MAT:series', 'MAT:odd_one_out', 'LG:ordering'])
     expect(rows.map((r) => r.measured)).toEqual([true, true, false, false])
     expect(rows[0]!.group).toBe('Matrix & Series')
-    const muted = clusterFacets(p.input.score, p.facetObservations, 'Reasoning', { unmeasured: ['MAT'] })
-    expect(muted.every((r) => !r.measured)).toBe(true)
+    const off = clusterFacets(p.input.score, p.facetObservations, 'Reasoning', { unmeasured: { MAT: 'skipped' } })
+    expect(off.every((r) => !r.measured)).toBe(true)
+  })
+
+  it('gives facets of an unmeasured axis the axis reason, never "insufficient data"', () => {
+    const p = syntheticProfile('skipped')!
+    const est = axisEstimates(p.input)
+    expect(unmeasuredReasons(est)).toMatchObject({ SPA: 'skipped', EMO: 'not_yet_available', LR: 'no_data' })
+    const rows = clusterFacets(p.input.score, p.facetObservations, 'Spatial/Memory', { catalog: p.catalog, unmeasured: unmeasuredReasons(est) })
+    const spa = rows.find((r) => r.id === 'SPA:3d_rotation')!
+    // 16 items, but the axis was skipped: not measured (skipped), not "insufficient data (16 items)".
+    expect(spa).toMatchObject({ measured: false, reason: 'skipped', nItems: 16 })
+    expect(notMeasuredText(spa.reason, spa.nItems, spa.unit)).toBe('Not measured (skipped)')
+    // A facet of an axis never offered yet, and of one with no data.
+    const emo = clusterFacets(p.input.score, [], 'Social-Creative', { catalog: { EMO: ['appraisal'] }, unmeasured: unmeasuredReasons(est) })
+    expect(emo[0]).toMatchObject({ measured: false, reason: 'not_yet_available' })
+    const lr = clusterFacets(p.input.score, [], 'Reasoning', { catalog: { LR: ['flaw'] }, unmeasured: unmeasuredReasons(est) })
+    expect(lr[0]).toMatchObject({ measured: false, reason: 'no_data' })
+  })
+
+  it('counts a block as one observation toward the threshold and says "block" (A12, A18)', () => {
+    const p = syntheticProfile('m1')!
+    const rows = clusterFacets(p.input.score, p.facetObservations, 'Spatial/Memory', { catalog: p.catalog, unmeasured: unmeasuredReasons(axisEstimates(p.input)) })
+    const fwd = rows.find((r) => r.id === 'WM:digits_forward')!
+    expect(fwd).toMatchObject({ measured: false, reason: 'insufficient_data', nItems: 1, unit: 'block' })
+    expect(notMeasuredText(fwd.reason, fwd.nItems, fwd.unit)).toBe('Insufficient data (1 block; 5 needed)')
+    expect(rows.find((r) => r.id === 'SPA:3d_rotation')).toMatchObject({ measured: true, unit: 'item' })
+    // Five blocks reach the threshold like five items.
+    const blocks: FacetObservation[] = Array.from({ length: FACET_MIN_ITEMS }, (_, i) => ({
+      facet: 'corsi',
+      block: true,
+      obs: { kind: 'grm', axis: 'WM', a: 1.5, b: [-1, 0, 1], y: i % 4 } satisfies Observation,
+    }))
+    const five = clusterFacets(scoreAll(blocks.map((o) => o.obs)), blocks, 'Spatial/Memory')
+    expect(five.find((r) => r.id === 'WM:corsi')).toMatchObject({ measured: true, nItems: 5, unit: 'block' })
+  })
+
+  it('pluralises counts', () => {
+    expect(countText(1)).toBe('1 item')
+    expect(countText(0)).toBe('0 items')
+    expect(countText(3, 'block')).toBe('3 blocks')
+    expect(notMeasuredText('insufficient_data', 1)).toBe('Insufficient data (1 item; 5 needed)')
+    expect(notMeasuredText('insufficient_data', 2, 'block')).toBe('Insufficient data (2 blocks; 5 needed)')
   })
 
   it('names facets readably', () => {

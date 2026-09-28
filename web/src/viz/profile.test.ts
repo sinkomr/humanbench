@@ -81,6 +81,17 @@ describe('posterior fuzz draws (§9.3: 20 seeded draws)', () => {
     expect(draws.every((d) => d.length === 17)).toBe(true)
   })
 
+  it('put each axis draw under its own spoke: column i of axisSamples is the draw of spoke i\'s axis', () => {
+    for (const p of [full, m1]) {
+      const est = axisEstimates(p.input)
+      const joint = posteriorSamples(p.input.score.theta, p.input.score.cov, 20, 'map')
+      const draws = axisSamples(p.input, est, 20, 'map')
+      // Spoke order differs from the canonical axis order, so a column mix-up cannot pass.
+      expect(est.map((e) => e.code)).not.toEqual([...AXIS_CODES])
+      draws.forEach((d, s) => est.forEach((e, i) => expect(d[i]).toBe(joint[s]![AXES.find((a) => a.code === e.code)!.index])))
+    }
+  })
+
   it('have the posterior mean and covariance (Cholesky draws, n = 6000)', () => {
     // No observations: the posterior is the prior N(0, Σ_init), whose correlations reach .60, so a
     // draw that ignored the off-diagonal (or used the wrong factor) would fail.

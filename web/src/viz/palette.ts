@@ -5,8 +5,14 @@
  * that carry meaning (the mean stroke, whiskers, markers, not-measured stubs) keep at least 3:1
  * (WCAG 1.4.11). `palette.test.ts` checks every ratio and that the backgrounds match `app.css`.
  *
- * Deviation, documented: in the light scheme #999999 is 2.8:1 on white, below the 3:1 non-text
- * minimum, so muted marks use #808080 there; the dark scheme keeps §9.8's #999999.
+ * Deviations, documented:
+ * - Light scheme: #999999 is 2.8:1 on white, below the 3:1 non-text minimum, so muted marks use
+ *   #808080 there; the dark scheme keeps §9.8's #999999.
+ * - Dark scheme: the two blue roles swap (blob #56B4E9, band #0072B2). #0072B2 is only 3.5:1 on
+ *   the dark background (#15151a), enough for 3:1 but not for 4.5:1, so it cannot serve as the
+ *   text accent there; #56B4E9 is 7.9:1. Keeping the mean curve, its markers and the accent text
+ *   in one colour, the brighter blue takes the blob role and the darker one the (translucent)
+ *   band. Both stay Okabe–Ito, so the pair is still colour-blind safe (§9.8).
  */
 
 /** The eight Okabe–Ito colours (Okabe & Ito 2008). */

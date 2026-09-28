@@ -7,14 +7,25 @@
 import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CLUSTERS } from '../engine/axes'
-import { FACET_MIN_ITEMS, clusterFacets } from './facets'
+import { FACET_MIN_ITEMS, clusterFacets, unmeasuredReasons } from './facets'
 import { formatTheta } from './geometry'
+import { HATCH_CAPTION } from './copy'
 import { THEMES } from './palette'
 import { axisEstimates, N_FUZZ, type SpokeEstimate } from './profile'
 import ProfileView from './ProfileView.svelte'
 import { SYNTHETIC_PROFILES, syntheticProfile, type SyntheticProfile } from './synthetic'
 
 let app: ReturnType<typeof mount> | undefined
+
+// jsdom has no ResizeObserver (bind:clientWidth needs one): a stub that never reports a size, so
+// the charts keep the default text layout here (fitLayout is unit-tested in blob.test.ts).
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver
+}
 
 afterEach(() => {
   if (app) unmount(app)
@@ -129,11 +140,40 @@ describe('ProfileView structure (§9, A15)', () => {
     expect(header('MAT').querySelector('.glyph')).toBeNull()
     expect(root.querySelectorAll('path.hatch')).toHaveLength(2)
     expect(root.querySelector('path.hatch')!.getAttribute('fill')).toMatch(/^url\(#hb-profile-\d+-blob-hatch\)$/)
+    // The hatch is explained in the caption, only when there is one.
+    expect(root.querySelector('figcaption')!.textContent).toContain(HATCH_CAPTION)
     // In M1 the tier (c) axes are not measured, so nothing is hatched.
     app && unmount(app)
     app = undefined
     document.body.innerHTML = ''
-    expect(render(syntheticProfile('m1')!).querySelectorAll('path.hatch')).toHaveLength(0)
+    const m1 = render(syntheticProfile('m1')!)
+    expect(m1.querySelectorAll('path.hatch')).toHaveLength(0)
+    expect(m1.querySelector('figcaption')!.textContent).not.toContain(HATCH_CAPTION)
+  })
+
+  it('draws the crisp curve muted around muted spokes and in the blob colour elsewhere (§9.5)', () => {
+    const p = syntheticProfile('full')!
+    const root = render(p)
+    const est = axisEstimates(p.input)
+    const crisp = root.querySelector('path.crisp')!
+    const muted = root.querySelector('path.crisp-muted')!
+    expect(muted.getAttribute('d')).toBe(crisp.getAttribute('d'))
+    const clipOf = (el: Element): Element => document.getElementById(/^url\(#(.+)\)$/.exec(el.getAttribute('clip-path')!)![1]!)!
+    expect(clipOf(crisp).tagName.toLowerCase()).toBe('clippath')
+    expect(clipOf(muted).querySelectorAll('path').length).toBeGreaterThan(0)
+    expect(new Set(muted.getAttribute('data-spokes')!.split(' '))).toEqual(new Set(est.filter((e) => e.muted).map((e) => e.id)))
+    // No muted spoke: one plain curve, no clip.
+    app && unmount(app)
+    app = undefined
+    document.body.innerHTML = ''
+    const q = syntheticProfile('m1')!
+    // Every θ at +1 with a tiny SD: every measured interval excludes 0.
+    const score = { ...q.input.score, theta: q.input.score.theta.map(() => 1), cov: q.input.score.cov.map((r, i) => r.map((_v, j) => (i === j ? 1e-4 : 0))) }
+    const noneMuted = { ...q, input: { ...q.input, score } }
+    const plain = render(noneMuted)
+    expect(axisEstimates(noneMuted.input).some((e) => e.muted)).toBe(false)
+    expect(plain.querySelector('path.crisp-muted')).toBeNull()
+    expect(plain.querySelector('path.crisp')!.hasAttribute('clip-path')).toBe(false)
   })
 })
 
@@ -152,7 +192,11 @@ describe('bar / lollipop view (§9.5 c: the screen-reader default)', () => {
       expect(el.getAttribute('aria-hidden'), el.tagName).not.toBe('true')
       expect(el.hasAttribute('hidden'), el.tagName).toBe(false)
     }
-    // Screen readers meet the table before anything else in the view: the blob is a single image.
+    // Screen readers meet the table before the blob (DOM order), and the blob is a single image
+    // with nothing focusable inside.
+    const svg = root.querySelector('svg.hb-blob')!
+    expect(table.compareDocumentPosition(svg) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(table.compareDocumentPosition(root.querySelector('figcaption')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(root.querySelectorAll('svg.hb-blob [tabindex], svg.hb-blob a, svg.hb-blob button')).toHaveLength(0)
     // Lollipops are decoration: their values are the cell text.
     for (const svg of table.querySelectorAll('svg.lollipop')) expect(svg.getAttribute('aria-hidden')).toBe('true')
@@ -198,7 +242,7 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     const panel = root.querySelector('.facet-panel')!
     expect(panel.querySelector('h3')!.textContent).toBe('Quantitative: facets')
     const est = axisEstimates(p.input)
-    const rows = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: est.filter((e) => !e.measured).map((e) => e.code) })
+    const rows = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: unmeasuredReasons(est) })
     expect(rows.map((r) => [r.facet, r.nItems, r.measured])).toEqual([
       ['percent', 6, true],
       ['arith', 5, true],
@@ -223,8 +267,25 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     click(root.querySelector('path.wedge[data-group="Speed"]'))
     expect(root.querySelector('.facet-panel h3')!.textContent).toBe('Speed: facets')
     expect(button(root, 'Speed')!.getAttribute('aria-expanded')).toBe('true')
-    // One RT block per facet: below the threshold, so no numbers.
-    expect(root.querySelectorAll('.facet-panel td.stub')).toHaveLength(4)
+    // One block per facet: below the threshold, so no numbers, counted in blocks (A12, A18).
+    const stubs = [...root.querySelectorAll('.facet-panel td.stub')].map((td) => td.textContent)
+    expect(stubs).toHaveLength(4)
+    expect(stubs.every((t) => t === 'Insufficient data (1 block; 5 needed)')).toBe(true)
+  })
+
+  it('facets of a skipped axis read "not measured (skipped)"', () => {
+    const root = render(syntheticProfile('skipped')!)
+    click(button(root, 'Spatial/Memory'))
+    expect(root.querySelector('.facet-panel tr[data-row="SPA:3d_rotation"] td.stub')!.textContent).toBe('Not measured (skipped)')
+  })
+
+  it('the facet sub-blob has no clickable wedges (only the main blob drills down)', () => {
+    const root = render(syntheticProfile('full')!)
+    click(button(root, 'Knowledge'))
+    const sub = root.querySelector('.facet-panel svg.hb-blob')!
+    expect(sub).not.toBeNull()
+    expect(sub.querySelectorAll('path.wedge')).toHaveLength(0)
+    expect(root.querySelector('figure svg.hb-blob')!.querySelectorAll('path.wedge').length).toBeGreaterThan(0)
   })
 
   it('offers every cluster present, in spoke order', () => {
@@ -247,7 +308,7 @@ describe('no area, total or single score anywhere (§9.5 a, CLAUDE.md blob rule,
       for (const [name, act] of states) {
         act()
         const selected = root.querySelector('.facet-panel')?.getAttribute('data-cluster')
-        const facetRows = selected ? clusterFacets(p.input.score, p.facetObservations, selected as (typeof CLUSTERS)[number], { catalog: p.catalog, unmeasured: est.filter((e) => !e.measured).map((e) => e.code) }) : []
+        const facetRows = selected ? clusterFacets(p.input.score, p.facetObservations, selected as (typeof CLUSTERS)[number], { catalog: p.catalog, unmeasured: unmeasuredReasons(est) }) : []
         const allowed = allowedNumbers([...est, ...facetRows])
         const { text, attrs } = textAndAttributes(root)
         expect(text.match(AGGREGATE_WORDS), `${name}: text`).toBeNull()

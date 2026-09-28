@@ -1,5 +1,15 @@
 <script lang="ts" module>
+  import { canvasTextMeasure } from './measure'
+  import type { TextMeasure } from './blob'
+
   let instances = 0
+  let pageMeasure: TextMeasure | null | undefined
+
+  /** Canvas text widths in the page font, made once (only after real layout: jsdom has no canvas). */
+  function textMeasure(): TextMeasure | undefined {
+    if (pageMeasure === undefined) pageMeasure = canvasTextMeasure(getComputedStyle(document.body).fontFamily)
+    return pageMeasure ?? undefined
+  }
 </script>
 
 <script lang="ts">
@@ -9,12 +19,15 @@
    * cluster drill-down to facet estimates (§9.6, A12: ≥ 5 items). Input is the engine's scoreAll
    * output plus, for the drill-down, facet-tagged observations.
    *
+   * DOM order puts the table before the blob, so a screen reader meets the data first (§9.5 c);
+   * the blob is one image. Each chart's text layout is fitted to its rendered width (`fitLayout`).
+   *
    * Nothing here shows a sum, an average or the size of the shape (§9.5 a, CLAUDE.md blob rule).
    */
   import { onMount } from 'svelte'
   import BarTable from './BarTable.svelte'
   import BlobChart from './BlobChart.svelte'
-  import { buildBlob, type BlobModel } from './blob'
+  import { buildBlob, fitLayout, type BlobModel } from './blob'
   import {
     BARS_NOTE,
     BLOB_DESCRIPTION,
@@ -24,6 +37,7 @@
     FACET_GROUP,
     FACET_SKILL,
     facetCaption,
+    HATCH_CAPTION,
     facetHeading,
     PROFILE_HEADING,
     READING_CAPTION,
@@ -38,7 +52,7 @@
     VIEW_BLOB,
     VIEW_GROUP_LABEL,
   } from './copy'
-  import { clusterFacets, type FacetEstimate, type FacetObservation, type FacetOptions } from './facets'
+  import { clusterFacets, unmeasuredReasons, type FacetEstimate, type FacetObservation, type FacetOptions } from './facets'
   import { themeVars, THEMES, type ThemeName } from './palette'
   import { axisEstimates, axisSamples, DEFAULT_FUZZ_SEED, independentSamples, N_FUZZ, type ProfileInput } from './profile'
   import type { Cluster } from '../engine/axes'
@@ -65,6 +79,9 @@
   let view = $state<'blob' | 'bars'>('blob')
   let selected = $state<Cluster | null>(null)
   let prefersDark = $state(false)
+  /** Rendered widths of the two chart boxes (0 before layout and in jsdom: default text layout). */
+  let blobWidth = $state(0)
+  let subWidth = $state(0)
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') return
@@ -78,14 +95,20 @@
   })
 
   const estimates = $derived(axisEstimates(input))
-  const model = $derived(buildBlob(estimates, axisSamples(input, estimates, N_FUZZ, seed)))
+  const samples = $derived(axisSamples(input, estimates, N_FUZZ, seed))
+  // Once any chart on the page has laid out, later mounts measure from their first frame.
+  const measure = $derived(blobWidth > 0 || subWidth > 0 ? textMeasure() : (pageMeasure ?? undefined))
+  const layout = $derived(fitLayout(estimates, blobWidth, { measure }))
+  const model = $derived(buildBlob(estimates, samples, { layout, measure }))
   const clusters = $derived([...new Set(estimates.map((e) => e.cluster))])
-  const unmeasured = $derived(estimates.filter((e) => !e.measured).map((e) => e.code))
+  const unmeasured = $derived(unmeasuredReasons(estimates))
   const facets: FacetEstimate[] = $derived(
     selected === null ? [] : clusterFacets(input.score, facetObservations, selected, { catalog: facetCatalog, unmeasured }),
   )
   const facetModel: BlobModel | null = $derived(
-    facets.length >= SUB_BLOB_MIN && facets.length <= SUB_BLOB_MAX ? buildBlob(facets, independentSamples(facets, N_FUZZ, `${seed}/${selected}`)) : null,
+    facets.length >= SUB_BLOB_MIN && facets.length <= SUB_BLOB_MAX
+      ? buildBlob(facets, independentSamples(facets, N_FUZZ, `${seed}/${selected}`), { layout: fitLayout(facets, subWidth, { measure }), measure })
+      : null,
   )
   const style = $derived(
     Object.entries(themeVars(THEMES[theme ?? (prefersDark ? 'dark' : 'light')]))
@@ -107,20 +130,27 @@
     <button type="button" aria-pressed={view === 'bars'} onclick={() => (view = 'bars')}>{VIEW_BARS}</button>
   </div>
 
+  <!-- Before the figure: the data table is what a screen reader meets first (§9.5 c). -->
+  <BarTable rows={estimates} caption={TABLE_CAPTION} skillHeader={TABLE_SKILL} groupHeader={TABLE_CLUSTER} hidden={view === 'blob'} />
+
   {#if view === 'blob'}
     <figure class="blob-figure">
-      <BlobChart {model} uid="{uid}-blob" title={BLOB_TITLE} description={BLOB_DESCRIPTION} onselect={toggleCluster} {selected} />
+      <div class="chart-box" bind:clientWidth={blobWidth}>
+        <BlobChart {model} uid="{uid}-blob" title={BLOB_TITLE} description={BLOB_DESCRIPTION} onselect={toggleCluster} {selected} />
+      </div>
       <figcaption>
         <p>{RING_CAPTION}</p>
         <p>{UNCERTAINTY_CAPTION}</p>
         <p>{STUB_CAPTION}</p>
         <p>{TIER_LEGEND}</p>
+        {#if model.hatch.length > 0}
+          <p>{HATCH_CAPTION}</p>
+        {/if}
         <p>{READING_CAPTION}</p>
       </figcaption>
     </figure>
   {/if}
 
-  <BarTable rows={estimates} caption={TABLE_CAPTION} skillHeader={TABLE_SKILL} groupHeader={TABLE_CLUSTER} hidden={view === 'blob'} />
   {#if view === 'bars'}
     <p class="note">{BARS_NOTE}</p>
     <p class="note">{TIER_LEGEND}</p>
@@ -144,7 +174,9 @@
             <p>{FACET_EMPTY}</p>
           {:else}
             {#if facetModel !== null}
-              <BlobChart model={facetModel} uid="{uid}-sub" title={facetHeading(selected)} description={facetCaption(selected)} />
+              <div class="chart-box" bind:clientWidth={subWidth}>
+                <BlobChart model={facetModel} uid="{uid}-sub" title={facetHeading(selected)} description={facetCaption(selected)} />
+              </div>
             {/if}
             <BarTable rows={facets} caption={facetCaption(selected)} skillHeader={FACET_SKILL} groupHeader={FACET_GROUP} />
           {/if}
@@ -206,6 +238,12 @@
   }
   figure {
     margin: 0;
+  }
+  /* The chart's own box: its width is what fitLayout sizes the text for. */
+  .chart-box {
+    width: 100%;
+    max-width: 40rem;
+    margin: 0 auto;
   }
   figcaption {
     font-size: 0.875rem;
