@@ -1,5 +1,5 @@
 {
-  "version": "reading-passages-v2",
+  "version": "reading-passages-v3",
   "passages": [
     {
       "id": "franklin-autobiography-1868",
@@ -48,20 +48,20 @@
         },
         {
           "id": "franklin-autobiography-1868#q2",
-          "stem": "What did the author propose as a more effectual watch?",
+          "stem": "What did the author's paper on the watch insist on most particularly?",
           "options": [
-            "Making every housekeeper attend in turn",
-            "Fining constables who neglected the rounds",
-            "Letting the Junto pick constables",
-            "Paying proper men to serve full time"
+            "The watch spending most nights drinking",
+            "The profit constables made from the fees",
+            "The rough men the constable got as a watch",
+            "The poor paying as much tax as the rich"
           ],
           "key_index": 3,
-          "evidence_span": "I proposed as a more effectual watch, the hiring of proper men to serve constantly in that business",
+          "evidence_span": "insisting more particularly on the inequality of this six-shilling tax of the constables, respecting the circumstances of those who paid it",
           "option_rationales": [
-            "Housekeepers attending in turn was the old system he criticised.",
-            "Neglected rounds were one of the irregularities; no fines are proposed.",
-            "The Junto approved the idea; picking constables is never mentioned.",
-            "Stated: he proposed the hiring of proper men to serve constantly."
+            "Nights spent in tippling are one of the irregularities he represented, not the point he insisted on.",
+            "The constableship as a place of profit is one of the irregularities he represented, not the point he insisted on.",
+            "The ragamuffins the constable got are one of the irregularities he represented, not the point he insisted on.",
+            "Stated: he insisted more particularly on the inequality of the tax; a poor widow paid as much as the wealthiest merchant."
           ]
         },
         {
@@ -111,20 +111,20 @@
       "questions": [
         {
           "id": "darwin-beagle-1845#q1",
-          "stem": "At what time did the earthquake begin?",
+          "stem": "Which place does the author say was the more terrible sight?",
           "options": [
-            "In the middle of the night",
-            "At half-past eleven in the forenoon",
-            "Shortly after sunrise",
-            "Late in the afternoon"
+            "Talcahuano",
+            "Concepcion",
+            "The island of Quiriquina",
+            "The low island in the bay"
           ],
           "key_index": 1,
-          "evidence_span": "The earthquake commenced at half-past eleven o'clock in the forenoon.",
+          "evidence_span": "Concepcion, although not so completely desolated, was a more terrible, and if I may so call it, picturesque sight",
           "option_rationales": [
-            "The night is mentioned only as what would have been worse.",
-            "Stated: it commenced at half-past eleven o'clock in the forenoon.",
-            "Sunrise is never mentioned.",
-            "The afternoon is never mentioned."
+            "Talcahuano, where the great wave left little more than one layer of ruins, was the more desolated, not the more terrible sight.",
+            "Stated: Concepcion, although not so completely desolated, was a more terrible sight.",
+            "Quiriquina is where the mayor-domo was thrown down; it is not compared as a sight.",
+            "The low island is where seventy animals were drowned; it is not compared as a sight."
           ]
         },
         {
@@ -310,20 +310,20 @@
         },
         {
           "id": "faraday-candle-1861#q3",
-          "stem": "According to the passage, when do the street sellers shade their candles?",
+          "stem": "Which question does the lecturer say he has no doubt his listeners will ask?",
           "options": [
-            "On Saturday mornings",
-            "On market-day mornings",
-            "On quiet nights",
-            "On Saturday nights"
+            "Why a candle is so different from a lamp",
+            "How a solid with no vessel reaches the flame",
+            "How the fuel keeps together once it is fluid",
+            "How the oil rises to the top of the wick"
           ],
           "key_index": 3,
-          "evidence_span": "for the shading of their candles on Saturday nights",
+          "evidence_span": "I have no doubt you will ask, how is it that the oil, which will not burn of itself, gets up to the top of the cotton",
           "option_rationales": [
-            "The passage says Saturday nights, not mornings.",
-            "The market-place is named, but mornings are not.",
-            "Quiet describes the flame the lecturer wants, not the sellers' time.",
-            "Stated: they shade their candles on Saturday nights."
+            "He says his listeners observe that a candle differs from a lamp; he does not say they will ask why.",
+            "How the solid gets up to the flame is the more wonderful thing he raises himself.",
+            "How the fluid keeps together is part of that wonder, which he raises himself.",
+            "Stated: he has no doubt you will ask how the oil gets up to the top of the cotton."
           ]
         }
       ]

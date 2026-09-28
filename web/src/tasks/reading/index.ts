@@ -15,7 +15,9 @@
  * generatorVersion 1.1.0: the review rewrite of the bank (`reading-passages-v2`: three gate
  * questions replaced, five re-optioned, two passages re-dated) and τ_res = 0.05 (A11, A17).
  * 1.2.0: the key is `{ indices }` only; the evidence spans stay in the authored bank, out of the
- * runtime payload (A14).
+ * runtime payload (A14). 1.3.0: bank `reading-passages-v3`, three gate questions rewritten after
+ * the independent solves found them guessable without the passage (franklin q2, darwin q1,
+ * faraday q3; A14).
  */
 
 import { defineFamily, type ItemInstance } from '../family'
@@ -30,7 +32,7 @@ export const reading = defineFamily<ReadingSpec, ReadingKey, ReadingResponse>({
   name: 'reading',
   axis: 'PS',
   facet: 'reading_speed',
-  generatorVersion: '1.2.0',
+  generatorVersion: '1.3.0',
   itemType: 'reading_block',
   strata: [3],
   build: buildReading,

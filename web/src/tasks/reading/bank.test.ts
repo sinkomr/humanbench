@@ -25,7 +25,7 @@ const PINNED_WORDS: Readonly<Record<string, number>> = {
  * when the other checkout is absent. After an intended edit: bump `generatorVersion`, update
  * both pins, copy the file over and re-run the independent solves (A14).
  */
-const PASSAGES_SHA256 = '4c04c802fd5743bb0c348d27ca6b5820ea658afc2088c7ecd515c33d6dc9b83c'
+const PASSAGES_SHA256 = '6e965fb169d9fc634df911def637fad4f0fbb986f35b3a25d2be8d363ef04947'
 
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
@@ -52,7 +52,7 @@ describe('passage bank (A14, ROADMAP M1.12)', () => {
   })
 
   it(`holds ≥ ${MIN_PASSAGES} passages of ${MIN_WORDS}–${MAX_WORDS} words, with the pinned counts`, () => {
-    expect(READING_BANK.version).toBe('reading-passages-v2')
+    expect(READING_BANK.version).toBe('reading-passages-v3')
     expect(PASSAGES.length).toBeGreaterThanOrEqual(MIN_PASSAGES)
     const counts = Object.fromEntries(PASSAGES.map((p) => [p.id, countPassageWords(passageText(p.paragraphs))]))
     expect(counts).toEqual(PINNED_WORDS)
@@ -80,6 +80,18 @@ describe('passage bank (A14, ROADMAP M1.12)', () => {
     }).length
     expect(uniqueLongest).toBeLessThanOrEqual(qs.length / 3)
     expect(uniqueShortest).toBeLessThanOrEqual(qs.length / 3)
+  })
+
+  it('never cues a key by echoing its stem (A14: not answerable from stem cues)', () => {
+    // Words of 4+ letters shared with the stem; the key must not be the one option sharing most.
+    const words = (s: string): Set<string> => new Set((s.toLowerCase().match(/[a-z]+/g) ?? []).filter((w) => w.length >= 4))
+    for (const q of PASSAGES.flatMap((p) => p.questions)) {
+      const stem = words(q.stem)
+      const shared = q.options.map((o) => [...words(o)].filter((w) => stem.has(w)).length)
+      const top = Math.max(...shared)
+      const keyAlone = top > 0 && shared[q.key_index] === top && shared.filter((n) => n === top).length === 1
+      expect(keyAlone, `${q.id}: ${shared.join(',')}`).toBe(false)
+    }
   })
 
   it('each evidence span occurs in its passage and mentions no other option verbatim', () => {

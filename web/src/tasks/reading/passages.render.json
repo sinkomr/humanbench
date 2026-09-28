@@ -1,5 +1,5 @@
 {
-  "version": "reading-passages-v2",
+  "version": "reading-passages-v3",
   "passages": [
     {
       "id": "franklin-autobiography-1868",
@@ -41,12 +41,12 @@
         },
         {
           "id": "franklin-autobiography-1868#q2",
-          "stem": "What did the author propose as a more effectual watch?",
+          "stem": "What did the author's paper on the watch insist on most particularly?",
           "options": [
-            "Making every housekeeper attend in turn",
-            "Fining constables who neglected the rounds",
-            "Letting the Junto pick constables",
-            "Paying proper men to serve full time"
+            "The watch spending most nights drinking",
+            "The profit constables made from the fees",
+            "The rough men the constable got as a watch",
+            "The poor paying as much tax as the rich"
           ],
           "key_index": 3
         },
@@ -90,12 +90,12 @@
       "questions": [
         {
           "id": "darwin-beagle-1845#q1",
-          "stem": "At what time did the earthquake begin?",
+          "stem": "Which place does the author say was the more terrible sight?",
           "options": [
-            "In the middle of the night",
-            "At half-past eleven in the forenoon",
-            "Shortly after sunrise",
-            "Late in the afternoon"
+            "Talcahuano",
+            "Concepcion",
+            "The island of Quiriquina",
+            "The low island in the bay"
           ],
           "key_index": 1
         },
@@ -233,12 +233,12 @@
         },
         {
           "id": "faraday-candle-1861#q3",
-          "stem": "According to the passage, when do the street sellers shade their candles?",
+          "stem": "Which question does the lecturer say he has no doubt his listeners will ask?",
           "options": [
-            "On Saturday mornings",
-            "On market-day mornings",
-            "On quiet nights",
-            "On Saturday nights"
+            "Why a candle is so different from a lamp",
+            "How a solid with no vessel reaches the flame",
+            "How the fuel keeps together once it is fluid",
+            "How the oil rises to the top of the wick"
           ],
           "key_index": 3
         }
