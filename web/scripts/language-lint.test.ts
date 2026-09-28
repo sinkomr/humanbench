@@ -70,9 +70,9 @@ const benignText = fc.array(fc.constantFrom(...BENIGN), { maxLength: 6 }).map((w
 const recase = (s: string, flips: readonly boolean[]): string => [...s].map((c, i) => (flips[i % Math.max(1, flips.length)] ? c.toUpperCase() : c.toLowerCase())).join('')
 
 describe('language lint scope (ROADMAP M1.20)', () => {
-  it('scans web/src, web/public, web/index.html and the README, but not tests or test data', () => {
+  it('scans web/src, web/public, the HTML pages and the README, but not tests or test data', () => {
     const files = collectFiles()
-    for (const f of ['README.md', 'web/index.html', 'web/src/App.svelte', 'web/src/copy.ts', 'web/src/main.ts', 'web/src/app.css', 'web/public/favicon.svg', 'web/src/tasks/reading/passages.render.json', 'web/src/tasks/reading/passages.json']) {
+    for (const f of ['README.md', 'web/index.html', 'web/rt-selftest.html', 'web/src/selftest/RtSelfTest.svelte', 'web/src/App.svelte', 'web/src/copy.ts', 'web/src/main.ts', 'web/src/app.css', 'web/public/favicon.svg', 'web/src/tasks/reading/passages.render.json', 'web/src/tasks/reading/passages.json']) {
       expect(files).toContain(f)
     }
     expect(files.some((f) => /\.test\.ts$|__fixtures__/.test(f))).toBe(false)

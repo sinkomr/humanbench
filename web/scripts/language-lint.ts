@@ -448,7 +448,7 @@ export function lintFiles(files: readonly SourceFile[], { checkHomes = true }: {
 
 /** Directories scanned recursively, and single files, relative to the repo root. */
 export const SCAN_DIRS: readonly string[] = ['web/src', 'web/public', 'schema']
-export const SCAN_FILES: readonly string[] = ['README.md', 'web/README.md', 'web/index.html']
+export const SCAN_FILES: readonly string[] = ['README.md', 'web/README.md', 'web/index.html', 'web/rt-selftest.html']
 /** Tests and their data are not copy (they must name banned words to test them). */
 export const EXCLUDE: readonly RegExp[] = [/\.(test|spec)\.[cm]?[jt]sx?$/, /(^|\/)__fixtures__\//]
 

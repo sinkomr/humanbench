@@ -15,6 +15,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/engine/`: scoring, timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/tasks/`: task families
+  - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/viz/`: blob and bar views, export
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
@@ -104,6 +105,27 @@ The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `ma
 pull requests, with the browsers cached, and uploads the report as an artifact.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+
+### RT timing self-test
+
+`/humanbench/rt-selftest.html` (ROADMAP M1.23, DESIGN §11.6) checks how precisely a browser and
+display can time reaction-time trials. It measures the refresh rate, rAF frame-interval jitter, the
+`performance.now()` resolution, the onset scheduling error (the frame a stimulus appears in versus
+the first refresh at or after its target), and the delay from key and pointer events to their
+handlers. Each check shows p50, p95 and max; it passes when its p95 is below 5 ms. The page ends
+with a JSON report to copy. It is linked from nowhere else and asks search engines not to index it.
+
+To run it on a local production build, open http://localhost:4173/humanbench/rt-selftest.html
+after:
+
+```zsh
+cd web
+npm run build
+npm run preview
+```
+
+Keep the tab in front, on the display under test (for example a 120 Hz MacBook panel), with other
+busy tabs closed. `?quick=1` runs small samples (the e2e smoke test uses it); the report marks it.
 
 ### Procedural families
 
