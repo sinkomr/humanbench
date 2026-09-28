@@ -1,7 +1,8 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import type { AxisCode } from './axes'
+import { AXIS_CODES, type AxisCode } from './axes'
 import {
+  bayesModalR0,
   bayesModalTheta,
   calibrationEligible,
   dichotomousObservation,
@@ -17,6 +18,7 @@ import {
   lzStar,
   pasteCheck,
   pCorrect,
+  PERSON_FIT_PRIOR_SD,
   personFitCheck,
   poissonBinomialPmf,
   poissonBinomialUpperTail,
@@ -78,22 +80,25 @@ const toResponses = (obs: readonly DichotomousObservation[]): IntegrityResponse[
 const SIM_AXES: readonly AxisCode[] = ['MAT', 'SPA', 'QR', 'LR']
 
 /**
- * A well-behaved simulated session (the null model of the false-positive properties): 4 axes ×
- * `perAxis` items, θ_k ~ N(0, 1); a ~ lognormal(0.2, 0.3), b ~ θ_k + N(0, 1) (CAT-like targeting);
- * half 3PL with c = 1/4; responses from the model; expected times log-uniform on 10–60 s and
+ * A well-behaved simulated session (the null model of the false-positive properties): `axes` ×
+ * `perAxis` items, θ_k ~ N(0, 1) (or the fixed `theta` on every axis); a ~ lognormal(0.2, 0.3),
+ * b ~ θ_k + N(0, 1) (CAT-like targeting); half 3PL with c = 1/4; responses from the model; expected times log-uniform on 10–60 s and
  * lognormal RTs around them, ln RT = ln E[T] − τ + N(0, 0.4²) with person speed τ ~ N(0, 0.3²)
  * (van der Linden lognormal RT model; α = 2.5 is mid-range for cognitive items); items run
  * back-to-back with 0.5 s gaps; one brief tab switch (0.5–8 s, within the item) in ~10% of items;
  * no paste.
  */
-function simulateSession(rng: Rng, perAxis = 10): IntegritySession {
+function simulateSession(
+  rng: Rng,
+  { perAxis = 10, axes = SIM_AXES, theta: fixed }: { perAxis?: number; axes?: readonly AxisCode[]; theta?: number } = {},
+): IntegritySession {
   const tau = rng.normal(0, 0.3)
   const responses: IntegrityResponse[] = []
   const visibility: VisibilityEvent[] = []
   let t = 1000
   let id = 0
-  for (const axis of SIM_AXES) {
-    const theta = rng.normal()
+  for (const axis of axes) {
+    const theta = fixed ?? rng.normal()
     for (let j = 0; j < perAxis; j++) {
       const a = Math.exp(rng.normal(0.2, 0.3))
       const b = theta + rng.normal(0, 1)
@@ -278,14 +283,15 @@ describe('pasteCheck', () => {
   const items = [resp(0), resp(1)]
 
   it('does not flag a session without paste events', () => {
-    expect(pasteCheck(items, [])).toEqual({ flagged: false, evidence: { count: 0, item_ids: [] } })
+    expect(pasteCheck(items, [])).toEqual({ flagged: false, evidence: { count: 0, item_ids: [], unattributed: 0 } })
   })
 
   it('flags any paste event and attributes it by item_id or by window', () => {
-    const res = pasteCheck(items, [{ t_ms: 70_000 }, { t_ms: 5, item_id: 'i:0' }, { t_ms: 40_000 }])
+    const res = pasteCheck(items, [{ t_ms: 70_000 }, { t_ms: 5, item_id: 'i:0' }, { t_ms: 40_000 }, { t_ms: 1, item_id: 'i:9' }])
     expect(res.flagged).toBe(true)
-    expect(res.evidence.count).toBe(3) // the one between items is counted but not attributed
+    expect(res.evidence.count).toBe(4) // the one between items and the unknown id are counted, not attributed
     expect(res.evidence.item_ids).toEqual(['i:0', 'i:1'])
+    expect(res.evidence.unattributed).toBe(2)
   })
 
   it('flagged ⇔ at least one event; attributed ids are response ids', () => {
@@ -295,6 +301,8 @@ describe('pasteCheck', () => {
         expect(res.flagged).toBe(ts.length > 0)
         expect(res.evidence.count).toBe(ts.length)
         for (const id of res.evidence.item_ids) expect(['i:0', 'i:1']).toContain(id)
+        const inWindow = ts.filter((t) => items.some((r) => t >= r.onset_ms && t <= r.end_ms)).length
+        expect(res.evidence.unattributed).toBe(ts.length - inWindow)
       }),
     )
   })
@@ -379,6 +387,61 @@ describe('uniformRtCheck (SD of ln RT < 0.1 across items of very different lengt
     expect(uniformRtCheck([]).evidence).toEqual({ n_items: 0, time_ratio: null, sd_log_rt: null, applies: false })
   })
 
+  it('applies at a time ratio of exactly 2 (≥ 2×), taken over the timed items only', () => {
+    const atTwo = [10, 12, 14, 17, 20].map((e, i) => resp(i, { expected_time_s: e, rt_ms: 20_000 }))
+    expect(uniformRtCheck(atTwo)).toEqual({ flagged: true, evidence: { n_items: 5, time_ratio: 2, sd_log_rt: 0, applies: true } })
+    // An untimed item (rt_ms = 0) neither counts nor widens the ratio, whatever its expected time.
+    const narrow = [20, 25, 30, 35, 39].map((e, i) => resp(i, { expected_time_s: e, rt_ms: 20_000 }))
+    const untimed = resp(9, { expected_time_s: 1000, rt_ms: 0 })
+    expect(uniformRtCheck([...narrow, untimed])).toEqual({
+      flagged: false,
+      evidence: { n_items: 5, time_ratio: 39 / 20, sd_log_rt: 0, applies: false },
+    })
+  })
+
+  it('uses the sample SD (n − 1) of ln RT', () => {
+    // ln RT = L, L, L, L, L + 0.5: deviations −0.1 (×4) and 0.4, Σ² = 0.2; sample SD √(0.2/4),
+    // population SD √(0.2/5) = 0.2.
+    const rs = [10, 20, 30, 40, 50].map((e, i) => resp(i, { expected_time_s: e, rt_ms: 20_000 * (i === 4 ? Math.exp(0.5) : 1) }))
+    close(uniformRtCheck(rs).evidence.sd_log_rt, Math.sqrt(0.05), 1e-12)
+  })
+
+  it('flags SD(ln RT) strictly below 0.1: exactly 0.1 is not flagged, the next value down is', () => {
+    // Four RTs `four`, the fifth `last` at the analytic root of SD = 0.1; then walk `last` over
+    // adjacent doubles until the computed SD is 0.1 exactly. The computed SD moves in steps of
+    // ~57 ulps of 0.1, so an exact hit needs the right `four` (about 1 in 60): vary the fourth RT.
+    const f64 = new Float64Array(1)
+    const bits = new BigInt64Array(f64.buffer)
+    const nextDouble = (x: number, dir: 1 | -1): number => {
+      f64[0] = x // x > 0: stepping the bit pattern steps to the adjacent double
+      bits[0] = bits[0]! + BigInt(dir)
+      return f64[0]!
+    }
+    const check = (rts: readonly number[]) =>
+      uniformRtCheck([10, 20, 30, 40, 50].map((e, i) => resp(i, { expected_time_s: e, rt_ms: rts[i]! })))
+    let hit: number[] | null = null
+    for (let j = 1; hit === null && j < 5000; j++) {
+      const four = [20_000, 20_000, 20_000, 20_000 + j]
+      const logs = four.map(Math.log)
+      const m = logs.reduce((acc, l) => acc + l, 0) / 4
+      const ss = logs.reduce((acc, l) => acc + (l - m) ** 2, 0)
+      let last = Math.exp(m + Math.sqrt((4 * 0.01 - ss) * 1.25)) // Σ² = ss + (4/5)(ln last − m)²
+      const dir = check([...four, last]).evidence.sd_log_rt! < 0.1 ? 1 : -1
+      for (let k = 0; k < 1000; k++) {
+        const sd = check([...four, last]).evidence.sd_log_rt!
+        if (sd === 0.1) hit = [...four, last]
+        if (sd === 0.1 || (sd < 0.1) !== (dir === 1)) break // found, or crossed 0.1 without hitting it
+        last = nextDouble(last, dir)
+      }
+    }
+    expect(hit).not.toBeNull()
+    const rts = hit!
+    expect(check(rts)).toMatchObject({ flagged: false, evidence: { sd_log_rt: 0.1, applies: true } })
+    let below = rts[4]!
+    while (check([...rts.slice(0, 4), below]).evidence.sd_log_rt! >= 0.1) below = nextDouble(below, -1)
+    expect(check([...rts.slice(0, 4), below]).flagged).toBe(true)
+  })
+
   it('skips zero RTs (no log) and is invariant to the time unit', () => {
     fc.assert(
       fc.property(
@@ -391,6 +454,7 @@ describe('uniformRtCheck (SD of ln RT < 0.1 across items of very different lengt
           const rs = rows.map(([rt, e], i) => resp(i, { rt_ms: rt, expected_time_s: e }))
           const a = uniformRtCheck([...rs, resp(99, { rt_ms: 0, expected_time_s: 1000 })])
           const b = uniformRtCheck(rs.map((r) => ({ ...r, rt_ms: r.rt_ms * k, end_ms: r.onset_ms + r.rt_ms * k })))
+          expect(a.evidence).toEqual(uniformRtCheck(rs).evidence) // the untimed item changes nothing
           expect(a.evidence.n_items).toBe(rs.length)
           close(b.evidence.sd_log_rt, a.evidence.sd_log_rt!, 1e-9)
           expect(a.flagged).toBe(a.evidence.applies && a.evidence.sd_log_rt! < UNIFORM_RT_MAX_SD)
@@ -493,6 +557,15 @@ describe('hardItemCheck (accuracy on b > θ + 1.5 above expectation, exact p < .
     expect(() => hardItemCheck(items, { MAT: 0 })).toThrow(RangeError) // θ missing for SPA
   })
 
+  it('rejects non-finite item parameters instead of treating them as not hard', () => {
+    expect(() => hardItemCheck([resp(0, { params: { model: '2pl', a: 1, b: NaN } })], { MAT: 0 })).toThrow(RangeError)
+    expect(() => hardItemCheck([resp(0, { params: { model: '2pl_testlet', a: Infinity, b: 2 } })], { MAT: 0 })).toThrow(RangeError)
+    expect(() => hardItemCheck([resp(0, { params: { model: '3pl', a: 1, b: 2, c: NaN } })], { MAT: 0 })).toThrow(RangeError)
+    expect(() => integrityReport({ responses: [resp(0, { params: { model: '2pl', a: 1, b: NaN } })] })).toThrow(RangeError)
+    // Unscored responses are not used, so their parameters are not checked here.
+    expect(hardItemCheck([resp(0, { params: { model: '2pl', a: 1, b: NaN }, correct: null })], { MAT: 0 }).flagged).toBe(false)
+  })
+
   it('reports p = 1 and no flag without hard items', () => {
     expect(hardItemCheck([resp(0)], { MAT: 0 }).evidence).toMatchObject({ n_hard: 0, n_correct: 0, p_value: 1 })
   })
@@ -527,7 +600,7 @@ describe('lzStar (Snijders 2001)', () => {
     const v = 8 * s(2) * s(-2) + 2 * s(1) * s(-1)
     close(lzStar(rasch([-2, -1, 1, 2], [1, 1, 0, 0]), { MAT: 0 }, { MAT: 0 }).lz_star, (4 * s(-2) + 2 * s(-1)) / Math.sqrt(v))
     close(lzStar(rasch([-2, -1, 1, 2], [0, 0, 1, 1]), { MAT: 0 }, { MAT: 0 }).lz_star, -(4 * s(2) + 2 * s(1)) / Math.sqrt(v))
-    // The same through the Bayes modal path: the N(0, 1) prior keeps θ̂ = 0 and r_0 = 0.
+    // The same through the Bayes modal path: by symmetry the prior keeps θ̂ = 0 and r_0 = 0.
     const fit = personFitCheck(toResponses(rasch([-2, -1, 1, 2], [0, 0, 1, 1])))
     close(fit.evidence.theta.MAT!, 0, 1e-9)
     close(fit.evidence.lz_star, -(4 * s(2) + 2 * s(1)) / Math.sqrt(v), 1e-9)
@@ -547,7 +620,8 @@ describe('lzStar (Snijders 2001)', () => {
 
   it('matches an independent 40-digit mpmath computation (2 axes, 2PL + 3PL, Bayes modal θ̂)', () => {
     // Reference: Magis et al. (2012) formulas with P' by mpmath numerical differentiation and θ̂
-    // by mpmath.findroot on the numerically differentiated log posterior (N(0, 1) prior).
+    // by mpmath.findroot on the numerically differentiated log posterior, for a N(0, 1) prior and
+    // for the default N(0, 3²) one.
     const obs: DichotomousObservation[] = [
       { kind: '2pl', axis: 'MAT', a: 1.2, b: -1.0, y: 1 },
       { kind: '2pl', axis: 'MAT', a: 0.8, b: -0.3, y: 1 },
@@ -559,7 +633,7 @@ describe('lzStar (Snijders 2001)', () => {
       { kind: '3pl', axis: 'SPA', a: 1.6, b: 0.9, c: 0.25, y: 1 },
       { kind: '3pl', axis: 'SPA', a: 1.1, b: 1.5, c: 0.25, y: 0 },
     ]
-    const theta = bayesModalTheta(obs)
+    const theta = bayesModalTheta(obs, 1)
     close(theta.MAT!, 0.32119296313751961, 1e-9)
     close(theta.SPA!, 0.13258452628945279, 1e-9)
     const res = lzStar(obs, theta, { MAT: -theta.MAT!, SPA: -theta.SPA! })
@@ -568,7 +642,29 @@ describe('lzStar (Snijders 2001)', () => {
     close(res.w, 0.24206039300123942, 1e-9)
     close(res.lz_star, 0.18662764647390906, 1e-9)
     close(res.lz, 0.22253311136631941, 1e-9)
-    close(personFitCheck(toResponses(obs)).evidence.lz_star, 0.18662764647390906, 1e-9)
+
+    expect(PERSON_FIT_PRIOR_SD).toBe(3)
+    const theta3 = bayesModalTheta(obs)
+    close(theta3.MAT!, 0.53733187246687659, 1e-9)
+    close(theta3.SPA!, 0.33740635595600533, 1e-9)
+    expect(bayesModalR0(theta3)).toEqual({ MAT: -theta3.MAT! / 9, SPA: -theta3.SPA! / 9 })
+    const res3 = lzStar(obs, theta3, bayesModalR0(theta3))
+    close(res3.c.MAT!, 0.15709124069325869, 1e-9)
+    close(res3.c.SPA!, 0.43041706131045273, 1e-9)
+    close(res3.w, 0.23016611109248527, 1e-9)
+    close(res3.lz_star, 0.19691795752549631, 1e-9)
+    close(res3.lz, 0.20722115853574144, 1e-9)
+    const fit = personFitCheck(toResponses(obs)).evidence
+    close(fit.lz_star, 0.19691795752549631, 1e-9)
+    close(fit.theta.MAT!, 0.53733187246687659, 1e-9)
+  })
+
+  it('validates the Bayes modal prior', () => {
+    const obs = rasch([0, 1], [1, 0])
+    expect(() => bayesModalTheta(obs, 0)).toThrow(RangeError)
+    expect(() => bayesModalTheta(obs, NaN)).toThrow(RangeError)
+    expect(() => bayesModalR0({ MAT: 1 }, -1)).toThrow(RangeError)
+    expect(bayesModalR0({ MAT: 1.5, QR: -0.5 }, 2, 0.5)).toEqual({ MAT: -0.25, QR: 0.25 })
   })
 
   const obsArb = fc.array(
@@ -587,6 +683,8 @@ describe('lzStar (Snijders 2001)', () => {
   )
 
   it('agrees with a naive re-derivation (numerical P′, ln P − ln(1 − P)) on random multi-axis patterns', () => {
+    // P′ by the five-point stencil (relative error ~1e-10 here; a central difference with h = 1e-6
+    // carries ~1e-8, which the ill-conditioned w − c·r amplifies past the tolerance).
     const P = (o: DichotomousObservation, t: number) => (o.kind === '3pl' ? p3pl(t, o.a, o.b, o.c) : p2pl(t, o.a, o.b))
     fc.assert(
       fc.property(obsArb, fc.double({ min: -2, max: 2, noNaN: true }), fc.double({ min: -1, max: 1, noNaN: true }), (obs, t0, r0) => {
@@ -600,10 +698,10 @@ describe('lzStar (Snijders 2001)', () => {
           const mine = obs.filter((o) => o.axis === axis)
           if (mine.length === 0) continue
           const t = theta[axis]!
-          const h = 1e-6
+          const h = 1e-3
           const rows = mine.map((o) => {
             const p = P(o, t)
-            const dp = (P(o, t + h) - P(o, t - h)) / (2 * h)
+            const dp = (8 * (P(o, t + h) - P(o, t - h)) - (P(o, t + 2 * h) - P(o, t - 2 * h))) / (12 * h)
             return { y: o.y, p, dp, w: Math.log(p) - Math.log(1 - p), r: dp / (p * (1 - p)) }
           })
           const c = rows.reduce((acc, x) => acc + x.dp * x.w, 0) / rows.reduce((acc, x) => acc + x.dp * x.r, 0)
@@ -616,22 +714,41 @@ describe('lzStar (Snijders 2001)', () => {
         const res = lzStar(obs, theta, r0s)
         close(res.w, W, 1e-7)
         // Compare where the corrected variance is well conditioned; a degenerate one (e.g. one
-        // item per axis: w̃ ≡ 0) must come back null rather than as rounding noise. The naive
-        // ln P − ln(1 − P) carries ~1e-16 absolute error, hence the absolute floor.
+        // item per axis: w̃ ≡ 0) must come back null rather than as rounding noise. The reference
+        // loses digits as w̃ = w − c·r cancels (relative error ~ that of P′ / √(v/v0)), and its
+        // ln P − ln(1 − P) carries ~1e-16 absolute error in each w (P rounds near ½), so it is
+        // only compared where v/v0 > 1e-3 and v > 1e-12 (|w̃| ≳ 1e-6); both flaked before (review).
         if (res.lz_star === null) expect(v).toBeLessThanOrEqual(1e-8 * v0 + 1e-20)
-        else if (v > 1e-6 * v0) close(res.lz_star, numerator / Math.sqrt(v), 1e-6)
+        else if (v > 1e-3 * v0 && v > 1e-12) close(res.lz_star, numerator / Math.sqrt(v), 1e-6)
       }),
     )
   })
 
+  it('stays exact for near-identical items at θ, where a naive ln P − ln(1 − P) loses the w', () => {
+    // Found by the property above (review of M1.19): P rounds to ½, so the naive reference had w ≈ 0.
+    // Rasch-like pair with w_i = a(θ − b_i), equal PQ = ¼ to 1e-33 and r = a: c = (w1 + w2)/(2a),
+    // w̃ = ±(w1 − w2)/2, numerator W = −(w1 + w2)/2, Var = (w1 − w2)²/8; the QR item alone adds 0.
+    const b1 = -5.55e-16
+    const b2 = 4.7e-22
+    const obs: DichotomousObservation[] = [
+      { kind: '2pl', axis: 'MAT', a: 0.3, b: b1, y: 0 },
+      { kind: '2pl', axis: 'MAT', a: 0.3, b: b2, y: 0 },
+      { kind: '2pl', axis: 'QR', a: 0.3, b: 0, y: 0 },
+    ]
+    const w1 = 0.3 * (0 - b1)
+    const w2 = 0.3 * (0 - b2)
+    close(lzStar(obs, { MAT: 0, QR: 0 }, { MAT: 0, QR: 0 }).lz_star, (-Math.SQRT2 * (w1 + w2)) / (w1 - w2), 1e-9)
+  })
+
   it('at the Bayes modal θ̂, W + c·r_0 equals the projected residual Σ (X − P) w̃ (estimating equation)', () => {
     // Snijders' numerator is Σ (X − P)(w − c r) exactly when θ̂ solves r_0 + Σ (X − P) r = 0, so
-    // this checks the sign and scale of r_0 = −θ̂ for the N(0, 1) Bayes modal estimator.
+    // this checks the sign and scale of r_0 = −(θ̂ − μ)/σ² for the Bayes modal estimator.
     fc.assert(
-      fc.property(obsArb, (obs) => {
-        const theta = bayesModalTheta(obs)
+      fc.property(obsArb, fc.constantFrom(1, 2, PERSON_FIT_PRIOR_SD), (obs, sd) => {
+        const theta = bayesModalTheta(obs, sd)
         const r0: Partial<Record<AxisCode, number>> = {}
-        for (const [k, t] of Object.entries(theta)) r0[k as AxisCode] = -t
+        for (const [k, t] of Object.entries(theta)) r0[k as AxisCode] = -t / (sd * sd)
+        expect(bayesModalR0(theta, sd)).toEqual(r0)
         const res = lzStar(obs, theta, r0)
         let numerator = res.w
         for (const [k, c] of Object.entries(res.c)) numerator += c * r0[k as AxisCode]!
@@ -671,8 +788,9 @@ describe('lzStar (Snijders 2001)', () => {
 
   it('null distribution by simulation: lz* ≈ N(0, 1) while the uncorrected lz is too narrow', () => {
     // 2,000 simulees, one axis, 40 2PL items (a ~ lognormal(0.2, 0.3), b ~ N(0, 1.2)), θ ~ N(0, 1),
-    // Bayes modal θ̂. Measured (seed below): lz* mean ≈ 0.08, SD ≈ 0.98, P(lz* < −2) ≈ 0.028;
-    // lz SD ≈ 0.90 (Snijders' point: estimating θ shrinks lz's variance).
+    // Bayes modal θ̂. Measured (seed below): lz* mean ≈ 0.09, SD ≈ 1.01, P(lz* < −2) ≈ 0.034 (Warm's
+    // WLE gives ≈ 0.03 on this design too: a short-test property of lz*, not of the estimator);
+    // lz SD ≈ 0.89 (Snijders' point: estimating θ shrinks lz's variance).
     const rng = createRng('lz-null')
     const star: number[] = []
     const raw: number[] = []
@@ -700,8 +818,8 @@ describe('lzStar (Snijders 2001)', () => {
   })
 
   it('aberrant patterns give low lz*: preknowledge, random responding and reversed Guttman', () => {
-    // 30 2PL items per simulee, 300 simulees per pattern. Measured: mean lz* ≈ −6.9 / −5.0 / −9.8,
-    // P(lz* < −2) ≈ 1.00 / 0.94 / 0.96 (vs ≈ 0.02 for model-conforming patterns).
+    // 30 2PL items per simulee, 300 simulees per pattern. Measured: mean lz* ≈ −6.8 / −4.9 / −10.1,
+    // P(lz* < −2) ≈ 1.00 / 0.93 / 0.97 (vs ≈ 0.02–0.03 for model-conforming patterns).
     const kinds = ['preknowledge', 'random', 'reversed'] as const
     for (const kind of kinds) {
       const rng = createRng(`lz-aberrant-${kind}`)
@@ -748,6 +866,30 @@ describe('personFitCheck (lz* < −2 with ≥ 20 items)', () => {
     expect(res.flagged).toBe(false)
   })
 
+  it('counts only dichotomous scored items towards the 20: 19 plus unscored responses is too few', () => {
+    const rs = [
+      ...reversedGuttman(19),
+      resp(100, { params: { model: 'grm', a: 1, b: [-1, 1] }, correct: null }),
+      resp(101, { params: { model: 'gaussian', lam: -1, d: 0, sigma: 0.3 }, correct: null }),
+      resp(102, { params: { model: '2pl', a: 1, b: 0 }, correct: null }),
+    ]
+    expect(rs.length).toBeGreaterThanOrEqual(LZ_STAR_MIN_ITEMS)
+    const res = personFitCheck(rs)
+    expect(res.evidence.n_items).toBe(19)
+    expect(res.evidence.lz_star!).toBeLessThan(LZ_STAR_MAX)
+    expect(res.flagged).toBe(false)
+  })
+
+  it('flags on the corrected lz*, not on the uncorrected lz', () => {
+    // 20 Rasch items, b evenly spaced on [−2, 2]; only two of the harder items right. θ̂ is low, so
+    // the two right answers are surprising: lz* ≈ −3.7 < −2, while the too-narrow lz ≈ −1.7 is not.
+    const bs = Array.from({ length: 20 }, (_, i) => -2 + (4 * i) / 19)
+    const res = personFitCheck(toResponses(rasch(bs, bs.map((_, i) => (i === 15 || i === 16 ? 1 : 0)))))
+    expect(res.evidence.lz_star!).toBeLessThan(-3.5)
+    expect(res.evidence.lz!).toBeGreaterThan(-1.8)
+    expect(res.flagged).toBe(true)
+  })
+
   it('does not flag a Guttman (perfectly ordered) pattern, and ignores non-dichotomous responses', () => {
     const bs = Array.from({ length: 24 }, (_, i) => -2 + (4 * i) / 23)
     const rs = [
@@ -787,14 +929,16 @@ describe('integrityReport', () => {
     expect(rep.flags).toEqual([])
     expect(rep.item_flags).toEqual({})
     expect(rep.save_flags).toEqual({ visibility_hidden_s: 0, paste_events: 0, fast_guess_n: 0 })
+    expect(rep.flag_count).toBe(0)
     expect(rep.calibration_eligible).toBe(true)
     expect(Object.keys(rep.checks)).toEqual([...FLAG_KINDS])
   })
 
-  it('one flag keeps the session eligible; two kinds make it ineligible; item flags and §8 counters', () => {
+  it('one flag keeps the session eligible; two make it ineligible; item flags and §8 counters', () => {
     const rs = clean()
     const one = integrityReport({ responses: rs, paste: [{ t_ms: rs[1]!.onset_ms + 10 }] })
-    expect(one.flags.map((f) => f.kind)).toEqual(['paste'])
+    expect(one.flags.map((f) => [f.kind, f.n])).toEqual([['paste', 1]])
+    expect(one.flag_count).toBe(1)
     expect(one.calibration_eligible).toBe(true)
 
     const fast = rs.map((r, i) => (i === 3 ? { ...r, rt_ms: 5000, end_ms: r.onset_ms + 5000 } : r))
@@ -805,10 +949,47 @@ describe('integrityReport', () => {
       { t_ms: fast[1]!.onset_ms + 13_240, state: 'visible' },
     ]
     const two = integrityReport({ responses: fast, paste: [{ t_ms: 0, item_id: fast[3]!.item_id }], visibility })
-    expect(two.flags.map((f) => f.kind)).toEqual(['visibility_hidden', 'paste', 'too_fast'])
+    expect(two.flags.map((f) => [f.kind, f.n])).toEqual([
+      ['visibility_hidden', 1],
+      ['paste', 1],
+      ['too_fast', 1],
+    ])
+    expect(two.flag_count).toBe(3)
     expect(two.calibration_eligible).toBe(false)
     expect(two.item_flags).toEqual({ 'i:1': ['visibility_hidden'], 'i:3': ['paste', 'too_fast'] })
     expect(two.save_flags).toEqual({ visibility_hidden_s: 12.3, paste_events: 1, fast_guess_n: 1 })
+  })
+
+  it('counts §13 flags per response: two too-fast answers exclude the session, one does not', () => {
+    const fast = (ids: readonly number[]) =>
+      clean().map((r, i) => (ids.includes(i) ? { ...r, rt_ms: 3000, end_ms: r.onset_ms + 3000 } : r))
+    const one = integrityReport({ responses: fast([3]) })
+    expect(one.flags.map((f) => [f.kind, f.n])).toEqual([['too_fast', 1]])
+    expect(one.calibration_eligible).toBe(true)
+    const two = integrityReport({ responses: fast([3, 5]) })
+    expect(two.flags.map((f) => [f.kind, f.n])).toEqual([['too_fast', 2]])
+    expect(two.flag_count).toBe(2)
+    expect(two.save_flags.fast_guess_n).toBe(2)
+    expect(two.calibration_eligible).toBe(false)
+  })
+
+  it('counts pastes per item: repeats in one item count once, other items and stray pastes add one each', () => {
+    const rs = clean()
+    const at = (i: number, dt = 10) => ({ t_ms: rs[i]!.onset_ms + dt })
+    const count = (paste: { t_ms: number; item_id?: string }[]) => {
+      const rep = integrityReport({ responses: rs, paste })
+      return [rep.flag_count, rep.calibration_eligible]
+    }
+    expect(count([at(1), at(1, 500), { t_ms: 0, item_id: rs[1]!.item_id }])).toEqual([1, true])
+    expect(count([at(1), at(2)])).toEqual([2, false])
+    expect(count([{ t_ms: 0 }, { t_ms: 50 }])).toEqual([1, true]) // before the first item: one in all
+    expect(count([{ t_ms: 0 }, at(4)])).toEqual([2, false])
+    // A response with both a per-item flag of one kind and another counts twice.
+    const fastAndPasted = rs.map((r, i) => (i === 3 ? { ...r, rt_ms: 3000, end_ms: r.onset_ms + 3000 } : r))
+    const rep = integrityReport({ responses: fastAndPasted, paste: [{ t_ms: 0, item_id: rs[3]!.item_id }] })
+    expect(rep.item_flags).toEqual({ [rs[3]!.item_id]: ['paste', 'too_fast'] })
+    expect(rep.flag_count).toBe(2)
+    expect(rep.calibration_eligible).toBe(false)
   })
 
   it('person_fit alone makes the session ineligible (§13 "or lz* < −2")', () => {
@@ -822,10 +1003,13 @@ describe('integrityReport', () => {
     const rep = integrityReport({ responses: rs })
     expect(rep.flags.map((f) => f.kind)).toContain('person_fit')
     expect(rep.calibration_eligible).toBe(false)
-    expect(calibrationEligible([{ kind: 'person_fit' }])).toBe(false)
-    expect(calibrationEligible([{ kind: 'uniform_rt' }])).toBe(true)
-    expect(calibrationEligible([{ kind: 'uniform_rt' }, { kind: 'too_fast' }])).toBe(false)
+    expect(calibrationEligible([{ kind: 'person_fit', n: 1 }])).toBe(false)
+    expect(calibrationEligible([{ kind: 'uniform_rt', n: 1 }])).toBe(true)
+    expect(calibrationEligible([{ kind: 'uniform_rt', n: 1 }, { kind: 'too_fast', n: 1 }])).toBe(false)
+    expect(calibrationEligible([{ kind: 'too_fast', n: 2 }])).toBe(false)
     expect(calibrationEligible([])).toBe(true)
+    expect(() => calibrationEligible([{ kind: 'paste', n: 0 }])).toThrow(RangeError)
+    expect(() => calibrationEligible([{ kind: 'paste', n: 1.5 }])).toThrow(RangeError)
   })
 
   it('flags uniform RT and hard-item accuracy in a session; the caller θ overrides the Bayes modal θ̂', () => {
@@ -839,7 +1023,7 @@ describe('integrityReport', () => {
     expect(withTheta.checks.hard_item_accuracy.flagged).toBe(true)
     expect(withTheta.checks.hard_item_accuracy.evidence.n_hard).toBe(4)
     expect(withTheta.flags.map((f) => f.kind)).toEqual(['uniform_rt', 'hard_item_accuracy'])
-    // The session's own θ̂ is pulled up by the hard correct answers (a conservative test).
+    // The session's own θ̂ is pulled up by the hard correct answers (conservative for the test).
     expect(own.checks.person_fit.evidence.theta.MAT!).toBeGreaterThan(0.5)
     expect(() => integrityReport({ responses: rs, theta: { XYZ: 0 } as Partial<Record<AxisCode, number>> })).toThrow(RangeError)
     expect(() => integrityReport({ responses: rs, theta: { MAT: NaN } })).toThrow(RangeError)
@@ -884,12 +1068,13 @@ describe('integrityReport', () => {
 // ------------------------------------------------------------ false positives (null model)
 
 describe('well-behaved simulated sessions (controlled false-positive rate)', () => {
-  it('never raise visibility, paste or uniform-RT flags', () => {
+  it('never raise visibility or uniform-RT flags (brief tab switches, lognormal RTs)', () => {
+    // The simulated sessions have no paste events, so the paste check is not exercised here; its
+    // no-event case is covered in pasteCheck.
     fc.assert(
       fc.property(fc.integer(), (seed) => {
         const rep = integrityReport(simulateSession(createRng(seed)))
         expect(rep.checks.visibility_hidden.flagged).toBe(false)
-        expect(rep.checks.paste.flagged).toBe(false)
         expect(rep.checks.uniform_rt.evidence.applies).toBe(true)
         expect(rep.checks.uniform_rt.flagged).toBe(false)
       }),
@@ -898,8 +1083,8 @@ describe('well-behaved simulated sessions (controlled false-positive rate)', () 
   })
 
   it('flag rates stay at their nominal levels over batches of 300 sessions', () => {
-    // Measured on 4,000 sessions of this model: person_fit 0.023 (nominal Φ(−2) = 0.023),
-    // too_fast 0.031, hard_item_accuracy 0.0015, calibration-ineligible 0.023, others 0.
+    // Measured on 4,000 sessions of this model: person_fit 0.017 (nominal Φ(−2) = 0.023),
+    // too_fast 0.031, hard_item_accuracy 0.0008, calibration-ineligible 0.021, others 0.
     fc.assert(
       fc.property(fc.integer(), (seed) => {
         const rng = createRng(`fp-${seed}`)
@@ -918,5 +1103,33 @@ describe('well-behaved simulated sessions (controlled false-positive rate)', () 
       }),
       { numRuns: 5 },
     )
+  })
+
+  it('stay near nominal for honest users at the ends of the scale, with items targeted at θ', { timeout: 120_000 }, () => {
+    // θ fixed on every axis, b ~ θ + N(0, 1); 600 sessions per cell, 4 axes × 10 items and
+    // 12 axes × 4 items. A θ̂ shrunk by the N(0, 1) population prior failed this: person_fit
+    // 5–6% (4 × 10) and 13–17% (12 × 4) at θ = ±2.5, hard_item_accuracy 3–19% at θ = +2.5.
+    // With the N(0, 3²) prior: person_fit ≤ 2.3% and hard ≤ 0.3% on 2,000 sessions per cell for
+    // |θ| ≤ 3 (≤ 3.2% and ≤ 0.4% in the cells below).
+    const n = 600
+    const designs = [
+      { axes: SIM_AXES, perAxis: 10 },
+      { axes: AXIS_CODES.slice(0, 12), perAxis: 4 },
+    ]
+    for (const design of designs) {
+      for (const theta of [-2.5, -2, 2, 2.5]) {
+        const rng = createRng(`fp-extreme-${design.axes.length}x${design.perAxis}-${theta}`)
+        let personFit = 0
+        let hard = 0
+        for (let s = 0; s < n; s++) {
+          const rep = integrityReport(simulateSession(rng, { ...design, theta }))
+          if (rep.checks.person_fit.flagged) personFit++
+          if (rep.checks.hard_item_accuracy.flagged) hard++
+        }
+        const cell = `${design.axes.length}×${design.perAxis} at θ = ${theta}`
+        expect(personFit / n, cell).toBeLessThanOrEqual(0.045)
+        expect(hard / n, cell).toBeLessThanOrEqual(0.015)
+      }
+    }
   })
 })

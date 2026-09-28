@@ -30,14 +30,23 @@
  * - `hard_item_accuracy`: on the dichotomous items with b > θ + {@link HARD_ITEM_MARGIN} (θ on the
  *   item's axis), the number correct X is improbably high under the model: the exact
  *   Poisson-binomial upper tail P(X ≥ x | P_1..P_n), with P_j each item's model probability at θ,
- *   is < {@link HARD_ITEM_ALPHA}. θ is the caller's estimate for the axis when given (e.g. the
- *   session MAP), else the per-axis Bayes modal estimate below. An estimate that includes the
- *   hard responses themselves is pulled up by them, which makes the test conservative.
+ *   is < {@link HARD_ITEM_ALPHA}. θ is the caller's estimate for the axis when given, else the
+ *   per-axis Bayes modal estimate below. The test is only as good as θ: a θ shrunk toward the
+ *   population mean makes items look harder to a high-ability user than they are and the test
+ *   liberal (with a N(0, 1) prior, 3–19% flagged at θ = +2.5 instead of ≤ 1%), so the default
+ *   estimate uses the weak prior below, and a caller θ should not be pulled far toward 0 either
+ *   (e.g. a returning user's running estimate, not a first-session MAP under the population
+ *   prior). Given a θ̂ that is close to unbiased, including the hard responses in it pulls it up
+ *   by their correct answers, which makes the test conservative.
  * - `person_fit`: Snijders' (2001) lz* < {@link LZ_STAR_MAX} over at least
  *   {@link LZ_STAR_MIN_ITEMS} dichotomous items ({@link lzStar}).
  *
- * Calibration eligibility (§13): the session is eligible unless ≥ 2 kinds are flagged or
- * `person_fit` is flagged ({@link calibrationEligible}).
+ * Calibration eligibility (§13 "each sets client_flags; ≥2 flags in a session, or lz* < −2"):
+ * the flags are counted as they are set, one per flagged response for the per-item kinds (a
+ * response with a paste and a too-fast answer counts twice; pastes that belong to no response
+ * count once in all) plus one per raised session-level kind. The session is eligible unless that
+ * count is ≥ 2 or `person_fit` is raised ({@link calibrationEligible}). So two too-fast correct
+ * answers (the item-exposure pattern that would bias b downward) exclude a session; one does not.
  *
  * Person-fit details ({@link lzStar}, Snijders 2001, Psychometrika 66:331–342; notation of Magis,
  * Raîche & Béland 2012, JEBS 37:57–81). For a dichotomous item i with P_i(θ), Q_i = 1 − P_i:
@@ -52,10 +61,16 @@
  * below 1 when θ is estimated. The session has several axes, each with its own θ̂; every item
  * loads on one axis (simple structure, §7.2), so the estimating equations separate by axis and
  * the correction is applied per axis (c_k, r_0k), which reduces to Snijders' statistic when there
- * is one axis. θ̂ here is the Bayes modal estimate per axis with the N(0, 1) prior
- * ({@link PERSON_FIT_PRIOR_SD}; the marginal of the M1 prior μ = 0, unit-diagonal Σ_init, A8),
- * always finite even for all-correct or all-wrong patterns, computed with the engine MAP under an
- * identity Σ. A '2pl_testlet' item counts as a 2PL item (its testlet effect is ignored here).
+ * is one axis. θ̂ here is the Bayes modal estimate per axis with the weakly informative
+ * N(0, 3²) prior ({@link PERSON_FIT_PRIOR_SD}), computed with the engine MAP under a diagonal Σ.
+ * It is always finite, even for all-correct or all-wrong patterns (unlike ML), and it barely
+ * shrinks: Snijders' correction is first order, and a strongly shrunk θ̂ leaves a residual bias
+ * that makes lz* flag honest users at the ends of the scale. With the M1 population prior N(0, 1)
+ * (A8), simulated users at θ = ±2.5 whose items are targeted at θ (b ~ θ + N(0, 1)) got
+ * P(lz* < −2) = 5–6% on 4 axes × 10 items and 13–17% on 12 axes × 4 items (nominal Φ(−2) = 2.3%);
+ * with σ = 3 it is 0.6–2.3% for |θ| ≤ 3 in both designs, the same as with Warm's WLE (r_0 =
+ * J/(2I), also in Magis et al. 2012) within simulation error. A '2pl_testlet' item counts as a
+ * 2PL item (its testlet effect is ignored here).
  */
 
 import { AXIS_CODES, AXIS_INDEX, isAxisCode, modelFamilyOf, N_AXES, type AxisCode } from './axes'
@@ -88,9 +103,13 @@ export const HARD_ITEM_ALPHA = 0.01
 export const LZ_STAR_MAX = -2
 /** `person_fit` applies only to at least this many dichotomous items. */
 export const LZ_STAR_MIN_ITEMS = 20
-/** Prior mean and SD of the per-axis Bayes modal θ̂ behind lz* (M1 prior marginal, A8). */
+/**
+ * Prior mean and SD of the per-axis Bayes modal θ̂ behind lz* and the default hard-item θ: weakly
+ * informative (the whole θ scale [−3, 3] within ±1 SD), not the N(0, 1) population prior, whose
+ * shrinkage inflates both flags for users at the ends of the scale (module comment).
+ */
 export const PERSON_FIT_PRIOR_MEAN = 0
-export const PERSON_FIT_PRIOR_SD = 1
+export const PERSON_FIT_PRIOR_SD = 3
 
 /** Flag kinds in report order. */
 export const FLAG_KINDS = [
@@ -176,6 +195,8 @@ export interface PasteEvidence {
   readonly count: number
   /** Items the events belong to (by `item_id`, else by time window), in response order. */
   readonly item_ids: readonly string[]
+  /** Events that belong to no response (an unknown `item_id`, or outside every item window). */
+  readonly unattributed: number
 }
 
 export interface TooFastItemEvidence {
@@ -249,8 +270,13 @@ export interface CheckResult<E> {
   readonly evidence: E
 }
 
-/** A raised flag with its evidence (a `sessions.flags` entry, §12). */
-export type IntegrityFlag = { [K in FlagKind]: { readonly kind: K; readonly evidence: EvidenceOf[K] } }[FlagKind]
+/**
+ * A raised flag with its evidence (a `sessions.flags` entry, §12). `n` is how many §13 flags it
+ * counts as: the flagged responses for a per-item kind (at least 1), 1 for a session-level kind.
+ */
+export type IntegrityFlag = {
+  [K in FlagKind]: { readonly kind: K; readonly n: number; readonly evidence: EvidenceOf[K] }
+}[FlagKind]
 
 export interface IntegrityReport {
   /** Every check's outcome. */
@@ -261,7 +287,9 @@ export interface IntegrityReport {
   readonly item_flags: Readonly<Record<string, readonly ItemFlagKind[]>>
   /** The §8 save-file session `flags` object. */
   readonly save_flags: { readonly visibility_hidden_s: number; readonly paste_events: number; readonly fast_guess_n: number }
-  /** §13: false when ≥ 2 kinds are flagged or `person_fit` is flagged. */
+  /** The §13 flag count: Σ n over {@link flags} (per-response flags plus session-level kinds). */
+  readonly flag_count: number
+  /** §13: false when {@link flag_count} ≥ 2 or `person_fit` is raised. */
   readonly calibration_eligible: boolean
 }
 
@@ -353,19 +381,23 @@ export function visibilityCheck(
 export function pasteCheck(responses: readonly IntegrityResponse[], events: readonly PasteEvent[]): CheckResult<PasteEvidence> {
   checkResponses(responses)
   if (!Array.isArray(events)) throw new RangeError('paste events must be an array')
+  const ids = new Set(responses.map((r) => r.item_id))
   const hit = new Set<string>()
+  let unattributed = 0
   for (const e of events) {
     finite('paste t_ms', e.t_ms)
+    let id: string | undefined
     if (e.item_id !== undefined) {
       if (typeof e.item_id !== 'string') throw new RangeError('paste item_id must be a string')
-      hit.add(e.item_id)
-      continue
+      id = ids.has(e.item_id) ? e.item_id : undefined
+    } else {
+      id = responses.find((x) => e.t_ms >= x.onset_ms && e.t_ms <= x.end_ms)?.item_id
     }
-    const r = responses.find((x) => e.t_ms >= x.onset_ms && e.t_ms <= x.end_ms)
-    if (r !== undefined) hit.add(r.item_id)
+    if (id === undefined) unattributed++
+    else hit.add(id)
   }
   const itemIds = responses.map((r) => r.item_id).filter((id) => hit.has(id))
-  return { flagged: events.length > 0, evidence: { count: events.length, item_ids: itemIds } }
+  return { flagged: events.length > 0, evidence: { count: events.length, item_ids: itemIds, unattributed } }
 }
 
 // ---------------------------------------------------------------------------- too fast
@@ -463,11 +495,18 @@ export type DichotomousObservation = Extract<Observation, { kind: '2pl' | '3pl' 
  * `correct` null). A '2pl_testlet' item becomes a 2PL observation.
  */
 export function dichotomousObservation(r: IntegrityResponse): DichotomousObservation | null {
-  if (r.correct === null || modelFamilyOf(r.params.model) !== 'dichotomous') return null
   const p = r.params
-  if (p.model === '3pl') return { kind: '3pl', axis: r.axis, a: p.a, b: p.b, c: p.c, y: r.correct }
-  if (p.model === '2pl' || p.model === '2pl_testlet') return { kind: '2pl', axis: r.axis, a: p.a, b: p.b, y: r.correct }
-  return null
+  if (r.correct === null || modelFamilyOf(p.model) !== 'dichotomous') return null
+  if (p.model !== '3pl' && p.model !== '2pl' && p.model !== '2pl_testlet') return null // narrows p
+  // Validate here, so a non-finite b is rejected rather than silently "not hard" (NaN > t is false).
+  finite(`${r.item_id}: a`, p.a)
+  finite(`${r.item_id}: b`, p.b)
+  if (p.model === '3pl') {
+    finite(`${r.item_id}: c`, p.c)
+    check3pl(p.c)
+    return { kind: '3pl', axis: r.axis, a: p.a, b: p.b, c: p.c, y: r.correct }
+  }
+  return { kind: '2pl', axis: r.axis, a: p.a, b: p.b, y: r.correct }
 }
 
 /** P, Q = 1 − P, w = ln(P/Q) and r = P'/(PQ) of a dichotomous item at θ, without cancellation. */
@@ -603,30 +642,46 @@ export function lzStar(
 }
 
 /**
- * Per-axis Bayes modal θ̂ with the N({@link PERSON_FIT_PRIOR_MEAN}, {@link PERSON_FIT_PRIOR_SD}²)
- * prior (the engine MAP with an identity-scaled Σ, so axes are independent), for every axis with
- * an observation.
+ * Per-axis Bayes modal θ̂ with the N(`mean`, `sd`²) prior, by default
+ * N({@link PERSON_FIT_PRIOR_MEAN}, {@link PERSON_FIT_PRIOR_SD}²) (the engine MAP with a diagonal
+ * Σ, so axes are independent), for every axis with an observation.
  */
-export function bayesModalTheta(obs: readonly DichotomousObservation[]): Partial<Record<AxisCode, number>> {
+export function bayesModalTheta(
+  obs: readonly DichotomousObservation[],
+  sd: number = PERSON_FIT_PRIOR_SD,
+  mean: number = PERSON_FIT_PRIOR_MEAN,
+): Partial<Record<AxisCode, number>> {
+  checkPrior(sd, mean)
   const out: Partial<Record<AxisCode, number>> = {}
   if (obs.length === 0) return out
-  const v = PERSON_FIT_PRIOR_SD * PERSON_FIT_PRIOR_SD
-  const mu = new Array<number>(N_AXES).fill(PERSON_FIT_PRIOR_MEAN)
+  const v = sd * sd
+  const mu = new Array<number>(N_AXES).fill(mean)
   const sigma = Array.from({ length: N_AXES }, (_, i) => Array.from({ length: N_AXES }, (_, j) => (i === j ? v : 0)))
   const { theta } = mapTheta(obs, mu, sigma)
   for (const o of obs) out[o.axis] = theta[AXIS_INDEX[o.axis]]!
   return out
 }
 
-/** r_0 of the Bayes modal estimator at θ̂: −(θ̂ − μ)/σ² per axis. */
-function bayesModalR0(theta: Partial<Record<AxisCode, number>>): Partial<Record<AxisCode, number>> {
-  const v = PERSON_FIT_PRIOR_SD * PERSON_FIT_PRIOR_SD
+/** r_0 of the N(`mean`, `sd`²) Bayes modal estimator at θ̂: −(θ̂ − mean)/sd² per axis (for {@link lzStar}). */
+export function bayesModalR0(
+  theta: Partial<Record<AxisCode, number>>,
+  sd: number = PERSON_FIT_PRIOR_SD,
+  mean: number = PERSON_FIT_PRIOR_MEAN,
+): Partial<Record<AxisCode, number>> {
+  checkPrior(sd, mean)
+  const v = sd * sd
   const out: Partial<Record<AxisCode, number>> = {}
   for (const code of AXIS_CODES) {
     const t = theta[code]
-    if (t !== undefined) out[code] = -(t - PERSON_FIT_PRIOR_MEAN) / v
+    if (t !== undefined) out[code] = -(t - mean) / v
   }
   return out
+}
+
+function checkPrior(sd: number, mean: number): void {
+  finite('prior sd', sd)
+  finite('prior mean', mean)
+  if (!(sd > 0)) throw new RangeError(`prior sd must be > 0, got ${sd}`)
 }
 
 /** lz* at the per-axis Bayes modal θ̂; flagged when < {@link LZ_STAR_MAX} with ≥ {@link LZ_STAR_MIN_ITEMS} items. */
@@ -641,10 +696,17 @@ export function personFitCheck(responses: readonly IntegrityResponse[]): CheckRe
 
 // ---------------------------------------------------------------------------- report
 
-/** §13: eligible unless ≥ 2 kinds are flagged or `person_fit` is flagged. */
-export function calibrationEligible(flags: readonly { readonly kind: FlagKind }[]): boolean {
-  const kinds = new Set(flags.map((f) => f.kind))
-  return kinds.size < 2 && !kinds.has('person_fit')
+/**
+ * §13: eligible unless the raised flags count ≥ 2 (Σ n: per-response flags plus session-level
+ * kinds, see {@link IntegrityFlag}) or `person_fit` is raised.
+ */
+export function calibrationEligible(flags: readonly { readonly kind: FlagKind; readonly n: number }[]): boolean {
+  let count = 0
+  for (const f of flags) {
+    if (!Number.isInteger(f.n) || f.n < 1) throw new RangeError(`flag ${f.kind}: n must be an integer ≥ 1, got ${f.n}`)
+    count += f.n
+  }
+  return count < 2 && !flags.some((f) => f.kind === 'person_fit')
 }
 
 /** All six §13 checks for one session, the raised flags, per-item flags and the §8 summary. */
@@ -666,10 +728,20 @@ export function integrityReport(session: IntegritySession): IntegrityReport {
     hard_item_accuracy: hardItemCheck(responses, theta),
     person_fit: person,
   }
+  // §13 flag counts: per-item kinds count their flagged responses (pastes that belong to no
+  // response add one in all), session-level kinds count once.
+  const n: Record<FlagKind, number> = {
+    visibility_hidden: checks.visibility_hidden.evidence.items.length,
+    paste: checks.paste.evidence.item_ids.length + (checks.paste.evidence.unattributed > 0 ? 1 : 0),
+    too_fast: checks.too_fast.evidence.count,
+    uniform_rt: 1,
+    hard_item_accuracy: 1,
+    person_fit: 1,
+  }
   const flags: IntegrityFlag[] = []
   for (const kind of FLAG_KINDS) {
     const res = checks[kind]
-    if (res.flagged) flags.push({ kind, evidence: res.evidence } as IntegrityFlag)
+    if (res.flagged) flags.push({ kind, n: n[kind], evidence: res.evidence } as IntegrityFlag)
   }
 
   const hits: Record<ItemFlagKind, Set<string>> = {
@@ -692,6 +764,7 @@ export function integrityReport(session: IntegritySession): IntegrityReport {
       paste_events: checks.paste.evidence.count,
       fast_guess_n: checks.too_fast.evidence.count,
     },
+    flag_count: flags.reduce((acc, f) => acc + f.n, 0),
     calibration_eligible: calibrationEligible(flags),
   }
 }
