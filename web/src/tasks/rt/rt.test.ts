@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { validateItemInstance } from '../family'
 import { runFamilyProperties, onlySpecFields, type FamilyPropertyOptions } from '../testing'
-import { RT_SPEC_FIELDS, generateRtBlock, rt, type RtItem, type RtKey, type RtResponse, type RtSpec } from '.'
+import { RT_SPEC_FIELDS, generateRtBlock, rt, type RtKey, type RtResponse, type RtSpec } from '.'
+import { rtScoreCase } from './synthetic'
 
 /** Stimulus positions are what the renderer draws, and they are the key (§14.6 ex. 12). */
 const ALLOW_KEY =
@@ -10,17 +11,10 @@ const ALLOW_KEY =
 /** Blocks of one mode are isomorphs whatever their jitter (A11), so there are exactly 2 family_ids. */
 const TWO_STRUCTURES = { min: 2 / 10_000, reason: '2 structures (simple, choice4): RT blocks differing only in jitter are isomorphs (A11)' }
 
-/** Extra leak check: only the schedule fields, and no field names that could carry per-trial outcomes. */
-function rtSpecLeaksKey(item: RtItem): string | null {
-  const extra = onlySpecFields<RtSpec, RtKey>(...RT_SPEC_FIELDS)(item)
-  if (extra !== null) return extra
-  return JSON.stringify(item.spec).includes('"reference"') ? 'spec carries the scoring reference' : null
-}
-
 const OPTS: FamilyPropertyOptions<RtSpec, RtKey, RtResponse> = {
   allowKeyInSpec: ALLOW_KEY,
   familyIdRatio: TWO_STRUCTURES,
-  specLeaksKey: rtSpecLeaksKey,
+  specLeaksKey: onlySpecFields<RtSpec, RtKey>(...RT_SPEC_FIELDS),
 }
 
 describe('rt family: property suite (DESIGN §14.3 M1 acceptance 1)', () => {
@@ -58,7 +52,7 @@ describe('rt family: identity and modes', () => {
   it('a mode tag in the seed picks the mode and survives the stratum suffix and the item id', () => {
     const c = generateRtBlock('sess-1', 'choice4')
     expect(c.seed).toBe('sess-1#choice4')
-    expect(c.item_id).toBe('i:rt:1.0.0:sess-1#choice4')
+    expect(c.item_id).toBe('i:rt:1.1.0:sess-1#choice4')
     expect(c.spec.mode).toBe('choice4')
     const tagged = rt.generate('sess-1#simple', { stratum: 3 })
     expect(tagged.seed).toBe('sess-1#simple@s3')
@@ -79,12 +73,12 @@ describe('rt family: identity and modes', () => {
     let none = 0
     for (let i = 0; i < 300; i++) {
       const item = rt.generate(`score-${i}`)
-      const ref = item.key.reference
-      const s = rt.score(item, ref)
+      const c = rtScoreCase(item)
+      const s = rt.score(item, c.response)
       expect(s.correct).toBeNull()
-      if (ref.expected.status === 'ok') {
+      if (c.expected.status === 'ok') {
         ok++
-        expect(s.value).toBe(ref.expected.observation?.x)
+        expect(s.value).toBe(c.expected.observation?.x)
       } else {
         none++
         expect(s).toEqual({ correct: null })
@@ -94,23 +88,12 @@ describe('rt family: identity and modes', () => {
     expect(none).toBeGreaterThan(0)
   })
 
-  it('the reference covers both outcomes and every trimming rule across instances', () => {
-    const totals = { ok: 0, none: 0, misses: 0, anticipations: 0, errors: 0, fast: 0, slow: 0 }
-    const devices = new Set<string>()
-    for (let i = 0; i < 1_000; i++) {
-      const e = rt.generate(`cover-${i}`).key.reference
-      devices.add(e.device_class)
-      const x = e.expected
-      if (x.status === 'ok') totals.ok++
-      else totals.none++
-      totals.misses += x.n_misses
-      totals.anticipations += x.n_anticipations
-      totals.errors += x.n_errors
-      totals.fast += x.n_too_fast
-      totals.slow += x.n_too_slow
+  it('the key is the stimulus positions and nothing else (no test fixture in production keys)', () => {
+    for (let i = 0; i < 500; i++) {
+      const item = rt.generate(`key-${i}`)
+      expect(Object.keys(item.key)).toEqual(['positions'])
+      expect(item.key.positions).toEqual(item.spec.positions)
     }
-    for (const v of Object.values(totals)) expect(v).toBeGreaterThan(20)
-    expect(devices.size).toBe(3)
   })
 
   it('instances are valid, JSON-stable blocks of the right length', () => {
@@ -119,7 +102,7 @@ describe('rt family: identity and modes', () => {
       expect(validateItemInstance(item, rt)).toEqual([])
       expect(item.spec.foreperiods_ms).toHaveLength(mode === 'simple' ? 30 : 40)
       expect(item.spec.practice_foreperiods_ms).toHaveLength(3)
-      expect(item.key.reference.rt_ms).toHaveLength(mode === 'simple' ? 30 : 40)
+      expect(item.key.positions).toHaveLength(mode === 'simple' ? 30 : 40)
       expect(JSON.parse(JSON.stringify(item))).toEqual(item)
     }
   })

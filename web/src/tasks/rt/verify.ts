@@ -15,13 +15,12 @@
  *   forms across the practice → scored boundary either;
  * - `practice_positions_distinct`: choice: the 3 practice trials use 3 different positions;
  * - `key_matches_stimuli`: key.positions equals the stimulus positions (§14.6 ex. 12: key = position);
+ * - `key_fields_exact`: the key holds exactly `positions`, what scoring needs (no test fixture:
+ *   the scoring parity responses live in a separate dump, `synthetic.ts`);
  * - `structure_matches`: structural_params is the mode's structure (A11);
  * - `params_match_norms`: Gaussian lam = −s, d = β, sigma = τ_res of the mode's norm (A10);
  * - `stratum_matches`, `prior_matches`, `expected_time_matches`: the M1.P priors recomputed
- *   (`prior_matches` includes the provenance string);
- * - `reference_well_formed`: the key's reference responses are a well-formed response;
- * - `reference_scores_match`: scoring them again gives the recorded status, counts, reason or
- *   observation and SE (floats to {@link REFERENCE_TOL}).
+ *   (`prior_matches` includes the provenance string).
  */
 
 import type { JsonValue } from '../../engine'
@@ -29,7 +28,6 @@ import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
 import { maxRunLength } from './gen'
 import { RT_PROVENANCE, RT_STRATUM, rtDifficulty, rtExpectedTimeS, rtItemParams, rtStructure } from './prior'
-import { expectedOf, rtResponseProblems, scoreRtResponse } from './score'
 import {
   FOREPERIOD_MAX_MS,
   FOREPERIOD_MIN_MS,
@@ -37,15 +35,10 @@ import {
   RT_MODE_CONFIG,
   RT_PRACTICE_TRIALS,
   isRtMode,
-  type RtExpected,
   type RtKey,
-  type RtMode,
-  type RtResponse,
   type RtSpec,
 } from './types'
 
-/** Tolerance for recomputed reference floats (x, SE, sigma, lam, d): the A1 parity bound. */
-export const REFERENCE_TOL = 1e-12
 /** Tolerance for the recomputed expected block time in seconds. */
 export const EXPECTED_TIME_TOL = 1e-9
 
@@ -63,43 +56,6 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v ===
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
 const isIntArray = (v: unknown): v is number[] => Array.isArray(v) && v.every(isInt)
 const sameInts = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((x, i) => x === b[i])
-const close = (a: unknown, b: number): boolean => typeof a === 'number' && Math.abs(a - b) <= REFERENCE_TOL
-
-/** Every problem of a reference object (empty = well formed); practice responses are required. */
-export function referenceProblems(mode: RtMode, ref: unknown): string[] {
-  if (!isPlainObject(ref)) return ['reference must be an object']
-  const out: string[] = []
-  if (!(typeof ref.device_class === 'string' && ref.device_class.length > 0)) out.push('reference.device_class must be a non-empty string')
-  if (ref.practice_rt_ms === undefined || ref.practice_choice === undefined) out.push('reference needs practice responses')
-  out.push(...rtResponseProblems(mode, { rt_ms: ref.rt_ms, choice: ref.choice, practice_rt_ms: ref.practice_rt_ms, practice_choice: ref.practice_choice }))
-  if (!isPlainObject(ref.expected)) out.push('reference.expected must be an object')
-  return out
-}
-
-const COUNT_FIELDS = ['n_valid', 'n_misses', 'n_anticipations', 'n_errors', 'n_too_fast', 'n_too_slow'] as const
-
-/** Whether a recorded expectation equals a recomputed one (same fields; floats to REFERENCE_TOL). */
-export function expectedMatches(recorded: unknown, recomputed: RtExpected): boolean {
-  if (!isPlainObject(recorded)) return false
-  const fields = Object.keys(recorded).sort().join(',')
-  if (fields !== Object.keys(recomputed).sort().join(',')) return false
-  if (recorded.status !== recomputed.status) return false
-  if (!COUNT_FIELDS.every((f) => recorded[f] === recomputed[f])) return false
-  if (recomputed.status === 'no_observation') return recorded.reason === recomputed.reason
-  const obs = recorded.observation
-  const want = recomputed.observation
-  if (!isPlainObject(obs) || want === undefined || recomputed.se === undefined) return false
-  return (
-    Object.keys(obs).sort().join(',') === 'axis,d,kind,lam,sigma,x' &&
-    obs.kind === 'gaussian' &&
-    obs.axis === 'RT' &&
-    close(obs.lam, want.lam) &&
-    close(obs.d, want.d) &&
-    close(obs.sigma, want.sigma) &&
-    close(obs.x, want.x) &&
-    close(recorded.se, recomputed.se)
-  )
-}
 
 function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
   const spec: unknown = item.spec
@@ -134,19 +90,6 @@ function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
     d.sd_prior === prior.sd_prior &&
     d.provenance === RT_PROVENANCE
 
-  const ref = isPlainObject(key) ? key.reference : undefined
-  const refProblems = referenceProblems(mode, ref)
-  let refStatus: string = 'unscored'
-  let refValid = -1
-  let refMatches = false
-  if (refProblems.length === 0 && isIntArray(keyPositions) && keyPositions.length === cfg.n_trials) {
-    const r = ref as Record<string, unknown>
-    const recomputed = expectedOf(scoreRtResponse(mode, keyPositions, r as unknown as RtResponse, { device_class: r.device_class as string }))
-    refStatus = recomputed.status
-    refValid = recomputed.n_valid
-    refMatches = expectedMatches(r.expected, recomputed)
-  }
-
   return verdict({
     mode_known: true,
     schedule_integer_arrays: true,
@@ -161,15 +104,12 @@ function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
     max_run_ok: mode === 'simple' || maxRun <= MAX_POSITION_RUN,
     practice_positions_distinct: mode === 'simple' || new Set(pp).size === pp.length,
     key_matches_stimuli: keyMatches,
+    key_fields_exact: isPlainObject(key) && Object.keys(key).join(',') === 'positions',
     structure_matches: canonicalJson(item.structural_params) === canonicalJson(rtStructure(mode)),
     params_match_norms: paramsMatch,
     stratum_matches: item.stratum === RT_STRATUM,
     prior_matches: priorMatches,
     expected_time_matches: Math.abs(item.expected_time_s - rtExpectedTimeS(schedule)) <= EXPECTED_TIME_TOL,
-    reference_well_formed: refProblems.length === 0,
-    reference_status: refStatus,
-    reference_n_valid: refValid,
-    reference_scores_match: refMatches,
   })
 }
 

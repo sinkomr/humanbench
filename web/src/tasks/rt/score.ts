@@ -176,7 +176,7 @@ export function rtBlockObservation(item: ItemInstance<RtSpec, RtKey>, response: 
   return scoreRtResponse(item.spec.mode, item.key.positions, response, device)
 }
 
-/** The part of a result a reference records: status, counts, and the observation + SE or the reason. */
+/** The part of a result the parity dump records (`synthetic.ts`): status, counts, and the observation + SE or the reason. */
 export function expectedOf(result: RtBlockResult): RtExpected {
   const { n_valid, n_misses, n_anticipations, n_errors, n_too_fast, n_too_slow } = result.meta
   const counts = { n_valid, n_misses, n_anticipations, n_errors, n_too_fast, n_too_slow }

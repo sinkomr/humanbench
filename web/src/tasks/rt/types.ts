@@ -134,7 +134,10 @@ export type RtBlockResult =
       readonly meta: RtObservationMeta
     }
 
-/** What scoring the reference responses must give (the §12-style scoring self-check). */
+/**
+ * The part of a block result that the scoring parity dump records (`synthetic.ts`,
+ * `golden/ts_dumps/rt_scores.json`): status, trial counts, and the observation + SE or the reason.
+ */
 export interface RtExpected extends RtTrialCounts {
   readonly status: 'ok' | 'no_observation'
   /** status "no_observation" only. */
@@ -146,22 +149,11 @@ export interface RtExpected extends RtTrialCounts {
 }
 
 /**
- * A synthetic worked scoring example carried in the key: responses for every trial (drawn from
- * a lapse-prone mixture so both outcomes and every trimming rule occur) and the result they
- * must score to. `verify()` recomputes it, and the bank's Python twin recomputes it from the TS
- * dump to 1e-12 (A1). Never rendered and never scored as a person.
+ * The block key: the correct response per scored trial (= stimulus position), and nothing else
+ * (family contract: the answer key holds only what scoring needs). The synthetic responses that
+ * cross-check the scorer against the bank's Python twin live in a separate parity dump
+ * (`synthetic.ts`), never in an item.
  */
-export interface RtReference {
-  readonly device_class: string
-  readonly practice_rt_ms: readonly (number | null)[]
-  readonly practice_choice: readonly (number | null)[]
-  readonly rt_ms: readonly (number | null)[]
-  readonly choice: readonly (number | null)[]
-  readonly expected: RtExpected
-}
-
-/** The block key: the correct response per scored trial (= stimulus position) plus the reference. */
 export interface RtKey {
   readonly positions: readonly number[]
-  readonly reference: RtReference
 }
