@@ -30,22 +30,13 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **wf2b** (`wf_598bf613-59c`) finished its fixes and merged `wf2/*` into `dev` in both repos. Quant was merged later, and is **not yet registered**. The 4-lens audit ran; its findings are in the scratchpad file `wf2/audit_findings.json`. The repair step then failed: the stall watchdog kills an agent after 3 minutes with no progress, and the serial bank pytest run takes about 5.5 minutes.
-- **In flight: wf2c** (`wf_47425241-a4c`, started 2026-09-27 19:43). It runs in order:
-  - **base:** on bank `dev`, finish the id-scheme work (shared cyrb128 `family_id`, Python twin versions tagged `+py`) and add pytest-xdist.
-  - **4 scoped repairs**, each in its own worktree on branch `wf2c/<name>`: `quantreg`, `infra`, `rules`, `rtfix`.
-  - **reading:** re-solve the A14 questions with 2 independent solvers, then fix them on `wf2c/reading2`.
-  - **merger:** merge into `dev`.
-  - **verifier.**
-- **If interrupted:** check `git branch --list 'wf2c/*'` and `git worktree list`. Merge the green branches into `dev` in this order: quantreg, rtfix, infra, rules, reading2. Regenerate the dumps, then run the gates. For the bank, use `uv run pytest -q -n 8`.
-- Deferred to new ROADMAP tasks (M1.F2 contract v2 and M1.P):
-  - the block-observation API and block-aware property suite;
-  - per-item facets;
-  - a numeric-aware KeyEchoTracker;
-  - re-centring the prior anchors, and FER/CAL provisional models;
-  - realistic block parameters for M1.4a;
-  - quant sibling-variant exclusion (M1.14);
-  - the contract fields that renderers and the selector need.
+- **Nothing is in flight.** The wf2 batch is merged, repaired, verified and pushed.
+- **Next batch (wf3):**
+  - M1.12 A14 closure: rewrite 4 questions, then a third solve round.
+  - M1.F2 contract v2.
+  - Guardrails: M1.20 and M1.A.
+  - M1.14 selector, M1.17 save file and M1.19 integrity flags.
+  - M3.1 item schema, and M4.1 and M4.2 (bank).
 
 ## Needs you (blocked on the user)
 
@@ -64,3 +55,16 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 - 2026-09-26 16:25: **M0 done.** Pushed, Pages enabled, site live at http://michaelsinko.phd/humanbench/, CI green in both repos.
 - 2026-09-26 17:35: **M1.1** (pub a325971, 93 tests) and **M1.2** (bank f36f6f9, 134 tests) done after adversarial review; all 26 review findings fixed. Pushed to main.
 - 2026-09-26 17:50: A roadmap critic pass compared ROADMAP with DESIGN.md. It added ~36 missing tasks and decisions A7–A17, reordered the guardrails and M3.1 ahead of M2, and expanded "Needs you".
+- 2026-09-26 17:58 to 20:12: **wf2** built M1.2b, M1.3, M1.4a, M1.F and 8 procedural families (M1.5–M1.12), each in its own worktree with an adversarial review. The usage limit interrupted it during the last review fixes.
+- 2026-09-26 21:58 to 2026-09-27 00:00: **wf2b** finished the fixes and merged `wf2/*` into `dev`. Its 4-lens audit found 29 issues. The repair agent then died on the 3-minute stall watchdog, because the serial bank pytest takes 5.5 min.
+- 2026-09-27 19:43 to 21:10: **wf2c** made these repairs:
+  - `family_id` is now shared across repos (cyrb128 port), and Python twins carry `+py` versions.
+  - pytest-xdist brings the bank suite to about 60 s.
+  - quant is registered, and one numeric-key shape is shared with series.
+  - A17 sync checks now exist in both repos.
+  - A repo-wide timing lint was added. Verifier-only reading data is kept out of the app bundle. The SPA model kind is now per item, and ScoreResult was renamed to ItemScore.
+  - RT parity fixtures moved out of the production keys.
+  - 3 reading questions were rewritten.
+  - The verifier found no regressions. Gates: pub 1119 tests, bank 1304 tests, with 0 cross-check disagreements.
+  - Ticked M1.2b–M1.11. M1.12 and M1.P are partial. M1.F2 was added for the deferred contract gaps.
+
