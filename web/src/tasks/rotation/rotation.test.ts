@@ -1,5 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { MalformedResponseError } from '../family'
 import { createRng } from '../../engine'
 import { STRATUM_B_CUTS, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
@@ -34,6 +35,8 @@ const OPTS = {
   familyIdRatio: SMALL_STRUCTURE,
   specLeaksKey: rotationSpecLeaksKey,
   correctResponse: (item: RotationItem) => item.key.index,
+  incorrectResponse: (item: RotationItem) => (item.key.index + 1) % 4,
+  malformedResponses: () => [-1, 4, 1.5, '0', [0]],
 } as const
 
 const features = (item: RotationItem): RotationFeatures => item.difficulty.features as unknown as RotationFeatures
@@ -255,7 +258,7 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     const k = item.key.index
     expect(rotation.score(item, k)).toEqual({ correct: 1 })
     expect(rotation.score(item, (k + 1) % 4)).toEqual({ correct: 0 })
-    expect(rotation.score(item, k + 0.5)).toEqual({ correct: 0 })
-    expect(rotation.score(item, Number.NaN)).toEqual({ correct: 0 })
+    // Not an option position: malformed (M1.F2), a RangeError.
+    for (const bad of [k + 0.5, Number.NaN, -1, 4, '0', null]) expect(() => rotation.score(item, bad as number), String(bad)).toThrow(MalformedResponseError)
   })
 })

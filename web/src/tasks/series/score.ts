@@ -5,7 +5,7 @@
  * else scores 0.
  */
 
-import type { ItemScore } from '../family'
+import { entryResponse, type ItemScore } from '../family'
 import { WORD_SEPARATOR_RE } from '../priors'
 import type { SeriesItem, SeriesResponse } from './types'
 
@@ -41,6 +41,7 @@ export function parseLetterResponse(response: unknown): string | undefined {
 }
 
 export function scoreSeries(item: SeriesItem, response: SeriesResponse): ItemScore {
+  entryResponse(item, response, true)
   const key = item.key
   if ('letter' in key) return { correct: parseLetterResponse(response) === key.letter ? 1 : 0 }
   const v = parseIntegerResponse(response)

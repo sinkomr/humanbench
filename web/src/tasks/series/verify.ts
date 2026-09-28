@@ -10,7 +10,7 @@
 
 import { verdict, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
-import { SIGMA_B_DEFAULT, stratumOfB } from '../priors'
+import { SIGMA_B_DEFAULT, powerTimeLimit, stratumOfB } from '../priors'
 import { SERIES_PROVENANCE, seriesB, seriesExpectedTime, seriesFeatures } from './prior'
 import { MAX_VISIBLE, MIN_VISIBLE, TERM_BOUND, analyse, inRuleDomain, isRuleName, letterPosition, uniquenessChecks } from './rules'
 import type { SeriesItem } from './types'
@@ -97,6 +97,7 @@ export function verifySeries(item: SeriesItem): VerifyResult {
       provenance_matches: item.difficulty.provenance === SERIES_PROVENANCE,
       stratum_matches: typeof b === 'number' && Number.isFinite(b) && item.stratum === stratumOfB(b) && SERIES_STRATA.includes(item.stratum),
       expected_time_matches: item.expected_time_s === seriesExpectedTime(features),
+      time_limit_matches: item.time_limit_s === powerTimeLimit(item.expected_time_s),
       no_options: item.options_count === undefined,
     })
   } catch (e) {

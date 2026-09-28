@@ -17,7 +17,7 @@ import {
 } from '.'
 
 describe('provisional PS reading norms (A10, §7.1, §7.3)', () => {
-  it('β = ln 238 (Brysbaert 2019) with the −0.1 pre-1928 shift, s = 0.25, sigma = √(0.15² + τ_res²)', () => {
+  it('β = ln 238 (Brysbaert 2019) with the −0.1 pre-1928 shift, s = 0.25, params.sigma = τ_res (M1.F2)', () => {
     expect(NORM_WPM).toBe(238)
     expect(READING_S).toBe(0.25)
     expect(PRE_1928_SHIFT).toBe(-0.1)
@@ -27,7 +27,7 @@ describe('provisional PS reading norms (A10, §7.1, §7.3)', () => {
     expect(p.lam).toBe(0.25)
     expect(p.d).toBe(Math.log(238) - 0.1)
     expect(Math.exp(p.d)).toBeCloseTo(215.35, 2)
-    expect(p.sigma).toBeCloseTo(Math.sqrt(0.025), 15)
+    expect(p.sigma).toBe(TAU_RES) // the observation adds the 0.15 per-passage SE: √(0.15² + τ_res²)
   })
 
   it('d = ln 238 − s·b keeps the location and the prior consistent', () => {

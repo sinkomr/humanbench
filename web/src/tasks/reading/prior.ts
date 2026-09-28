@@ -8,9 +8,11 @@
  * - d = ln 238 − s·b, where 238 wpm is Brysbaert's (2019) silent-reading norm for non-fiction
  *   [EST, §7.3] and b is the passage prior below; for pre-1928 prose b = 0.4, so
  *   d = ln 238 − 0.1 (the [SPEC] era adjustment of −0.1 ln-wpm, ≈ 215 wpm at θ = 0);
- * - sigma = √(0.15² + τ_res²): 0.15 is the §7.1 per-passage SD of ln wpm (it already covers
- *   passage-to-passage variation) and τ_res = 0.05 [SPEC] the model residual, the same
- *   provisional value as the other A10 Gaussian blocks (RT, coding).
+ * - params.sigma = τ_res = 0.05 [SPEC], the model residual, the same provisional value as the
+ *   other A10 Gaussian blocks (RT, coding): the one meaning of a Gaussian block's sigma (M1.F2,
+ *   `family.ts`). A passed block's observation has sigma = √(0.15² + τ_res²), where 0.15 is the
+ *   §7.1 per-passage SD of ln wpm (it already covers passage-to-passage variation), the block's
+ *   own measurement SE. (Before generator 1.4.0 `params.sigma` held that observation sigma.)
  *
  * The item's b (difficulty prior, M1.P) is on the θ scale: the θ at which a reader's expected
  * speed on this passage equals the 238-wpm norm, so d = ln 238 − s·b keeps the two consistent.
@@ -94,7 +96,7 @@ export function readingItemParams(bPrior: number): Extract<ItemParams, { model: 
     model: 'gaussian',
     lam: READING_S,
     d: Math.log(NORM_WPM) - READING_S * bPrior,
-    sigma: Math.sqrt(SIGMA_MEASUREMENT * SIGMA_MEASUREMENT + TAU_RES * TAU_RES),
+    sigma: TAU_RES,
   }
 }
 

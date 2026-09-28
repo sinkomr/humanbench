@@ -18,6 +18,14 @@ export function isRtMode(v: unknown): v is RtMode {
   return v === 'simple' || v === 'choice4'
 }
 
+/** The block family of a mode (M1.F2: one family per sub-task): `rt_simple`, `rt_choice4`. */
+export function rtFamilyName(mode: RtMode): 'rt_simple' | 'rt_choice4' {
+  return `rt_${mode}`
+}
+
+/** The drill-down facet of each mode's family (§3 row 9: simple RT, 4-choice RT). */
+export const RT_FACETS: Readonly<Record<RtMode, string>> = Object.freeze({ simple: 'simple_rt', choice4: 'choice_rt' })
+
 /** Per-mode block layout and trimming window (§7.1, A10). */
 export interface RtModeConfig {
   /** Stimulus locations: 1 (simple) or 4 (choice; positions 0–3). */

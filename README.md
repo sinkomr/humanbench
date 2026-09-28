@@ -59,12 +59,16 @@ Test files live next to the code in `web/src/` (and `web/scripts/` for the Node 
 ### Procedural families
 
 Each procedural task family lives in `web/src/tasks/<family>/` and implements the contract in
-`web/src/tasks/family.ts` (ROADMAP A1, A11): a seeded generator, a verifier and a scorer, tested
-with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances (with the
-family's own key-leak check, `specLeaksKey`, or a documented waiver). The families registered
-in `web/src/tasks/registry.ts` are rotation, matrices, series, quant, span_fwd, span_bwd, corsi,
-rt, coding and reading; `registry.test.ts` runs every registered family through the property suite
-at n = 500. The private bank repo re-verifies at least 1,000 TS instances of every family with
+`web/src/tasks/family.ts` (ROADMAP A1, A11, M1.F2): a seeded generator, a verifier and a scorer,
+tested with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances (with
+the family's own key-leak check, `specLeaksKey`, or a documented waiver, and its synthetic
+responses: correct/incorrect for items, valid/invalid for blocks, plus malformed ones that must
+throw a `MalformedResponseError`). A family is `kind: 'item'` (keyed power items the adaptive
+selector serves) or `kind: 'block'` (a fixed block run whole, one family per sub-task, whose
+`score()` returns the engine observation or the reasons there is none). The families registered
+in `web/src/tasks/registry.ts` are rotation, matrices, series and quant (items), and span_fwd,
+span_bwd, corsi, rt_simple, rt_choice4, coding and reading (blocks); `registry.test.ts` runs every
+registered family through the property suite at n = 500. The private bank repo re-verifies at least 1,000 TS instances of every family with
 its Python twin. Dump them into the sibling bank checkout (`../humanbench-bank`, or
 `$HB_BANK_DIR`) with:
 
@@ -97,7 +101,8 @@ When the bank checkout is present, `npm test` fails if any of these copies is st
 family), checks each dump's header, item count, seed order, items and bytes, checks the series
 analysis fixture, and fails on any file in `golden/ts_dumps/` that nothing here checks;
 `web/scripts/coding-scores-dump.test.ts` and `web/scripts/rt-scores-dump.test.ts` check the
-coding and rt parity dumps, and
+coding and RT parity dumps (`coding_scores.json`, `rt_simple_scores.json`,
+`rt_choice4_scores.json`), and
 `web/scripts/sync-golden.test.ts` the golden fixtures. Without the bank (as in CI) these checks
 skip and name the path they looked at.
 

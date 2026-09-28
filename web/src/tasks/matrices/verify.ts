@@ -28,7 +28,7 @@
 import type { JsonValue } from '../../engine'
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
-import { stratumOfB } from '../priors'
+import { powerTimeLimit, stratumOfB } from '../priors'
 import {
   MAX_RULES,
   MIN_RULES,
@@ -44,7 +44,7 @@ import {
   type MatrixSpec,
 } from './grammar'
 import { MODAL_TIE_READING, modalArgmax, modalPicksKeyUniquely } from './heuristic'
-import { SIGMA_B_DEFAULT, TIME_LIMIT_S, bPriorOf, expectedTimeOf, featuresOf } from './prior'
+import { SIGMA_B_DEFAULT, bPriorOf, expectedTimeOf, featuresOf } from './prior'
 import { solve, violatedRules } from './solver'
 
 export type MatrixItem = ItemInstance<MatrixSpec, MatrixKey>
@@ -141,7 +141,7 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
       features_match: features !== null && sameJson(d.features, features),
       prior_matches: features !== null && d.b_prior === bPrior && d.sd_prior === SIGMA_B_DEFAULT,
       stratum_matches: features !== null && item.stratum === stratumOfB(bPrior),
-      time_matches: features !== null && item.expected_time_s === expectedTimeOf(nRules) && item.time_limit_s === TIME_LIMIT_S,
+      time_matches: features !== null && item.expected_time_s === expectedTimeOf(nRules) && item.time_limit_s === powerTimeLimit(item.expected_time_s),
       method: 'rule_enumeration',
       predicted_cells: sol.predictedCells,
       consistent_rule_fits: sol.consistentRuleFits,

@@ -61,7 +61,6 @@ import {
   ROTATION_PROVENANCE,
   ROTATION_SD_PRIOR,
   ROTATION_STRATA,
-  ROTATION_TIME_LIMIT_S,
   rotationBPrior,
   rotationExpectedTime,
   type RotationStratum,
@@ -279,6 +278,5 @@ export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSp
     options_count: ROTATION_OPTIONS,
     difficulty: { features: { ...features }, b_prior: bPrior, sd_prior: ROTATION_SD_PRIOR, provenance: ROTATION_PROVENANCE },
     expected_time_s: rotationExpectedTime(features.angle_deg),
-    time_limit_s: ROTATION_TIME_LIMIT_S,
   }
 }

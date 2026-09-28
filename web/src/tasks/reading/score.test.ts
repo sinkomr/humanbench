@@ -1,5 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { MalformedResponseError } from '../family'
 import { GATE_MIN_CORRECT, SKIM_WPM, reading, readingBlockObservation, readingResponseProblems, wordsPerMinute, type ReadingItem, type ReadingResponse } from '.'
 
 const item: ReadingItem = reading.generate('score-tests')
@@ -36,7 +37,9 @@ describe('gate ≥ 2/3 (§3 row 10, A10)', () => {
     expect(r.meta.n_correct).toBe(nRight)
     expect(r.meta.gate_passed).toBe(passed)
     expect(r.status).toBe(passed ? 'ok' : 'no_observation')
-    expect(reading.score(item, resp(60_000, choicesWith(nRight)))).toEqual(passed ? { correct: null, value: Math.log(W) } : { correct: null })
+    const s = reading.score(item, resp(60_000, choicesWith(nRight)))
+    if (passed) expect(s).toMatchObject({ correct: null, observation: { kind: 'gaussian', x: Math.log(W) }, flags: [], reasons: [] })
+    else expect(s).toEqual({ correct: null, flags: [], reasons: ['gate_failed'] })
   })
 
   it('GATE_MIN_CORRECT is 2 of 3', () => {
@@ -77,9 +80,11 @@ describe('skimming flag (wpm > 900): recorded in meta, no observation', () => {
     expect(fast.meta.flags).toEqual(['skimming'])
     expect(fast.meta.gate_passed).toBe(true)
     expect(fast).toMatchObject({ status: 'no_observation', reason: 'skimming' })
-    expect(reading.score(item, resp((W / 1_200) * 60_000))).toEqual({ correct: null })
+    expect(reading.score(item, resp((W / 1_200) * 60_000))).toEqual({ correct: null, flags: ['skimming'], reasons: ['skimming'] })
     // The review's probe: the whole passage "read" in 1 s with every key right (≈ 21,700 wpm).
-    expect(reading.score(item, resp(1_000))).toEqual({ correct: null })
+    expect(reading.score(item, resp(1_000))).toEqual({ correct: null, flags: ['skimming'], reasons: ['skimming'] })
+    // A skimmed block with a failed gate: the gate is the reason, the flag is still raised (M1.F2).
+    expect(reading.score(item, resp((W / 2_000) * 60_000, choicesWith(0)))).toEqual({ correct: null, flags: ['skimming'], reasons: ['gate_failed'] })
     const slow = readingBlockObservation(item, resp((W / 250) * 60_000))
     expect(slow.meta.flags).toEqual([])
     expect(slow.status).toBe('ok')
@@ -99,13 +104,15 @@ describe('skimming flag (wpm > 900): recorded in meta, no observation', () => {
         expect(r.meta.norms_version).toBe('reading-v0')
         if (wpm > SKIM_WPM) {
           expect(r).toMatchObject({ status: 'no_observation', reason: 'skimming' })
-          expect(s).toEqual({ correct: null })
+          expect(s).toEqual({ correct: null, flags: ['skimming'], reasons: ['skimming'] })
           return
         }
         expect(r.status).toBe('ok')
         if (r.status !== 'ok' || item.params.model !== 'gaussian') return
-        expect(r.observation).toEqual({ kind: 'gaussian', axis: 'PS', lam: item.params.lam, d: item.params.d, sigma: item.params.sigma, x: Math.log(wpm) })
-        expect(s).toEqual({ correct: null, value: Math.log(wpm) })
+        // sigma = √(0.15² + τ_res²): the §7.1 per-passage SD as the block's SE, τ_res = params.sigma (M1.F2).
+        const sigma = Math.sqrt(0.15 * 0.15 + item.params.sigma * item.params.sigma)
+        expect(r.observation).toEqual({ kind: 'gaussian', axis: 'PS', lam: item.params.lam, d: item.params.d, sigma, x: Math.log(wpm) })
+        expect(s).toEqual({ correct: null, observation: r.observation, flags: [], reasons: [] })
       }),
       { numRuns: 300 },
     )
@@ -128,7 +135,7 @@ describe('skimming flag (wpm > 900): recorded in meta, no observation', () => {
 })
 
 describe('malformed responses', () => {
-  it('lists every problem and scoring throws a RangeError', () => {
+  it('lists every problem and scoring throws a MalformedResponseError (a RangeError, M1.F2)', () => {
     expect(readingResponseProblems(null, 3, 4)).toEqual(['response must be an object'])
     expect(readingResponseProblems({ reading_time_ms: 0, choices: [0, 1, 2] }, 3, 4)).toEqual(['reading_time_ms must be a finite number > 0'])
     expect(readingResponseProblems({ reading_time_ms: 1000, choices: [0, 1] }, 3, 4)).toEqual(['choices must have 3 entries, got 2'])
@@ -138,8 +145,8 @@ describe('malformed responses', () => {
     ])
     expect(readingResponseProblems({ reading_time_ms: 1000 }, 3, 4)).toEqual(['choices must be an array'])
     for (const bad of [{ reading_time_ms: -5, choices: keys }, { reading_time_ms: 1000, choices: [0] }, { reading_time_ms: Number.NaN, choices: keys }]) {
-      expect(() => readingBlockObservation(item, bad as ReadingResponse)).toThrow(RangeError)
-      expect(() => reading.score(item, bad as ReadingResponse)).toThrow(RangeError)
+      expect(() => readingBlockObservation(item, bad as ReadingResponse)).toThrow(MalformedResponseError)
+      expect(() => reading.score(item, bad as ReadingResponse)).toThrow(MalformedResponseError)
     }
   })
 })

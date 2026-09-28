@@ -13,8 +13,8 @@ import {
   codingOutcome,
   scoreCoding,
   type CodingResponse,
-  type CodingScoreResult,
 } from '.'
+import { MalformedResponseError } from '../family'
 import { evenTimes, scriptedResponses, syntheticResponses } from './synthetic'
 
 const item = coding.generate('score')
@@ -35,20 +35,19 @@ describe('coding scoring (M1.11, A10)', () => {
     })
     // A norm taker (40/min) sits exactly at θ = 0: x = lam·0 + d.
     expect(o.observation?.kind === 'gaussian' && o.observation.x - o.observation.d).toBe(0)
-    expect(scoreCoding(item, r)).toEqual({ correct: null, value: Math.log(40), observation: o.observation, outcome: o })
+    expect(scoreCoding(item, r)).toEqual({ correct: null, observation: o.observation, flags: [], reasons: [] })
   })
 
-  it('score() carries the block observation with its own σ and the flags, not the nominal params.sigma', () => {
-    // 10 correct + 4 wrong: σ = √(1/10 + τ²) ≈ 0.32, far from params.sigma ≈ 0.138 (60 correct).
+  it('score() is a BlockScore: the observation with its own σ = √(1/correct + τ_res²), τ_res = params.sigma, and the flag (M1.F2)', () => {
+    // 10 correct + 4 wrong: σ = √(1/10 + τ²) ≈ 0.32; params.sigma is τ_res = 0.05 only.
     const r = scriptedResponses(item, evenTimes(14, 1_000), (k) => k < 4)
-    const s = coding.score(item, r) as CodingScoreResult
-    expect(s.correct).toBeNull()
-    expect(s.outcome).toEqual(codingOutcome(item, r))
-    expect(s.outcome).toMatchObject({ correct: 10, errors: 4, high_error_rate: true })
+    const s = coding.score(item, r)
+    expect(codingOutcome(item, r)).toMatchObject({ correct: 10, errors: 4, high_error_rate: true })
+    expect(s).toEqual({ correct: null, observation: codingOutcome(item, r).observation, flags: ['high_error_rate'], reasons: [] })
     expect(s.observation).toMatchObject({ kind: 'gaussian', sigma: Math.sqrt(1 / 10 + CODING_TAU_RES ** 2) })
-    expect(s.value).toBe(s.observation?.kind === 'gaussian' ? s.observation.x : Number.NaN)
     if (item.params.model !== 'gaussian' || s.observation?.kind !== 'gaussian') throw new Error('expected Gaussian params')
-    expect(s.observation.sigma).toBeGreaterThan(2 * item.params.sigma)
+    expect(item.params.sigma).toBe(CODING_TAU_RES)
+    expect(s.observation.sigma).toBe(Math.sqrt(1 / 10 + item.params.sigma ** 2))
   })
 
   it('the rate is over the full window, however early the responses stop', () => {
@@ -91,13 +90,13 @@ describe('coding scoring (M1.11, A10)', () => {
     expect(over.observation).not.toBeNull()
   })
 
-  it('no correct response → no observation (ln 0), and score() omits the value', () => {
+  it('no correct response → no observation (ln 0), and score() gives the reason', () => {
     const none = codingOutcome(item, [])
     expect(none).toMatchObject({ attempted: 0, correct: 0, error_rate: 0, high_error_rate: false, correct_per_min: 0, observation: null })
     const wrong = scriptedResponses(item, evenTimes(30, 1_000), () => true)
     expect(codingOutcome(item, wrong)).toMatchObject({ correct: 0, errors: 30, high_error_rate: true, observation: null })
-    expect(scoreCoding(item, wrong)).toEqual({ correct: null, observation: null, outcome: codingOutcome(item, wrong) })
-    expect(scoreCoding(item, wrong)).not.toHaveProperty('value')
+    expect(scoreCoding(item, wrong)).toEqual({ correct: null, flags: ['high_error_rate'], reasons: ['no_correct_responses'] })
+    expect(scoreCoding(item, [])).toEqual({ correct: null, flags: [], reasons: ['no_correct_responses'] })
     const one = codingOutcome(item, scriptedResponses(item, [100]))
     expect(one.observation).toMatchObject({ x: Math.log(1 / 1.5), sigma: Math.sqrt(1 + 0.0025) })
   })
@@ -145,9 +144,12 @@ describe('coding scoring (M1.11, A10)', () => {
       scriptedResponses(item, evenTimes(200, 10)).concat([{ digit: 1, t_ms: 5_000 }]), // 201 responses
     ]
     for (const b of bad) {
-      expect(() => checkResponses(item, b as CodingResponse[])).toThrow(RangeError)
-      expect(() => coding.score(item, b as CodingResponse[])).toThrow(RangeError)
+      expect(() => checkResponses(item, b as CodingResponse[])).toThrow(MalformedResponseError)
+      expect(() => coding.score(item, b as CodingResponse[])).toThrow(MalformedResponseError)
     }
+    // A hole in the stream is malformed too (not skipped).
+    // eslint-disable-next-line no-sparse-arrays
+    expect(() => coding.score(item, [ok[0], , ok[2]] as CodingResponse[])).toThrow(MalformedResponseError)
     expect(() => checkResponses(item, ok)).not.toThrow()
     expect(() => checkResponses(item, [{ digit: 1, t_ms: 5 }, { digit: 2, t_ms: 5 }])).not.toThrow() // equal times are fine
   })

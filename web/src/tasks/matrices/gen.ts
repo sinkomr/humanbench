@@ -51,7 +51,6 @@ import {
   MATRIX_STRATA,
   RULE_SETS_BY_STRATUM,
   SIGMA_B_DEFAULT,
-  TIME_LIMIT_S,
   bPriorOf,
   expectedTimeOf,
   featuresOf,
@@ -265,6 +264,5 @@ export function buildMatrix(rng: Rng, ctx: BuildContext): BuiltItem<MatrixSpec, 
     options_count: OPTIONS_COUNT,
     difficulty: { features: { ...features }, b_prior: bPriorOf(features), sd_prior: SIGMA_B_DEFAULT, provenance: MATRIX_PROVENANCE },
     expected_time_s: expectedTimeOf(features.n_rules),
-    time_limit_s: TIME_LIMIT_S,
   }
 }

@@ -35,6 +35,11 @@ export interface ItemBase {
   item_id: string
   /** e.g. "f:mat:0182"; a user never sees two items of one family (§7.7). */
   family_id: string
+  /**
+   * The near-isomorph group a session serves at most once (M1.F2, M1.14; A11 amended): the
+   * family_id, or `g:<family>:<label>` (quant: per template). Absent = the family_id.
+   */
+  sibling_group?: string
   axis: AxisCode
   /** Sub-facet reported only in drill-down (§3), e.g. "3d_rotation". */
   facet?: string

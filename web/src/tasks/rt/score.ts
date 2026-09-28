@@ -14,15 +14,17 @@
  * values when n is even) with SE = 1.2533 · 1.4826 · MAD(ln rt) / √n, where MAD is the median
  * absolute deviation from x. The Gaussian observation is
  * `{ kind: 'gaussian', axis: 'RT', lam: −s, d: β, sigma: √(SE² + τ_res²), x }` with the
- * provisional norms of `prior.ts`; the device class and trial counts travel beside it.
+ * provisional norms of `prior.ts` (τ_res = `params.sigma`, the one meaning of a Gaussian block's
+ * sigma, M1.F2); the device class and trial counts travel beside it. A malformed response throws
+ * a `MalformedResponseError` (a RangeError, as in every family).
  *
  * As A10 specifies, SE has no floor: it is 0 when more than half of the valid log RTs are equal
  * (likely only with a coarse, quantised performance.now()), and sigma then falls to τ_res. The
  * clock-resolution check and any SE floor belong to the device check / M4.8 calibration.
  */
 
-import type { ItemInstance } from '../family'
-import { RT_NORMS_VERSION, rtNorm } from './prior'
+import { MalformedResponseError, blockScore, gaussianObservationSigma, type BlockScore, type ItemInstance } from '../family'
+import { RT_NORMS_VERSION, rtNorm, rtParamsOfNorm } from './prior'
 import {
   RT_MODE_CONFIG,
   RT_PRACTICE_TRIALS,
@@ -120,7 +122,7 @@ export function rtEstimate(validRtsMs: readonly number[]): { x: number; mad: num
  */
 export function scoreRtResponse(mode: RtMode, keyPositions: readonly number[], response: RtResponse, device: RtDevice): RtBlockResult {
   const problems = rtResponseProblems(mode, response)
-  if (problems.length > 0) throw new RangeError(`malformed RT response: ${problems.join('; ')}`)
+  if (problems.length > 0) throw new MalformedResponseError(`malformed RT response: ${problems.join('; ')}`)
   const cfg = RT_MODE_CONFIG[mode]
   if (keyPositions.length !== cfg.n_trials) throw new RangeError(`need ${cfg.n_trials} key positions, got ${keyPositions.length}`)
   if (!(typeof device.device_class === 'string' && device.device_class.length > 0)) {
@@ -165,7 +167,7 @@ export function scoreRtResponse(mode: RtMode, keyPositions: readonly number[], r
   const { x, se } = rtEstimate(valid)
   return {
     status: 'ok',
-    observation: { kind: 'gaussian', axis: 'RT', lam: -norm.s, d: norm.beta, sigma: Math.sqrt(se * se + norm.tau_res * norm.tau_res), x },
+    observation: { kind: 'gaussian', axis: 'RT', lam: -norm.s, d: norm.beta, sigma: gaussianObservationSigma(se, rtParamsOfNorm(norm)), x },
     se,
     meta,
   }
@@ -174,6 +176,17 @@ export function scoreRtResponse(mode: RtMode, keyPositions: readonly number[], r
 /** Score a block item's responses: {@link scoreRtResponse} against `item.key.positions`. */
 export function rtBlockObservation(item: ItemInstance<RtSpec, RtKey>, response: RtResponse, device: RtDevice): RtBlockResult {
   return scoreRtResponse(item.spec.mode, item.key.positions, response, device)
+}
+
+/**
+ * `score()` of an RT block family (M1.F2 {@link BlockScore}): the Gaussian observation, or none
+ * with the reason (`too_few_valid_trials`). No integrity flags yet (anticipations and misses are
+ * counted in {@link rtBlockObservation}'s `meta`). The device class only annotates the
+ * observation, which does not depend on it.
+ */
+export function rtBlockScore(item: ItemInstance<RtSpec, RtKey>, response: RtResponse): BlockScore {
+  const r = rtBlockObservation(item, response, { device_class: 'unspecified' })
+  return r.status === 'ok' ? blockScore(r.observation) : blockScore(null, [], [r.reason])
 }
 
 /** The part of a result the parity dump records (`synthetic.ts`): status, counts, and the observation + SE or the reason. */

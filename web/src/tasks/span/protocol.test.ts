@@ -1,5 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { MalformedResponseError } from '../family'
 import {
   advanceSpan,
   categoryCount,
@@ -197,6 +198,9 @@ describe('exact match and response streams (§14.6 examples 10–11)', () => {
     expect(advanceSpan(p, key, [[1, 2, 4]])).toEqual({ finished: false, trial: 1, length: 3, longest_passed: 0 })
     expect(outcome(advanceSpan(p, key, [[9], [5, 3, 5]]))).toMatchObject({ longest_passed: 3, category: 1, stop: 'max_length' })
     expect(() => advanceSpan(p, key, [[1, 2, 4], [5, 3, 5], [1]])).toThrow(RangeError)
-    expect(() => advanceSpan(p, key, 'nope' as unknown as unknown[])).toThrow(TypeError)
+    // One error class across families (M1.F2): a MalformedResponseError, a RangeError.
+    expect(() => advanceSpan(p, key, 'nope' as unknown as unknown[])).toThrow(MalformedResponseError)
+    expect(() => advanceSpan(p, key, [[1, 2, 4], [5, 3, 5], [1]])).toThrow(MalformedResponseError)
+    expect(() => advanceSpan(p, key, ['124'])).toThrow(MalformedResponseError)
   })
 })

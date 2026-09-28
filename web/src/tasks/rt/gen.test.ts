@@ -10,9 +10,6 @@ import {
   drawSchedule,
   generateRtBlock,
   maxRunLength,
-  modeOfSeed,
-  rt,
-  rtBlockSeed,
   rtExpectedTimeS,
 } from '.'
 import { rtFeatures } from './prior'
@@ -25,25 +22,6 @@ describe('maxRunLength', () => {
     expect(maxRunLength([1, 1, 2, 2, 2, 3])).toBe(3)
     expect(maxRunLength([0, 0, 0, 0])).toBe(4)
     expect(maxRunLength([3, 1, 1, 1, 1, 1])).toBe(5)
-  })
-})
-
-describe('mode tags in seeds', () => {
-  it('reads a trailing #simple / #choice4, also before an @s<k> suffix', () => {
-    expect(modeOfSeed('a#simple')).toBe('simple')
-    expect(modeOfSeed('a#choice4')).toBe('choice4')
-    expect(modeOfSeed('a#choice4@s3')).toBe('choice4')
-    expect(modeOfSeed('a#simple#choice4')).toBe('choice4')
-    expect(modeOfSeed('a')).toBeUndefined()
-    expect(modeOfSeed('a#simplex')).toBeUndefined()
-    expect(modeOfSeed('a#simple@s3x')).toBeUndefined()
-    expect(modeOfSeed('#choice2')).toBeUndefined()
-  })
-
-  it('rtBlockSeed tags a seed and refuses bad input', () => {
-    expect(rtBlockSeed('s', 'simple')).toBe('s#simple')
-    expect(() => rtBlockSeed('', 'simple')).toThrow(RangeError)
-    expect(() => rtBlockSeed('s', 'choice2' as never)).toThrow(RangeError)
   })
 })
 
@@ -144,7 +122,7 @@ describe('drawSchedule', () => {
 describe('priors and expected time (M1.P, [SPEC] v0)', () => {
   it('b = 0 for both modes (stratum 3), σ_b = 1, provenance says [SPEC] v0', () => {
     for (const mode of ['simple', 'choice4'] as const) {
-      const item = rt.generate(rtBlockSeed('prior', mode))
+      const item = generateRtBlock('prior', mode)
       expect(item.difficulty.b_prior).toBe(0)
       expect(item.difficulty.sd_prior).toBe(1)
       expect(item.difficulty.provenance).toMatch(/^\[SPEC\] v0/)

@@ -17,16 +17,17 @@ import { matrices } from './matrices'
 import { quant } from './quant'
 import { reading } from './reading'
 import { rotation } from './rotation'
-import { rt } from './rt'
+import { rtChoice4, rtSimple } from './rt'
 import { series } from './series'
 import { corsi, spanBwd, spanFwd } from './span'
 
 /**
- * M1 procedural families (§4.2, §14.3 M1), keyed by `family.name`: power items rotation (M1.5),
- * matrices (M1.6), series (M1.7) and quant (M1.8); blocks span_fwd, span_bwd and corsi (M1.9),
- * rt (M1.10), coding (M1.11) and reading (M1.12).
+ * M1 procedural families (§4.2, §14.3 M1), keyed by `family.name`: item families (kind 'item')
+ * rotation (M1.5), matrices (M1.6), series (M1.7) and quant (M1.8); block families (kind
+ * 'block', one per sub-task, M1.F2) span_fwd, span_bwd and corsi (M1.9), rt_simple and
+ * rt_choice4 (M1.10), coding (M1.11) and reading (M1.12).
  */
-const REGISTERED: readonly AnyFamily[] = [rotation, matrices, series, quant, spanFwd, spanBwd, corsi, rt, coding, reading]
+const REGISTERED: readonly AnyFamily[] = [rotation, matrices, series, quant, spanFwd, spanBwd, corsi, rtSimple, rtChoice4, coding, reading]
 
 /**
  * The registered names, in registry order. Kept as a string literal on purpose: the bank's
@@ -34,7 +35,7 @@ const REGISTERED: readonly AnyFamily[] = [rotation, matrices, series, quant, spa
  * `golden/ts_dumps/<name>.json` dumps cover the same families (A1, A17). `registry.test.ts`
  * checks it equals the keys of {@link FAMILIES}.
  */
-export const FAMILY_NAMES = ['rotation', 'matrices', 'series', 'quant', 'span_fwd', 'span_bwd', 'corsi', 'rt', 'coding', 'reading'] as const
+export const FAMILY_NAMES = ['rotation', 'matrices', 'series', 'quant', 'span_fwd', 'span_bwd', 'corsi', 'rt_simple', 'rt_choice4', 'coding', 'reading'] as const
 
 export const FAMILIES: Readonly<Record<string, AnyFamily>> = Object.freeze(Object.fromEntries(REGISTERED.map((f) => [f.name, f])))
 

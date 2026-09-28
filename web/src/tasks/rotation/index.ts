@@ -17,7 +17,8 @@
  *   (`npm run dump:families -- --module src/tasks/rotation/index.ts --family rotation --n 1000 --bank`).
  *
  * generatorVersion 1.1.0: `time_limit_s` 60 → 180, the shared power-item cap (§13,
- * `POWER_TIME_LIMIT_S`); content otherwise unchanged from 1.0.0.
+ * `POWER_TIME_LIMIT_S`); content otherwise unchanged from 1.0.0. 1.2.0 (contract v2, M1.F2):
+ * `sibling_group`; the cap is now set by `defineFamily` (`powerTimeLimit`, still 180 s here).
  */
 
 import { defineFamily } from '../family'
@@ -29,9 +30,10 @@ import { verifyRotation } from './verify'
 
 export const rotation = defineFamily<RotationSpec, RotationKey, RotationResponse>({
   name: 'rotation',
+  kind: 'item',
   axis: 'SPA',
-  facet: '3d_rotation',
-  generatorVersion: '1.1.0',
+  facets: ['3d_rotation'],
+  generatorVersion: '1.2.0',
   itemType: 'mc_image_spec',
   strata: ROTATION_STRATA,
   build: buildRotation,

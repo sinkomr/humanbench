@@ -6,14 +6,14 @@
 
 import { describe, expect, it } from 'vitest'
 import { createRng } from '../../engine'
-import { expectedOf, generateRtBlock, rt, scoreRtResponse } from '.'
+import { RT_FAMILY_LIST, expectedOf, generateRtBlock, rtChoice4, scoreRtResponse } from '.'
 import {
-  RT_SCORE_DUMP_FILE,
   RT_SCORE_DUMP_SEED_PREFIX,
   SYNTHETIC_DEVICE_CLASSES,
   buildRtScoreDump,
   drawSyntheticResponses,
   rtScoreCase,
+  rtScoreDumpFile,
   serializeRtScoreDump,
   type RtScoreDump,
 } from './synthetic'
@@ -22,7 +22,7 @@ describe('synthetic RT responses', () => {
   it('are whole tenths of a ms (integer draws, the same on every engine), with every lapse kind', () => {
     const kinds = new Set<string>()
     for (let i = 0; i < 200; i++) {
-      const item = rt.generate(`tenths-${i}`)
+      const item = (RT_FAMILY_LIST[i % 2] as typeof rtChoice4).generate(`tenths-${i}`)
       const r = drawSyntheticResponses(createRng(`tenths-${i}`), item.spec)
       expect(r.rt_ms).toHaveLength(item.spec.positions.length)
       expect(r.practice_rt_ms).toHaveLength(3)
@@ -47,49 +47,51 @@ describe('synthetic RT responses', () => {
   })
 })
 
-describe('rt scoring parity dump (A1, A17)', () => {
+describe.each(RT_FAMILY_LIST.map((f) => [f.name, f] as const))('%s scoring parity dump (A1, A17)', (name, family) => {
   const N = 1_000
-  const dump = buildRtScoreDump(N)
+  const dump = buildRtScoreDump(family, N)
 
   it('has a header naming the item dump, and one case per dumped block dump-<i>', () => {
-    expect(RT_SCORE_DUMP_FILE).toBe('rt_scores.json')
-    expect(dump).toMatchObject({ family: 'rt', generator_version: rt.generatorVersion, items_file: 'rt.json', count: N })
-    expect(dump.cases.map((c) => c.item_id)).toEqual(dump.cases.map((_, i) => `i:rt:${rt.generatorVersion}:${RT_SCORE_DUMP_SEED_PREFIX}${i}`))
-    expect(() => buildRtScoreDump(0)).toThrow(RangeError)
+    expect(rtScoreDumpFile(name)).toBe(`${name}_scores.json`)
+    expect(dump).toMatchObject({ family: name, generator_version: family.generatorVersion, items_file: `${name}.json`, count: N })
+    expect(dump.cases.map((c) => c.item_id)).toEqual(dump.cases.map((_, i) => `i:${name}:${family.generatorVersion}:${RT_SCORE_DUMP_SEED_PREFIX}${i}`))
+    expect(() => buildRtScoreDump(family, 0)).toThrow(RangeError)
   })
 
   it('each case is the TS result of its own responses on its own block', () => {
     for (const [i, c] of dump.cases.entries()) {
-      const item = rt.generate(`${RT_SCORE_DUMP_SEED_PREFIX}${i}`)
+      const item = family.generate(`${RT_SCORE_DUMP_SEED_PREFIX}${i}`)
       expect(c.expected).toEqual(expectedOf(scoreRtResponse(item.spec.mode, item.key.positions, c.response, { device_class: c.device_class })))
       expect(c.response.rt_ms).toHaveLength(item.key.positions.length)
     }
   }, 60_000)
 
-  it('covers both outcomes, every trimming rule, both modes and every device class', () => {
-    const totals = { ok: 0, none: 0, misses: 0, anticipations: 0, errors: 0, fast: 0, slow: 0 }
+  it('covers both outcomes, every trimming rule of its mode and every device class', () => {
+    const totals: Record<string, number> = { ok: 0, none: 0, misses: 0, anticipations: 0, fast: 0, slow: 0, ...(name === 'rt_choice4' ? { errors: 0 } : {}) }
     const devices = new Set<string>()
     const modes = new Set<number>()
     for (const c of dump.cases) {
       devices.add(c.device_class)
       modes.add(c.response.rt_ms.length)
       const x = c.expected
-      if (x.status === 'ok') totals.ok++
-      else totals.none++
-      totals.misses += x.n_misses
-      totals.anticipations += x.n_anticipations
-      totals.errors += x.n_errors
-      totals.fast += x.n_too_fast
-      totals.slow += x.n_too_slow
+      const add = (k: string, v: number): void => {
+        totals[k] = (totals[k] as number) + v
+      }
+      add(x.status === 'ok' ? 'ok' : 'none', 1)
+      add('misses', x.n_misses)
+      add('anticipations', x.n_anticipations)
+      if (totals.errors !== undefined) add('errors', x.n_errors)
+      add('fast', x.n_too_fast)
+      add('slow', x.n_too_slow)
     }
     for (const v of Object.values(totals)) expect(v).toBeGreaterThan(20)
-    expect(totals.ok).toBeGreaterThan(N / 2)
+    expect(totals.ok as number).toBeGreaterThan(N / 2)
     expect([...devices].sort()).toEqual([...SYNTHETIC_DEVICE_CLASSES].sort())
-    expect([...modes].sort()).toEqual([30, 40])
+    expect([...modes]).toEqual([name === 'rt_simple' ? 30 : 40])
   })
 
   it('serialises one canonical case per line and survives JSON', () => {
-    const small = buildRtScoreDump(5)
+    const small = buildRtScoreDump(family, 5)
     const text = serializeRtScoreDump(small)
     expect(text.split('\n')).toHaveLength(small.cases.length + 3)
     expect(JSON.parse(text) as RtScoreDump).toEqual(JSON.parse(JSON.stringify(small)))

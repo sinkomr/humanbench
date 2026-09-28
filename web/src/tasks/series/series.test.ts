@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { NUMERIC_ITEM_TYPE, itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
+import { MalformedResponseError, NUMERIC_ITEM_TYPE, itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
 import { itemId, structuralHash } from '../ids'
-import { ICAR_ANCHOR_B, stratumOfB } from '../priors'
+import { ICAR_ANCHOR_B, powerTimeLimit, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
 import { ANALYSIS_FIXTURE_N, analysisCase, analysisFixture, serializeAnalysisFixture } from './analysis-fixture'
 import { SERIES_STRATA, acceptDraft, minVisibleFor, renderDraft, type Draft } from './gen'
@@ -53,7 +53,21 @@ const CONTENT_RATIO = { min: 0.9, reason: 'letter series (1,248 possible) and sm
 const correctResponse = (item: SeriesItem): string =>
   'letter' in item.key ? item.key.letter.toLowerCase() : ` ${item.key.value} `
 
-const OPTS = { specLeaksKey: seriesSpecLeaksKey, familyIdRatio: FAMILY_ID_RATIO, contentRatio: CONTENT_RATIO, correctResponse } as const
+/** A well-formed wrong answer: the next letter, or the key + 1 (as a number: numeric keypads send numbers). */
+const incorrectResponse = (item: SeriesItem): string | number =>
+  'letter' in item.key ? String.fromCharCode(((item.key.letter.charCodeAt(0) - 65 + 1) % 26) + 65) : Number(item.key.value) + 1
+
+/** Malformed series responses (M1.F2): not text and not a finite number. */
+const malformedResponses = (): unknown[] => [[], ['4'], Number.POSITIVE_INFINITY, { value: '4' }]
+
+const OPTS = {
+  specLeaksKey: seriesSpecLeaksKey,
+  familyIdRatio: FAMILY_ID_RATIO,
+  contentRatio: CONTENT_RATIO,
+  correctResponse,
+  incorrectResponse,
+  malformedResponses,
+} as const
 
 type Mutable = { -readonly [K in keyof SeriesItem]: unknown }
 
@@ -68,6 +82,7 @@ function makeItem(rule: RuleName, coefficients: Record<string, number | string>,
   return {
     item_id: itemId('series', series.generatorVersion, seed),
     family_id: series.familyIdOf({ rule, coefficients }),
+    sibling_group: series.familyIdOf({ rule, coefficients }),
     family: 'series',
     generator_version: series.generatorVersion,
     seed,
@@ -81,6 +96,7 @@ function makeItem(rule: RuleName, coefficients: Record<string, number | string>,
     params: itemParamsFor(undefined, 1, difficulty.b_prior),
     difficulty,
     expected_time_s: seriesExpectedTime(features),
+    time_limit_s: powerTimeLimit(seriesExpectedTime(features)),
   }
 }
 
@@ -140,7 +156,8 @@ describe('series family: identity, strata and params', () => {
   it('is axis MAT, facet series, the shared entry item type "numeric" (as quant), strata 1–5', () => {
     expect(series.name).toBe('series')
     expect(series.axis).toBe('MAT')
-    expect(series.facet).toBe('series')
+    expect(series.kind).toBe('item')
+    expect(series.facets).toEqual(['series'])
     expect(series.itemType).toBe('numeric')
     expect(series.itemType).toBe(NUMERIC_ITEM_TYPE)
     expect(series.strata).toEqual([1, 2, 3, 4, 5])
@@ -438,6 +455,22 @@ describe('series verify: hand-built items', () => {
     expect(r).not.toMatch(/min_dl_rules_agree/)
   })
 
+  it('pins simpler_than_interpolant as STRICT: a key rule whose DL ties the interpolant fails (M1.F2)', () => {
+    // −7 ×5 is Fibonacci-type with c = 7 (t + t' + 7 = −7): DL = 7 bits + log2(8·8·8) = 16, and the
+    // degree-4 interpolant (−7, 0, 0, 0, 0) = 13 bits + log2(8) = 16. An exact tie: `<` rejects it,
+    // the `<=` mutant would accept it. One step down (c = 6 on −6 ×5: 7 + log2 343 ≈ 15.42 vs
+    // 13 + log2 7 ≈ 15.81) is strictly simpler and passes.
+    const tie = analyse([-7, -7, -7, -7, -7], false)
+    const tieFit = tie.fits.find((f) => f.rule === 'fibonacci' && f.coefficients.c === 7)
+    expect(tieFit).toBeDefined()
+    expect(compareDl(tieFit!.dl, tie.interpolant)).toBe(0)
+    expect(uniquenessChecks(tie, { rule: 'fibonacci', coefficients: { c: 7 } }, -7).simpler_than_interpolant).toBe(false)
+    const below = analyse([-6, -6, -6, -6, -6], false)
+    const belowFit = below.fits.find((f) => f.rule === 'fibonacci' && f.coefficients.c === 6)
+    expect(compareDl(belowFit!.dl, below.interpolant)).toBe(-1)
+    expect(uniquenessChecks(below, { rule: 'fibonacci', coefficients: { c: 6 } }, -6).simpler_than_interpolant).toBe(true)
+  })
+
   it('rejects a key rule that is not strictly simpler than the interpolating polynomial', () => {
     // interleaved 900, 903, 906 | 901, 905, 909 → 909 costs 31.95 bits; the degree-5 interpolant 31.14
     const item = makeItem('interleaved', { da: 3, db: 4 }, [900, 901, 903, 905, 906, 909, 909])
@@ -475,8 +508,12 @@ describe('series score', () => {
     expect(series.score(num, -9)).toEqual({ correct: 0 })
     expect(series.score(num, '-10.0')).toEqual({ correct: 0 })
     expect(series.score(num, '')).toEqual({ correct: 0 })
-    expect(series.score(num, Number.NaN)).toEqual({ correct: 0 })
     expect(series.score(num, -10.5)).toEqual({ correct: 0 })
+    // Not text and not a finite number: malformed (M1.F2), not a wrong answer.
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, null, undefined, true, [-10], { value: '-10' }]) {
+      expect(() => series.score(num, bad as never), String(bad)).toThrow(MalformedResponseError)
+      expect(() => series.score(let_, bad as never), String(bad)).toThrow(RangeError)
+    }
     expect(parseIntegerResponse('+42')).toBe(42)
     expect(parseIntegerResponse('4 2')).toBeUndefined()
   })

@@ -273,7 +273,7 @@ describe('verifyReading: item-level negative cases', () => {
     const p = item.params as { lam: number; d: number; sigma: number }
     expectItemFails(badItem((x) => (x.params = { ...p, model: 'gaussian', d: p.d + 0.01 })), 'params_match')
     expectItemFails(badItem((x) => (x.params = { ...p, model: 'gaussian', lam: -0.25 })), 'params_match')
-    expectItemFails(badItem((x) => (x.params = { ...p, model: 'gaussian', sigma: 0.15 })), 'params_match')
+    expectItemFails(badItem((x) => (x.params = { ...p, model: 'gaussian', sigma: Math.sqrt(0.025) })), 'params_match')
     expectItemFails(badItem((x) => (x.params = { model: '3pl', a: 1, b: 0.4, c: 0.25 })), 'params_match')
     expectItemFails(badItem((x) => (x.options_count = 4)), 'params_match')
   })

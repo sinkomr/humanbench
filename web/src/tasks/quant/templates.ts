@@ -7,8 +7,9 @@
  * family_id is the template variant (A11: isomorphs differ only in their numbers). A variant is
  * a stem template in A11's sense (its own fields, stem and answer route); `template` groups
  * variants by topic. Hashing the topic alone would leave 4 families in each of strata 1–3, below
- * the 6S per stratum that per-user family exclusion needs (§7.7), so sibling variants of one
- * trick (recip/*, system/*) are left to a session-level rule (followup). Its `spec` is
+ * the 6S per stratum that per-user family exclusion needs (§7.7), so the variants of one template
+ * form a sibling group (`sibling_group = g:quant:<template>`, M1.F2): the selector serves at most
+ * one item of a template per session (M1.14), and the template is the item's facet. Its `spec` is
  * `{ stem, hint, input_format, given }`: `given` holds exactly the quantities the stem shows
  * (never the solution: no roots, no x₀), and the stem is rendered from it. Numbers are integers;
  * negatives render with "−" (U+2212); `lin` renders a linear combination ("3x − y", "x^2 − 5x + 6").
@@ -28,7 +29,7 @@
  */
 
 import type { JsonValue, Rng } from '../../engine'
-import type { EntryFormat } from '../family'
+import { siblingGroupId, type EntryFormat } from '../family'
 import type { Stratum } from '../ids'
 import { Fraction, bigGcd, frac } from './fraction'
 
@@ -982,6 +983,17 @@ function cyclePowMod(base: number, exp: number, m: number): number {
 
 /** Every variant, in a fixed order (the generator's draw order depends on it). */
 export const VARIANTS: readonly VariantDef[] = Object.freeze([...S1, ...S2, ...S3, ...S4])
+
+/**
+ * Every template id, in table order: the family's facets (M1.F2: an item's facet is its template)
+ * and the labels of its sibling groups (`g:quant:<template>`, A11 amended, M1.14).
+ */
+export const QUANT_TEMPLATES: readonly string[] = Object.freeze([...new Set(VARIANTS.map((v) => v.template))])
+
+/** The sibling group of a template's variants (M1.F2, A11 amended): `g:quant:<template>`. */
+export function quantSiblingGroup(template: string): string {
+  return siblingGroupId('quant', template)
+}
 
 /** Template ids by stratum, in table order. */
 export const TEMPLATES_BY_STRATUM: Readonly<Record<1 | 2 | 3 | 4, readonly string[]>> = Object.freeze({

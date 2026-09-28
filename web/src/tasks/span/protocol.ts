@@ -10,7 +10,13 @@
  * outcome is the longest passed length; its GRM category (A10) is y = longest − 2, or 0 if no
  * length was passed. Passed lengths are always contiguous from the start length, so the
  * outcome is also the last length before the stop.
+ *
+ * Malformed input (M1.F2: one error class across families) throws a `MalformedResponseError`,
+ * a RangeError: a response stream that is not an array, a trial response that is neither an
+ * entered sequence (an array) nor missing (null / a hole), or a response after the block finished.
  */
+
+import { MalformedResponseError } from '../family'
 
 export interface SpanProtocol {
   readonly start_length: number
@@ -87,7 +93,7 @@ export function spanStatus(p: SpanProtocol, results: readonly boolean[]): SpanSt
   let correct = 0
   const finish = (used: number, stop: SpanStop): SpanStatus => {
     if (results.length > used) {
-      throw new RangeError(`span block finished after ${used} trials, but ${results.length} responses were given`)
+      throw new MalformedResponseError(`span block finished after ${used} trials, but ${results.length} responses were given`)
     }
     return {
       finished: true,
@@ -124,15 +130,20 @@ export function isExactMatch(response: unknown, expected: readonly number[]): bo
 
 /**
  * Feed a response stream through the state machine: response i is scored against
- * `expected[i]` by {@link isExactMatch}. Returns the next trial or the finished outcome; throws a
- * RangeError on a response after the block finished or with no expected sequence.
+ * `expected[i]` by {@link isExactMatch} (a missing trial response, null or a hole, is wrong).
+ * Returns the next trial or the finished outcome; throws a `MalformedResponseError` (a
+ * RangeError) on a stream that is not an array, a trial response that is not an array or
+ * missing, or a response after the block finished or with no expected sequence.
  */
 export function advanceSpan(p: SpanProtocol, expected: readonly (readonly number[])[], responses: readonly unknown[]): SpanStatus {
-  if (!Array.isArray(responses)) throw new TypeError('span responses must be an array (one entry per trial given)')
+  if (!Array.isArray(responses)) throw new MalformedResponseError('span responses must be an array (one entry per trial given)')
   // Array.from visits every index (a hole is an undefined, i.e. wrong, response); map would skip it.
   const results = Array.from(responses, (r, i) => {
     const exp = expected[i]
-    if (exp === undefined) throw new RangeError(`span response ${i} has no trial (the block has ${expected.length})`)
+    if (exp === undefined) throw new MalformedResponseError(`span response ${i} has no trial (the block has ${expected.length})`)
+    if (!(r === undefined || r === null || Array.isArray(r))) {
+      throw new MalformedResponseError(`span response ${i} must be the entered sequence (an array) or missing, got ${typeof r}`)
+    }
     return isExactMatch(r, exp)
   })
   return spanStatus(p, results)

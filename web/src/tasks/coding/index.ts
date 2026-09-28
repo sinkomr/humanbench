@@ -7,12 +7,12 @@
  * response stream into log(correct per minute), the error count and flag, and the engine
  * observation.
  *
- * INTEGRATORS: score a block with {@link codingOutcome} (or read `observation` / `outcome` off
- * the {@link CodingScoreResult} that `coding.score()` returns). Do NOT build the Gaussian
- * observation from `item.params` plus `score().value`: `params.sigma` is the nominal σ at the
- * norm count (60 correct, ≈ 0.138, for planning), while a block's observation uses its own
- * σ = √(1/correct + τ_res²) (≈ 0.32 at 10 correct), and the > 20% error flag lives in the
- * outcome only.
+ * INTEGRATORS: `coding.score()` returns the M1.F2 `BlockScore`: the observation (its own
+ * σ = √(1/correct + τ_res²), ≈ 0.32 at 10 correct), or none with the reason, and the
+ * "high_error_rate" flag; {@link codingOutcome} has the counts. `params.sigma` is τ_res only.
+ *
+ * Generator version 1.1.0 (contract v2, M1.F2): kind 'block', `sibling_group`, params.sigma =
+ * τ_res (was the nominal σ at the norm count), `score()` returns a `BlockScore`.
  */
 
 import { defineFamily } from '../family'
@@ -39,17 +39,18 @@ export {
   codingSigma,
   codingStratum,
 } from './prior'
-export { checkResponses, codingObservation, codingOutcome, scoreCoding, type CodingOutcome, type CodingScoreResult } from './score'
+export { CODING_HIGH_ERROR_RATE, CODING_NO_CORRECT, checkResponses, codingObservation, codingOutcome, scoreCoding, type CodingOutcome } from './score'
 export { glyphCounts, hasImmediateRepeat, verifyCoding } from './verify'
 
 /** Current generator version of the coding family. */
-export const CODING_GENERATOR_VERSION = '1.0.0'
+export const CODING_GENERATOR_VERSION = '1.1.0'
 
 /** The symbol-digit coding block family (M1.11). */
 export const coding = defineFamily<CodingSpec, CodingKey, CodingResponses>({
   name: 'coding',
+  kind: 'block',
   axis: 'PS',
-  facet: 'coding',
+  facets: ['coding'],
   generatorVersion: CODING_GENERATOR_VERSION,
   itemType: 'coding_block',
   strata: [codingStratum()],

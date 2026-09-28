@@ -24,7 +24,7 @@
  */
 
 import type { Stratum } from '../ids'
-import { ICAR_ANCHOR_B, POWER_TIME_LIMIT_S, SIGMA_B_DEFAULT, clampPrior, linearB, type LinearPriorModel } from '../priors'
+import { ICAR_ANCHOR_B, SIGMA_B_DEFAULT, clampPrior, linearB, type LinearPriorModel } from '../priors'
 import type { RotationFeatures } from './spec'
 
 /** Strata this family generates (angle bins, see {@link ANGLE_BINS}). */
@@ -69,9 +69,3 @@ export const ROTATION_EXPECTED_TIME_DEG_PER_S = 9
 export function rotationExpectedTime(angleDeg: number): number {
   return ROTATION_EXPECTED_TIME_BASE_S + angleDeg / ROTATION_EXPECTED_TIME_DEG_PER_S
 }
-
-/**
- * Hard time limit per item: the shared power-item cap (§13, {@link POWER_TIME_LIMIT_S}), ≥ 4.5×
- * the slowest E[T] of 40 s. Was 60 s (the §12 example) before generator 1.1.0, only 1.5× E[T].
- */
-export const ROTATION_TIME_LIMIT_S = POWER_TIME_LIMIT_S

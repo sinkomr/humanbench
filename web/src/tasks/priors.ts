@@ -99,18 +99,30 @@ export function expectedTimeFromWords(words: number): number {
 }
 
 /**
- * The one hard time cap of power items, in seconds (DESIGN §13: "no time limits on power items
- * beyond a generous cap"; the §12 record's `time_limit_s`). A power family either leaves its
- * items untimed (series, quant: numeric entry, nothing to pace) or caps them at exactly this
- * value (rotation, matrices), and the cap must stay ≥ {@link POWER_TIME_LIMIT_MIN_RATIO} × E[T]
- * of every item (`power-time.test.ts`), so it only ends a stalled item and never paces a slow
- * but engaged taker. Timed blocks (coding's 90 s window, RT trials) are speed tasks, not power
- * items, and keep their own durations.
+ * The floor of the one shared time cap of power items, in seconds (DESIGN §13: "no time limits
+ * on power items beyond a generous cap"; the §12 record's `time_limit_s`). See
+ * {@link powerTimeLimit}.
  */
 export const POWER_TIME_LIMIT_S = 180
 
-/** A capped power item's limit is at least this multiple of its expected time E[T]. */
+/** A power item's cap is at least this multiple of its expected time E[T] (§13 "generous"). */
 export const POWER_TIME_LIMIT_MIN_RATIO = 2.5
+
+/**
+ * The one shared time cap of every power item (kind 'item', M1.F2; DESIGN §13, §12
+ * `time_limit_s int`): max(180 s, ⌈2.5 · E[T]⌉) whole seconds. It only ends a stalled item and
+ * never paces a slow but engaged taker: at least 180 s, and at least 2.5 × E[T] for the rare
+ * long item (quant stems at E[T] > 72 s). `defineFamily` sets it on every item and
+ * `validateItemInstance` requires it; the bank's `hb.gen.priors.power_time_limit` is the same
+ * rule. Timed blocks (coding's 90 s window) are speed tasks, not power items, and keep their
+ * own durations.
+ */
+export function powerTimeLimit(expectedTimeS: number): number {
+  if (!(Number.isFinite(expectedTimeS) && expectedTimeS > 0)) {
+    throw new RangeError(`powerTimeLimit(): expected time must be finite and > 0, got ${expectedTimeS}`)
+  }
+  return Math.max(POWER_TIME_LIMIT_S, Math.ceil(POWER_TIME_LIMIT_MIN_RATIO * expectedTimeS))
+}
 
 /**
  * Word separators of {@link countWords}: exactly the characters of JS `\s`, spelled out so the

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MalformedResponseError } from '../family'
 import { quant } from '.'
 import { Fraction, frac } from './fraction'
 import { sampleOf, variantDef, withGiven } from './test-helpers'
@@ -70,9 +71,9 @@ describe('quant scoring', () => {
     expect(quant.score(item, '40')).toEqual({ correct: 0 })
   })
 
-  it('scores a non-string response as incorrect', () => {
+  it('throws a MalformedResponseError on a non-string response (M1.F2); unparseable text is wrong', () => {
     const item = sampleOf('arith', 'group_mul')
-    expect(quant.score(item, 42 as unknown as string)).toEqual({ correct: 0 })
-    expect(quant.score(item, undefined as unknown as string)).toEqual({ correct: 0 })
+    for (const bad of [42, undefined, null, ['42'], { value: '42' }]) expect(() => quant.score(item, bad as unknown as string)).toThrow(MalformedResponseError)
+    expect(quant.score(item, 'forty-two')).toEqual({ correct: 0 })
   })
 })

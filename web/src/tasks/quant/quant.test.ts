@@ -34,6 +34,10 @@ const OPTS: FamilyPropertyOptions<QuantSpec, QuantKey, QuantResponse> = {
   familyIdRatio: VARIANT_SPACE,
   contentRatio: SMALL_TEMPLATES,
   correctResponse: (item) => item.key.value,
+  // The key + 1, outside every tolerance (abs ≤ 0.005).
+  incorrectResponse: (item) => (Fraction.parseCanonical(item.key.value) as Fraction).add(Fraction.ONE).toString(),
+  // Typed entries are text (M1.F2): a number, an array or an object is malformed.
+  malformedResponses: (item) => [Number(item.key.value), [item.key.value], { value: item.key.value }],
 }
 
 /** The family leak check, feeding every checked item to a run-level {@link QuantKeyEcho} too. */

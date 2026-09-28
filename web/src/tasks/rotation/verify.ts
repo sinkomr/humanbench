@@ -31,7 +31,7 @@
 
 import { verdict, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
-import { stratumOfB } from '../priors'
+import { powerTimeLimit, stratumOfB } from '../priors'
 import {
   COORD_LIMIT,
   MIN_ARMS,
@@ -62,7 +62,6 @@ import {
   ANGLE_BINS,
   ROTATION_SD_PRIOR,
   ROTATION_STRATA,
-  ROTATION_TIME_LIMIT_S,
   rotationBPrior,
   rotationExpectedTime,
   type RotationStratum,
@@ -295,7 +294,7 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
     time_matches:
       featuresComplete &&
       Math.abs(item.expected_time_s - rotationExpectedTime(angle)) <= TIME_TOL &&
-      item.time_limit_s === ROTATION_TIME_LIMIT_S,
+      item.time_limit_s === powerTimeLimit(item.expected_time_s),
     distractors: distractorKinds,
   })
 }

@@ -12,7 +12,8 @@
  * numeric or single-letter entry from `spec.input_format` ("integer" or "letter", the shared
  * `EntryFormat` vocabulary). Integer keys are the shared `NumericKey` `{ value: "42", tol:
  * { abs: 0 } }`; letter keys are `{ letter: "K" }`. Version 1.1.0: that item type and key shape
- * (was `series_entry` and `{ value: 42, tol: 0 }`; audit: quant conventions).
+ * (was `series_entry` and `{ value: 42, tol: 0 }`; audit: quant conventions). Version 1.2.0
+ * (contract v2, M1.F2): `sibling_group` and the shared power-item cap `time_limit_s` (§13).
  *
  * Rules, DL and uniqueness: `rules.ts`; generator: `gen.ts`; verifier: `verify.ts`; scoring:
  * `score.ts`; the TS → bank analysis fixture: `analysis-fixture.ts`. Python twin: the bank's
@@ -30,9 +31,10 @@ export type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec, SeriesStructure
 
 export const series = defineFamily<SeriesSpec, SeriesKey, SeriesResponse>({
   name: 'series',
+  kind: 'item',
   axis: 'MAT',
-  facet: 'series',
-  generatorVersion: '1.1.0',
+  facets: ['series'],
+  generatorVersion: '1.2.0',
   itemType: NUMERIC_ITEM_TYPE,
   strata: SERIES_STRATA,
   build: buildSeries,

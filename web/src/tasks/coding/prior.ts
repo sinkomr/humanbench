@@ -21,8 +21,9 @@
  *   conservative: inter-response times are far more regular than exponential, so real counts
  *   are under-dispersed. At the norm count (60) σ = √(1/60 + 0.05²) ≈ 0.138, i.e. a single
  *   block has reliability s²/(s² + σ²) ≈ .77 in the norm population.
- * `params.sigma` is that nominal σ at the norm count (for information-per-second planning,
- * §7.4); the observation of a finished block uses the σ of its own count.
+ * `params.sigma` is τ_res (0.05), the one meaning of a Gaussian block's sigma (M1.F2,
+ * `family.ts`); the observation of a finished block has σ = √(1/correct + τ_res²), from its own
+ * count. (Before generator 1.1.0 `params.sigma` was the nominal σ at the norm count, 0.138.)
  *
  * ## Difficulty prior ([SPEC] v0 regression, σ_b = 1.0)
  *
@@ -92,13 +93,13 @@ export function codingSigma(correct: number): number {
   return Math.sqrt(1 / correct + CODING_TAU_RES * CODING_TAU_RES)
 }
 
-/** The block's Gaussian params (A10): lam = s, d = β − s·b, sigma = σ at the norm count. */
+/** The block's Gaussian params (A10): lam = s, d = β − s·b, sigma = τ_res (M1.F2). */
 export function codingParams(bPrior: number): ItemParams {
   return {
     model: 'gaussian',
     lam: CODING_RATE_SCALE,
     d: CODING_BETA - CODING_RATE_SCALE * bPrior,
-    sigma: codingSigma(CODING_NORM_CORRECT),
+    sigma: CODING_TAU_RES,
   }
 }
 

@@ -12,7 +12,7 @@
  * a response stream into the GRM category and the engine observation.
  */
 
-import { defineFamily, type ProceduralFamily } from '../family'
+import { defineFamily, type BlockFamily } from '../family'
 import {
   SPAN_BWD,
   SPAN_CORSI,
@@ -35,19 +35,26 @@ export * from './config'
 export * from './protocol'
 export { SPAN_GRM_A, grmThresholds, meanLength, protocolOf, spanB, spanDifficulty, spanExpectedTime, spanStratum } from './prior'
 export { drawSequence, drawTrials, isPalindrome, runCompletion } from './gen'
-export { itemProtocol, runBlock, scoreSpan, spanObservation } from './score'
+export { SPAN_UNFINISHED, itemProtocol, runBlock, scoreSpan, spanObservation } from './score'
 export { SPAN_FLOAT_TOL, SPAN_TIME_RANGE_S, expectedKey, hasImmediateRepeat, hasRunOfThree, specFieldsOf, verifySpan } from './verify'
 
-/** Current generator version of all three span families. */
-export const SPAN_GENERATOR_VERSION = '1.0.0'
+/**
+ * Current generator version of all three span families. 1.1.0 (contract v2, M1.F2): kind
+ * 'block', `sibling_group`, and `score()` returns the GRM observation ({@link scoreSpan}).
+ */
+export const SPAN_GENERATOR_VERSION = '1.1.0'
 
-/** Make the family of one span task. */
-export function spanFamily(cfg: SpanTaskConfig): ProceduralFamily<SpanSpec, SpanKey, SpanResponse> {
+/**
+ * Make the block family of one span sub-task (M1.F2: one block family per sub-task, like
+ * `rt_simple` / `rt_choice4`).
+ */
+export function spanFamily(cfg: SpanTaskConfig): BlockFamily<SpanSpec, SpanKey, SpanResponse> {
   const stratum = spanStratum(cfg)
   return defineFamily<SpanSpec, SpanKey, SpanResponse>({
     name: cfg.name,
+    kind: 'block',
     axis: 'WM',
-    facet: cfg.task,
+    facets: [cfg.task],
     generatorVersion: SPAN_GENERATOR_VERSION,
     itemType: 'span',
     strata: [stratum],

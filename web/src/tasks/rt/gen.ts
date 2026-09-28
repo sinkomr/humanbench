@@ -13,14 +13,12 @@
  * β = params.d goes through Math.log. The key is the stimulus positions alone; the synthetic
  * responses of the scoring parity check are drawn separately (`synthetic.ts`, not in the item).
  *
- * Mode: `generate(seed)` picks simple or choice with probability ½ each, unless the seed ends in
- * a mode tag `#simple` / `#choice4` (before any `@s<k>` stratum suffix), which the session flow
- * uses to ask for a specific block ({@link rtBlockSeed}). The tag is part of the seed, so the
- * item still regenerates from its id alone (A11).
+ * Mode: each RT sub-task is its own block family (M1.F2: `rt_simple`, `rt_choice4`, like the
+ * three span families), so the mode is the family's, never drawn or read from the seed.
  */
 
 import type { Rng } from '../../engine'
-import type { BuildContext, BuiltItem } from '../family'
+import type { BuiltItem } from '../family'
 import { RT_STRATUM, rtDifficulty, rtExpectedTimeS, rtItemParams, rtStructure } from './prior'
 import {
   FOREPERIOD_MAX_MS,
@@ -33,21 +31,6 @@ import {
   type RtMode,
   type RtSpec,
 } from './types'
-
-const MODE_TAG_RE = /#(simple|choice4)(?:@s[1-6])?$/
-
-/** The mode a seed's tag asks for (`…#simple`, `…#choice4`, optionally followed by `@s<k>`), else undefined. */
-export function modeOfSeed(seed: string): RtMode | undefined {
-  const m = MODE_TAG_RE.exec(seed)
-  return m && isRtMode(m[1]) ? m[1] : undefined
-}
-
-/** A seed that generates a block of the given mode: `<base>#<mode>`. */
-export function rtBlockSeed(base: string, mode: RtMode): string {
-  if (typeof base !== 'string' || base.length === 0) throw new RangeError('rtBlockSeed(): base seed must be a non-empty string')
-  if (!isRtMode(mode)) throw new RangeError(`rtBlockSeed(): unknown mode ${JSON.stringify(mode)}`)
-  return `${base}#${mode}`
-}
 
 /** Longest run of equal consecutive values (0 for an empty list). */
 export function maxRunLength(seq: readonly number[]): number {
@@ -104,11 +87,12 @@ export function drawSchedule(rng: Rng, mode: RtMode): RtSpec {
 }
 
 /**
- * The family's `build` (see `defineFamily`): schedule, key, A10 params and priors. The key is the
- * stimulus positions only, what scoring needs (audit: no test fixture in production keys).
+ * The `build` of the mode's family (see `defineFamily`): schedule, key, A10 params and priors.
+ * The key is the stimulus positions only, what scoring needs (audit: no test fixture in
+ * production keys).
  */
-export function buildRt(rng: Rng, ctx: BuildContext): BuiltItem<RtSpec, RtKey> {
-  const mode: RtMode = modeOfSeed(ctx.seed) ?? (rng.next() < 0.5 ? 'simple' : 'choice4')
+export function buildRt(rng: Rng, mode: RtMode): BuiltItem<RtSpec, RtKey> {
+  if (!isRtMode(mode)) throw new RangeError(`buildRt(): unknown mode ${JSON.stringify(mode)}`)
   const spec = drawSchedule(rng, mode)
   return {
     stratum: RT_STRATUM,

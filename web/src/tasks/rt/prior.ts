@@ -4,8 +4,9 @@
  *
  * Measurement model (§7.1, A10): the block statistic x = median ln(RT) of the valid trials is
  * a Gaussian observation x ~ N(lam·θ + d, sigma²) with lam = −s and d = β, so θ̂ = (β − x)/s
- * (faster = higher). The item's `params.sigma` is the residual τ_res; each observation widens
- * it with the person's own SE, sigma = √(SE² + τ_res²) (see `score.ts`).
+ * (faster = higher). The item's `params.sigma` is the residual τ_res (the one meaning of a
+ * Gaussian block's sigma, M1.F2, `family.ts`); each observation widens it with the person's own
+ * SE, sigma = √(SE² + τ_res²) (see `score.ts`).
  */
 
 import type { ItemParams } from '../../engine'
@@ -44,10 +45,14 @@ export function rtNorm(mode: RtMode, _deviceClass?: string): RtNorm {
   return RT_WEB_NORMS[mode] // per-device-class norms arrive with M4.8
 }
 
+/** The A10 Gaussian parameters of a norm row: lam = −s, d = β, sigma = τ_res. */
+export function rtParamsOfNorm(n: RtNorm): Extract<ItemParams, { model: 'gaussian' }> {
+  return { model: 'gaussian', lam: -n.s, d: n.beta, sigma: n.tau_res }
+}
+
 /** The block's A10 Gaussian item parameters: lam = −s, d = β, sigma = τ_res. */
 export function rtItemParams(mode: RtMode): Extract<ItemParams, { model: 'gaussian' }> {
-  const n = RT_WEB_NORMS[mode]
-  return { model: 'gaussian', lam: -n.s, d: n.beta, sigma: n.tau_res }
+  return rtParamsOfNorm(RT_WEB_NORMS[mode])
 }
 
 /**

@@ -40,7 +40,6 @@ import {
   NORM_WPM,
   PUBLIC_DOMAIN_BEFORE,
   READING_S,
-  SIGMA_MEASUREMENT,
   TAU_RES,
   readingDifficulty,
   readingExpectedTimeS,
@@ -236,7 +235,7 @@ export function verifyReading(item: ItemInstance<ReadingSpec, ReadingKey>): Veri
     const p = item.params
     const b = item.difficulty.b_prior
     const expectedD = Math.log(NORM_WPM) - READING_S * b
-    const expectedSigma = Math.sqrt(SIGMA_MEASUREMENT * SIGMA_MEASUREMENT + TAU_RES * TAU_RES)
+    const expectedSigma = TAU_RES
     const paramsMatch =
       p.model === 'gaussian' &&
       p.lam === READING_S &&

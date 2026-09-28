@@ -18,6 +18,8 @@ const OPTS = {
   specLeaksKey: matricesSpecLeaksKey,
   familyIdRatio: RULE_SET_FAMILIES,
   correctResponse: (item: MatrixItem) => item.key.index,
+  incorrectResponse: (item: MatrixItem) => (item.key.index + 1) % 6,
+  malformedResponses: () => [-1, 6, 2.5, '1', [1]],
 } as const
 
 /** Chance for the option-only picker (1 of 6) and the M1.6 ceiling of 1.5 × chance. */

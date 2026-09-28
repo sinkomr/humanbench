@@ -8,9 +8,11 @@
  * space (the unordered digit pair, so 55 families), A9 params (4 options → 3PL, c = 1/4) and a
  * verifier that recomputes everything from the item alone. Its Python twin is the bank's
  * `hb.gen._example`, which verifies this family's dump (`golden/ts_dumps/example.json`).
+ * Version 1.1.0 (contract v2, M1.F2): kind 'item', `sibling_group`, the shared §13 cap
+ * (`powerTimeLimit`, 180 s) instead of its own 60 s, and malformed responses throw.
  */
 
-import { defineFamily, verdict, type ItemInstance } from '../family'
+import { defineFamily, mcResponseIndex, verdict, type ItemInstance } from '../family'
 import type { Stratum } from '../ids'
 import {
   SIGMA_B_DEFAULT,
@@ -50,9 +52,10 @@ const isDigit = (v: unknown): v is number => typeof v === 'number' && Number.isI
 
 export const example = defineFamily<ExampleSpec, ExampleKey, ExampleResponse>({
   name: 'example',
+  kind: 'item',
   axis: 'QR',
-  facet: 'toy_sum',
-  generatorVersion: '1.0.0',
+  facets: ['toy_sum'],
+  generatorVersion: '1.1.0',
   itemType: 'mc',
   strata: [1, 2],
   build(rng, ctx) {
@@ -82,7 +85,6 @@ export const example = defineFamily<ExampleSpec, ExampleKey, ExampleResponse>({
         provenance: 'toy prior for contract tests: anchor b = -1.6, +1.0 for a carry',
       },
       expected_time_s: expectedTimeFromWords(countWords(stem(a, b))),
-      time_limit_s: 60,
     }
   },
   verify(item) {
@@ -111,7 +113,7 @@ export const example = defineFamily<ExampleSpec, ExampleKey, ExampleResponse>({
     }
   },
   score(item, response) {
-    return { correct: response === item.key.index ? 1 : 0 }
+    return { correct: mcResponseIndex(item, response) === item.key.index ? 1 : 0 }
   },
 })
 

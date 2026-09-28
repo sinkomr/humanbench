@@ -42,7 +42,8 @@ const SERIES_ANALYSIS_REFRESH = `npx tsx -e "import('./src/tasks/series/analysis
  */
 const PARITY_FILES: Readonly<Record<string, string>> = {
   'coding_scores.json': 'scripts/coding-scores-dump.test.ts',
-  'rt_scores.json': 'scripts/rt-scores-dump.test.ts',
+  'rt_simple_scores.json': 'scripts/rt-scores-dump.test.ts',
+  'rt_choice4_scores.json': 'scripts/rt-scores-dump.test.ts',
   'series.analysis.json': 'scripts/ts-dumps-sync.test.ts',
 }
 

@@ -17,6 +17,7 @@ import {
   spanSpecLeaksKey,
   type SpanTaskConfig,
 } from '.'
+import { spanInvalidResponse, spanMalformedResponses, spanValidResponse } from './synthetic'
 
 /** The stimuli are the key (forward, Corsi) or its reversal (backward) by design (§14.6 ex. 10–11). */
 const KEY_IN_SPEC =
@@ -29,7 +30,13 @@ const CASES: readonly [string, (typeof SPAN_FAMILIES)[number], SpanTaskConfig][]
 ]
 
 describe.each(CASES)('family %s (M1.9)', (name, family, cfg) => {
-  const opts = { allowKeyInSpec: KEY_IN_SPEC, specLeaksKey: spanSpecLeaksKey(cfg) } as const
+  const opts = {
+    allowKeyInSpec: KEY_IN_SPEC,
+    specLeaksKey: spanSpecLeaksKey(cfg),
+    validResponse: spanValidResponse,
+    invalidResponse: spanInvalidResponse,
+    malformedResponses: spanMalformedResponses,
+  } as const
 
   it('passes runFamilyProperties at n = 10,000', () => {
     const r = runFamilyProperties(family, opts)
@@ -78,8 +85,16 @@ describe.each(CASES)('family %s (M1.9)', (name, family, cfg) => {
 
   it('scores its own key stream at the top category and an empty stream as unfinished', () => {
     const item = family.generate('score')
-    expect(family.score(item, item.key.sequences)).toEqual({ correct: null, value: cfg.maxLength - 2 })
-    expect(family.score(item, [])).toEqual({ correct: null })
+    const p = item.params as unknown as { a: number; b: number[] }
+    expect(family.score(item, item.key.sequences)).toEqual({
+      correct: null,
+      observation: { kind: 'grm', axis: 'WM', a: p.a, b: [...p.b], y: cfg.maxLength - 2 },
+      flags: [],
+      reasons: [],
+    })
+    expect(family.score(item, [])).toEqual({ correct: null, flags: [], reasons: ['unfinished'] })
+    expect(family.kind).toBe('block')
+    expect(family.facets).toEqual([cfg.task])
     const status = runBlock(item, [])
     expect(status).toEqual({ finished: false, trial: 0, length: 3, longest_passed: 0 })
   })
