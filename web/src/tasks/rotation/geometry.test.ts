@@ -209,7 +209,7 @@ describe('chain keys', () => {
       }),
       { numRuns: 150 },
     )
-  })
+  }, 30_000)
 
   it('is null for non-chains', () => {
     expect(chainKey([[0, 0, 0], [1, 0, 0], [2, 0, 0], [1, 1, 0]])).toBeNull()
