@@ -1,7 +1,12 @@
 /**
  * ROADMAP M1.4b (a): the non-adaptive replication of the bank's M1.4a θ-recovery run in TS, on
  * the SAME simulees (`engine/__fixtures__/sim_m14a_v1.json`, the A17 copy of the bank's
- * `golden/sim_m14a_v1.json`). Acceptance: per-axis |r_TS − r_Python| ≤ 0.02.
+ * `golden/sim_m14a_v1.json`). Parity: per-axis |r_TS − r_Python| ≤ 0.02 (in fact identical to
+ * rounding: the same responses and the same scorer, so this repeats the M1.3 golden parity).
+ *
+ * This is NOT the adaptive CAT simulation of M1.4b (b) (`cat.test.ts`): that run serves the real
+ * families (SPA 3PL, other item counts), so its r is a different design's and is only reported
+ * next to the Python r (`report.ts` catVsPython; post-merge audit, ADR pending).
  *
  * This is the fast version: the first N = 300 simulees (the fixture carries the Python results
  * for exactly this prefix). The full N = 2,000 run is `scripts/sim-cat.slow.test.ts`
@@ -65,7 +70,7 @@ describe(`M1.4b (a): TS replication of M1.4a on the same simulees, N = ${N_FAST}
   const run = runM14a(FIXTURE, N_FAST)
   const rows = parity(FIXTURE, run)
 
-  it(`per-axis r matches the Python result within ${PARITY_R_TOL} on every axis (acceptance)`, () => {
+  it(`replication parity: per-axis r matches the Python result within ${PARITY_R_TOL} on every axis (the fixed form, not the CAT)`, () => {
     expect(rows.map((r) => r.code)).toEqual([...AXIS_CODES])
     for (const r of rows) expect(r.diff, r.code).toBeLessThanOrEqual(PARITY_R_TOL)
     expect(rows.every((r) => r.ok)).toBe(true)

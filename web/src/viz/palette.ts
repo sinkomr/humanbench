@@ -43,7 +43,7 @@ export interface VizTheme {
   readonly textMuted: string
   /** The crisp mean curve and credible markers (§9.3). */
   readonly blob: string
-  /** The ±1 SD band and the posterior fuzz curves (§9.3). */
+  /** The ±1 SD band and the fuzz bands (§9.3). */
   readonly band: string
   /** Tier (c) hatch (§9.7). */
   readonly hatch: string

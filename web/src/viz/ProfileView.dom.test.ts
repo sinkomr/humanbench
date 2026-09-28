@@ -11,13 +11,14 @@ import { FACET_MIN_ITEMS, clusterFacets, unmeasuredReasons } from './facets'
 import { formatTheta } from './geometry'
 import { HATCH_CAPTION } from './copy'
 import { THEMES } from './palette'
-import { axisEstimates, N_FUZZ, type SpokeEstimate } from './profile'
+import { FUZZ_Z, N_FUZZ } from './blob'
+import { axisEstimates, type SpokeEstimate } from './profile'
 import ProfileView from './ProfileView.svelte'
 import { SYNTHETIC_PROFILES, syntheticProfile, type SyntheticProfile } from './synthetic'
 
 let app: ReturnType<typeof mount> | undefined
 
-// jsdom has no ResizeObserver (bind:clientWidth needs one): a stub that never reports a size, so
+// jsdom has no ResizeObserver (width.ts needs one): a stub that never reports a size, so
 // the charts keep the default text layout here (fitLayout is unit-tested in blob.test.ts).
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class {
@@ -54,7 +55,7 @@ const AGGREGATE_WORDS = /\b(areas?|totals?|overall|sum(?:med|s)?|composite|aggre
 
 /** Every number a reader can see must be one of these: per-spoke values, ring labels, fixed copy numbers. */
 function allowedNumbers(rows: readonly (SpokeEstimate & { nItems?: number })[]): Set<string> {
-  const ok = new Set(['1', '2', '3', '0', '90', String(N_FUZZ), String(FACET_MIN_ITEMS)])
+  const ok = new Set(['1', '2', '3', '0', '90', String(FACET_MIN_ITEMS)])
   for (const r of rows) {
     if (r.nItems !== undefined) ok.add(String(r.nItems))
     if (!r.measured) continue
@@ -99,7 +100,12 @@ describe('ProfileView structure (§9, A15)', () => {
     expect(svg.querySelectorAll('g.mark.unmeasured circle.gap')).toHaveLength(unmeasured.length)
     expect(svg.querySelectorAll('line.spoke.unmeasured')).toHaveLength(unmeasured.length)
     expect([...svg.querySelectorAll('text.label.unmeasured')].every((t) => t.textContent?.includes('not measured'))).toBe(true)
-    expect(svg.querySelectorAll('.fuzz path')).toHaveLength(N_FUZZ)
+    const fuzz = [...svg.querySelectorAll('.fuzz path')]
+    expect(fuzz).toHaveLength(N_FUZZ)
+    // §9.3: filled bands (evenodd) with opacity ∝ φ(z), darkest next to the mean.
+    expect(fuzz.every((p) => p.getAttribute('fill-rule') === 'evenodd')).toBe(true)
+    const opacity = fuzz.map((p) => Number(p.getAttribute('fill-opacity')))
+    opacity.forEach((o, j) => expect(o).toBeCloseTo(opacity[0]! * Math.exp((FUZZ_Z[0]! ** 2 - FUZZ_Z[j]! ** 2) / 2), 2))
     expect(svg.querySelectorAll('path.crisp')).toHaveLength(1)
     expect(svg.querySelectorAll('path.band')).toHaveLength(1)
   })

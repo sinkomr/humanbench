@@ -5,7 +5,9 @@
   window (`spec.duration_s`) starts in the animation frame that draws the first glyph and is
   measured with `performance.now()`; each press records its digit and its time from that frame
   (`CodingResponse`). The block ends when the window closes or every glyph is answered, and the
-  response list goes to `onrespond`. No right/wrong feedback is shown.
+  response list goes to `onrespond`. No right/wrong feedback is shown. One polite status line
+  stays mounted in every phase; when the block ends it says so and takes focus, so keyboard and
+  screen-reader users keep their place (WCAG 2.4.3, 4.1.3; as the span renderers).
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
@@ -30,6 +32,7 @@
   let endedBy: 'time' | 'all' = $state('time')
   let root: HTMLElement | undefined = $state()
   let stageEl: HTMLElement | undefined = $state()
+  let statusEl: HTMLElement | undefined = $state()
   const responses: CodingResponse[] = []
   let t0 = 0
   let handle: number | null = null
@@ -37,6 +40,7 @@
   const t = $derived(timing ?? browserTiming())
   const windowMs = $derived(spec.duration_s * 1000)
   const current = $derived(spec.sequence[index])
+  const doneText = $derived(`${endedBy === 'time' ? 'Time is up.' : 'You answered every shape.'} Thank you.`)
 
   function format(s: number): string {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -82,6 +86,8 @@
     phase = 'done'
     visible = false
     flushSync()
+    // The stage and keypad that held focus are gone: move focus to the status line.
+    statusEl?.focus()
     onrespond(responses.map((r) => ({ ...r })))
   }
 
@@ -142,9 +148,8 @@
     </div>
     <p class="hb-sr-only" aria-live="assertive" aria-atomic="true">{visible && current !== undefined ? GLYPHS[current].name : ''}</p>
     <Keypad digits={CODING_DIGITS} label="Digit keypad" onpress={press} />
-  {:else}
-    <p class="hb-status">{endedBy === 'time' ? 'Time is up.' : 'You answered every shape.'} Thank you.</p>
   {/if}
+  <p class="hb-status" aria-live="polite" tabindex="-1" bind:this={statusEl}>{phase === 'done' ? doneText : ''}</p>
 </section>
 
 <style>

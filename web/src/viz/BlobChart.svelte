@@ -68,9 +68,10 @@
   </g>
 
   <path class="band" d={model.band.d} fill-rule="evenodd" />
+  <!-- §9.3: 20 nested curves at θ + z·SD, each filling the band toward the mean, opacity ∝ φ(z). -->
   <g class="fuzz">
     {#each model.fuzz as c, i (i)}
-      <path d={c.d} data-curve={c.kind} />
+      <path d={c.band} fill-rule="evenodd" fill-opacity={c.opacity.toFixed(3)} data-curve={c.kind} />
     {/each}
   </g>
   {#each model.hatch as h, i (h.id)}
@@ -162,17 +163,17 @@
     stroke-dasharray: 3 4;
   }
 
+  /* §9.3: the light ±1 SD band (the accessible fallback) under the fuzz, whose per-band
+     fill-opacity (∝ φ(z)) is an attribute from the model; CSS must not set it. */
   .band {
     fill: var(--hb-band);
-    fill-opacity: 0.28;
+    fill-opacity: 0.12;
     stroke: none;
     pointer-events: none;
   }
   .fuzz path {
-    fill: none;
-    stroke: var(--hb-band);
-    stroke-opacity: 0.45;
-    stroke-width: 1;
+    fill: var(--hb-band);
+    stroke: none;
     pointer-events: none;
   }
   .hatch {

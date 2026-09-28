@@ -6,7 +6,7 @@
 import { AXIS_CODES, type AxisCode } from '../engine/axes'
 import { COVERAGE_FLOOR } from '../engine/selector'
 import { A15_MAX_S, CAT_AXES, observedAxes, type CatRun } from './cat'
-import { M14A_VERSION, PARITY_R_TOL, type M14aRun, type ParityRow } from './m14a'
+import { M14A_VERSION, PARITY_R_TOL, type M14aAxisResult, type M14aRun, type ParityRow } from './m14a'
 import { COVERAGE_HI, COVERAGE_LO, R_MIN, Z_COVERAGE, type AxisRecovery } from './stats'
 
 export interface CatAcceptanceOptions {
@@ -41,6 +41,44 @@ export function catAcceptanceFailures(run: CatRun, opts: CatAcceptanceOptions = 
   return fails
 }
 
+/**
+ * How far the CAT r may fall below the Python M1.4a r on a CAT axis at the fixed length of 20
+ * items per axis before the slow test fails: a REGRESSION GUARD, not the ROADMAP M1.4b "within
+ * 0.02". Measured at N = 2,000: MAT −.028, SPA −.050, QR +.015 (post-merge audit).
+ */
+export const CAT_PY_R_DROP_MAX = 0.06
+
+/**
+ * One axis of the adaptive run (b) next to the Python M1.4a r on the same simulees. ROADMAP M1.4b
+ * says "parity with Python within 0.02 on r" for the CAT, but the Python side is M1.4a: a FIXED
+ * form of 20 2PL stand-in items per item axis, stand-in Gaussian observations for WM / RT / PS,
+ * and no CAT. The adaptive run serves the real families instead (SPA 3PL with c = 1/4, A9;
+ * provisional a = 1.0 items; its own item counts; the real block observation models), so its r is
+ * a different design's, not a twin's: the 0.02 parity holds for the replication (a) (`m14a.ts`,
+ * identical to rounding), and this row only reports the gap. An ADR has to settle which reading
+ * ROADMAP M1.4b means (post-merge audit follow-up).
+ */
+export interface CatPythonRow {
+  readonly code: AxisCode
+  readonly r_cat: number
+  readonly r_py: number
+  /** r_CAT − r_Python (negative: the CAT recovers less). */
+  readonly delta: number
+}
+
+/** {@link CatPythonRow}s for every axis the CAT run observed, in canonical order. */
+export function catVsPython(run: CatRun, py: readonly M14aAxisResult[]): CatPythonRow[] {
+  const observed = new Set(observedAxes(run))
+  const pyBy = new Map(py.map((a) => [a.code, a]))
+  return run.axes
+    .filter((a) => observed.has(a.code))
+    .map((a) => {
+      const ref = pyBy.get(a.code)
+      if (ref === undefined) throw new RangeError(`the Python results lack axis ${a.code}`)
+      return { code: a.code, r_cat: a.r, r_py: ref.r, delta: a.r - ref.r }
+    })
+}
+
 const f3 = (x: number): string => (Number.isFinite(x) ? x.toFixed(3) : String(x))
 const f2 = (x: number): string => (Number.isFinite(x) ? x.toFixed(2) : String(x))
 const pct = (x: number): string => `${(100 * x).toFixed(1)}%`
@@ -69,13 +107,21 @@ export function formatParity(run: M14aRun, rows: readonly ParityRow[], tol: numb
   return lines.join('\n')
 }
 
-/** The M1.4b (b) table: recovery per axis, items per CAT axis, time, blocks, and the verdict. */
-export function formatCat(run: CatRun, opts: CatAcceptanceOptions = {}): string {
+/**
+ * The M1.4b (b) table: recovery per axis, items per CAT axis, time, blocks, and the verdict. With
+ * `python` ({@link catVsPython}), each observed axis also shows the Python M1.4a r and the gap.
+ */
+export function formatCat(run: CatRun, opts: CatAcceptanceOptions = {}, python?: readonly CatPythonRow[]): string {
   const observed = new Set(observedAxes(run))
+  const pyBy = new Map((python ?? []).map((p) => [p.code, p]))
+  const vsPy = (k: AxisCode): string => {
+    const p = pyBy.get(k)
+    return p === undefined ? '' : `   python r ${f3(p.r_py)}  Δr ${p.delta >= 0 ? '+' : '−'}${Math.abs(p.delta).toFixed(3)}`
+  }
   const rule = run.fixedLength === null ? `A15 time rule, target ${(run.targetS / 60).toFixed(1)} min` : `fixed length ${run.fixedLength} items per CAT axis (no time limit)`
   const lines = [
     `M1.4b (b) adaptive CAT simulation: N = ${run.n}, seed ${JSON.stringify(run.seed)}, ${rule}; finish = correlated MAP + Laplace`,
-    ...axisLines(run.axes, (k) => (CAT_AXES.includes(k) ? '  CAT' : observed.has(k) ? '  block' : '  (no data: borrowing via Σ only)')),
+    ...axisLines(run.axes, (k) => (CAT_AXES.includes(k) ? `  CAT${vsPy(k)}` : observed.has(k) ? `  block${vsPy(k)}` : '  (no data: borrowing via Σ only)')),
     'CAT items per axis (min / mean / max): ' + CAT_AXES.map((k) => {
       const s = run.itemsPerAxis[k]!
       return `${k} ${s.min} / ${s.mean.toFixed(1)} / ${s.max}`
@@ -88,6 +134,9 @@ export function formatCat(run: CatRun, opts: CatAcceptanceOptions = {}): string 
     'blocks with an observation: ' + Object.entries(run.blockObserved).map(([f, p]) => `${f} ${(100 * p).toFixed(0)}%`).join(', '),
     'CAT segment ends: ' + Object.entries(run.segmentEnds).map(([k, v]) => `${k} ${v}`).join(', '),
   ]
+  if (python !== undefined && python.length > 0) {
+    lines.push(`python r: the ${M14A_VERSION} fixed 2PL form on the same simulees, a different design (not a twin; parity is part a); Δr = r_CAT − r_Python`)
+  }
   const fails = catAcceptanceFailures(run, opts)
   const rMin = opts.rMin ?? R_MIN
   const timeRule = run.fixedLength === null ? `, every session ≤ ${((opts.budgetS ?? A15_MAX_S) / 60).toFixed(1)} min` : ''

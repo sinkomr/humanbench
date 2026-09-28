@@ -216,6 +216,36 @@ test.describe('blob demo route (M1.16)', () => {
     })
   }
 
+  // Post-merge audit: re-laying the chart out inside the ResizeObserver callback made WebKit and
+  // iOS raise "ResizeObserver loop completed with undelivered notifications" on every narrowing
+  // resize or rotation; the width now reaches the layout a frame later (src/viz/width.ts).
+  test('resizing and rotating the view raises no page errors, with a drill-down open too', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    // Two animation frames: long enough for an observer notification and the layout it triggers.
+    const settle = (): Promise<unknown> => page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))')
+    const start = page.viewportSize()!
+    for (const profile of ['m1', 'full', 'skipped', 'sparse']) {
+      await page.setViewportSize(start)
+      await page.goto('about:blank')
+      await open(page, profile)
+      if (profile === 'full') await page.getByRole('button', { name: 'Knowledge', exact: true }).click()
+      await settle()
+      for (const size of [
+        { width: 360, height: 800 },
+        { width: 844, height: 390 },
+        { width: 320, height: 640 },
+        { width: 1024, height: 768 },
+        { width: 390, height: 844 },
+      ]) {
+        await page.setViewportSize(size)
+        await settle()
+        await settle()
+      }
+    }
+    expect(errors).toEqual([])
+  })
+
   test('the mean curve is muted around muted spokes (§9.5)', async ({ page }) => {
     await open(page, 'full')
     const blob = page.locator('figure svg.hb-blob')

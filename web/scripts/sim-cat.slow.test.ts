@@ -14,14 +14,18 @@
  * - (b') the same with the DESIGN §14.3 M1 acceptance's fixed length of 20 items per CAT axis
  *   (no time limit, about 48 min): r ≥ .85 on MAT, SPA and QR and coverage as above (measured
  *   .903 / .868 / .905). At N = 300 SPA is .844, so this criterion is checked at full size only.
+ *   Next to the Python M1.4a r on the same people (.931 / .918 / .890) the CAT r is within
+ *   {@link CAT_PY_R_DROP_MAX} (a regression guard), but NOT within ROADMAP M1.4b's 0.02 (expected
+ *   failure): M1.4a is a fixed 2PL form, the CAT serves the real families (SPA 3PL with c = 1/4,
+ *   A9). The 0.02 parity holds for (a); an ADR has to settle M1.4b's reading (post-merge audit).
  */
 
 import { beforeAll, describe, expect, it } from 'vitest'
 import { AXIS_INDEX } from '../src/engine/axes'
 import { A15_TARGET_S, COVERAGE_FLOOR } from '../src/engine/selector'
 import { A15_MAX_S, BLOCK_AXES, CAT_AXES, observedAxes, runCat, type CatRun } from '../src/sim/cat'
-import { PARITY_R_TOL, parity, runM14a } from '../src/sim/m14a'
-import { catAcceptanceFailures, formatCat, formatParity } from '../src/sim/report'
+import { PARITY_R_TOL, parity, pythonResults, runM14a } from '../src/sim/m14a'
+import { CAT_PY_R_DROP_MAX, catAcceptanceFailures, catVsPython, formatCat, formatParity } from '../src/sim/report'
 import { COVERAGE_HI, COVERAGE_LO, R_MIN } from '../src/sim/stats'
 import { loadFixture } from './sim-cat'
 
@@ -83,13 +87,25 @@ describe.runIf(SLOW)(`M1.4b full run, N = ${N_FULL} (slow; npm run test:slow)`, 
     let run: CatRun
     beforeAll(() => {
       run = runCat(THETAS, { seed: 'm14b', fixedLength: 20 })
-      console.log(formatCat(run))
+      console.log(formatCat(run, {}, catVsPython(run, pythonResults(FIXTURE, N_FULL)!)))
     }, RUN_TIMEOUT)
 
     it(`acceptance: every CAT axis gets 20 items, r ≥ ${R_MIN} on MAT, SPA and QR, coverage in range`, () => {
       for (const k of CAT_AXES) expect(run.itemsPerAxis[k], k).toEqual({ min: 20, mean: 20, max: 20 })
       expectCoverage(run)
       expect(catAcceptanceFailures(run)).toEqual([])
+    })
+
+    it(`the CAT r stays within ${CAT_PY_R_DROP_MAX} below the Python M1.4a r on MAT, SPA and QR (regression guard, not parity)`, () => {
+      const rows = catVsPython(run, pythonResults(FIXTURE, N_FULL)!).filter((r) => CAT_AXES.includes(r.code))
+      expect(rows).toHaveLength(CAT_AXES.length)
+      for (const r of rows) expect(r.delta, r.code).toBeGreaterThanOrEqual(-CAT_PY_R_DROP_MAX)
+    })
+
+    // Expected failure (module comment): SPA is .050 and MAT .028 below Python. When it passes, drop `.fails`.
+    it.fails(`ROADMAP M1.4b read literally: CAT r within ${PARITY_R_TOL} of Python on MAT, SPA and QR (NOT MET: a different design)`, () => {
+      const rows = catVsPython(run, pythonResults(FIXTURE, N_FULL)!).filter((r) => CAT_AXES.includes(r.code))
+      for (const r of rows) expect(Math.abs(r.delta), r.code).toBeLessThanOrEqual(PARITY_R_TOL)
     })
   })
 })

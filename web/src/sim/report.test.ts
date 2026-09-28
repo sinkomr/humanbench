@@ -1,13 +1,14 @@
 /**
  * M1.4b acceptance checks and tables (`report.ts`) on synthetic runs: which criterion applies to
- * which axis, the time rule only for A15 runs, and the verdict lines.
+ * which axis, the time rule only for A15 runs, the verdict lines, and the CAT-vs-Python rows.
  */
 
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, type AxisCode } from '../engine/axes'
 import type { Observation } from '../engine/types'
 import type { CatRun, SessionResult } from './cat'
-import { catAcceptanceFailures, formatCat } from './report'
+import type { M14aAxisResult } from './m14a'
+import { catAcceptanceFailures, catVsPython, formatCat } from './report'
 import type { AxisRecovery } from './stats'
 
 const OBSERVED: readonly AxisCode[] = ['MAT', 'QR', 'SPA', 'WM', 'RT', 'PS']
@@ -72,5 +73,35 @@ describe('catAcceptanceFailures', () => {
     expect(text).toContain('CAT items per axis (min / mean / max): MAT 10 / 10.0 / 10, SPA 12 / 12.0 / 12, QR 6 / 6.0 / 6')
     expect(text).toContain('(no data: borrowing via Σ only)')
     expect(text.split('\n').slice(-2)).toEqual([expect.stringMatching(/: FAIL$/), '  FAIL MAT: r = 0.800 < 0.85'])
+  })
+})
+
+describe('catVsPython (the CAT r next to the Python M1.4a r; a comparison, not parity)', () => {
+  const py: M14aAxisResult[] = AXIS_CODES.map((code, i) => ({ code, r: 0.8 + i / 100, rmse: 0.4, mean_sd: 0.4, coverage: 0.9, model: '2pl', n_obs: 20 }))
+
+  it('gives r_CAT − r_Python for every observed axis, in canonical order', () => {
+    const run = fakeRun({ MAT: { r: 0.8 }, SPA: { r: 0.95 } })
+    const rows = catVsPython(run, py)
+    expect(rows.map((r) => r.code)).toEqual(AXIS_CODES.filter((c) => OBSERVED.includes(c)))
+    const mat = rows.find((r) => r.code === 'MAT')!
+    expect(mat).toEqual({ code: 'MAT', r_cat: 0.8, r_py: 0.8, delta: 0 })
+    const spa = rows.find((r) => r.code === 'SPA')!
+    expect(spa.delta).toBeCloseTo(0.95 - py.find((a) => a.code === 'SPA')!.r, 12)
+    for (const r of rows) expect(r.delta).toBeCloseTo(r.r_cat - r.r_py, 12)
+  })
+
+  it('throws when the Python results lack an observed axis', () => {
+    expect(() => catVsPython(fakeRun(), py.filter((a) => a.code !== 'QR'))).toThrow(/QR/)
+  })
+
+  it('shows the Python r and the signed gap on each observed axis, and says it is not parity', () => {
+    const run = fakeRun({ QR: { r: 0.9 } })
+    const text = formatCat(run, {}, catVsPython(run, py))
+    const qrPy = py.find((a) => a.code === 'QR')!.r
+    expect(text).toMatch(new RegExp(`^QR .*CAT   python r ${qrPy.toFixed(3)}  Δr \\+${(0.9 - qrPy).toFixed(3)}$`, 'm'))
+    expect(text).toMatch(/^RT .*block   python r \S+  Δr [+−]\d\.\d{3}$/m)
+    expect(text).toContain('not a twin; parity is part a')
+    expect(text).not.toMatch(/^LR .*python r/m)
+    expect(formatCat(run)).not.toContain('python r')
   })
 })

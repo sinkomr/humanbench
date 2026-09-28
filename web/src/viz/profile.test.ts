@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { AXES, AXIS_CODES, N_AXES } from '../engine/axes'
 import { scoreAll } from '../engine/scorer'
 import { Z90 } from './geometry'
-import { axisEstimates, axisSamples, independentSamples, interval90, posteriorSamples, stubLabel } from './profile'
+import { axisEstimates, interval90, stubLabel } from './profile'
 import { spokeOrder } from './seriation'
 import { syntheticProfile } from './synthetic'
 
@@ -70,56 +70,3 @@ describe('axisEstimates (§9, A12, A15)', () => {
   })
 })
 
-describe('posterior fuzz draws (§9.3: 20 seeded draws)', () => {
-  it('are reproducible from the seed and differ across seeds', () => {
-    const { theta, cov } = full.input.score
-    expect(posteriorSamples(theta, cov, 20, 's')).toEqual(posteriorSamples(theta, cov, 20, 's'))
-    expect(posteriorSamples(theta, cov, 20, 's')).not.toEqual(posteriorSamples(theta, cov, 20, 't'))
-    const est = axisEstimates(full.input)
-    const draws = axisSamples(full.input, est)
-    expect(draws).toHaveLength(20)
-    expect(draws.every((d) => d.length === 17)).toBe(true)
-  })
-
-  it('put each axis draw under its own spoke: column i of axisSamples is the draw of spoke i\'s axis', () => {
-    for (const p of [full, m1]) {
-      const est = axisEstimates(p.input)
-      const joint = posteriorSamples(p.input.score.theta, p.input.score.cov, 20, 'map')
-      const draws = axisSamples(p.input, est, 20, 'map')
-      // Spoke order differs from the canonical axis order, so a column mix-up cannot pass.
-      expect(est.map((e) => e.code)).not.toEqual([...AXIS_CODES])
-      draws.forEach((d, s) => est.forEach((e, i) => expect(d[i]).toBe(joint[s]![AXES.find((a) => a.code === e.code)!.index])))
-    }
-  })
-
-  it('have the posterior mean and covariance (Cholesky draws, n = 6000)', () => {
-    // No observations: the posterior is the prior N(0, Σ_init), whose correlations reach .60, so a
-    // draw that ignored the off-diagonal (or used the wrong factor) would fail.
-    const { theta, cov } = scoreAll([])
-    const n = 6000
-    const draws = posteriorSamples(theta, cov, n, 'moments')
-    const mean = theta.map((_, k) => draws.reduce((s, d) => s + d[k]!, 0) / n)
-    let worstMean = 0
-    let worstCov = 0
-    for (let i = 0; i < N_AXES; i++) {
-      worstMean = Math.max(worstMean, Math.abs(mean[i]! - theta[i]!))
-      for (let j = 0; j <= i; j++) {
-        const c = draws.reduce((s, d) => s + (d[i]! - mean[i]!) * (d[j]! - mean[j]!), 0) / (n - 1)
-        worstCov = Math.max(worstCov, Math.abs(c - cov[i]![j]!))
-      }
-    }
-    // Sampling SEs: mean ≈ 1/√n ≈ .013, covariance ≈ √(2/n) ≈ .018; allow about 4 SE.
-    expect(worstMean).toBeLessThan(0.055)
-    expect(worstCov).toBeLessThan(0.075)
-    expect(Math.max(...cov.flatMap((row, i) => row.filter((_, j) => j !== i)))).toBeGreaterThanOrEqual(0.6)
-  })
-
-  it('independent draws follow each spoke and leave unmeasured spokes at 0', () => {
-    const est = axisEstimates(m1.input)
-    const draws = independentSamples(est, 20, 'x')
-    est.forEach((e, i) => {
-      if (!e.measured) expect(draws.every((d) => d[i] === 0)).toBe(true)
-    })
-    expect(independentSamples(est, 20, 'x')).toEqual(draws)
-  })
-})

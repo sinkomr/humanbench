@@ -5,8 +5,10 @@
  *
  * - Radius linear in θ over [−3, 3] (§9.1, `geometry.ts`); rings at −2 … +2 SD, "provisional"
  *   (A12); the θ = 0 ring dashed.
- * - Crisp posterior curve + the ±1 SD band + 20 seeded posterior draws as fuzz (§9.3), each a
- *   closed curve chosen by the overshoot rule (§9.2, `curve.ts`).
+ * - Crisp posterior curve + the ±1 SD band + the fuzz (§9.3): 20 nested closed curves at
+ *   θ_k + z·SD_k for z spread evenly over ±1.645, each filling the band toward the mean with
+ *   opacity ∝ the normal density φ(z) ({@link FUZZ_Z}, {@link fuzzOpacity}); every curve is chosen
+ *   by the overshoot rule (§9.2, `curve.ts`).
  * - Not-measured spokes (§9.7, A15): a dashed spoke, a grey stub at the centre and a gap marker;
  *   every curve dips to the inner clamp there (never interpolated through).
  * - Measured spokes: a marker at θ and a 90% whisker; muted when the interval overlaps 0 (§9.5).
@@ -25,7 +27,7 @@
 
 import { RING_NOTE } from './copy'
 import { chooseCurve, fmt, type CurveKind } from './curve'
-import { polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, type Point } from './geometry'
+import { polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, Z90, type Point } from './geometry'
 import { stubLabel, type SpokeEstimate } from './profile'
 
 /** Default outer radius (θ = +3) in SVG user units. */
@@ -61,6 +63,23 @@ export const WRAP_CHARS = 10
 export const NOTE_WRAP_CHARS = 12
 /** Halo width around chart text, in em of that text. */
 const HALO_EM = 0.3
+
+/** §9.3 / ROADMAP M1.16: the fuzz is 20 nested closed curves. */
+export const N_FUZZ = 20
+/**
+ * The z of each fuzz curve (§9.3: radii θ_k + z·SD_k, z ∈ [−1.64, 1.64]), inside out:
+ * ±Z90·j/10 for j = 10 … 1, then 1 … 10. The crisp curve is z = 0, so each side has 10 bands of
+ * equal width in z out to the 90% interval ({@link Z90}), the edge the whiskers show.
+ */
+export const FUZZ_Z: readonly number[] = Object.freeze(
+  Array.from({ length: N_FUZZ }, (_, j) => (j < N_FUZZ / 2 ? j - N_FUZZ / 2 : j - N_FUZZ / 2 + 1) * (Z90 / (N_FUZZ / 2))),
+)
+/** Fill opacity of the fuzz next to the crisp curve (z → 0). */
+export const FUZZ_MAX_OPACITY = 0.3
+/** §9.3: a fuzz curve's fill opacity, ∝ the normal density φ(z) (peak {@link FUZZ_MAX_OPACITY}). */
+export function fuzzOpacity(z: number): number {
+  return FUZZ_MAX_OPACITY * Math.exp(-(z * z) / 2)
+}
 
 export interface RingView {
   readonly theta: number
@@ -109,6 +128,18 @@ export interface CurveView {
   readonly d: string
   readonly kind: CurveKind
   readonly overshootRings: number
+}
+
+/** One §9.3 fuzz curve (radii θ_k + z·SD_k) and the band it fills. */
+export interface FuzzView extends CurveView {
+  readonly z: number
+  /** Fill opacity ∝ φ(z) ({@link fuzzOpacity}). */
+  readonly opacity: number
+  /**
+   * This curve then its neighbour toward the mean (the crisp curve for the innermost pair), drawn
+   * with fill-rule evenodd: the band between them. Only ever a band at the edge, never the shape.
+   */
+  readonly band: string
 }
 
 export interface WedgeView {
@@ -171,7 +202,8 @@ export interface BlobModel {
   readonly muteRuns: readonly MuteRun[]
   /** ±1 SD band: outer then inner closed curve, drawn with fill-rule evenodd. */
   readonly band: { readonly d: string; readonly outer: CurveView; readonly inner: CurveView }
-  readonly fuzz: readonly CurveView[]
+  /** The §9.3 fuzz, in {@link FUZZ_Z} order (inside out). */
+  readonly fuzz: readonly FuzzView[]
   /** Wedge clip paths for tier (c) measured spokes (§9.7 hatch). */
   readonly hatch: readonly { readonly id: string; readonly d: string }[]
   readonly wedges: readonly WedgeView[]
@@ -529,16 +561,16 @@ function runSector(start: number, len: number, k: number, r: number): string {
 }
 
 /**
- * The render model of a blob with the given spokes (in order around the circle) and fuzz draws
- * (`samples[s][i]` = θ of spoke i in draw s; ignored for unmeasured spokes). Needs ≥ 3 spokes.
+ * The render model of a blob with the given spokes (in order around the circle). Needs ≥ 3
+ * spokes. The fuzz follows each measured spoke's θ and SD (§9.3), so axes (correlated posterior,
+ * per-axis SD) and facets (separate EAPs) are drawn the same way.
  */
-export function buildBlob(spokes: readonly SpokeEstimate[], samples: readonly (readonly number[])[], opts: BlobOptions = {}): BlobModel {
+export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = {}): BlobModel {
   const R = opts.R ?? DEFAULT_R
   const layout = opts.layout ?? DEFAULT_LAYOUT
   if (!(layout.fontSize > 0) || !Number.isFinite(layout.fontSize)) throw new RangeError('layout.fontSize must be positive')
   const k = spokes.length
   if (k < 3) throw new RangeError('a blob needs at least 3 spokes')
-  for (const s of samples) if (s.length !== k) throw new RangeError('each fuzz draw needs one θ per spoke')
   const r = radiusScale(R)
   const rMin = R_MIN_FRACTION * R
   const ring = ringSpacing(R)
@@ -560,12 +592,19 @@ export function buildBlob(spokes: readonly SpokeEstimate[], samples: readonly (r
     radiiOf((s) => s.theta! - s.sd!),
     ring,
   )
-  const fuzz = samples.map((draw) =>
+  // §9.3: nested curves at θ + z·SD; each fills the band toward the mean with opacity ∝ φ(z).
+  const fuzzCurves = FUZZ_Z.map((z) =>
     curveView(
-      radiiOf((_, i) => draw[i]!),
+      radiiOf((s) => s.theta! + z * s.sd!),
       ring,
     ),
   )
+  const mid = N_FUZZ / 2 // fuzz[mid − 1] and fuzz[mid] are the innermost pair (z = ∓Z90/10)
+  const fuzz: FuzzView[] = FUZZ_Z.map((z, j) => {
+    const c = fuzzCurves[j]!
+    const inward = j === mid - 1 || j === mid ? crisp : fuzzCurves[z < 0 ? j + 1 : j - 1]!
+    return { ...c, z, opacity: fuzzOpacity(z), band: `${c.d}${inward.d}` }
+  })
 
   const text = textLayout(spokes, R, layout, opts.measure ?? estimateTextWidth)
   const views: SpokeView[] = spokes.map((s, i) => {

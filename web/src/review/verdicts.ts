@@ -39,9 +39,17 @@
  * - `reviewer` (top level): who exported the file; `verdicts[].reviewer`: who gave that verdict
  *   (merged files keep each verdict's own reviewer). Both are non-empty: the page records no
  *   verdict and exports nothing until a reviewer name is entered.
- * - Bank ingestion (§12): each verdict becomes the item's `verification.human_audit` =
- *   `{ "by": verdicts[].reviewer, "date": reviewed_utc[0:10], "result": verdict }`, and the
- *   family's audit passes for that generator version iff `planned` = `reviewed` = `pass`.
+ * - Bank ingestion (§4.4, §12; the bank's `HumanAudit`, `result` ∈ pass | fail only): a
+ *   procedural family is audited per family and generator version, so the file maps to ONE
+ *   `human_audit` per family row with `scope: "family"` ({@link familyAudits}):
+ *   - all 30 planned instances `pass` → `{ by, date, result: "pass", scope: "family" }`;
+ *   - any planned instance `fail` → `result: "fail"`, the failed seeds and notes in `notes` (the
+ *     family is fixed and re-audited under a new generator version);
+ *   - otherwise (an instance `unsure` or not reviewed yet) → no record: `unsure` is a reviewer's
+ *     reminder, never ingested; resolve it to pass or fail and export again.
+ *   `by` is the verdicts' reviewers (sorted, comma-separated), `date` the day of the latest
+ *   verdict counted (`reviewed_utc[0:10]`). Verdicts on older generator versions are not mapped.
+ *   The bank's ingest command is ROADMAP M3.4 (`hb review`).
  */
 
 import { utcSeconds, wallClockMs } from '../save/clock'
@@ -206,6 +214,53 @@ export function buildExport(store: ReviewStore, planned: readonly PlannedFamily[
     families: summarize(store, planned),
     verdicts: Object.values(store.verdicts).sort((a, b) => (a.item_id < b.item_id ? -1 : a.item_id > b.item_id ? 1 : 0)),
   }
+}
+
+/** §12 `verification.human_audit` for a procedural family (the bank's `HumanAudit`, §4.4). */
+export interface FamilyHumanAudit {
+  readonly by: string
+  /** YYYY-MM-DD. */
+  readonly date: string
+  /** Never 'unsure' (the bank accepts pass | fail only). */
+  readonly result: 'pass' | 'fail'
+  readonly scope: 'family'
+  readonly notes?: string
+}
+
+/** What one export row maps to at ingest (module comment). */
+export type FamilyAuditOutcome =
+  | { readonly family: string; readonly generator_version: string; readonly human_audit: FamilyHumanAudit }
+  | { readonly family: string; readonly generator_version: string; readonly human_audit: null; readonly pending: string }
+
+/**
+ * The bank-side meaning of an export (module comment, "Bank ingestion"): one family-scope
+ * `human_audit` per family row whose 30 planned instances are all pass, or which has a fail;
+ * `human_audit: null` with the reason for a family still in progress (unsure or unreviewed).
+ */
+export function familyAudits(x: ReviewExport): FamilyAuditOutcome[] {
+  const byId = new Map(x.verdicts.map((v) => [v.item_id, v]))
+  return x.families.map(({ family, generator_version }) => {
+    const counted: VerdictRecord[] = []
+    for (let i = 1; i <= REVIEW_PER_FAMILY; i++) {
+      const v = byId.get(`i:${family}:${generator_version}:${reviewSeed(family, i)}`)
+      if (v !== undefined) counted.push(v)
+    }
+    const fails = counted.filter((v) => v.verdict === 'fail')
+    const passes = counted.filter((v) => v.verdict === 'pass').length
+    const unsure = counted.length - fails.length - passes
+    if (fails.length === 0 && passes < REVIEW_PER_FAMILY) {
+      const missing = REVIEW_PER_FAMILY - counted.length
+      return { family, generator_version, human_audit: null, pending: `${unsure} unsure, ${missing} not reviewed` }
+    }
+    const basis = fails.length > 0 ? fails : counted
+    const by = [...new Set(basis.map((v) => v.reviewer.trim()))].sort().join(', ')
+    const date = basis.map((v) => v.reviewed_utc).reduce((a, b) => (b > a ? b : a)).slice(0, 10)
+    const human_audit: FamilyHumanAudit =
+      fails.length > 0
+        ? { by, date, result: 'fail', scope: 'family', notes: fails.map((v) => (v.note.trim() === '' ? v.seed : `${v.seed}: ${v.note.trim()}`)).join('; ') }
+        : { by, date, result: 'pass', scope: 'family' }
+    return { family, generator_version, human_audit }
+  })
 }
 
 /** Every way `x` fails to be a {@link ReviewExport} (empty = valid). */

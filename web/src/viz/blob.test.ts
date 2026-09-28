@@ -1,6 +1,5 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { AXIS_INDEX } from '../engine/axes'
 import { OVERSHOOT_LIMIT_RINGS } from './curve'
 import {
   buildBlob,
@@ -8,9 +7,13 @@ import {
   DEFAULT_R,
   estimateTextWidth,
   fitLayout,
+  FUZZ_MAX_OPACITY,
+  FUZZ_Z,
+  fuzzOpacity,
   LABEL_FONT,
   MAX_LABEL_FONT,
   MIN_TEXT_PX,
+  N_FUZZ,
   NOTE_WRAP_CHARS,
   renderedSizes,
   sectorPath,
@@ -22,14 +25,14 @@ import {
   type TextMeasure,
 } from './blob'
 import { clusterFacets, unmeasuredReasons } from './facets'
-import { R_MIN_FRACTION, radiusScale, spokeAngle } from './geometry'
-import { axisEstimates, axisSamples, DEFAULT_FUZZ_SEED, N_FUZZ, posteriorSamples, type AxisEstimate, type SpokeEstimate } from './profile'
+import { R_MIN_FRACTION, radiusScale, spokeAngle, Z90 } from './geometry'
+import { axisEstimates, measuredFields, type AxisEstimate, type SpokeEstimate } from './profile'
 import { syntheticProfile, SYNTHETIC_PROFILES } from './synthetic'
 
 function modelOf(id: string): { est: AxisEstimate[]; model: BlobModel } {
   const p = syntheticProfile(id)!
   const est = axisEstimates(p.input)
-  return { est, model: buildBlob(est, axisSamples(p.input, est)) }
+  return { est, model: buildBlob(est) }
 }
 
 /** The on-curve points of path data (the endpoint of each C segment). */
@@ -134,20 +137,82 @@ describe('blob render model (§9)', () => {
     }
   })
 
-  it('draws each fuzz curve through the posterior draw of its own axis at every measured spoke (§9.3)', () => {
-    for (const id of ['full', 'm1']) {
-      const p = syntheticProfile(id)!
-      const { est, model } = modelOf(id)
-      // The joint draws in canonical axis order; spoke i must show the column of its axis.
-      const draws = posteriorSamples(p.input.score.theta, p.input.score.cov, N_FUZZ, DEFAULT_FUZZ_SEED)
-      model.fuzz.forEach((c, s) => {
+  it('spreads the 20 fuzz z values evenly over ±1.645, symmetric, inside out, with no z = 0 (§9.3)', () => {
+    expect(FUZZ_Z).toHaveLength(N_FUZZ)
+    expect(FUZZ_Z[0]).toBeCloseTo(-Z90, 12)
+    expect(FUZZ_Z.at(-1)).toBeCloseTo(Z90, 12)
+    FUZZ_Z.forEach((z, j) => {
+      expect(z).toBeCloseTo(-FUZZ_Z[N_FUZZ - 1 - j]!, 12)
+      expect(z).not.toBe(0)
+      if (j > 0) expect(z).toBeGreaterThan(FUZZ_Z[j - 1]!)
+    })
+    const steps = FUZZ_Z.slice(1).map((z, j) => z - FUZZ_Z[j]!)
+    // Equal steps, except across the crisp curve (z = 0), which is two half steps.
+    steps.forEach((d, j) => expect(d, `step ${j}`).toBeCloseTo(j === N_FUZZ / 2 - 1 ? (2 * Z90) / N_FUZZ * 2 : (2 * Z90) / N_FUZZ, 12))
+  })
+
+  it('fills each fuzz band with opacity ∝ the normal density φ(z), darkest next to the mean (§9.3)', () => {
+    const { model } = modelOf('full')
+    model.fuzz.forEach((c, j) => {
+      expect(c.z).toBe(FUZZ_Z[j])
+      expect(c.opacity).toBeCloseTo(FUZZ_MAX_OPACITY * Math.exp(-(c.z * c.z) / 2), 12)
+    })
+    // ∝ φ: the ratio of any two opacities is the ratio of the densities.
+    fc.assert(
+      fc.property(fc.double({ min: -3, max: 3, noNaN: true }), fc.double({ min: -3, max: 3, noNaN: true }), (a, b) => {
+        expect(fuzzOpacity(a) / fuzzOpacity(b)).toBeCloseTo(Math.exp((b * b - a * a) / 2), 9)
+      }),
+    )
+    const byAbs = [...model.fuzz].sort((a, b) => Math.abs(a.z) - Math.abs(b.z))
+    for (let j = 2; j < byAbs.length; j++) expect(byAbs[j]!.opacity).toBeLessThanOrEqual(byAbs[j - 1]!.opacity)
+    expect(Math.max(...model.fuzz.map((c) => c.opacity))).toBeLessThanOrEqual(FUZZ_MAX_OPACITY)
+  })
+
+  it('draws fuzz curve j at r(θ + z_j·SD) at every measured spoke and at the inner clamp elsewhere (§9.3)', () => {
+    for (const p of SYNTHETIC_PROFILES) {
+      const { est, model } = modelOf(p.id)
+      model.fuzz.forEach((c) => {
         const radii = radiiAtSpokes(c.d, 17)
         est.forEach((e, i) => {
-          const want = e.measured ? r(draws[s]![AXIS_INDEX[e.code]]!) : R_MIN_FRACTION * R
-          expect(radii.get(i), `${id} draw ${s} spoke ${e.code}`).toBeCloseTo(want, 1)
+          const want = e.measured ? r(e.theta! + c.z * e.sd!) : R_MIN_FRACTION * R
+          expect(radii.get(i), `${p.id} z ${c.z.toFixed(3)} spoke ${e.code}`).toBeCloseTo(want, 1)
         })
       })
     }
+  })
+
+  it('makes each fuzz band the curve plus its neighbour toward the mean (the crisp curve for the innermost pair)', () => {
+    const { model } = modelOf('full')
+    const mid = N_FUZZ / 2
+    model.fuzz.forEach((c, j) => {
+      const inward = j === mid - 1 || j === mid ? model.crisp : model.fuzz[c.z < 0 ? j + 1 : j - 1]!
+      expect(c.band, `z ${c.z}`).toBe(c.d + inward.d)
+    })
+  })
+
+  it('nests the fuzz curves: at every spoke the radius never decreases with z (property)', () => {
+    const spoke = fc.record({ theta: fc.double({ min: -3.5, max: 3.5, noNaN: true }), sd: fc.double({ min: 0.05, max: 1.5, noNaN: true }), measured: fc.boolean() })
+    fc.assert(
+      fc.property(fc.array(spoke, { minLength: 3, maxLength: 17 }), (raw) => {
+        const spokes: SpokeEstimate[] = raw.map((x, i) => ({
+          id: `s${i}`,
+          name: `Skill ${i}`,
+          shortLabel: [`S${i}`],
+          group: 'g',
+          tier: 'a',
+          glyph: '',
+          ...(x.measured ? measuredFields(x.theta, x.sd) : { measured: false, reason: 'no_data' as const, muted: false }),
+        }))
+        const model = buildBlob(spokes)
+        const radii = model.fuzz.map((c) => radiiAtSpokes(c.d, spokes.length))
+        const crisp = radiiAtSpokes(model.crisp.d, spokes.length)
+        spokes.forEach((_, i) => {
+          const seq = [...radii.slice(0, N_FUZZ / 2).map((m) => m.get(i)!), crisp.get(i)!, ...radii.slice(N_FUZZ / 2).map((m) => m.get(i)!)]
+          for (let j = 1; j < seq.length; j++) expect(seq[j]!).toBeGreaterThanOrEqual(seq[j - 1]! - 0.011)
+        })
+      }),
+      { numRuns: 60 },
+    )
   })
 
   it('bounds the ±1 SD band by r(θ + SD) outside and r(θ − SD) inside (§9.3)', () => {
@@ -187,7 +252,7 @@ describe('blob render model (§9)', () => {
     expect(model.ring).toBe(30)
     expect(model.rings.every((x) => x.showLabel)).toBe(true)
     // Text too large for one ring spacing (narrow screens): only −2, 0 and +2 SD are labelled.
-    const big = buildBlob(modelOf('m1').est, [], { layout: { fontSize: 36, compact: true } })
+    const big = buildBlob(modelOf('m1').est, { layout: { fontSize: 36, compact: true } })
     expect(big.rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '0 SD', '+2 SD'])
   })
 
@@ -220,7 +285,7 @@ describe('blob render model (§9)', () => {
   it('draws sector paths, including a full circle', () => {
     expect(sectorPath(0, Math.PI / 2, 10)).toBe('M0,0L0.00,-10.00A10,10 0 0,1 10.00,0.00Z')
     expect(sectorPath(0, 2 * Math.PI, 10)).toMatch(/A10,10 0 1,1 .*A10,10 0 1,1 .*Z$/)
-    expect(() => buildBlob(axisEstimates(syntheticProfile('m1')!.input).slice(0, 2), [])).toThrow(RangeError)
+    expect(() => buildBlob(axisEstimates(syntheticProfile('m1')!.input).slice(0, 2))).toThrow(RangeError)
   })
 })
 
@@ -250,7 +315,7 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
   it('keeps every label and the ring note inside the viewBox, at any layout', () => {
     fc.assert(
       fc.property(spokesArb(), fc.double({ min: LABEL_FONT, max: MAX_LABEL_FONT, noNaN: true }), fc.boolean(), (spokes, fontSize, compact) => {
-        const model = buildBlob(spokes, [], { layout: { fontSize, compact } })
+        const model = buildBlob(spokes, { layout: { fontSize, compact } })
         const vb = viewBoxOf(model)
         for (const b of [...model.labelBoxes, model.noteBox]) expect(within(b, vb)).toBe(true)
         // The circle (and the wedges, R + 4) too, centred horizontally.
@@ -314,11 +379,11 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
 
   it('scales the text sizes with the layout and exposes them to the chart', () => {
     const { est } = modelOf('m1')
-    const a = buildBlob(est, [], { layout: { fontSize: 20, compact: false } })
+    const a = buildBlob(est, { layout: { fontSize: 20, compact: false } })
     expect(a.text.label).toBe(20)
     expect(a.text.small).toBeLessThan(20)
     expect(a.text.halo).toBeGreaterThan(0)
-    expect(() => buildBlob(est, [], { layout: { fontSize: 0, compact: false } })).toThrow(RangeError)
+    expect(() => buildBlob(est, { layout: { fontSize: 0, compact: false } })).toThrow(RangeError)
   })
 
   it('has one-line compact labels, wraps facet labels at spaces, keeps "not measured" whole, and places the glyph', () => {

@@ -13,7 +13,9 @@
  *   scorer and registered families (blocks included) under the A15 time rule with the session
  *   target `--target-min` (default 27.5 min, the midpoint of A15's 25–30; the time acceptance is
  *   every simulated session ≤ 30 min), then, unless `--fixed 0`, the same with a fixed length of
- *   `--fixed` items per CAT axis (DESIGN §14.3 "r ≥ .85 at 20 items/axis").
+ *   `--fixed` items per CAT axis (DESIGN §14.3 "r ≥ .85 at 20 items/axis"). When the fixture has
+ *   Python results for n, each table also shows the Python M1.4a r per axis and the gap: M1.4a
+ *   is a fixed 2PL form, so this is a comparison of two designs, not the 0.02 parity of (a).
  *
  * Prints one table per run with its acceptance verdict (progress goes to stderr). `--json` writes
  * the numbers; a relative path resolves against the directory npm was run from. Exit codes: 0 (or
@@ -26,8 +28,8 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { A15_TARGET_S } from '../src/engine/selector'
 import { runCat, type CatRun } from '../src/sim/cat'
-import { m14aFixtureProblems, parity, runM14a, type M14aFixture } from '../src/sim/m14a'
-import { axisTable, catAcceptanceFailures, formatCat, formatParity } from '../src/sim/report'
+import { m14aFixtureProblems, parity, pythonResults, runM14a, type M14aFixture } from '../src/sim/m14a'
+import { axisTable, catAcceptanceFailures, catVsPython, formatCat, formatParity, type CatPythonRow } from '../src/sim/report'
 import { PUB_ROOT, UsageError } from './dump-lib'
 
 export const SIM_CAT_USAGE = 'usage: npm run sim:cat -- [--part a|b|all] [--n 2000] [--seed m14b] [--target-min 27.5] [--fixed 20] [--json <file>] [--strict]'
@@ -90,7 +92,7 @@ export function loadFixture(path: string = SIM_FIXTURE): M14aFixture {
   return f
 }
 
-function catJson(run: CatRun, fails: readonly string[]): object {
+function catJson(run: CatRun, fails: readonly string[], python: readonly CatPythonRow[] | undefined): object {
   return {
     n: run.n,
     seed: run.seed,
@@ -106,6 +108,7 @@ function catJson(run: CatRun, fails: readonly string[]): object {
     block_observed: run.blockObserved,
     segment_ends: run.segmentEnds,
     acceptance_failures: fails,
+    ...(python === undefined ? {} : { vs_python_m14a: python }),
   }
 }
 
@@ -152,12 +155,16 @@ export function main(argv: readonly string[], cwd = process.env.INIT_CWD ?? proc
       runs.push({ key: 'b_fixed', run: runCat(thetas, { seed: args.seed, fixedLength: args.fixed, onSession: progress('fixed-length run') }) })
       process.stderr.write(` (${((performance.now() - t1) / 1000).toFixed(0)} s)\n`)
     }
+    // The Python M1.4a r for the same n, when the fixture has it: reported next to the CAT r (a
+    // different design, not parity; report.ts catVsPython).
+    const py = pythonResults(f, args.n)
     for (const { key, run } of runs) {
       const fails = catAcceptanceFailures(run)
-      console.log(formatCat(run))
+      const python = py === undefined ? undefined : catVsPython(run, py)
+      console.log(formatCat(run, {}, python))
       console.log('')
       failed ||= fails.length > 0
-      out[key] = catJson(run, fails)
+      out[key] = catJson(run, fails, python)
     }
   }
   if (args.json !== undefined) {

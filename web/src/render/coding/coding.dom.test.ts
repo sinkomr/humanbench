@@ -109,6 +109,38 @@ describe('CodingRenderer', () => {
     expect(m.responses[0]?.map((r) => r.digit)).toEqual([0])
   })
 
+  it('keeps one polite status line and, when the block ends, focus on it inside the renderer (WCAG 2.4.3, 4.1.3)', () => {
+    // Ended by the clock.
+    const timed = mountCoding(coding.generate('render-coding-focus-time'))
+    const status = timed.container.querySelector('.hb-status')
+    expect(status?.getAttribute('aria-live')).toBe('polite')
+    click(buttonByText(timed.container, 'Start'))
+    expect(document.activeElement?.classList.contains('stage')).toBe(true)
+    timed.display.advance(FRAME)
+    timed.display.advance(91_000)
+    expect(timed.responses).toHaveLength(1)
+    expect(timed.container.querySelector('.hb-status')).toBe(status)
+    expect(status?.textContent).toBe('Time is up. Thank you.')
+    expect(document.activeElement).toBe(status)
+    timed.destroy()
+
+    // Ended by answering every glyph (from the keypad, which is then removed).
+    const item = coding.generate('render-coding-focus-all')
+    const all = mountCoding(item)
+    click(buttonByText(all.container, 'Start'))
+    all.display.advance(FRAME)
+    for (let k = 0; k < item.spec.sequence.length; k++) {
+      all.display.advance(50)
+      click(buttonByText(all.container.querySelector('.keypad') as HTMLElement, '1'))
+    }
+    expect(all.responses).toHaveLength(1)
+    expect(all.container.querySelector('.keypad')).toBeNull()
+    const done = all.container.querySelector('.hb-status')
+    expect(done?.textContent).toBe('You answered every shape. Thank you.')
+    expect(document.activeElement).toBe(done)
+    expect(all.container.contains(document.activeElement)).toBe(true)
+  })
+
   it('matches its snapshots (intro and running)', () => {
     const item = coding.generate('render-coding-snap')
     const m = mountCoding(item)

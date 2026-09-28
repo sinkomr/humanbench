@@ -8,7 +8,9 @@
   (choice); touch mode: tap or click the position. The response is the family's `RtResponse`
   (scored and practice trials as parallel arrays), sent once at the end of the block, just after
   `oninputtype` reports the input type the responses came from (keyboard, mouse or touch, from
-  each tap's `pointerType`; §11.6 items 2 and 5 norm them separately).
+  each tap's `pointerType`; §11.6 items 2 and 5 norm them separately). One polite status line
+  stays mounted in every phase; at the end of the block it says so and takes focus, so keyboard
+  and screen-reader users keep their place (WCAG 2.4.3, 4.1.3; as the span renderers).
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
@@ -52,6 +54,7 @@
   let note = $state('')
   let root: HTMLElement | undefined = $state()
   let stageEl: HTMLElement | undefined = $state()
+  let statusEl: HTMLElement | undefined = $state()
 
   const rts: (number | null)[] = []
   const choices: (number | null)[] = []
@@ -159,6 +162,8 @@
     }
     phase = 'done'
     flushSync()
+    // The stage that held focus is gone: move focus to the status line, which now says so.
+    statusEl?.focus()
     oninputtype?.(inputType())
     onrespond({
       rt_ms: [...rts],
@@ -224,9 +229,7 @@
   {:else if phase === 'ready'}
     <p class="hb-instructions">Practice done. The counted trials start now.</p>
     <button type="button" class="hb-btn hb-primary" onclick={() => begin('main')}>Start</button>
-  {:else if phase === 'done'}
-    <p class="hb-status">Block complete. Thank you.</p>
-  {:else}
+  {:else if phase === 'running'}
     <p class="progress">{stage === 'practice' ? 'Practice' : 'Trial'} {trialIdx + 1} of {nTrials}</p>
     <div class="stage" class:choice4 bind:this={stageEl} tabindex="-1">
       <p class="fixation" aria-hidden="true">{trialState === 'fixation' ? '+' : ''}</p>
@@ -254,8 +257,8 @@
     <p class="hb-sr-only" aria-live="assertive" aria-atomic="true">
       {trialState === 'stimulus' && target !== null ? (choice4 ? `Target, position ${target + 1}` : 'Target') : ''}
     </p>
-    <p class="hb-status" aria-live="polite">{note}</p>
   {/if}
+  <p class="hb-status" aria-live="polite" tabindex="-1" bind:this={statusEl}>{phase === 'done' ? 'Block complete. Thank you.' : note}</p>
 </section>
 
 <style>

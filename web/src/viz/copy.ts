@@ -30,7 +30,7 @@ export const RING_NOTE: readonly string[] = ['Rings: SD units, provisional', 'Ce
 
 /** §9.3: fuzz + band; §9.5: muting (markers and the line). */
 export const UNCERTAINTY_CAPTION =
-  'The solid line is the most likely profile. The shaded band spans ±1 SD, and the faint lines are 20 plausible profiles drawn from your results. Whiskers show 90% intervals; where one overlaps 0 SD, the marker is hollow and the line turns grey.'
+  'The solid line is the most likely profile. The light band spans ±1 SD, and the soft edge around the line fades out across each 90% interval: the darker the shading, the more plausible that value. Whiskers show 90% intervals; where one overlaps 0 SD, the marker is hollow and the line turns grey.'
 
 /** §9.7, A15. */
 export const STUB_CAPTION = 'Dashed grey spokes are skills that were not measured; the line drops to the centre there.'

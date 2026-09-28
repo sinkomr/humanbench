@@ -152,6 +152,28 @@ describe('RtRenderer', () => {
     expect(obs?.kind === 'gaussian' ? obs.x : Number.NaN).toBeCloseTo(median(r.rt_ms.filter((x): x is number => x !== null && x > 0).map(Math.log)), 6)
   })
 
+  it('keeps one polite status line and, when the block ends, focus on it inside the renderer (WCAG 2.4.3, 4.1.3)', () => {
+    for (const [gen, seed] of [[rtSimple, 'render-rt-focus-s'], [rtChoice4, 'render-rt-focus-c']] as const) {
+      const item = gen.generate(seed)
+      const m = mountRt(item, 'keyboard')
+      const status = m.container.querySelector('.hb-status')
+      expect(status?.getAttribute('aria-live')).toBe('polite')
+      click(buttonByText(m.container, 'Start practice'))
+      for (let i = 0; i < item.spec.practice_positions.length; i++) answerTrial(m, keyFor(item, true, i), 300)
+      until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+      expect(m.container.querySelector('.hb-status')).toBe(status)
+      click(buttonByText(m.container, 'Start'))
+      expect(document.activeElement?.classList.contains('stage')).toBe(true)
+      for (let i = 0; i < item.spec.positions.length; i++) answerTrial(m, keyFor(item, false, i), 300)
+      until(m.display, () => m.responses.length === 1, 20_000)
+      expect(m.container.querySelector('.hb-status')).toBe(status)
+      expect(status?.textContent).toBe('Block complete. Thank you.')
+      expect(document.activeElement).toBe(status)
+      expect(m.container.contains(document.activeElement)).toBe(true)
+      m.destroy()
+    }
+  })
+
   it('a missing response ends the trial after the response window', () => {
     const item = rtSimple.generate('render-rt-miss')
     const m = mountRt(item, 'keyboard')

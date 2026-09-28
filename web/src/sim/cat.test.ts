@@ -23,6 +23,11 @@
  * ≈ 0.57. r ≥ .85 on all three needs about a 45-minute session; DESIGN §14.3's "at 20 items/axis"
  * (≈ 48 min) passes at N = 2,000 (.903 / .868 / .905, the slow test). The r floor below guards
  * against regressions meanwhile.
+ *
+ * ROADMAP M1.4b's "parity with Python within 0.02 on r" is NOT claimed for this run: the Python
+ * side (M1.4a) is a fixed 2PL form, while this run serves the real families, so the CAT r is only
+ * reported next to the Python r (`report.ts` catVsPython). The 0.02 parity holds for the
+ * replication (a) (`m14a.test.ts`); which reading M1.4b means needs an ADR (post-merge audit).
  */
 
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -32,8 +37,8 @@ import type { Observation } from '../engine/types'
 import { A15_TARGET_S, COVERAGE_FLOOR } from '../engine/selector'
 import { resolveItem } from '../tasks/registry'
 import { A15_MAX_S, BLOCK_AXES, CAT_AXES, administeredB, observedAxes, runCat, sessionSeedOf, simulateSession, targetingR, type CatRun } from './cat'
-import type { M14aFixture } from './m14a'
-import { catAcceptanceFailures, formatCat } from './report'
+import { pythonResults, type M14aFixture } from './m14a'
+import { catAcceptanceFailures, catVsPython, formatCat } from './report'
 import { SPAN_FAMILIES } from './responders'
 import { COVERAGE_HI, COVERAGE_LO, R_MIN } from './stats'
 
@@ -155,7 +160,7 @@ describe(`M1.4b (b): adaptive session under the A15 time rule, N = ${N_FAST} (fa
 
   beforeAll(() => {
     run = runCat(THETAS.slice(0, N_FAST), { seed: 'm14b' })
-    console.log(formatCat(run))
+    console.log(formatCat(run, {}, catVsPython(run, pythonResults(FIXTURE, N_FAST)!)))
   }, 300_000)
 
   it('uses the M1.4a simulees with one session seed each', () => {
@@ -218,6 +223,14 @@ describe(`M1.4b (b): adaptive session under the A15 time rule, N = ${N_FAST} (fa
   it('the only acceptance failures are the CAT axes r criterion (time and coverage pass)', () => {
     const fails = catAcceptanceFailures(run)
     expect(fails.every((f) => /^(MAT|SPA|QR): r = /.test(f))).toBe(true)
+  })
+
+  // Reported, not parity (module comment): at the A15 budget the CAT axes recover θ well below
+  // the Python M1.4a fixed 20-item form on the same people (Δr ≈ −.1 at N = 300 and 2,000).
+  it('the CAT r is compared with the Python M1.4a r on every observed axis, and falls short of it on the CAT axes', () => {
+    const rows = catVsPython(run, pythonResults(FIXTURE, N_FAST)!)
+    expect(rows.map((r) => r.code).sort()).toEqual([...CAT_AXES, ...BLOCK_AXES].sort())
+    for (const r of rows.filter((x) => CAT_AXES.includes(x.code))) expect(r.delta, r.code).toBeLessThan(-0.02)
   })
 
   // Expected failure (see the module comment): r ≥ .85 on MAT, SPA and QR within the A15 budget is

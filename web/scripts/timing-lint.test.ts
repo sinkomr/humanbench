@@ -8,8 +8,11 @@
  * - **clock** (all of `src/`): no `Date.now`, no argless `new Date()` / `new Date`, no `Date()`
  *   call. Response times come from `performance.now()` and rAF timestamps only. `new Date(x)` with
  *   an argument (parsing or formatting a given time) is fine.
- * - **random** (`src/engine/`, `src/tasks/`): no `Math.random`, `getRandomValues` or `randomUUID`.
- *   Items and scores must regenerate from their seed (A11): draw from the seeded engine stream.
+ * - **random** (`src/engine/`, `src/tasks/`, `src/render/`, `src/viz/`): no `Math.random`,
+ *   `getRandomValues` or `randomUUID`. Items and scores must regenerate from their seed (A11):
+ *   draw from the seeded engine stream. Renderers must never reorder or randomise what the spec
+ *   fixes (A18: option order is the item's), and the blob draws the same for a given profile
+ *   (§9.3), so both are covered too. `save/ids.ts` (crypto session ids) stays outside.
  *
  * A file that legitimately needs one of these (e.g. a save file's wall-clock `created_at`, §8)
  * goes in {@link ALLOW} with the rule and the reason; stale entries fail. Svelte markup outside
@@ -40,8 +43,11 @@ const ALLOW: Readonly<Record<string, Partial<Record<Rule, string>>>> = {
   'save/clock.ts': { clock: 'save-file metadata only (§8 created_utc, started_utc, session-id time prefix); never RT' },
 }
 
-/** Directories (under `web/src`) where the random rule applies. */
-const SEEDED_DIRS = ['engine/', 'tasks/']
+/** Directories (under `web/src`) where the random rule applies (module comment; A11, A18). */
+const SEEDED_DIRS = ['engine/', 'tasks/', 'render/', 'viz/']
+
+/** Whether the random rule applies to a file (posix path under `web/src`). */
+const isSeeded = (f: string): boolean => SEEDED_DIRS.some((d) => f.startsWith(d))
 
 const RANDOM_MEMBERS = new Set(['random', 'getRandomValues', 'randomUUID'])
 
@@ -111,7 +117,7 @@ function violations(): string[] {
     const text = readFileSync(join(SRC, f), 'utf8')
     const hits = f.endsWith('.svelte') ? scanSvelte(text) : scanScript(text, f)
     for (const h of hits) {
-      if (h.rule === 'random' && !SEEDED_DIRS.some((d) => f.startsWith(d))) continue
+      if (h.rule === 'random' && !isSeeded(f)) continue
       if (ALLOW[f]?.[h.rule] !== undefined) continue
       out.push(`src/${f}:${h.line}: ${h.what} (${h.rule})`)
     }
@@ -128,8 +134,15 @@ describe('timing and determinism lint over web/src (CLAUDE.md, §11.6, A11)', ()
     expect(files.length).toBeGreaterThan(100)
   })
 
-  it('no file reads the wall clock, and nothing in engine/ or tasks/ uses an unseeded random source', () => {
+  it('no file reads the wall clock, and nothing in engine/, tasks/, render/ or viz/ uses an unseeded random source', () => {
     expect(violations()).toEqual([])
+  })
+
+  it('applies the random rule to renderers and the viz, not to save-file ids (A18, §9.3)', () => {
+    for (const f of ['engine/prng.ts', 'tasks/family.ts', 'render/choice/OptionGroup.svelte', 'render/entry.ts', 'viz/profile.ts', 'viz/BlobChart.svelte']) expect(isSeeded(f), f).toBe(true)
+    for (const f of ['save/ids.ts', 'save/clock.ts', 'App.svelte', 'review/verdicts.ts']) expect(isSeeded(f), f).toBe(false)
+    const files = sourceFiles()
+    for (const d of SEEDED_DIRS) expect(files.some((f) => f.startsWith(d)), d).toBe(true)
   })
 
   it('allow-list entries are justified and still needed', () => {

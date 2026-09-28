@@ -12,6 +12,7 @@ import {
   buildExport,
   emptyStore,
   exportProblems,
+  familyAudits,
   mergeStores,
   nowUtc,
   parseStore,
@@ -20,6 +21,7 @@ import {
   summarize,
   verdictProblems,
   withVerdict,
+  type FamilyHumanAudit,
   type Verdict,
   type VerdictRecord,
 } from './verdicts'
@@ -165,6 +167,73 @@ describe('summaries and export', () => {
           const later = [a.verdicts[id], b.verdicts[id]].filter((x): x is VerdictRecord => x !== undefined).map((x) => x.reviewed_utc)
           expect(v.reviewed_utc).toBe(later.sort().at(-1))
         }
+      }),
+    )
+  })
+})
+
+describe('bank ingestion mapping (familyAudits; §4.4, §12 HumanAudit)', () => {
+  /** The bank's `hb.items.schema.HumanAudit` (strict): the fields, `result` pass | fail, the scopes. */
+  const HUMAN_AUDIT_FIELDS = ['by', 'date', 'result', 'scope', 'content_sha256', 'notes']
+  function bankProblems(a: FamilyHumanAudit): string[] {
+    const out: string[] = []
+    for (const k of Object.keys(a)) if (!HUMAN_AUDIT_FIELDS.includes(k)) out.push(`extra field ${k}`)
+    if (a.by.trim() === '') out.push('by empty')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(a.date)) out.push('date')
+    if (a.result !== 'pass' && a.result !== 'fail') out.push(`result ${String(a.result)}`)
+    if (!['item', 'family', 'batch'].includes(a.scope)) out.push('scope')
+    return out
+  }
+
+  function exportOf(verdicts: readonly VerdictRecord[]) {
+    let s = { ...emptyStore(), reviewer: 'sinkomr' }
+    for (const v of verdicts) s = withVerdict(s, v.item_id, v)
+    return buildExport(s, planned, '2026-10-02T10:00:00Z')
+  }
+
+  it('maps 30 of 30 pass to one family-scope pass, dated by the latest verdict, by every reviewer', () => {
+    const vs = Array.from({ length: 30 }, (_, k) => rec('series', k + 1, 'pass', k === 12 ? '2026-10-03T08:00:00Z' : '2026-10-01T09:00:00Z', '1.3.0', k === 4 ? 'second' : 'sinkomr'))
+    const [series, quant] = familyAudits(exportOf(vs))
+    expect(series).toEqual({ family: 'series', generator_version: '1.3.0', human_audit: { by: 'second, sinkomr', date: '2026-10-03', result: 'pass', scope: 'family' } })
+    expect(quant).toEqual({ family: 'quant', generator_version: '1.3.0', human_audit: null, pending: '0 unsure, 30 not reviewed' })
+    expect(bankProblems(series!.human_audit!)).toEqual([])
+  })
+
+  it('maps any fail to a family-scope fail with the failed seeds and notes; older versions do not count', () => {
+    const vs = [
+      { ...rec('series', 3, 'fail', '2026-10-02T11:00:00Z'), note: ' two options are equal ' },
+      rec('series', 8, 'fail', '2026-10-01T10:00:00Z', '1.3.0', 'second'),
+      rec('series', 9, 'unsure'),
+      rec('quant', 1, 'fail', '2026-09-01T00:00:00Z', '1.2.0'),
+      ...Array.from({ length: 30 }, (_, k) => rec('quant', k + 1, 'pass')),
+    ]
+    const [series, quant] = familyAudits(exportOf(vs))
+    expect(series?.human_audit).toEqual({ by: 'second, sinkomr', date: '2026-10-02', result: 'fail', scope: 'family', notes: 'review-series-3: two options are equal; review-series-8' })
+    expect(quant?.human_audit).toMatchObject({ result: 'pass', scope: 'family' })
+  })
+
+  it('never ingests unsure: a family with an unsure or unreviewed instance and no fail stays pending', () => {
+    const vs = Array.from({ length: 30 }, (_, k) => rec('series', k + 1, k === 29 ? 'unsure' : 'pass'))
+    expect(familyAudits(exportOf(vs))[0]).toEqual({ family: 'series', generator_version: '1.3.0', human_audit: null, pending: '1 unsure, 0 not reviewed' })
+    expect(familyAudits(exportOf(vs.slice(0, 29)))[0]).toMatchObject({ human_audit: null, pending: '0 unsure, 1 not reviewed' })
+  })
+
+  it('every record is a valid bank HumanAudit: pass iff 30 pass, fail iff any fail, never unsure (property)', () => {
+    const verdict = fc.constantFrom<Verdict | null>('pass', 'fail', 'unsure', null)
+    fc.assert(
+      fc.property(fc.array(fc.oneof({ weight: 3, arbitrary: fc.constant<Verdict | null>('pass') }, verdict), { minLength: 30, maxLength: 30 }), (plan) => {
+        const vs = plan.flatMap((v, k) => (v === null ? [] : [rec('series', k + 1, v)]))
+        const out = familyAudits(exportOf(vs))[0]!
+        const fails = plan.filter((v) => v === 'fail').length
+        const passes = plan.filter((v) => v === 'pass').length
+        if (fails > 0) expect(out.human_audit?.result).toBe('fail')
+        else if (passes === 30) expect(out.human_audit?.result).toBe('pass')
+        else expect(out.human_audit).toBeNull()
+        if (out.human_audit !== null) {
+          expect(bankProblems(out.human_audit)).toEqual([])
+          expect(out.human_audit.scope).toBe('family')
+        }
+        expect(JSON.stringify(out)).not.toContain('"result":"unsure"')
       }),
     )
   })

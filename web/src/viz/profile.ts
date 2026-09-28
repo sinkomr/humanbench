@@ -8,8 +8,8 @@
  * - measured = the axis has observations (it has an EAP entry) and was not skipped (§13). Every
  *   other axis is a "not measured" stub (§9.7, A15: all 17 spokes are always shown); the
  *   correlated model's borrowed estimate for it is never shown or interpolated;
- * - estimate θ_k and SD_k = √cov_kk from the correlated posterior, which is also what the fuzz
- *   curves sample, so the crisp curve, band and fuzz agree;
+ * - estimate θ_k and SD_k = √cov_kk from the correlated posterior, from which `blob.ts` draws the
+ *   crisp curve, the ±1 SD band and the §9.3 fuzz (curves at θ_k + z·SD_k), so all three agree;
  * - the 90% interval θ_k ± 1.645·SD_k and the muting rule (§9.5, A12 θ = 0 rule): a spoke whose
  *   interval contains 0 is muted ("overlaps 0 SD"); only an interval that excludes 0 is shown as
  *   credibly above or below 0 SD.
@@ -18,8 +18,6 @@
  */
 
 import { AXES, isAxisCode, N_AXES, type AxisCode, type AxisDef, type Cluster, type GoldTier } from '../engine/axes'
-import { cholesky, tryCholesky, type Matrix } from '../engine/linalg'
-import { createRng } from '../engine/prng'
 import type { ScoreResult } from '../engine/scorer'
 import { Z90 } from './geometry'
 import { spokeOrder } from './seriation'
@@ -177,55 +175,4 @@ export function axisEstimates(input: ProfileInput): AxisEstimate[] {
     const sd = Math.sqrt(input.score.cov[a.index]![a.index]!)
     return { ...base, ...measuredFields(theta, sd) }
   })
-}
-
-/**
- * `n` seeded draws from the joint posterior N(θ, cov) (§9.3 fuzz; ROADMAP M1.16), θ + L·z with
- * L the Cholesky factor of cov and z from the engine PRNG (sfc32), so a profile always gets the
- * same fuzz. Draws are in the order of `theta` (canonical axes for scorer output).
- */
-export function posteriorSamples(theta: readonly number[], cov: readonly (readonly number[])[], n: number, seed: string): number[][] {
-  if (!Number.isInteger(n) || n < 0) throw new RangeError('n must be a non-negative integer')
-  const k = theta.length
-  const c: Matrix = cov.map((r) => r.slice())
-  let L = tryCholesky(c)
-  if (L === null) {
-    // A Laplace covariance is PD; guard against rounding with a tiny ridge.
-    L = cholesky(c.map((r, i) => r.map((v, j) => (i === j ? v + 1e-10 : v))))
-  }
-  const rng = createRng(seed)
-  return Array.from({ length: n }, () => {
-    const z = Array.from({ length: k }, () => rng.normal())
-    return theta.map((t, i) => {
-      let s = t
-      for (let j = 0; j <= i; j++) s += L[i]![j]! * z[j]!
-      return s
-    })
-  })
-}
-
-/** Default fuzz seed: fixed, so a given profile always renders the same fuzz (§9.3). */
-export const DEFAULT_FUZZ_SEED = 'hb-blob-fuzz-v1'
-/** §9.3 / ROADMAP M1.16: 20 fuzz curves. */
-export const N_FUZZ = 20
-
-/**
- * Seeded fuzz draws for spokes with independent posteriors (drill-down facets: separate
- * unidimensional EAPs, A12): θ_i + SD_i·z; 0 for unmeasured spokes (never drawn).
- */
-export function independentSamples(spokes: readonly SpokeEstimate[], n = N_FUZZ, seed = DEFAULT_FUZZ_SEED): number[][] {
-  const rng = createRng(seed)
-  return Array.from({ length: n }, () =>
-    spokes.map((s) => {
-      const z = rng.normal() // drawn for every spoke, so a spoke's draws do not depend on the others' status
-      return s.measured ? s.theta! + s.sd! * z : 0
-    }),
-  )
-}
-
-/** Fuzz draws for the axis spokes, in spoke order (columns follow `estimates`). */
-export function axisSamples(input: ProfileInput, estimates: readonly AxisEstimate[], n = N_FUZZ, seed = DEFAULT_FUZZ_SEED): number[][] {
-  const draws = posteriorSamples(input.score.theta, input.score.cov, n, seed)
-  const idx = estimates.map((e) => AXES.find((a) => a.code === e.code)!.index)
-  return draws.map((d) => idx.map((i) => d[i]!))
 }

@@ -54,7 +54,8 @@
   } from './copy'
   import { clusterFacets, unmeasuredReasons, type FacetEstimate, type FacetObservation, type FacetOptions } from './facets'
   import { themeVars, THEMES, type ThemeName } from './palette'
-  import { axisEstimates, axisSamples, DEFAULT_FUZZ_SEED, independentSamples, N_FUZZ, type ProfileInput } from './profile'
+  import { axisEstimates, type ProfileInput } from './profile'
+  import { widthOf } from './width'
   import type { Cluster } from '../engine/axes'
 
   interface Props {
@@ -63,13 +64,11 @@
     facetObservations?: readonly FacetObservation[]
     /** Known facets per axis, listed even without items. */
     facetCatalog?: FacetOptions['catalog']
-    /** Seed of the fuzz draws (§9.3); fixed by default so a profile always looks the same. */
-    seed?: string
     /** Colour scheme; default follows prefers-color-scheme. */
     theme?: ThemeName
   }
 
-  let { input, facetObservations = [], facetCatalog, seed = DEFAULT_FUZZ_SEED, theme }: Props = $props()
+  let { input, facetObservations = [], facetCatalog, theme }: Props = $props()
 
   const uid = `hb-profile-${++instances}`
   /** Facet sub-blobs need at least 3 spokes and stay legible up to 24. */
@@ -79,7 +78,10 @@
   let view = $state<'blob' | 'bars'>('blob')
   let selected = $state<Cluster | null>(null)
   let prefersDark = $state(false)
-  /** Rendered widths of the two chart boxes (0 before layout and in jsdom: default text layout). */
+  /**
+   * Rendered widths of the two chart boxes (0 before layout and in jsdom: default text layout),
+   * reported a frame after each resize (`width.ts`: no ResizeObserver loop in WebKit).
+   */
   let blobWidth = $state(0)
   let subWidth = $state(0)
 
@@ -95,11 +97,10 @@
   })
 
   const estimates = $derived(axisEstimates(input))
-  const samples = $derived(axisSamples(input, estimates, N_FUZZ, seed))
   // Once any chart on the page has laid out, later mounts measure from their first frame.
   const measure = $derived(blobWidth > 0 || subWidth > 0 ? textMeasure() : (pageMeasure ?? undefined))
   const layout = $derived(fitLayout(estimates, blobWidth, { measure }))
-  const model = $derived(buildBlob(estimates, samples, { layout, measure }))
+  const model = $derived(buildBlob(estimates, { layout, measure }))
   const clusters = $derived([...new Set(estimates.map((e) => e.cluster))])
   const unmeasured = $derived(unmeasuredReasons(estimates))
   const facets: FacetEstimate[] = $derived(
@@ -107,7 +108,7 @@
   )
   const facetModel: BlobModel | null = $derived(
     facets.length >= SUB_BLOB_MIN && facets.length <= SUB_BLOB_MAX
-      ? buildBlob(facets, independentSamples(facets, N_FUZZ, `${seed}/${selected}`), { layout: fitLayout(facets, subWidth, { measure }), measure })
+      ? buildBlob(facets, { layout: fitLayout(facets, subWidth, { measure }), measure })
       : null,
   )
   const style = $derived(
@@ -135,7 +136,7 @@
 
   {#if view === 'blob'}
     <figure class="blob-figure">
-      <div class="chart-box" bind:clientWidth={blobWidth}>
+      <div class="chart-box" {@attach widthOf((w) => (blobWidth = w))}>
         <BlobChart {model} uid="{uid}-blob" title={BLOB_TITLE} description={BLOB_DESCRIPTION} onselect={toggleCluster} {selected} />
       </div>
       <figcaption>
@@ -174,7 +175,7 @@
             <p>{FACET_EMPTY}</p>
           {:else}
             {#if facetModel !== null}
-              <div class="chart-box" bind:clientWidth={subWidth}>
+              <div class="chart-box" {@attach widthOf((w) => (subWidth = w))}>
                 <BlobChart model={facetModel} uid="{uid}-sub" title={facetHeading(selected)} description={facetCaption(selected)} />
               </div>
             {/if}
