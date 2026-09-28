@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { BLOCKING_IMPACTS, WCAG_AA_TAGS } from '../e2e/axe'
-import { visualGalleryUrl } from '../e2e/dev-server'
+import { REVIEW_URL, visualGalleryUrl } from '../e2e/dev-server'
 import config from '../playwright.config'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
@@ -39,15 +39,19 @@ describe('Playwright config (M1.A)', () => {
     expect(server?.url).toBe(config.use?.baseURL)
   })
 
-  it('also starts a fresh Vite dev server for the dev-only pages (M1.13 renderer gallery)', () => {
+  it('also starts a fresh Vite dev server for the dev-only pages (M1.13 galleries, M1.G7 review page)', () => {
     const servers = Array.isArray(config.webServer) ? config.webServer : []
     expect(servers).toHaveLength(2)
     const dev = servers[1]
-    expect(dev?.command).toMatch(/^npm run dev -- .*--strictPort/)
+    expect(dev?.command).toMatch(/^npx vite --host 127\.0\.0\.1 --port \d+ --strictPort$/)
+    expect(dev?.command).not.toMatch(/build|preview/)
     expect(dev?.env).toEqual({ VITE_BASE: '/humanbench/' })
     expect(dev?.reuseExistingServer).toBe(false)
-    expect(dev?.url).toBe(visualGalleryUrl())
-    expect(dev?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/humanbench\/render-visual\.html$/)
+    expect(dev?.url).toBe(REVIEW_URL)
+    expect(dev?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/humanbench\/review\.html$/)
+    // Both dev-only pages live on the same server.
+    expect(new URL(visualGalleryUrl()).origin).toBe(new URL(dev?.url ?? '').origin)
+    expect(visualGalleryUrl()).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/humanbench\/render-visual\.html$/)
     // A different port from the preview's.
     expect(new URL(dev?.url ?? '').port).not.toBe(new URL(config.use?.baseURL ?? '').port)
   })

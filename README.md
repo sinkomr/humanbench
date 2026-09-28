@@ -15,6 +15,8 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/engine/`: scoring, timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/tasks/`: task families
+  - `web/src/render/`: the item and block renderers (what the taker sees), by family
+  - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/viz/`: blob and bar views, export
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
@@ -104,6 +106,62 @@ The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `ma
 pull requests, with the browsers cached, and uploads the report as an artifact.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+
+### Renderers
+
+Each family's renderer lives in `web/src/render/<family>/` (ROADMAP M1.13). A renderer is a Svelte
+component that takes the item's `spec`, never its key, and calls `onrespond(response)` with exactly
+the response the family's `score()` takes (`web/src/render/common/props.ts`). `web/src/render/entry.ts`
+maps the typed-entry and block families (series, quant, span_fwd, span_bwd, corsi, rt_simple,
+rt_choice4, coding, reading) to their renderers; `web/src/render/visual.ts` maps the image
+families. Timing uses animation frames for onsets and `performance.now()` for responses, through
+the RT timing utilities (`web/src/tasks/rt/timing.ts`). The RT renderer also reports, through
+`oninputtype`, whether a block's responses came from the keyboard, a mouse or touch (from each
+tap's `pointerType`), for the RT observation's `input_type` (DESIGN §11.6 norms them separately).
+`web/src/render/entry-leak.dom.test.ts`
+renders hundreds of generated instances and fails if the key, or anything that tells the keyed
+option apart, reaches the DOM.
+
+### Procedural review page (G7)
+
+DESIGN §4.4 asks for a human spot audit of 30 instances per procedural family and generator
+version: 11 registered families, 330 instances, planned at about 4 hours in all (ROADMAP M1.G7).
+The review page shows, for every registered family, the instances with seeds `review-<family>-1` to `review-<family>-30`: each one rendered as
+the taker sees it (or as JSON when the family has no renderer yet), with its key, the verifier's
+checks, the difficulty features, the b prior, the stratum and the sibling group. Mark each one
+pass, fail or unsure, with a note. The page is also the renderer gallery: you can work through any
+renderer and see the response it sends and how `score()` reads it.
+
+It runs only on the development server and is never part of a production build
+(`web/scripts/review-build.test.ts`). Start it, which opens http://localhost:5173/humanbench/review.html:
+
+```zsh
+cd web
+npm run review
+```
+
+Choose a family at the top, set "Per page" (1, 5, 10 or 30), and enter your name as the
+reviewer: the verdict buttons and the export stay off until you do, because every verdict
+records who gave it. Verdicts are saved in this browser (localStorage) as you go. "Export JSON" downloads
+them as a `hb.g7_review.v1` file for the bank; "Import JSON" merges such a file back in (for
+example on another machine). The file format is documented in `web/src/review/verdicts.ts`: a
+summary row per family (planned, reviewed, pass, fail, unsure) and one row per verdict (item id,
+family, generator version, seed, family_id, sibling_group, verdict, note, reviewer, UTC time;
+an imported verdict keeps its own reviewer). A family
+passes when all 30 of its instances pass; after a fail, fix the cause and audit the family again
+(a generator fix bumps its version, which gives new instance ids, so old verdicts do not carry
+over).
+
+The e2e suite checks the page in the dev server too: `playwright.config.ts` starts `vite` on
+port 4175 as well (set `E2E_DEV_PORT` if it is taken), and `web/e2e/gallery.spec.ts` checks every
+renderer with axe, at 360 px and 640 px widths, with reduced motion, and from the keyboard. Its
+two screenshot baselines (the Corsi board, the coding legend) are recorded on macOS Chromium; after
+an intended visual change, update them:
+
+```zsh
+cd web
+npx playwright test e2e/gallery.spec.ts --project=chromium --update-snapshots
+```
 
 ### Procedural families
 

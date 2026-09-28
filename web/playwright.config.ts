@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { DEV_BASE, DEV_PORT, visualGalleryUrl } from './e2e/dev-server'
+import { DEV_BASE, DEV_PORT, REVIEW_URL } from './e2e/dev-server'
 
 /**
  * Playwright + axe-core harness (ROADMAP M1.A, A3; DESIGN §13 accessibility, §14.3 M1 acceptance 4).
@@ -10,8 +10,10 @@ import { DEV_BASE, DEV_PORT, visualGalleryUrl } from './e2e/dev-server'
  * server is started each run, so a stale build is never tested; set E2E_PORT if 4174 is taken.
  * Browsers: `npm run e2e:install`. Run: `npm run e2e` (or `npm run e2e -- --project=webkit`).
  *
- * A second server, the Vite dev server on E2E_DEV_PORT (4175), serves the dev-only pages that the
- * production build leaves out, such as the visual renderer gallery (M1.13, `e2e/dev-server.ts`).
+ * A second server, the Vite dev server on E2E_DEV_PORT (default 4175), serves the dev-only pages
+ * that no production build contains (`e2e/dev-server.ts`): the visual renderer gallery
+ * (`render-visual.html`, M1.13, `e2e/render-visual.spec.ts`) and the renderer gallery / G7 review
+ * page (`review.html`, M1.13, M1.G7, `e2e/gallery.spec.ts`).
  */
 
 const PORT = Number(process.env.E2E_PORT ?? 4174)
@@ -57,9 +59,9 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
-      // Dev-only pages (import.meta.env.DEV), e.g. the visual renderer gallery (M1.13).
-      command: `npm run dev -- --host 127.0.0.1 --port ${DEV_PORT} --strictPort`,
-      url: visualGalleryUrl(),
+      // Dev-only pages (import.meta.env.DEV): render-visual.html and review.html (M1.13, M1.G7).
+      command: `npx vite --host 127.0.0.1 --port ${DEV_PORT} --strictPort`,
+      url: REVIEW_URL,
       env: { VITE_BASE: DEV_BASE },
       reuseExistingServer: false,
       timeout: 120_000,

@@ -1,0 +1,347 @@
+<!--
+  Reaction-time stimuli, simple and 4-choice (ROADMAP M1.10, M1.13, A10; DESIGN §3 row 9, §7.1,
+  §11.6, §13, §14.6 ex. 12). 3 practice trials with feedback, then the scored trials. Each trial
+  shows a fixation cross, then the target after the spec's foreperiod, drawn in the first animation
+  frame at or after the onset time (the rAF onset scheduler of `tasks/rt/timing.ts`); RT is the
+  `performance.now()` response time minus that frame's timestamp (`responseRtMs`), so a press
+  before the target is drawn is an anticipation. Keyboard mode: Space (simple) or D F J K / 1–4
+  (choice); touch mode: tap or click the position. The response is the family's `RtResponse`
+  (scored and practice trials as parallel arrays), sent once at the end of the block, just after
+  `oninputtype` reports the input type the responses came from (keyboard, mouse or touch, from
+  each tap's `pointerType`; §11.6 items 2 and 5 norm them separately).
+-->
+<script lang="ts">
+  import { flushSync, onDestroy } from 'svelte'
+  import '../common/render.css'
+  import { isOwnKey } from '../common/focus'
+  import { browserTiming, type RendererProps } from '../common/props'
+  import { afterFrames } from '../common/sequence'
+  import { createOnsetScheduler, responseRtMs, responseTimestamp, type ScheduledOnset } from '../../tasks/rt/timing'
+  import { RT_PRACTICE_TRIALS, type RtResponse, type RtSpec } from '../../tasks/rt/types'
+  import { CHOICE_KEY_LABELS, RT_EARLY_ITI_MS, RT_ITI_MS, pointerInputType, positionOfKey, responseWindowMs, type RtInputMode, type RtInputType } from './keys'
+
+  interface Props extends RendererProps<RtSpec, RtResponse> {
+    /** Fixed input mode (the session's device check); omitted = the taker chooses on the intro. */
+    readonly inputMode?: RtInputMode
+    /** Called with the control scheme (keys, or tap or click) when the block starts. */
+    readonly oninputmode?: (mode: RtInputMode) => void
+    /**
+     * Called once at the end of the block, just before `onrespond`, with the input type the
+     * responses came from: store it as the observation's `RtDevice.input_type` (§11.6: keyboard,
+     * mouse and touch are normed separately; a mouse click in tap-or-click mode is 'mouse').
+     */
+    readonly oninputtype?: (type: RtInputType) => void
+  }
+
+  let { spec, onrespond, timing, inputMode, oninputmode, oninputtype }: Props = $props()
+
+  type Phase = 'intro' | 'running' | 'ready' | 'done'
+  type Stage = 'practice' | 'main'
+  type TrialState = 'blank' | 'fixation' | 'stimulus'
+
+  const uid = $props.id()
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+  // The initial mode only; a later inputMode change does not switch a running block.
+  // svelte-ignore state_referenced_locally
+  let mode: RtInputMode = $state(inputMode ?? (coarse ? 'touch' : 'keyboard'))
+  let phase: Phase = $state('intro')
+  let stage: Stage = $state('practice')
+  let trialIdx = $state(0)
+  let trialState: TrialState = $state('blank')
+  let target: number | null = $state(null)
+  let note = $state('')
+  let root: HTMLElement | undefined = $state()
+  let stageEl: HTMLElement | undefined = $state()
+
+  const rts: (number | null)[] = []
+  const choices: (number | null)[] = []
+  const practiceRts: (number | null)[] = []
+  const practiceChoices: (number | null)[] = []
+  // PointerEvent.pointerType of each tap-or-click response, practice and scored apart.
+  const practicePointers: string[] = []
+  const scoredPointers: string[] = []
+
+  let onset: ScheduledOnset | null = null
+  let deadline: ScheduledOnset | null = null
+  let startHandle: number | null = null
+  let cancelPause: (() => void) | null = null
+
+  const t = $derived(timing ?? browserTiming())
+  const scheduler = $derived(createOnsetScheduler(t.frames))
+  const choice4 = $derived(spec.mode === 'choice4')
+  const positions = $derived(Array.from({ length: spec.n_positions }, (_, i) => i))
+  const nTrials = $derived(stage === 'practice' ? spec.practice_positions.length : spec.positions.length)
+
+  function stopTimers(): void {
+    onset?.cancel()
+    deadline?.cancel()
+    cancelPause?.()
+    if (startHandle !== null) t.frames.cancel(startHandle)
+    onset = deadline = null
+    cancelPause = null
+    startHandle = null
+  }
+
+  function runTrial(): void {
+    const fps = stage === 'practice' ? spec.practice_foreperiods_ms : spec.foreperiods_ms
+    const pos = stage === 'practice' ? spec.practice_positions : spec.positions
+    const i = trialIdx
+    const fp = fps[i]
+    const p = pos[i]
+    if (fp === undefined || p === undefined) return
+    target = null
+    trialState = 'fixation'
+    flushSync()
+    // The trial starts in the frame that draws the fixation cross; the foreperiod runs from there.
+    startHandle = t.frames.request((ts0) => {
+      startHandle = null
+      onset = scheduler.schedule(fp, ts0, (onTs) => {
+        target = p
+        trialState = 'stimulus'
+        flushSync()
+        deadline = scheduler.schedule(responseWindowMs(spec.mode), onTs, () => record(null, null))
+      })
+    })
+  }
+
+  /** Record a response to the running trial; false when no trial is waiting for one. */
+  function respond(position: number): boolean {
+    if (phase !== 'running' || trialState === 'blank' || onset === null) return false
+    const ts = responseTimestamp(t.clock)
+    const rt = responseRtMs(onset, ts)
+    record(rt, spec.mode === 'simple' ? 0 : position)
+    return true
+  }
+
+  /** The input type of this block's responses (§11.6); scored taps decide, else the practice ones. */
+  function inputType(): RtInputType {
+    if (mode === 'keyboard') return 'keyboard'
+    return pointerInputType(scoredPointers.length > 0 ? scoredPointers : practicePointers, coarse ? 'touch' : 'mouse')
+  }
+
+  function record(rt: number | null, choice: number | null): void {
+    const pos = (stage === 'practice' ? spec.practice_positions : spec.positions)[trialIdx]
+    stopTimers()
+    if (stage === 'practice') {
+      practiceRts.push(rt)
+      practiceChoices.push(choice)
+    } else {
+      rts.push(rt)
+      choices.push(choice)
+    }
+    const early = rt !== null && rt < 0
+    if (early) note = 'Too early. Wait for the target.'
+    else if (stage === 'practice') {
+      if (rt === null) note = 'No response that time.'
+      else if (choice4 && choice !== pos) note = 'That was a different position.'
+      else note = `${Math.round(rt)} ms`
+    } else note = ''
+    target = null
+    trialState = 'blank'
+    flushSync()
+    cancelPause = afterFrames(t.frames, early ? RT_EARLY_ITI_MS : RT_ITI_MS, () => next())
+  }
+
+  function next(): void {
+    cancelPause = null
+    note = ''
+    if (trialIdx + 1 < nTrials) {
+      trialIdx += 1
+      runTrial()
+      return
+    }
+    if (stage === 'practice') {
+      phase = 'ready'
+      trialState = 'blank'
+      flushSync()
+      root?.querySelector<HTMLButtonElement>('button.hb-primary')?.focus()
+      return
+    }
+    phase = 'done'
+    flushSync()
+    oninputtype?.(inputType())
+    onrespond({
+      rt_ms: [...rts],
+      choice: [...choices],
+      practice_rt_ms: [...practiceRts],
+      practice_choice: [...practiceChoices],
+    })
+  }
+
+  function begin(which: Stage): void {
+    if (which === 'practice') oninputmode?.(mode)
+    stage = which
+    trialIdx = 0
+    phase = 'running'
+    note = ''
+    flushSync()
+    stageEl?.focus()
+    runTrial()
+  }
+
+  function onkey(event: KeyboardEvent): void {
+    if (phase !== 'running' || mode !== 'keyboard' || event.repeat || !isOwnKey(root, event)) return
+    const p = positionOfKey(spec.mode, event.key)
+    if (p === null) return
+    event.preventDefault()
+    respond(p)
+  }
+
+  function ontap(event: PointerEvent, position: number): void {
+    event.preventDefault()
+    if (mode !== 'touch') return
+    const stageNow = stage
+    const pointerType = typeof event.pointerType === 'string' ? event.pointerType : ''
+    if (respond(position)) (stageNow === 'practice' ? practicePointers : scoredPointers).push(pointerType)
+  }
+
+  onDestroy(stopTimers)
+</script>
+
+<svelte:window onkeydown={onkey} />
+
+<section class="hb-render rt" bind:this={root} aria-labelledby="{uid}-title">
+  <p class="title" id="{uid}-title">{choice4 ? 'Reaction time, four positions' : 'Reaction time'}</p>
+  {#if phase === 'intro'}
+    <p class="hb-instructions">
+      {#if choice4}
+        A target will appear in one of four positions. Respond to its position as fast as you can:
+        {mode === 'keyboard' ? 'press D, F, J or K (or 1 to 4) for the positions from left to right' : 'tap or click that position'}.
+      {:else}
+        A target will appear in the box. As soon as you see it,
+        {mode === 'keyboard' ? 'press the Space bar' : 'tap or click the box'}.
+      {/if}
+      Wait for the target: pressing early does not count. First come {RT_PRACTICE_TRIALS} practice trials, then {spec.positions.length} counted trials.
+    </p>
+    {#if inputMode === undefined}
+      <fieldset class="modes">
+        <legend>Respond with</legend>
+        <label><input type="radio" name="{uid}-mode" value="keyboard" bind:group={mode} /> Keyboard</label>
+        <label><input type="radio" name="{uid}-mode" value="touch" bind:group={mode} /> Tap or click</label>
+      </fieldset>
+    {/if}
+    <button type="button" class="hb-btn hb-primary" onclick={() => begin('practice')}>Start practice</button>
+  {:else if phase === 'ready'}
+    <p class="hb-instructions">Practice done. The counted trials start now.</p>
+    <button type="button" class="hb-btn hb-primary" onclick={() => begin('main')}>Start</button>
+  {:else if phase === 'done'}
+    <p class="hb-status">Block complete. Thank you.</p>
+  {:else}
+    <p class="progress">{stage === 'practice' ? 'Practice' : 'Trial'} {trialIdx + 1} of {nTrials}</p>
+    <div class="stage" class:choice4 bind:this={stageEl} tabindex="-1">
+      <p class="fixation" aria-hidden="true">{trialState === 'fixation' ? '+' : ''}</p>
+      <div class="pads">
+        {#each positions as i (i)}
+          {#if mode === 'touch'}
+            <button
+              type="button"
+              class="pad"
+              class:on={trialState === 'stimulus' && target === i}
+              aria-label={choice4 ? `Position ${i + 1}` : 'Target box'}
+              onpointerdown={(e) => ontap(e, i)}
+            ></button>
+          {:else}
+            <div class="pad" class:on={trialState === 'stimulus' && target === i}></div>
+          {/if}
+        {/each}
+      </div>
+      {#if choice4 && mode === 'keyboard'}
+        <div class="keys" aria-hidden="true">
+          {#each CHOICE_KEY_LABELS as k (k)}<span>{k}</span>{/each}
+        </div>
+      {/if}
+    </div>
+    <p class="hb-sr-only" aria-live="assertive" aria-atomic="true">
+      {trialState === 'stimulus' && target !== null ? (choice4 ? `Target, position ${target + 1}` : 'Target') : ''}
+    </p>
+    <p class="hb-status" aria-live="polite">{note}</p>
+  {/if}
+</section>
+
+<style>
+  .rt {
+    padding: 0.5rem 0;
+  }
+
+  .title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+  }
+
+  .modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 0 0 1rem;
+    border: 2px solid var(--r-border);
+    border-radius: 0.5rem;
+  }
+
+  .modes label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2.75rem;
+  }
+
+  .progress {
+    margin: 0 0 0.5rem;
+    color: var(--r-muted);
+  }
+
+  .stage {
+    display: grid;
+    gap: 0.75rem;
+    justify-items: center;
+    max-width: 32rem;
+    padding: 1rem;
+    border: 2px solid var(--r-border);
+    border-radius: 0.75rem;
+    background: var(--r-surface);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .fixation {
+    margin: 0;
+    height: 2.5rem;
+    font-size: 2.5rem;
+    line-height: 1;
+    font-weight: 700;
+  }
+
+  .pads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .stage:not(.choice4) .pads {
+    max-width: 12rem;
+  }
+
+  .pad {
+    aspect-ratio: 1;
+    min-height: 3rem;
+    padding: 0;
+    border: 3px solid var(--r-border);
+    border-radius: 0.75rem;
+    background: var(--r-bg);
+    touch-action: manipulation;
+  }
+
+  .pad.on {
+    background: radial-gradient(circle, var(--r-fg) 0 42%, var(--r-bg) 43%);
+    border-color: var(--r-fg);
+  }
+
+  .keys {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    width: 100%;
+    text-align: center;
+    font-weight: 600;
+  }
+</style>
