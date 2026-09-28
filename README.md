@@ -62,8 +62,8 @@ Each procedural task family lives in `web/src/tasks/<family>/` and implements th
 `web/src/tasks/family.ts` (ROADMAP A1, A11): a seeded generator, a verifier and a scorer, tested
 with the shared property suite in `web/src/tasks/testing.ts` over 10,000 instances (with the
 family's own key-leak check, `specLeaksKey`, or a documented waiver). The families registered
-in `web/src/tasks/registry.ts` are rotation, matrices, series, span_fwd, span_bwd, corsi, rt,
-coding and reading; `registry.test.ts` runs every registered family through the property suite
+in `web/src/tasks/registry.ts` are rotation, matrices, series, quant, span_fwd, span_bwd, corsi,
+rt, coding and reading; `registry.test.ts` runs every registered family through the property suite
 at n = 500. The private bank repo re-verifies at least 1,000 TS instances of every family with
 its Python twin. Dump them into the sibling bank checkout (`../humanbench-bank`, or
 `$HB_BANK_DIR`) with:
@@ -104,7 +104,8 @@ skip and name the path they looked at.
 The reading passages are authored in `web/src/tasks/reading/passages.json`, with evidence spans
 and option rationales that only the verifier and tests read (ROADMAP A14). The app ships
 `passages.render.json`, the same bank without those fields. After editing `passages.json`,
-regenerate it (`npm test` fails until you do), then copy `passages.json` to the bank:
+regenerate it (`npm test` fails until you do), then copy `passages.json` to the bank (`uv run hb
+sync passages` in the bank does the same copy):
 
 ```zsh
 cd web
