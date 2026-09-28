@@ -5,7 +5,7 @@
  */
 
 import type { Observation } from '../../engine'
-import type { ScoreResult } from '../family'
+import type { ItemScore } from '../family'
 import type { SpanItem, SpanResponse } from './config'
 import { advanceSpan, type SpanOutcome, type SpanProtocol, type SpanStatus } from './protocol'
 
@@ -43,7 +43,7 @@ export function spanObservation(item: SpanItem, outcome: SpanOutcome): Observati
  * `score()` of a span block: `correct` is always null (a block, §8); `value` is the GRM category
  * of a finished block and is omitted while the block is unfinished (no observation yet).
  */
-export function scoreSpan(item: SpanItem, responses: SpanResponse): ScoreResult {
+export function scoreSpan(item: SpanItem, responses: SpanResponse): ItemScore {
   const status = runBlock(item, responses)
   return status.finished ? { correct: null, value: status.outcome.category } : { correct: null }
 }

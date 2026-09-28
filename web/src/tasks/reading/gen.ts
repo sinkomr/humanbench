@@ -10,7 +10,7 @@ import type { BuildContext, BuiltItem } from '../family'
 import type { Stratum } from '../ids'
 import { PASSAGES } from './bank'
 import { readingDifficulty, readingExpectedTimeS, readingItemParams, readingStratum } from './prior'
-import type { PassageRecord, ReadingKey, ReadingSpec, SpecQuestion } from './types'
+import type { ReadingKey, ReadingSpec, RenderPassage, SpecQuestion } from './types'
 
 /** Every pre-1928 passage has b = 0.4, stratum 3 (§6.ii bands); the family's only stratum. */
 export const READING_STRATUM: Stratum = 3
@@ -25,24 +25,25 @@ export function readingStructure(passageId: string): { passage_id: string } {
   return { passage_id: passageId }
 }
 
-/** Build the block for bank passage `p` with option orders drawn from `rng`. */
-export function buildFromPassage(p: PassageRecord, rng: Rng): BuiltItem<ReadingSpec, ReadingKey> {
+/**
+ * Build the block for bank passage `p` with option orders drawn from `rng`. The key holds only
+ * the keyed positions: evidence spans are authoring data (`passages.json`), not runtime data (A14).
+ */
+export function buildFromPassage(p: RenderPassage, rng: Rng): BuiltItem<ReadingSpec, ReadingKey> {
   const questions: SpecQuestion[] = []
   const indices: number[] = []
-  const evidence: string[] = []
   for (const q of p.questions) {
     // order[j] = the authored index of the option shown at position j.
     const order = rng.shuffle(q.options.map((_, i) => i))
     questions.push({ id: q.id, stem: q.stem, options: order.map((i) => q.options[i] as string) })
     indices.push(order.indexOf(q.key_index))
-    evidence.push(q.evidence_span)
   }
   const difficulty = readingDifficulty(p)
   const params = readingItemParams(difficulty.b_prior)
   return {
     stratum: readingStratum(difficulty.b_prior),
     spec: { passage_id: p.id, paragraphs: p.paragraphs, word_count: p.word_count, source: p.source, questions },
-    key: { indices, evidence },
+    key: { indices },
     structural_params: readingStructure(p.id),
     difficulty,
     expected_time_s: readingExpectedTimeS(p.word_count, params.d, questions),
@@ -55,7 +56,7 @@ export function buildReading(rng: Rng, ctx: BuildContext): BuiltItem<ReadingSpec
   if (ctx.stratum !== undefined && ctx.stratum !== READING_STRATUM) {
     throw new RangeError(`reading blocks are stratum ${READING_STRATUM}, not ${ctx.stratum}`)
   }
-  const p = PASSAGES[rng.int(0, PASSAGES.length - 1)] as PassageRecord
+  const p = PASSAGES[rng.int(0, PASSAGES.length - 1)] as RenderPassage
   const built = buildFromPassage(p, rng)
   if (built.stratum !== READING_STRATUM) throw new Error(`reading: passage ${p.id} is not in stratum ${READING_STRATUM}`)
   return built

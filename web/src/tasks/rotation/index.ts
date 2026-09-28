@@ -15,6 +15,9 @@
  *   `spec.ts`: the wire types and the `iso_v1` camera.
  * - Python twin: the bank's `hb.gen.rotation`, which verifies `golden/ts_dumps/rotation.json`
  *   (`npm run dump:families -- --module src/tasks/rotation/index.ts --family rotation --n 1000 --bank`).
+ *
+ * generatorVersion 1.1.0: `time_limit_s` 60 → 180, the shared power-item cap (§13,
+ * `POWER_TIME_LIMIT_S`); content otherwise unchanged from 1.0.0.
  */
 
 import { defineFamily } from '../family'
@@ -28,7 +31,7 @@ export const rotation = defineFamily<RotationSpec, RotationKey, RotationResponse
   name: 'rotation',
   axis: 'SPA',
   facet: '3d_rotation',
-  generatorVersion: '1.0.0',
+  generatorVersion: '1.1.0',
   itemType: 'mc_image_spec',
   strata: ROTATION_STRATA,
   build: buildRotation,

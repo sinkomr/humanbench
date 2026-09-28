@@ -2,16 +2,19 @@
  * The coding scoring parity dump (`synthetic.ts`, A1/A17): what it covers, and a copy check
  * that the bank's `golden/ts_dumps/coding_scores.json` is exactly what this repo produces now
  * (skipped when the bank checkout is absent, e.g. in CI). Refresh with
- * `npx tsx src/tasks/coding/dump-scores.ts --n 1000 --bank` from `web/`.
+ * `npm run dump:coding-scores -- --n 1000 --bank` from `web/`.
  */
 
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CODING_SEQUENCE_LENGTH, coding, codingOutcome } from '.'
-import { bankDumpsDir, nodeFs } from './node-io'
-import { DUMP_STREAMS, SCORE_DUMP_FILE, buildScoreDump, serializeScoreDump, type ScoreDump } from './synthetic'
+import { CODING_SEQUENCE_LENGTH, coding, codingOutcome } from '../src/tasks/coding'
+import { DUMP_STREAMS, SCORE_DUMP_FILE, buildScoreDump, serializeScoreDump, type ScoreDump } from '../src/tasks/coding/synthetic'
+import { CODING_SCORES_USAGE, main, parseCodingScoresArgs } from './dump-coding-scores'
+import { UsageError, bankDumpsDir } from './dump-lib'
 
-const fs = await nodeFs()
-const path = `${await bankDumpsDir()}${SCORE_DUMP_FILE}`
+const path = join(bankDumpsDir(), SCORE_DUMP_FILE)
 const present = fs.existsSync(path)
 
 describe('coding scoring parity dump (M1.11, A1, A17)', () => {
@@ -55,6 +58,30 @@ describe('coding scoring parity dump (M1.11, A1, A17)', () => {
     const text = fs.readFileSync(path, 'utf8')
     const { count } = JSON.parse(text) as { count: number }
     expect(count).toBeGreaterThanOrEqual(1_000)
-    expect(text === serializeScoreDump(buildScoreDump(count)), 'stale: npx tsx src/tasks/coding/dump-scores.ts --n 1000 --bank').toBe(true)
+    expect(text === serializeScoreDump(buildScoreDump(count)), 'stale: npm run dump:coding-scores -- --n 1000 --bank').toBe(true)
+  })
+})
+
+describe('npm run dump:coding-scores (the CLI in scripts/, A17)', () => {
+  const env = { HB_BANK_DIR: '/tmp/some-bank' }
+
+  it('parses --n and exactly one of --out / --bank', () => {
+    expect(parseCodingScoresArgs(['--', '--n', '5', '--out', 'x.json'], '/work', env)).toEqual({ n: 5, out: '/work/x.json' })
+    expect(parseCodingScoresArgs(['--bank'], '/work', env)).toEqual({ n: 1000, out: join('/tmp/some-bank', 'golden', 'ts_dumps', SCORE_DUMP_FILE) })
+    for (const bad of [[], ['--bank', '--out', 'x'], ['--n', '0', '--bank'], ['--n', '1.5', '--bank'], ['--what']]) {
+      expect(() => parseCodingScoresArgs(bad, '/work', env), bad.join(' ')).toThrow(UsageError)
+    }
+  })
+
+  it('writes exactly the serialised dump', () => {
+    const dir = fs.mkdtempSync(join(fs.realpathSync(os.tmpdir()), 'hb-coding-scores-'))
+    try {
+      expect(main(['--n', '4', '--out', 'out.json'], dir, env)).toBe(0)
+      expect(fs.readFileSync(join(dir, 'out.json'), 'utf8')).toBe(serializeScoreDump(buildScoreDump(4)))
+      expect(main(['--bogus'], dir, env)).toBe(2)
+      expect(CODING_SCORES_USAGE).toContain('--bank')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

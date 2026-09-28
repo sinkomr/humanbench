@@ -22,7 +22,7 @@
  */
 
 import type { Stratum } from '../ids'
-import { ICAR_ANCHOR_B, SIGMA_B_DEFAULT, clampPrior, linearB, stratumOfB, type LinearPriorModel } from '../priors'
+import { ICAR_ANCHOR_B, POWER_TIME_LIMIT_S, SIGMA_B_DEFAULT, clampPrior, linearB, stratumOfB, type LinearPriorModel } from '../priors'
 import { allRuleSets, nonConstantRules, type RuleSet } from './grammar'
 
 export const MATRIX_PRIOR: LinearPriorModel = Object.freeze({
@@ -42,7 +42,8 @@ export const MATRIX_PROVENANCE =
 
 export const EXPECTED_TIME_BASE_S = 30
 export const EXPECTED_TIME_PER_RULE_S = 10
-export const TIME_LIMIT_S = 180
+/** Hard time limit per item: the shared power-item cap (§13, {@link POWER_TIME_LIMIT_S}). */
+export const TIME_LIMIT_S = POWER_TIME_LIMIT_S
 
 /** Named inputs of the v0 prior (`difficulty.features`). */
 export interface MatrixFeatures {

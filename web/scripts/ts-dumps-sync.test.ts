@@ -41,7 +41,8 @@ const SERIES_ANALYSIS_REFRESH = `npx tsx -e "import('./src/tasks/series/analysis
  * (relative to `web/`) that fails when the bank copy is stale.
  */
 const PARITY_FILES: Readonly<Record<string, string>> = {
-  'coding_scores.json': 'src/tasks/coding/scores-dump.test.ts',
+  'coding_scores.json': 'scripts/coding-scores-dump.test.ts',
+  'rt_scores.json': 'scripts/rt-scores-dump.test.ts',
   'series.analysis.json': 'scripts/ts-dumps-sync.test.ts',
 }
 

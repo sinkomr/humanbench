@@ -53,7 +53,11 @@ export interface PolycubeView {
 
 export interface RotationSpec {
   readonly target: PolycubeView
-  /** Four options in display order: the target rotated, its mirror image, a one-cube-moved variant and that variant's mirror image. */
+  /**
+   * The four options, in a seeded shuffled display order (the key is the position of the target
+   * rotated): the target rotated, its mirror image, a one-cube-moved variant and that variant's
+   * mirror image, in no fixed order.
+   */
   readonly options: readonly PolycubeView[]
   readonly camera: typeof CAMERA_ISO_V1
 }

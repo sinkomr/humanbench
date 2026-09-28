@@ -4,7 +4,7 @@
  * score 0. No partial credit: numeric entry is 2PL (A9).
  */
 
-import type { ItemInstance, ScoreResult } from '../family'
+import type { ItemInstance, ItemScore } from '../family'
 import { Fraction } from './fraction'
 import type { QuantKey, QuantSpec } from './gen'
 import { parseEntry, withinTolerance } from './numeric'
@@ -12,7 +12,7 @@ import { parseEntry, withinTolerance } from './numeric'
 /** What the person typed. */
 export type QuantResponse = string
 
-export function scoreQuant(item: ItemInstance<QuantSpec, QuantKey>, response: QuantResponse): ScoreResult {
+export function scoreQuant(item: ItemInstance<QuantSpec, QuantKey>, response: QuantResponse): ItemScore {
   const entry = parseEntry(response)
   const target = Fraction.parseCanonical(item.key.value)
   if (entry === null || target === null) return { correct: 0 }

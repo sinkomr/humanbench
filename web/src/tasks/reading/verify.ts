@@ -1,8 +1,9 @@
 /**
  * Verifier of the `reading` family (ROADMAP M1.12, A14; DESIGN §4.1 G2/G3). Two layers:
  *
- * 1. {@link passageChecks}: the authoring rules of one passage, applied both to the bank records
- *    ({@link verifyPassage}, {@link bankProblems}) and to the passage an item carries:
+ * 1. {@link passageChecks}: the authoring rules of one passage, applied both to the authored
+ *    records (`verifyPassage` / `bankProblems` in `authoring.ts`) and to the passage an item
+ *    carries:
  *    - `id_valid`: lowercase kebab-case id;
  *    - `paragraphs_clean`: ≥ 1 paragraph, each in the allowed charset, no tabs/newlines/double spaces;
  *    - `no_boilerplate`: no Gutenberg header, footer, licence or credit text (`BOILERPLATE_RE`);
@@ -16,15 +17,16 @@
  *      source span (offsets) is at least as long as the stored text (it only loses whitespace);
  *    - `three_questions`, `question_ids_valid` (`<id>#q1..3`), `stems_clean` (ending in "?");
  *    - `four_options`, `options_clean`, `options_distinct` (case- and space-insensitive);
- *    - `key_in_range`: every key index is an integer 0–3;
- *    - `evidence_in_passage`: every evidence span has ≥ 3 words, no newline, and is a verbatim
- *      substring of the passage text.
- *    Bank records also need `rationales_complete` (one clean line per option).
+ *    - `key_in_range`: every key index is an integer 0–3.
+ *    Authored records also need `evidence_in_passage` (every evidence span has ≥ 3 words, no
+ *    newline, and is a verbatim substring of the passage text) and `rationales_complete` (one
+ *    clean line per option); those fields exist only in `passages.json`, never in the runtime
+ *    bank or an item (A14), so `authoring.ts` checks them.
  * 2. {@link verifyReading}: an item instance. The passage checks run on the item's own content
- *    (spec + key), and the item must match the bank: `passage_known`, `spec_matches_bank`,
- *    `options_match_bank` (a permutation of the authored options), `key_shape` (exactly
- *    `indices` and `evidence`, one per question), `key_matches_bank` (the keyed option and
- *    evidence are the authored ones), plus `params_match`, `prior_matches`, `stratum_matches`,
+ *    (spec + key), and the item must match the runtime bank: `passage_known`,
+ *    `spec_matches_bank`, `options_match_bank` (a permutation of the authored options),
+ *    `key_shape` (exactly `indices`, one per question), `key_matches_bank` (the keyed option is
+ *    the authored one), plus `params_match`, `prior_matches`, `stratum_matches`,
  *    `structure_matches` and `expected_time_matches`. The bank's Python twin
  *    (`hb.gen.reading`) implements the same check names independently.
  */
@@ -32,7 +34,7 @@
 import type { JsonValue } from '../../engine'
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
-import { passageById, PASSAGES } from './bank'
+import { passageById } from './bank'
 import { READING_OPTIONS, READING_QUESTIONS, READING_STRATUM, readingStructure } from './gen'
 import {
   NORM_WPM,
@@ -45,7 +47,7 @@ import {
   readingStratum,
 } from './prior'
 import { BOILERPLATE_RE, countPassageWords, isCleanLine, optionForm, passageText } from './text'
-import type { PassageRecord, PassageSource, ReadingKey, ReadingSpec } from './types'
+import type { PassageSource, ReadingKey, ReadingSpec } from './types'
 
 /** Inclusive word-count range of a passage (§14.6 example 13: ~350 words). */
 export const MIN_WORDS = 330
@@ -66,7 +68,6 @@ export interface PassageUnderTest {
     readonly stem: unknown
     readonly options: unknown
     readonly key_index: unknown
-    readonly evidence_span: unknown
   }[]
 }
 
@@ -77,7 +78,8 @@ const SHA256_RE = /^[0-9a-f]{64}$/
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0
 const isNat = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
+/** A JSON array of strings. */
+export const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 
 /** A real calendar date written YYYY-MM-DD (proleptic Gregorian; no clock involved). */
 function isIsoDate(s: unknown): boolean {
@@ -158,53 +160,12 @@ export function passageChecks(p: PassageUnderTest): Record<string, boolean> {
     options_clean: optionLists.every((o) => o !== null && o.every(isCleanLine)),
     options_distinct: optionLists.every((o) => o !== null && new Set(o.map(optionForm)).size === o.length),
     key_in_range: qs.every((q) => Number.isInteger(q.key_index) && (q.key_index as number) >= 0 && (q.key_index as number) < READING_OPTIONS),
-    evidence_in_passage:
-      parasOk &&
-      qs.every(
-        (q) =>
-          typeof q.evidence_span === 'string' &&
-          !q.evidence_span.includes('\n') &&
-          countPassageWords(q.evidence_span) >= 3 &&
-          text.includes(q.evidence_span),
-      ),
   }
 }
 
-function malformed(e: unknown): VerifyResult {
+/** A failed verdict for input that made a check throw. */
+export function malformed(e: unknown): VerifyResult {
   return { ok: false, reason: `malformed: ${e instanceof Error ? e.message : String(e)}`, checks: {} }
-}
-
-/** Verify one authored bank record: {@link passageChecks} plus `rationales_complete`. */
-export function verifyPassage(p: PassageRecord): VerifyResult {
-  try {
-    const qs = Array.isArray(p.questions) ? p.questions : []
-    return verdict({
-      ...passageChecks(p),
-      rationales_complete: qs.every(
-        (q) => isStringArray(q.option_rationales) && q.option_rationales.length === READING_OPTIONS && q.option_rationales.every(isCleanLine),
-      ),
-    })
-  } catch (e) {
-    return malformed(e)
-  }
-}
-
-/** Every problem with a whole bank (empty = valid): per-passage verdicts, unique ids, size. */
-export function bankProblems(passages: readonly PassageRecord[] = PASSAGES): string[] {
-  const out: string[] = []
-  if (passages.length < MIN_PASSAGES) out.push(`the bank has ${passages.length} passages; need ≥ ${MIN_PASSAGES}`)
-  const ids = new Set<string>()
-  const texts = new Set<string>()
-  for (const p of passages) {
-    const v = verifyPassage(p)
-    if (!v.ok) out.push(`${String(p.id)}: ${v.reason}`)
-    if (ids.has(p.id)) out.push(`duplicate passage id ${p.id}`)
-    ids.add(p.id)
-    const t = Array.isArray(p.paragraphs) ? passageText(p.paragraphs) : ''
-    if (texts.has(t)) out.push(`${p.id}: duplicate passage text`)
-    texts.add(t)
-  }
-  return out
 }
 
 /** The passage an item carries, in the shape {@link passageChecks} reads (key from `key`). */
@@ -222,7 +183,6 @@ function passageOfItem(item: ItemInstance<ReadingSpec, ReadingKey>): PassageUnde
       stem: q.stem,
       options: q.options,
       key_index: Array.isArray(key.indices) ? key.indices[i] : undefined,
-      evidence_span: Array.isArray(key.evidence) ? key.evidence[i] : undefined,
     })),
   }
 }
@@ -243,12 +203,7 @@ export function verifyReading(item: ItemInstance<ReadingSpec, ReadingKey>): Veri
     if (!isObj(spec) || !isObj(key) || !Array.isArray(spec.questions)) return verdict({ spec_well_formed: false })
     const bank = typeof spec.passage_id === 'string' ? passageById(spec.passage_id) : undefined
     const qs = spec.questions
-    const keyShape =
-      Array.isArray(key.indices) &&
-      Array.isArray(key.evidence) &&
-      key.indices.length === qs.length &&
-      key.evidence.length === qs.length &&
-      Object.keys(key).sort().join(',') === 'evidence,indices'
+    const keyShape = Array.isArray(key.indices) && key.indices.length === qs.length && Object.keys(key).join(',') === 'indices'
 
     let specMatches = false
     let optionsMatch = false
@@ -273,8 +228,7 @@ export function verifyReading(item: ItemInstance<ReadingSpec, ReadingKey>): Veri
             b !== undefined &&
             Number.isInteger(k) &&
             isStringArray(q.options) &&
-            q.options[k as number] === b.options[b.key_index] &&
-            key.evidence[i] === b.evidence_span
+            q.options[k as number] === b.options[b.key_index]
           )
         })
     }

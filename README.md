@@ -85,8 +85,8 @@ dumps, the toy family dump, the coding and rt scoring parity dumps and the serie
 cd web
 npm run dump:families -- --all --n 1000 --bank
 npm run dump:families -- --module src/tasks/_example/index.ts --family example --n 1000 --bank
-npx tsx src/tasks/coding/dump-scores.ts --n 1000 --bank
-npx tsx scripts/dump-rt-scores.ts --n 1000 --bank
+npm run dump:coding-scores -- --n 1000 --bank
+npm run dump:rt-scores -- --n 1000 --bank
 npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ../../humanbench-bank/golden/ts_dumps/series.analysis.json
 ```
 
@@ -96,9 +96,27 @@ When the bank checkout is present, `npm test` fails if any of these copies is st
 `web/scripts/ts-dumps-sync.test.ts` requires a dump of every registered family (and the toy
 family), checks each dump's header, item count, seed order, items and bytes, checks the series
 analysis fixture, and fails on any file in `golden/ts_dumps/` that nothing here checks;
-`web/src/tasks/coding/scores-dump.test.ts` checks the coding parity dump, and
+`web/scripts/coding-scores-dump.test.ts` and `web/scripts/rt-scores-dump.test.ts` check the
+coding and rt parity dumps, and
 `web/scripts/sync-golden.test.ts` the golden fixtures. Without the bank (as in CI) these checks
 skip and name the path they looked at.
+
+The reading passages are authored in `web/src/tasks/reading/passages.json`, with evidence spans
+and option rationales that only the verifier and tests read (ROADMAP A14). The app ships
+`passages.render.json`, the same bank without those fields. After editing `passages.json`,
+regenerate it (`npm test` fails until you do), then copy `passages.json` to the bank:
+
+```zsh
+cd web
+npm run sync:reading-render
+cp src/tasks/reading/passages.json ../../humanbench-bank/src/hb/gen/reading/passages.json
+```
+
+App code imports the task helpers from `web/src/tasks` (the barrel) and the families only from
+`web/src/tasks/registry.ts`. `web/scripts/bundle.test.ts` builds the app and both entry points
+and fails if a bundle carries reading authoring data. `web/scripts/timing-lint.test.ts` fails on
+any wall-clock read under `web/src` (`Date.now`, argless `new Date()`) and on unseeded
+randomness in `web/src/engine` and `web/src/tasks`: timing uses `performance.now()`.
 
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 

@@ -14,7 +14,7 @@ const N_OBS = 150
 const RUNS = 20
 const WARMUP = 5
 
-/** A simulated full session: 150 observations spread over all 17 axes, kind by the axis's model. */
+/** A simulated full session: 150 observations spread over all 17 axes, kind by the axis's default model. */
 function session(seed: string): Observation[] {
   const rng = createRng(seed)
   const theta = AXIS_CODES.map(() => rng.normal())
@@ -24,7 +24,7 @@ function session(seed: string): Observation[] {
     const t = theta[k]!
     const a = 0.7 + 1.5 * rng.next()
     const b = rng.normal(0, 1.2)
-    switch (AXES[k]!.modelKind) {
+    switch (AXES[k]!.defaultModelKind) {
       case 'grm': {
         const bs = [b - 0.8, b, b + 0.8]
         const probs = grmProbs(t, a, bs)
@@ -38,13 +38,12 @@ function session(seed: string): Observation[] {
         const d = rng.normal(0, 0.5)
         return { kind: 'gaussian', axis, lam, d, sigma: 0.5, x: lam * t + d + rng.normal(0, 0.5) }
       }
-      default: {
-        if (axis === 'SPA') {
-          const c = 0.25 // 4-option items (A9)
-          return { kind: '3pl', axis, a, b, c, y: rng.next() < c + (1 - c) * logistic(a * (t - b)) ? 1 : 0 }
-        }
-        return { kind: '2pl', axis, a, b, y: rng.next() < logistic(a * (t - b)) ? 1 : 0 }
+      case '3pl': {
+        const c = 0.25 // 4-option items (A9)
+        return { kind: '3pl', axis, a, b, c, y: rng.next() < c + (1 - c) * logistic(a * (t - b)) ? 1 : 0 }
       }
+      default:
+        return { kind: '2pl', axis, a, b, y: rng.next() < logistic(a * (t - b)) ? 1 : 0 }
     }
   })
 }
