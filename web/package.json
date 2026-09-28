@@ -28,6 +28,8 @@
     "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tsconfig/svelte": "^5.0.8",
+    "@types/d3-scale": "^4.0.9",
+    "@types/d3-shape": "^3.2.0",
     "@types/node": "^24.13.3",
     "@types/three": "^0.186.0",
     "ajv": "^8.20.0",
@@ -41,6 +43,8 @@
     "vitest": "^5.0.2"
   },
   "dependencies": {
+    "d3-scale": "^4.0.2",
+    "d3-shape": "^3.2.0",
     "three": "^0.186.1"
   }
 }

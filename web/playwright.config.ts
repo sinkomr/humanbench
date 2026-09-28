@@ -5,7 +5,8 @@ import { DEV_BASE, DEV_PORT, REVIEW_URL } from './e2e/dev-server'
  * Playwright + axe-core harness (ROADMAP M1.A, A3; DESIGN §13 accessibility, §14.3 M1 acceptance 4).
  *
  * Every run builds the app and serves the production build with `vite preview` under the Pages base
- * path `/humanbench/` (VITE_BASE is pinned here, so a local `.env` cannot change it), then runs
+ * path `/humanbench/` (VITE_BASE is pinned here, so a local `.env` cannot change it), plus the
+ * dev-only routes (VITE_HB_DEV_ROUTES=1, M1.16), then runs
  * `e2e/*.spec.ts` in desktop Chromium, desktop WebKit and an emulated iPhone 13 (WebKit). A fresh
  * server is started each run, so a stale build is never tested; set E2E_PORT if 4174 is taken.
  * Browsers: `npm run e2e:install`. Run: `npm run e2e` (or `npm run e2e -- --project=webkit`).
@@ -52,7 +53,9 @@ export default defineConfig({
     {
       command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
       url: `${ORIGIN}${BASE}`,
-      env: { VITE_BASE: BASE },
+      // VITE_HB_DEV_ROUTES=1 also compiles in the dev-only routes (src/dev/, e.g. #/dev/blob, M1.16)
+      // so their pages can be tested; the Pages and CI builds leave them out (scripts/dev-routes.test.ts).
+      env: { VITE_BASE: BASE, VITE_HB_DEV_ROUTES: '1' },
       reuseExistingServer: false,
       timeout: 120_000,
       stdout: 'ignore',

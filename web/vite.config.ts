@@ -28,6 +28,11 @@ function schemaAssets(): Plugin {
   }
 }
 
+/** Whether the build includes the dev-only routes of src/dev/ (see `define` below; M1.16). */
+export function devRoutesEnabled(mode: string, env: Record<string, string>): boolean {
+  return mode !== 'production' || env.VITE_HB_DEV_ROUTES === '1'
+}
+
 // The GitHub Pages project site lives at /humanbench/ (ROADMAP A3).
 // Override with VITE_BASE (shell env or .env*), e.g. VITE_BASE=/ for a custom domain.
 // The Pages workflow sets it from actions/configure-pages, so a custom domain works too.
@@ -37,6 +42,9 @@ export default defineConfig(({ mode }) => {
   return {
     base,
     plugins: [svelte(), schemaAssets()],
+    // Dev-only routes (src/dev/, e.g. the M1.16 blob demo): on in dev and tests, and in a build
+    // with VITE_HB_DEV_ROUTES=1 (the Playwright e2e build); a plain production build drops them.
+    define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)) },
     test: {
       // A safety net above vitest's 5 s default, so a busy machine (e.g. the bank's pytest running
       // alongside) does not fail seconds-long tests; heavy tests still set their own timeouts.
