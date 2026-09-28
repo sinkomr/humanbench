@@ -30,13 +30,18 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **Nothing is in flight.** The wf2 batch is merged, repaired, verified and pushed.
-- **Next batch (wf3):**
-  - M1.12 A14 closure: rewrite 4 questions, then a third solve round.
-  - M1.F2 contract v2.
-  - Guardrails: M1.20 and M1.A.
-  - M1.14 selector, M1.17 save file and M1.19 integrity flags.
-  - M3.1 item schema, and M4.1 and M4.2 (bank).
+- **In flight: wf3** (`wf_dc795869-654`, started 2026-09-27 21:20). Its chains each run in a worktree on branch `wf3/<name>`:
+  - `contract2`: M1.F2, then M1.P.
+  - `reading3`: M1.12 A14 closure, with solve rounds 3–5 and solve records in the bank.
+  - `guard`: M1.20, then M1.A.
+  - `selector`: M1.14.
+  - `save`: M1.17.
+  - `integrity`: M1.19.
+  - `itemschema`: M3.1.
+  - `calib`: M4.1, then M4.2.
+
+  After the chains, the merger merges them into `dev`, then comes the audit (acceptance and integration lenses), then repair.
+- **If interrupted:** check `git branch --list 'wf3/*'` and `git worktree list` in both repos. Finish each chain on its own branch. Then merge into `dev` in this order: contract2, reading3, guard, integrity, save, selector, itemschema, calib. When merging, adapt `selector` to contract v2. Regenerate the dumps, then run all gates plus e2e. For the bank, use `-n 8`.
 
 ## Needs you (blocked on the user)
 
@@ -67,4 +72,4 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
   - 3 reading questions were rewritten.
   - The verifier found no regressions. Gates: pub 1119 tests, bank 1304 tests, with 0 cross-check disagreements.
   - Ticked M1.2b–M1.11. M1.12 and M1.P are partial. M1.F2 was added for the deferred contract gaps.
-
+- 2026-09-27 21:15: Pushed `dev` to `main` in both repos. Pub CI and Pages are green. Bank CI had been red since M1.2 because Rich forces ANSI colour on GitHub Actions; this is fixed in 2bca38c.
