@@ -10,12 +10,16 @@
  * - nothing animates under prefers-reduced-motion (the renderers have no motion at all);
  * - rotation: five non-blank figures per item, the options all different, identical pixels on a
  *   reload (fixed camera and lighting), ONE WebGL context however many figures and items, and that
- *   context freed when the items unmount;
+ *   context freed when the items unmount; without WebGL, the notice, locked options, the
+ *   `onunavailable` report instead of an onset, and no axe issues (a browser build without WebGL
+ *   skips the tests that need the figures drawn);
  * - matrices: a screenshot comparison where a baseline exists for the platform (SVG is stable).
  */
 
 import { existsSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
+import { CONFIRM_LABEL } from '../src/render/choice/keys'
+import { ROTATION_UNAVAILABLE } from '../src/render/rotation/copy'
 import { expectNoSeriousAxe } from './axe'
 import { visualGalleryUrl } from './dev-server'
 
@@ -23,20 +27,33 @@ const FAMILIES = ['rotation', 'matrices'] as const
 type Family = (typeof FAMILIES)[number]
 const OPTIONS: Record<Family, number> = { rotation: 4, matrices: 6 }
 
-/** Open the gallery and wait until every item reports its onset. */
-async function openGallery(page: Page, query: Record<string, string | number>): Promise<void> {
-  await page.goto(visualGalleryUrl(query))
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-  const n = Number(query.count ?? 1)
-  for (let i = 0; i < n; i++) await expect(page.locator(`#shown-${i}`)).toHaveText('Shown', { timeout: 30_000 })
-}
+const webglByPage = new WeakMap<Page, boolean>()
 
-/** True if this browser build can create a WebGL context at all. */
+/**
+ * True if this browser build can create a WebGL context at all. Probed once per page (the probe
+ * itself creates a context, which the drawing test's context count must not see twice).
+ */
 async function hasWebGL(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
+  const known = webglByPage.get(page)
+  if (known !== undefined) return known
+  const has = await page.evaluate(() => {
     const c = document.createElement('canvas')
     return Boolean(c.getContext('webgl2') ?? c.getContext('webgl'))
   })
+  webglByPage.set(page, has)
+  return has
+}
+
+/**
+ * Open the gallery and wait until every item reports its onset. Rotation items are drawn only
+ * with WebGL (options locked until then), so a browser build without it skips the test.
+ */
+async function openGallery(page: Page, query: Record<string, string | number>): Promise<void> {
+  await page.goto(visualGalleryUrl(query))
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  if (query.family === 'rotation') test.skip(!(await hasWebGL(page)), 'this browser build has no WebGL (the fallback has its own test)')
+  const n = Number(query.count ?? 1)
+  for (let i = 0; i < n; i++) await expect(page.locator(`#shown-${i}`)).toHaveText('Shown', { timeout: 30_000 })
 }
 
 /** Horizontal overflow of the page in CSS px (0 = no horizontal scrolling). */
@@ -150,7 +167,7 @@ test.describe('rotation renderer drawing (Three.js)', () => {
       } as typeof orig
     })
     await page.goto(visualGalleryUrl({ family: 'rotation', seed: 'e2e-draw', count: 2 }))
-    test.skip(!(await hasWebGL(page)), 'this browser build has no WebGL (the text fallback is unit-tested)')
+    test.skip(!(await hasWebGL(page)), 'this browser build has no WebGL (the fallback has its own test)')
     await openGallery(page, { family: 'rotation', seed: 'e2e-draw', count: 2 })
 
     const snapshot = (): Promise<{ url: string; ink: number }[]> =>
@@ -183,6 +200,32 @@ test.describe('rotation renderer drawing (Three.js)', () => {
     await page.getByRole('button', { name: 'Remove items' }).click()
     await expect(page.locator('#removed')).toBeVisible()
     await expect.poll(() => page.evaluate(() => (window as unknown as { __webgl: { lost: number } }).__webgl.lost)).toBe(1)
+  })
+})
+
+test.describe('rotation renderer without WebGL', () => {
+  test('shows the notice and text alternatives, keeps the options locked, reports unavailable, and passes axe', async ({ page }) => {
+    // A browser (or a blocked GPU) without WebGL: every WebGL context request fails.
+    await page.addInitScript(() => {
+      const orig = HTMLCanvasElement.prototype.getContext
+      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+        if (/webgl/i.test(type)) return null
+        return (orig as (this: HTMLCanvasElement, t: string, ...r: unknown[]) => RenderingContext | null).call(this, type, ...rest)
+      } as typeof orig
+    })
+    await page.goto(visualGalleryUrl({ family: 'rotation', seed: 'e2e-nogl-1' }))
+    await expect(page.locator('#shown-0')).toHaveText('Unavailable', { timeout: 30_000 })
+    await expect(page.locator('.rotation').getByRole('status')).toHaveText(ROTATION_UNAVAILABLE)
+    await expect(page.getByRole('img', { name: /^Target: a 3D object made of \d+ cubes/ })).toBeVisible()
+    const radios = page.getByRole('radio')
+    await expect(radios).toHaveCount(4)
+    for (const r of await radios.all()) await expect(r).toBeDisabled()
+    await expect(page.getByRole('button', { name: CONFIRM_LABEL })).toBeDisabled()
+    await page.keyboard.press('2')
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#response-0')).toHaveText('none yet')
+    await expect(page.locator('#shown-0')).toHaveText('Unavailable')
+    await expectNoSeriousAxe(page)
   })
 })
 

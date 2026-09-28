@@ -14,7 +14,7 @@ import { FAMILY_NAMES, getFamily } from '../tasks/registry'
 import { matrices } from '../tasks/matrices'
 import { rotation } from '../tasks/rotation'
 import { CONFIRM_LABEL } from './choice/keys'
-import { click, mountInto, optionInputs, type Mounted } from './dom-testing'
+import { click, mountInto, optionInputs, settle, type Mounted } from './dom-testing'
 import MatrixRenderer from './matrices/MatrixRenderer.svelte'
 import RotationRenderer from './rotation/RotationRenderer.svelte'
 import { VISUAL_RENDERERS, visualRenderers, type ItemRendererProps } from './visual'
@@ -38,7 +38,7 @@ const matricesResponse: Equal<ResponseOf<typeof MatrixRenderer>, ScoreResponse<t
 const rotationSpec: Equal<SpecOf<typeof RotationRenderer>, FamilySpec<typeof rotation>> = true
 const matricesSpec: Equal<SpecOf<typeof MatrixRenderer>, FamilySpec<typeof matrices>> = true
 // …and its props are the shared renderer props: no key, item, params or difficulty prop.
-type PropNames = 'spec' | 'onrespond' | 'onshown' | 'disabled'
+type PropNames = 'spec' | 'onrespond' | 'onshown' | 'onunavailable' | 'disabled'
 const rotationProps: Equal<keyof ComponentProps<typeof RotationRenderer>, PropNames> = true
 const matricesProps: Equal<keyof ComponentProps<typeof MatrixRenderer>, PropNames> = true
 const sharedProps: Equal<keyof ItemRendererProps<unknown, unknown>, PropNames> = true
@@ -53,10 +53,11 @@ afterEach(() => {
   mounted = undefined
 })
 
-/** Mount, pick option `i` by pointer, confirm; returns what onrespond received. */
-function respondWith(component: Component<any>, spec: object, i: number): unknown[] {
+/** Mount, wait for the onset, pick option `i` by pointer, confirm; returns what onrespond received. */
+async function respondWith(component: Component<any>, spec: object, i: number): Promise<unknown[]> {
   const onrespond = vi.fn()
   mounted = mountInto(component, { spec, onrespond })
+  await settle()
   click(optionInputs(mounted.target)[i] as HTMLInputElement)
   const confirm = [...mounted.target.querySelectorAll('button')].find((b) => b.textContent?.trim() === CONFIRM_LABEL) as HTMLButtonElement
   click(confirm)
@@ -79,13 +80,13 @@ describe('visual renderer map (M1.13)', () => {
   })
 
   for (const name of ['rotation', 'matrices'] as const) {
-    it(`${name}: every option position it emits is a response score() accepts, correct exactly at the key`, () => {
+    it(`${name}: every option position it emits is a response score() accepts, correct exactly at the key`, async () => {
       const family = name === 'rotation' ? rotation : matrices
       for (let s = 0; s < 8; s++) {
         const item = family.generate(`contract-${name}-${s}`) as ItemInstance<object, { index: number }>
         const k = item.options_count as number
         for (let i = 0; i < k; i++) {
-          const responses = respondWith(visualRenderers[name], item.spec, i)
+          const responses = await respondWith(visualRenderers[name], item.spec, i)
           expect(responses).toEqual([i])
           const score = (family.score as (it: typeof item, r: unknown) => { correct: 0 | 1 | null })(item, responses[0])
           expect(score.correct).toBe(i === item.key.index ? 1 : 0)

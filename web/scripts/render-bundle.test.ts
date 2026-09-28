@@ -19,14 +19,21 @@ const WEB = fileURLToPath(new URL('..', import.meta.url))
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 const RENDER = fileURLToPath(new URL('../src/render/', import.meta.url))
 
-/** Files under web/src (posix, relative) that import from 'three' or a 'three/…' subpath. */
+/** The specifier 'three' or a 'three/…' subpath, in either quote style. */
+const THREE_SPECIFIER = String.raw`['"]three(?:/[^'"]*)?['"]`
+/**
+ * Every static or dynamic way to reach 'three': `import … from` / `export … from` (incl. `import
+ * type`), side-effect `import 'three'`, dynamic `import('three')` and `require('three')`.
+ */
+const IMPORTS_THREE = new RegExp(String.raw`\bfrom\s*${THREE_SPECIFIER}|\bimport\s*${THREE_SPECIFIER}|\b(?:import|require)\s*\(\s*${THREE_SPECIFIER}\s*\)`)
+
+/** Files under web/src (posix, relative) that import 'three' or a 'three/…' subpath. */
 function threeImporters(): string[] {
   const out: string[] = []
   for (const f of readdirSync(SRC, { recursive: true, encoding: 'utf8' })) {
     const rel = f.split(/[\\/]/).join('/')
     if (!/\.(ts|js|svelte)$/.test(rel)) continue
-    const text = readFileSync(`${SRC}${rel}`, 'utf8')
-    if (/from\s+['"]three(?:\/[^'"]*)?['"]|import\(\s*['"]three(?:\/[^'"]*)?['"]\s*\)/.test(text)) out.push(rel)
+    if (IMPORTS_THREE.test(readFileSync(`${SRC}${rel}`, 'utf8'))) out.push(rel)
   }
   return out.sort()
 }
@@ -54,6 +61,25 @@ describe('visual renderer bundles (M1.13)', () => {
     expect(text).toContain('HumanBench')
     for (const m of GALLERY_MARKERS) expect(text, m).not.toContain(m)
   }, 60_000)
+
+  it('the import scan sees every form of importing three (so the next check is not vacuous)', () => {
+    const hits = [
+      "import { Mesh } from 'three'",
+      'import * as THREE from "three"',
+      "import type { Mesh } from 'three'",
+      "import 'three'",
+      'import "three/examples/jsm/controls/OrbitControls.js"',
+      "export { Mesh } from 'three'",
+      "export * from 'three/src/math/Vector3.js'",
+      "const m = await import('three')",
+      "const m = await import ( 'three/webgpu' )",
+      "const t = require('three')",
+      "  import{Mesh}from'three'",
+    ]
+    for (const h of hits) expect(IMPORTS_THREE.test(h), h).toBe(true)
+    const misses = ["import { x } from './three-view'", "import('./three-view')", "import 'threejs-extras'", "from 'three-stdlib'", "// uses three.js", "const three = 3"]
+    for (const m of misses) expect(IMPORTS_THREE.test(m), m).toBe(false)
+  })
 
   it('only the rotation renderer imports Three.js (A3)', () => {
     const importers = threeImporters()

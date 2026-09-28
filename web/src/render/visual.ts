@@ -6,7 +6,7 @@
  *
  * Every renderer takes {@link ItemRendererProps}: the item's `spec` and NEVER the item or its key,
  * and it calls `onrespond` with a value of exactly the type the family's `score()` accepts
- * (`visual.test.ts` checks this at the type level and at run time). MC options are shown in
+ * (`visual.dom.test.ts` checks this at the type level and at run time). MC options are shown in
  * `spec.options` order, and the response is the display position (A18, `mcResponseIndex`).
  *
  * Importing this map does not load Three.js: the rotation renderer imports `three` lazily from
@@ -27,8 +27,18 @@ export interface ItemRendererProps<Spec, Response> {
   spec: Spec
   /** Called once with the response, of the type the family's `score()` takes. */
   onrespond: (response: Response) => void
-  /** Timestamp (ms, performance.now() clock) of the first animation frame showing the stimulus (§11.6). */
+  /**
+   * Timestamp (ms, performance.now() clock) of the first animation frame showing the stimulus
+   * (§11.6): the rAF callback timestamp of the frame in which it is first on screen. Called once
+   * per spec, and never before the stimulus is shown; the renderer accepts no response before.
+   */
   onshown?: (onsetMs: number) => void
+  /**
+   * The stimulus cannot be shown in this browser (e.g. no WebGL for rotation), so the item cannot
+   * be answered: called once per spec instead of `onshown`, with the options locked; the session
+   * offers skipping (§13 "skip any axis", M1.15). Renderers that always draw never call it.
+   */
+  onunavailable?: () => void
   /** Blocks responding (e.g. while the session is paused). */
   disabled?: boolean
 }
@@ -42,6 +52,6 @@ export const visualRenderers = Object.freeze({
 /**
  * The same renderers as a partial map over family names, for lookups by `item.family`. The
  * components have different spec and response types, hence `Component<any>`; their pairing with
- * `family.score()` is checked in `visual.test.ts`.
+ * `family.score()` is checked in `visual.dom.test.ts`.
  */
 export const VISUAL_RENDERERS: Readonly<Partial<Record<FamilyName, Component<any>>>> = visualRenderers

@@ -5,17 +5,25 @@
   position, the response `rotation.score()` takes. The target and the four options are drawn by
   Three.js with the fixed `iso_v1` camera from `scene.ts`; Three.js itself (`three-view.ts`) is
   loaded lazily on mount and shares one WebGL context across every figure and every mounted
-  renderer (see there for the iOS context budget). Without WebGL the figures stay blank, the text
-  alternatives remain, and a notice says the question cannot be answered here.
+  renderer (see there for the iOS context budget).
 
-  - Onset (§11.6): `onshown(t)` is called once per spec with the timestamp of the first animation
-    frame after every figure was drawn (rAF clock = performance.now()), so a response time never
-    includes the lazy load. Drawing itself runs in a rAF callback.
+  - Locked until drawn: the options accept no choice until every figure of the current spec has
+    been painted, so no response (and no response time) exists for a stimulus nobody saw.
+  - Onset (§11.6): the figures are painted in a rAF callback, and they are on screen in the frame
+    that callback belongs to, so `onshown(t)` is called once per spec with that callback's
+    timestamp (rAF clock = performance.now()), the same convention as the matrices renderer (the
+    first frame showing the stimulus). A failed paint (lost context, zero-size canvas) reports
+    nothing; the next successful pass (resize, context restore) does. The lazy load is never in
+    the response time.
+  - Without WebGL the figures stay blank, the text alternatives remain, a notice says the question
+    cannot be answered here, the options stay locked, `onshown` is never called and
+    `onunavailable()` is called once per spec instead, so the session can offer skipping (§13
+    "skip any axis", M1.15).
   - The figures are static (no animation), so prefers-reduced-motion has nothing to reduce.
   - Canvases are sized from their CSS box × devicePixelRatio (capped at 2) and redrawn on resize.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import type { RotationResponse, RotationSpec } from '../../tasks/rotation/spec'
   import OptionGroup from '../choice/OptionGroup.svelte'
   import { optionLetter } from '../choice/keys'
@@ -30,10 +38,12 @@
     onrespond: (response: RotationResponse) => void
     /** rAF timestamp (ms, performance.now() clock) of the first frame showing the figures. */
     onshown?: (onsetMs: number) => void
+    /** The figures cannot be drawn in this browser (no WebGL): the item cannot be answered. */
+    onunavailable?: () => void
     disabled?: boolean
   }
 
-  let { spec, onrespond, onshown, disabled = false }: Props = $props()
+  let { spec, onrespond, onshown, onunavailable, disabled = false }: Props = $props()
 
   const scene = $derived(rotationScene(spec))
   const nCubes = $derived(spec.target.cubes.length)
@@ -45,13 +55,17 @@
   /** Bumped on resize and on WebGL context restore, to redraw. */
   let redraws = $state(0)
 
-  /** The spec whose onset was already reported. */
-  let shownFor: RotationSpec | null = null
+  /** The spec whose figures were all painted (its onset reported; its options unlocked). */
+  let drawnFor: RotationSpec | null = $state.raw(null)
+  const drawn = $derived(drawnFor === spec)
+  /** The spec whose unavailability was reported. */
+  let unavailableFor: RotationSpec | null = null
 
-  function announce(forSpec: RotationSpec): void {
-    if (shownFor === forSpec) return
-    shownFor = forSpec
-    requestAnimationFrame((t) => onshown?.(t))
+  /** Called from the rAF callback that painted `forSpec`; `t` is that frame's timestamp (§11.6). */
+  function markDrawn(forSpec: RotationSpec, t: number): void {
+    if (drawnFor === forSpec) return
+    drawnFor = forSpec
+    onshown?.(t)
   }
 
   function sizeCanvas(canvas: HTMLCanvasElement): void {
@@ -104,14 +118,19 @@
     const target = targetCanvas
     const options = optionCanvases.slice(0, sc.options.length)
     if (!p || !target || options.length !== sc.options.length || options.some((c) => !c)) return
-    const frame = requestAnimationFrame(() => {
-      if (drawAll(p, sc, target, options as HTMLCanvasElement[])) announce(forSpec)
+    const frame = requestAnimationFrame((t) => {
+      if (drawAll(p, sc, target, options as HTMLCanvasElement[])) markDrawn(forSpec, t)
     })
     return () => cancelAnimationFrame(frame)
   })
 
   $effect(() => {
-    if (status === 'unavailable') announce(spec)
+    if (status !== 'unavailable') return
+    const forSpec = spec
+    if (unavailableFor === forSpec) return
+    unavailableFor = forSpec
+    // The caller's handler runs untracked: whatever state it reads must not re-run this effect.
+    untrack(() => onunavailable?.())
   })
 </script>
 
@@ -132,7 +151,7 @@
       legend={ROTATION_OPTIONS_LEGEND}
       optionName={(i) => optionAlt(optionLetter(i), nCubes)}
       {onrespond}
-      {disabled}
+      disabled={disabled || !drawn}
       columns={{ narrow: 2, wide: 4 }}
     >
       {#snippet option(i: number)}

@@ -3,8 +3,9 @@
   through its renderer, for the e2e suite (axe, keyboard, layout, drawing) and for eyeballing.
   Query: `family` (rotation | matrices, default rotation), `seed` (default gallery-1), `count`
   (items shown at once, 1–4, default 1). Only each item's `spec` reaches a renderer; the gallery
-  shows the emitted response, never the key. The "Remove items" button unmounts the renderers (the
-  e2e suite checks that this frees the shared WebGL context).
+  shows the emitted response, never the key, and each item's state: Drawing, Shown (`onshown`) or
+  Unavailable (`onunavailable`, e.g. no WebGL). The "Remove items" button unmounts the renderers
+  (the e2e suite checks that this frees the shared WebGL context).
 -->
 <script lang="ts">
   import type { Component } from 'svelte'
@@ -27,7 +28,7 @@
   })
 
   const responses: (number | null)[] = $state(items.map(() => null))
-  const shown: boolean[] = $state(items.map(() => false))
+  const states: ('Drawing' | 'Shown' | 'Unavailable')[] = $state(items.map(() => 'Drawing'))
   let present = $state(true)
 
   const link = (f: string, s: string): string => `?family=${encodeURIComponent(f)}&seed=${encodeURIComponent(s)}${count > 1 ? `&count=${count}` : ''}`
@@ -49,9 +50,14 @@
     {#each items as item, i (item.item_id)}
       <section aria-labelledby="item-{i}">
         <h2 id="item-{i}">{family}, seed {item.seed}</h2>
-        <Renderer spec={item.spec} onrespond={(r: number) => (responses[i] = r)} onshown={() => (shown[i] = true)} />
+        <Renderer
+          spec={item.spec}
+          onrespond={(r: number) => (responses[i] = r)}
+          onshown={() => (states[i] = 'Shown')}
+          onunavailable={() => (states[i] = 'Unavailable')}
+        />
         <p class="status">
-          <span id="shown-{i}">{shown[i] ? 'Shown' : 'Drawing'}</span>.
+          <span id="shown-{i}">{states[i]}</span>.
           Response: <output id="response-{i}">{responses[i] === null ? 'none yet' : String(responses[i])}</output>
         </p>
       </section>

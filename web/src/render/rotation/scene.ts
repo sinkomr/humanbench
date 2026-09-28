@@ -105,6 +105,15 @@ export function toDepth(p: Vec3): number {
  * Lighting of every figure (deterministic, fixed in the camera frame). Colours are sRGB hex; the
  * canvas background is the paper white of the matrices renderer, so stimuli look the same in the
  * light and dark themes (the page around them follows the theme).
+ *
+ * Shading is a secondary depth cue only: the structure is carried by the cube edges, drawn at
+ * ≥ 3:1 against every face shade and the background (WCAG 1.4.11), as in the line drawings of
+ * the classic mental-rotation tests. No fixed lighting can shade two visible faces apart at every
+ * orientation: a 120° turn about the line of sight cycles the three faces the view shows, so two
+ * of them have equal shades somewhere along the turn (intermediate value theorem). Over generated
+ * items about 1 figure in 6 has two visible faces within 1.1:1 of each other; moving the light
+ * only trades which orientations those are (the best direction found still left ~15%). The tests
+ * bound that share and check the edges at every face.
  */
 export const LIGHTING = Object.freeze({
   background: '#ffffff',

@@ -30,6 +30,16 @@ export function nextFrame(): Promise<number> {
   return new Promise((resolve) => requestAnimationFrame(resolve))
 }
 
+/**
+ * Wait `frames` animation frames and flush Svelte's updates: enough for a renderer to report its
+ * onset (after which its options accept a choice) and, with a mocked painter, for the lazy
+ * `three-view` import to resolve and the rotation figures to be painted.
+ */
+export async function settle(frames = 3): Promise<void> {
+  for (let i = 0; i < frames; i++) await nextFrame()
+  flushSync()
+}
+
 /** The option radios of a rendered item, in DOM order. */
 export function optionInputs(root: ParentNode): HTMLInputElement[] {
   return [...root.querySelectorAll<HTMLInputElement>('input[type="radio"]')]

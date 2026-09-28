@@ -6,9 +6,12 @@
   structural text alternative ("Row 1, column 2: 3 small black triangles, turned 45°, at …"), and
   every option's radio is named the same way. `onrespond(index)` gets the chosen display
   position, the response `matrices.score()` takes. `onshown(t)` reports the timestamp of the
-  first animation frame showing the item (rAF clock = performance.now(), §11.6). No animation.
+  first animation frame showing the item (rAF clock = performance.now(), §11.6), and the options
+  accept a choice only from then on, so no response exists without an onset (the same contract
+  as the rotation renderer, `visual.ts`). No animation.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { MatrixCell, MatrixResponse, MatrixSpec } from '../../tasks/matrices/grammar'
   import OptionGroup from '../choice/OptionGroup.svelte'
   import { optionLetter } from '../choice/keys'
@@ -23,6 +26,8 @@
     onrespond: (response: MatrixResponse) => void
     /** rAF timestamp (ms, performance.now() clock) of the first frame showing the item. */
     onshown?: (onsetMs: number) => void
+    /** Part of the shared renderer props (visual.ts); never called: plain SVG always draws. */
+    onunavailable?: () => void
     disabled?: boolean
   }
 
@@ -34,13 +39,17 @@
     return cell
   }
 
-  let shownFor: MatrixSpec | null = null
+  /** The spec whose onset was reported (its options unlock then). */
+  let shownFor: MatrixSpec | null = $state.raw(null)
+  const shown = $derived(shownFor === spec)
   $effect(() => {
     const s = spec
-    if (shownFor === s) return
-    shownFor = s
+    if (untrack(() => shownFor) === s) return
     // The SVG is in the DOM when effects run; the next frame is the first to show it.
-    const frame = requestAnimationFrame((t) => onshown?.(t))
+    const frame = requestAnimationFrame((t) => {
+      shownFor = s
+      onshown?.(t)
+    })
     return () => cancelAnimationFrame(frame)
   })
 </script>
@@ -61,7 +70,7 @@
       legend={MATRIX_OPTIONS_LEGEND}
       optionName={(i) => matrixOptionName(optionLetter(i), optionCell(i))}
       {onrespond}
-      {disabled}
+      disabled={disabled || !shown}
       columns={{ narrow: 3, wide: 6 }}
     >
       {#snippet option(i: number)}

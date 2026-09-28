@@ -164,9 +164,47 @@ describe('rotation scene: deterministic lighting', () => {
     expect(dot3(LIGHTING.direction, ISO_BASIS.right)).toBeLessThan(0)
   })
 
-  it('gives the three cube faces the iso view shows three clearly different shades', () => {
+  it('gives the three faces of an unrotated cube (identity quat, the plain iso view) three clearly different shades', () => {
     const faces = [shade([1, 0, 0]), shade([0, 1, 0]), shade([0, 0, 1])]
     for (let i = 0; i < 3; i++) for (let j = 0; j < i; j++) expect(Math.abs((faces[i] as number) - (faces[j] as number))).toBeGreaterThan(0.08)
+  })
+
+  it('cannot shade the visible faces apart at every orientation, so the edges carry the structure there', () => {
+    // A turn by θ about the line of sight keeps the three iso faces visible (each at cos = 1/√3)
+    // and at 120° cycles them, so some θ gives two of them the same shade (intermediate values).
+    const back = ISO_BASIS.back
+    const edge = luminance(LIGHTING.edge)
+    let closest = Infinity
+    for (let deg = 0; deg <= 120; deg += 0.25) {
+      const h = (deg * Math.PI) / 360
+      const q: Quat = [Math.cos(h), Math.sin(h) * back[0], Math.sin(h) * back[1], Math.sin(h) * back[2]]
+      const shades = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as Vec3[]).map((n) => shade(rotate(q, n)))
+      for (let i = 0; i < 3; i++) for (let j = 0; j < i; j++) closest = Math.min(closest, Math.abs((shades[i] as number) - (shades[j] as number)))
+      // Whatever the shades, every face keeps its ≥ 3:1 edges (WCAG 1.4.11).
+      for (const sh of shades) expect((luminance(LIGHTING.face) * sh + 0.05) / (edge + 0.05)).toBeGreaterThanOrEqual(3)
+    }
+    expect(closest).toBeLessThan(0.005)
+  })
+
+  it('still shades the visible faces of most generated figures apart (≤ 20% with two faces within 1.1:1)', () => {
+    const axes: Vec3[] = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+    const face = luminance(LIGHTING.face)
+    const closest: number[] = []
+    for (const spec of items(150, 'scene-shade')) {
+      for (const fig of [spec.target, ...spec.options].map(figureScene)) {
+        // Face directions turned towards the viewer by more than a sliver (cos > 0.2).
+        const visible = axes.map((a) => rotate(fig.quat, a)).filter((n) => dot3(n, ISO_BASIS.back) > 0.2)
+        if (visible.length < 2) continue
+        const lum = visible.map((n) => face * shade(n))
+        let ratio = Infinity
+        for (let i = 0; i < lum.length; i++) for (let j = 0; j < i; j++) ratio = Math.min(ratio, (Math.max(lum[i] as number, lum[j] as number) + 0.05) / (Math.min(lum[i] as number, lum[j] as number) + 0.05))
+        closest.push(ratio)
+      }
+    }
+    closest.sort((a, b) => a - b)
+    expect(closest.length).toBeGreaterThan(500)
+    expect(closest.filter((r) => r < 1.1).length / closest.length).toBeLessThanOrEqual(0.2)
+    expect(closest[Math.floor(closest.length / 2)]).toBeGreaterThanOrEqual(1.25)
   })
 
   it('keeps every shade within [ambient, 1] (no clipped highlights) for any normal', () => {

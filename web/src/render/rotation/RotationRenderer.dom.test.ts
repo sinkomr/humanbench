@@ -3,14 +3,15 @@
  * §13). jsdom has no WebGL, so `three-view.ts` is replaced by a recording painter: the tests check
  * what the component asks it to draw (the target and the options in display order, one shared
  * camera), the painter lifecycle (acquire on mount, release on destroy), text alternatives,
- * responding and the onset callback. The WebGL-less fallback is in `RotationFallback.dom.test.ts`,
- * the Three.js drawing itself in the e2e suite.
+ * responding (never before the figures are painted) and the onset callback (the timestamp of the
+ * frame that painted them, never after a failed paint). The WebGL-less fallback is in
+ * `RotationFallback.dom.test.ts`, the Three.js drawing itself in the e2e suite.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rotation } from '../../tasks/rotation'
-import { optionLetter } from '../choice/keys'
-import { mountInto, nextFrame, optionInputs, press, stableHtml, type Mounted } from '../dom-testing'
+import { CONFIRM_LABEL, optionLetter } from '../choice/keys'
+import { click, mountInto, optionInputs, press, settle, stableHtml, type Mounted } from '../dom-testing'
 import { ROTATION_STEM, ROTATION_UNAVAILABLE, optionAlt, targetAlt } from './copy'
 import { rotationScene, type FigureScene, type IsoCamera } from './scene'
 import RotationRenderer from './RotationRenderer.svelte'
@@ -19,6 +20,9 @@ interface PaintCall {
   readonly canvas: HTMLCanvasElement
   readonly figure: FigureScene
   readonly camera: IsoCamera
+  /** Timestamp of the animation frame callback the paint ran in (null: outside any frame). */
+  readonly frame: number | null
+  readonly ok: boolean
 }
 
 const painter = vi.hoisted(() => ({
@@ -26,6 +30,10 @@ const painter = vi.hoisted(() => ({
   acquired: 0,
   released: 0,
   restored: [] as (() => void)[],
+  /** Whether painting into `canvas` succeeds (false: lost context, zero-size canvas …). */
+  accept: (_canvas: HTMLCanvasElement): boolean => true,
+  /** Timestamp of the animation frame callback running now (see beforeEach). */
+  frame: null as number | null,
 }))
 
 vi.mock('./three-view', () => ({
@@ -34,8 +42,9 @@ vi.mock('./three-view', () => ({
     let released = false
     return {
       paint: (canvas: HTMLCanvasElement, figure: FigureScene, camera: IsoCamera) => {
-        painter.calls.push({ canvas, figure, camera })
-        return true
+        const ok = painter.accept(canvas)
+        painter.calls.push({ canvas, figure, camera, frame: painter.frame, ok })
+        return ok
       },
       onRestored: (l: () => void) => painter.restored.push(l),
       release: () => {
@@ -47,6 +56,22 @@ vi.mock('./three-view', () => ({
 }))
 
 let mounted: Mounted | undefined
+
+beforeEach(() => {
+  // Record which animation frame each paint runs in, to pin the onset to the painting frame.
+  const raf = globalThis.requestAnimationFrame.bind(globalThis)
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb) =>
+    raf((t) => {
+      painter.frame = t
+      try {
+        cb(t)
+      } finally {
+        painter.frame = null
+      }
+    }),
+  )
+})
+
 afterEach(() => {
   mounted?.destroy()
   mounted = undefined
@@ -54,12 +79,9 @@ afterEach(() => {
   painter.restored.length = 0
   painter.acquired = 0
   painter.released = 0
+  painter.accept = () => true
+  vi.restoreAllMocks()
 })
-
-/** Let the lazy import resolve and the draw frame run. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 3; i++) await nextFrame()
-}
 
 function render(seed: string, onshown?: (t: number) => void) {
   const item = rotation.generate(seed)
@@ -67,6 +89,24 @@ function render(seed: string, onshown?: (t: number) => void) {
   mounted = mountInto(RotationRenderer, { spec: item.spec, onrespond, ...(onshown ? { onshown } : {}) })
   return { item, onrespond, root: mounted.target }
 }
+
+const confirmButton = (root: HTMLElement): HTMLButtonElement => {
+  const b = [...root.querySelectorAll('button')].find((x) => x.textContent?.trim() === CONFIRM_LABEL)
+  if (!b) throw new Error('no confirm button')
+  return b
+}
+
+/** Try every way of responding with option `i` (key, Enter, pointer, Confirm). */
+function tryRespond(root: HTMLElement, i: number): void {
+  const inputs = optionInputs(root)
+  inputs[i]?.focus()
+  press(inputs[i] as HTMLInputElement, String(i + 1))
+  press(inputs[i] as HTMLInputElement, 'Enter')
+  click(inputs[i] as HTMLInputElement)
+  click(confirmButton(root))
+}
+
+const locked = (root: HTMLElement): boolean => optionInputs(root).every((x) => x.matches(':disabled')) && confirmButton(root).disabled
 
 describe('RotationRenderer', () => {
   it('matches the DOM snapshot of a fixed item', async () => {
@@ -123,17 +163,68 @@ describe('RotationRenderer', () => {
     expect(painter.calls.length).toBe(before + 5)
   })
 
-  it('reports the onset once, after the figures were drawn, from an animation frame (§11.6)', async () => {
-    const onshown = vi.fn<(t: number) => void>()
+  it('reports the onset once, with the timestamp of the frame that painted all five figures (§11.6)', async () => {
+    const seen: { t: number; calls: number; frame: number | null }[] = []
+    const onshown = vi.fn<(t: number) => void>((t) => seen.push({ t, calls: painter.calls.length, frame: painter.frame }))
     render('rotation-dom-5', onshown)
     expect(onshown).not.toHaveBeenCalled()
     await settle()
     expect(onshown).toHaveBeenCalledTimes(1)
-    expect(painter.calls.length).toBeGreaterThanOrEqual(5)
+    // Called inside the painting frame's callback, after its five paints, with that frame's timestamp.
+    const [first] = seen
+    const pass = painter.calls.slice(0, first?.calls)
+    expect(pass).toHaveLength(5)
+    expect(new Set(pass.map((c) => c.frame)).size).toBe(1)
+    expect(first?.frame).toBe(pass[0]?.frame)
+    expect(first?.t).toBe(pass[0]?.frame)
     for (const l of painter.restored) l()
     await settle()
     expect(onshown).toHaveBeenCalledTimes(1)
   })
+
+  it('accepts no response before the figures are painted (the lazy load is still pending at mount)', async () => {
+    const onshown = vi.fn<(t: number) => void>()
+    const { onrespond, root } = render('rotation-dom-7', onshown)
+    expect(painter.calls).toHaveLength(0)
+    expect(locked(root)).toBe(true)
+    tryRespond(root, 1)
+    expect(optionInputs(root).some((x) => x.checked)).toBe(false)
+    expect(onrespond).not.toHaveBeenCalled()
+    await settle()
+    expect(onshown).toHaveBeenCalledTimes(1)
+    expect(locked(root)).toBe(false)
+    tryRespond(root, 1)
+    expect(onrespond).toHaveBeenCalledExactlyOnceWith(1)
+  })
+
+  for (const [what, accept] of [
+    ['every paint fails', () => false],
+    ['only the target fails to paint', (c: HTMLCanvasElement) => !c.closest('.target')],
+    ['only the last option fails to paint', (c: HTMLCanvasElement) => c !== [...document.querySelectorAll('label canvas')].at(-1)],
+  ] as const) {
+    it(`reports no onset and stays locked while a draw pass fails (${what}); the first full pass unlocks it`, async () => {
+      painter.accept = accept
+      const onshown = vi.fn<(t: number) => void>()
+      const { onrespond, root } = render(`rotation-dom-8-${what}`, onshown)
+      await settle()
+      expect(painter.calls.length).toBeGreaterThanOrEqual(5) // it tried
+      expect(painter.calls.some((c) => !c.ok)).toBe(true)
+      expect(onshown).not.toHaveBeenCalled()
+      expect(locked(root)).toBe(true)
+      tryRespond(root, 2)
+      expect(onrespond).not.toHaveBeenCalled()
+      // The WebGL context comes back: the redraw succeeds, and that pass reports the onset.
+      painter.accept = () => true
+      for (const l of painter.restored) l()
+      await settle()
+      expect(onshown).toHaveBeenCalledTimes(1)
+      const okFrame = painter.calls.at(-1)?.frame
+      expect(onshown).toHaveBeenCalledWith(okFrame)
+      expect(locked(root)).toBe(false)
+      tryRespond(root, 2)
+      expect(onrespond).toHaveBeenCalledExactlyOnceWith(2)
+    })
+  }
 
   it('responds with the display position, which rotation.score() accepts and scores against the key', async () => {
     const { item, onrespond, root } = render('rotation-dom-6')

@@ -1,13 +1,13 @@
 /**
  * Matrices renderer in jsdom (ROADMAP M1.13, A18; DESIGN §4.2, §11.6, §13): what it draws, its
- * text alternatives, keyboard and pointer responding, the response contract with
- * `matrices.score()`, the onset callback, and a DOM snapshot.
+ * text alternatives, keyboard and pointer responding (only after the onset), the response
+ * contract with `matrices.score()`, the onset callback, and a DOM snapshot.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { matrices } from '../../tasks/matrices'
 import { CONFIRM_LABEL, optionLetter } from '../choice/keys'
-import { click, mountInto, nextFrame, optionInputs, press, stableHtml, type Mounted } from '../dom-testing'
+import { click, mountInto, nextFrame, optionInputs, press, settle, stableHtml, type Mounted } from '../dom-testing'
 import { MATRIX_GRID_LABEL, MATRIX_MISSING_LABEL, MATRIX_STEM, matrixOptionName } from './copy'
 import { cellObjects, gridCellLabel } from './draw'
 import MatrixRenderer from './MatrixRenderer.svelte'
@@ -25,6 +25,13 @@ function render(seed: string, extra: { disabled?: boolean; onshown?: (t: number)
   return { item, onrespond, root: mounted.target }
 }
 
+/** Render and wait for the onset (the options accept a choice from then on). */
+async function renderShown(seed: string, extra: { disabled?: boolean } = {}) {
+  const r = render(seed, extra)
+  await settle()
+  return r
+}
+
 const confirmButton = (root: HTMLElement): HTMLButtonElement => {
   const b = [...root.querySelectorAll('button')].find((x) => x.textContent?.trim() === CONFIRM_LABEL)
   if (!b) throw new Error('no confirm button')
@@ -32,13 +39,13 @@ const confirmButton = (root: HTMLElement): HTMLButtonElement => {
 }
 
 describe('MatrixRenderer', () => {
-  it('matches the DOM snapshot of a fixed item', () => {
-    const { root } = render('snapshot-matrices-1')
+  it('matches the DOM snapshot of a fixed item', async () => {
+    const { root } = await renderShown('snapshot-matrices-1')
     expect(stableHtml(root)).toMatchSnapshot()
   })
 
-  it('draws the stem, the 8 visible cells in reading order with text alternatives, then the missing cell', () => {
-    const { item, root } = render('matrices-dom-1')
+  it('draws the stem, the 8 visible cells in reading order with text alternatives, then the missing cell', async () => {
+    const { item, root } = await renderShown('matrices-dom-1')
     expect(root.querySelector('.stem')?.textContent).toBe(MATRIX_STEM)
     const grid = root.querySelector('[role="group"]')
     expect(grid?.getAttribute('aria-label')).toBe(MATRIX_GRID_LABEL)
@@ -56,8 +63,8 @@ describe('MatrixRenderer', () => {
     })
   })
 
-  it('shows the six options in spec.options order, each named by its letter and its description', () => {
-    const { item, root } = render('matrices-dom-2')
+  it('shows the six options in spec.options order, each named by its letter and its description', async () => {
+    const { item, root } = await renderShown('matrices-dom-2')
     const inputs = optionInputs(root)
     expect(inputs).toHaveLength(6)
     expect(inputs.map((x) => x.getAttribute('aria-label'))).toEqual(item.spec.options.map((cell, i) => matrixOptionName(optionLetter(i), cell)))
@@ -73,8 +80,8 @@ describe('MatrixRenderer', () => {
     })
   })
 
-  it('picks with number and letter keys, and Enter on an option responds once with the display position', () => {
-    const { item, onrespond, root } = render('matrices-dom-3')
+  it('picks with number and letter keys, and Enter on an option responds once with the display position', async () => {
+    const { item, onrespond, root } = await renderShown('matrices-dom-3')
     const inputs = optionInputs(root)
     inputs[0]?.focus()
     press(document.activeElement as Element, '3')
@@ -98,8 +105,8 @@ describe('MatrixRenderer', () => {
     expect(inputs.every((x) => x.matches(':disabled'))).toBe(true)
   })
 
-  it('responds by pointer: click an option card, then Confirm', () => {
-    const { onrespond, root } = render('matrices-dom-4')
+  it('responds by pointer: click an option card, then Confirm', async () => {
+    const { onrespond, root } = await renderShown('matrices-dom-4')
     const confirm = confirmButton(root)
     expect(confirm.disabled).toBe(true)
     click(optionInputs(root)[5] as HTMLInputElement)
@@ -108,14 +115,32 @@ describe('MatrixRenderer', () => {
     expect(onrespond).toHaveBeenCalledExactlyOnceWith(5)
   })
 
-  it('ignores keys and clicks while disabled', () => {
-    const { onrespond, root } = render('matrices-dom-5', { disabled: true })
+  it('ignores keys and clicks while disabled', async () => {
+    const { onrespond, root } = await renderShown('matrices-dom-5', { disabled: true })
     const inputs = optionInputs(root)
     expect(inputs.every((x) => x.matches(':disabled'))).toBe(true)
     press(inputs[0] as HTMLInputElement, '2')
     expect(inputs.some((x) => x.checked)).toBe(false)
     click(confirmButton(root))
     expect(onrespond).not.toHaveBeenCalled()
+  })
+
+  it('accepts no choice before the onset: options locked at mount, unlocked from the onset frame', async () => {
+    const onshown = vi.fn<(t: number) => void>()
+    const { onrespond, root } = render('matrices-dom-7', { onshown })
+    const inputs = optionInputs(root)
+    expect(inputs.every((x) => x.matches(':disabled'))).toBe(true)
+    click(inputs[2] as HTMLInputElement)
+    press(inputs[2] as HTMLInputElement, '3')
+    click(confirmButton(root))
+    expect(inputs.some((x) => x.checked)).toBe(false)
+    expect(onrespond).not.toHaveBeenCalled()
+    await settle()
+    expect(onshown).toHaveBeenCalledTimes(1)
+    expect(inputs.some((x) => x.matches(':disabled'))).toBe(false)
+    click(inputs[2] as HTMLInputElement)
+    click(confirmButton(root))
+    expect(onrespond).toHaveBeenCalledExactlyOnceWith(2)
   })
 
   it('reports the onset once, from an animation frame rather than at mount (§11.6)', async () => {
