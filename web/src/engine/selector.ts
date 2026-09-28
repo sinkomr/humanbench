@@ -28,11 +28,11 @@
  *    generated with `{ stratum }`, so `item_id` regenerates the item (A11). Skipped while drawing:
  *    a family seen this session or in an earlier one (§7.7, §8 `seen_families`), an item whose
  *    `sibling_group` was already served this session (A11 amended, M1.F2: a family is its own
- *    group; quant groups its variants by template, `g:quant:<template>`), and an item whose E[T]
- *    exceeds the remaining time. Duplicate
- *    family_ids in the pool keep the best score. If fewer than top-k candidates compete, the next
- *    nearest strata are added one at a time; 'exhausted' is reported only after a
- *    {@link SWEEP_ATTEMPTS}-seed sweep of every stratum finds nothing.
+ *    group; quant's near-isomorph variants share `g:quant:<label>`, `QUANT_SIBLING_SETS`), and
+ *    an item whose E[T] exceeds the remaining time. Duplicate family_ids in the pool keep the
+ *    best score. If fewer than top-k candidates compete, the next nearest strata are added one
+ *    at a time; 'exhausted' is reported only after a {@link SWEEP_ATTEMPTS}-seed sweep of every
+ *    stratum finds nothing.
  * 3. **Criterion** (§7.4 L573): score_j = w_k · I_j(θ̂_k) · Var(θ_k) / E[T_j], where I_j is the
  *    Fisher information of the ITEM's own model (A9: 2PL a²P(1−P), 3PL with c = 1/k, 2PL-testlet
  *    discounted by 20% per §7.1), never the axis default; θ̂_k and Var(θ_k) are the current
@@ -78,7 +78,7 @@ export const ATTEMPTS_PER_STRATUM = 3 * CANDIDATES_PER_STRATUM
 /**
  * Seeds per (family, stratum) of the sweep that runs before a pool is reported 'exhausted'. The
  * rarest quant variant (a recip one) is 1 in 30 draws of its stratum, so 576 draws miss a lone
- * unseen one with p ≈ 3·10⁻⁹ (a lone unused template is drawn at least as often).
+ * unseen one with p ≈ 3·10⁻⁹.
  */
 export const SWEEP_ATTEMPTS = 48 * ATTEMPTS_PER_STRATUM
 /** Information multiplier of a '2pl_testlet' item: the §7.1 testlet effect γ ~ N(0, 0.3²) discounts it by ~20%. */
