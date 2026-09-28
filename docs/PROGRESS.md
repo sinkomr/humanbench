@@ -28,15 +28,22 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **wf2 was interrupted** at about 20:12 on 2026-09-26 by the usage limit. Scorer, contract, series, span and rt had finished their review fixes. The fixes for matrices, quant, rotation and coding, and the reading review, had not finished.
-- **In flight: recovery workflow wf2b** (run `wf_598bf613-59c` in session `fc164352`, started 21:58). It does four things in order:
-  1. finishes those fixes on each `wf2/<fam>` branch;
-  2. runs an integrator that merges `wf2/*` into `dev` in both repos, registers the families, regenerates `golden/ts_dumps` and removes the worktrees;
-  3. runs a 4-lens audit of the merged `dev`;
-  4. repairs what the audit finds.
-  The prior findings are saved in the session scratchpad (`wf2/findings.json`).
-- **If interrupted:** run `git worktree list` and `git branch --list 'wf2/*'` in both repos. A branch that is still unmerged and has a dirty worktree is a fix left half-done: finish it, then merge into `dev` in this order: scorer, contract, rotation, matrices, series, quant, span, rt, coding, reading. After that, register the families, regenerate the dumps, run all gates, and remove the worktrees.
-- Resume ticks were re-created in this session (the old session's crons died with it), with the same schedule: `23 22-23 26 9 *` and `23 0-9 27 9 *`.
+- **wf2b** (`wf_598bf613-59c`) finished its fixes and merged `wf2/*` into `dev` in both repos. Quant was merged later, and is **not yet registered**. The 4-lens audit ran; its findings are in the scratchpad file `wf2/audit_findings.json`. The repair step then failed: the stall watchdog kills an agent after 3 minutes with no progress, and the serial bank pytest run takes about 5.5 minutes.
+- **In flight: wf2c** (`wf_47425241-a4c`, started 2026-09-27 05:35). It runs in order:
+  - **base:** on bank `dev`, finish the id-scheme work (shared cyrb128 `family_id`, Python twin versions tagged `+py`) and add pytest-xdist.
+  - **4 scoped repairs**, each in its own worktree on branch `wf2c/<name>`: `quantreg`, `infra`, `rules`, `rtfix`.
+  - **reading:** re-solve the A14 questions with 2 independent solvers, then fix them on `wf2c/reading2`.
+  - **merger:** merge into `dev`.
+  - **verifier.**
+- **If interrupted:** check `git branch --list 'wf2c/*'` and `git worktree list`. Merge the green branches into `dev` in this order: quantreg, rtfix, infra, rules, reading2. Regenerate the dumps, then run the gates. For the bank, use `uv run pytest -q -n 8`.
+- Deferred to new ROADMAP tasks (M1.F2 contract v2 and M1.P):
+  - the block-observation API and block-aware property suite;
+  - per-item facets;
+  - a numeric-aware KeyEchoTracker;
+  - re-centring the prior anchors, and FER/CAL provisional models;
+  - realistic block parameters for M1.4a;
+  - quant sibling-variant exclusion (M1.14);
+  - the contract fields that renderers and the selector need.
 
 ## Needs you (blocked on the user)
 
