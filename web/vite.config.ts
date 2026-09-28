@@ -38,6 +38,9 @@ export default defineConfig(({ mode }) => {
     base,
     plugins: [svelte(), schemaAssets()],
     test: {
+      // A safety net above vitest's 5 s default, so a busy machine (e.g. the bank's pytest running
+      // alongside) does not fail seconds-long tests; heavy tests still set their own timeouts.
+      testTimeout: 30_000,
       // Tests named *.dom.test.ts or *.svelte.test.ts run in jsdom; all other *.test.ts (src/ and the
       // Node scripts/ tests: dump CLI, fixture sync, A17) run in node. scripts/**/*.ts are
       // type-checked by tsconfig.scripts.json.

@@ -17,7 +17,8 @@
  *
  *   npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ../../humanbench-bank/golden/ts_dumps/series.analysis.json
  *
- * (`series.analysis` is not a family name, so the A17 dump-sync test skips the file.)
+ * When the bank checkout is present, `scripts/ts-dumps-sync.test.ts` fails while the bank copy
+ * differs from `serializeAnalysisFixture()` (A17).
  */
 
 import { createRng, type Rng } from '../../engine'

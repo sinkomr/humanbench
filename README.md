@@ -91,8 +91,14 @@ npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process
 ```
 
 The other direction, the bank's golden scoring files into `web/src/engine/__fixtures__/`, is
-`npm run sync:golden` (ROADMAP A17). When the bank checkout is present, `npm test` fails if any
-of these copies is stale.
+`npm run sync:golden` (ROADMAP A17; `uv run hb sync golden` in the bank does the same copy).
+When the bank checkout is present, `npm test` fails if any of these copies is stale:
+`web/scripts/ts-dumps-sync.test.ts` requires a dump of every registered family (and the toy
+family), checks each dump's header, item count, seed order, items and bytes, checks the series
+analysis fixture, and fails on any file in `golden/ts_dumps/` that nothing here checks;
+`web/src/tasks/coding/scores-dump.test.ts` checks the coding parity dump, and
+`web/scripts/sync-golden.test.ts` the golden fixtures. Without the bank (as in CI) these checks
+skip and name the path they looked at.
 
 The build uses the base path `/humanbench/`. To build for a different path, such as a custom domain served at `/`:
 

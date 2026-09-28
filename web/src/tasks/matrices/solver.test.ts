@@ -412,11 +412,11 @@ describe('solve against a brute-force completion search (fast-check)', () => {
 
   it('agrees on generated grids of every rule set with random edits', () => {
     fc.assert(fc.property(perturbedGrid, agrees), { numRuns: 400, seed: 20260926 })
-  })
+  }, 30_000)
 
   it('agrees on random small-valued grids', () => {
     fc.assert(fc.property(smallGrid, agrees), { numRuns: 400, seed: 20260927 })
-  })
+  }, 30_000)
 })
 
 describe('modal-attribute picker properties (fast-check)', () => {

@@ -171,6 +171,48 @@ export function serializeDump(dump: FamilyDump): string {
   return `${head}\n${dump.items.map((it) => canonicalJson(it)).join(',\n')}\n]}\n`
 }
 
+/** The header keys of a dump, in order (the bank's `DUMP_HEAD_KEYS` too). */
+export const DUMP_HEAD_KEYS = ['family', 'generator_version', 'count', 'items'] as const
+
+/**
+ * Why the dump text `text` is not what `dump:families` writes for `family` now (the A17
+ * staleness check; empty when it is current): the header keys in order, the family name, the
+ * generator_version, `count` equal to the number of items and ≥ `minCount` (A1: ≥ 1,000), the
+ * seeds `dump-0 … dump-(count−1)` in order, every item equal to `family.generate(seed)` and,
+ * last, the exact bytes {@link serializeDump} writes. Only the first differing item is reported.
+ */
+export function dumpDrift(text: string, family: AnyFamily, minCount: number = DEFAULT_DUMP_N): string[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (e) {
+    return [`not JSON: ${e instanceof Error ? e.message : String(e)}`]
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return ['not a dump object']
+  const head = parsed as Record<string, unknown>
+  const keys = Object.keys(head)
+  if (keys.join() !== DUMP_HEAD_KEYS.join()) return [`header keys [${keys.join(', ')}] ≠ [${DUMP_HEAD_KEYS.join(', ')}]`]
+  const problems: string[] = []
+  if (head.family !== family.name) problems.push(`family ${JSON.stringify(head.family)} ≠ ${JSON.stringify(family.name)}`)
+  if (head.generator_version !== family.generatorVersion) {
+    problems.push(`generator_version ${JSON.stringify(head.generator_version)} ≠ ${JSON.stringify(family.generatorVersion)}`)
+  }
+  if (!Array.isArray(head.items)) return [...problems, 'items is not an array']
+  const items = head.items as ItemInstance<object, object>[]
+  if (head.count !== items.length) problems.push(`count ${JSON.stringify(head.count)} ≠ ${items.length} items`)
+  if (items.length < minCount) problems.push(`${items.length} items < ${minCount} (A1)`)
+  if (problems.length > 0) return problems
+  for (const [i, it] of items.entries()) {
+    const seed = `${DUMP_SEED_PREFIX}${i}`
+    const got: unknown = typeof it === 'object' && it !== null ? it.seed : undefined
+    if (got !== seed) return [`item ${i}: seed ${JSON.stringify(got)} ≠ ${JSON.stringify(seed)} (seeds run ${DUMP_SEED_PREFIX}0, ${DUMP_SEED_PREFIX}1, … in order)`]
+    if (canonicalJson(it) !== canonicalJson(family.generate(seed))) return [`item ${i} (${seed}) differs from the generator`]
+  }
+  const want = serializeDump({ family: family.name, generator_version: family.generatorVersion, count: items.length, items })
+  if (text !== want) return ['the items match, but the text is not in the dump format (a header line, then one canonical-JSON item per line)']
+  return []
+}
+
 /** `$HB_BANK_DIR/golden/ts_dumps`, or the sibling bank checkout's `golden/ts_dumps` (A17). */
 export function bankDumpsDir(env: NodeJS.ProcessEnv = process.env): string {
   const bank = env.HB_BANK_DIR ? resolve(env.HB_BANK_DIR) : resolve(PUB_ROOT, '..', 'humanbench-bank')

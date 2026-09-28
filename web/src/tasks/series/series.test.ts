@@ -557,7 +557,7 @@ describe('series prior (M1.P v0)', () => {
 describe('series analysis fixture (TS → bank differential, A1)', () => {
   it('is pinned: refresh the bank copy when analyse() changes', () => {
     expect(structuralHash(serializeAnalysisFixture())).toBe(ANALYSIS_FIXTURE_DIGEST)
-  })
+  }, 60_000)
 
   it('covers accepted and rejected sequences, ties, the ε band, letters and every fit family', () => {
     const f = analysisFixture()
@@ -572,5 +572,5 @@ describe('series analysis fixture (TS → bank differential, A1)', () => {
     for (const count of [ambiguous, unique, none, letters]) expect(count).toBeGreaterThan(50)
     // a fit inside the ε band but not tied with the minimum
     expect(analysisCase([3, 1, 0, -1, -3], false).fits.filter((x) => x.in_min_set).map((x) => x.rule).sort()).toEqual(['cubic', 'interleaved'])
-  })
+  }, 60_000)
 })

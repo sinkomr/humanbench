@@ -1,18 +1,21 @@
 /**
  * Cross-repo fixtures (ROADMAP A17): the bank golden files copied into
  * src/engine/__fixtures__/ by scripts/sync-golden.sh must be byte-identical to the bank's own
- * copies whenever the sibling bank repo is present (skipped otherwise, e.g. in CI).
+ * copies whenever the sibling bank repo is present (skipped with the path otherwise, e.g. in CI).
+ * The bank's `tests/test_crossrepo.py` checks the same copies from its side.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { bankDumpsDir } from './dump-lib'
 
 const WEB = resolve(import.meta.dirname, '..')
 const SCRIPT = join(WEB, 'scripts', 'sync-golden.sh')
 const FIXTURES = join(WEB, 'src', 'engine', '__fixtures__')
-const BANK = process.env.HB_BANK_DIR ?? resolve(WEB, '..', '..', 'humanbench-bank')
+/** `$HB_BANK_DIR`, else the sibling `humanbench-bank` (as for the dumps). */
+const BANK = dirname(dirname(bankDumpsDir()))
 const FILES = ['sigma_v2.json', 'scoring_v1.json'] as const
 
 describe('golden fixtures match the sibling bank repo (A17)', () => {
@@ -20,7 +23,8 @@ describe('golden fixtures match the sibling bank repo (A17)', () => {
     for (const f of FILES) expect(existsSync(join(FIXTURES, f)), f).toBe(true)
   })
 
-  it.skipIf(!existsSync(join(BANK, 'golden')))('copies are byte-identical to the bank files', () => {
+  it('copies are byte-identical to the bank files', ({ skip }) => {
+    skip(!existsSync(join(BANK, 'golden')), `no bank checkout at ${BANK} (the sibling humanbench-bank, or $HB_BANK_DIR), e.g. in CI`)
     for (const f of FILES) {
       const mine = readFileSync(join(FIXTURES, f))
       const bank = readFileSync(join(BANK, 'golden', f))
