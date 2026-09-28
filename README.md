@@ -12,7 +12,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
 ## Layout
 
 - `web/`: the app (Vite, Svelte 5, TypeScript strict), deployed to GitHub Pages under `/humanbench/`
-  - `web/src/engine/`: scoring, timing
+  - `web/src/engine/`: scoring (MAP/Laplace, EAP, the §7.8 retest model for multi-session saves), timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/tasks/`: task families
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)

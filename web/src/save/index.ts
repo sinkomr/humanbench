@@ -5,7 +5,10 @@
  * localStorage autosave. JSON Schema: `schema/save-v1.json` at the repo root, published by the
  * build at `<base>schema/save-v1.json` (its `$id`).
  *
- * The property-test arbitraries (`testing.ts`) are test-only and not re-exported.
+ * The property-test arbitraries (`testing.ts`) are test-only and not re-exported. Re-scoring a
+ * save with the §7.8 retest model (`rescore.ts`, M1.Q) is not re-exported either: it imports the
+ * task registry, which would make this module heavy (`scripts/bundle.test.ts`). Import
+ * `save/rescore` explicitly.
  */
 export * from './autosave'
 export * from './clock'
