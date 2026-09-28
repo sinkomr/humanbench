@@ -38,6 +38,7 @@ import {
 import { logistic, p2pl, p3pl } from './irt'
 import { createRng, type Rng } from './prng'
 import type { ItemParams } from './types'
+import { validateSave } from '../save/validate'
 
 // ------------------------------------------------------------------------------ helpers
 
@@ -928,7 +929,16 @@ describe('integrityReport', () => {
     const rep = integrityReport({ responses: clean() })
     expect(rep.flags).toEqual([])
     expect(rep.item_flags).toEqual({})
-    expect(rep.save_flags).toEqual({ visibility_hidden_s: 0, paste_events: 0, fast_guess_n: 0 })
+    expect(rep.save_flags).toEqual({
+      visibility_hidden_s: 0,
+      paste_events: 0,
+      fast_guess_n: 0,
+      flag_count: 0,
+      calibration_eligible: true,
+      uniform_rt: false,
+      hard_item_accuracy: false,
+      person_fit: false,
+    })
     expect(rep.flag_count).toBe(0)
     expect(rep.calibration_eligible).toBe(true)
     expect(Object.keys(rep.checks)).toEqual([...FLAG_KINDS])
@@ -957,7 +967,51 @@ describe('integrityReport', () => {
     expect(two.flag_count).toBe(3)
     expect(two.calibration_eligible).toBe(false)
     expect(two.item_flags).toEqual({ 'i:1': ['visibility_hidden'], 'i:3': ['paste', 'too_fast'] })
-    expect(two.save_flags).toEqual({ visibility_hidden_s: 12.3, paste_events: 1, fast_guess_n: 1 })
+    expect(two.save_flags).toEqual({
+      visibility_hidden_s: 12.3,
+      paste_events: 1,
+      fast_guess_n: 1,
+      flag_count: 3,
+      calibration_eligible: false,
+      uniform_rt: false,
+      hard_item_accuracy: false,
+      person_fit: false,
+    })
+  })
+
+  it('save_flags mirror the report and are valid §8 session flags (property)', () => {
+    fc.assert(
+      fc.property(fc.array(fc.tuple(fc.integer({ min: 1, max: 60 }), fc.boolean()), { minLength: 1, maxLength: 12 }), fc.boolean(), (rows, pasted) => {
+        const rs = clean()
+          .slice(0, 1)
+          .concat(rows.map(([t, ok], i) => resp(i + 10, { expected_time_s: 10 + 5 * i, rt_ms: t * 1000, correct: ok ? 1 : 0 })))
+        const rep = integrityReport({ responses: rs, paste: pasted ? [{ t_ms: 0, item_id: rs[0]!.item_id }] : [] })
+        const sf = rep.save_flags
+        expect(sf.flag_count).toBe(rep.flag_count)
+        expect(sf.calibration_eligible).toBe(rep.calibration_eligible)
+        for (const k of ['uniform_rt', 'hard_item_accuracy', 'person_fit'] as const) expect(sf[k]).toBe(rep.flags.some((f) => f.kind === k))
+        const save = validateSave({
+          schema_version: '1.0.0',
+          bank_version: 'm1-static',
+          anon_id: 'hb_7Q3m9Kx2Vw5rT8pL',
+          created_utc: '2026-10-03T18:22:11Z',
+          sessions: [
+            {
+              session_id: 's_01J9ZK3QA',
+              started_utc: '2026-10-03T17:20:02Z',
+              duration_s: 60,
+              device: { class: 'desktop', input: 'mouse', os_family: 'macOS', browser_family: 'Safari', refresh_hz_est: null, timer_res_ms: null, viewport: [1, 1] },
+              flags: sf,
+              responses: [],
+            },
+          ],
+          seen_items: [],
+          seen_families: [],
+        })
+        expect(save.ok, save.ok ? '' : save.errors.join('\n')).toBe(true)
+      }),
+      { numRuns: 100 },
+    )
   })
 
   it('counts §13 flags per response: two too-fast answers exclude the session, one does not', () => {

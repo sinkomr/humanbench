@@ -170,7 +170,11 @@ export interface IntegritySession {
   readonly responses: readonly IntegrityResponse[]
   readonly visibility?: readonly VisibilityEvent[]
   readonly paste?: readonly PasteEvent[]
-  /** θ per axis for `hard_item_accuracy` (e.g. the session MAP); missing axes use the Bayes modal θ̂. */
+  /**
+   * θ per axis for `hard_item_accuracy` (e.g. a returning user's running estimate; not a θ shrunk
+   * toward 0 such as a first-session MAP under the population prior, see the module comment);
+   * missing axes use the Bayes modal θ̂.
+   */
   readonly theta?: Partial<Record<AxisCode, number>>
 }
 
@@ -278,6 +282,24 @@ export type IntegrityFlag = {
   [K in FlagKind]: { readonly kind: K; readonly n: number; readonly evidence: EvidenceOf[K] }
 }[FlagKind]
 
+/**
+ * The §8 save-file session `flags` object (snake_case numbers and booleans, `schema/save-v1.json`
+ * `flags`): the three §8 counters, the §13 count and eligibility, and whether each session-level
+ * kind was raised, so a save alone shows why a session was excluded from calibration. The
+ * per-item kinds are summarised by the counters; per-response `client_flags` (§12) and the event
+ * logs are not in the save (M1.15 decides whether the tuple `extra` carries them).
+ */
+export interface SaveFlags {
+  readonly visibility_hidden_s: number
+  readonly paste_events: number
+  readonly fast_guess_n: number
+  readonly flag_count: number
+  readonly calibration_eligible: boolean
+  readonly uniform_rt: boolean
+  readonly hard_item_accuracy: boolean
+  readonly person_fit: boolean
+}
+
 export interface IntegrityReport {
   /** Every check's outcome. */
   readonly checks: { readonly [K in FlagKind]: CheckResult<EvidenceOf[K]> }
@@ -285,8 +307,8 @@ export interface IntegrityReport {
   readonly flags: readonly IntegrityFlag[]
   /** Per-response flag kinds (§12 `responses.client_flags`), only for responses with any. */
   readonly item_flags: Readonly<Record<string, readonly ItemFlagKind[]>>
-  /** The §8 save-file session `flags` object. */
-  readonly save_flags: { readonly visibility_hidden_s: number; readonly paste_events: number; readonly fast_guess_n: number }
+  /** The §8 save-file session `flags` object ({@link SaveFlags}). */
+  readonly save_flags: SaveFlags
   /** The §13 flag count: Σ n over {@link flags} (per-response flags plus session-level kinds). */
   readonly flag_count: number
   /** §13: false when {@link flag_count} ≥ 2 or `person_fit` is raised. */
@@ -755,6 +777,8 @@ export function integrityReport(session: IntegritySession): IntegrityReport {
     if (kinds.length > 0) itemFlags[r.item_id] = kinds
   }
 
+  const flagCount = flags.reduce((acc, f) => acc + f.n, 0)
+  const eligible = calibrationEligible(flags)
   return {
     checks,
     flags,
@@ -763,8 +787,13 @@ export function integrityReport(session: IntegritySession): IntegrityReport {
       visibility_hidden_s: Math.round(checks.visibility_hidden.evidence.total_hidden_s * 10) / 10,
       paste_events: checks.paste.evidence.count,
       fast_guess_n: checks.too_fast.evidence.count,
+      flag_count: flagCount,
+      calibration_eligible: eligible,
+      uniform_rt: checks.uniform_rt.flagged,
+      hard_item_accuracy: checks.hard_item_accuracy.flagged,
+      person_fit: checks.person_fit.flagged,
     },
-    flag_count: flags.reduce((acc, f) => acc + f.n, 0),
-    calibration_eligible: calibrationEligible(flags),
+    flag_count: flagCount,
+    calibration_eligible: eligible,
   }
 }

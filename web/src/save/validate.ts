@@ -20,7 +20,13 @@ export type ValidationResult = { ok: true; save: SaveFileV1 } | { ok: false; err
 export const SCHEMA_VERSION_RE = /^1\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/u
 export const VERSION_TAG_RE = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/u
 export const ANON_ID_RE = /^hb_[0-9A-Za-z]{16,17}$/u
-export const UTC_SECONDS_RE = /^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/u
+/**
+ * A real UTC calendar second in 1970–9999 (`clock.ts`): month lengths and Gregorian leap years
+ * are in the pattern, so `2026-02-30` and `2026-02-29` fail here and in the schema alike, and a
+ * match always round-trips through `Date` (`create.test.ts` checks every day of 1960–2500).
+ */
+export const UTC_SECONDS_RE =
+  /^(?:(?:19[7-9][0-9]|[2-9][0-9]{3})-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1[0-9]|2[0-8])|(?:0[13-9]|1[0-2])-(?:29|30)|(?:0[13578]|1[02])-31)|(?:19(?:7[26]|8[048]|9[26])|[2-9][0-9](?:0[48]|[2468][048]|[13579][26])|(?:[2468][048]|[3579][26])00)-02-29)T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/u
 export const SESSION_ID_RE = /^s_[0-9A-Za-z]{8,32}$/u
 const ITEM_ID_RE = /^i:[^\uD800-\uDFFF]+$/u
 const FAMILY_ID_RE = /^f:[^\uD800-\uDFFF]+$/u

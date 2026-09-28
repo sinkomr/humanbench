@@ -72,7 +72,13 @@ describe('save ids (DESIGN §8 privacy)', () => {
     expect(utcSeconds(0)).toBe('1970-01-01T00:00:00Z')
     expect(parseUtcSeconds('2026-10-03T17:20:02Z')).toBe(Date.UTC(2026, 9, 3, 17, 20, 2))
     expect(parseUtcSeconds('2026-10-03T17:20:02.5Z')).toBeNaN()
-    for (const bad of [Number.NaN, Infinity, -1e15, 1e16]) expect(() => utcSeconds(bad)).toThrow(RangeError)
+    for (const bad of [Number.NaN, Infinity, -1e15, 1e16, -1]) expect(() => utcSeconds(bad)).toThrow(RangeError)
+    // Impossible calendar times are rejected, not rolled over into the next month (Date.parse does).
+    for (const bad of ['2026-02-30T00:00:00Z', '2026-02-29T00:00:00Z', '2100-02-29T00:00:00Z', '2026-06-31T00:00:00Z', '0000-01-01T00:00:00Z', '1969-12-31T23:59:59Z']) {
+      expect([bad, parseUtcSeconds(bad)]).toEqual([bad, Number.NaN])
+    }
+    expect(parseUtcSeconds('2028-02-29T00:00:00Z')).toBe(Date.UTC(2028, 1, 29))
+    expect(parseUtcSeconds('2000-02-29T00:00:00Z')).toBe(Date.UTC(2000, 1, 29))
     fc.assert(
       fc.property(fc.integer({ min: 0, max: Date.UTC(9999, 11, 31) }), (ms) => {
         const s = utcSeconds(ms)
@@ -80,6 +86,33 @@ describe('save ids (DESIGN §8 privacy)', () => {
         expect(parseUtcSeconds(s)).toBe(Math.floor(ms / 1000) * 1000)
       }),
     )
+  })
+
+  it('UTC_SECONDS_RE accepts exactly the real calendar days of 1970–9999 (every day of 1960–2500, sampled beyond)', () => {
+    const p2 = (n: number): string => String(n).padStart(2, '0')
+    const real = (y: number, m: number, d: number): boolean => {
+      const t = new Date(Date.UTC(2000, m - 1, d)) // year set below: Date.UTC maps 0–99 to 1900s
+      t.setUTCFullYear(y, m - 1, d)
+      return y >= 1970 && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d
+    }
+    const agree = (y: number, m: number, d: number): void => {
+      const s = `${String(y).padStart(4, '0')}-${p2(m)}-${p2(d)}T23:59:59Z`
+      const ok = UTC_SECONDS_RE.test(s)
+      if (ok !== real(y, m, d)) expect.fail(`${s}: pattern ${ok}, calendar ${real(y, m, d)}`)
+      if (ok && parseUtcSeconds(s) !== Date.parse(s)) expect.fail(`${s} does not round-trip`)
+    }
+    let n = 0
+    for (let y = 1960; y <= 2500; y++) {
+      for (let m = 1; m <= 12; m++) {
+        for (let d = 1; d <= 31; d++) {
+          agree(y, m, d)
+          n++
+        }
+      }
+    }
+    expect(n).toBe(541 * 12 * 31)
+    for (const y of [0, 1, 999, 1969, 2800, 2900, 3000, 4000, 9600, 9700, 9996, 9999]) for (let m = 1; m <= 12; m++) for (let d = 1; d <= 31; d++) agree(y, m, d)
+    fc.assert(fc.property(fc.integer({ min: 2501, max: 9999 }), fc.integer({ min: 1, max: 12 }), fc.integer({ min: 28, max: 31 }), (y, m, d) => agree(y, m, d)))
   })
 })
 

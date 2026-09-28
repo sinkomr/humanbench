@@ -182,7 +182,12 @@ export function rtBlockObservation(item: ItemInstance<RtSpec, RtKey>, response: 
  * `score()` of an RT block family (M1.F2 {@link BlockScore}): the Gaussian observation, or none
  * with the reason (`too_few_valid_trials`). No integrity flags yet (anticipations and misses are
  * counted in {@link rtBlockObservation}'s `meta`). The device class only annotates the
- * observation, which does not depend on it.
+ * observation, which does not depend on it while `rtNorm` has one norm per mode.
+ *
+ * The block `score(item, response)` contract has no device or input mode, so once the norms are
+ * per device (§11.6, §13 "normed separately", M4.8) this function cannot pick the right one: the
+ * session must then call {@link rtBlockObservation} with its `device.class` and `device.input`,
+ * or the contract gains a score context (ROADMAP M4.8).
  */
 export function rtBlockScore(item: ItemInstance<RtSpec, RtKey>, response: RtResponse): BlockScore {
   const r = rtBlockObservation(item, response, { device_class: 'unspecified' })

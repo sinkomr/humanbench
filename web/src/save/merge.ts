@@ -8,8 +8,12 @@
  * (property-tested in `merge.test.ts`). Field by field:
  * - `sessions` (§8 step 1): union by `session_id`, ignoring duplicates. When two copies of one
  *   session differ (an autosave snapshot vs the finished session), the kept copy is the maximum of
- *   (signed, response count, duration, canonical JSON), a total order, so the choice never
- *   depends on argument order. Output is sorted by (`started_utc`, `session_id`).
+ *   (signed, response count, duration, flags, canonical JSON), a total order, so the choice never
+ *   depends on argument order. Flags rank by (number of keys, Σ numeric values, number of `true`
+ *   values) ({@link flagRank}): the §13 report is written at session end (M1.19
+ *   `integrityReport`), so a finished copy can tie a pre-report autosave on responses and
+ *   duration, and its flags must not lose to `{}` in the canonical-JSON tie-break. Output is
+ *   sorted by (`started_utc`, `session_id`).
  * - `seen_items`, `seen_families` (§8 step 2): sorted set union.
  * - `anon_id`: the smaller id (code-unit order), so repeated merges converge on one id. Saves
  *   with different ids may be one person's (a fresh start, later joined with an old file) or two
@@ -39,12 +43,31 @@ function sortedUnion(lists: readonly (readonly string[])[]): string[] {
   return [...new Set(lists.flat())].sort(cmp)
 }
 
+/**
+ * How much integrity information a copy's flags hold: [keys, Σ positive numeric values, `true`
+ * count]. It only grows as a session goes on (counters rise, the end-of-session report adds
+ * keys), so the later copy of a session ranks at least as high (module comment). Never NaN (only
+ * values > 0 are summed, so the sum is at worst +∞).
+ */
+export function flagRank(flags: SaveSession['flags']): [number, number, number] {
+  let sum = 0
+  let trues = 0
+  for (const v of Object.values(flags)) {
+    if (typeof v === 'number') sum += Math.max(0, v)
+    else if (v === true) trues++
+  }
+  return [Object.keys(flags).length, sum, trues]
+}
+
 /** Total order on two copies of one session: the greater is kept (see the module comment). */
 function compareCopies(a: SaveSession, b: SaveSession, ja: string, jb: string): number {
   const signed = Number(a.sig !== undefined) - Number(b.sig !== undefined)
   if (signed !== 0) return signed
   if (a.responses.length !== b.responses.length) return a.responses.length - b.responses.length
   if (a.duration_s !== b.duration_s) return a.duration_s - b.duration_s
+  const fa = flagRank(a.flags)
+  const fb = flagRank(b.flags)
+  for (let i = 0; i < fa.length; i++) if (fa[i] !== fb[i]) return fa[i]! < fb[i]! ? -1 : 1 // not a − b: ∞ − ∞ is NaN
   return cmp(ja, jb)
 }
 

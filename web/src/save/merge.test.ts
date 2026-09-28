@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { jcs } from './jcs'
-import { distinctAnonIds, isUsableCache, mergeAll, mergeSaves, mergeSessions, normalizeSave, sameSave, subsumes } from './merge'
+import { distinctAnonIds, flagRank, isUsableCache, mergeAll, mergeSaves, mergeSessions, normalizeSave, sameSave, subsumes } from './merge'
 import { parseSaveText } from './parse'
 import { arbCache, arbSave, arbSaveFamily, arbSession, TEST_CTX } from './testing'
 import { SCHEMA_URL, SCHEMA_VERSION, type SaveFileV1, type SaveSession } from './types'
@@ -204,10 +204,46 @@ describe('merge (DESIGN §8 R-8.1)', () => {
     })
 
     it('breaks exact ties by canonical JSON, so the pick is order-free', () => {
-      const x = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 1, { flags: { paste_events: 1 } })
-      const y = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 1, { flags: { paste_events: 2 } })
+      // Same flag rank (1 key, Σ 2, no true): only the canonical JSON tells them apart.
+      const x = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 1, { flags: { paste_events: 2 } })
+      const y = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 1, { flags: { fast_guess_n: 2 } })
+      expect(flagRank(x.flags)).toEqual(flagRank(y.flags))
       expect(mergeSessions([[x], [y]])).toEqual(mergeSessions([[y], [x]]))
-      expect(mergeSessions([[x, y]])).toEqual([y])
+      expect(mergeSessions([[x, y]])).toEqual([x])
+    })
+
+    it('keeps the end-of-session integrity flags over a tied pre-report autosave (M1.19)', () => {
+      const autosave = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 3, { duration_s: 1200 })
+      const final = { ...autosave, flags: { visibility_hidden_s: 14, paste_events: 1, fast_guess_n: 2 } }
+      for (const [x, y] of [
+        [autosave, final],
+        [final, autosave],
+      ] as const) {
+        expect(mergeSaves(base({ sessions: [x] }), base({ sessions: [y] }), ctx).sessions).toEqual([final])
+      }
+      const zeros = { ...autosave, flags: { visibility_hidden_s: 0, paste_events: 0, fast_guess_n: 0, calibration_eligible: true } }
+      expect(mergeSessions([[zeros], [autosave]])).toEqual([zeros]) // more keys, even all-zero ones
+      const counted = { ...zeros, flags: { ...zeros.flags, paste_events: 1 } }
+      expect(mergeSessions([[counted], [zeros]])).toEqual([counted]) // same keys, higher counters
+    })
+
+    it('a copy whose flags grew (a new key, a higher counter or a raised boolean) wins either way (property)', () => {
+      fc.assert(
+        fc.property(arbSession(), fc.constantFrom(0, 1, 2), fc.integer({ min: 1, max: 50 }), (s, mode, d) => {
+          const grown = JSON.parse(JSON.stringify(s)) as SaveSession
+          if (mode === 0) grown.flags.flag_count = d
+          else if (mode === 1) grown.flags.paste_events = ((s.flags.paste_events as number | undefined) ?? 0) + d
+          else grown.flags.person_fit = true
+          expect(mergeSessions([[s], [grown]])).toEqual([grown])
+          expect(mergeSessions([[grown], [s]])).toEqual([grown])
+        }),
+        RUNS,
+      )
+    })
+
+    it('flagRank never returns NaN, even for extreme or negative values', () => {
+      expect(flagRank({ a: 1e308, b: 1e308, c: -1e308, d: true, e: false, f: null })).toEqual([6, Infinity, 1])
+      expect(flagRank({})).toEqual([0, 0, 0])
     })
 
     it('dedups duplicates inside one file too', () => {

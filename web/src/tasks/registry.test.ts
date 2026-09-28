@@ -1,15 +1,16 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { coding, codingSpecLeaksKey } from './coding'
 import { codingInvalidResponse, codingMalformedResponses, codingValidResponse } from './coding/synthetic'
 import { NUMERIC_ITEM_TYPE, kindOfModel, validateItemInstance, type AnyFamily, type ProceduralFamily } from './family'
-import { FAMILY_NAME_RE, GENERATOR_VERSION_RE, isPyTwinVersion } from './ids'
+import { FAMILY_NAME_RE, GENERATOR_VERSION_RE, STRATA, isPyTwinVersion, parseItemId } from './ids'
 import { matrices, matricesSpecLeaksKey } from './matrices'
 import { stratumOfB } from './priors'
 import { QUANT_TEMPLATES, quant, quantSpecLeaksKey } from './quant'
 import { reading, type ReadingKey, type ReadingSpec } from './reading'
 import { readingInvalidResponse, readingMalformedResponses, readingValidResponse } from './reading/synthetic'
 import { Fraction } from './quant/fraction'
-import { FAMILIES, FAMILY_NAMES, getFamily } from './registry'
+import { FAMILIES, FAMILY_NAMES, getFamily, resolveItem } from './registry'
 import { rotation } from './rotation'
 import { rotationSpecLeaksKey } from './rotation/verify'
 import { RT_SPEC_FIELDS, rtChoice4, rtSimple, type RtKey, type RtSpec } from './rt'
@@ -191,6 +192,46 @@ describe('family registry (M1.F)', () => {
         expect(['abs', 'rel'], name).toContain(Object.keys(key.tol as object)[0])
       }
     }
+  })
+
+  describe('resolveItem: an item id regenerates only with the exact generator that made it (A11, R-8.1)', () => {
+    it('regenerates every family item from its id, free and stratum-targeted (property)', () => {
+      const names = entries.map(([name]) => name)
+      fc.assert(
+        fc.property(fc.constantFrom(...names), fc.string({ minLength: 1, maxLength: 12 }), fc.nat(), (name, seed, k) => {
+          const fam = getFamily(name) as AnyFamily
+          const stratum = k % 2 === 0 ? undefined : fam.strata[k % fam.strata.length]
+          let item
+          try {
+            item = fam.generate(seed, stratum === undefined ? undefined : { stratum })
+          } catch (e) {
+            if (e instanceof RangeError) return // a seed that names another stratum (`…@s<k>`)
+            throw e
+          }
+          expect(resolveItem(item.item_id)).toEqual(item)
+        }),
+        { numRuns: 300 },
+      )
+    })
+
+    it('returns null for a bank twin id, another version, an unregistered family or a malformed id', () => {
+      const item = quant.generate('x0')
+      expect(resolveItem(item.item_id)).toEqual(item)
+      const { seed } = parseItemId(item.item_id)!
+      expect(resolveItem(`i:quant:${quant.generatorVersion}+py:${seed}`)).toBeNull() // the Python twin's item (A11)
+      expect(resolveItem(`i:quant:0.0.1:${seed}`)).toBeNull() // before a generator bump
+      expect(resolveItem('i:rt:1.1.0:x0')).toBeNull() // rt split into rt_simple / rt_choice4 at 2.0.0
+      for (const bad of ['', 'x', 'i:quant', `f:quant:${seed}`, `i:Quant:${quant.generatorVersion}:x0`, `i:quant:${quant.generatorVersion}:`]) {
+        expect(resolveItem(bad), bad).toBeNull()
+      }
+      expect(resolveItem(42 as unknown as string)).toBeNull()
+    })
+
+    it('returns null for a seed whose stratum the family cannot target', () => {
+      const missing = entries.flatMap(([name, fam]) => STRATA.filter((s) => !fam.strata.includes(s)).map((s) => [name, fam, s] as const))
+      expect(missing.length).toBeGreaterThan(0)
+      for (const [name, fam, s] of missing) expect(resolveItem(`i:${name}:${fam.generatorVersion}:x@s${s}`), `${name} @s${s}`).toBeNull()
+    })
   })
 
   it.each(entries.map(([name]) => name))(`registered family %s passes runFamilyProperties at n = ${REGISTRATION_N}`, (name) => {

@@ -541,7 +541,7 @@ export type PlannedStep =
       readonly segment: SegmentId
       readonly family: string
       readonly axis: AxisCode
-      /** The block instance (seed {@link blockSeed}, RT `…#<mode>`), so its id regenerates it. */
+      /** The block instance (seed {@link blockSeed}), so its id regenerates it (`resolveItem`). */
       readonly item: AnyItem
     }
   | {

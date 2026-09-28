@@ -6,7 +6,7 @@ import schemaText from '../../../schema/save-v1.json?raw'
 import { jcs } from './jcs'
 import { arbSave, TEST_CTX } from './testing'
 import { SCHEMA_URL, SCHEMA_VERSION } from './types'
-import { validateSave } from './validate'
+import { UTC_SECONDS_RE, validateSave } from './validate'
 import { normalizeSave } from './merge'
 
 /** The JSON example of DESIGN §8: the first ```json block after the §8 heading. */
@@ -44,6 +44,12 @@ const MUTATIONS: Mutation[] = [
   ['created_utc with offset', (d) => (d.created_utc = '2026-10-03T18:22:11+01:00')],
   ['created_utc month 13', (d) => (d.created_utc = '2026-13-03T18:22:11Z')],
   ['created_utc with ms', (d) => (d.created_utc = '2026-10-03T18:22:11.123Z')],
+  ['created_utc Feb 30', (d) => (d.created_utc = '2026-02-30T00:00:00Z')],
+  ['created_utc Feb 29 of a common year', (d) => (d.created_utc = '2026-02-29T00:00:00Z')],
+  ['created_utc Feb 29 of 2100', (d) => (d.created_utc = '2100-02-29T00:00:00Z')],
+  ['created_utc Apr 31', (d) => (d.created_utc = '2026-04-31T12:00:00Z')],
+  ['created_utc year 0000', (d) => (d.created_utc = '0000-01-01T00:00:00Z')],
+  ['started_utc before 1970', (d) => (sessionsOf(d)[0]!.started_utc = '1969-12-31T23:59:59Z')],
   ['bank_version empty', (d) => (d.bank_version = '')],
   ['seen item not i:', (d) => (d.seen_items = ['x:mat'])],
   ['seen family not f:', (d) => (d.seen_families = ['i:mat'])],
@@ -118,6 +124,16 @@ describe('schema/save-v1.json (DESIGN §8)', () => {
       apply(d)
       expect([name, ajvOk(d)]).toEqual([name, false])
       expect([name, tsOk(d)]).toEqual([name, false])
+    }
+  })
+
+  it('utc_seconds: the schema pattern is the TS pattern, and both accept the calendar edge days', () => {
+    const defs = schema.$defs as Record<string, { pattern: string }>
+    expect(defs.utc_seconds!.pattern).toBe(UTC_SECONDS_RE.source)
+    for (const t of ['2028-02-29T12:00:00Z', '2000-02-29T00:00:00Z', '1972-02-29T00:00:00Z', '2400-02-29T23:59:59Z', '1970-01-01T00:00:00Z', '9999-12-31T23:59:59Z', '2026-12-31T23:59:59Z']) {
+      const d = clone(designExample()) as Doc
+      d.created_utc = t
+      expect([t, ajvOk(d), tsOk(d)]).toEqual([t, true, true])
     }
   })
 

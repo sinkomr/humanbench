@@ -183,10 +183,12 @@ export type EntryFormat = 'integer' | 'decimal' | 'fraction' | 'letter'
 export type Tolerance = { readonly abs: number } | { readonly rel: number }
 
 /**
- * The numeric-entry key shared by the entry families (series, quant; §12, §14.6 ex. 2–3): the
- * exact answer as a canonical rational string ("42", "-7", "3/8": lowest terms, positive
- * denominator, no "+"), so fractions stay exact, and its {@link Tolerance}. A letter answer uses
- * `{ letter }` instead (series).
+ * The numeric-entry key shared by the entry families (series, quant; §12; M1.F2): the exact
+ * answer as a canonical rational string ("42", "-7", "3/8": lowest terms, positive denominator,
+ * no "+"), so fractions stay exact, and its {@link Tolerance}. A letter answer uses `{ letter }`
+ * instead (series). This replaces the `{"value": 42, "tol": 0}` of DESIGN §14.6 ex. 2–3, which
+ * predate M1.F2 (the DESIGN examples are not yet updated; there the same key reads
+ * `{"value": "42", "tol": {"abs": 0}}`).
  */
 export interface NumericKey {
   readonly value: string
