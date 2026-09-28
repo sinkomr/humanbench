@@ -118,6 +118,7 @@ export function isProceduralFamily(v: unknown): v is AnyFamily {
   const f = v as Record<string, unknown>
   return (
     typeof f.name === 'string' &&
+    (f.kind === 'item' || f.kind === 'block') &&
     typeof f.generatorVersion === 'string' &&
     typeof f.generate === 'function' &&
     typeof f.verify === 'function' &&

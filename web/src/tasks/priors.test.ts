@@ -1,5 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { gaussianObservationSigma } from './family'
 import {
   B_PRIOR_LIMIT,
   EXPECTED_TIME_BASE_S,
@@ -17,6 +18,13 @@ import {
   linearB,
   logit,
   stratumOfB,
+  CAL_NORMS,
+  FERMI_NORMS,
+  brierScore,
+  brierStandardError,
+  calibrationParams,
+  fermiParams,
+  fermiX,
 } from './priors'
 
 describe('p → b link (§6.ii)', () => {
@@ -132,6 +140,106 @@ describe('strata', () => {
       fc.property(fc.double({ min: -4, max: 4, noNaN: true }), fc.double({ min: -4, max: 4, noNaN: true }), (x, y) => {
         const [lo, hi] = x <= y ? [x, y] : [y, x]
         expect(stratumOfB(lo)).toBeLessThanOrEqual(stratumOfB(hi))
+      }),
+    )
+  })
+})
+
+describe('provisional FER and CAL location/scale (M1.P, A10; replaced at M4.8)', () => {
+  it('Fermi: x = −|log10(estimate / truth)| with the §7.1 δ model on the dex scale', () => {
+    expect(FERMI_NORMS).toEqual({ version: 'fermi-v0', median_abs_error_dex: 0.5, scale_dex: 0.2, residual_sd_dex: 0.35 })
+    expect(fermiX(3e7, 3.156e7)).toBeCloseTo(-0.022, 3) // §14.6 ex. 8
+    expect(fermiX(10, 1)).toBe(-1)
+    expect(fermiX(0.1, 1)).toBe(-1)
+    expect(fermiX(5, 5)).toBe(0)
+    for (const [e, t] of [[0, 1], [1, 0], [-1, 1], [Number.NaN, 1], [1, Number.POSITIVE_INFINITY]]) {
+      expect(() => fermiX(e as number, t as number)).toThrow(RangeError)
+    }
+    expect(fermiParams()).toEqual({ model: 'gaussian', lam: 0.2, d: -0.5, sigma: 0.35 })
+    // δ in θ units: an item one SD harder moves the expected −|e| down by one scale_dex.
+    expect(fermiParams(1).d).toBeCloseTo(-0.7, 12)
+    expect(() => fermiParams(Number.NaN)).toThrow(RangeError)
+    // A θ = 0 taker on a δ = 0 item: E[x] = d = −0.5 dex; about one 2PL item's information.
+    const p = fermiParams()
+    expect((p.lam * p.lam) / (p.sigma * p.sigma)).toBeCloseTo(0.327, 3)
+  })
+
+  it('property: −|e| is symmetric in over- and under-estimation and never positive', () => {
+    fc.assert(
+      fc.property(fc.double({ min: 1e-6, max: 1e9, noNaN: true }), fc.double({ min: 1e-6, max: 1e9, noNaN: true }), (e, t) => {
+        const x = fermiX(e, t)
+        expect(x).toBeLessThanOrEqual(0)
+        expect(x).toBeCloseTo(fermiX(t, e), 9)
+        expect(x).toBeCloseTo(-Math.abs(Math.log10(e / t)), 9)
+      }),
+    )
+  })
+
+  it('property: finite for every finite positive double pair, where the ratio over- or underflows too', () => {
+    expect(fermiX(1e308, 1e-308)).toBeCloseTo(-616, 9)
+    expect(fermiX(1e-308, 1e308)).toBeCloseTo(-616, 9)
+    expect(fermiX(5e-324, 1e10)).toBeCloseTo(-333.306, 3)
+    expect(fermiX(Number.MAX_VALUE, Number.MIN_VALUE)).toBe(fermiX(Number.MIN_VALUE, Number.MAX_VALUE))
+    const positive = fc.double({ min: Number.MIN_VALUE, max: Number.MAX_VALUE, noNaN: true, noDefaultInfinity: true })
+    fc.assert(
+      fc.property(positive, positive, (e, t) => {
+        const x = fermiX(e, t)
+        expect(Number.isFinite(x)).toBe(true)
+        expect(x).toBeLessThanOrEqual(0)
+        expect(x).toBe(fermiX(t, e))
+      }),
+      { numRuns: 1_000 },
+    )
+  })
+
+  it('Calibration: x = −Brier, standardised by the provisional population location/scale', () => {
+    expect(CAL_NORMS).toEqual({ version: 'cal-v0', brier_mean: 0.21, brier_sd: 0.06, reliability: 0.6, residual_sd: 0.02, min_responses: 10 })
+    // §14.6 ex. 9: c = 0.9, y = 0 → 0.81; c = 0.6, y = 1 → 0.16.
+    expect(brierScore([0.9], [0])).toBeCloseTo(0.81, 12)
+    expect(brierScore([0.6], [1])).toBeCloseTo(0.16, 12)
+    expect(brierScore([0.9, 0.6], [0, 1])).toBeCloseTo(0.485, 12)
+    const bad: [number[], number[]][] = [
+      [[], []],
+      [[0.5], []],
+      [[1.2], [1]],
+      [[0.5], [2]],
+    ]
+    for (const [c, y] of bad) expect(() => brierScore(c, y as (0 | 1)[])).toThrow(RangeError)
+    const p = calibrationParams()
+    expect(p.model).toBe('gaussian')
+    expect(p.d).toBe(-0.21)
+    // lam² is the reliable share of the population variance of −B …
+    expect((p.lam * p.lam) / 0.0036).toBeCloseTo(0.6, 12)
+    // … and sigma is τ_res (M1.F2's one meaning), not an observation sigma: at the reference
+    // session (30 answers, per-answer SD 0.18) √(SE² + τ_res²) is brier_sd·√(1 − reliability).
+    expect(p.sigma).toBe(CAL_NORMS.residual_sd)
+    const refSe = 0.18 / Math.sqrt(30)
+    const total = Math.sqrt(refSe * refSe + p.sigma * p.sigma)
+    expect(Math.abs(total / (0.06 * Math.sqrt(0.4)) - 1)).toBeLessThan(0.02)
+    expect(gaussianObservationSigma(refSe, p)).toBeCloseTo(total, 15)
+  })
+
+  it('brierStandardError: the sample SD of (c − y)² over √n', () => {
+    // Terms 0.81 and 0.16: mean 0.485, sample SD √(2·0.325²) = 0.4596, over √2 = 0.325.
+    expect(brierStandardError([0.9, 0.6], [0, 1])).toBeCloseTo(0.325, 12)
+    expect(brierStandardError([0.7, 0.7, 0.7], [1, 1, 1])).toBe(0)
+    for (const [c, y] of [[[0.5], [1]], [[], []], [[0.5, 1.5], [1, 0]], [[0.5, 0.5], [1]]] as [number[], (0 | 1)[]][]) {
+      expect(() => brierStandardError(c, y)).toThrow(RangeError)
+    }
+  })
+
+  it('property: brierStandardError is finite, ≥ 0 and 0 exactly when every answer has the same term', () => {
+    const answer = fc.tuple(fc.double({ min: 0, max: 1, noNaN: true }), fc.constantFrom<0 | 1>(0, 1))
+    fc.assert(
+      fc.property(fc.array(answer, { minLength: 2, maxLength: 60 }), (xs) => {
+        const c = xs.map(([v]) => v)
+        const y = xs.map(([, o]) => o)
+        const se = brierStandardError(c, y)
+        expect(Number.isFinite(se) && se >= 0).toBe(true)
+        // An SE never exceeds the largest possible term spread (1) over √n.
+        expect(se).toBeLessThanOrEqual(1 / Math.sqrt(xs.length - 1) + 1e-12)
+        const same = brierStandardError([c[0] as number, c[0] as number], [y[0] as 0 | 1, y[0] as 0 | 1])
+        expect(same).toBe(0)
       }),
     )
   })

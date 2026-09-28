@@ -1,7 +1,8 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { MalformedResponseError } from '../family'
 import { createRng } from '../../engine'
-import { STRATUM_B_CUTS, stratumOfB } from '../priors'
+import { ICAR_ANCHOR_B, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
 import {
   achiralCanon,
@@ -18,7 +19,7 @@ import {
   type Cube,
 } from './geometry'
 import { drawTarget, isTargetLike, movedDistractorPairs } from './gen'
-import { ANGLE_BINS, ROTATION_PRIOR, ROTATION_STRATA, rotationBPrior, rotationExpectedTime, type RotationStratum } from './prior'
+import { ANGLE_BINS, ANGLE_CENTRE_DEG, ANGLE_RANGE, ROTATION_PRIOR, ROTATION_STRATA, angleOfB, rotationBPrior, rotationExpectedTime } from './prior'
 import { analyseRotation, rotationSpecLeaksKey } from './verify'
 import { rotation, type RotationFeatures, type RotationItem } from '.'
 
@@ -34,6 +35,8 @@ const OPTS = {
   familyIdRatio: SMALL_STRUCTURE,
   specLeaksKey: rotationSpecLeaksKey,
   correctResponse: (item: RotationItem) => item.key.index,
+  incorrectResponse: (item: RotationItem) => (item.key.index + 1) % 4,
+  malformedResponses: () => [-1, 4, 1.5, '0', [0]],
 } as const
 
 const features = (item: RotationItem): RotationFeatures => item.difficulty.features as unknown as RotationFeatures
@@ -64,20 +67,24 @@ const adjacentInList = (cubes: readonly Cube[]): number =>
 const achiralKey = (cubes: readonly Cube[]): string => achiralCanon(cubes).join(';')
 
 describe('rotation family (M1.5, DESIGN §4.2)', () => {
-  it('passes runFamilyProperties at n = 10,000 spread over strata 2–5', () => {
+  it('passes runFamilyProperties at n = 10,000 spread over strata 2–6', () => {
     const r = runFamilyProperties(rotation, { ...OPTS, strata: rotation.strata })
     expect(r.n).toBe(10_000)
     expect(r.distinctItemIds).toBe(10_000)
     expect(r.distinctContents).toBe(10_000)
     expect(r.distinctFamilyIds).toBeGreaterThan(1_000)
-    expect(r.strataCounts).toEqual({ 1: 0, 2: 2_500, 3: 2_500, 4: 2_500, 5: 2_500, 6: 0 })
-    expect(r.bPrior.min).toBeGreaterThanOrEqual(STRATUM_B_CUTS[0]!)
-    expect(r.bPrior.max).toBeLessThan(STRATUM_B_CUTS[4]!)
+    expect(r.strataCounts).toEqual({ 1: 0, 2: 2_000, 3: 2_000, 4: 2_000, 5: 2_000, 6: 2_000 })
+    expect(r.bPrior.min).toBeGreaterThanOrEqual(-0.56)
+    expect(r.bPrior.max).toBeLessThan(3.46)
   }, 600_000)
 
-  it('passes runFamilyProperties when the family picks the stratum', () => {
+  it('passes runFamilyProperties when the family picks the stratum (the natural pool, M1.P)', () => {
     const r = runFamilyProperties(rotation, { ...OPTS, n: 2_000 })
-    for (const k of ROTATION_STRATA) expect(r.strataCounts[k]).toBeGreaterThan(400)
+    // Angles uniform on 20–180°: the strata hold their bins' shares of the 160° range.
+    for (const k of [3, 4, 5]) expect(r.strataCounts[k as 3]).toBeGreaterThan(400)
+    expect(r.strataCounts[6]).toBeGreaterThan(350)
+    expect(r.strataCounts[2]).toBeLessThan(80) // the 20–22° sliver
+    expect(Math.abs(r.bPrior.mean - ICAR_ANCHOR_B.rotation)).toBeLessThan(0.1)
   }, 300_000)
 
   it('has the identity of a spatial MC item with 3PL c = 1/4 (A9)', () => {
@@ -97,24 +104,35 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     )
   })
 
-  it('targets strata through angle bins and refuses strata 1 and 6', () => {
+  it('targets strata through angle bins and refuses stratum 1', () => {
+    expect(ROTATION_STRATA).toEqual([2, 3, 4, 5, 6])
     for (const k of ROTATION_STRATA) {
       const item = rotation.generate('bins', { stratum: k })
       expect(item.seed).toBe(`bins@s${k}`)
       expect(rotation.generate(`bins@s${k}`)).toEqual(item)
-      const [lo, hi] = ANGLE_BINS[k as RotationStratum]
+      const [lo, hi] = ANGLE_BINS[k] as readonly [number, number]
       expect(features(item).angle_deg).toBeGreaterThanOrEqual(lo)
       expect(features(item).angle_deg).toBeLessThan(hi)
     }
     expect(() => rotation.generate('bins', { stratum: 1 })).toThrow(RangeError)
-    expect(() => rotation.generate('bins', { stratum: 6 })).toThrow(RangeError)
   })
 
-  it('uses the [SPEC] v0 prior: ICAR anchor at 138°, +0.025 per degree, bins = default b bands', () => {
+  it('uses the [SPEC] v0 prior: ICAR anchor at the pool mean angle 100°, +0.025 per degree, bins = default b bands (M1.P)', () => {
     expect(ROTATION_PRIOR.anchorB).toBeCloseTo(1.45, 3)
-    expect(rotationBPrior({ angle_deg: 138 })).toBeCloseTo(1.45, 3)
-    expect(rotationBPrior({ angle_deg: 178 })).toBeCloseTo(2.45, 3)
-    for (const [k, [lo, hi]] of Object.entries(ANGLE_BINS)) {
+    expect(ANGLE_RANGE).toEqual([20, 180])
+    expect(ANGLE_CENTRE_DEG).toBe((ANGLE_RANGE[0] + ANGLE_RANGE[1]) / 2) // the mean of U(20, 180)
+    expect(rotationBPrior({ angle_deg: 100 })).toBe(ICAR_ANCHOR_B.rotation)
+    expect(rotationBPrior({ angle_deg: 140 })).toBeCloseTo(2.45, 3)
+    expect(angleOfB(ICAR_ANCHOR_B.rotation)).toBe(100)
+    // The bins are the bands' angle ranges: ≈ 20–22, 22–62, 62–102, 102–142, 142–180.
+    expect(Object.values(ANGLE_BINS).map(([lo, hi]) => [Math.round(lo), Math.round(hi)])).toEqual([
+      [20, 22],
+      [22, 62],
+      [62, 102],
+      [102, 142],
+      [142, 180],
+    ])
+    for (const [k, [lo, hi]] of Object.entries(ANGLE_BINS) as [string, readonly [number, number]][]) {
       expect(stratumOfB(rotationBPrior({ angle_deg: lo + 0.001 }))).toBe(Number(k))
       expect(stratumOfB(rotationBPrior({ angle_deg: hi - 0.001 }))).toBe(Number(k))
     }
@@ -255,7 +273,7 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     const k = item.key.index
     expect(rotation.score(item, k)).toEqual({ correct: 1 })
     expect(rotation.score(item, (k + 1) % 4)).toEqual({ correct: 0 })
-    expect(rotation.score(item, k + 0.5)).toEqual({ correct: 0 })
-    expect(rotation.score(item, Number.NaN)).toEqual({ correct: 0 })
+    // Not an option position: malformed (M1.F2), a RangeError.
+    for (const bad of [k + 0.5, Number.NaN, -1, 4, '0', null]) expect(() => rotation.score(item, bad as number), String(bad)).toThrow(MalformedResponseError)
   })
 })

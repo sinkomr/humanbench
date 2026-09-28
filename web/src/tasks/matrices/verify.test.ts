@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MalformedResponseError } from '../family'
 import { maskOf, type Cell, type RuleSet } from './grammar'
 import {
   EXAMPLE1_CHAIN,
@@ -58,8 +59,8 @@ describe('matrices verify: a hand-built §14.6 example 1', () => {
   it('scores the chosen option index', () => {
     expect(matrices.score(GOOD, 2)).toEqual({ correct: 1 })
     expect(matrices.score(GOOD, 0)).toEqual({ correct: 0 })
-    expect(matrices.score(GOOD, 2.5)).toEqual({ correct: 0 })
-    expect(matrices.score(GOOD, -1)).toEqual({ correct: 0 })
+    // Not an option position: malformed (M1.F2), a RangeError.
+    for (const bad of [2.5, -1, 6, '2', null]) expect(() => matrices.score(GOOD, bad as number), String(bad)).toThrow(MalformedResponseError)
   })
 })
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { validateItemInstance } from '../family'
 import { onlySpecFields, runFamilyProperties, type FamilyPropertyOptions } from '../testing'
 import { PASSAGES, READING_STRATUM, reading, readingBlockObservation, type ReadingItem, type ReadingKey, type ReadingResponse, type ReadingSpec } from '.'
+import { readingInvalidResponse, readingMalformedResponses, readingValidResponse } from './synthetic'
 
 /** The spec fields a reading block may carry; anything new is a deliberate decision. */
 const READING_SPEC_FIELDS = ['passage_id', 'paragraphs', 'word_count', 'source', 'questions'] as const
@@ -26,6 +27,9 @@ const OPTS: FamilyPropertyOptions<ReadingSpec, ReadingKey, ReadingResponse> = {
   familyIdRatio: ONE_FAMILY_PER_PASSAGE,
   contentRatio: SMALL_CONTENT,
   specLeaksKey: readingSpecLeaksKey,
+  validResponse: readingValidResponse,
+  invalidResponse: readingInvalidResponse,
+  malformedResponses: readingMalformedResponses,
 }
 
 /** Correct answers read at `wpm` words per minute. */
@@ -49,16 +53,17 @@ describe('reading family: property suite (DESIGN §14.3 M1 acceptance 1)', () =>
     expect(r.strataCounts[3]).toBe(1_200)
   }, 60_000)
 
-  it('scores all 10,000 instances: correct answers give ln(wpm), a failed gate gives no value', () => {
+  it('scores all 10,000 instances: correct answers give x = ln(wpm), a failed gate gives no observation', () => {
     const problems: string[] = []
     for (let i = 0; i < 10_000; i++) {
       const item = reading.generate(`score-${i}`)
       const wpm = 150 + (i % 700)
       const ok = reading.score(item, responseAt(item, wpm))
-      if (ok.correct !== null || ok.value === undefined || Math.abs(ok.value - Math.log(wpm)) > 1e-9) problems.push(`score-${i}: ${JSON.stringify(ok)}`)
+      const x = ok.observation?.kind === 'gaussian' ? ok.observation.x : undefined
+      if (ok.correct !== null || x === undefined || Math.abs(x - Math.log(wpm)) > 1e-9) problems.push(`score-${i}: ${JSON.stringify(ok)}`)
       const wrong = item.key.indices.map((k) => (k + 1) % 4)
       const failed = reading.score(item, responseAt(item, wpm, wrong))
-      if (failed.correct !== null || 'value' in failed) problems.push(`score-${i} (wrong): ${JSON.stringify(failed)}`)
+      if (failed.correct !== null || 'observation' in failed || failed.reasons.join() !== 'gate_failed') problems.push(`score-${i} (wrong): ${JSON.stringify(failed)}`)
       if (problems.length > 10) break
     }
     expect(problems).toEqual([])
@@ -69,7 +74,8 @@ describe('reading family: identity, strata and randomisation', () => {
   it('is a PS reading-speed block family with Gaussian params (A10) and no options_count', () => {
     expect(reading.name).toBe('reading')
     expect(reading.axis).toBe('PS')
-    expect(reading.facet).toBe('reading_speed')
+    expect(reading.kind).toBe('block')
+    expect(reading.facets).toEqual(['reading_speed'])
     expect(reading.itemType).toBe('reading_block')
     expect(reading.strata).toEqual([READING_STRATUM])
     const item = reading.generate('identity')

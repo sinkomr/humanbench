@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { NUMERIC_ITEM_TYPE, itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
+import { MalformedResponseError, NUMERIC_ITEM_TYPE, itemParamsFor, validateItemInstance, type AnyFamily, type ItemInstance } from '../family'
 import { itemId, structuralHash } from '../ids'
-import { ICAR_ANCHOR_B, stratumOfB } from '../priors'
+import { ICAR_ANCHOR_B, powerTimeLimit, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
 import { ANALYSIS_FIXTURE_N, analysisCase, analysisFixture, serializeAnalysisFixture } from './analysis-fixture'
 import { SERIES_STRATA, acceptDraft, minVisibleFor, renderDraft, type Draft } from './gen'
 import { series, seriesSpecLeaksKey, type SeriesItem, type SeriesKey, type SeriesSpec } from '.'
-import { SERIES_PRIOR, SERIES_PROVENANCE, seriesB, seriesDifficulty, seriesExpectedTime, seriesFeatures } from './prior'
+import { POOL_FEATURE_MEANS, SERIES_PRIOR, SERIES_PROVENANCE, seriesB, seriesDifficulty, seriesExpectedTime, seriesFeatures } from './prior'
 import {
   EPSILON_BITS,
   RULE_NAMES,
@@ -53,7 +53,21 @@ const CONTENT_RATIO = { min: 0.9, reason: 'letter series (1,248 possible) and sm
 const correctResponse = (item: SeriesItem): string =>
   'letter' in item.key ? item.key.letter.toLowerCase() : ` ${item.key.value} `
 
-const OPTS = { specLeaksKey: seriesSpecLeaksKey, familyIdRatio: FAMILY_ID_RATIO, contentRatio: CONTENT_RATIO, correctResponse } as const
+/** A well-formed wrong answer: the next letter, or the key + 1 (as a number: numeric keypads send numbers). */
+const incorrectResponse = (item: SeriesItem): string | number =>
+  'letter' in item.key ? String.fromCharCode(((item.key.letter.charCodeAt(0) - 65 + 1) % 26) + 65) : Number(item.key.value) + 1
+
+/** Malformed series responses (M1.F2): not text and not a finite number. */
+const malformedResponses = (): unknown[] => [[], ['4'], Number.POSITIVE_INFINITY, { value: '4' }]
+
+const OPTS = {
+  specLeaksKey: seriesSpecLeaksKey,
+  familyIdRatio: FAMILY_ID_RATIO,
+  contentRatio: CONTENT_RATIO,
+  correctResponse,
+  incorrectResponse,
+  malformedResponses,
+} as const
 
 type Mutable = { -readonly [K in keyof SeriesItem]: unknown }
 
@@ -68,6 +82,7 @@ function makeItem(rule: RuleName, coefficients: Record<string, number | string>,
   return {
     item_id: itemId('series', series.generatorVersion, seed),
     family_id: series.familyIdOf({ rule, coefficients }),
+    sibling_group: series.familyIdOf({ rule, coefficients }),
     family: 'series',
     generator_version: series.generatorVersion,
     seed,
@@ -81,6 +96,7 @@ function makeItem(rule: RuleName, coefficients: Record<string, number | string>,
     params: itemParamsFor(undefined, 1, difficulty.b_prior),
     difficulty,
     expected_time_s: seriesExpectedTime(features),
+    time_limit_s: powerTimeLimit(seriesExpectedTime(features)),
   }
 }
 
@@ -104,16 +120,15 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
     expect(r.strataCounts).toEqual({ 1: 2_000, 2: 2_000, 3: 2_000, 4: 2_000, 5: 2_000, 6: 0 })
   }, 180_000)
 
-  it('passes runFamilyProperties at n = 10,000 with the natural stratum mix', () => {
+  it('passes runFamilyProperties at n = 10,000 over the natural pool (M1.P)', () => {
     const r = runFamilyProperties(series, OPTS)
     expect(r.n).toBe(10_000)
-    for (const s of SERIES_STRATA) expect(r.strataCounts[s]).toBeGreaterThan(800)
+    for (const s of SERIES_STRATA) expect(r.strataCounts[s]).toBeGreaterThan(500)
     expect(r.strataCounts[6]).toBe(0)
     expect(r.bPrior.min).toBeLessThan(-1.5)
     expect(r.bPrior.max).toBeGreaterThan(1.5)
-    // The natural mix centres on stratum 3, above the ICAR anchor (an ICAR-like item, see prior.ts).
-    expect(r.bPrior.mean).toBeGreaterThan(-0.5)
-    expect(r.bPrior.mean).toBeLessThan(0.5)
+    // The pool mean is the ICAR series anchor: the prior is centred at the pool's feature means.
+    expect(Math.abs(r.bPrior.mean - ICAR_ANCHOR_B.series)).toBeLessThan(0.1)
   }, 180_000)
 
   it('generates every rule family, numbers and letters, with 5–7 terms (interleaved 6–7)', () => {
@@ -140,7 +155,8 @@ describe('series family: identity, strata and params', () => {
   it('is axis MAT, facet series, the shared entry item type "numeric" (as quant), strata 1–5', () => {
     expect(series.name).toBe('series')
     expect(series.axis).toBe('MAT')
-    expect(series.facet).toBe('series')
+    expect(series.kind).toBe('item')
+    expect(series.facets).toEqual(['series'])
     expect(series.itemType).toBe('numeric')
     expect(series.itemType).toBe(NUMERIC_ITEM_TYPE)
     expect(series.strata).toEqual([1, 2, 3, 4, 5])
@@ -438,6 +454,22 @@ describe('series verify: hand-built items', () => {
     expect(r).not.toMatch(/min_dl_rules_agree/)
   })
 
+  it('pins simpler_than_interpolant as STRICT: a key rule whose DL ties the interpolant fails (M1.F2)', () => {
+    // −7 ×5 is Fibonacci-type with c = 7 (t + t' + 7 = −7): DL = 7 bits + log2(8·8·8) = 16, and the
+    // degree-4 interpolant (−7, 0, 0, 0, 0) = 13 bits + log2(8) = 16. An exact tie: `<` rejects it,
+    // the `<=` mutant would accept it. One step down (c = 6 on −6 ×5: 7 + log2 343 ≈ 15.42 vs
+    // 13 + log2 7 ≈ 15.81) is strictly simpler and passes.
+    const tie = analyse([-7, -7, -7, -7, -7], false)
+    const tieFit = tie.fits.find((f) => f.rule === 'fibonacci' && f.coefficients.c === 7)
+    expect(tieFit).toBeDefined()
+    expect(compareDl(tieFit!.dl, tie.interpolant)).toBe(0)
+    expect(uniquenessChecks(tie, { rule: 'fibonacci', coefficients: { c: 7 } }, -7).simpler_than_interpolant).toBe(false)
+    const below = analyse([-6, -6, -6, -6, -6], false)
+    const belowFit = below.fits.find((f) => f.rule === 'fibonacci' && f.coefficients.c === 6)
+    expect(compareDl(belowFit!.dl, below.interpolant)).toBe(-1)
+    expect(uniquenessChecks(below, { rule: 'fibonacci', coefficients: { c: 6 } }, -6).simpler_than_interpolant).toBe(true)
+  })
+
   it('rejects a key rule that is not strictly simpler than the interpolating polynomial', () => {
     // interleaved 900, 903, 906 | 901, 905, 909 → 909 costs 31.95 bits; the degree-5 interpolant 31.14
     const item = makeItem('interleaved', { da: 3, db: 4 }, [900, 901, 903, 905, 906, 909, 909])
@@ -475,8 +507,12 @@ describe('series score', () => {
     expect(series.score(num, -9)).toEqual({ correct: 0 })
     expect(series.score(num, '-10.0')).toEqual({ correct: 0 })
     expect(series.score(num, '')).toEqual({ correct: 0 })
-    expect(series.score(num, Number.NaN)).toEqual({ correct: 0 })
     expect(series.score(num, -10.5)).toEqual({ correct: 0 })
+    // Not text and not a finite number: malformed (M1.F2), not a wrong answer.
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, null, undefined, true, [-10], { value: '-10' }]) {
+      expect(() => series.score(num, bad as never), String(bad)).toThrow(MalformedResponseError)
+      expect(() => series.score(let_, bad as never), String(bad)).toThrow(RangeError)
+    }
     expect(parseIntegerResponse('+42')).toBe(42)
     expect(parseIntegerResponse('4 2')).toBeUndefined()
   })
@@ -508,15 +544,35 @@ describe('series score', () => {
 })
 
 describe('series prior (M1.P v0)', () => {
-  it('is anchored at ICAR series p = .59 on the ICAR-like reference item', () => {
+  it('is anchored at ICAR series p = .59 as the pool mean: the centres are the natural pool means (M1.P)', () => {
     expect(SERIES_PRIOR.anchorB).toBe(ICAR_ANCHOR_B.series)
     expect(SERIES_PRIOR.anchorB).toBeCloseTo(-0.364, 3)
-    // 2, 3, 5, 8, 12, 17 → 23: a two-part (cost 4) rule, 6 terms, 2 digits, ascending
+    for (const [k, t] of Object.entries(SERIES_PRIOR.terms)) expect(t.centre, k).toBe(POOL_FEATURE_MEANS[k as keyof typeof POOL_FEATURE_MEANS])
+    // The item at the pool-mean features (a composite of the natural mix) sits at the anchor.
+    expect(seriesB({ rule: 'quadratic', ...POOL_FEATURE_MEANS } as never)).toBeCloseTo(ICAR_ANCHOR_B.series, 12)
+    // The pre-1.3.0 reference item 2, 3, 5, 8, 12, 17 → 23 (a cost-4 rule, 6 terms, 2 digits,
+    // ascending) now sits below the anchor: the natural pool is harder than it.
     const ref = makeItem('quadratic', { s: 1 }, [2, 3, 5, 8, 12, 17, 23])
     expect(series.verify(ref).ok).toBe(true)
-    expect(ref.difficulty.b_prior).toBe(ICAR_ANCHOR_B.series)
+    expect(ref.difficulty.b_prior).toBeLessThan(ICAR_ANCHOR_B.series)
     expect(ref.difficulty.provenance).toBe(SERIES_PROVENANCE)
   })
+
+  it('re-estimates the pool feature means within rounding over 20,000 natural draws', () => {
+    // The centres were estimated over 100,000 draws (seed "natural"); an independent 20,000
+    // agree within 4 SEs of each mean (and the pool mean b within 0.1 of the anchor, below).
+    const sums: Record<string, number> = {}
+    const n = 20_000
+    let sumB = 0
+    for (let i = 0; i < n; i++) {
+      const item = series.generate(`centres-${i}`)
+      sumB += item.difficulty.b_prior
+      for (const k of Object.keys(POOL_FEATURE_MEANS)) sums[k] = (sums[k] ?? 0) + Number(item.difficulty.features[k])
+    }
+    const tol: Record<string, number> = { family_cost: 0.04, max_digits: 0.04, visible_terms: 0.03, has_negative: 0.02, descending: 0.02, wraps: 0.01, is_letter: 0.01 }
+    for (const [k, want] of Object.entries(POOL_FEATURE_MEANS)) expect(Math.abs((sums[k] as number) / n - want), k).toBeLessThan(tol[k] as number)
+    expect(Math.abs(sumB / n - ICAR_ANCHOR_B.series)).toBeLessThan(0.05)
+  }, 120_000)
 
   it('counts a letter as one symbol, whatever its alphabet position', () => {
     const early = seriesFeatures('letter', { d: 1 }, [1, 2, 3, 4, 5, 6])

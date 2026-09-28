@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { grmCumulative, grmProbs, loglikGrm } from '../../engine'
+import { MalformedResponseError } from '../family'
 import { B_PRIOR_LIMIT, stratumOfB } from '../priors'
 import {
   SPAN_BWD,
@@ -20,11 +21,20 @@ import {
   spanFwd,
   spanObservation,
   spanStratum,
+  SPAN_UNFINISHED,
   type SpanItem,
   type SpanOutcome,
 } from '.'
 
 const WRONG: number[] = []
+
+/** The BlockScore of a finished block with GRM category y (M1.F2). */
+const grmScore = (item: SpanItem, y: number) => {
+  const p = item.params as unknown as { a: number; b: number[] }
+  return { correct: null, observation: { kind: 'grm', axis: 'WM', a: p.a, b: [...p.b], y }, flags: [], reasons: [] }
+}
+/** The BlockScore of an unfinished block. */
+const UNFINISHED = { correct: null, flags: [], reasons: [SPAN_UNFINISHED] }
 
 /** Any seed except one ending in `@s<k>`, which would target a stratum the family may not have. */
 const SEEDS = fc.string({ minLength: 1 }).filter((s) => !/@s[1-6]$/.test(s))
@@ -120,9 +130,9 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
     const responses = takerResponses(item, 5)
     expect(responses).toHaveLength(8)
     expect(outcomeOf(item, responses)).toEqual({ longest_passed: 5, category: 3, trials_given: 8, trials_correct: 6, stop: 'failed_length' })
-    expect(spanBwd.score(item, responses)).toEqual({ correct: null, value: 3 })
+    expect(spanBwd.score(item, responses)).toEqual(grmScore(item, 3))
     // Typing the digits in presentation order is wrong on every backward trial.
-    expect(spanBwd.score(item, item.spec.trials.slice(0, 2))).toEqual({ correct: null, value: 0 })
+    expect(spanBwd.score(item, item.spec.trials.slice(0, 2))).toEqual(grmScore(item, 0))
   })
 
   it('§14.6 ex. 11: Corsi positions are compared exactly, in order', () => {
@@ -145,7 +155,7 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
         expect(o.longest_passed).toBe(longest)
         expect(o.category).toBe(longest === 0 ? 0 : longest - 2)
         expect(o.trials_given).toBe(2 * (Math.min(Math.max(span, 2), max - 1) - 1))
-        expect(family.score(item, responses)).toEqual({ correct: null, value: o.category })
+        expect(family.score(item, responses)).toEqual(grmScore(item, o.category))
       }),
       { numRuns: 500 },
     )
@@ -153,16 +163,64 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
 
   it('scores unfinished blocks with no value and refuses responses after the end', () => {
     const item = spanFwd.generate('partial')
-    expect(spanFwd.score(item, [item.key.sequences[0]])).toEqual({ correct: null })
-    expect(() => spanFwd.score(item, [WRONG, WRONG, WRONG])).toThrow(RangeError)
-    expect(() => spanFwd.score(item, [...item.key.sequences, WRONG])).toThrow(RangeError)
+    expect(spanFwd.score(item, [item.key.sequences[0]])).toEqual(UNFINISHED)
+    expect(() => spanFwd.score(item, [WRONG, WRONG, WRONG])).toThrow(MalformedResponseError)
+    expect(() => spanFwd.score(item, [...item.key.sequences, WRONG])).toThrow(MalformedResponseError)
   })
 
-  it('treats malformed trial responses as wrong', () => {
+  it('treats missing trials, blank slots and wrong symbols as wrong; non-array entries and non-symbol elements as malformed (M1.F2)', () => {
     const item = spanFwd.generate('malformed')
     const k = item.key.sequences[0] as number[]
-    expect(spanFwd.score(item, [k.join(''), k.map(String)])).toEqual({ correct: null, value: 0 })
-    expect(spanFwd.score(item, [null, { digits: k }])).toEqual({ correct: null, value: 0 })
+    expect(spanFwd.score(item, [null, undefined])).toEqual(grmScore(item, 0))
+    // Well-formed but wrong: other digits, the wrong length, blank (null) slots as JSON writes holes.
+    expect(spanFwd.score(item, [[...k].reverse(), k.slice(1)])).toEqual(grmScore(item, 0))
+    expect(spanFwd.score(item, [k.map(() => null), [null, ...k.slice(1)]])).toEqual(grmScore(item, 0))
+    for (const bad of [k.join(''), { digits: k }, 123, true]) {
+      expect(() => spanFwd.score(item, [bad, k]), JSON.stringify(bad)).toThrow(MalformedResponseError)
+    }
+    for (const bad of ['123', null, undefined, { 0: k }]) expect(() => spanFwd.score(item, bad as never)).toThrow(MalformedResponseError)
+    // An element that is not a symbol of the task is a renderer bug, not a wrong answer.
+    for (const el of [10, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '3', {}, [], true]) {
+      expect(() => spanFwd.score(item, [[el, ...k.slice(1)], k]), String(el)).toThrow(MalformedResponseError)
+      expect(() => spanFwd.score(item, [k, [...k.slice(1), el]]), String(el)).toThrow(MalformedResponseError)
+    }
+    expect(() => spanFwd.score(item, [k.map(String), null])).toThrow(MalformedResponseError)
+  })
+
+  it('checks elements against each task\'s alphabet: digits 1–9, Corsi blocks 0–8 (M1.F2)', () => {
+    const c = corsi.generate('alphabet')
+    const k = c.key.sequences[0] as number[]
+    // Corsi block 0 is a symbol (a well-formed, here wrong, answer); block 9 or 99 is not.
+    expect(corsi.score(c, [[0, 0, 0], [0, 0, 0]])).toEqual(grmScore(c, 0))
+    for (const el of [9, 99, -5, 1.5]) expect(() => corsi.score(c, [[el, ...k.slice(1)], k]), String(el)).toThrow(MalformedResponseError)
+    const b = spanBwd.generate('alphabet')
+    expect(spanBwd.score(b, [[9, 9, 9], [1, 1, 1]])).toEqual(grmScore(b, 0))
+    for (const el of [0, 10]) expect(() => spanBwd.score(b, [[el, 1, 2], null]), String(el)).toThrow(MalformedResponseError)
+  })
+
+  it('property: a stream of well-formed entries never throws; one non-symbol element always does (M1.F2)', () => {
+    const entry = (symbols: readonly number[]) =>
+      fc.oneof(fc.constant(null), fc.array(fc.oneof(fc.constantFrom(...symbols), fc.constant(null)), { maxLength: 12 }))
+    fc.assert(
+      fc.property(
+        fc.constantFrom(spanFwd, spanBwd, corsi),
+        fc.string(),
+        fc.integer({ min: 0, max: 1 }),
+        fc.oneof(fc.integer({ min: -100, max: 100 }), fc.double(), fc.string(), fc.boolean()),
+        (family, seed, pos, el) => {
+          const item = family.generate(`p-${seed}`)
+          const symbols = SPAN_TASKS.find((c) => c.task === item.spec.task)?.symbols as readonly number[]
+          const stream = fc.sample(fc.array(entry(symbols), { minLength: 2, maxLength: 2 }), { numRuns: 1, seed: seed.length })[0] as unknown[][]
+          const s = family.score(item, stream)
+          expect(s.reasons.length > 0 || s.observation !== undefined).toBe(true)
+          if (typeof el === 'number' && symbols.includes(el)) return
+          const bad = stream.map((t) => (t === null ? [] : [...t]))
+          ;(bad[pos] as unknown[]).push(el)
+          expect(() => family.score(item, bad)).toThrow(MalformedResponseError)
+        },
+      ),
+      { numRuns: 300 },
+    )
   })
 
   it('gives no credit for blank or partly filled entry slots (sparse arrays)', () => {
@@ -170,13 +228,13 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
     for (const family of [spanFwd, spanBwd, corsi]) {
       const item = family.generate('holes')
       const blank = item.key.sequences.map((s) => new Array<number>(s.length))
-      expect(family.score(item, blank.slice(0, 2))).toEqual({ correct: null, value: 0 })
+      expect(family.score(item, blank.slice(0, 2))).toEqual(grmScore(item, 0))
       const lastOnly = item.key.sequences.slice(0, 2).map((s) => {
         const r = new Array<number>(s.length)
         r[s.length - 1] = s[s.length - 1] as number
         return r
       })
-      expect(family.score(item, lastOnly)).toEqual({ correct: null, value: 0 })
+      expect(family.score(item, lastOnly)).toEqual(grmScore(item, 0))
       // A hole in the response stream itself is a missing, hence wrong, trial.
       expect(runBlock(item, [, item.key.sequences[1]])).toMatchObject({ finished: false, trial: 2, longest_passed: 3 })
       expect(outcomeOf(item, new Array(2))).toMatchObject({ longest_passed: 0, category: 0, trials_given: 2 })

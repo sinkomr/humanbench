@@ -31,7 +31,7 @@
 
 import { verdict, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
-import { stratumOfB } from '../priors'
+import { powerTimeLimit, stratumOfB } from '../priors'
 import {
   COORD_LIMIT,
   MIN_ARMS,
@@ -62,10 +62,8 @@ import {
   ANGLE_BINS,
   ROTATION_SD_PRIOR,
   ROTATION_STRATA,
-  ROTATION_TIME_LIMIT_S,
   rotationBPrior,
   rotationExpectedTime,
-  type RotationStratum,
 } from './prior'
 import {
   ANGLE_TOL_DEG,
@@ -239,7 +237,7 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
   const angle = featuresComplete ? (f.angle_deg as number) : NaN
   const cos = featuresComplete ? (f.axis_view_cos as number) : NaN
   const bPrior = item.difficulty?.b_prior
-  const stratum = item.stratum as RotationStratum
+  const stratum = item.stratum
   const bin = ANGLE_BINS[stratum] as readonly [number, number] | undefined
 
   return verdict({
@@ -295,7 +293,7 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
     time_matches:
       featuresComplete &&
       Math.abs(item.expected_time_s - rotationExpectedTime(angle)) <= TIME_TOL &&
-      item.time_limit_s === ROTATION_TIME_LIMIT_S,
+      item.time_limit_s === powerTimeLimit(item.expected_time_s),
     distractors: distractorKinds,
   })
 }

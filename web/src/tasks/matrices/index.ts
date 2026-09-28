@@ -9,7 +9,10 @@
  * - `verify.ts`, `score.ts`, `prior.ts` ([SPEC] v0 b prior and E[T], M1.P).
  *
  * The Python twin is the bank's `hb.gen.matrices`, which cross-checks this family's dump
- * (`golden/ts_dumps/matrices.json`, A1: 0 disagreements).
+ * (`golden/ts_dumps/matrices.json`, A1: 0 disagreements). Version 1.1.0 (contract v2, M1.F2):
+ * `sibling_group`; the 180 s cap is now the shared `powerTimeLimit` rule set by `defineFamily`.
+ * 1.2.0 (M1.P): the prior is centred at the natural pool's rule-type means, and the pool draws
+ * rule sets uniformly, so its mean b is the ICAR anchor.
  */
 
 import { defineFamily } from '../family'
@@ -24,9 +27,10 @@ export type { MatrixItem } from './verify'
 
 export const matrices = defineFamily<MatrixSpec, MatrixKey, MatrixResponse>({
   name: 'matrices',
+  kind: 'item',
   axis: 'MAT',
-  facet: 'matrix',
-  generatorVersion: '1.0.0',
+  facets: ['matrix'],
+  generatorVersion: '1.2.0',
   itemType: 'mc_matrix_spec',
   strata: MATRIX_STRATA,
   build: buildMatrix,

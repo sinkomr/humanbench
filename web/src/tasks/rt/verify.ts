@@ -20,7 +20,9 @@
  * - `structure_matches`: structural_params is the mode's structure (A11);
  * - `params_match_norms`: Gaussian lam = −s, d = β, sigma = τ_res of the mode's norm (A10);
  * - `stratum_matches`, `prior_matches`, `expected_time_matches`: the M1.P priors recomputed
- *   (`prior_matches` includes the provenance string).
+ *   (`prior_matches` includes the provenance string);
+ * - with the family's mode (M1.F2: one family per sub-task): `mode_matches_family`, and the
+ *   facet of the mode's family.
  */
 
 import type { JsonValue } from '../../engine'
@@ -34,8 +36,11 @@ import {
   MAX_POSITION_RUN,
   RT_MODE_CONFIG,
   RT_PRACTICE_TRIALS,
+  RT_FACETS,
   isRtMode,
+  rtFamilyName,
   type RtKey,
+  type RtMode,
   type RtSpec,
 } from './types'
 
@@ -57,10 +62,14 @@ const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInt
 const isIntArray = (v: unknown): v is number[] => Array.isArray(v) && v.every(isInt)
 const sameInts = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((x, i) => x === b[i])
 
-function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
+function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>, familyMode: RtMode | undefined): VerifyResult {
   const spec: unknown = item.spec
   if (!isPlainObject(spec) || !isRtMode(spec.mode)) return verdict({ mode_known: false })
   const mode = spec.mode
+  const ofFamily: Record<string, JsonValue> =
+    familyMode === undefined
+      ? {}
+      : { mode_matches_family: mode === familyMode, facet_matches: item.facet === RT_FACETS[familyMode] && item.family === rtFamilyName(familyMode) }
   const { practice_foreperiods_ms: pf, practice_positions: pp, foreperiods_ms: fp, positions: pos } = spec
   if (!(isIntArray(pf) && isIntArray(pp) && isIntArray(fp) && isIntArray(pos))) {
     return verdict({ mode_known: true, schedule_integer_arrays: false })
@@ -92,6 +101,7 @@ function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
 
   return verdict({
     mode_known: true,
+    ...ofFamily,
     schedule_integer_arrays: true,
     spec_fields_exact: Object.keys(spec).sort().join(',') === [...RT_SPEC_FIELDS].sort().join(','),
     n_positions_matches_mode: spec.n_positions === cfg.n_positions,
@@ -113,10 +123,13 @@ function verifyUnchecked(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
   })
 }
 
-/** The family's `verify`: never throws; a malformed instance fails with the error as its reason. */
-export function verifyRt(item: ItemInstance<RtSpec, RtKey>): VerifyResult {
+/**
+ * The families' `verify`: never throws; a malformed instance fails with the error as its reason.
+ * With `mode` (the family's), the block must be of that mode and family.
+ */
+export function verifyRt(item: ItemInstance<RtSpec, RtKey>, mode?: RtMode): VerifyResult {
   try {
-    return verifyUnchecked(item)
+    return verifyUnchecked(item, mode)
   } catch (e) {
     return { ok: false, reason: `malformed item: ${e instanceof Error ? e.message : String(e)}`, checks: {} }
   }

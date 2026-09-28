@@ -23,7 +23,7 @@ describe('coding scoring parity dump (M1.11, A1, A17)', () => {
 
   it('cycles through every stream kind over the dumped blocks dump-<i>', () => {
     expect(dump.cases.map((c) => c.stream)).toEqual([...DUMP_STREAMS, ...DUMP_STREAMS, ...DUMP_STREAMS].map((s) => s.name))
-    expect(dump.cases.map((c) => c.item_id)).toEqual(dump.cases.map((_, i) => `i:coding:1.0.0:dump-${i}`))
+    expect(dump.cases.map((c) => c.item_id)).toEqual(dump.cases.map((_, i) => `i:coding:${coding.generatorVersion}:dump-${i}`))
     expect(dump).toMatchObject({ family: 'coding', generator_version: coding.generatorVersion, items_file: 'coding.json' })
   })
 

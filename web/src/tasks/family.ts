@@ -1,21 +1,34 @@
 /**
- * The procedural family contract (ROADMAP A1, A9, A11, A17, M1.P; DESIGN §4.1–4.2, §6.ii, §12).
+ * The procedural family contract, v2 (ROADMAP A1, A9, A10, A11, A17, M1.F, M1.F2, M1.P; DESIGN
+ * §4.1–4.2, §6.ii, §7.1, §7.4, §12, §13).
  *
  * A *family* is a seeded generator of item instances plus its verifier and scorer. Every
- * procedural task in the static MVP is one: rotation, matrices, series, quant, and also the
- * fixed blocks (digit/Corsi span, RT, coding, reading), where one {@link ItemInstance} is one
- * whole block or trial list.
+ * procedural task in the static MVP is one, of one of two {@link FamilyKind kinds}:
+ *
+ * - `kind: 'item'`: keyed power items (rotation, matrices, series, quant) that the adaptive
+ *   selector serves one at a time (§7.4, M1.14). They use the A9 models (2PL/3PL) and
+ *   `score()` returns an {@link ItemScore} (`correct` 0/1).
+ * - `kind: 'block'`: fixed blocks (span, RT, coding, reading) that the session runs whole, in
+ *   the A15 order, never through the selector (M1.14). One {@link ItemInstance} is one whole
+ *   block, it uses the A10 models (GRM for span, Gaussian for RT/PS), and `score()` returns a
+ *   {@link BlockScore}: the engine observation, or none plus the reasons, and integrity flags.
+ *
+ * **Sub-tasks** (M1.F2): a block with sub-tasks (digit span forward / backward / Corsi, simple /
+ * 4-choice RT) is ONE BLOCK FAMILY PER SUB-TASK (`span_fwd`, `span_bwd`, `corsi`, `rt_simple`,
+ * `rt_choice4`). Each has its own name, facet, norms and params, one instance is one
+ * administration, and the session asks each block family for one instance. No family encodes a
+ * sub-task in its seed, so `generate(seed)` of a family always means the same task.
  *
  * ## Writing a family (implementers)
  *
  * Put everything in your own directory, `web/src/tasks/<family>/`, with an `index.ts` that
  * exports the family object; do not edit any shared file (an integrator adds it to
- * `registry.ts` later). Most families should use {@link defineFamily}, which derives the ids,
- * the stratum-targeted seed and the A9 item parameters, so `build()` only returns content:
+ * `registry.ts` later). Use {@link defineFamily}, which derives the ids, the stratum-targeted
+ * seed, the A9 item parameters and the power-item time cap, so `build()` only returns content:
  *
  * ```ts
- * export const series = defineFamily<SeriesSpec, SeriesKey, number>({
- *   name: 'ser', axis: 'MAT', facet: 'series', generatorVersion: '1.0.0',
+ * export const series = defineFamily<SeriesSpec, SeriesKey, SeriesResponse>({
+ *   name: 'ser', kind: 'item', axis: 'MAT', facets: ['series'], generatorVersion: '1.0.0',
  *   itemType: NUMERIC_ITEM_TYPE, strata: [1, 2, 3, 4, 5, 6],
  *   build(rng, ctx) {
  *     const stratum = ctx.stratum ?? pickStratum(rng)   // honour a requested stratum
@@ -29,8 +42,9 @@
  *
  * Then, in `<family>/<family>.test.ts`, run the shared property suite at n = 10,000
  * (`runFamilyProperties` in `../testing`, DESIGN §14.3 M1 acceptance 1) with your own
- * `specLeaksKey` check (e.g. `onlySpecFields(...)`; a documented `specLeaksKeyWaiver` otherwise),
- * and dump ≥ 1,000 instances for the bank's Python cross-check (A1):
+ * `specLeaksKey` check (e.g. `onlySpecFields(...)`; a documented `specLeaksKeyWaiver` otherwise)
+ * and your synthetic responses (items: correct / incorrect; blocks: valid / invalid), and dump
+ * ≥ 1,000 instances for the bank's Python cross-check (A1):
  *
  * ```
  * npm run dump:families -- --module src/tasks/<family>/index.ts --n 1000 --bank
@@ -47,30 +61,71 @@
  *   field name containing the word key/ans/answer/correct/solution in any case style
  *   (`correctIndex`, `is_correct`, `answerValue`, `keyTable`; call a legend `legend`), no
  *   option order that encodes the answer, no precomputed result (a spec value that always
- *   equals a key value is flagged across the run). `key`, `structural_params`, `params` and
- *   `difficulty` never reach the renderer. Keys are JSON objects, e.g. `{ index: 2 }` (MC) or
- *   the shared numeric-entry {@link NumericKey} `{ value: "42", tol: { abs: 0 } }`.
+ *   equals a key value, also numerically, e.g. `42` beside the key `"42"`, is flagged across
+ *   the run). `key`, `structural_params`, `params` and `difficulty` never reach the renderer.
+ *   Keys are JSON objects, e.g. `{ index: 2 }` (MC) or the shared numeric-entry
+ *   {@link NumericKey} `{ value: "42", tol: { abs: 0 } }`.
+ * - **Option display order** (M1.13). An MC item (`options_count` = k) lists its options in
+ *   `spec.options`, an array of exactly k entries, and that array order IS the display order:
+ *   the renderer shows `spec.options[i]` as option i and never reorders, sorts or keys it; the
+ *   generator shuffles, so `key.index` (an integer in 0 … k − 1, the position in
+ *   `spec.options`) is uniform over positions (checked over every property run).
  * - **family_id** is `familyIdOf(structural_params)` (A11): the hash of the parameters that
  *   make two items isomorphs (canonical polycube, matrix rule set, series rule family +
- *   coefficient class, quant template). Canonicalise sets before hashing (sort cells, rules).
- *   The bank computes the same hash (see `ids.ts`), so its Python twin must build the same
+ *   coefficient class, quant template variant). Canonicalise sets before hashing. The bank
+ *   computes the same hash (see `ids.ts`), so its Python twin must build the same
  *   `structural_params` for the same structure: one structure, one family_id in both repos.
+ * - **sibling_group** (A11 amended, M1.14) names the set of near-isomorph families a session
+ *   shows at most once: the selector excludes a candidate whose `sibling_group` was already
+ *   served in the session (and, across sessions, every seen `family_id`, §7.7). It is the
+ *   item's `family_id` (a family is its own group) unless the family groups sibling families
+ *   explicitly as `g:<family>:<label>` ({@link siblingGroupId}); quant groups its template
+ *   variants by template. Items of one family_id always share one sibling_group.
+ * - **Facets** (§3 drill-down). A family declares its `facets`; each item's `facet` is one of
+ *   them (quant: the template, e.g. "percent"; most families have exactly one).
  * - **Versions.** `generatorVersion` has no `+` build tag; bump it whenever `generate` output
  *   changes for any seed (old ids then no longer regenerate), and bump the bank twin to
  *   `<new>+py`. A twin's items carry `+py` because its content per seed differs (A11).
- * - **params (A9).** Options k ≤ 4 → 3PL with c = 1/k; k ≥ 5 or numeric entry → 2PL; with
- *   b = `difficulty.b_prior` and a = the family's default discrimination. Blocks use the
- *   A10 models (GRM for span, Gaussian for RT/PS) and omit `options_count`.
+ * - **params (A9, A10).** Items: options k ≤ 4 → 3PL with c = 1/k; k ≥ 5 or numeric entry →
+ *   2PL; with b = `difficulty.b_prior` and a = the family's default discrimination. Blocks use
+ *   the A10 models (GRM for span, Gaussian for RT/PS), returned by `build()`, and omit
+ *   `options_count`. The model family must match the kind (items dichotomous, blocks not).
+ * - **One meaning of a Gaussian block's `params.sigma`**: it is τ_res, the residual SD of the
+ *   block statistic x around lam·θ + d *beyond* the block's own sampling error. A scored
+ *   block's observation carries sigma = √(SE² + τ_res²) ({@link gaussianObservationSigma}),
+ *   where SE is that block's own standard error of x (RT: 1.2533·1.4826·MAD/√n; coding:
+ *   1/√correct; reading: the §7.1 per-passage SD 0.15). So `params.sigma` is never the sigma
+ *   of an observation by itself; take the observation from `score()`.
  * - **difficulty.** `b_prior` is finite with |b_prior| ≤ 4, `sd_prior` > 0 (σ_b = 1.0 by
  *   default), `features` are the named inputs of the v0 regression, and `provenance` says how
  *   b was obtained (see `priors.ts`, M1.P).
  * - **Time.** `expected_time_s` > 0 is E[T] for information per second (§7.4); blocks use the
- *   block duration. `time_limit_s`, if present, is > 0.
+ *   block duration. Every item (kind 'item') carries the one shared power-item cap of §13,
+ *   `time_limit_s = powerTimeLimit(expected_time_s)` (`priors.ts`; `defineFamily` sets it);
+ *   a block's `time_limit_s`, if present, is its own timed window (coding's 90 s).
  * - **JSON.** An instance is plain JSON with snake_case keys and survives a JSON round trip.
  *   Optional fields are omitted, never `undefined`.
- * - **Strata.** `stratum` ∈ `family.strata`. `generate(seed, { stratum: k })` returns an item
- *   in stratum k (seed `<seed>@s<k>`, see `resolveSeed`) or throws a RangeError if the family
- *   cannot target k.
+ * - **Strata.** `stratum` ∈ `family.strata`, and `stratum = stratumOfB(difficulty.b_prior)`,
+ *   the default band of the item's b (M1.P: one meaning of a stratum across families).
+ *   `generate(seed, { stratum: k })` returns an item in stratum k (seed `<seed>@s<k>`, see
+ *   `resolveSeed`) or throws a RangeError if the family cannot target k.
+ * - **Pool anchoring (M1.P).** An ICAR-anchored family's pool (`generate(seed)` without a
+ *   stratum) has mean b = its ICAR anchor (`priors.ts` ICAR_ANCHORED_FAMILIES). The pool's
+ *   stratum mix is whatever that distribution gives, not uniform (at n = 2,000: rotation ≈ 1%
+ *   in its 20–22° stratum 2, matrices ≈ 70% in stratum 3), so a selector that needs a stratum
+ *   requests it with `generate(seed, { stratum })` (M1.14).
+ *
+ * ## Scoring rules (checked by the suite)
+ *
+ * - `score(item, response)` takes a response of the family's response type. A response that
+ *   is not one (wrong JSON type, out of range, the wrong length, a response after a block
+ *   finished; in span, an entered element outside the task's symbols) throws a
+ *   {@link MalformedResponseError}, a RangeError, in every family (the bank
+ *   twins raise `hb.gen.base.MalformedResponseError`, a ValueError). A well-formed but wrong
+ *   answer is not malformed: it scores 0 (an unparseable typed entry is a wrong answer). A
+ *   skipped or timed-out item is the session's record (§13), not a `score()` call.
+ * - Items return `{ correct: 0 | 1 }`. Blocks return a {@link BlockScore}: the observation
+ *   when the block yields one, otherwise no observation and ≥ 1 reason.
  */
 
 import {
@@ -78,20 +133,35 @@ import {
   createRng,
   isAxisCode,
   isJsonValue,
+  modelFamilyOf,
   type AxisCode,
   type ItemBase,
   type ItemParams,
   type JsonValue,
+  type Observation,
   type Rng,
 } from '../engine'
 import { FAMILY_ID_RE, FAMILY_NAME_RE, GENERATOR_VERSION_RE, familyId, isStratum, itemId, resolveSeed, type Stratum } from './ids'
-import { B_PRIOR_LIMIT } from './priors'
+import { B_PRIOR_LIMIT, powerTimeLimit, stratumOfB } from './priors'
 
 /** A JSON object (the shape of `spec` and `key` once parsed from JSON). */
 export type JsonObject = { [key: string]: JsonValue }
 
 /** A named input of the difficulty regression. */
 export type Feature = number | string | boolean
+
+/**
+ * The two kinds of family (M1.F2): `item` = keyed power items served adaptively (§7.4, M1.14);
+ * `block` = a fixed block run whole in the A15 order (span, RT, coding, reading; A10).
+ */
+export type FamilyKind = 'item' | 'block'
+
+export const FAMILY_KINDS: readonly FamilyKind[] = Object.freeze(['item', 'block'] as const)
+
+/** The kind a scoring model belongs to: dichotomous models are items, GRM and Gaussian blocks (A9, A10). */
+export function kindOfModel(model: ItemParams['model']): FamilyKind {
+  return modelFamilyOf(model) === 'dichotomous' ? 'item' : 'block'
+}
 
 /**
  * `item_type` of every typed-entry item (series, quant): "numeric", as in DESIGN §14.6 ex. 2. The
@@ -122,12 +192,29 @@ export interface NumericKey {
   readonly tol: Tolerance
 }
 
+/** A canonical rational string of a {@link NumericKey}: "42", "-7", "3/8" (lowest terms not checked here). */
+export const CANONICAL_RATIONAL_RE = /^-?(?:0|[1-9][0-9]*)(?:\/[1-9][0-9]*)?$/
+
 /** The item's difficulty prior b ~ N(b_prior, sd_prior²) and where it came from (§6.ii, §12). */
 export interface DifficultyPrior {
   readonly features: Readonly<Record<string, Feature>>
   readonly b_prior: number
   readonly sd_prior: number
   readonly provenance: string
+}
+
+/**
+ * A sibling group of families (A11 amended, M1.14): `g:<family>:<label>`, label lowercase
+ * `[a-z0-9_]`, 1–48 characters. Families not grouped use their own family_id instead.
+ */
+export const SIBLING_GROUP_RE = /^g:([a-z][a-z0-9_]{0,23}):([a-z0-9_]{1,48})$/
+
+/** `g:<family>:<label>`, the id of an explicit sibling group; throws a RangeError on a bad name or label. */
+export function siblingGroupId(familyName: string, label: string): string {
+  const id = `g:${familyName}:${label}`
+  const m = SIBLING_GROUP_RE.exec(id)
+  if (!m || m[1] !== familyName) throw new RangeError(`sibling group ${JSON.stringify(id)} must match ${SIBLING_GROUP_RE}`)
+  return id
 }
 
 /**
@@ -140,19 +227,24 @@ export interface ItemInstance<Spec extends object = JsonObject, Key extends obje
   readonly item_id: string
   /** `f:<fam>:<12 hex>` = `familyIdOf(structural_params)` (A11). */
   readonly family_id: string
+  /** The family_id, or `g:<fam>:<label>` for grouped near-isomorph families (M1.14; see the module comment). */
+  readonly sibling_group: string
   /** The family name `<fam>` (e.g. "rot"). */
   readonly family: string
   readonly generator_version: string
   /** The resolved seed: `generate(seed)` reproduces this item exactly. */
   readonly seed: string
   readonly axis: AxisCode
-  /** Drill-down sub-facet (§3), e.g. "3d_rotation", "series". */
+  /** Drill-down sub-facet (§3), one of the family's `facets`, e.g. "3d_rotation", "percent". */
   readonly facet: string
   /** Renderer / response format, e.g. "mc_image_spec", "numeric" ({@link NUMERIC_ITEM_TYPE}), "span". */
   readonly item_type: string
   /** Difficulty stratum 1–6 (§6.ii). */
   readonly stratum: Stratum
-  /** Render payload. Must not contain or trivially reveal the key. */
+  /**
+   * Render payload. Must not contain or trivially reveal the key. MC items list their options
+   * in `spec.options`, in display order (never keyed; see the module comment).
+   */
   readonly spec: Spec
   /** The answer key, a JSON object such as `{ index: 2 }` or a {@link NumericKey}. */
   readonly key: Key
@@ -165,6 +257,7 @@ export interface ItemInstance<Spec extends object = JsonObject, Key extends obje
   readonly difficulty: DifficultyPrior
   /** E[T] in seconds (§7.4). */
   readonly expected_time_s: number
+  /** Items: the shared cap `powerTimeLimit(expected_time_s)` (§13); blocks: their timed window, if any. */
   readonly time_limit_s?: number
 }
 
@@ -177,9 +270,8 @@ export interface VerifyResult {
 }
 
 /**
- * Result of scoring a response. `correct` is 0/1 for keyed items and null for blocks and
- * continuous responses (§8 response tuple); `value` carries a continuous score (e.g. GRM
- * category for span, median log-RT for RT, log correct/min for coding). Named `ItemScore`, not
+ * Result of scoring an item's response (kind 'item'): `correct` is 0/1 for keyed items (§8
+ * response tuple); `value` is reserved for a continuous item score. Named `ItemScore`, not
  * `ScoreResult`: that is the engine's person-level MAP/EAP result (`engine/scorer.ts`), and code
  * that imports both barrels needs the two apart. The bank twin is `hb.gen.base.ScoreResult`.
  */
@@ -188,17 +280,101 @@ export interface ItemScore {
   readonly value?: number
 }
 
+/** The engine observation a block yields: GRM (span) or Gaussian (RT, coding, reading) (A10). */
+export type BlockObservation = Extract<Observation, { kind: 'grm' } | { kind: 'gaussian' }>
+
+/** A flag or reason token of a {@link BlockScore}: lowercase snake_case, e.g. "too_few_valid_trials". */
+export const SCORE_TOKEN_RE = /^[a-z][a-z0-9_]*$/
+
+/**
+ * Result of scoring a block (kind 'block', M1.F2): what the scorer consumes, the observation
+ * (A10: GRM for span, Gaussian for RT/PS, see the module comment for its sigma), or, when the
+ * block yields none (an unfinished span block, too few valid RT trials, a failed reading gate,
+ * no correct coding response), no observation and the reasons why. `flags` are integrity flags
+ * for the §13 client flags (M1.19), e.g. "high_error_rate", "skimming"; they may accompany an
+ * observation. `correct` is null (a block, §8). The bank twin is `hb.gen.base.BlockScore`.
+ */
+export interface BlockScore {
+  readonly correct: null
+  /** Omitted exactly when `reasons` is non-empty. */
+  readonly observation?: BlockObservation
+  readonly flags: readonly string[]
+  readonly reasons: readonly string[]
+}
+
+/**
+ * Build a {@link BlockScore}: with an observation (and no reasons) or without one (≥ 1 reason).
+ * Throws a RangeError on any other combination or a token that is not {@link SCORE_TOKEN_RE}.
+ */
+export function blockScore(observation: BlockObservation | null | undefined, flags: readonly string[] = [], reasons: readonly string[] = []): BlockScore {
+  for (const t of [...flags, ...reasons]) {
+    if (!SCORE_TOKEN_RE.test(t)) throw new RangeError(`block score token ${JSON.stringify(t)} must match ${SCORE_TOKEN_RE}`)
+  }
+  const has = observation !== null && observation !== undefined
+  if (has === reasons.length > 0) throw new RangeError('a block score has an observation or ≥ 1 reason, not both and not neither')
+  return has ? { correct: null, observation, flags: [...flags], reasons: [] } : { correct: null, flags: [...flags], reasons: [...reasons] }
+}
+
+/**
+ * sigma of a Gaussian block observation, √(SE² + τ_res²) with τ_res = the item's `params.sigma`
+ * (the one meaning of `params.sigma`, see the module comment). Throws a RangeError on a negative
+ * or non-finite SE or non-Gaussian params.
+ */
+export function gaussianObservationSigma(se: number, params: ItemParams): number {
+  if (params.model !== 'gaussian') throw new RangeError(`gaussianObservationSigma(): params.model is ${params.model}, not gaussian`)
+  if (!(Number.isFinite(se) && se >= 0)) throw new RangeError(`gaussianObservationSigma(): SE must be finite and ≥ 0, got ${se}`)
+  return Math.sqrt(se * se + params.sigma * params.sigma)
+}
+
+/**
+ * Thrown by every family's `score()` on a response that is not of its response type (M1.F2):
+ * one error class across families, a RangeError, so callers catch it uniformly. The bank twin
+ * is `hb.gen.base.MalformedResponseError`, a ValueError.
+ */
+export class MalformedResponseError extends RangeError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MalformedResponseError'
+  }
+}
+
+/**
+ * The response of an MC item: the chosen option index, an integer 0 … options_count − 1 (the
+ * position in `spec.options`, M1.13). Throws a {@link MalformedResponseError} on anything else.
+ */
+export function mcResponseIndex(item: ItemInstance<object, object>, response: unknown): number {
+  const k = item.options_count
+  if (!(typeof response === 'number' && Number.isInteger(response) && typeof k === 'number' && response >= 0 && response < k)) {
+    throw new MalformedResponseError(`${item.family}: an MC response is an option index 0..${String((k ?? 0) - 1)}, got ${String(response)}`)
+  }
+  return response
+}
+
+/**
+ * The response of a typed-entry item ({@link NUMERIC_ITEM_TYPE}): the text typed, a string (and,
+ * when `allowNumber`, a finite number, e.g. from a numeric keypad). Throws a
+ * {@link MalformedResponseError} on anything else; an unparseable string is a wrong answer, not
+ * a malformed response.
+ */
+export function entryResponse(item: ItemInstance<object, object>, response: unknown, allowNumber: boolean): string | number {
+  if (typeof response === 'string') return response
+  if (allowNumber && typeof response === 'number' && Number.isFinite(response)) return response
+  throw new MalformedResponseError(`${item.family}: an entry response is the typed ${allowNumber ? 'text or a finite number' : 'text'}, got ${String(response)}`)
+}
+
 export interface GenerateOptions {
   /** Target difficulty stratum; the family throws a RangeError if it cannot produce it. */
   readonly stratum?: number
 }
 
-/** A procedural family: seeded generator, verifier and scorer (A1, A11). */
-export interface ProceduralFamily<Spec extends object = JsonObject, Key extends object = JsonObject, Resp = unknown> {
+/** What every family has, whatever its kind. */
+interface FamilyCore<Spec extends object, Key extends object> {
   /** Short family code used in ids (`FAMILY_NAME_RE`), e.g. "rot". */
   readonly name: string
+  readonly kind: FamilyKind
   readonly axis: AxisCode
-  readonly facet: string
+  /** The drill-down facets of this family's items (§3); each item's `facet` is one of them. */
+  readonly facets: readonly string[]
   /**
    * Bump when the output for any seed changes; old ids then no longer regenerate. No `+` build
    * tag: `<ver>+py` names the bank's Python twin (A11, `PY_TWIN_BUILD` in `ids.ts`).
@@ -211,13 +387,31 @@ export interface ProceduralFamily<Spec extends object = JsonObject, Key extends 
   generate(seed: string, opts?: GenerateOptions): ItemInstance<Spec, Key>
   /** Programmatic key check + uniqueness/ambiguity (G2, G3). Must not throw on a well-formed item. */
   verify(item: ItemInstance<Spec, Key>): VerifyResult
-  score(item: ItemInstance<Spec, Key>, response: Resp): ItemScore
   /** `familyId(name, structuralParams)` for this family. */
   familyIdOf(structuralParams: JsonValue): string
 }
 
+/** A family of keyed power items (kind 'item'): served by the adaptive selector (M1.14). */
+export interface ItemFamily<Spec extends object = JsonObject, Key extends object = JsonObject, Resp = unknown> extends FamilyCore<Spec, Key> {
+  readonly kind: 'item'
+  /** Throws a {@link MalformedResponseError} on a response that is not of the family's type. */
+  score(item: ItemInstance<Spec, Key>, response: Resp): ItemScore
+}
+
+/** A fixed-block family (kind 'block'): run whole by the session (A10, A15), never selected adaptively. */
+export interface BlockFamily<Spec extends object = JsonObject, Key extends object = JsonObject, Resp = unknown> extends FamilyCore<Spec, Key> {
+  readonly kind: 'block'
+  /** Throws a {@link MalformedResponseError} on a response that is not of the family's type. */
+  score(item: ItemInstance<Spec, Key>, response: Resp): BlockScore
+}
+
+/** A procedural family (A1, A11): an item family or a block family, told apart by `kind`. */
+export type ProceduralFamily<Spec extends object = JsonObject, Key extends object = JsonObject, Resp = unknown> =
+  | ItemFamily<Spec, Key, Resp>
+  | BlockFamily<Spec, Key, Resp>
+
 /** Any family, e.g. in the registry (method parameters are bivariant, so every family fits). */
-export type AnyFamily = ProceduralFamily<object, object, unknown>
+export type AnyFamily = ItemFamily<object, object, unknown> | BlockFamily<object, object, unknown>
 
 /** Default 2PL/3PL discrimination for a new family before calibration (§6.iii: a lognormal around the family mean). */
 export const DEFAULT_A = 1.0
@@ -252,17 +446,22 @@ export function verdict(checks: Readonly<Record<string, JsonValue>>): VerifyResu
   return failed.length === 0 ? { ok: true, reason: 'ok', checks } : { ok: false, reason: `failed: ${failed.join(', ')}`, checks }
 }
 
-/** What {@link FamilyDefinition.build} returns: the content; ids and seed are filled in. */
+/** What {@link FamilyDefinition.build} returns: the content; ids, seed and the item time cap are filled in. */
 export interface BuiltItem<Spec extends object, Key extends object> {
   readonly stratum: Stratum
+  /** One of the family's `facets`; may be omitted when the family has exactly one. */
+  readonly facet?: string
+  /** A `g:<family>:<label>` group ({@link siblingGroupId}); omitted = the item's family_id. */
+  readonly sibling_group?: string
   readonly spec: Spec
   readonly key: Key
   readonly structural_params: JsonValue
   readonly options_count?: number
   readonly difficulty: DifficultyPrior
   readonly expected_time_s: number
+  /** Blocks only: the block's timed window. Items get the shared §13 cap from `defineFamily`. */
   readonly time_limit_s?: number
-  /** Override the A9 parameters, e.g. GRM (span) or Gaussian (RT, PS) for blocks (A10). */
+  /** Blocks only (required there): the A10 model, GRM (span) or Gaussian (RT, PS). Items get A9 params. */
   readonly params?: ItemParams
 }
 
@@ -273,15 +472,15 @@ export interface BuildContext {
   readonly stratum?: Stratum
 }
 
-/** Everything a family implements when using {@link defineFamily}. */
-export interface FamilyDefinition<Spec extends object, Key extends object, Resp> {
+/** What every family definition has, whatever its kind. */
+interface DefinitionCore<Spec extends object, Key extends object> {
   readonly name: string
   readonly axis: AxisCode
-  readonly facet: string
+  readonly facets: readonly string[]
   readonly generatorVersion: string
   readonly itemType: string
   readonly strata: readonly Stratum[]
-  /** Family default discrimination a for the A9 params (default {@link DEFAULT_A}). */
+  /** Family default discrimination a for the A9 params of items (default {@link DEFAULT_A}). */
   readonly defaultA?: number
   /**
    * Build the content from `rng` (seeded from `ctx.seed`; draw nothing from anywhere else).
@@ -289,70 +488,120 @@ export interface FamilyDefinition<Spec extends object, Key extends object, Resp>
    */
   build(rng: Rng, ctx: BuildContext): BuiltItem<Spec, Key>
   verify(item: ItemInstance<Spec, Key>): VerifyResult
+}
+
+/** Everything an item family implements when using {@link defineFamily}. */
+export interface ItemFamilyDefinition<Spec extends object, Key extends object, Resp> extends DefinitionCore<Spec, Key> {
+  readonly kind: 'item'
   score(item: ItemInstance<Spec, Key>, response: Resp): ItemScore
 }
 
+/** Everything a block family implements when using {@link defineFamily}. */
+export interface BlockFamilyDefinition<Spec extends object, Key extends object, Resp> extends DefinitionCore<Spec, Key> {
+  readonly kind: 'block'
+  score(item: ItemInstance<Spec, Key>, response: Resp): BlockScore
+}
+
+export type FamilyDefinition<Spec extends object, Key extends object, Resp> =
+  | ItemFamilyDefinition<Spec, Key, Resp>
+  | BlockFamilyDefinition<Spec, Key, Resp>
+
 /**
- * Make a {@link ProceduralFamily} from a definition: resolves the stratum-targeted seed, seeds
- * the stream with `createRng(seed)`, and fills in `item_id`, `family_id`, the identity fields
- * and the A9 params (b = b_prior, a = defaultA) unless `build` returned `params`.
+ * Make a family from a definition: resolves the stratum-targeted seed, seeds the stream with
+ * `createRng(seed)`, and fills in `item_id`, `family_id`, `sibling_group`, the identity fields,
+ * the A9 params (items: b = b_prior, a = defaultA) and the §13 power-item cap (items:
+ * `time_limit_s = powerTimeLimit(expected_time_s)`). Throws if `build()` breaks a kind rule
+ * (an item returning params or a time limit, a block without params) or returns a facet the
+ * family does not declare.
  */
-export function defineFamily<Spec extends object, Key extends object, Resp>(
-  def: FamilyDefinition<Spec, Key, Resp>,
-): ProceduralFamily<Spec, Key, Resp> {
+export function defineFamily<Spec extends object, Key extends object, Resp>(def: ItemFamilyDefinition<Spec, Key, Resp>): ItemFamily<Spec, Key, Resp>
+export function defineFamily<Spec extends object, Key extends object, Resp>(def: BlockFamilyDefinition<Spec, Key, Resp>): BlockFamily<Spec, Key, Resp>
+export function defineFamily<Spec extends object, Key extends object, Resp>(def: FamilyDefinition<Spec, Key, Resp>): ProceduralFamily<Spec, Key, Resp> {
   if (!FAMILY_NAME_RE.test(def.name)) throw new RangeError(`family name must match ${FAMILY_NAME_RE}, got ${JSON.stringify(def.name)}`)
+  if (!(FAMILY_KINDS as readonly string[]).includes(def.kind)) throw new RangeError(`family kind must be item or block, got ${JSON.stringify(def.kind)}`)
   if (!GENERATOR_VERSION_RE.test(def.generatorVersion)) {
     throw new RangeError(`generator version must match ${GENERATOR_VERSION_RE}, got ${JSON.stringify(def.generatorVersion)}`)
   }
   if (!isAxisCode(def.axis)) throw new RangeError(`unknown axis ${JSON.stringify(def.axis)}`)
   if (def.strata.length === 0 || !def.strata.every(isStratum)) throw new RangeError('strata must be a non-empty list of 1–6')
+  if (def.facets.length === 0 || !def.facets.every((f) => typeof f === 'string' && f.length > 0) || new Set(def.facets).size !== def.facets.length) {
+    throw new RangeError('facets must be a non-empty list of distinct non-empty strings')
+  }
   const a = def.defaultA ?? DEFAULT_A
   const familyIdOf = (structuralParams: JsonValue): string => familyId(def.name, structuralParams)
-  return {
+  const facets = Object.freeze([...def.facets])
+  const generate = (rawSeed: string, opts?: GenerateOptions): ItemInstance<Spec, Key> => {
+    const { seed, stratum } = resolveSeed(rawSeed, opts?.stratum)
+    if (stratum !== undefined && !def.strata.includes(stratum)) {
+      throw new RangeError(`family ${def.name} cannot generate stratum ${stratum} (supports ${def.strata.join(', ')})`)
+    }
+    const built = def.build(createRng(seed), stratum === undefined ? { seed } : { seed, stratum })
+    if (stratum !== undefined && built.stratum !== stratum) {
+      throw new Error(`family ${def.name}: build() returned stratum ${built.stratum} for requested stratum ${stratum}`)
+    }
+    const facet = built.facet ?? (facets.length === 1 ? facets[0] : undefined)
+    if (facet === undefined || !facets.includes(facet)) {
+      throw new Error(`family ${def.name}: build() returned facet ${JSON.stringify(built.facet)}, not one of ${facets.join(', ')}`)
+    }
+    let params: ItemParams
+    let timeLimit: number | undefined
+    if (def.kind === 'item') {
+      if (built.params !== undefined) throw new Error(`family ${def.name}: an item family gets A9 params from defineFamily, not build()`)
+      if (built.time_limit_s !== undefined) throw new Error(`family ${def.name}: an item's time limit is the shared §13 cap, not build()'s`)
+      params = itemParamsFor(built.options_count, a, built.difficulty.b_prior)
+      // A bad E[T] gets no cap here, so validateItemInstance reports the E[T] itself.
+      const e = built.expected_time_s
+      timeLimit = Number.isFinite(e) && e > 0 ? powerTimeLimit(e) : undefined
+    } else {
+      if (built.params === undefined) throw new Error(`family ${def.name}: a block family's build() must return its A10 params`)
+      params = built.params
+      timeLimit = built.time_limit_s
+    }
+    const fid = familyIdOf(built.structural_params)
+    return {
+      item_id: itemId(def.name, def.generatorVersion, seed),
+      family_id: fid,
+      sibling_group: built.sibling_group ?? fid,
+      family: def.name,
+      generator_version: def.generatorVersion,
+      seed,
+      axis: def.axis,
+      facet,
+      item_type: def.itemType,
+      stratum: built.stratum,
+      spec: built.spec,
+      key: built.key,
+      structural_params: built.structural_params,
+      ...(built.options_count === undefined ? {} : { options_count: built.options_count }),
+      params,
+      difficulty: built.difficulty,
+      expected_time_s: built.expected_time_s,
+      ...(timeLimit === undefined ? {} : { time_limit_s: timeLimit }),
+    }
+  }
+  const core = {
     name: def.name,
     axis: def.axis,
-    facet: def.facet,
+    facets,
     generatorVersion: def.generatorVersion,
     itemType: def.itemType,
     strata: Object.freeze([...def.strata]),
     familyIdOf,
-    verify: (item) => def.verify(item),
-    score: (item, response) => def.score(item, response),
-    generate(rawSeed: string, opts?: GenerateOptions): ItemInstance<Spec, Key> {
-      const { seed, stratum } = resolveSeed(rawSeed, opts?.stratum)
-      if (stratum !== undefined && !def.strata.includes(stratum)) {
-        throw new RangeError(`family ${def.name} cannot generate stratum ${stratum} (supports ${def.strata.join(', ')})`)
-      }
-      const built = def.build(createRng(seed), stratum === undefined ? { seed } : { seed, stratum })
-      if (stratum !== undefined && built.stratum !== stratum) {
-        throw new Error(`family ${def.name}: build() returned stratum ${built.stratum} for requested stratum ${stratum}`)
-      }
-      return {
-        item_id: itemId(def.name, def.generatorVersion, seed),
-        family_id: familyIdOf(built.structural_params),
-        family: def.name,
-        generator_version: def.generatorVersion,
-        seed,
-        axis: def.axis,
-        facet: def.facet,
-        item_type: def.itemType,
-        stratum: built.stratum,
-        spec: built.spec,
-        key: built.key,
-        structural_params: built.structural_params,
-        ...(built.options_count === undefined ? {} : { options_count: built.options_count }),
-        params: built.params ?? itemParamsFor(built.options_count, a, built.difficulty.b_prior),
-        difficulty: built.difficulty,
-        expected_time_s: built.expected_time_s,
-        ...(built.time_limit_s === undefined ? {} : { time_limit_s: built.time_limit_s }),
-      }
-    },
+    generate,
+    verify: (item: ItemInstance<Spec, Key>) => def.verify(item),
   }
+  if (def.kind === 'item') {
+    const itemDef = def
+    return { ...core, kind: 'item', score: (item: ItemInstance<Spec, Key>, response: Resp): ItemScore => itemDef.score(item, response) }
+  }
+  const blockDef = def
+  return { ...core, kind: 'block', score: (item: ItemInstance<Spec, Key>, response: Resp): BlockScore => blockDef.score(item, response) }
 }
 
 const REQUIRED_FIELDS = [
   'item_id',
   'family_id',
+  'sibling_group',
   'family',
   'generator_version',
   'seed',
@@ -416,12 +665,35 @@ function paramsProblems(p: unknown, optionsCount: unknown, bPrior: unknown): str
     case 'gaussian': {
       if (keys !== 'd,lam,model,sigma') out.push('params (gaussian) must have exactly the fields d,lam,model,sigma')
       if (!finite('lam') || !finite('d')) out.push('params.lam and params.d must be finite')
-      if (!isFinitePositive(p.sigma)) out.push('params.sigma must be finite and > 0')
+      if (!isFinitePositive(p.sigma)) out.push('params.sigma (tau_res) must be finite and > 0')
       if (optionsCount !== undefined) out.push('gaussian items (blocks) must omit options_count')
       break
     }
     default:
       out.push(`unknown params.model ${JSON.stringify(p.model)}`)
+  }
+  return out
+}
+
+const PARAM_MODELS: ReadonlySet<string> = new Set(['2pl', '2pl_testlet', '3pl', 'grm', 'gaussian'])
+
+/** The kind an instance's params imply (undefined when the model is unknown). */
+function kindOfParams(p: unknown): FamilyKind | undefined {
+  return isPlainObject(p) && typeof p.model === 'string' && PARAM_MODELS.has(p.model) ? kindOfModel(p.model as ItemParams['model']) : undefined
+}
+
+/** MC option order and key shape (M1.13): `spec.options` has exactly k entries, `key.index` ∈ 0 … k − 1. */
+function optionProblems(x: Record<string, unknown>): string[] {
+  if (!('options_count' in x)) return []
+  const k = x.options_count
+  const spec = x.spec
+  const key = x.key
+  const out: string[] = []
+  const options = isPlainObject(spec) ? spec.options : undefined
+  if (!Array.isArray(options) || options.length !== k) out.push('an MC item lists exactly options_count options in spec.options (display order)')
+  const index = isPlainObject(key) ? key.index : undefined
+  if (!(typeof index === 'number' && Number.isInteger(index) && typeof k === 'number' && index >= 0 && index < k)) {
+    out.push('an MC item keys an option position: key.index must be an integer 0 … options_count − 1')
   }
   return out
 }
@@ -449,6 +721,10 @@ export function validateItemInstance(x: unknown, family?: AnyFamily): string[] {
   const fid = typeof x.family_id === 'string' ? FAMILY_ID_RE.exec(x.family_id) : null
   if (!fid) out.push(`family_id must match ${FAMILY_ID_RE}`)
   else if (fid[1] !== fam) out.push(`family_id prefix ${fid[1]} does not match family ${String(fam)}`)
+  const group = typeof x.sibling_group === 'string' ? SIBLING_GROUP_RE.exec(x.sibling_group) : null
+  if (x.sibling_group !== x.family_id && !(group && group[1] === fam)) {
+    out.push(`sibling_group must be the family_id or g:<family>:<label> (${SIBLING_GROUP_RE})`)
+  }
   if (!isAxisCode(x.axis)) out.push(`unknown axis ${JSON.stringify(x.axis)}`)
   if (!isNonEmptyString(x.facet)) out.push('facet must be a non-empty string')
   if (!isNonEmptyString(x.item_type)) out.push('item_type must be a non-empty string')
@@ -458,9 +734,15 @@ export function validateItemInstance(x: unknown, family?: AnyFamily): string[] {
   if ('options_count' in x) {
     const k = x.options_count
     if (!(typeof k === 'number' && Number.isInteger(k) && k >= 2)) out.push('options_count must be an integer ≥ 2')
+    else out.push(...optionProblems(x))
   }
   if (!isFinitePositive(x.expected_time_s)) out.push('expected_time_s must be finite and > 0')
   if ('time_limit_s' in x && !isFinitePositive(x.time_limit_s)) out.push('time_limit_s must be finite and > 0')
+  const kind = kindOfParams(x.params)
+  if (kind === 'item' && isFinitePositive(x.expected_time_s)) {
+    const cap = powerTimeLimit(x.expected_time_s)
+    if (x.time_limit_s !== cap) out.push(`an item's time_limit_s must be the shared §13 cap powerTimeLimit(expected_time_s) = ${cap}, got ${String(x.time_limit_s)}`)
+  }
 
   const d = x.difficulty
   if (!isPlainObject(d)) {
@@ -480,6 +762,8 @@ export function validateItemInstance(x: unknown, family?: AnyFamily): string[] {
     const b = d.b_prior
     if (!(typeof b === 'number' && Number.isFinite(b) && Math.abs(b) <= B_PRIOR_LIMIT)) {
       out.push(`difficulty.b_prior must be finite with |b| ≤ ${B_PRIOR_LIMIT}`)
+    } else if (isStratum(x.stratum) && stratumOfB(b) !== x.stratum) {
+      out.push(`stratum ${x.stratum} is not the default band of b_prior ${b}: stratumOfB = ${stratumOfB(b)} (M1.P)`)
     }
     if (!isFinitePositive(d.sd_prior)) out.push('difficulty.sd_prior must be finite and > 0')
     if (!isNonEmptyString(d.provenance)) out.push('difficulty.provenance must be a non-empty string')
@@ -490,8 +774,9 @@ export function validateItemInstance(x: unknown, family?: AnyFamily): string[] {
     if (fam !== family.name) out.push(`family ${String(fam)} is not ${family.name}`)
     if (ver !== family.generatorVersion) out.push(`generator_version ${String(ver)} is not ${family.generatorVersion}`)
     if (x.axis !== family.axis) out.push(`axis ${String(x.axis)} is not ${family.axis}`)
-    if (x.facet !== family.facet) out.push(`facet ${String(x.facet)} is not ${family.facet}`)
+    if (typeof x.facet !== 'string' || !family.facets.includes(x.facet)) out.push(`facet ${String(x.facet)} is not one of ${family.facets.join(', ')}`)
     if (x.item_type !== family.itemType) out.push(`item_type ${String(x.item_type)} is not ${family.itemType}`)
+    if (kind !== undefined && kind !== family.kind) out.push(`params.model ${String((x.params as Record<string, unknown>).model)} is not a ${family.kind} model (A9, A10)`)
     if (isStratum(x.stratum) && !family.strata.includes(x.stratum)) out.push(`stratum ${x.stratum} is not in the family's strata`)
     if (fid && x.family_id !== family.familyIdOf(x.structural_params as JsonValue)) {
       out.push('family_id does not equal familyIdOf(structural_params)')
@@ -512,6 +797,7 @@ export function toItemBase(item: ItemInstance<object, object>): ItemBase {
   return {
     item_id: item.item_id,
     family_id: item.family_id,
+    sibling_group: item.sibling_group,
     axis: item.axis,
     facet: item.facet,
     item_type: item.item_type,

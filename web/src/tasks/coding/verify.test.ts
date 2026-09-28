@@ -178,7 +178,7 @@ describe('verifyCoding (M1.11): each rule rejects a hand-built bad block', () =>
     expect(failed(tamper((x) => (x.difficulty = { ...d, sd_prior: 2 })))).toEqual(['difficulty_matches'])
     expect(failed(tamper((x) => (x.difficulty = { ...d, provenance: 'made up' })))).toEqual(['difficulty_matches'])
     expect(failed(tamper((x) => (x.params = { ...base.params, lam: 0.3 })))).toEqual(['params_match'])
-    expect(failed(tamper((x) => (x.params = { ...base.params, sigma: 0.05 })))).toEqual(['params_match'])
+    expect(failed(tamper((x) => (x.params = { ...base.params, sigma: 0.138 })))).toEqual(['params_match'])
     expect(failed(tamper((x) => (x.params = { model: '2pl', a: 1, b: 0 })))).toEqual(['params_match'])
     expect(failed(tamper((x) => (x.stratum = 4)))).toEqual(['stratum_matches'])
     expect(failed(tamper((x) => (x.axis = 'RT')))).toEqual(['identity_matches'])

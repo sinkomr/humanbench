@@ -9,7 +9,7 @@ import type { Rng } from '../../engine'
 import type { BuildContext, BuiltItem, NumericKey } from '../family'
 import type { Stratum } from '../ids'
 import { QUANT_PROVENANCE, QUANT_SD_PRIOR, quantBPrior, quantExpectedTime, quantFeatures } from './prior'
-import { HINTS, TEMPLATES_BY_STRATUM, toleranceFor, variantsOf, type Given, type InputFormat } from './templates'
+import { HINTS, TEMPLATES_BY_STRATUM, quantSiblingGroup, toleranceFor, variantsOf, type Given, type InputFormat } from './templates'
 
 /** Strata the family generates (§6.ii 1–4: middle school to college). */
 export const QUANT_STRATA: readonly Stratum[] = Object.freeze([1, 2, 3, 4] as const)
@@ -35,6 +35,8 @@ export function buildQuant(rng: Rng, ctx: BuildContext): BuiltItem<QuantSpec, Qu
   const features = quantFeatures(variant.template, variant.variant, stratum, variant.offset, !value.isInteger())
   return {
     stratum,
+    facet: variant.template,
+    sibling_group: quantSiblingGroup(variant.template),
     spec: { stem, hint: HINTS[variant.format], input_format: variant.format, given },
     key: { value: value.toString(), tol: toleranceFor(variant.format) },
     structural_params: { template: variant.template, variant: variant.variant },

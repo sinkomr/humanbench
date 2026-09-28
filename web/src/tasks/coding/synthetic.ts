@@ -144,3 +144,34 @@ export function serializeScoreDump(dump: ScoreDump): string {
   const head = `{"family":${JSON.stringify(dump.family)},"generator_version":${JSON.stringify(dump.generator_version)},"items_file":${JSON.stringify(dump.items_file)},"count":${dump.count},"cases":[`
   return `${head}\n${dump.cases.map((c) => canonicalJson(c)).join(',\n')}\n]}\n`
 }
+
+/**
+ * Block-suite responses (M1.F2, `runFamilyProperties`): a typical taker (30–60 responses/min,
+ * ≤ 10% errors) whose block always yields an observation (≥ 1 correct response in the window).
+ */
+export function codingValidResponse(item: CodingItem, rng: Rng): CodingResponse[] {
+  const profile: TakerProfile = { name: 'valid', rate_per_min: 30 + 30 * rng.next(), error_p: 0.1 * rng.next(), cv: 0.2 + 0.3 * rng.next(), until_ms: 60_000 }
+  const out = syntheticResponses(item, profile, rng)
+  return out.some((r, k) => r.digit === item.key.table[item.spec.sequence[k] as CodingSymbol]) ? out : scriptedResponses(item, [1_000])
+}
+
+/** Block-suite responses (M1.F2): a well-formed block without a correct response (none, or all wrong). */
+export function codingInvalidResponse(item: CodingItem, rng: Rng): CodingResponse[] {
+  return rng.next() < 0.5 ? [] : scriptedResponses(item, evenTimes(rng.int(1, 60), 1_000), () => true)
+}
+
+/** Block-suite malformed streams (M1.F2): bad digits, times, order, shapes and too many responses. */
+export function codingMalformedResponses(item: CodingItem): unknown[] {
+  const ok = scriptedResponses(item, evenTimes(3, 1_000))
+  const at = (k: number, r: unknown): unknown[] => ok.map((x, i) => (i === k ? r : x))
+  return [
+    at(1, { digit: 10, t_ms: 2_000 }),
+    at(1, { digit: 1.5, t_ms: 2_000 }),
+    at(1, { digit: '1', t_ms: 2_000 }),
+    at(1, { digit: 1, t_ms: -1 }),
+    at(2, { digit: 1, t_ms: 500 }),
+    at(0, null),
+    at(0, 7),
+    scriptedResponses(item, evenTimes(item.spec.sequence.length, 100)).concat([{ digit: 1, t_ms: 90_001 }]),
+  ]
+}

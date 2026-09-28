@@ -22,10 +22,10 @@
  */
 
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
-import { stratumOfB } from '../priors'
+import { powerTimeLimit, stratumOfB } from '../priors'
 import { Fraction, Surd, exactRoot, frac } from './fraction'
 import { evaluate } from './expr'
-import { HINTS, variantOf, toleranceFor, num, nums, str, bool, type FieldSpec, type Given, type VariantDef } from './templates'
+import { HINTS, quantSiblingGroup, variantOf, toleranceFor, num, nums, str, bool, type FieldSpec, type Given, type VariantDef } from './templates'
 import { QUANT_PROVENANCE, QUANT_SD_PRIOR, quantBPrior, quantExpectedTime, quantFeatures } from './prior'
 import type { QuantKey, QuantSpec } from './gen'
 
@@ -770,7 +770,12 @@ export function verifyQuant(item: ItemInstance<QuantSpec, QuantKey>): VerifyResu
       features_match: featuresOk,
       prior_matches:
         featuresOk && Math.abs(d.b_prior - quantBPrior(feats)) <= 1e-12 && d.sd_prior === QUANT_SD_PRIOR && d.provenance === QUANT_PROVENANCE,
-      time_matches: stemOk && Math.abs(item.expected_time_s - quantExpectedTime(variant.stratum as 1 | 2 | 3 | 4, stem)) <= 1e-9,
+      time_matches:
+        stemOk &&
+        Math.abs(item.expected_time_s - quantExpectedTime(variant.stratum as 1 | 2 | 3 | 4, stem)) <= 1e-9 &&
+        item.time_limit_s === powerTimeLimit(item.expected_time_s),
+      facet_matches: item.facet === variant.template,
+      sibling_group_matches: item.sibling_group === quantSiblingGroup(variant.template),
       no_options: item.options_count === undefined,
     })
   } catch (e) {

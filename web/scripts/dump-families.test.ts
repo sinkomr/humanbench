@@ -74,7 +74,7 @@ describe('buildDump / serializeDump', () => {
   it('dumps seeds dump-<i>, every item valid and verified, one canonical item per line', () => {
     const dump = buildDump(example, 30)
     expect(dump.family).toBe('example')
-    expect(dump.generator_version).toBe('1.0.0')
+    expect(dump.generator_version).toBe(example.generatorVersion)
     expect(dump.count).toBe(30)
     expect(dump.items.map((it) => it.seed)).toEqual(Array.from({ length: 30 }, (_, i) => `dump-${i}`))
     const text = serializeDump(dump)
@@ -175,9 +175,9 @@ describe('npm run dump:families (tsx, end to end)', () => {
       [join(WEB, 'node_modules/tsx/dist/cli.mjs'), 'scripts/dump-families.ts', '--', '--module', EXAMPLE_MODULE, '--n', '7', '--out', out],
       { cwd: WEB, env: { ...process.env, INIT_CWD: WEB }, encoding: 'utf8' },
     )
-    expect(stdout).toMatch(/wrote 7 example 1\.0\.0 instances/)
+    expect(stdout).toMatch(/wrote 7 example 1\.1\.0 instances/)
     const dump = JSON.parse(readFileSync(out, 'utf8')) as { items: { item_id: string }[] }
-    expect(dump.items[6]?.item_id).toBe('i:example:1.0.0:dump-6')
+    expect(dump.items[6]?.item_id).toBe(`i:example:${example.generatorVersion}:dump-6`)
     expect(JSON.stringify(dump.items[0])).toBe(JSON.stringify(JSON.parse(canonicalJson(example.generate('dump-0')))))
   }, 30_000)
 })

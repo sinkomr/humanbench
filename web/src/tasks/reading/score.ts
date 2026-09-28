@@ -11,14 +11,17 @@
  * - Observation, only if the gate passed (A10: the reading observation is dropped otherwise)
  *   and the block is not flagged as skimming ([SPEC]: a skimmed time is not a reading time, and
  *   x = ln(wpm) above ln 900 would put θ_PS beyond +5.7, so it is dropped like a failed gate):
- *   `{ kind: 'gaussian', axis: 'PS', lam: s, d, sigma, x: ln(wpm) }` with the item's params
- *   (`prior.ts`: s = 0.25, d = ln 238 − 0.1 for pre-1928 prose, sigma = √(0.15² + τ_res²)).
- *   So `family.score()`, which has no channel for flags, never returns a skimmed wpm either.
+ *   `{ kind: 'gaussian', axis: 'PS', lam: s, d, sigma, x: ln(wpm) }` with the item's lam and d
+ *   (`prior.ts`: s = 0.25, d = ln 238 − 0.1 for pre-1928 prose) and sigma = √(0.15² + τ_res²):
+ *   the §7.1 per-passage SD as the block's SE and τ_res = `params.sigma` (M1.F2).
+ * - `reading.score()` returns the M1.F2 `BlockScore` ({@link readingBlockScore}): the
+ *   observation, or none with the reason (`gate_failed`, `skimming`), and the `skimming` flag.
+ *   A malformed response throws a `MalformedResponseError` (a RangeError, as in every family).
  */
 
 import type { Observation } from '../../engine'
-import type { ItemInstance } from '../family'
-import { READING_NORMS_VERSION } from './prior'
+import { MalformedResponseError, blockScore, gaussianObservationSigma, type BlockScore, type ItemInstance } from '../family'
+import { READING_NORMS_VERSION, SIGMA_MEASUREMENT } from './prior'
 import type { ReadingKey, ReadingResponse, ReadingSpec } from './types'
 
 /** Minimum correct gate answers for the wpm to count (§3 row 10: gate ≥ 2/3). */
@@ -76,7 +79,7 @@ export function readingBlockObservation(item: ItemInstance<ReadingSpec, ReadingK
   const nQ = item.spec.questions.length
   const nOptions = item.spec.questions[0]?.options.length ?? 0
   const problems = readingResponseProblems(response, nQ, nOptions)
-  if (problems.length > 0) throw new RangeError(`malformed reading response: ${problems.join('; ')}`)
+  if (problems.length > 0) throw new MalformedResponseError(`malformed reading response: ${problems.join('; ')}`)
   const p = item.params
   if (p.model !== 'gaussian') throw new RangeError(`reading items use Gaussian params (A10), got ${p.model}`)
 
@@ -101,5 +104,15 @@ export function readingBlockObservation(item: ItemInstance<ReadingSpec, ReadingK
   if (meta.flags.includes('skimming')) {
     return { status: 'no_observation', reason: 'skimming', detail: `${wpm.toFixed(1)} wpm > ${SKIM_WPM} (skimming)`, meta }
   }
-  return { status: 'ok', observation: { kind: 'gaussian', axis: 'PS', lam: p.lam, d: p.d, sigma: p.sigma, x: Math.log(wpm) }, meta }
+  const sigma = gaussianObservationSigma(SIGMA_MEASUREMENT, p)
+  return { status: 'ok', observation: { kind: 'gaussian', axis: 'PS', lam: p.lam, d: p.d, sigma, x: Math.log(wpm) }, meta }
+}
+
+/**
+ * `score()` of a reading block (M1.F2 {@link BlockScore}): the Gaussian observation of a passed,
+ * unskimmed block, or none with the reason; the `skimming` flag whenever wpm > 900.
+ */
+export function readingBlockScore(item: ItemInstance<ReadingSpec, ReadingKey>, response: ReadingResponse): BlockScore {
+  const r = readingBlockObservation(item, response)
+  return r.status === 'ok' ? blockScore(r.observation, r.meta.flags) : blockScore(null, r.meta.flags, [r.reason])
 }

@@ -10,7 +10,16 @@
  * outcome is the longest passed length; its GRM category (A10) is y = longest − 2, or 0 if no
  * length was passed. Passed lengths are always contiguous from the start length, so the
  * outcome is also the last length before the stop.
+ *
+ * Malformed input (M1.F2: one error class across families) throws a `MalformedResponseError`,
+ * a RangeError: a response stream that is not an array, a trial response that is neither an
+ * entered sequence (an array) nor missing (null / a hole), an entered element that is neither a
+ * symbol of the task (digits 1–9, Corsi blocks 0–8) nor a blank slot (null / a hole), or a
+ * response after the block finished. A well-formed wrong answer (a wrong symbol, the wrong
+ * length, blank slots, a missing trial) is wrong, not malformed.
  */
+
+import { MalformedResponseError } from '../family'
 
 export interface SpanProtocol {
   readonly start_length: number
@@ -87,7 +96,7 @@ export function spanStatus(p: SpanProtocol, results: readonly boolean[]): SpanSt
   let correct = 0
   const finish = (used: number, stop: SpanStop): SpanStatus => {
     if (results.length > used) {
-      throw new RangeError(`span block finished after ${used} trials, but ${results.length} responses were given`)
+      throw new MalformedResponseError(`span block finished after ${used} trials, but ${results.length} responses were given`)
     }
     return {
       finished: true,
@@ -124,15 +133,39 @@ export function isExactMatch(response: unknown, expected: readonly number[]): bo
 
 /**
  * Feed a response stream through the state machine: response i is scored against
- * `expected[i]` by {@link isExactMatch}. Returns the next trial or the finished outcome; throws a
- * RangeError on a response after the block finished or with no expected sequence.
+ * `expected[i]` by {@link isExactMatch} (a missing trial response, null or a hole, is wrong).
+ * Returns the next trial or the finished outcome; throws a `MalformedResponseError` (a
+ * RangeError) on a stream that is not an array, a trial response that is not an array or
+ * missing, or a response after the block finished or with no expected sequence. With `symbols`
+ * (the task's alphabet; the family scorer always passes it), every entered element must also be
+ * one of them or a blank slot (null / a hole: a UI that fills slots by index leaves holes, which
+ * JSON writes as null): a digit 10, a Corsi block 9, "3" or 1.5 is a renderer bug, not a wrong
+ * answer, so it throws instead of scoring as a failed trial (M1.F2).
  */
-export function advanceSpan(p: SpanProtocol, expected: readonly (readonly number[])[], responses: readonly unknown[]): SpanStatus {
-  if (!Array.isArray(responses)) throw new TypeError('span responses must be an array (one entry per trial given)')
+export function advanceSpan(
+  p: SpanProtocol,
+  expected: readonly (readonly number[])[],
+  responses: readonly unknown[],
+  symbols?: readonly number[],
+): SpanStatus {
+  if (!Array.isArray(responses)) throw new MalformedResponseError('span responses must be an array (one entry per trial given)')
+  const alphabet = symbols === undefined ? null : new Set(symbols)
   // Array.from visits every index (a hole is an undefined, i.e. wrong, response); map would skip it.
   const results = Array.from(responses, (r, i) => {
     const exp = expected[i]
-    if (exp === undefined) throw new RangeError(`span response ${i} has no trial (the block has ${expected.length})`)
+    if (exp === undefined) throw new MalformedResponseError(`span response ${i} has no trial (the block has ${expected.length})`)
+    if (!(r === undefined || r === null || Array.isArray(r))) {
+      throw new MalformedResponseError(`span response ${i} must be the entered sequence (an array) or missing, got ${typeof r}`)
+    }
+    if (alphabet !== null && Array.isArray(r)) {
+      // Indexed, not for…of / every, so holes are visited (and allowed) too.
+      for (let j = 0; j < r.length; j++) {
+        const v: unknown = r[j]
+        if (!(v === undefined || v === null || (typeof v === 'number' && alphabet.has(v)))) {
+          throw new MalformedResponseError(`span response ${i} element ${j} must be a symbol of the task or blank, got ${typeof v === 'string' ? JSON.stringify(v) : String(v)}`)
+        }
+      }
+    }
     return isExactMatch(r, exp)
   })
   return spanStatus(p, results)

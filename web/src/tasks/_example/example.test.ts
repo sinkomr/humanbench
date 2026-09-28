@@ -11,11 +11,18 @@ const TINY_SPACE = { min: 0.005, reason: '55 unordered digit pairs (toy family)'
  */
 const SMALL_CONTENT = { min: 0.75, reason: '23,496 possible (operands, options) layouts (toy family)' }
 
-const OPTS = { familyIdRatio: TINY_SPACE, contentRatio: SMALL_CONTENT, specLeaksKey: exampleSpecLeaksKey } as const
+const OPTS = {
+  familyIdRatio: TINY_SPACE,
+  contentRatio: SMALL_CONTENT,
+  specLeaksKey: exampleSpecLeaksKey,
+  correctResponse: (item: ExampleItem) => item.key.index,
+  incorrectResponse: (item: ExampleItem) => (item.key.index + 1) % 4,
+  malformedResponses: () => [-1, 4, 0.5, '0'],
+} as const
 
 describe('toy family "example" (contract end to end)', () => {
   it('passes runFamilyProperties at n = 10,000', () => {
-    const r = runFamilyProperties(example, { ...OPTS, correctResponse: (item) => item.key.index })
+    const r = runFamilyProperties(example, OPTS)
     expect(r.n).toBe(10_000)
     expect(r.distinctItemIds).toBe(10_000)
     expect(r.distinctContents).toBeGreaterThan(7_500)

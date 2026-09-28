@@ -1,10 +1,11 @@
 /**
  * Scoring a quant response (M1.8, §8 response tuple): the typed entry is parsed exactly
  * (`numeric.ts`) and compared with the key under the item's stored tolerance. Unparseable entries
- * score 0. No partial credit: numeric entry is 2PL (A9).
+ * score 0; a response that is not text throws a `MalformedResponseError` (M1.F2). No partial
+ * credit: numeric entry is 2PL (A9).
  */
 
-import type { ItemInstance, ItemScore } from '../family'
+import { entryResponse, type ItemInstance, type ItemScore } from '../family'
 import { Fraction } from './fraction'
 import type { QuantKey, QuantSpec } from './gen'
 import { parseEntry, withinTolerance } from './numeric'
@@ -13,7 +14,7 @@ import { parseEntry, withinTolerance } from './numeric'
 export type QuantResponse = string
 
 export function scoreQuant(item: ItemInstance<QuantSpec, QuantKey>, response: QuantResponse): ItemScore {
-  const entry = parseEntry(response)
+  const entry = parseEntry(entryResponse(item, response, false) as string)
   const target = Fraction.parseCanonical(item.key.value)
   if (entry === null || target === null) return { correct: 0 }
   return { correct: withinTolerance(entry, target, item.key.tol) ? 1 : 0 }

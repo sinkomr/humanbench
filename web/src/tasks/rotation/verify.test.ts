@@ -157,7 +157,7 @@ describe('rotation verifier: the hand-built baseline', () => {
     expect(v.checks.distractors).toEqual(['mirror', 'moved', 'mirror_moved'])
     expect(Object.values(v.checks).filter((c) => typeof c === 'boolean')).toHaveLength(28)
     expect(good().difficulty.features.angle_deg).toBeCloseTo(80, 9)
-    expect(good().stratum).toBe(3)
+    expect(good().stratum).toBe(4) // b = 1.45 + 0.025·(80 − 100) = 0.95 (M1.P)
   })
 
   it('accepts a generated item and its JSON copy', () => {
@@ -349,8 +349,8 @@ describe('rotation verifier rejects (one failure reason each)', () => {
   })
 
   it('stratum_matches: a stratum that is not the b band / angle bin', () => {
-    failsOnly(tamper(good(), (y) => (y.stratum = 4)), 'stratum_matches')
-    // An angle below 20° is stratum 1, which the family never makes.
+    failsOnly(tamper(good(), (y) => (y.stratum = 3)), 'stratum_matches')
+    // An angle below 20° is outside the family's angle range (and its bins).
     failsAtLeast(build(T12, withPlan(GOOD_KEY, { angle: 10 }), GOOD_KEY), 'stratum_matches')
   })
 

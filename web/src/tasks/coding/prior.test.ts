@@ -36,8 +36,9 @@ describe('coding prior and norms (M1.P, A10; all [SPEC] provisional)', () => {
     expect(CODING_PROVENANCE).toMatch(/^\[SPEC\] v0, provisional/)
   })
 
-  it('Gaussian params: lam = s, d = β − s·b, sigma = σ at the norm count (≈ 0.138)', () => {
-    expect(codingParams(0)).toEqual({ model: 'gaussian', lam: 0.25, d: Math.log(40), sigma: codingSigma(60) })
+  it('Gaussian params: lam = s, d = β − s·b, sigma = τ_res (the one meaning of params.sigma, M1.F2)', () => {
+    expect(codingParams(0)).toEqual({ model: 'gaussian', lam: 0.25, d: Math.log(40), sigma: CODING_TAU_RES })
+    expect(CODING_TAU_RES).toBe(0.05)
     const p = codingParams(1)
     expect(p.model === 'gaussian' && p.d).toBeCloseTo(Math.log(40) - 0.25, 14)
     expect(codingSigma(60)).toBeCloseTo(0.138444, 6)

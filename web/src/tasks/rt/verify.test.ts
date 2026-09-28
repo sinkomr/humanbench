@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { VerifyResult } from '../family'
-import { generateRtBlock, rt, rtDifficulty, rtExpectedTimeS, rtStructure, verifyRt, type RtItem, type RtMode, type RtSpec } from '.'
+import { generateRtBlock, rtChoice4, rtDifficulty, rtExpectedTimeS, rtStructure, verifyRt, type RtItem, type RtMode, type RtSpec } from '.'
 
 /** Mutable JSON view of an item. */
 type J = any
@@ -307,6 +307,6 @@ describe('verifyRt rejects each failure reason (negative tests)', () => {
   it('the family object uses this verifier', () => {
     const x = base('choice4')
     x.stratum = 2
-    expect(rt.verify(x as RtItem).reason).toBe('failed: stratum_matches')
+    expect(rtChoice4.verify(x as RtItem).reason).toBe('failed: stratum_matches')
   })
 })

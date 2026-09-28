@@ -11,8 +11,14 @@ import {
   verifyCoding,
   type CodingItem,
 } from '.'
+import { codingInvalidResponse, codingMalformedResponses, codingValidResponse } from './synthetic'
 
-const OPTS = { specLeaksKey: codingSpecLeaksKey } as const
+const OPTS = {
+  specLeaksKey: codingSpecLeaksKey,
+  validResponse: codingValidResponse,
+  invalidResponse: codingInvalidResponse,
+  malformedResponses: codingMalformedResponses,
+} as const
 
 describe('family coding (M1.11)', () => {
   it('passes runFamilyProperties at n = 10,000', () => {

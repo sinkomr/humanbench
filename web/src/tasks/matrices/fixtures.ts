@@ -5,7 +5,7 @@
  * negative test fails exactly the check it targets.
  */
 
-import { stratumOfB } from '../priors'
+import { powerTimeLimit, stratumOfB } from '../priors'
 import {
   maskOf,
   nonConstantRules,
@@ -20,7 +20,7 @@ import {
   type Shape,
   type Size,
 } from './grammar'
-import { TIME_LIMIT_S, bPriorOf, expectedTimeOf, featuresOf, MATRIX_PROVENANCE, SIGMA_B_DEFAULT } from './prior'
+import { bPriorOf, expectedTimeOf, featuresOf, MATRIX_PROVENANCE, SIGMA_B_DEFAULT } from './prior'
 import { matrices } from '.'
 import type { MatrixItem } from './verify'
 
@@ -58,10 +58,11 @@ export function handItem(visible: readonly Cell[], options: readonly Cell[], ind
     key: { index },
     structural_params: structuralParamsOf(rules),
     family_id: matrices.familyIdOf(structuralParamsOf(rules)),
+    sibling_group: matrices.familyIdOf(structuralParamsOf(rules)),
     params: { model: '2pl', a: 1, b },
     difficulty: { features: { ...features }, b_prior: b, sd_prior: SIGMA_B_DEFAULT, provenance: MATRIX_PROVENANCE },
     expected_time_s: expectedTimeOf(nonConstantRules(rules).length),
-    time_limit_s: TIME_LIMIT_S,
+    time_limit_s: powerTimeLimit(expectedTimeOf(nonConstantRules(rules).length)),
   }
 }
 

@@ -1,12 +1,11 @@
 /**
- * Scoring of a span block (ROADMAP M1.9, A10; DESIGN §7.1 GRM, §14.6 examples 10–11): exact
- * match per trial, the state machine for the graded outcome, and the engine observation
+ * Scoring of a span block (ROADMAP M1.9, A10, M1.F2; DESIGN §7.1 GRM, §14.6 examples 10–11):
+ * exact match per trial, the state machine for the graded outcome, and the engine observation
  * `{ kind: 'grm', axis: 'WM', a, b, y }` with the item's (provisional) GRM parameters.
  */
 
-import type { Observation } from '../../engine'
-import type { ItemScore } from '../family'
-import type { SpanItem, SpanResponse } from './config'
+import { blockScore, type BlockObservation, type BlockScore } from '../family'
+import { spanSymbols, type SpanItem, type SpanResponse } from './config'
 import { advanceSpan, type SpanOutcome, type SpanProtocol, type SpanStatus } from './protocol'
 
 /** The protocol recorded in a block's spec. */
@@ -17,11 +16,11 @@ export function itemProtocol(item: SpanItem): SpanProtocol {
 
 /**
  * Run a block's response stream (one entry per trial given, in order) through the state
- * machine: the next trial to give, or the finished outcome. Throws a RangeError on a response
- * after the block finished.
+ * machine: the next trial to give, or the finished outcome. Throws a `MalformedResponseError`
+ * on a malformed stream, including an entered element outside the task's symbols (M1.F2).
  */
 export function runBlock(item: SpanItem, responses: SpanResponse): SpanStatus {
-  return advanceSpan(itemProtocol(item), item.key.sequences, responses)
+  return advanceSpan(itemProtocol(item), item.key.sequences, responses, spanSymbols(item.spec.task))
 }
 
 /**
@@ -29,7 +28,7 @@ export function runBlock(item: SpanItem, responses: SpanResponse): SpanStatus {
  * GRM parameters and y = the outcome's category. Throws if the item is not a GRM block or y is
  * outside 0 … thresholds.
  */
-export function spanObservation(item: SpanItem, outcome: SpanOutcome): Observation {
+export function spanObservation(item: SpanItem, outcome: SpanOutcome): BlockObservation {
   const p = item.params
   if (p.model !== 'grm') throw new RangeError(`span item ${item.item_id} has params.model ${p.model}, not grm`)
   const y = outcome.category
@@ -39,11 +38,15 @@ export function spanObservation(item: SpanItem, outcome: SpanOutcome): Observati
   return { kind: 'grm', axis: item.axis, a: p.a, b: [...p.b], y }
 }
 
+/** Why an unfinished span block has no observation yet (its {@link BlockScore} reason). */
+export const SPAN_UNFINISHED = 'unfinished'
+
 /**
- * `score()` of a span block: `correct` is always null (a block, §8); `value` is the GRM category
- * of a finished block and is omitted while the block is unfinished (no observation yet).
+ * `score()` of a span block (M1.F2 {@link BlockScore}): a finished block yields its GRM
+ * observation (y = the outcome's category); an unfinished one yields none, with the reason
+ * "unfinished". No integrity flags. Throws a `MalformedResponseError` on a malformed stream.
  */
-export function scoreSpan(item: SpanItem, responses: SpanResponse): ItemScore {
+export function scoreSpan(item: SpanItem, responses: SpanResponse): BlockScore {
   const status = runBlock(item, responses)
-  return status.finished ? { correct: null, value: status.outcome.category } : { correct: null }
+  return status.finished ? blockScore(spanObservation(item, status.outcome)) : blockScore(null, [], [SPAN_UNFINISHED])
 }

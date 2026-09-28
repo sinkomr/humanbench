@@ -1,8 +1,10 @@
 /**
- * Series generator (DESIGN §4.2 "Series"; ROADMAP M1.7, A11). Draws a stratum, then a key rule
- * family from that stratum's menu and its coefficients, and keeps the draw only if its v0 prior
- * lands in the stratum and it passes the full uniqueness analysis of `rules.ts` (so every
- * generated item verifies by construction). Every random number comes from the seeded `rng`.
+ * Series generator (DESIGN §4.2 "Series"; ROADMAP M1.7, M1.P, A11). Without a requested stratum
+ * it draws the natural pool: a key rule family from {@link NATURAL_MENU} and its coefficients,
+ * kept if it passes the full uniqueness analysis of `rules.ts` (so every generated item verifies
+ * by construction); the stratum is the band of its b, and the pool's mean b is the ICAR anchor
+ * (`prior.ts`). A requested stratum draws from that stratum's menu and keeps the draw only if its
+ * v0 prior lands in the stratum. Every random number comes from the seeded `rng`.
  */
 
 import type { Rng } from '../../engine'
@@ -29,14 +31,21 @@ import type { SeriesKey, SeriesSpec, SeriesStructure } from './types'
 /** Strata the family generates (stratum 6, b ≥ 2.5, is out of reach of the v0 prior's intent). */
 export const SERIES_STRATA: readonly Stratum[] = Object.freeze([1, 2, 3, 4, 5] as const)
 
-/** Stratum weights when none is requested (few stratum-1 items: that content space is small). */
-const NATURAL_STRATA: readonly (readonly [Stratum, number])[] = [
-  [1, 1.2],
-  [2, 2],
-  [3, 3],
-  [4, 2.5],
-  [5, 1.5],
-]
+/**
+ * The natural pool's key rule families (M1.P), when no stratum is requested: weights close to
+ * the rule mix of the pre-1.3.0 stratum-first pool, drawn independently of b, so the pool's
+ * feature means (`POOL_FEATURE_MEANS`) and hence its mean b do not depend on the prior.
+ */
+export const NATURAL_MENU: readonly (readonly [RuleName, number])[] = Object.freeze([
+  ['arithmetic', 25],
+  ['letter', 5],
+  ['geometric', 4],
+  ['quadratic', 12],
+  ['interleaved', 10],
+  ['fibonacci', 11],
+  ['composite_alt', 23],
+  ['composite_aff', 10],
+] as const)
 
 /** Rule menu per stratum (weights); the prior decides whether a draw lands in the stratum. */
 const MENUS: Readonly<Record<number, readonly (readonly [RuleName, number])[]>> = {
@@ -217,15 +226,16 @@ export function acceptDraft(draft: Draft): boolean {
 
 /** `build()` of the series family (see `defineFamily`). */
 export function buildSeries(rng: Rng, ctx: BuildContext): BuiltItem<SeriesSpec, SeriesKey> {
-  const stratum = ctx.stratum ?? weighted(rng, NATURAL_STRATA)
-  const menu = MENUS[stratum]
-  if (!menu) throw new RangeError(`series cannot generate stratum ${stratum}`)
+  const requested = ctx.stratum
+  const menu = requested === undefined ? NATURAL_MENU : MENUS[requested]
+  if (!menu) throw new RangeError(`series cannot generate stratum ${String(requested)}`)
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const draft = sampleDraft(rng, weighted(rng, menu))
     if (!draft.values.every((x) => Number.isSafeInteger(x) && Math.abs(x) <= TERM_BOUND)) continue
     const features = seriesFeatures(draft.rule, draft.coefficients, draft.values)
     const difficulty = seriesDifficulty(features)
-    if (stratumOfB(difficulty.b_prior) !== stratum || !acceptDraft(draft)) continue
+    const stratum = stratumOfB(difficulty.b_prior)
+    if ((requested === undefined ? !SERIES_STRATA.includes(stratum) : stratum !== requested) || !acceptDraft(draft)) continue
     const structure: SeriesStructure = { rule: draft.rule, coefficients: draft.coefficients }
     return {
       stratum,
@@ -235,5 +245,5 @@ export function buildSeries(rng: Rng, ctx: BuildContext): BuiltItem<SeriesSpec, 
       expected_time_s: seriesExpectedTime(features),
     }
   }
-  throw new Error(`series: no valid item for stratum ${stratum} after ${MAX_ATTEMPTS} draws`)
+  throw new Error(`series: no valid item for stratum ${String(requested)} after ${MAX_ATTEMPTS} draws`)
 }

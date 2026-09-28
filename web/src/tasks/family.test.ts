@@ -2,16 +2,26 @@ import { describe, expect, it } from 'vitest'
 import { example } from './_example'
 import {
   DEFAULT_A,
+  MalformedResponseError,
+  SIBLING_GROUP_RE,
+  blockScore,
   defineFamily,
+  entryResponse,
+  gaussianObservationSigma,
   itemParamsFor,
+  kindOfModel,
+  mcResponseIndex,
   parseItemInstance,
+  siblingGroupId,
   toItemBase,
   validateItemInstance,
   verdict,
+  type BlockObservation,
   type BuiltItem,
   type JsonObject,
 } from './family'
 import type { Stratum } from './ids'
+import { powerTimeLimit } from './priors'
 
 /** A fresh mutable JSON copy of a valid instance. */
 const sample = (seed = 'family-test'): Record<string, unknown> => JSON.parse(JSON.stringify(example.generate(seed))) as Record<string, unknown>
@@ -80,11 +90,25 @@ describe('validateItemInstance', () => {
     ['axis', (x) => (x.axis = 'IQ'), /unknown axis/],
     ['stratum', (x) => (x.stratum = 7), /stratum must be/],
     ['stratum outside family strata', (x) => (x.stratum = 5), /family's strata/],
+    ['stratum not the band of b_prior (M1.P)', (x) => (x.stratum = x.stratum === 1 ? 2 : 1), /is not the default band of b_prior -?\d/],
     ['spec not object', (x) => (x.spec = [1, 2]), /spec must be a JSON object/],
     ['key not object', (x) => (x.key = 2), /key must be a JSON object/],
     ['options_count', (x) => (x.options_count = 1), /options_count must be/],
     ['expected_time_s', (x) => (x.expected_time_s = 0), /expected_time_s/],
     ['time_limit_s', (x) => (x.time_limit_s = -5), /time_limit_s/],
+    ['item without the §13 cap', (x) => delete x.time_limit_s, /shared §13 cap/],
+    ['item with another cap', (x) => (x.time_limit_s = 60), /shared §13 cap powerTimeLimit\(expected_time_s\) = 180, got 60/],
+    ['missing sibling_group', (x) => delete x.sibling_group, /missing field sibling_group/],
+    ['sibling_group of another family', (x) => (x.sibling_group = 'g:other:sums'), /sibling_group must be/],
+    ['sibling_group not an id', (x) => (x.sibling_group = 'sums'), /sibling_group must be/],
+    ['facet not declared', (x) => (x.facet = 'toy_product'), /facet toy_product is not one of toy_sum/],
+    ['MC options not in spec.options', (x) => (x.spec = { operands: [1, 2], choices: [1, 2, 3, 4] }), /spec\.options \(display order\)/],
+    ['MC options count mismatch', (x) => ((x.spec as JsonObject).options = [1, 2, 3]), /exactly options_count options/],
+    ['MC key not a position', (x) => (x.key = { index: 4 }), /key\.index must be an integer 0 … options_count − 1/],
+    ['block params on an item family', (x) => {
+      delete x.options_count
+      x.params = { model: 'gaussian', lam: 1, d: 0, sigma: 0.05 }
+    }, /not a item model/],
     ['b_prior too large', (x) => ((x.difficulty as JsonObject).b_prior = 4.5), /b_prior/],
     ['sd_prior', (x) => ((x.difficulty as JsonObject).sd_prior = 0), /sd_prior/],
     ['provenance', (x) => ((x.difficulty as JsonObject).provenance = ''), /provenance/],
@@ -108,8 +132,15 @@ describe('validateItemInstance', () => {
     expect(() => parseItemInstance(mutate(f), example)).toThrow(/invalid item instance/)
   })
 
-  it('accepts block models (GRM, Gaussian) without options_count', () => {
-    const base = mutate((x) => delete x.options_count)
+  it('accepts a grouped sibling_group of its own family', () => {
+    expect(validateItemInstance({ ...sample(), sibling_group: 'g:example:sums' }, example)).toEqual([])
+  })
+
+  it('accepts block models (GRM, Gaussian) without options_count, and no cap on blocks', () => {
+    const base = mutate((x) => {
+      delete x.options_count
+      delete x.time_limit_s
+    })
     expect(validateItemInstance({ ...base, params: { model: 'grm', a: 1.2, b: [-1, 0, 1.5] } })).toEqual([])
     expect(validateItemInstance({ ...base, params: { model: 'gaussian', lam: -0.8, d: 6.2, sigma: 0.3 } })).toEqual([])
     expect(validateItemInstance({ ...base, params: { model: 'grm', a: 1, b: [0, 0] } }).join()).toMatch(/strictly increasing/)
@@ -128,12 +159,13 @@ describe('toItemBase', () => {
     expect(toItemBase(item)).toEqual({
       item_id: item.item_id,
       family_id: item.family_id,
+      sibling_group: item.family_id,
       axis: 'QR',
       facet: 'toy_sum',
       item_type: 'mc',
       gold_tier: 'a',
       expected_time_s: item.expected_time_s,
-      time_limit_s: 60,
+      time_limit_s: 180,
       params: item.params,
     })
   })
@@ -145,13 +177,15 @@ describe('defineFamily', () => {
     spec: { stem: 'x' },
     key: { value: 1 },
     structural_params: { t: 'const' },
-    difficulty: { features: {}, b_prior: 0.5, sd_prior: 1, provenance: 'test' },
+    // b in the default band of the stratum (M1.P): −2 for stratum 1, −1 for stratum 2
+    difficulty: { features: {}, b_prior: stratum - 3, sd_prior: 1, provenance: 'test' },
     expected_time_s: 30,
   })
   const base = {
     name: 'toy',
+    kind: 'item' as const,
     axis: 'QR' as const,
-    facet: 'toy',
+    facets: ['toy'],
     generatorVersion: '1.0.0',
     itemType: 'numeric_entry',
     strata: [1] as const,
@@ -159,21 +193,68 @@ describe('defineFamily', () => {
     verify: () => verdict({ ok: true }),
     score: () => ({ correct: 1 as const }),
   }
+  const gaussian = { model: 'gaussian' as const, lam: 1, d: 0, sigma: 0.2 }
+  const blockBase = {
+    ...base,
+    kind: 'block' as const,
+    build: () => ({ ...built(), params: gaussian }),
+    score: () => blockScore(null, [], ['unfinished']),
+  }
 
-  it('fills ids, identity fields and A9 params (numeric entry → 2PL, default a)', () => {
+  it('fills ids, identity fields, A9 params (numeric entry → 2PL, default a) and the §13 cap', () => {
     const fam = defineFamily({ ...base, defaultA: 1.3 })
     const item = fam.generate('s1')
+    expect(fam.kind).toBe('item')
+    expect(fam.facets).toEqual(['toy'])
     expect(item.item_id).toBe('i:toy:1.0.0:s1')
     expect(item.family_id).toBe(fam.familyIdOf({ t: 'const' }))
-    expect(item.params).toEqual({ model: '2pl', a: 1.3, b: 0.5 })
+    expect(item.sibling_group).toBe(item.family_id) // a family is its own sibling group by default
+    expect(item.facet).toBe('toy') // the only facet
+    expect(item.params).toEqual({ model: '2pl', a: 1.3, b: -2 })
     expect('options_count' in item).toBe(false)
-    expect('time_limit_s' in item).toBe(false)
+    expect(item.time_limit_s).toBe(powerTimeLimit(30))
     expect(validateItemInstance(item, fam)).toEqual([])
   })
 
-  it('keeps params returned by build (blocks, A10)', () => {
-    const fam = defineFamily({ ...base, build: () => ({ ...built(), params: { model: 'gaussian', lam: 1, d: 0, sigma: 0.2 } }) })
-    expect(fam.generate('s').params).toEqual({ model: 'gaussian', lam: 1, d: 0, sigma: 0.2 })
+  it('keeps params and the time window returned by a block build (A10), with no §13 cap', () => {
+    const fam = defineFamily(blockBase)
+    expect(fam.kind).toBe('block')
+    const item = fam.generate('s')
+    expect(item.params).toEqual(gaussian)
+    expect('time_limit_s' in item).toBe(false)
+    expect(validateItemInstance(item, fam)).toEqual([])
+    const timed = defineFamily({ ...blockBase, build: () => ({ ...built(), params: gaussian, time_limit_s: 90 }) })
+    expect(timed.generate('s').time_limit_s).toBe(90)
+  })
+
+  it('enforces the kind rules on build (M1.F2)', () => {
+    expect(() => defineFamily({ ...base, build: () => ({ ...built(), params: gaussian }) }).generate('s')).toThrow(/A9 params from defineFamily/)
+    expect(() => defineFamily({ ...base, build: () => ({ ...built(), time_limit_s: 60 }) }).generate('s')).toThrow(/shared §13 cap/)
+    expect(() => defineFamily({ ...blockBase, build: () => built() }).generate('s')).toThrow(/must return its A10 params/)
+    expect(() => defineFamily({ ...base, kind: 'quiz' as never })).toThrow(RangeError)
+  })
+
+  it('takes facets per item and sibling groups from build (M1.F2)', () => {
+    const fam = defineFamily({
+      ...base,
+      facets: ['sums', 'products'],
+      build: (rng) => {
+        const f = rng.next() < 0.5 ? 'sums' : 'products'
+        return { ...built(), facet: f, sibling_group: siblingGroupId('toy', f) }
+      },
+    })
+    const facets = new Set<string>()
+    for (let i = 0; i < 40; i++) {
+      const item = fam.generate(`f${i}`)
+      facets.add(item.facet)
+      expect(item.sibling_group).toBe(`g:toy:${item.facet}`)
+      expect(validateItemInstance(item, fam)).toEqual([])
+    }
+    expect([...facets].sort()).toEqual(['products', 'sums'])
+    expect(() => defineFamily({ ...base, facets: ['a', 'b'] }).generate('s')).toThrow(/facet undefined, not one of a, b/)
+    expect(() => defineFamily({ ...base, build: () => ({ ...built(), facet: 'other' }) }).generate('s')).toThrow(/not one of toy/)
+    expect(() => defineFamily({ ...base, facets: [] })).toThrow(RangeError)
+    expect(() => defineFamily({ ...base, facets: ['a', 'a'] })).toThrow(RangeError)
   })
 
   it('passes the resolved seed and requested stratum to build, seeded from that seed', () => {
@@ -207,5 +288,70 @@ describe('defineFamily', () => {
     expect(() => defineFamily({ ...base, axis: 'IQ' as never })).toThrow(RangeError)
     expect(() => defineFamily({ ...base, strata: [] })).toThrow(RangeError)
     expect(() => defineFamily({ ...base, strata: [7 as never] })).toThrow(RangeError)
+  })
+})
+
+describe('contract v2 helpers (M1.F2)', () => {
+  it('kindOfModel: dichotomous models are items, GRM and Gaussian blocks', () => {
+    expect(['2pl', '3pl', '2pl_testlet'].map((m) => kindOfModel(m as never))).toEqual(['item', 'item', 'item'])
+    expect(kindOfModel('grm')).toBe('block')
+    expect(kindOfModel('gaussian')).toBe('block')
+  })
+
+  it('siblingGroupId builds g:<family>:<label> and refuses bad labels', () => {
+    expect(siblingGroupId('quant', 'percent')).toBe('g:quant:percent')
+    expect(SIBLING_GROUP_RE.test('g:quant:percent')).toBe(true)
+    for (const bad of [['quant', ''], ['quant', 'Percent'], ['quant', 'a:b'], ['Quant', 'x'], ['quant', 'x'.repeat(49)]] as const) {
+      expect(() => siblingGroupId(bad[0], bad[1]), JSON.stringify(bad)).toThrow(RangeError)
+    }
+  })
+
+  const grm: BlockObservation = { kind: 'grm', axis: 'WM', a: 1.7, b: [-1, 0, 1], y: 2 }
+
+  it('blockScore: an observation xor ≥ 1 reason, snake_case tokens', () => {
+    expect(blockScore(grm)).toEqual({ correct: null, observation: grm, flags: [], reasons: [] })
+    expect(blockScore(grm, ['high_error_rate'])).toEqual({ correct: null, observation: grm, flags: ['high_error_rate'], reasons: [] })
+    expect(blockScore(null, ['skimming'], ['gate_failed'])).toEqual({ correct: null, flags: ['skimming'], reasons: ['gate_failed'] })
+    expect('observation' in blockScore(undefined, [], ['unfinished'])).toBe(false)
+    expect(() => blockScore(null)).toThrow(RangeError)
+    expect(() => blockScore(grm, [], ['x'])).toThrow(RangeError)
+    expect(() => blockScore(null, [], ['Gate Failed'])).toThrow(RangeError)
+    expect(() => blockScore(grm, ['2fast'])).toThrow(RangeError)
+  })
+
+  it('gaussianObservationSigma = sqrt(SE² + params.sigma²): params.sigma is tau_res', () => {
+    const p = { model: 'gaussian' as const, lam: 0.25, d: 3, sigma: 0.05 }
+    expect(gaussianObservationSigma(0, p)).toBe(0.05)
+    expect(gaussianObservationSigma(0.15, p)).toBe(Math.sqrt(0.15 * 0.15 + 0.05 * 0.05))
+    expect(() => gaussianObservationSigma(-0.1, p)).toThrow(RangeError)
+    expect(() => gaussianObservationSigma(Number.NaN, p)).toThrow(RangeError)
+    expect(() => gaussianObservationSigma(0.1, { model: '2pl', a: 1, b: 0 })).toThrow(RangeError)
+  })
+
+  it('MalformedResponseError is a RangeError with its own name', () => {
+    const e = new MalformedResponseError('bad')
+    expect(e).toBeInstanceOf(RangeError)
+    expect(e).toBeInstanceOf(Error)
+    expect(e.name).toBe('MalformedResponseError')
+    expect(e.message).toBe('bad')
+  })
+
+  it('mcResponseIndex accepts exactly the option positions 0 … k − 1', () => {
+    const item = example.generate('mc')
+    for (let i = 0; i < 4; i++) expect(mcResponseIndex(item, i)).toBe(i)
+    for (const bad of [-1, 4, 1.5, '1', null, undefined, true, Number.NaN, [1], {}]) {
+      expect(() => mcResponseIndex(item, bad), String(bad)).toThrow(MalformedResponseError)
+    }
+  })
+
+  it('entryResponse accepts typed text (and finite numbers when allowed)', () => {
+    const item = example.generate('entry')
+    expect(entryResponse(item, 'abc', false)).toBe('abc')
+    expect(entryResponse(item, '', false)).toBe('')
+    expect(entryResponse(item, 42, true)).toBe(42)
+    expect(() => entryResponse(item, 42, false)).toThrow(MalformedResponseError)
+    for (const bad of [null, undefined, true, Number.NaN, Number.POSITIVE_INFINITY, [], {}]) {
+      expect(() => entryResponse(item, bad, true), String(bad)).toThrow(MalformedResponseError)
+    }
   })
 })
