@@ -17,7 +17,7 @@
  */
 
 import { jcs } from './jcs'
-import { mergeAll, subsumes } from './merge'
+import { distinctAnonIds, mergeAll, subsumes } from './merge'
 import type { Migration } from './migrate'
 import { loadSaveDocument, type ParseErrorCode } from './parse'
 import type { SaveContext, SaveFileV1 } from './types'
@@ -135,6 +135,12 @@ export interface RestoreResult {
   keys: string[]
   /** Keys that could not be used, with why; they are left in storage. */
   failures: { key: string; code: ParseErrorCode | 'read_failed' }[]
+  /**
+   * Distinct `anon_id`s of the merged autosaves (sorted). More than one means `save` combines
+   * saves issued to different ids, e.g. two people on a shared device, or one person who started
+   * fresh and then loaded an old file; the session flow (M1.15) should ask before keeping it.
+   */
+  anonIds: string[]
 }
 
 /** Read and merge every autosave (crash recovery on load). Never throws. */
@@ -143,7 +149,7 @@ export function restoreAutosaves(
   storage: StorageLike | null = browserStorage(),
   migrations?: ReadonlyMap<number, Migration>,
 ): RestoreResult {
-  const result: RestoreResult = { save: null, keys: [], failures: [] }
+  const result: RestoreResult = { save: null, keys: [], failures: [], anonIds: [] }
   if (storage === null) return result
   const saves: SaveFileV1[] = []
   for (const key of autosaveKeys(storage)) {
@@ -158,6 +164,7 @@ export function restoreAutosaves(
   if (saves.length > 0) {
     try {
       result.save = mergeAll(saves, ctx)
+      result.anonIds = distinctAnonIds(saves)
     } catch {
       result.failures.push(...result.keys.map((key) => ({ key, code: 'invalid' as const })))
       result.keys = []

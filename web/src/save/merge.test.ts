@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { jcs } from './jcs'
-import { isUsableCache, mergeAll, mergeSaves, mergeSessions, normalizeSave, sameSave, subsumes } from './merge'
+import { distinctAnonIds, isUsableCache, mergeAll, mergeSaves, mergeSessions, normalizeSave, sameSave, subsumes } from './merge'
 import { parseSaveText } from './parse'
 import { arbCache, arbSave, arbSaveFamily, arbSession, TEST_CTX } from './testing'
 import { SCHEMA_URL, SCHEMA_VERSION, type SaveFileV1, type SaveSession } from './types'
@@ -195,7 +195,7 @@ describe('merge (DESIGN §8 R-8.1)', () => {
     })
 
     it('prefers a server-signed copy (A16), then more responses, then longer duration', () => {
-      const sig = { alg: 'HMAC-SHA256' as const, kid: 'k2026a', mac: 'AAAA' }
+      const sig = { alg: 'HMAC-SHA256' as const, kid: 'k2026a', mac: 'AAAA', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' }
       const signed = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 2, { sig })
       const longer = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 4)
       expect(mergeSessions([[longer], [signed]])).toEqual([signed])
@@ -282,6 +282,53 @@ describe('merge (DESIGN §8 R-8.1)', () => {
         }),
         RUNS,
       )
+    })
+
+    it('a signed session keeps its (session, anon_id) binding through any merge, even when the file anon_id changes (A16, property)', () => {
+      fc.assert(
+        fc.property(arbSaveFamily(3, { bindSigs: true }), (saves) => {
+          const m = mergeAll(saves, ctx)
+          for (const s of m.sessions) {
+            if (s.sig === undefined) continue
+            // The kept copy, sig included, is one an input file carried, and the sig names the
+            // anon_id of that file (the one the server bound it to), whatever the merged anon_id.
+            const sources = saves.filter((f) => f.sessions.some((c) => jcs(c) === jcs(s)))
+            expect(sources.length).toBeGreaterThan(0)
+            expect(sources.map((f) => f.anon_id)).toContain(s.sig.anon_id)
+          }
+          const signedIn = new Set(saves.flatMap((f) => f.sessions.filter((c) => c.sig !== undefined).map((c) => c.session_id)))
+          for (const id of signedIn) expect(m.sessions.find((s) => s.session_id === id)?.sig).toBeDefined()
+        }),
+        RUNS,
+      )
+    })
+
+    it('a signed session from the file with the larger anon_id still names its own id after the merge', () => {
+      const bSig = { ...sig, mac: 'MACoverSessionAndAnonB', anon_id: 'hb_zzzzzzzzzzzzzzzz' }
+      const fa = base({ anon_id: 'hb_0000000000000000a', sessions: [session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 1)] })
+      const fb = base({ anon_id: 'hb_zzzzzzzzzzzzzzzz', sessions: [session('s_01J9ZK3QB', '2026-10-04T17:20:02Z', 1, { sig: bSig })] })
+      const m = mergeSaves(fa, fb, ctx)
+      expect(m.anon_id).toBe('hb_0000000000000000a')
+      expect(m.sessions.map((x) => [x.session_id, x.sig ?? null])).toEqual([
+        ['s_01J9ZK3QA', null],
+        ['s_01J9ZK3QB', bSig],
+      ])
+    })
+
+    it('a session sig must name its anon_id; a file-level sig must not', () => {
+      const s = session('s_01J9ZK3QA', '2026-10-03T17:20:02Z', 1)
+      expect(validateSave(base({ sessions: [{ ...s, sig: { ...sig, anon_id: 'hb_zzzzzzzzzzzzzzzz' } }] })).ok).toBe(true)
+      expect(validateSave(base({ sessions: [{ ...s, sig: sig as never }] })).ok).toBe(false)
+      expect(validateSave(base({ sessions: [{ ...s, sig: { ...sig, anon_id: 'nope' } }] })).ok).toBe(false)
+      expect(validateSave({ ...base(), sig: { ...sig, anon_id: 'hb_zzzzzzzzzzzzzzzz' } })).toMatchObject({ ok: false })
+    })
+
+    it('distinctAnonIds reports saves issued to different ids, so the UI can ask before merging', () => {
+      const a = base({ anon_id: 'hb_zzzzzzzzzzzzzzzz' })
+      const b = base({ anon_id: 'hb_0000000000000000a' })
+      expect(distinctAnonIds([a, a])).toEqual(['hb_zzzzzzzzzzzzzzzz'])
+      expect(distinctAnonIds([a, b, a])).toEqual(['hb_0000000000000000a', 'hb_zzzzzzzzzzzzzzzz'])
+      expect(mergeSaves(a, b, ctx).anon_id).toBe('hb_0000000000000000a')
     })
   })
 

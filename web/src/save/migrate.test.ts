@@ -1,9 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { jcs } from './jcs'
-import { majorOf, migrateToCurrent, MIGRATIONS, type Migration } from './migrate'
+import { isNewerVersion, majorOf, migrateToCurrent, MIGRATIONS, versionOf, type Migration } from './migrate'
 import { loadSaveDocument, parseSaveText } from './parse'
-import { SCHEMA_MAJOR, SCHEMA_URL } from './types'
+import { SCHEMA_MAJOR, SCHEMA_URL, SCHEMA_VERSION } from './types'
 import { validateSave } from './validate'
 
 /**
@@ -87,6 +87,24 @@ describe('save migrations scaffold (DESIGN §8 merge step 5)', () => {
     for (const bad of [null, [], 'x', {}, { schema_version: 1 }, { schema_version: 'v1' }, { schema_version: '1.0' }, { schema_version: '01.0.0' }]) {
       expect(majorOf(bad)).toBeNull()
     }
+  })
+
+  it('orders versions by (major, minor, patch): isNewerVersion (property)', () => {
+    expect(versionOf({ schema_version: '1.12.3' })).toEqual([1, 12, 3])
+    expect(versionOf({ schema_version: 'v1' })).toBeNull()
+    expect(isNewerVersion({ schema_version: SCHEMA_VERSION })).toBe(false)
+    expect(isNewerVersion({ schema_version: '1.0.1' }, '1.0.0')).toBe(true)
+    expect(isNewerVersion({ schema_version: '1.10.0' }, '1.9.9')).toBe(true)
+    expect(isNewerVersion({ schema_version: '1.9.9' }, '1.10.0')).toBe(false)
+    expect(isNewerVersion({ schema_version: '0.9.0' }, '1.0.0')).toBe(false)
+    expect(isNewerVersion({ schema_version: 'x' }, '1.0.0')).toBe(false)
+    const arbV = fc.tuple(fc.nat(12), fc.nat(12), fc.nat(12))
+    fc.assert(
+      fc.property(arbV, arbV, (a, b) => {
+        const cmp = a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+        expect(isNewerVersion({ schema_version: a.join('.') }, b.join('.'))).toBe(cmp > 0)
+      }),
+    )
   })
 
   it('migrates a fake v0 document to a valid v1 save, purely', () => {

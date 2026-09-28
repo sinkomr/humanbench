@@ -139,6 +139,45 @@ describe('unsigned MVP save from session state (DESIGN §8, §14.3 M1, A16)', ()
     expect(() => saveWithSession(null, state(), { ...opts, anonId: 'me@example.org' })).toThrow(TypeError)
   })
 
+  it('rejects NaN / ±Infinity anywhere in the state instead of letting a JSON copy turn them into null (§7.8)', () => {
+    const opts = { ctx, createdMs: T, anonId: 'hb_7Q3m9Kx2Vw5rT8pL' }
+    const r0 = ['i:x', 0, 'A', 1, 1000, 80] as const
+    const bad: [string, Partial<SessionState>][] = [
+      ['confidence NaN', { responses: [['i:x', 0, 'A', 1, 1000, Number.NaN]] }],
+      ['confidence Infinity', { responses: [['i:x', 0, 'A', 1, 1000, Number.POSITIVE_INFINITY]] }],
+      ['rt NaN', { responses: [['i:x', 0, 'A', 1, Number.NaN, 80]] }],
+      ['trial extra NaN', { responses: [[...r0, [243, Number.NaN, 238]]] }],
+      ['payload NaN', { responses: [['i:x', 0, { x: Number.NaN }, 1, 1000, 80]] }],
+      ['payload -Infinity', { responses: [['i:x', 0, [Number.NEGATIVE_INFINITY], 1, 1000, 80]] }],
+      ['payload undefined', { responses: [['i:x', 0, undefined as never, 1, 1000, 80]] }],
+      ['extra undefined element', { responses: [[...r0, [1, undefined as never]]] }],
+      ['flag NaN', { flags: { lz_star: Number.NaN } }],
+      ['flag Infinity', { flags: { visibility_hidden_s: Number.POSITIVE_INFINITY } }],
+      ['refresh NaN', { device: { ...state().device, refresh_hz_est: Number.NaN } }],
+      ['timer Infinity', { device: { ...state().device, timer_res_ms: Number.POSITIVE_INFINITY } }],
+      ['duration NaN', { durationS: Number.NaN }],
+    ]
+    for (const [name, over] of bad) {
+      expect(() => saveWithSession(null, state(over), opts), name).toThrow(TypeError)
+      expect(() => sessionFromState(state(over)), name).toThrow(TypeError)
+    }
+  })
+
+  it('a non-finite number at any response position always throws (property)', () => {
+    const arbNonFinite = fc.constantFrom(Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY)
+    fc.assert(
+      fc.property(fc.array(arbResponse, { minLength: 1, maxLength: 5 }), fc.nat(), fc.constantFrom(2, 4, 5, 6), arbNonFinite, (responses, at, slot, x) => {
+        const rs = responses.map((r) => [...r]) as unknown[][]
+        const r = rs[at % rs.length] as unknown[]
+        if (slot === 6) r[6] = [1, x]
+        else r[slot] = slot === 2 ? { v: x } : x
+        const opts = { ctx, createdMs: T, anonId: 'hb_7Q3m9Kx2Vw5rT8pL' }
+        expect(() => saveWithSession(null, state({ responses: rs as unknown as SessionState['responses'] }), opts)).toThrow(TypeError)
+      }),
+      { numRuns: 200 },
+    )
+  })
+
   it('per-item snapshots merge to the final snapshot, in any order (autosave idempotence; property)', () => {
     fc.assert(
       fc.property(fc.array(arbResponse, { minLength: 1, maxLength: 10 }), arbDevice, arbFlags, fc.integer({ min: 0, max: 10 }), (responses, device, flags, shift) => {

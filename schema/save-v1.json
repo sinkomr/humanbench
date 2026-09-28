@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sinkomr.github.io/humanbench/schema/save-v1.json",
   "title": "HumanBench save file, schema v1",
-  "description": "DESIGN §8 (R-8.x) save file: sessions of raw responses, seen item and family ids, and an optional posterior cache. Strings are I-JSON (RFC 7493: no lone surrogates) so every valid file has an RFC 8785 canonical form. Signatures: the static MVP writes none, so its files are unverified; the per-session MAC of ROADMAP A16 (`sessions[].sig`) supersedes the file-level `sig` of the §8 example, which stays valid here. The TypeScript validator web/src/save/validate.ts mirrors this schema exactly and additionally rejects JSON nested deeper than 64 levels.",
+  "description": "DESIGN §8 (R-8.x) save file: sessions of raw responses, seen item and family ids, and an optional posterior cache. Strings are I-JSON (RFC 7493: no lone surrogates) so every valid file has an RFC 8785 canonical form. Signatures: the static MVP writes none, so its files are unverified; the per-session MAC of ROADMAP A16 (`sessions[].sig`, which names the anon_id it binds so it survives a merge) supersedes the file-level `sig` of the §8 example, which stays valid here. Versions: minor and patch bumps are additive within a major; a reader that cannot validate a file from a newer minor reports it as made by a newer version rather than dropping unknown fields. The TypeScript validator web/src/save/validate.ts mirrors this schema exactly and additionally rejects JSON nested deeper than 64 levels.",
   "type": "object",
   "required": ["schema_version", "bank_version", "anon_id", "created_utc", "sessions", "seen_items", "seen_families"],
   "additionalProperties": false,
@@ -14,11 +14,7 @@
       "pattern": "^1\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$"
     },
     "bank_version": { "$ref": "#/$defs/version_tag" },
-    "anon_id": {
-      "description": "96 random bits in base62 behind an hb_ prefix (§8 privacy).",
-      "type": "string",
-      "pattern": "^hb_[0-9A-Za-z]{16,17}$"
-    },
+    "anon_id": { "$ref": "#/$defs/anon_id" },
     "created_utc": { "$ref": "#/$defs/utc_seconds" },
     "sessions": { "type": "array", "items": { "$ref": "#/$defs/session" } },
     "seen_items": { "type": "array", "items": { "$ref": "#/$defs/item_id" } },
@@ -27,6 +23,11 @@
     "sig": { "$ref": "#/$defs/sig" }
   },
   "$defs": {
+    "anon_id": {
+      "description": "96 random bits in base62 behind an hb_ prefix (§8 privacy).",
+      "type": "string",
+      "pattern": "^hb_[0-9A-Za-z]{16,17}$"
+    },
     "text": {
       "description": "An I-JSON string: no unpaired UTF-16 surrogate (RFC 7493 §2.1, required by RFC 8785).",
       "type": "string",
@@ -78,7 +79,7 @@
         "device": { "$ref": "#/$defs/device" },
         "flags": { "$ref": "#/$defs/flags" },
         "responses": { "type": "array", "items": { "$ref": "#/$defs/response" } },
-        "sig": { "$ref": "#/$defs/sig" }
+        "sig": { "$ref": "#/$defs/session_sig" }
       }
     },
     "device": {
@@ -106,8 +107,9 @@
       }
     },
     "family_name": {
+      "description": "A family such as macOS or Safari, never a version string (§8 privacy): no digits or dots.",
       "type": "string",
-      "pattern": "^[A-Za-z][A-Za-z0-9 ._-]{0,31}$"
+      "pattern": "^[A-Za-z][A-Za-z _-]{0,31}$"
     },
     "flags": {
       "description": "Integrity flag counters (§13); M1.19 adds more, so unknown snake_case flags are allowed.",
@@ -152,7 +154,7 @@
       }
     },
     "sig": {
-      "description": "Server HMAC (§8; per session under ROADMAP A16, M2.3). Only the server can verify it.",
+      "description": "Server HMAC over the file body (§8 example; superseded by ROADMAP A16). Only the server can verify it.",
       "type": "object",
       "required": ["alg", "kid", "mac"],
       "additionalProperties": false,
@@ -160,6 +162,18 @@
         "alg": { "const": "HMAC-SHA256" },
         "kid": { "type": "string", "pattern": "^[0-9A-Za-z._-]{1,64}$" },
         "mac": { "type": "string", "pattern": "^[0-9A-Za-z+/=._-]{1,512}$" }
+      }
+    },
+    "session_sig": {
+      "description": "ROADMAP A16 per-session server HMAC (M2.3) over the session without sig together with anon_id, the id it was issued to. A merge may change the file's anon_id, so the bound id travels with the sig. Only the server can verify it.",
+      "type": "object",
+      "required": ["alg", "kid", "mac", "anon_id"],
+      "additionalProperties": false,
+      "properties": {
+        "alg": { "const": "HMAC-SHA256" },
+        "kid": { "type": "string", "pattern": "^[0-9A-Za-z._-]{1,64}$" },
+        "mac": { "type": "string", "pattern": "^[0-9A-Za-z+/=._-]{1,512}$" },
+        "anon_id": { "$ref": "#/$defs/anon_id" }
       }
     }
   }

@@ -11,15 +11,19 @@
  *   (signed, response count, duration, canonical JSON), a total order, so the choice never
  *   depends on argument order. Output is sorted by (`started_utc`, `session_id`).
  * - `seen_items`, `seen_families` (§8 step 2): sorted set union.
- * - `anon_id`: the smaller id (code-unit order), so repeated merges converge on one id.
+ * - `anon_id`: the smaller id (code-unit order), so repeated merges converge on one id. Saves
+ *   with different ids may be one person's (a fresh start, later joined with an old file) or two
+ *   people's on a shared device, which a merge cannot tell apart: callers check
+ *   {@link distinctAnonIds} first and ask before combining (`restoreAutosaves` reports them).
  * - `created_utc`: the later one (fixed-width UTC sorts as text).
  * - `$schema`, `schema_version`, `bank_version`: those of the running app ({@link SaveContext}).
  * - `posterior_cache` (§8 step 4): kept only if its `param_version` is the context's, its shapes
  *   are consistent, and it was computed over exactly the merged sessions; otherwise dropped, and
  *   the caller re-scores from `responses` (§8 step 3, §7.8; M1.Q adds the retest model).
  * - file-level `sig` (§8, superseded by A16): kept only if the merged body is byte-identical under
- *   RFC 8785 to that input's body, i.e. while the MAC can still verify. Session `sig`s travel with
- *   their sessions.
+ *   RFC 8785 to that input's body, i.e. while the MAC can still verify. Session `sig`s (A16) travel
+ *   with their sessions and name the anon_id they bind (`SessionSig.anon_id`), so they still
+ *   verify when the merged file's `anon_id` differs from the one they were issued to.
  */
 
 import { isAxisCode } from '../engine/axes'
@@ -119,6 +123,14 @@ export function mergeAll(saves: readonly SaveFileV1[], ctx: SaveContext): SaveFi
   const sig = canonicalMax(saves.filter((s) => s.sig !== undefined && bodyWithoutSig(s) === body).map((s) => s.sig))
   if (sig !== undefined) out.sig = sig
   return out
+}
+
+/**
+ * The distinct `anon_id`s of `saves`, sorted. More than one means the merge would combine saves
+ * issued to different ids (see the module comment); the UI should ask before doing so.
+ */
+export function distinctAnonIds(saves: readonly SaveFileV1[]): string[] {
+  return sortedUnion([saves.map((s) => s.anon_id)])
 }
 
 /** Merge two saves (R-8.1). Commutative, associative, idempotent on normalised saves. */

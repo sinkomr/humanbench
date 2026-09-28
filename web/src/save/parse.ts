@@ -15,7 +15,7 @@
 import { base64Decode, gunzip, MAX_JSON_BYTES, type CodecOptions } from './codec'
 import { GzipError, isGzip } from './gzip'
 import { isUsableCache } from './merge'
-import { migrateToCurrent, MIGRATIONS, type Migration } from './migrate'
+import { isNewerVersion, migrateToCurrent, MIGRATIONS, type Migration } from './migrate'
 import type { SaveFileV1 } from './types'
 import { validateSave } from './validate'
 
@@ -36,7 +36,7 @@ export interface ParseFailure {
   ok: false
   code: ParseErrorCode
   message: string
-  /** Schema errors (JSON-pointer paths) for `invalid`. */
+  /** Schema errors (JSON-pointer paths) for `invalid`, and for a newer-minor `newer_version`. */
   details?: string[]
 }
 
@@ -60,6 +60,8 @@ export interface ParseOptions extends CodecOptions {
   paramVersion?: string
 }
 
+const NEWER_VERSION = 'This save was made by a newer version of HumanBench. Reload the page to update, then try again.'
+
 const fail = (code: ParseErrorCode, message: string, details?: string[]): ParseFailure =>
   details === undefined ? { ok: false, code, message } : { ok: false, code, message, details }
 
@@ -68,7 +70,7 @@ export function loadSaveDocument(doc: unknown, format: ParseSuccess['format'] = 
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return fail('not_a_save', 'The content is JSON but not a HumanBench save.')
   const m = migrateToCurrent(doc, opts.migrations ?? MIGRATIONS)
   if (!m.ok) {
-    if (m.code === 'newer_version') return fail('newer_version', 'This save was made by a newer version of HumanBench. Reload the page to update, then try again.')
+    if (m.code === 'newer_version') return fail('newer_version', NEWER_VERSION)
     if (m.code === 'unknown_version') {
       const looksLikeSave = 'sessions' in doc || 'anon_id' in doc
       return looksLikeSave ? fail('unknown_version', `This save's format version cannot be read (${m.message}).`) : fail('not_a_save', 'The content is JSON but not a HumanBench save.')
@@ -76,7 +78,12 @@ export function loadSaveDocument(doc: unknown, format: ParseSuccess['format'] = 
     return fail('invalid', `This save could not be upgraded (${m.message}).`)
   }
   const v = validateSave(m.doc)
-  if (!v.ok) return fail('invalid', 'This save file is damaged or was edited into an unreadable form.', v.errors)
+  if (!v.ok) {
+    // A newer minor of this major may add fields or values (additive, `migrate.ts`): ask for a
+    // reload rather than calling the file damaged, and never strip what this build does not know.
+    if (isNewerVersion(m.doc)) return fail('newer_version', NEWER_VERSION, v.errors)
+    return fail('invalid', 'This save file is damaged or was edited into an unreadable form.', v.errors)
+  }
   const warnings: string[] = []
   const cache = v.save.posterior_cache
   if (cache !== undefined && opts.paramVersion !== undefined && !isUsableCache(cache, opts.paramVersion)) {

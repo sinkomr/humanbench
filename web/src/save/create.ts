@@ -12,7 +12,7 @@ import type { ResponseTuple } from '../engine/types'
 import { utcSeconds } from './clock'
 import { isUsableCache, mergeAll } from './merge'
 import { SCHEMA_URL, SCHEMA_VERSION, type DeviceInfo, type PosteriorCache, type SaveContext, type SaveFileV1, type SaveSession, type SessionFlags } from './types'
-import { assertValidSave } from './validate'
+import { assertValidSave, assertValidSession } from './validate'
 
 /** The running session as the session flow tracks it (TS-side; the file itself is snake_case). */
 export interface SessionState {
@@ -43,22 +43,29 @@ export interface SaveMeta {
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
-/** The §8 session record for `state` (deep-copied; no `sig`). */
+/**
+ * The §8 session record for `state` (deep-copied; no `sig`). The caller's values are validated
+ * *before* the JSON copy, which would otherwise turn NaN / ±Infinity (and undefined array
+ * elements) into null and change the raw data §7.8 treats as authoritative (a NaN
+ * `confidence_pct` would read as "not asked"). Throws a TypeError on an invalid state.
+ */
 export function sessionFromState(state: SessionState): SaveSession {
-  return {
+  const raw: SaveSession = {
     session_id: state.sessionId,
     started_utc: utcSeconds(state.startedMs),
     duration_s: Math.round(Math.max(0, state.durationS)),
-    device: clone(state.device),
-    flags: clone(state.flags),
-    responses: clone([...state.responses]),
+    device: state.device,
+    flags: state.flags,
+    responses: [...state.responses],
   }
+  return clone(assertValidSession(raw))
 }
 
 /**
  * The save holding `base` (or nothing) plus the current snapshot of `state`, normalised and
  * validated. The snapshot replaces any earlier copy of the same session in `base`. Throws a
- * TypeError if the result is not a valid v1 save (a programming error in the caller's state).
+ * TypeError if the state or the result is not valid v1 (a programming error in the caller's
+ * state, e.g. a non-finite number: {@link sessionFromState}).
  */
 export function saveWithSession(base: SaveFileV1 | null, state: SessionState, meta: SaveMeta): SaveFileV1 {
   const anonId = base?.anon_id ?? meta.anonId

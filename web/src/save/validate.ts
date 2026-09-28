@@ -11,7 +11,7 @@
  */
 
 import { isIJsonString } from './jcs'
-import type { SaveFileV1 } from './types'
+import type { SaveFileV1, SaveSession } from './types'
 
 export type ValidationResult = { ok: true; save: SaveFileV1 } | { ok: false; errors: string[] }
 
@@ -24,7 +24,8 @@ export const UTC_SECONDS_RE = /^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]
 export const SESSION_ID_RE = /^s_[0-9A-Za-z]{8,32}$/u
 const ITEM_ID_RE = /^i:[^\uD800-\uDFFF]+$/u
 const FAMILY_ID_RE = /^f:[^\uD800-\uDFFF]+$/u
-const FAMILY_NAME_RE = /^[A-Za-z][A-Za-z0-9 ._-]{0,31}$/u
+// A family name only (§8 privacy: no precise user agent): no digits or dots, so no version string.
+const FAMILY_NAME_RE = /^[A-Za-z][A-Za-z _-]{0,31}$/u
 const FLAG_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/u
 const KID_RE = /^[0-9A-Za-z._-]{1,64}$/u
 const MAC_RE = /^[0-9A-Za-z+/=._-]{1,512}$/u
@@ -115,12 +116,14 @@ class Checker {
     return ok
   }
 
-  sig(v: unknown, path: string): boolean {
+  /** A file-level sig, or with `bound` an A16 session sig, which also names its `anon_id`. */
+  sig(v: unknown, path: string, bound = false): boolean {
     if (!isObj(v)) return this.fail(path, 'must be an object')
-    let ok = this.keys(v, path, ['alg', 'kid', 'mac'])
+    let ok = this.keys(v, path, bound ? ['alg', 'kid', 'mac', 'anon_id'] : ['alg', 'kid', 'mac'])
     if (Object.hasOwn(v, 'alg') && v.alg !== 'HMAC-SHA256') ok = this.fail(`${path}/alg`, 'must be "HMAC-SHA256"')
     if (Object.hasOwn(v, 'kid')) ok = this.str(v.kid, `${path}/kid`, KID_RE) && ok
     if (Object.hasOwn(v, 'mac')) ok = this.str(v.mac, `${path}/mac`, MAC_RE) && ok
+    if (bound && Object.hasOwn(v, 'anon_id')) ok = this.str(v.anon_id, `${path}/anon_id`, ANON_ID_RE) && ok
     return ok
   }
 
@@ -188,7 +191,7 @@ class Checker {
     if (has('device')) ok = this.device(v.device, `${path}/device`) && ok
     if (has('flags')) ok = this.flags(v.flags, `${path}/flags`) && ok
     if (has('responses')) ok = this.array(v.responses, `${path}/responses`, (x, p) => this.response(x, p)) && ok
-    if (has('sig')) ok = this.sig(v.sig, `${path}/sig`) && ok
+    if (has('sig')) ok = this.sig(v.sig, `${path}/sig`, true) && ok
     return ok
   }
 
@@ -233,4 +236,14 @@ export function assertValidSave(doc: unknown): SaveFileV1 {
   const r = validateSave(doc)
   if (!r.ok) throw new TypeError(`invalid save file: ${r.errors.slice(0, 5).join('; ')}`)
   return r.save
+}
+
+/**
+ * Check one session record (`$defs/session`) as it would sit in a file, and throw a TypeError
+ * listing the errors if it is invalid. Runs on the caller's raw values, before any JSON copy.
+ */
+export function assertValidSession(v: unknown, path = '/sessions/0'): SaveSession {
+  const c = new Checker()
+  if (!c.session(v, path)) throw new TypeError(`invalid session: ${c.errors.slice(0, 5).join('; ')}`)
+  return v as SaveSession
 }

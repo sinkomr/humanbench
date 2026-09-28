@@ -3,7 +3,10 @@
  * Notes), with a dependency-free fallback for browsers without `CompressionStream` /
  * `DecompressionStream` (Safari < 16.4, Firefox < 113):
  * - {@link gzipStored}: a valid gzip member whose DEFLATE blocks are stored (uncompressed), so any
- *   gunzip reads it; larger than compressed output, but always correct.
+ *   gunzip reads it; larger than compressed output, but always correct. Known limit: on that
+ *   path the copy code is ~1.33× the JSON rather than §8's "~40 KB" (a 10-session save of ~80 KB
+ *   JSON gives a ~110 KB code vs ~7 KB natively). Accepted for the MVP: only the browsers above
+ *   take it, and download / Web Share are unaffected; a fixed-Huffman encoder would fix it.
  * - {@link gunzipSync}: a small DEFLATE decoder (RFC 1951; after Mark Adler's puff.c) that reads
  *   any gzip, compressed or not, with CRC-32 and length checks and an output cap (a code pasted
  *   from elsewhere cannot expand without bound).

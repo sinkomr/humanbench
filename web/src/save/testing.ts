@@ -12,7 +12,7 @@ import fc from 'fast-check'
 import { AXIS_CODES } from '../engine/axes'
 import type { JsonValue, ResponseTuple } from '../engine/types'
 import { utcSeconds } from './clock'
-import { SCHEMA_URL, SCHEMA_VERSION, type DeviceInfo, type PosteriorCache, type SaveFileV1, type SaveSession, type SaveSig, type SessionFlags } from './types'
+import { SCHEMA_URL, SCHEMA_VERSION, type DeviceInfo, type PosteriorCache, type SaveFileV1, type SaveSession, type SaveSig, type SessionFlags, type SessionSig } from './types'
 
 /** Context the arbitraries' caches are built for. */
 export const TEST_CTX = { bank_version: 'm1-static', param_version: 'p-test-1' } as const
@@ -67,6 +67,9 @@ export const arbSig: fc.Arbitrary<SaveSig> = fc.record({
   mac: fc.constantFrom('base64...', 'AAAA', 'q83vEjRWeJA='),
 })
 
+/** An A16 session sig, bound to one of the pool's anon_ids. */
+export const arbSessionSig: fc.Arbitrary<SessionSig> = fc.tuple(arbSig, arbAnonId).map(([sig, anon_id]) => ({ ...sig, anon_id }))
+
 export const arbSession = (withSig = true): fc.Arbitrary<SaveSession> =>
   fc
     .record({
@@ -76,7 +79,7 @@ export const arbSession = (withSig = true): fc.Arbitrary<SaveSession> =>
       device: arbDevice,
       flags: arbFlags,
       responses: fc.array(arbResponse, { maxLength: 6 }),
-      sig: withSig ? fc.option(arbSig, { nil: undefined, freq: 4 }) : fc.constant(undefined),
+      sig: withSig ? fc.option(arbSessionSig, { nil: undefined, freq: 4 }) : fc.constant(undefined),
     })
     .map((s) => {
       const out: SaveSession = { session_id: s.session_id, started_utc: s.started_utc, duration_s: s.duration_s, device: s.device, flags: s.flags, responses: s.responses }
@@ -104,6 +107,8 @@ export interface ArbSaveOptions {
   sessions?: fc.Arbitrary<SaveSession[]>
   /** Include `$schema` / the current schema_version always (a normalised-looking header). */
   currentHeader?: boolean
+  /** Rebind every session sig to the file's own `anon_id`, as the server issues them (A16). */
+  bindSigs?: boolean
 }
 
 /** A valid v1 save (not necessarily normalised). */
@@ -127,7 +132,7 @@ export const arbSave = (opts: ArbSaveOptions = {}): fc.Arbitrary<SaveFileV1> =>
         bank_version: r.bank_version,
         anon_id: r.anon_id,
         created_utc: r.created_utc,
-        sessions: r.sessions,
+        sessions: opts.bindSigs ? r.sessions.map((x) => (x.sig === undefined ? x : { ...x, sig: { ...x.sig, anon_id: r.anon_id } })) : r.sessions,
         seen_items: r.seen_items,
         seen_families: r.seen_families,
       }
@@ -141,5 +146,5 @@ export const arbSave = (opts: ArbSaveOptions = {}): fc.Arbitrary<SaveFileV1> =>
  * `n` saves drawn from one shared pool of sessions (with several copies per session id), so they
  * overlap the way two devices' saves of one person do.
  */
-export const arbSaveFamily = (n: number): fc.Arbitrary<SaveFileV1[]> =>
-  fc.array(arbSession(), { minLength: 1, maxLength: 8 }).chain((pool) => fc.array(arbSave({ sessions: fc.subarray(pool) }), { minLength: n, maxLength: n }))
+export const arbSaveFamily = (n: number, opts: Pick<ArbSaveOptions, 'bindSigs'> = {}): fc.Arbitrary<SaveFileV1[]> =>
+  fc.array(arbSession(), { minLength: 1, maxLength: 8 }).chain((pool) => fc.array(arbSave({ ...opts, sessions: fc.subarray(pool) }), { minLength: n, maxLength: n }))

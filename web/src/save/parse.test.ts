@@ -202,6 +202,21 @@ describe('upload by content (DESIGN §8: "parse by content, not extension")', ()
     expectCode(await parseSaveText('x'.repeat(9 * 1024 * 1024)), 'too_large')
   })
 
+  it('reads a newer minor of v1 that it can validate, and reports one using fields it does not know as newer_version, not damaged', async () => {
+    const newer = { ...save, schema_version: '1.1.0' }
+    expectSave(await parseSaveText(JSON.stringify(newer)), newer)
+    const extraTop = await parseSaveText(JSON.stringify({ ...newer, retest_model: { rho: 0.3 } }))
+    expectCode(extraTop, 'newer_version')
+    expect(extraTop.ok ? [] : extraTop.details).toEqual(['/: unexpected "retest_model"'])
+    const s0 = save.sessions[0] as SaveSession
+    expectCode(await parseSaveText(JSON.stringify({ ...newer, sessions: [{ ...s0, locale: 'en' }] })), 'newer_version')
+    const widened = { ...save, schema_version: '1.0.1', sessions: [{ ...s0, device: { ...s0.device, class: 'watch' } }] }
+    expectCode(await parseSaveText(JSON.stringify(widened)), 'newer_version')
+    // The same additions under this build's own version are damage, not a newer format.
+    expectCode(await parseSaveText(JSON.stringify({ ...save, retest_model: { rho: 0.3 } })), 'invalid')
+    expectCode(await parseSaveText(JSON.stringify({ ...widened, schema_version: SCHEMA_VERSION })), 'invalid')
+  })
+
   it('refuses a gzip bomb before expanding it fully', async () => {
     const bomb = await gzip(new Uint8Array(40 * 1024 * 1024).fill(0x20))
     expect(bomb.length).toBeLessThan(100_000)

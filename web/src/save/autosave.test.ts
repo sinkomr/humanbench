@@ -16,7 +16,7 @@ import {
 } from './autosave'
 import { saveWithSession, type SessionState } from './create'
 import { jcs } from './jcs'
-import { mergeAll } from './merge'
+import { distinctAnonIds, mergeAll } from './merge'
 import { arbSaveFamily, TEST_CTX } from './testing'
 import type { SaveFileV1 } from './types'
 
@@ -153,7 +153,18 @@ describe('localStorage autosave (DESIGN §8 crash recovery)', () => {
     ])
     expect(r.save?.sessions.map((s) => s.session_id)).toEqual(['s_01J9ZK3QA', 's_01J9ZK3QB'])
     expect(storage.map.size).toBe(5)
-    expect(restoreAutosaves(ctx, new FakeStorage())).toEqual({ save: null, keys: [], failures: [] })
+    expect(r.anonIds).toEqual(['hb_7Q3m9Kx2Vw5rT8pL'])
+    expect(restoreAutosaves(ctx, new FakeStorage())).toEqual({ save: null, keys: [], failures: [], anonIds: [] })
+  })
+
+  it('reports autosaves issued to different anon_ids, so the session flow can ask before keeping the merge', () => {
+    const storage = new FakeStorage()
+    storage.setItem(autosaveKey('s_01J9ZK3QA'), jcs(build('s_01J9ZK3QA', 2)))
+    const other = saveWithSession(null, state('s_01J9ZK3QB', 1), { ctx, createdMs: T, anonId: 'hb_0000000000000000a' })
+    storage.setItem(autosaveKey('s_01J9ZK3QB'), jcs(other))
+    const r = restoreAutosaves(ctx, storage)
+    expect(r.anonIds).toEqual(['hb_0000000000000000a', 'hb_7Q3m9Kx2Vw5rT8pL'])
+    expect(r.save?.sessions.map((s) => s.session_id)).toEqual(['s_01J9ZK3QA', 's_01J9ZK3QB'])
   })
 
   it('on a quota error, removes only autosaves the new save already holds, then retries', () => {
@@ -199,7 +210,7 @@ describe('localStorage autosave (DESIGN §8 crash recovery)', () => {
     expect(() => throwingHandler.flush()).not.toThrow()
     expect(errors.map((e) => e.kind)).toEqual(['unavailable', 'write_failed', 'build_failed'])
     expect(autosaveKeys(blocked)).toEqual([])
-    expect(restoreAutosaves(ctx, blocked)).toEqual({ save: null, keys: [], failures: [] })
+    expect(restoreAutosaves(ctx, blocked)).toEqual({ save: null, keys: [], failures: [], anonIds: [] })
     expect(clearAutosave('s_01J9ZK3QA', blocked)).toBe(false)
     expect(pruneAutosaves(build('s_01J9ZK3QA', 1), blocked)).toEqual([])
     expect(restoreAutosaves(ctx, null).save).toBeNull()
@@ -279,6 +290,7 @@ describe('localStorage autosave (DESIGN §8 crash recovery)', () => {
         const r = restoreAutosaves(ctx, storage)
         expect(r.failures).toEqual([])
         expect(jcs(r.save)).toBe(jcs(mergeAll([...last.values()], ctx)))
+        expect(r.anonIds).toEqual(distinctAnonIds([...last.values()]))
       }),
       { numRuns: 150 },
     )

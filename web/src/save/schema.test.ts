@@ -76,7 +76,13 @@ const MUTATIONS: Mutation[] = [
   ['response lone surrogate', (d) => ((sessionsOf(d)[0]!.responses as unknown[][])[0] = ['i:x', 0, 'a\ud800', 1, 10, null])],
   ['response key lone surrogate', (d) => ((sessionsOf(d)[0]!.responses as unknown[][])[0] = ['i:x', 0, { '\udc00': 1 }, 1, 10, null])],
   ['extra lone surrogate', (d) => ((sessionsOf(d)[0]!.responses as unknown[][])[0] = ['i:x', 0, 'A', 1, 10, null, ['\ud83d']])],
-  ['session sig bad mac', (d) => (sessionsOf(d)[0]!.sig = { alg: 'HMAC-SHA256', kid: 'k', mac: 'has space' })],
+  ['os_family version number', (d) => ((sessionsOf(d)[0]!.device as Doc).os_family = 'iOS 17.4.1')],
+  ['browser_family version number', (d) => ((sessionsOf(d)[0]!.device as Doc).browser_family = 'Chrome 129.0.6668.100')],
+  ['os_family trailing digit', (d) => ((sessionsOf(d)[0]!.device as Doc).os_family = 'Windows 11')],
+  ['session sig bad mac', (d) => (sessionsOf(d)[0]!.sig = { alg: 'HMAC-SHA256', kid: 'k', mac: 'has space', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' })],
+  ['session sig without anon_id (A16)', (d) => (sessionsOf(d)[0]!.sig = { alg: 'HMAC-SHA256', kid: 'k', mac: 'AA' })],
+  ['session sig bad anon_id', (d) => (sessionsOf(d)[0]!.sig = { alg: 'HMAC-SHA256', kid: 'k', mac: 'AA', anon_id: 'hb_short' })],
+  ['file sig with anon_id', (d) => (d.sig = { alg: 'HMAC-SHA256', kid: 'k', mac: 'AA', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' })],
 ]
 
 describe('schema/save-v1.json (DESIGN §8)', () => {

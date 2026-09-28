@@ -5,7 +5,9 @@
  * A document's major version comes from its `schema_version` (semver). Each registered
  * {@link Migration} lifts one major to the next; {@link migrateToCurrent} chains them up to
  * {@link SCHEMA_MAJOR} and then the v1 validator runs (`parse.ts`). Minor and patch bumps are
- * additive within a major and need no migration. v1 is the first format, so the production
+ * additive within a major and need no migration; a newer-minor file that uses a field this build
+ * does not know fails validation and `parse.ts` reports it as `newer_version` ({@link isNewerVersion}),
+ * so nothing is silently dropped. v1 is the first format, so the production
  * registry is empty; `migrate.test.ts` exercises the machinery with a fake v0 → v1.
  *
  * Rules for a migration: pure (never mutate the input; return a new object), total on every valid
@@ -13,7 +15,7 @@
  * keyed by its `from` major, with a golden before/after test.
  */
 
-import { SCHEMA_MAJOR } from './types'
+import { SCHEMA_MAJOR, SCHEMA_VERSION } from './types'
 
 export interface Migration {
   /** Source major version. */
@@ -32,13 +34,31 @@ export type MigrateResult =
 
 const SEMVER_RE = /^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/
 
-/** The major of a document's `schema_version`, or null if it has none or it is not semver. */
-export function majorOf(doc: unknown): number | null {
-  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return null
-  const v = (doc as Record<string, unknown>).schema_version
+/** [major, minor, patch] of a semver string, or null. */
+function parseSemver(v: unknown): [number, number, number] | null {
   if (typeof v !== 'string') return null
   const m = SEMVER_RE.exec(v)
-  return m ? Number(m[1]) : null
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+}
+
+/** [major, minor, patch] of a document's `schema_version`, or null if it has none or it is not semver. */
+export function versionOf(doc: unknown): [number, number, number] | null {
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) return null
+  return parseSemver((doc as Record<string, unknown>).schema_version)
+}
+
+/** The major of a document's `schema_version`, or null if it has none or it is not semver. */
+export function majorOf(doc: unknown): number | null {
+  return versionOf(doc)?.[0] ?? null
+}
+
+/** True iff the document's `schema_version` is later than `current` (default: this build's). */
+export function isNewerVersion(doc: unknown, current: string = SCHEMA_VERSION): boolean {
+  const v = versionOf(doc)
+  const c = parseSemver(current)
+  if (v === null || c === null) return false
+  for (let i = 0; i < 3; i++) if (v[i] !== c[i]) return v[i]! > c[i]!
+  return false
 }
 
 /**

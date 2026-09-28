@@ -7,8 +7,13 @@
  * Signatures (§8, ROADMAP A16): the static MVP writes no `sig` anywhere, so every file it makes is
  * *unverified*: accepted for personal display, never used for calibration. Only the server holds
  * the HMAC key, so the client never claims a file is verified. A16 moves the MAC to each session
- * (`SaveSession.sig`, M2.3); the file-level `sig` of the §8 example stays valid in the schema and
- * is kept through a merge only while the file body is unchanged (`merge.ts`).
+ * (`SaveSession.sig`, M2.3; it names the anon_id it binds, so it survives a merge); the file-level
+ * `sig` of the §8 example stays valid in the schema and is kept through a merge only while the
+ * file body is unchanged (`merge.ts`).
+ *
+ * Versions: minor and patch bumps are additive within a major. A file from a newer minor that
+ * this build cannot validate is reported as `newer_version` (reload to update), never stripped of
+ * the fields it does not know (`parse.ts`).
  */
 
 import type { ResponseTuple } from '../engine/types'
@@ -52,11 +57,20 @@ export interface DeviceInfo {
  */
 export type SessionFlags = { [flag: string]: number | boolean | null }
 
-/** Server HMAC (§8; per session under A16). */
+/** Server HMAC over the whole file body (the §8 example's file-level `sig`, superseded by A16). */
 export interface SaveSig {
   alg: 'HMAC-SHA256'
   kid: string
   mac: string
+}
+
+/**
+ * A16 per-session MAC (M2.3): an HMAC over the session (without `sig`) together with the anon_id
+ * it was issued to. That anon_id is stored in the sig because a merge (R-8.1) may give the file a
+ * different `anon_id` (`merge.ts` keeps the smaller one), and the MAC must still verify after it.
+ */
+export interface SessionSig extends SaveSig {
+  anon_id: string
 }
 
 export interface SaveSession {
@@ -68,7 +82,7 @@ export interface SaveSession {
   flags: SessionFlags
   responses: ResponseTuple[]
   /** A16 per-session MAC (M2.3). Never written by the static MVP. */
-  sig?: SaveSig
+  sig?: SessionSig
 }
 
 /** Cached posterior (§8). A cache only (§7.8): re-scoring from `responses` is authoritative. */
