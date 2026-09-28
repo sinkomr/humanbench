@@ -163,12 +163,15 @@ randomness in `web/src/engine` and `web/src/tasks`: timing uses `performance.now
 
 `npm test` also runs the language lint (ROADMAP A13, DESIGN R-5.6.x) in
 `web/scripts/language-lint.test.ts`. It reads the user-facing text of the app: string and template
-literals and Svelte markup under `web/src`, JSON copy, `web/public`, `web/index.html` and this
-README (not tests, test data or code comments). It fails on the banned terms listed, each with its
-reason, in `web/scripts/language-lint.ts`. Matching ignores case and respects word boundaries. Only
-two texts may carry a banned word: the §13 disclaimer, quoted exactly, and the R-5.6.5 resource
-sentence, which is spelled out only in `web/src/copy.ts` as `RESOURCE_LINE` (import it; only the
-results footer renders it). To lint the repo, or just some files, and print each hit:
+literals and Svelte markup under `web/src`, JSON copy, `web/public`, the published `schema/` JSON,
+`web/index.html` and this README (not tests, test data or code comments). It fails on the banned
+terms listed, each with its reason, in `web/scripts/language-lint.ts`. Matching ignores case, and
+anything but a letter ends a word (a digit or `_` too), so `IQR` is not a hit. Only two texts may
+carry a banned word: the §13 disclaimer, quoted exactly, and the R-5.6.5 resource sentence, which
+is spelled out only in `web/src/copy.ts` as `RESOURCE_LINE` (import it; only the results footer
+renders it). The Emotion Reading tooltip that DESIGN R-5.6.2 fixes word for word is not allowed
+yet: ROADMAP M6.1 must settle that with an A13 amendment (see the lint's header). To lint the repo,
+or just some files, and print each hit:
 
 ```zsh
 cd web

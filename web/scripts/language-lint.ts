@@ -6,19 +6,21 @@
  *
  * **What is scanned** ({@link collectFiles}), as repo-relative posix paths: every text file under
  * `web/src` (the share-card renderer, M1.18, will land there too) except tests (`*.test.*`,
- * `*.spec.*`) and `__fixtures__/` test data; `web/public`; `web/index.html`; `README.md` and
+ * `*.spec.*`) and `__fixtures__/` test data; `web/public`; the repo-root `schema/` (the build
+ * publishes its JSON at `<base>schema/`, DESIGN §8); `web/index.html`; `README.md` and
  * `web/README.md`. Per file type ({@link segmentsOf}):
- * - `.ts`/`.js` and the `<script>` blocks of `.svelte`/`.html`: string literals and template
- *   literal text, parsed with the TypeScript compiler, so comments, identifiers and import paths
- *   never match;
+ * - `.ts`/`.js` (and `.tsx`/`.jsx`) and the `<script>` blocks of `.svelte`/`.html`: string
+ *   literals, template literal text and JSX text, parsed with the TypeScript compiler, so comments,
+ *   identifiers and import paths never match;
  * - `.svelte`/`.html` markup outside `<script>` (text, attributes, `{…}` expressions, styles),
  *   `.md`, `.svg`, `.css`, `.txt`: the whole text, minus HTML and CSS comments;
  * - `.json`: every string value (keys are data, not copy).
  *
  * **What is banned** ({@link BANNED_TERMS}): each term with its word forms, the reason, and
- * examples the tests check it catches. Matching is case-insensitive and on word boundaries, so
- * "non-diagnostic" matches but "IQR" does not. {@link NOT_BANNED} records near-misses that were
- * left out on purpose, and the tests check they stay unflagged.
+ * examples the tests check it catches. Matching is case-insensitive and between letters: anything
+ * but a letter (space, punctuation, a digit, `_`) delimits, so "non-diagnostic" and "adhd_screen"
+ * match but "IQR" does not. {@link NOT_BANNED} records near-misses that were left out on purpose,
+ * and the tests check they stay unflagged.
  *
  * **What is allowed** ({@link ALLOWED_TEXT}): exactly two texts are masked before matching,
  * case-sensitively but ignoring how whitespace wraps (Markdown and HTML may break lines). Change
@@ -29,6 +31,12 @@
  * - The §13 disclaimer (`DISCLAIMER`), the one place "clinical" (and "IQ", which it disowns) may
  *   appear. It may be quoted anywhere (README, the no-JS fallback).
  * `src/copy.test.ts` pins both word-for-word to docs/DESIGN.md.
+ *
+ * **Open conflict, for ROADMAP M6.1 to settle:** DESIGN R-5.6.2 requires the Emotion Reading
+ * tooltip "… Not a diagnostic or clinical measure; …", which this lint flags ("diagnostic",
+ * "clinical"). A13 allow-lists only the two texts above, so shipping that tooltip word-for-word
+ * needs an A13 amendment first: either add it here as a third exact text (pinned to DESIGN like
+ * `DISCLAIMER`), or reword R-5.6.2. `language-lint.test.ts` pins the conflict so it stays visible.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
@@ -43,7 +51,7 @@ export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 export interface BannedTerm {
   /** Short name used in reports and tests. */
   readonly id: string
-  /** Regex source of the word forms; the lint wraps it in `\b(?:…)\b` and matches case-insensitively. */
+  /** Regex source of the word forms; the lint wraps it in `(?<!\p{L})(?:…)(?!\p{L})` and matches case-insensitively. */
   readonly pattern: string
   /** Forms the pattern must catch (tested). */
   readonly examples: readonly string[]
@@ -98,7 +106,7 @@ export const BANNED_TERMS: readonly BannedTerm[] = [
     id: 'diagnosis',
     pattern: 'diagnos\\w*',
     examples: ['diagnosis', 'diagnoses', 'diagnose', 'diagnosed', 'diagnostic', 'non-diagnostic'],
-    why: '§13: the app is not a clinical assessment; R-5.6.3: it never asks about diagnoses. Copy says what the scores are, not which diagnosis they are not.',
+    why: '§13: the app is not a clinical assessment; R-5.6.3: it never asks about diagnoses. Copy says what the scores are, not which diagnosis they are not (the R-5.6.2 tooltip is an open conflict for M6.1: see the header).',
   },
   { id: 'prognosis', pattern: 'prognos\\w*', examples: ['prognosis', 'prognostic'], why: 'Medical outcome framing (§13: not a basis for decisions about health).' },
   { id: 'disorder', pattern: 'disorder\\w*', examples: ['disorder', 'Disorders', 'disordered'], why: 'The DSM/ICD category noun (R-5.6.1).' },
@@ -275,10 +283,16 @@ function isModuleSpecifier(node: ts.Node): boolean {
   return false
 }
 
-/** String literals and template-literal text of a TS/JS source, each with its line. */
+/** How the TypeScript parser reads a script file, by extension (JSX needs TSX/JSX, or JS). */
+function scriptKindOf(fileName: string): ts.ScriptKind {
+  if (/\.tsx$/i.test(fileName)) return ts.ScriptKind.TSX
+  if (/\.jsx$/i.test(fileName)) return ts.ScriptKind.JSX
+  return /\.[cm]?js$/i.test(fileName) ? ts.ScriptKind.JS : ts.ScriptKind.TS
+}
+
+/** String literals, template-literal text and JSX text of a TS/JS source, each with its line. */
 export function scriptSegments(text: string, fileName = 'x.ts', firstLine = 1): Segment[] {
-  const isJs = /\.[cm]?jsx?$/.test(fileName)
-  const sf = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, isJs ? ts.ScriptKind.JS : ts.ScriptKind.TS)
+  const sf = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, scriptKindOf(fileName))
   const out: Segment[] = []
   const visit = (node: ts.Node): void => {
     if (
@@ -289,6 +303,9 @@ export function scriptSegments(text: string, fileName = 'x.ts', firstLine = 1): 
       ts.isTemplateTail(node)
     ) {
       out.push({ text: node.text, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + firstLine })
+    } else if (ts.isJsxText(node)) {
+      // JSX text keeps its leading whitespace, so it starts at `pos`, not at getStart().
+      out.push({ text: node.text, line: sf.getLineAndCharacterOfPosition(node.pos).line + firstLine })
     }
     ts.forEachChild(node, visit)
   }
@@ -361,7 +378,12 @@ const ALLOWED_RES: readonly (readonly [AllowedText, RegExp])[] = ALLOWED_TEXT.ma
   new RegExp(a.text.trim().split(/\s+/).map(escapeRegExp).join('\\s+'), 'g'),
 ])
 
-const TERM_RES: readonly (readonly [BannedTerm, RegExp])[] = BANNED_TERMS.map((t) => [t, new RegExp(`\\b(?:${t.pattern})\\b`, 'gi')])
+/**
+ * Terms match between letters only, not at `\b`: digits and `_` delimit too, so id-like copy such
+ * as "adhd_screen" or "ADHD2" is caught, while "IQR" and "diagram" are not. `\p{L}` also keeps
+ * accented letters from delimiting.
+ */
+const TERM_RES: readonly (readonly [BannedTerm, RegExp])[] = BANNED_TERMS.map((t) => [t, new RegExp(`(?<!\\p{L})(?:${t.pattern})(?!\\p{L})`, 'giu')])
 
 export interface Analysis {
   readonly hits: readonly Hit[]
@@ -425,7 +447,7 @@ export function lintFiles(files: readonly SourceFile[], { checkHomes = true }: {
 }
 
 /** Directories scanned recursively, and single files, relative to the repo root. */
-export const SCAN_DIRS: readonly string[] = ['web/src', 'web/public']
+export const SCAN_DIRS: readonly string[] = ['web/src', 'web/public', 'schema']
 export const SCAN_FILES: readonly string[] = ['README.md', 'web/README.md', 'web/index.html']
 /** Tests and their data are not copy (they must name banned words to test them). */
 export const EXCLUDE: readonly RegExp[] = [/\.(test|spec)\.[cm]?[jt]sx?$/, /(^|\/)__fixtures__\//]

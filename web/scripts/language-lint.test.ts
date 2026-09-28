@@ -1,12 +1,13 @@
 /**
  * Tests of the language lint (ROADMAP M1.20, A13; DESIGN R-5.6.1–R-5.6.5, §13): the repo is clean,
  * the fixtures under `scripts/fixtures/language-lint/` fail (banned.*) or pass (allowed.*) exactly
- * as expected, and fast-check properties pin case-insensitivity, word boundaries, file-type
+ * as expected, and fast-check properties pin case-insensitivity, letter boundaries, file-type
  * handling, and the exactness of the two allowed texts.
  */
 
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
@@ -16,6 +17,7 @@ import {
   BANNED_TERMS,
   NOT_BANNED,
   REPO_ROOT,
+  SCAN_DIRS,
   collectFiles,
   kindOf,
   lintFiles,
@@ -62,7 +64,8 @@ const lintAs = (kind: string, s: string): Hit[] => {
 
 /** Benign filler that no banned pattern touches. */
 const BENIGN = ['the', 'blob', 'shows', 'your', 'reasoning', 'speed', 'memory', 'profile', 'with', 'uncertainty', 'rings', 'provisional', 'add', 'screen', 'normal']
-const DELIMS = [' ', '\n', ', ', '. ', ' (', ') ', ' "', '" ', ' — ', ' - ', ': ', '\n  ', ' / ']
+/** Anything but a letter delimits a term, digits and `_` included (id-like copy such as "adhd_screen"). */
+const DELIMS = [' ', '\n', ', ', '. ', ' (', ') ', ' "', '" ', ' — ', ' - ', ': ', '\n  ', ' / ', '_', '-', '/', '1', ' 2']
 const benignText = fc.array(fc.constantFrom(...BENIGN), { maxLength: 6 }).map((ws) => ws.join(' '))
 const recase = (s: string, flips: readonly boolean[]): string => [...s].map((c, i) => (flips[i % Math.max(1, flips.length)] ? c.toUpperCase() : c.toLowerCase())).join('')
 
@@ -77,8 +80,24 @@ describe('language lint scope (ROADMAP M1.20)', () => {
     expect(files.length).toBeGreaterThan(60)
   })
 
+  it('also scans the repo-root schema/ JSON the build publishes at <base>schema/ (DESIGN §8)', () => {
+    expect(SCAN_DIRS).toContain('schema')
+    const root = mkdtempSync(join(tmpdir(), 'hb-language-lint-'))
+    try {
+      mkdirSync(join(root, 'schema'))
+      writeFileSync(join(root, 'schema', 'save-v1.json'), JSON.stringify({ $id: 'save-v1', description: 'Not a diagnosis.' }, null, 2))
+      writeFileSync(join(root, 'schema', '.gitkeep'), '')
+      expect(collectFiles(root)).toEqual(['schema/save-v1.json'])
+      expect(lintRepo(root)).toEqual([expect.stringMatching(/^schema\/save-v1\.json:3: "diagnosis" at \$\.description is banned/)])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('reads each file type with the right scanner', () => {
-    expect(['a.ts', 'a.svelte.ts', 'a.js', 'a.svelte', 'a.html', 'a.md', 'a.svg', 'a.css', 'a.json', 'a.png', 'a.woff2'].map(kindOf)).toEqual([
+    expect(['a.ts', 'a.svelte.ts', 'a.js', 'a.tsx', 'a.jsx', 'a.svelte', 'a.html', 'a.md', 'a.svg', 'a.css', 'a.json', 'a.png', 'a.woff2'].map(kindOf)).toEqual([
+      'script',
+      'script',
       'script',
       'script',
       'script',
@@ -91,6 +110,37 @@ describe('language lint scope (ROADMAP M1.20)', () => {
       undefined,
       undefined,
     ])
+  })
+})
+
+describe('script scanning', () => {
+  it('never reads module specifiers: imports, re-exports, import() and import types', () => {
+    const src = [
+      "import autism from './autism'",
+      "import type { Adhd } from './adhd'",
+      "import diagnosis = require('./diagnosis')",
+      "export * from './disorder'",
+      "export { symptom } from './symptom'",
+      "const m = import('./syndrome')",
+      "type T = import('./deficit').T",
+      "declare module 'pathology' {}",
+    ].join('\n')
+    for (const path of ['x.ts', 'x.tsx']) expect(lintText(src, path), path).toEqual([])
+    // The same words as copy are caught, so the exclusion is what keeps them out.
+    const copy = "export const words = ['./autism', './adhd', './diagnosis', './disorder', './symptom', './syndrome', './deficit', 'pathology']"
+    expect(terms(lintText(copy, 'x.ts'))).toEqual(['adhd', 'autism', 'deficit', 'diagnosis', 'disorder', 'pathology', 'symptom', 'syndrome'])
+  })
+
+  it('reads JSX text as well as JSX attributes in .tsx and .jsx, with the right lines', () => {
+    const src = 'export const X = () => (\n  <p title="autism">\n    An ADHD screening\n  </p>\n)\n'
+    for (const path of ['x.tsx', 'x.jsx']) expect(summary(lintText(src, path)), path).toEqual(['2 autism', '3 adhd', '3 screening'])
+  })
+
+  it('treats digits and "_" as delimiters, so id-like copy is caught but longer words are not', () => {
+    for (const [s, id] of [['adhd_screen', 'adhd'], ['ADHD2', 'adhd'], ['iq_score', 'iq'], ['2IQ', 'iq'], ['asd-1', 'asd'], ['ptsd_rate', 'condition-name']] as const) {
+      expect(terms(lintText(`"${s}"`, 'x.ts')), s).toEqual([id])
+    }
+    for (const s of ['IQR', 'iqr_2', 'hasde', 'diagram_1', 'impartial2']) expect(lintText(`"${s}"`, 'x.ts'), s).toEqual([])
   })
 })
 
@@ -153,6 +203,17 @@ describe('allowed texts (A13: the R-5.6.5 constant; "clinical" only in the §13 
     expect(lintFiles([results], { checkHomes: false })).toEqual([])
     expect(lintFiles([{ path: 'web/src/copy.ts', text: `export const RESOURCE_LINE = ${JSON.stringify(RESOURCE_LINE)}` }])).toEqual([])
     expect(lintFiles([{ path: 'web/src/results/Footer.svelte', text: "<script lang=\"ts\">\n  import { RESOURCE_LINE } from '../copy'\n</script>\n<p>{RESOURCE_LINE}</p>\n" }])).toEqual([])
+  })
+
+  it('records the open R-5.6.2 conflict: its DESIGN-mandated tooltip trips the lint until M6.1 amends A13', () => {
+    // DESIGN R-5.6.2 fixes the Emotion Reading tooltip word for word, but it says "diagnostic" and
+    // "clinical", and A13 allow-lists only RESOURCE_LINE and DISCLAIMER. When M6.1 settles it (a
+    // third exact allowed text, or a reworded R-5.6.2), update this test with the lint header.
+    const design = readFileSync(join(REPO_ROOT, 'docs', 'DESIGN.md'), 'utf8')
+    const tooltip = /^- R-5\.6\.2:.*?tooltip: "([^"\n]+)"/m.exec(design)?.[1]
+    expect(tooltip).toMatch(/^Measures agreement with /)
+    expect(terms(lintText(tooltip ?? '', 'x.md'))).toEqual(['clinical', 'diagnosis'])
+    expect(ALLOWED_TEXT.map((a) => a.text)).not.toContain(tooltip)
   })
 
   it('the disclaimer may be quoted anywhere, but only exactly', () => {
