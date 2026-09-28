@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { BLOCKING_IMPACTS, WCAG_AA_TAGS } from '../e2e/axe'
 import config from '../playwright.config'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
@@ -22,6 +23,9 @@ describe('Playwright config (M1.A)', () => {
     expect(webkit?.use?.defaultBrowserType).toBe('webkit')
     expect(iphone?.use).toMatchObject({ defaultBrowserType: 'webkit', isMobile: true, hasTouch: true })
     expect(iphone?.use?.userAgent).toMatch(/iPhone/)
+    // WebKit is slowest on a loaded machine, so it gets more than the default budget.
+    expect(config.timeout).toBeGreaterThanOrEqual(60_000)
+    for (const p of [webkit, iphone]) expect(p?.timeout ?? 0, p?.name).toBeGreaterThan(config.timeout ?? 0)
   })
 
   it('tests a fresh vite preview of the production build under /humanbench/', () => {
@@ -31,6 +35,13 @@ describe('Playwright config (M1.A)', () => {
     expect(server?.env).toEqual({ VITE_BASE: '/humanbench/' })
     expect(server?.reuseExistingServer).toBe(false)
     expect(server?.url).toBe(config.use?.baseURL)
+  })
+
+  it('checks axe against WCAG 2.0, 2.1 and 2.2 at A and AA, failing on serious and critical (§13)', () => {
+    // §13 asks for WCAG 2.2 AA; axe tags each rule with the WCAG version that added it, so dropping a
+    // version's tags silently drops its rules (the e2e helper test covers 2.1 AA and 2.2 AA by example).
+    expect([...WCAG_AA_TAGS].sort()).toEqual(['wcag21a', 'wcag21aa', 'wcag22aa', 'wcag2a', 'wcag2aa'])
+    expect([...BLOCKING_IMPACTS].sort()).toEqual(['critical', 'serious'])
   })
 
   it('has the npm scripts, and a CI job that installs browsers and runs the suite', () => {

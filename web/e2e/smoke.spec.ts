@@ -41,7 +41,11 @@ test.describe('hello page', () => {
   test('the rendered page passes the language lint (A13)', async ({ page }) => {
     await page.goto('./')
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-    expect(lintText(await page.content(), 'rendered.html')).toEqual([])
+    // Content-hashed asset names (assets/index-<hash>.js) are not copy, and a hash can spell a short
+    // banned token between digits or "_" (the lint's letter boundaries), so they are dropped first.
+    const html = (await page.content()).replace(/\/assets\/[^"'\s)]+/g, '/assets/')
+    expect(html).toContain('/humanbench/assets/')
+    expect(lintText(html, 'rendered.html')).toEqual([])
   })
 
   for (const colorScheme of ['light', 'dark'] as const) {
@@ -55,15 +59,21 @@ test.describe('hello page', () => {
 })
 
 test.describe('axe helper', () => {
-  test('reports and fails on serious violations', async ({ page }) => {
+  test('reports and fails on serious violations of WCAG 2.0, 2.1 AA and 2.2 AA rules', async ({ page }) => {
     await page.setContent(
       '<!doctype html><html lang="en"><head><title>bad</title></head><body><main>' +
+        // WCAG 2.0: image-alt (critical), color-contrast (serious).
         '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="10" height="10">' +
         '<p style="color:#999;background:#aaa">low contrast</p>' +
+        // WCAG 2.1 AA (wcag21aa): autocomplete-valid.
+        '<label>Name <input type="text" autocomplete="not-a-token"></label>' +
+        // WCAG 2.2 AA (wcag22aa): target-size, two abutting 10 px buttons.
+        '<div style="display:flex;gap:0"><button type="button" aria-label="one" style="width:10px;height:10px;padding:0;border:0;margin:0"></button>' +
+        '<button type="button" aria-label="two" style="width:10px;height:10px;padding:0;border:0;margin:0"></button></div>' +
         '</main></body></html>',
     )
     const ids = (await seriousAxeViolations(page)).map((v) => v.id).sort()
-    expect(ids).toEqual(['color-contrast', 'image-alt'])
+    expect(ids).toEqual(['autocomplete-valid', 'color-contrast', 'image-alt', 'target-size'])
     await expect(expectNoSeriousAxe(page)).rejects.toThrow(/image-alt/)
   })
 })

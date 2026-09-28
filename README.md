@@ -79,6 +79,14 @@ npm run e2e -- --project=webkit
 npm run e2e -- e2e/smoke.spec.ts
 ```
 
+WebKit is much slower than Chromium on a busy machine, so its tests get 90 s each rather than 60 s.
+Locally, avoid running the suite alongside other heavy jobs (such as the bank's test suite), or
+use fewer workers:
+
+```zsh
+npm run e2e -- --workers=2
+```
+
 It serves on port 4174. If that port is taken, pick another:
 
 ```zsh

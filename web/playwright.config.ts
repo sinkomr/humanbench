@@ -14,6 +14,7 @@ const PORT = Number(process.env.E2E_PORT ?? 4174)
 const BASE = '/humanbench/'
 const ORIGIN = `http://127.0.0.1:${PORT}`
 const CI = Boolean(process.env.CI)
+const WEBKIT_TIMEOUT = 90_000
 
 export default defineConfig({
   testDir: './e2e',
@@ -35,9 +36,11 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    // WebKit is the slow engine under load: at load average 8-17 its tests took 20-43 s against the
+    // 60 s budget, so both WebKit projects get 90 s (README: avoid overlapping heavy jobs locally).
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, timeout: WEBKIT_TIMEOUT },
     // iOS emulation (WebKit engine, iPhone 13 viewport, touch, mobile UA): CLAUDE.md, M1.22.
-    { name: 'iphone', use: { ...devices['iPhone 13'] } },
+    { name: 'iphone', use: { ...devices['iPhone 13'] }, timeout: WEBKIT_TIMEOUT },
   ],
   webServer: {
     command: `npm run build && npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
