@@ -6,7 +6,7 @@
     "types": ["node"],
     "skipLibCheck": true,
 
-    /* Node scripts run under tsx and import src/ modules, so resolve like the app (bundler). */
+    /* Node scripts (tsx) and the Playwright suite import src/ modules, so resolve like the app (bundler). */
     "module": "esnext",
     "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
@@ -20,5 +20,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts", "e2e/**/*.ts", "playwright.config.ts"]
 }

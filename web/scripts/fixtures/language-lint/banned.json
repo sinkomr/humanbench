@@ -1,0 +1,6 @@
+{
+  "autism": "keys are data, not copy",
+  "title": "A disorder profile",
+  "notes": ["fine", "clinical norms"],
+  "nested": { "deep": "on the spectrum" }
+}

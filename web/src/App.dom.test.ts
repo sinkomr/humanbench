@@ -34,4 +34,17 @@ describe('App (jsdom)', () => {
     expect(disclaimer).not.toBeNull()
     expect(disclaimer?.textContent?.trim()).toBe(DESIGN_13_DISCLAIMER)
   })
+
+  it('exposes the disclaimer to assistive tech: nothing on its path is hidden (§13, M1.20)', () => {
+    app = mount(App, { target: document.body })
+    flushSync()
+
+    const disclaimer = document.querySelector('footer .disclaimer')
+    expect(disclaimer).not.toBeNull()
+    for (let el: Element | null = disclaimer; el !== null; el = el.parentElement) {
+      expect(el.getAttribute('aria-hidden'), el.tagName).not.toBe('true')
+      expect(el.hasAttribute('hidden'), el.tagName).toBe(false)
+      expect(el.hasAttribute('inert'), el.tagName).toBe(false)
+    }
+  })
 })
