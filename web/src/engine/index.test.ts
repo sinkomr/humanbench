@@ -13,6 +13,13 @@ describe('engine barrel (index.ts)', () => {
       // linalg.ts
       'cholesky', 'tryCholesky', 'choleskySolve', 'choleskyInverse', 'choleskyLogDet', 'solve',
       'inverse', 'spdSolve', 'spdInverse', 'matmul', 'matvec', 'transpose', 'symmetricEigen',
+      // integrity.ts
+      'integrityReport', 'visibilityCheck', 'pasteCheck', 'tooFastCheck', 'uniformRtCheck', 'hardItemCheck',
+      'personFitCheck', 'hiddenIntervals', 'poissonBinomialPmf', 'poissonBinomialUpperTail', 'lzStar',
+      'bayesModalTheta', 'dichotomousObservation', 'pCorrect', 'calibrationEligible', 'FLAG_KINDS',
+      'HIDDEN_MAX_S', 'TOO_FAST_RATIO', 'TOO_FAST_MIN_MEDIAN_S', 'UNIFORM_RT_MAX_SD', 'UNIFORM_RT_MIN_TIME_RATIO',
+      'UNIFORM_RT_MIN_ITEMS', 'HARD_ITEM_MARGIN', 'HARD_ITEM_ALPHA', 'LZ_STAR_MAX', 'LZ_STAR_MIN_ITEMS',
+      'PERSON_FIT_PRIOR_MEAN', 'PERSON_FIT_PRIOR_SD',
       // irt.ts
       'logistic', 'logLogistic', 'p2pl', 'p3pl', 'grmProbs', 'grmLogProbs', 'info2pl', 'info3pl',
       'infoGrm', 'infoGaussian', 'check3pl', 'checkGaussian', 'checkGrm',
