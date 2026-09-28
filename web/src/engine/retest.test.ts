@@ -121,10 +121,12 @@ describe('adjustObservation (exact re-expression on θ_k)', () => {
   })
 
   it('property: a zero gain changes nothing, and the input is never modified', () => {
+    // Compared as JSON: a Gaussian d = −0 comes back as d + λ·0 = +0, the same value, but toEqual
+    // tells −0 from +0 (fast-check generates −0).
     fc.assert(
       fc.property(obsArb, dbl(-1, 1), (o, rho) => {
         const before = JSON.stringify(o)
-        expect(adjustObservation(o, 0)).toEqual(o)
+        expect(JSON.stringify(adjustObservation(o, 0))).toBe(before)
         adjustObservation(o, rho)
         expect(JSON.stringify(o)).toBe(before)
       }),
@@ -161,12 +163,63 @@ describe('session order and test numbers', () => {
   })
 
   it('orders by start time, then id; ids must be unique and non-empty', () => {
+    // The earliest session has the largest id, so sorting by id alone (or by time alone, keeping
+    // the listed order of the tie) gives a different order.
     const a = { session_id: 's_b', started_utc: '2026-10-02T08:00:00Z', observations: [] }
     const b = { session_id: 's_a', started_utc: '2026-10-02T08:00:00Z', observations: [] }
-    const c = { session_id: 's_0', started_utc: '2026-10-01T08:00:00Z', observations: [] }
-    expect(orderSessions([a, b, c]).map((s) => s.session_id)).toEqual(['s_0', 's_a', 's_b'])
+    const c = { session_id: 's_z', started_utc: '2026-10-01T08:00:00Z', observations: [] }
+    expect(orderSessions([a, b, c]).map((s) => s.session_id)).toEqual(['s_z', 's_a', 's_b'])
     expect(() => orderSessions([a, a])).toThrow(/duplicate/)
     expect(() => orderSessions([{ ...a, session_id: '' }])).toThrow(RangeError)
+  })
+
+  it('a session that took an axis but scored nothing on it is still a test of it (exposure, not scorability)', () => {
+    const later: RetestSession = { session_id: 's_2', started_utc: '2026-10-08T00:00:00Z', observations: [{ kind: '3pl', axis: 'SPA', a: 1.2, b: 0, c: 0.25, y: 1 }, o('MAT')] }
+    const exposed: RetestSession = { session_id: 's_1', started_utc: '2026-10-01T00:00:00Z', observations: [], exposed_axes: ['SPA'] }
+    expect(sessionOrdinals([exposed, later])).toEqual([{ SPA: 1 }, { MAT: 1, SPA: 2 }])
+    const adj = retestAdjust([later, exposed])
+    expect(adj.sessions[1]!.rho.SPA).toBe(retestGain(0.45, 2))
+    expect(adj.sessions[0]!.n_observations).toBe(0)
+    expect(adj.next_ordinals.SPA).toBe(3)
+    // Without the exposure the same responses are test 1, with no practice credit: θ̂ is higher.
+    const spa = AXIS_INDEX.SPA
+    expect(rescoreRetest([exposed, later]).theta[spa]!).toBeLessThan(rescoreRetest([later]).theta[spa]!)
+    expect(() => sessionOrdinals([{ ...exposed, exposed_axes: ['XYZ' as AxisCode] }])).toThrow(/unknown axis/)
+  })
+
+  it('property: exposed axes that the session also observed change nothing', () => {
+    const caseArb = sessionsArb().chain((sessions) =>
+      fc.tuple(
+        fc.constant(sessions),
+        fc.tuple(...sessions.map((s) => (s.observations.length === 0 ? fc.constant([] as AxisCode[]) : fc.array(fc.constantFrom(...s.observations.map((x) => x.axis)), { maxLength: 4 })))),
+      ),
+    )
+    fc.assert(
+      fc.property(caseArb, ([sessions, extra]) => {
+        const widened = sessions.map((s, i) => ({ ...s, exposed_axes: extra[i]! }))
+        expect(sessionOrdinals(widened)).toEqual(sessionOrdinals(sessions))
+        const a = rescoreRetest(sessions)
+        const b = rescoreRetest(widened)
+        expect(b.theta).toEqual(a.theta)
+        expect(b.next_ordinals).toEqual(a.next_ordinals)
+      }),
+      { numRuns: 40 },
+    )
+  })
+
+  it('property: an earlier exposure moves every later test number on that axis up by one', () => {
+    fc.assert(
+      fc.property(sessionsArb(), axisArb, (sessions, k) => {
+        const first: RetestSession = { session_id: 's_first', started_utc: '2026-09-01T00:00:00Z', observations: [], exposed_axes: [k] }
+        const before = sessionOrdinals(sessions)
+        const after = sessionOrdinals([first, ...sessions])
+        expect(after[0]).toEqual({ [k]: 1 })
+        before.forEach((b, i) => {
+          expect(after[i + 1]).toEqual(Object.fromEntries(Object.entries(b).map(([ax, n]) => [ax, n + (ax === k ? 1 : 0)])))
+        })
+      }),
+      { numRuns: 40 },
+    )
   })
 
   it('property: the listed order of the sessions does not matter', () => {
@@ -291,6 +344,7 @@ interface GoldenSession {
   session_id: string
   started_utc: string
   observations: Observation[]
+  exposed_axes?: AxisCode[]
 }
 interface GoldenCase {
   id: string
@@ -347,7 +401,7 @@ describe('golden vectors (bank golden/retest_v1.json, ROADMAP M1.Q, A17)', () =>
     for (const row of golden.gain_table) row.s.forEach((s, i) => expect(close(retestGain(row.rho_max, s), row.gain[i]!), `${row.rho_max} s=${s}`).toBe(true))
   })
 
-  it('covers every observation kind, custom priors and ρ^max, unsorted input and 10 tests', () => {
+  it('covers every observation kind, custom priors and ρ^max, unsorted input, exposure and 10 tests', () => {
     const obs = golden.cases.flatMap((c) => c.inputs.sessions.flatMap((s) => s.observations))
     expect(new Set(obs.map((o) => o.kind))).toEqual(new Set(['2pl', '3pl', 'grm', 'gaussian']))
     expect(golden.cases.some((c) => c.inputs.rho_max !== undefined)).toBe(true)
@@ -355,6 +409,9 @@ describe('golden vectors (bank golden/retest_v1.json, ROADMAP M1.Q, A17)', () =>
     expect(golden.cases.some((c) => c.inputs.mu !== undefined)).toBe(true)
     expect(golden.cases.some((c) => c.inputs.sessions[0]?.session_id !== c.outputs.sessions[0]?.session_id)).toBe(true)
     expect(Math.max(...golden.cases.flatMap((c) => c.outputs.sessions.flatMap((s) => Object.values(s.ordinals))))).toBe(10)
+    const exposed = golden.cases.flatMap((c) => c.inputs.sessions.filter((s) => s.exposed_axes !== undefined))
+    expect(exposed.length).toBeGreaterThanOrEqual(5)
+    expect(exposed.some((s) => s.observations.length === 0)).toBe(true) // exposure only
   })
 
   it(`every case matches to ${1e-9} (ordinals, gains, adjusted observations, θ, cov, EAP, lp, next prior)`, () => {

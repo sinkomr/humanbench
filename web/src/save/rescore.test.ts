@@ -12,14 +12,15 @@ import { rtSimple } from '../tasks/rt'
 import { rtValidResponse } from '../tasks/rt/synthetic'
 import * as saveBarrel from './index'
 import { isUsableCache } from './merge'
-import { posteriorCacheOf, registryObservation, rescoreSessions, type ResponseResolver } from './rescore'
+import { blockResponseOf, itemAxis, posteriorCacheOf, registryObservation, rescoreSessions, type ResponseResolver } from './rescore'
 import { TEST_CTX } from './testing'
 import { SCHEMA_URL, SCHEMA_VERSION, type SaveFileV1, type SaveSession } from './types'
 import { assertValidSave } from './validate'
 
 type AnyItem = ItemInstance<object, object>
-const S1 = 's_00000001'
-const S2 = 's_00000002'
+// S1 is the earlier session (day 1) but has the larger id, so only start times order them.
+const S1 = 's_0000000b'
+const S2 = 's_0000000a'
 const keyIndex = (item: AnyItem): number => (item.key as { index: number }).index
 
 /** The observation the resolver must produce for a keyed MC item answered `y`. */
@@ -97,8 +98,30 @@ describe('registryObservation (response tuple → observation)', () => {
     expect(want?.kind).toBe('gaussian')
     expect(registryObservation([item.item_id, 0, response as never, null, 60_000, null])).toEqual({ observation: want })
     expect(registryObservation([item.item_id, 0, 'trials', null, 60_000, null])).toMatchObject({ skip: 'malformed' })
+    // The §8 example's layout: "trials" with the block's data in `extra` (engine/types.ts ResponseTuple).
+    expect(registryObservation([item.item_id, 0, 'trials', null, 60_000, null, response as never])).toEqual({ observation: want })
+    expect(registryObservation([item.item_id, 0, 'trials', null, 18_211, null, [243, 251, 238]])).toMatchObject({ skip: 'malformed' }) // no choices
     const empty = { rt_ms: Array(30).fill(null), choice: Array(30).fill(null) }
     expect(registryObservation([item.item_id, 0, empty, null, 60_000, null])).toMatchObject({ skip: 'no_observation', detail: expect.stringContaining('too_few_valid_trials') })
+  })
+})
+
+describe('blockResponseOf and itemAxis', () => {
+  it('reads a block from `response`, or from `extra` behind "trials" (§8 example)', () => {
+    expect(blockResponseOf(['i:rt_simple:2.0.0:x', 0, { rt_ms: [] }, null, 1, null])).toEqual({ rt_ms: [] })
+    expect(blockResponseOf(['i:rt_simple:2.0.0:x', 0, 'trials', null, 1, null, { rt_ms: [1] }])).toEqual({ rt_ms: [1] })
+    expect(blockResponseOf(['i:rt_simple:2.0.0:x', 0, 'trials', null, 1, null])).toBe('trials')
+    expect(blockResponseOf(['i:rt_simple:2.0.0:x', 0, 'other', null, 1, null, { rt_ms: [1] }])).toBe('other')
+  })
+
+  it('names the axis of a registered family whatever the generator version; undefined otherwise', () => {
+    const r = rot('ax-1')
+    expect(itemAxis(r.item_id)).toBe('SPA')
+    expect(itemAxis(r.item_id.replace(`:${rotation.generatorVersion}:`, ':0.9.0:'))).toBe('SPA')
+    expect(itemAxis(r.item_id.replace(`:${rotation.generatorVersion}:`, `:${rotation.generatorVersion}+py:`))).toBe('SPA')
+    expect(itemAxis(mat('ax-2').item_id)).toBe('MAT')
+    expect(itemAxis(rtSimple.generate('ax-3').item_id)).toBe('RT')
+    for (const id of ['i:mat:f0182:v3', 'not-an-id', 'i:toString:1.0.0:x', '']) expect(itemAxis(id), id).toBeUndefined()
   })
 })
 
@@ -168,6 +191,32 @@ describe('rescoreSessions (§7.8 re-scoring of a multi-session save, M1.Q)', () 
     expect(adjusted.theta[AXIS_INDEX.SPA]!).toBeLessThan(pooled.theta[AXIS_INDEX.SPA]!)
   })
 
+  it('a first session this build cannot score still counts as a test: the next one is s = 2 (exposure)', () => {
+    const later = session(S2, 8, s2Items.map((it) => mcTuple(it, 1)))
+    const oldVersion = (it: AnyItem): string => it.item_id.replace(`:${rotation.generatorVersion}:`, ':0.9.0:')
+    const unresolved = session(S1, 1, s1Items.map((it): ResponseTuple => [oldVersion(it), 0, keyIndex(it), 1, 30_000, null]))
+    const pretestOnly = session(S1, 1, s1Items.map((it): ResponseTuple => [it.item_id, 1, keyIndex(it), 1, 30_000, null]))
+    const alone = rescoreSessions(saveOf([later]))
+    expect(alone.sessions[0]!.ordinals).toEqual({ SPA: 1 })
+    for (const first of [unresolved, pretestOnly]) {
+      const r = rescoreSessions(saveOf([later, first]))
+      expect(r.sessions.map((s) => s.ordinals)).toEqual([{ SPA: 1 }, { SPA: 2 }])
+      expect(r.sessions[1]!.rho).toEqual({ SPA: retestGain(RHO_MAX_PRIOR.SPA, 2) })
+      expect(r.next_ordinals.SPA).toBe(3)
+      expect(r.n_scored).toBe(4)
+      expect(new Set(r.skipped.map((x) => x.reason))).toEqual(new Set([first === unresolved ? 'unresolved' : 'pretest']))
+      // The same SPA responses now carry the ρ(2) practice shift (direction aside: 3PL terms are not log-concave).
+      expect(r.theta[AXIS_INDEX.SPA]).not.toBe(alone.theta[AXIS_INDEX.SPA])
+    }
+  })
+
+  it('a skip from an injected resolver may name the axis (families this build does not know)', () => {
+    const exposedMat = saveOf([session(S1, 1, [['i:mat:f0182:v3', 0, 'C', 1, 41_250, 80]]), session(S2, 8, [mcTuple(m1, 1)])])
+    expect(rescoreSessions(exposedMat).sessions.map((s) => s.ordinals)).toEqual([{}, { MAT: 1 }])
+    const resolve: ResponseResolver = (t) => (t[0] === 'i:mat:f0182:v3' ? { skip: 'unresolved', axis: 'MAT' } : registryObservation(t))
+    expect(rescoreSessions(exposedMat, { resolve }).sessions.map((s) => s.ordinals)).toEqual([{ MAT: 1 }, { MAT: 2 }])
+  })
+
   it('takes an injected resolver (server params for items this build cannot regenerate, M2)', () => {
     const resolve: ResponseResolver = (t) =>
       t[0] === 'i:mat:f0182:v3' ? { observation: { kind: '2pl', axis: 'MAT', a: 1.3, b: 0.2, y: t[3] === 1 ? 1 : 0 } } : registryObservation(t)
@@ -181,7 +230,8 @@ describe('rescoreSessions (§7.8 re-scoring of a multi-session save, M1.Q)', () 
     const sessionArb = fc.array(fc.tuple(fc.integer({ min: 0, max: pool.length - 1 }), fc.constantFrom<0 | 1>(0, 1)), { minLength: 1, maxLength: 5 })
     fc.assert(
       fc.property(fc.array(sessionArb, { minLength: 1, maxLength: 4 }), (per) => {
-        const sessions = per.map((rs, i) => session(`s_${String(i).padStart(8, '0')}`, i + 1, rs.map(([j, y]) => mcTuple(pool[j]!, y))))
+        // Ids in the reverse of time order: only start times order the sessions.
+        const sessions = per.map((rs, i) => session(`s_${String(90 - i).padStart(8, '0')}`, i + 1, rs.map(([j, y]) => mcTuple(pool[j]!, y))))
         const a = rescoreSessions(saveOf(sessions))
         const b = rescoreSessions(saveOf([...sessions].reverse()))
         expect(b.theta).toEqual(a.theta)

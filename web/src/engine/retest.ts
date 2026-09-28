@@ -9,8 +9,11 @@
  * - θ_k is the person's trait on axis k, the retest-adjusted ("practice-adjusted", §7.8) θ that
  *   is reported;
  * - s is the test number on that axis: the ordinal, in time order, of the session among the
- *   person's sessions that have at least one scored observation on axis k ({@link sessionOrdinals}).
- *   The first test is s = 1, where ρ = 0; a session that skipped the axis is not a retest of it;
+ *   person's sessions that took axis k ({@link sessionOrdinals}): those with a scored observation
+ *   on k or with k in `exposed_axes` (items presented on k that gave no observation: pretest
+ *   items, ids this build cannot regenerate, unscored or unscorable responses). Practice comes
+ *   from exposure, not from scorability, so s does not depend on which build re-scores. The first
+ *   test is s = 1, where ρ = 0; a session that skipped the axis is not a retest of it;
  * - ρ_k^max is the plateau gain. Priors (§7.8): 0.45 for reasoning, spatial and speed, 0.25 for
  *   knowledge (alternate forms). §7.8 names only those clusters; the others are assigned here
  *   [SPEC] ({@link RHO_MAX_BY_CLUSTER}) and every value is provisional until M4.7 estimates ρ
@@ -35,6 +38,18 @@
  * single-session save re-scores exactly as {@link scoreAll} (s = 1, ρ = 0); ρ_k(s) is 0 at s = 1,
  * nondecreasing in s for ρ^max ≥ 0 and tends to ρ^max; and a larger ρ^max lowers θ̂_k (more of a
  * later session's performance is credited to practice).
+ *
+ * ## Task-spec mapping (ROADMAP M1.Q)
+ *
+ * The M1.Q task text described ρ_k(s) as a *stability* that carries the earlier posterior over as
+ * a function of the *spacing* s between sessions, with the properties "ρ = 0 → independent
+ * sessions; ρ = 1 and s = 0 → full carry-over; monotone in s". It also said "implement exactly per
+ * §7.8", and §7.8 (authoritative, CLAUDE.md) defines ρ_k(s) as an additive practice gain indexed
+ * by the test number, with no interval term. This module implements §7.8. The trait θ_k is constant
+ * across sessions, so carry-over is always full and ρ^max = 0 pools the sessions as one (never
+ * independence, which has no §7.8 analogue); s starts at 1 (ρ = 0, a single session is the plain
+ * score), not 0; ρ_k(s) is monotone in s. A spacing term (§7.8 lists the interval among the
+ * literature's moderators) is for M4.7 to estimate, not assumed here.
  */
 
 import { AXES, AXIS_CODES, AXIS_INDEX, N_AXES, initialSigma, type AxisCode, type Cluster } from './axes'
@@ -131,14 +146,20 @@ export interface RetestSession {
   /** `YYYY-MM-DDTHH:MM:SSZ` (§8); sessions are ordered by it, then by id (as `mergeSessions`). */
   readonly started_utc: string
   readonly observations: readonly Observation[]
+  /**
+   * Axes the session presented items on beyond its observations (pretest, unregenerable or
+   * unscored responses): they count as a test of the axis (module comment). Any order; repeats
+   * and axes that also have observations change nothing.
+   */
+  readonly exposed_axes?: readonly AxisCode[]
 }
 
-/** Per-session result: the test number and practice gain of each axis it observed. */
+/** Per-session result: the test number and practice gain of each axis it took (observed or exposed). */
 export interface SessionRetest {
   readonly session_id: string
   readonly started_utc: string
   readonly n_observations: number
-  /** Test number s per observed axis, in canonical axis order. */
+  /** Test number s per axis the session took (observed or exposed), in canonical axis order. */
   readonly ordinals: Partial<Record<AxisCode, number>>
   /** ρ_k(s) applied to that axis's observations. */
   readonly rho: Partial<Record<AxisCode, number>>
@@ -163,21 +184,30 @@ export function orderSessions<T extends Pick<RetestSession, 'session_id' | 'star
   return [...sessions].sort((a, b) => cmp(a.started_utc, b.started_utc) || cmp(a.session_id, b.session_id))
 }
 
-/** Axes (canonical order) with at least one observation in `obs`. */
-function observedAxes(obs: readonly Observation[]): AxisCode[] {
-  const idx = new Set(obs.map((o) => checkObservation(o)))
+/**
+ * Axes (canonical order) the session took: its observations' axes and its `exposed_axes`. Throws a
+ * RangeError on an invalid observation or an unknown exposed axis.
+ */
+function takenAxes(s: RetestSession): AxisCode[] {
+  const idx = new Set(s.observations.map((o) => checkObservation(o)))
+  const exposed = s.exposed_axes ?? []
+  if (!Array.isArray(exposed)) throw new RangeError(`session ${s.session_id}: exposed_axes must be an array`)
+  for (const k of exposed) {
+    if (typeof k !== 'string' || !Object.hasOwn(AXIS_INDEX, k)) throw new RangeError(`session ${s.session_id}: exposed_axes: unknown axis ${JSON.stringify(k)}`)
+    idx.add(AXIS_INDEX[k as AxisCode])
+  }
   return AXIS_CODES.filter((_, i) => idx.has(i))
 }
 
 /**
- * The test number s of each observed axis in each session, for sessions already in time order
- * ({@link orderSessions}): 1 + the number of earlier sessions with an observation on that axis.
+ * The test number s of each axis each session took (observed or exposed), for sessions already in
+ * time order ({@link orderSessions}): 1 + the number of earlier sessions that took that axis.
  */
 export function sessionOrdinals(ordered: readonly RetestSession[]): Partial<Record<AxisCode, number>>[] {
   const count = new Map<AxisCode, number>()
   return ordered.map((s) => {
     const out: Partial<Record<AxisCode, number>> = {}
-    for (const k of observedAxes(s.observations)) {
+    for (const k of takenAxes(s)) {
       const n = (count.get(k) ?? 0) + 1
       count.set(k, n)
       out[k] = n
@@ -192,7 +222,7 @@ export interface RetestAdjusted {
   readonly sessions: SessionRetest[]
   /** Every session's adjusted observations, concatenated in time order. */
   readonly observations: Observation[]
-  /** The test number the next session would be on each axis (1 for axes never observed). */
+  /** The test number the next session would be on each axis (1 for axes never taken). */
   readonly next_ordinals: Record<AxisCode, number>
 }
 

@@ -21,25 +21,38 @@
  *   stored for offline re-scoring); with no stored `correct` either, the response is skipped;
  * - a block (kind 'block', A10) is scored with the family's `score()`: its GRM or Gaussian
  *   observation, or `no_observation` with the block's reasons (e.g. too few valid RT trials).
- *   The tuple's `response` holds the block's response object (e.g. `RtResponse`).
+ *   Writers put the block's response object (e.g. `RtResponse`) in the tuple's `response`; the
+ *   §8 example's layout, `response` = "trials" with the trial data in `extra`, is read too
+ *   ({@link blockResponseOf}; convention in `engine/types.ts` `ResponseTuple`).
+ *
+ * Test numbers count exposure, not scorability (engine/retest.ts): every skipped response still
+ * marks its session as having taken the item's axis (`exposed_axes`), taken from the resolver's
+ * answer or else from the family named in the id ({@link itemAxis}; e.g. an id from before a
+ * generator bump). So a session whose items this build cannot regenerate, or that was pretest
+ * only, is still a test of the axis, and the next session's practice gain does not depend on the
+ * build that re-scores.
  *
  * Not re-exported from the save barrel: this module imports the task registry (every family and
  * the reading passages), and the barrel must stay light (`scripts/bundle.test.ts`). Import
  * `save/rescore` explicitly.
  */
 
-import { AXIS_CODES, N_AXES } from '../engine/axes'
+import { AXIS_CODES, N_AXES, type AxisCode } from '../engine/axes'
 import { rescoreRetest, type RetestOptions, type RetestScore, type RetestSession } from '../engine/retest'
-import type { Observation, ResponseTuple } from '../engine/types'
+import type { JsonValue, Observation, ResponseTuple } from '../engine/types'
 import { MalformedResponseError, type AnyFamily, type ItemInstance } from '../tasks/family'
+import { parseItemId } from '../tasks/ids'
 import { getFamily, resolveItem } from '../tasks/registry'
 import type { PosteriorCache, SaveFileV1 } from './types'
 
 /** Why a response yields no observation. */
 export type SkipReason = 'pretest' | 'unresolved' | 'unscored' | 'malformed' | 'no_observation'
 
-/** A resolver's answer for one response tuple. */
-export type ResolvedResponse = { readonly observation: Observation } | { readonly skip: SkipReason; readonly detail?: string }
+/**
+ * A resolver's answer for one response tuple. A skip may name the item's axis (e.g. a resolver
+ * with server metadata for an unregistered family); otherwise {@link itemAxis} is used.
+ */
+export type ResolvedResponse = { readonly observation: Observation } | { readonly skip: SkipReason; readonly detail?: string; readonly axis?: AxisCode }
 
 /** Response tuple → observation (default {@link registryObservation}). */
 export type ResponseResolver = (t: ResponseTuple) => ResolvedResponse
@@ -78,12 +91,34 @@ function itemObservation(item: ItemInstance<object, object>, y: 0 | 1): Resolved
   }
 }
 
+/** The §8 example's block layout: `response` = "trials" with the trial data in `extra`. */
+export const BLOCK_IN_EXTRA = 'trials'
+
+/**
+ * A block tuple's response object: `response`, or `extra` when `response` is
+ * {@link BLOCK_IN_EXTRA} and `extra` is present (the §8 example's layout).
+ */
+export function blockResponseOf(t: ResponseTuple): JsonValue {
+  const [, , response, , , , extra] = t
+  return response === BLOCK_IN_EXTRA && extra !== undefined ? extra : response
+}
+
+/**
+ * The axis of the family named in `itemId` (every item of a family is on the family's axis), or
+ * undefined for a malformed id or an unregistered family. Unlike {@link resolveItem} it ignores the
+ * generator version: exposure to an item does not depend on this build being able to rebuild it.
+ */
+export function itemAxis(itemId: string): AxisCode | undefined {
+  const ids = typeof itemId === 'string' ? parseItemId(itemId) : null
+  return ids === null ? undefined : getFamily(ids.family)?.axis
+}
+
 function scoreWith(family: AnyFamily, item: ItemInstance<object, object>, t: ResponseTuple): ResolvedResponse {
   const [, , response, stored] = t
   if (family.kind === 'block') {
     let s
     try {
-      s = family.score(item, response)
+      s = family.score(item, blockResponseOf(t))
     } catch (e) {
       if (e instanceof MalformedResponseError) return { skip: 'malformed', detail: e.message }
       throw e
@@ -121,12 +156,19 @@ export function rescoreSessions(save: SaveFileV1, opts: RescoreOptions = {}): Sa
   const skipped: SkippedResponse[] = []
   const sessions: RetestSession[] = save.sessions.map((s) => {
     const observations: Observation[] = []
+    const exposed = new Set<AxisCode>()
     s.responses.forEach((t, index) => {
       const r = resolve(t)
-      if ('observation' in r) observations.push(r.observation)
-      else skipped.push({ session_id: s.session_id, index, item_id: t[0], reason: r.skip, ...(r.detail !== undefined ? { detail: r.detail } : {}) })
+      if ('observation' in r) {
+        observations.push(r.observation)
+        return
+      }
+      skipped.push({ session_id: s.session_id, index, item_id: t[0], reason: r.skip, ...(r.detail !== undefined ? { detail: r.detail } : {}) })
+      const axis = r.axis ?? itemAxis(t[0]) // exposure still counts as a test of the axis (§7.8)
+      if (axis !== undefined) exposed.add(axis)
     })
-    return { session_id: s.session_id, started_utc: s.started_utc, observations }
+    const exposed_axes = AXIS_CODES.filter((k) => exposed.has(k))
+    return { session_id: s.session_id, started_utc: s.started_utc, observations, ...(exposed_axes.length > 0 ? { exposed_axes } : {}) }
   })
   const score = rescoreRetest(sessions, opts)
   return { ...score, n_scored: sessions.reduce((n, s) => n + s.observations.length, 0), skipped }
