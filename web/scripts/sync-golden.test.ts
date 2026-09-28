@@ -16,10 +16,10 @@ const SCRIPT = join(WEB, 'scripts', 'sync-golden.sh')
 const FIXTURES = join(WEB, 'src', 'engine', '__fixtures__')
 /** `$HB_BANK_DIR`, else the sibling `humanbench-bank` (as for the dumps). */
 const BANK = dirname(dirname(bankDumpsDir()))
-const FILES = ['sigma_v2.json', 'scoring_v1.json'] as const
+const FILES = ['sigma_v2.json', 'scoring_v1.json', 'retest_v1.json'] as const
 
 describe('golden fixtures match the sibling bank repo (A17)', () => {
-  it('has both fixture copies committed', () => {
+  it('has every fixture copy committed', () => {
     for (const f of FILES) expect(existsSync(join(FIXTURES, f)), f).toBe(true)
   })
 
@@ -46,7 +46,7 @@ describe('scripts/sync-golden.sh', () => {
   const run = (env: Record<string, string>): string =>
     execFileSync('sh', [SCRIPT], { env: { ...process.env, ...env }, encoding: 'utf8' })
 
-  it('copies both golden files byte for byte', () => {
+  it('copies every golden file byte for byte', () => {
     const tmp = mkTmp()
     const bank = join(tmp, 'bank')
     const dest = join(tmp, 'dest')
@@ -72,7 +72,7 @@ describe('scripts/sync-golden.sh', () => {
       encoding: 'utf8',
     })
     expect(res.status).toBe(1)
-    expect(res.stderr).toContain('lacks: scoring_v1.json')
+    expect(res.stderr).toContain('lacks: scoring_v1.json retest_v1.json')
     expect(res.stdout).toContain('not a git checkout')
     expect(readdirSync(dest)).toEqual(['sigma_v2.json'])
     expect(readFileSync(join(dest, 'sigma_v2.json'), 'utf8')).toBe('{"old": true}\n')

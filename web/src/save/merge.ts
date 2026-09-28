@@ -23,7 +23,8 @@
  * - `$schema`, `schema_version`, `bank_version`: those of the running app ({@link SaveContext}).
  * - `posterior_cache` (§8 step 4): kept only if its `param_version` is the context's, its shapes
  *   are consistent, and it was computed over exactly the merged sessions; otherwise dropped, and
- *   the caller re-scores from `responses` (§8 step 3, §7.8; M1.Q adds the retest model).
+ *   the caller re-scores from `responses` (§8 step 3, §7.8: `rescoreSessions` in `rescore.ts`,
+ *   M1.Q, applies the retest model; `posteriorCacheOf` builds the new cache).
  * - file-level `sig` (§8, superseded by A16): kept only if the merged body is byte-identical under
  *   RFC 8785 to that input's body, i.e. while the MAC can still verify. Session `sig`s (A16) travel
  *   with their sessions and name the anon_id they bind (`SessionSig.anon_id`), so they still

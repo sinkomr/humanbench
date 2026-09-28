@@ -65,7 +65,13 @@ export interface ItemBase {
  * One response in the save file (DESIGN §8):
  * `[item_id, pretest(0/1), response, correct(0/1/null), rt_ms, confidence_pct, extra?]`.
  * `correct` is null for unkeyed or continuous responses; `confidence_pct` is null when no
- * confidence was asked (§3 row 12: 50–100 on tier-a answers); `extra` carries e.g. RT trial arrays.
+ * confidence was asked (§3 row 12: 50–100 on tier-a answers); `extra` carries optional extras.
+ *
+ * Block responses (kind 'block', A10: RT, span, coding, reading): a writer (M1.15) puts the
+ * family's block response object (e.g. `RtResponse`, with every trial) in `response`, with
+ * `correct` null. The §8 example's layout, `response` = "trials" with the trial data in `extra`,
+ * is also read when re-scoring (`save/rescore.ts` `blockResponseOf`); its data must still be the
+ * family's response object (a bare RT list has no choices and is malformed).
  */
 export type ResponseTuple = [
   item_id: string,

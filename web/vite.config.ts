@@ -7,6 +7,15 @@ import { defineConfig } from 'vitest/config'
 const SCHEMA_DIR = fileURLToPath(new URL('../schema/', import.meta.url))
 
 /**
+ * HTML entry points. Besides the app, the RT timing self-test (ROADMAP M1.23, DESIGN §11.6) is its
+ * own page at <base>rt-selftest.html, linked from nowhere prominent.
+ */
+export const PAGES: Readonly<Record<string, string>> = {
+  index: fileURLToPath(new URL('./index.html', import.meta.url)),
+  rt_selftest: fileURLToPath(new URL('./rt-selftest.html', import.meta.url)),
+}
+
+/**
  * Publishes the repo-root schema/*.json files at <base>schema/ in the build, so the
  * save file's "$schema" URL (DESIGN §8, .../humanbench/schema/save-v1.json) resolves.
  */
@@ -45,6 +54,7 @@ export default defineConfig(({ mode }) => {
     // Dev-only routes (src/dev/, e.g. the M1.16 blob demo): on in dev and tests, and in a build
     // with VITE_HB_DEV_ROUTES=1 (the Playwright e2e build); a plain production build drops them.
     define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)) },
+    build: { rolldownOptions: { input: { ...PAGES } } },
     test: {
       // A safety net above vitest's 5 s default, so a busy machine (e.g. the bank's pytest running
       // alongside) does not fail seconds-long tests; heavy tests still set their own timeouts.

@@ -12,11 +12,13 @@ Status: static MVP in progress (milestone M1). The design spec is in
 ## Layout
 
 - `web/`: the app (Vite, Svelte 5, TypeScript strict), deployed to GitHub Pages under `/humanbench/`
-  - `web/src/engine/`: scoring, timing
+  - `web/src/engine/`: scoring (MAP/Laplace, EAP, the §7.8 retest model for multi-session saves), timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/tasks/`: task families
   - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
+
+  - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/viz/`: blob and bar views, export
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
@@ -162,6 +164,29 @@ an intended visual change, update them:
 cd web
 npx playwright test e2e/gallery.spec.ts --project=chromium --update-snapshots
 ```
+
+### RT timing self-test
+
+`/humanbench/rt-selftest.html` (ROADMAP M1.23, DESIGN §11.6) checks how precisely a browser and
+display can time reaction-time trials. It measures the refresh rate, rAF frame-interval jitter, the
+`performance.now()` resolution, the onset scheduling error (the frame a stimulus appears in versus
+the first refresh at or after its target), and the delay from key and pointer events to their
+handlers. Each check shows p50, p95 and max; it passes when its p95 is below 5 ms. The pass rule is
+the p95, not the max, so up to 5% of samples may be slower: a few dropped frames at 120 Hz (8.3 ms)
+still pass, and the max column shows them. The page ends with a JSON report to copy. It is linked
+from nowhere else and asks search engines not to index it.
+
+To run it on a local production build, open http://localhost:4173/humanbench/rt-selftest.html
+after:
+
+```zsh
+cd web
+npm run build
+npm run preview
+```
+
+Keep the tab in front, on the display under test (for example a 120 Hz MacBook panel), with other
+busy tabs closed. `?quick=1` runs small samples (the e2e smoke test uses it); the report marks it.
 
 ### Procedural families
 

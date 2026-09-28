@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copy the non-secret golden fixtures bank -> pub (ROADMAP A17):
-#   ../humanbench-bank/golden/{sigma_v2,scoring_v1}.json -> web/src/engine/__fixtures__/
+#   ../humanbench-bank/golden/{sigma_v2,scoring_v1,retest_v1}.json -> web/src/engine/__fixtures__/
 # The bank repo is the sibling of this repo's root (override with HB_BANK_DIR; the destination
 # can be overridden with HB_FIXTURES_DIR). When the bank is absent (e.g. in CI) nothing is
 # copied and the committed fixtures stay as they are. When the bank lacks any of the files
@@ -12,7 +12,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 bank=${HB_BANK_DIR:-"$repo/../humanbench-bank"}
 dest=${HB_FIXTURES_DIR:-"$repo/web/src/engine/__fixtures__"}
-files="sigma_v2.json scoring_v1.json"
+files="sigma_v2.json scoring_v1.json retest_v1.json"
 
 if [ ! -d "$bank/golden" ]; then
   echo "sync-golden: no bank repo at $bank; fixtures left unchanged"
