@@ -15,6 +15,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/engine/`: scoring, timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/tasks/`: task families
+  - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/viz/`: blob and bar views, export
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
@@ -104,6 +105,18 @@ The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `ma
 pull requests, with the browsers cached, and uploads the report as an artifact.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+
+### Renderers
+
+Each family's renderer lives in `web/src/render/<family>/` (ROADMAP M1.13). A renderer is a Svelte
+component that takes the item's `spec`, never its key, and calls `onrespond(response)` with exactly
+the response the family's `score()` takes (`web/src/render/common/props.ts`). `web/src/render/entry.ts`
+maps the typed-entry and block families (series, quant, span_fwd, span_bwd, corsi, rt_simple,
+rt_choice4, coding, reading) to their renderers; `web/src/render/visual.ts` maps the image
+families. Timing uses animation frames for onsets and `performance.now()` for responses, through
+the RT timing utilities (`web/src/tasks/rt/timing.ts`). `web/src/render/entry-leak.dom.test.ts`
+renders hundreds of generated instances and fails if the key, or anything that tells the keyed
+option apart, reaches the DOM.
 
 ### Procedural families
 

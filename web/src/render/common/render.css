@@ -1,0 +1,122 @@
+/*
+ * Shared renderer styles (ROADMAP M1.13; DESIGN §13 WCAG 2.2 AA): colour tokens with >= 4.5:1
+ * text contrast in light and dark, a visible focus ring, 44 px touch targets, sizes in rem so
+ * 200% zoom reflows, and no motion unless the user allows it (prefers-reduced-motion).
+ */
+
+.hb-render {
+  --r-fg: #1f1d24;
+  --r-muted: #4a4652;
+  --r-bg: #ffffff;
+  --r-surface: #f3f2f6;
+  --r-border: #75707f;
+  --r-accent: #1d4ed8;
+  --r-accent-fg: #ffffff;
+  --r-focus: #b45309;
+  --r-lit: #f5b800;
+  --r-lit-ring: #1f1d24;
+  --r-block: #3f4a8a;
+  --r-note: #7a2e0e;
+
+  color: var(--r-fg);
+  background: var(--r-bg);
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .hb-render {
+    --r-fg: #f1f0f4;
+    --r-muted: #c9c6d1;
+    --r-bg: #16151b;
+    --r-surface: #24232b;
+    --r-border: #a09aad;
+    --r-accent: #8fb0ff;
+    --r-accent-fg: #0b0a0f;
+    --r-focus: #fbbf24;
+    --r-lit: #ffd84d;
+    --r-lit-ring: #ffffff;
+    --r-block: #8e9bea;
+    --r-note: #fdba74;
+  }
+}
+
+.hb-render *,
+.hb-render *::before,
+.hb-render *::after {
+  box-sizing: border-box;
+}
+
+.hb-render :focus-visible {
+  outline: 3px solid var(--r-focus);
+  outline-offset: 2px;
+}
+
+.hb-render .hb-btn {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--r-border);
+  border-radius: 0.5rem;
+  background: var(--r-surface);
+  color: var(--r-fg);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hb-render .hb-btn.hb-primary {
+  background: var(--r-accent);
+  border-color: var(--r-accent);
+  color: var(--r-accent-fg);
+  font-weight: 600;
+}
+
+.hb-render .hb-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.hb-render .hb-instructions {
+  max-width: 38rem;
+  margin: 0 0 1rem;
+}
+
+.hb-render .hb-status {
+  min-height: 1.5em;
+  margin: 0.5rem 0;
+  color: var(--r-muted);
+}
+
+.hb-render .hb-note {
+  color: var(--r-note);
+  margin: 0.5rem 0 0;
+}
+
+.hb-render .hb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.hb-render .hb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hb-render .hb-btn {
+    transition: background-color 120ms ease-out;
+  }
+}
