@@ -30,23 +30,21 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: wf4** (`wf_aea602a7-86e`, started 2026-09-28 02:30). Its chains each run in a worktree on branch `wf4/<name>`:
-  - `render-visual`: M1.13 rotation and matrices.
-  - `render-entry`: M1.13 entry/span/RT/coding/reading, plus the dev-only G7 review page.
-  - `blob`: M1.16.
-  - `rtself-retest`: M1.23, then M1.Q.
-  - `catsim`: M1.4b.
-  - `m32`: M3.2.
-  - `calib2`: M4.3–M4.5.
-
-  After the chains come the merger, the audit (acceptance and UI-rules lenses) and repair.
-- **If interrupted:** check `git branch --list 'wf4/*'` and `git worktree list`. Finish each chain on its own branch, then merge them in the order above. Then run all gates plus `npm run e2e`.
+- **Nothing is in flight.** The resume ticks ended at 06:23 on 2026-09-28, as the user asked. wf4 is merged, audited, repaired and pushed.
+- **Decision needed:** the M1.4b (b) criterion. See ROADMAP M1.4b.
+- **Next batch (wf5, with the user's OK):**
+  - M1.15 session flow (includes the QR coverage-floor fix for the session clock);
+  - M1.R reveal;
+  - M1.18 export;
+  - M1.21 accessibility pass;
+  - M1.22 full e2e.
+  - Bank: M3.3/M3.4 (including G7 ingest), M3.6/M3.7, M3.9, and M4.6–M4.9.
 - **Process note:** each task has a task commit, then a "review fixes" commit, then a merge commit. It is not squashed, because squashing would rewrite pushed history. Ask the user before changing this.
 
 ## Needs you (blocked on the user)
 
-- [ ] **RT jitter self-test** (M1.23): run the self-test page on a 120 Hz Mac once it exists.
-- [ ] **G7 spot audits** (§4.4): 30 instances per procedural family (about 8 families, ~4 h total) once the review page exists. For M3, 60 items per finite batch.
+- [ ] **RT jitter self-test** (M1.23): the page is ready. Run `cd ~/code/humanbench/web`, then `npm run build`, then `npm run preview`, and open `rt-selftest.html` on a 120 Hz Mac (or use the live Pages URL once it is pushed). Pass means p95 < 5 ms.
+- [ ] **G7 spot audits** (§4.4): the review page is ready. Run `cd ~/code/humanbench/web` then `npm run review`. It shows 30 instances per family (about 4 h in total), and you export the JSON when done. For M3, 60 items per finite batch.
 - [ ] **Ollama** (G4, M3): run `brew install ollama` and pull two models from different families that fit 16 GB, e.g. a Qwen ~14B and a Gemma ~9B. Claude-authored finite items stay out of `live` until these run (A6).
 - [ ] **Local Postgres** (M2.0): optionally `brew install postgresql@17`. Otherwise Claude uses a pip- or npm-bundled Postgres.
 - [ ] **Supabase project** (M2.6): a free project, the region (us-east or eu-central), secrets, a Vault HMAC key, an age keypair for backups, and CAPTCHA keys.
@@ -80,4 +78,8 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
   - Added ADR A18.
   - Gates: pub 1,482 unit tests plus 18 e2e (chromium, webkit, iPhone); bank 1,828 tests.
   - Known flaky test: the scorer's 3PL property test has hypothesis cases with two posterior modes. It was made tolerant (it asserts some local mode). Whether MAP should search for the global mode is open (it needs new golden vectors).
+- 2026-09-28 07:20: **wf4 done** (25 agents; it paused once at the usage limit and resumed by itself).
+  - Tasks: M1.13 (9 renderers), the G7 review page (Claude's half), M1.16 blob, M1.23 self-test page, M1.Q, M1.4b (criterion (b) open), M3.2, and M4.3–M4.5.
+  - The audit found 8 issues; the repair fixed all 7 actionable ones: the M1.4b parity framing, the M4.5 metric (A19), the §9.3 fuzz, a WebKit ResizeObserver error, focus at the end of blocks, the G7 export format, and the random lint in render/ and viz/.
+  - Gates: pub 1,927 unit tests plus 168 e2e; bank about 2,260 tests.
 
