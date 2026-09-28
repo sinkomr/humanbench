@@ -11,10 +11,11 @@ Status: static MVP in progress (milestone M1). The design spec is in
 ## Layout
 
 - `web/`: the app (Vite, Svelte 5, TypeScript strict), deployed to GitHub Pages under `/humanbench/`
-  - `web/src/engine/`: scoring, save file, timing
+  - `web/src/engine/`: scoring, timing
+  - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/tasks/`: task families
   - `web/src/viz/`: blob and bar views, export
-- `schema/`: JSON Schemas (the save file, from M1); the build publishes each `schema/*.json` at `/humanbench/schema/`
+- `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build) and `pages.yml` (deploy on push to `main`)
 
 ## Development
