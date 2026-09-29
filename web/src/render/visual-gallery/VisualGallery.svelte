@@ -117,5 +117,10 @@
     min-height: 2.75rem;
     padding: 0.5rem 1rem;
     font: inherit;
+    color: var(--text-strong);
+    background: var(--bg);
+    border: 1px solid var(--text-strong);
+    border-radius: 0.375rem;
+    cursor: pointer;
   }
 </style>

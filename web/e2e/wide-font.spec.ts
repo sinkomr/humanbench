@@ -1,0 +1,79 @@
+/**
+ * Reflow under wide fonts (WCAG 1.4.10; ROADMAP M1.16, M1.A). The Linux CI runners render the
+ * system-ui stack in a font wider than macOS's (DejaVu Sans), which overflowed the blob demo at
+ * 320 px while local runs passed. Here every page font is forced to a wide face (Verdana, else
+ * DejaVu Sans) with extra letter spacing, so a layout that only fits narrow fonts fails on any
+ * machine. The layout must absorb font metrics (wrapping, min-width: 0), not rely on them.
+ */
+
+import { expect, test, type Page } from '@playwright/test'
+
+/**
+ * Wider than either platform's default: a wide face, plus 0.06 em between letters outside SVG, and
+ * no automatic hyphenation (Chromium on Linux has no hyphenation dictionaries).
+ */
+const WIDE_FONT_CSS = `
+  html, html * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; hyphens: manual !important; -webkit-hyphens: manual !important; }
+  html *:not(svg):not(svg *) { letter-spacing: 0.06em !important; }
+`
+
+/** Injected before any page script runs, so the charts measure their text in the wide font. */
+async function useWideFont(page: Page): Promise<void> {
+  // The document is still empty when init scripts run; readyState turns 'interactive' before the
+  // deferred (module) app script runs.
+  await page.addInitScript(`(() => {
+    const add = () => {
+      if (document.getElementById('hb-wide-font') || !document.head) return
+      const s = document.createElement('style')
+      s.id = 'hb-wide-font'
+      s.textContent = ${JSON.stringify(WIDE_FONT_CSS)}
+      document.head.appendChild(s)
+    }
+    add()
+    document.addEventListener('readystatechange', add)
+  })()`)
+}
+
+/**
+ * Horizontal overflow of the page in CSS px (0 = no sideways scrolling), and on overflow the
+ * elements that stick out furthest, to name the culprit. A string expression: no DOM lib.
+ */
+async function overflow(page: Page, where: string): Promise<void> {
+  const r = await page.evaluate<{ px: number; culprits: string[] }>(`(() => {
+    const px = document.documentElement.scrollWidth - window.innerWidth
+    const culprits = px <= 0 ? [] : [...document.querySelectorAll('body *')]
+      .map((el) => ({ el, right: el.getBoundingClientRect().right }))
+      .filter((x) => x.right > window.innerWidth + 0.5 && !x.el.closest('.visually-hidden'))
+      .sort((a, b) => b.right - a.right)
+      .slice(0, 6)
+      .map((x) => x.el.tagName.toLowerCase() + '.' + [...x.el.classList].join('.') + ' "' + (x.el.textContent || '').trim().slice(0, 30) + '" right=' + x.right.toFixed(1))
+    return { px, culprits }
+  })()`)
+  expect(r.px, `${where}: ${r.culprits.join(' | ')}`).toBeLessThanOrEqual(0)
+}
+
+test.describe('wide fonts: the blob demo route reflows at 320 CSS px (WCAG 1.4.10)', () => {
+  for (const width of [320, 360]) {
+    test(`blob view, bar view and drill-downs fit ${width} px`, async ({ page }) => {
+      await useWideFont(page)
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('./#/dev/blob?profile=full')
+      await expect(page.locator('svg.hb-blob').first()).toBeVisible()
+      await expect.poll(() => page.evaluate<string>('getComputedStyle(document.body).fontFamily')).toContain('Verdana')
+      await overflow(page, 'blob view')
+      for (const c of ['Knowledge', 'Quantitative']) {
+        await page.getByRole('button', { name: c, exact: true }).click()
+        await expect(page.getByRole('heading', { level: 3, name: `${c}: facets` })).toBeVisible()
+        await overflow(page, `blob view, ${c}`)
+      }
+      await page.getByRole('button', { name: 'Bar view' }).click()
+      await expect(page.locator('svg.lollipop').first()).toBeVisible()
+      await overflow(page, 'bar view')
+      for (const c of ['Knowledge', 'Quantitative']) {
+        await page.getByRole('button', { name: c, exact: true }).click()
+        await expect(page.getByRole('heading', { level: 3, name: `${c}: facets` })).toBeVisible()
+        await overflow(page, `bar view, ${c}`)
+      }
+    })
+  }
+})
