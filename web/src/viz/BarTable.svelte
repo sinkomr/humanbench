@@ -177,14 +177,23 @@
     stroke-width: 2;
   }
   /* Narrow screens: the table must fit without scrolling sideways (WCAG 1.4.10 reflow), so it
-     tightens, lets intervals wrap, and drops the group column (the order already groups rows). */
+     tightens, lets intervals wrap, and drops the group column (the order already groups rows).
+     table-layout: fixed caps the table at its container's width regardless of font metrics: with
+     the default auto layout a browser grows the table past 100% to fit each column's min-content
+     (an unbroken run of glyphs), and a wider CI font (e.g. Linux's Liberation/DejaVu fallback vs
+     macOS's system font) pushes that past the viewport even though every cell here can already
+     wrap at a space; overflow-wrap/word-break is the same belt-and-suspenders for a single word
+     wider than its now-fixed column. */
   @media (max-width: 40rem) {
     .hb-bars {
+      table-layout: fixed;
       font-size: 0.8125rem;
     }
     th,
     td {
       padding: 0.3rem 0.2rem;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     th {
       hyphens: auto;
@@ -196,11 +205,32 @@
     .hb-bars-wrap:not(.visually-hidden) .group-col {
       display: none;
     }
+    /* Column shares for the 4 visible columns (skill, estimate, interval, relation); the skill
+       name (with its parenthetical qualifier) is the longest text, so it gets the most room. */
+    .hb-bars-wrap:not(.visually-hidden) th:first-child,
+    .hb-bars-wrap:not(.visually-hidden) td:first-child {
+      width: 32%;
+    }
+    .hb-bars-wrap:not(.visually-hidden) th:nth-child(3),
+    .hb-bars-wrap:not(.visually-hidden) td.num:nth-child(3) {
+      width: 20%;
+    }
+    .hb-bars-wrap:not(.visually-hidden) th:nth-child(4),
+    .hb-bars-wrap:not(.visually-hidden) td.num:nth-child(4) {
+      width: 26%;
+    }
+    .hb-bars-wrap:not(.visually-hidden) th:nth-child(5),
+    .hb-bars-wrap:not(.visually-hidden) td:nth-child(5):not(.stub) {
+      width: 22%;
+    }
+    .interval {
+      min-width: 0;
+    }
     .interval span {
       white-space: normal;
     }
     .lollipop {
-      min-width: 3rem;
+      min-width: 2.5rem;
     }
   }
   .visually-hidden {

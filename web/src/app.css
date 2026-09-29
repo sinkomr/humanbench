@@ -28,6 +28,22 @@ body {
   background: var(--bg);
 }
 
+/*
+ * Base button reset (shared by every page that imports app.css: the main app, review.html, the
+ * dev-only render-visual.html gallery, and selftest). Without it, a plain `<button>` keeps its
+ * UA appearance: our dark theme's `color` cascades onto it (inherited), but WebKit on Linux still
+ * paints its native grey button face (#c0c0c0) underneath, giving white-on-grey text at ~1.8:1
+ * contrast (axe: color-contrast, WCAG 1.4.3). Any component's own `button` rule (Svelte-scoped, so
+ * higher specificity) overrides this; it exists so a button is never left to UA styling.
+ */
+button {
+  font: inherit;
+  color: var(--text-strong);
+  background: var(--bg);
+  border: 1px solid var(--text-strong);
+  border-radius: 0.375rem;
+}
+
 #app {
   min-height: 100svh;
   display: flex;
