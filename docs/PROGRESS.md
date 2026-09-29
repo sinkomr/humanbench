@@ -30,16 +30,12 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **Nothing is in flight.** The resume ticks ended at 06:23 on 2026-09-28, as the user asked. wf4 is merged, audited, repaired and pushed.
-- **Decision needed:** the M1.4b (b) criterion. See ROADMAP M1.4b.
-- **Next batch (wf5, with the user's OK):**
-  - M1.15 session flow (includes the QR coverage-floor fix for the session clock);
-  - M1.R reveal;
-  - M1.18 export;
-  - M1.21 accessibility pass;
-  - M1.22 full e2e.
-  - Bank: M3.3/M3.4 (including G7 ingest), M3.6/M3.7, M3.9, and M4.6–M4.9.
-- **Process note:** each task has a task commit, then a "review fixes" commit, then a merge commit. It is not squashed, because squashing would rewrite pushed history. Ask the user before changing this.
+- **In flight: wf5** (started 2026-09-29 00:10; the user allowed up to 6 h, so it stops at about 06:10). Hourly resume ticks run at :17 from 01:17 to 05:17.
+- **Decisions (user, 2026-09-29):**
+  - M1.4b: option 1, 20 items/axis.
+  - Phase AI Part 1 is approved.
+  - Build with Sonnet 5.5 subagents; Opus reviews and judges.
+- **If interrupted:** check `git branch --list 'wf5/*'` and `git worktree list` in both repos. Finish each chain on its own branch, then merge them into `dev` and run all gates.
 
 ## Needs you (blocked on the user)
 
