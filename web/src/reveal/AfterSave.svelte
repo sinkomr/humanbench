@@ -1,7 +1,8 @@
 <!--
   What comes after the save download (DESIGN §10 "download the save file … → share card"; Phase AI
   proposal v2 §3.3; ROADMAP M1.R): three slots that appear only once the save is safe.
-  - **Share card** (M1.18 fills it): a slot with a placeholder until the card exists.
+  - **Share card** (M1.18, `ShareCard.svelte`): the picture with its skill toggles and exports, then
+    a link to the results-talk helper below it. Without a card (this component alone) a placeholder.
   - **Notes for your AI** (AI.5): a link to the builder page when there is one (`slots.ts`), else a
     placeholder. The link opens in a new tab, so the results and their save stay where they are (the
     app has no way back to them). The notes come from the person's own choices, never from results.
@@ -20,6 +21,8 @@
     NOTES_TEXT,
     SHARE_HEADING,
     SHARE_PLACEHOLDER,
+    SHARE_TALK_LEAD,
+    SHARE_TALK_LINK,
     TALK_COPIED,
     TALK_COPY,
     TALK_COPY_FAILED,
@@ -27,7 +30,7 @@
     TALK_PREAMBLE,
     TALK_TEXT,
   } from './copy'
-  import { NOTES_BUILDER_HREF } from './slots'
+  import { NOTES_BUILDER_HREF, TALK_ANCHOR_ID } from './slots'
   import './reveal.css'
 
   interface Props {
@@ -43,6 +46,18 @@
      * cards here are the placeholders until then.
      */
     readonly ai?: Snippet
+  }
+
+  /**
+   * The share card links to the results-talk helper below it (proposal §8, M1.18; R-17.13): the
+   * link moves keyboard focus to the helper's card, and the browser scrolls it into view. Without
+   * the card (a replacement that lacks the id) the browser's own anchor behaviour is left alone.
+   */
+  function jumpToTalk(e: MouseEvent): void {
+    const target = document.getElementById(TALK_ANCHOR_ID)
+    if (target === null) return
+    e.preventDefault()
+    target.focus()
   }
 
   async function clipboardCopy(text: string): Promise<boolean> {
@@ -74,6 +89,7 @@
     {:else}
       <p>{SHARE_PLACEHOLDER}</p>
     {/if}
+    <p class="talk-link" data-talk-link>{SHARE_TALK_LEAD} <a href="#{TALK_ANCHOR_ID}" onclick={jumpToTalk}>{SHARE_TALK_LINK}</a>.</p>
   </article>
 
   {#if ai}
@@ -89,7 +105,7 @@
     {/if}
   </article>
 
-  <article class="hb-reveal-card" data-slot="results-talk" aria-labelledby="{uid}-talk">
+  <article class="hb-reveal-card" data-slot="results-talk" id={TALK_ANCHOR_ID} tabindex="-1" aria-labelledby="{uid}-talk">
     <h3 id="{uid}-talk">{TALK_HEADING}</h3>
     <p>{TALK_TEXT}</p>
     <p class="preamble" id="{uid}-preamble">{TALK_PREAMBLE}</p>
@@ -102,6 +118,16 @@
 </section>
 
 <style>
+  .talk-link {
+    margin-top: 1rem;
+  }
+  .hb-reveal-card:focus {
+    outline: none;
+  }
+  .hb-reveal-card:focus-visible {
+    outline: 3px solid var(--r-focus);
+    outline-offset: 2px;
+  }
   .preamble {
     margin: 0 0 0.5rem;
     padding: 0.5rem 0.75rem;

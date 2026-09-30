@@ -39,6 +39,14 @@ export interface ResultsModel {
   readonly practiceAdjusted: boolean
 }
 
+/**
+ * How many of the save's sessions contributed a scored answer (the count a share card states,
+ * M1.18: "Based on n sessions"). A session finished at once, or with only skipped parts, is not one.
+ */
+export function scoredSessions(results: Pick<ResultsModel, 'rescore'>): number {
+  return Math.max(1, results.rescore.sessions.filter((s) => s.n_observations > 0).length)
+}
+
 /** The session's `skipped_<axis>` flag (§13, `run.ts`). */
 export function skippedIn(session: Pick<SaveSession, 'flags'>, axis: AxisCode): boolean {
   return session.flags[`skipped_${axis.toLowerCase()}`] === true

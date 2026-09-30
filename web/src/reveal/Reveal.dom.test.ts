@@ -14,14 +14,15 @@ import { buttonByText, click, fakeDisplay } from '../render/common/testing'
 import type { ShareOutcome } from '../save/io'
 import type { SaveFileV1 } from '../save/types'
 import Finished from '../session/Finished.svelte'
+import { buildCard } from '../viz/card'
 import { axisEstimates } from '../viz/profile'
 import NumbersSection from './NumbersSection.svelte'
 import { render } from '../render/common/testing'
-import { PEAKS_HEADING, TAKER_COMPARISON_TEXT, TALK_COPIED, TALK_PREAMBLE } from './copy'
+import { NOTES_TEXT, PEAKS_HEADING, TAKER_COMPARISON_TEXT, TALK_COPIED, TALK_PREAMBLE } from './copy'
 import { REVEAL_AXIS_MS } from './frames'
 import { distinctivePeaks, withinPersonContrasts } from './peaks'
 import { buildResults } from './results'
-import { TALK_PREAMBLE_MAX_CHARS } from './slots'
+import { TALK_ANCHOR_ID, TALK_PREAMBLE_MAX_CHARS } from './slots'
 import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
 let cleanup: (() => void) | undefined
@@ -350,7 +351,11 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     const after = section(m.c, 'after-save')!
     expect(before(section(m.c, 'save')!, after)).toBe(true)
     expect([...after.querySelectorAll('[data-slot]')].map((e) => e.getAttribute('data-slot'))).toEqual(['share-card', 'notes-for-ai', 'results-talk'])
-    expect(after.querySelector('[data-slot="share-card"]')!.textContent).toContain('not available in this version yet')
+    // M1.18: the share slot holds the card panel (its own tests: ShareCard.dom.test.ts).
+    const share = after.querySelector('[data-slot="share-card"]')!
+    expect(share.querySelector('[data-share-card]')).not.toBeNull()
+    expect(share.querySelector('img[data-preview]')).not.toBeNull()
+    expect(share.textContent).not.toContain('not available')
     const notes = after.querySelector('[data-slot="notes-for-ai"]')!
     expect(notes.querySelector('[data-placeholder]')).not.toBeNull()
     expect(notes.querySelector('a')).toBeNull()
@@ -389,6 +394,94 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     expect(TALK_PREAMBLE.length).toBeLessThanOrEqual(TALK_PREAMBLE_MAX_CHARS)
     expect(TALK_PREAMBLE_MAX_CHARS).toBe(340)
     expect(/\d/.test(TALK_PREAMBLE)).toBe(false)
+  })
+})
+
+describe('the share card in the reveal (M1.18)', () => {
+  const cardProps = { prepareMs: 0, makePng: async (_svg: string, width: number, height: number) => ({ blob: new Blob(['png']), width, height }) }
+  const decode = (c: HTMLElement): string => {
+    const src = c.querySelector('img[data-preview]')!.getAttribute('src')!
+    return decodeURIComponent(src.slice(src.indexOf(',') + 1))
+  }
+
+  it('is the card of the person\'s own results: their measured skills, their credible peaks, the sessions that counted', () => {
+    const high = new Set<AxisCode>(['MAT', 'QR', 'VOC'])
+    const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 2 : -1])) as Record<AxisCode, number>
+    const b = botSave('s_REVEALDOM0000101', { level })
+    const m = mountFinished(b, { card: cardProps })
+    click(buttonByText(m.c, 'Download save file'))
+    const { measured, results } = peaksOf(b)
+    const estimates = axisEstimates(results.input)
+    const expected = buildCard({ estimates, peaks: distinctivePeaks(results.rescore, measured, { max: AXIS_CODES.length }), sessions: 1 })
+    expect(expected.peaks.length).toBeGreaterThan(0)
+    expect(decode(m.c)).toBe(expected.svg)
+    const boxes = [...m.c.querySelectorAll('input[data-skill]')].map((i) => i.getAttribute('data-skill'))
+    expect(boxes).toEqual(measured)
+    expect(decode(m.c)).toContain('Based on 1 session<')
+  })
+
+  it('starts from every credible peak: hiding the strongest brings the fourth one up', () => {
+    const high = new Set<AxisCode>(['MAT', 'QR', 'SPA', 'WM'])
+    const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 3 : -3])) as Record<AxisCode, number>
+    const b = botSave('s_REVEALDOM0000106', { level })
+    const { measured, results } = peaksOf(b)
+    const all = distinctivePeaks(results.rescore, measured, { max: AXIS_CODES.length })
+    expect(all.length).toBeGreaterThanOrEqual(4) // the page lists three, the card can list the next
+    const m = mountFinished(b, { card: cardProps })
+    click(buttonByText(m.c, 'Download save file'))
+    const estimates = axisEstimates(results.input)
+    expect(decode(m.c)).toBe(buildCard({ estimates, peaks: all, sessions: 1 }).svg)
+    click(m.c.querySelector(`input[data-skill="${all[0]!.code}"]`))
+    const hidden = buildCard({ estimates, peaks: all, hidden: [all[0]!.code], sessions: 1 })
+    expect(hidden.peaks.map((p) => p.code)).toEqual(all.slice(1, 4).map((p) => p.code))
+    expect(decode(m.c)).toBe(hidden.svg)
+  })
+
+  it('states the sessions a returning person\'s profile rests on', () => {
+    const a = bot('s_REVEALDOM0000102')
+    const b = botSave('s_REVEALDOM0000103', { base: a.save, startedMs: T0_MS + 8 * DAY_MS })
+    const m = mountFinished(b, { card: cardProps })
+    click(buttonByText(m.c, 'Download save file'))
+    expect(decode(m.c)).toContain('Based on 2 sessions<')
+  })
+
+  it('does not exist before the save, and never carries the notes card, the helper or the resource line', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000104'), { card: cardProps })
+    expect(m.c.querySelector('[data-share-card]')).toBeNull()
+    click(buttonByText(m.c, 'Download save file'))
+    const svg = decode(m.c)
+    for (const probe of [TALK_PREAMBLE, NOTES_TEXT, RESOURCE_LINE, 'Notes for your AI', 'Never paste your save file']) expect(svg).not.toContain(probe)
+    expect(m.c.querySelector('[data-share-card]')!.textContent).not.toContain(RESOURCE_LINE)
+  })
+
+  it('links to the results-talk helper below it, and the link moves focus there', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000105'), { card: cardProps })
+    click(buttonByText(m.c, 'Download save file'))
+    const share = m.c.querySelector('[data-slot="share-card"]')!
+    const link = share.querySelector<HTMLAnchorElement>('[data-talk-link] a')!
+    expect(link.getAttribute('href')).toBe(`#${TALK_ANCHOR_ID}`)
+    expect(link.textContent).toBe('Talking about your results with an AI')
+    const talk = m.c.querySelector('[data-slot="results-talk"]') as HTMLElement
+    expect(talk.id).toBe(TALK_ANCHOR_ID)
+    expect(before(share, talk)).toBe(true)
+    // The helper is on the same screen with its copy button and the "never paste" line.
+    expect(talk.textContent).toContain('Never paste your save file')
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(talk)
+  })
+
+  it('leaves the anchor alone when a replacement for the AI cards has no helper with that id', async () => {
+    const { createRawSnippet } = await import('svelte')
+    const AfterSave = (await import('./AfterSave.svelte')).default
+    const ai = createRawSnippet(() => ({ render: () => '<article data-slot="replacement">Working with AI</article>' }))
+    const r = render(AfterSave, { ai })
+    cleanup = r.destroy
+    const link = r.container.querySelector<HTMLAnchorElement>('[data-talk-link] a')!
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(false)
   })
 })
 

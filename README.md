@@ -19,7 +19,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
-  - `web/src/viz/`: blob and bar views, export
+  - `web/src/viz/`: blob and bar views, the share card and its export
   - `web/src/reveal/`: the results and reveal flow (build-up, distinctive peaks, required save, worked examples, retest advice, norms and pace)
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
@@ -160,7 +160,7 @@ blob builds up skill by skill (`frames.ts`; `prefers-reduced-motion` skips it an
 ends it), then come the distinctive peaks (`peaks.ts`: within-person contrasts whose 90% interval
 excludes 0, ROADMAP A12), the cluster drill-down, and the save file, which is required before
 leaving: a `beforeunload` guard (`guard.ts`) stays on until the file is downloaded or shared. Only
-then do the share card slot, the "Notes for your AI" card and the results-talk helper appear
+then do the share card, the "Notes for your AI" card and the results-talk helper appear
 (`AfterSave.svelte`, `slots.ts`; Phase AI). Three worked examples (`worked/`) are fresh procedural
 items whose solutions are derived from the item and tested against the key; their families go into
 the save's `seen_families`, so later sessions leave them out. The R-5.6.5 resource line is rendered
@@ -170,6 +170,30 @@ person picks, from the results or from the start screen of a returning person.
 The browser suite cannot sit through a full session, so `web/e2e/reveal.spec.ts` loads a simulated
 earlier session (`web/scripts/e2e-save.ts`, run with `tsx` because Playwright's loader cannot import
 the passages JSON) on the ready screen and finishes at once.
+
+### Share card
+
+The share card (ROADMAP M1.18, DESIGN §9.9) is a 1200 × 630 picture of the blob, the most distinctive
+peaks and the number of sessions. `web/src/viz/card.ts` builds it as an SVG string (so it is
+deterministic and tested in Node), `card-copy.ts` holds every line of text on it, `export.ts` draws
+the 2400 × 1260 PNG on a canvas and offers the SVG file and the share sheet, and
+`web/src/reveal/ShareCard.svelte` is the panel in the share slot after the save. Everything happens
+on the device: no request is made and there is no image server (`web/scripts/share-card.test.ts`
+scans for network, storage and notes imports). Tests pin these rules:
+
+- only measured skills the person leaves ticked are drawn, and a hidden skill leaves no trace: the
+  file is byte-identical whatever its estimate is;
+- Emotion Reading is put on a card only at or above the 0 SD ring (R-5.6.4), whether or not it is
+  ticked, and no skill is ever picked out as a weakness;
+- the peaks are the credible ones (A12) that are on the card, at most three, each with its 90% range;
+- the blob is the on-page blob (`card.dom.test.ts` compares them element by element), with a linear
+  radius, its uncertainty, and no total, area or single score;
+- every text on the card is an axis label, a ring label or a line of `card-copy.ts`, so notes text
+  (Phase AI), the R-5.6.5 resource line and the save file cannot reach it;
+- the panel links to the results-talk helper below it.
+
+`web/e2e/share-card.spec.ts` checks the real PNG (2400 × 1260 with the blob drawn), the SVG, the
+toggles, the reflow at 320 px and axe in Chromium, WebKit and the iPhone 13 emulation.
 
 ### Renderers
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../engine/axes'
 import { assertValidSave } from '../save/validate'
-import { buildResults, skippedIn } from './results'
+import { buildResults, scoredSessions, skippedIn } from './results'
 import { DAY_MS, T0_MS, botSave } from './test-support'
 
 describe('buildResults (M1.Q re-score of the save)', () => {
@@ -104,5 +104,19 @@ describe('buildResults (M1.Q re-score of the save)', () => {
   it('never carries a total, a mean or an area across skills', () => {
     const r = buildResults(botSave('s_RESULTS000000013').save)!
     expect(Object.keys(r).sort()).toEqual(['facetObservations', 'input', 'nSessions', 'practiceAdjusted', 'rescore', 'skipped'])
+  })
+})
+
+describe('scoredSessions (the count a share card states, M1.18)', () => {
+  it('counts the sessions that contributed a scored answer, not every session in the save', () => {
+    const one = botSave('s_RESULTS000000090')
+    expect(scoredSessions(buildResults(one.save)!)).toBe(1)
+    const two = botSave('s_RESULTS000000091', { base: one.save, startedMs: T0_MS + 8 * DAY_MS })
+    expect(scoredSessions(buildResults(two.save)!)).toBe(2)
+    // A session finished at once is in the save but is not one the profile rests on.
+    const empty = botSave('s_RESULTS000000092', { base: two.save, startedMs: T0_MS + 16 * DAY_MS, drive: (b) => b.run.finishEarly() })
+    const r = buildResults(empty.save)!
+    expect(r.nSessions).toBe(3)
+    expect(scoredSessions(r)).toBe(2)
   })
 })

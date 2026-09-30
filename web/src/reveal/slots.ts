@@ -13,8 +13,14 @@
  *   characters) to paste before talking about results with an assistant, and the line that says
  *   never to paste the save file. The text is `copy.ts` TALK_PREAMBLE; the card only offers it.
  *   Notes text never appears on a share card (M1.18 test) and no results enter the preamble.
- * - **Share card** (M1.18): a section that M1.18 fills; until then it says so.
+ * - **Share card** (M1.18, `ShareCard.svelte`): the picture, its skill toggles and its exports fill
+ *   the share slot. The slot also links to the results-talk helper by {@link TALK_ANCHOR_ID}: the
+ *   notes module's own card, if it replaces the built-in one (`AfterSave`'s `ai` snippet), must
+ *   carry an element with that id, so the link keeps working.
  */
+
+/** The id of the results-talk helper's card, which the share card links to (proposal §8, M1.18). */
+export const TALK_ANCHOR_ID = 'hb-results-talk'
 
 /** Route of the "Notes for your AI" builder, or null while there is none (AI.5). */
 export const NOTES_BUILDER_HREF: string | null = null

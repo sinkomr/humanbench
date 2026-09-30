@@ -2,12 +2,13 @@
   The end of a session (ROADMAP M1.15, M1.R; DESIGN §10 "Reveal flow"): why it ended, what it
   covered, and the reveal (`reveal/Reveal.svelte`): the profile builds up skill by skill, the
   distinctive peaks, the drill-down, the required save file with its leave-guard, and then the
-  share card slot, the notes cards, three worked examples, the retest advice and the results footer.
+  share card (M1.18), the notes cards, three worked examples, the retest advice and the results footer.
   The results are the practice-adjusted re-score of the WHOLE save (`reveal/results.ts`, M1.Q), so a
   returning person sees all their sessions together. A save with nothing scored shows no profile,
   and still offers the file.
 -->
 <script lang="ts">
+  import type { ComponentProps } from 'svelte'
   import type { AxisCode } from '../engine/axes'
   import type { RendererTiming } from '../render/common/props'
   import type { ShareOutcome } from '../save/io'
@@ -42,6 +43,8 @@
     readonly share?: (save: SaveFileV1) => Promise<ShareOutcome>
     readonly canShare?: boolean
     readonly copyText?: (text: string) => Promise<boolean>
+    /** Injectable for tests: how the share card makes and hands over its images. */
+    readonly card?: ComponentProps<typeof Reveal>['card']
   }
 
   let {
@@ -60,6 +63,7 @@
     share,
     canShare,
     copyText,
+    card,
   }: Props = $props()
 
   // Made once, when the results appear: the save is complete now.
@@ -99,6 +103,7 @@
       {share}
       {canShare}
       {copyText}
+      {card}
     />
   {/if}
 </Screen>

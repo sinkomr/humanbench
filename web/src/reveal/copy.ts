@@ -59,9 +59,43 @@ export const LEAVE_NO = 'Stay and save'
 
 export const AFTER_HEADING = 'After you save'
 
-/** The share card slot (M1.18 fills it): the card is made on this device and nothing is uploaded. */
+/**
+ * The share card slot (M1.18, `ShareCard.svelte`): the card is made on this device and nothing is
+ * uploaded. The words ON the card are in `viz/card-copy.ts`. `SHARE_PLACEHOLDER` is what the slot
+ * says when a caller gives it no card (a standalone `AfterSave`); the reveal always does.
+ */
 export const SHARE_HEADING = 'Share card'
-export const SHARE_PLACEHOLDER = 'A picture of your profile to share, where you can hide any skill, is not available in this version yet. Nothing is shared unless you choose to.'
+export const SHARE_PLACEHOLDER = 'A picture of your profile to share, where you can hide any skill, is not available here. Nothing is shared unless you choose to.'
+export const SHARE_INTRO =
+  'A picture of your profile that you can post or send. It is made on this device and nothing is uploaded. It shows the skills you leave ticked, your most distinctive peaks and how many sessions it rests on, and never a total or a single score.'
+export const SHARE_SKILLS_LEGEND = 'Skills on the card'
+export const SHARE_SKILLS_HELP = 'Untick any skill to leave it off the card. Skills that were not measured are not on the card.'
+export const SHARE_SHOW_ALL = 'Show all'
+export const SHARE_HIDE_ALL = 'Hide all'
+/**
+ * R-5.6.4: said about Emotion Reading whenever it was measured, whatever its estimate: a card carries
+ * it only at or above the 0 SD ring (so the note does not say where it is).
+ */
+export const SHARE_EMO_RULE = 'Only put on a card when it is at or above the 0 SD ring. Scores here depend a lot on vocabulary, culture and familiarity with tests.'
+export const SHARE_COLOURS_LEGEND = 'Card colours'
+export const SHARE_LIGHT = 'Light'
+export const SHARE_DARK = 'Dark'
+export const shareCount = (n: number): string => `${n} ${n === 1 ? 'skill is' : 'skills are'} on the card.`
+export const shareTooFew = (n: number, min: number): string => `Tick at least ${min} skills to make a card (${n} ticked).`
+export const SHARE_PNG = 'Download image (PNG)'
+export const SHARE_SVG = 'Download vector image (SVG)'
+export const SHARE_SHARE = 'Share image'
+export const SHARE_PREPARING = 'Preparing the PNG…'
+export const SHARE_SIZES = 'The PNG is 2400 × 1260 px, the card at 2×. The SVG is 1200 × 630 px and stays sharp at any size.'
+export const sharePngDone = (w: number, h: number): string => `Image saved: ${w} × ${h} px.`
+export const SHARE_SVG_DONE = 'Vector image saved.'
+export const SHARE_SHARED = 'Image shared.'
+export const SHARE_SHARE_CANCELLED = 'Sharing was cancelled.'
+export const SHARE_SHARE_FAILED = 'The image could not be shared. Download it instead.'
+export const SHARE_PNG_FAILED = 'This browser could not make the PNG. The vector image (SVG) still works.'
+/** The results-talk helper, linked from the share card (proposal amendment to M1.18; R-17.13). */
+export const SHARE_TALK_LEAD = 'Before you ask an AI about your results:'
+export const SHARE_TALK_LINK = 'Talking about your results with an AI'
 
 /** Phase AI, AI.5 builder card (slot until the route exists). */
 export const NOTES_HEADING = 'Notes for your AI'

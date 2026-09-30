@@ -157,7 +157,7 @@ test.describe('the required save (§10)', () => {
     expect(await unloadIsGuarded(page)).toBe(false)
     await expect(section(page, 'after-save')).toBeVisible()
     await expect(page.locator('[data-slot]')).toHaveCount(3)
-    await expect(page.locator('[data-slot="share-card"]')).toContainText('not available in this version yet')
+    await expect(page.locator('[data-slot="share-card"] [data-share-card]')).toBeVisible()
     await expect(page.locator('[data-slot="notes-for-ai"]')).toContainText('Notes for your AI')
     await expect(page.locator('[data-placeholder]')).toContainText('not available in this version yet')
     await expect(section(page, 'retest').locator('[data-focus-locked]')).toHaveCount(0)

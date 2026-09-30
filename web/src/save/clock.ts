@@ -1,6 +1,6 @@
 /**
- * Wall-clock time for save-file metadata only (DESIGN §8 `created_utc`, `started_utc`, session-id
- * time prefix). Never used for response times: those come from `performance.now()` and rAF
+ * Wall-clock time for file metadata only (DESIGN §8 `created_utc`, `started_utc`, session-id time
+ * prefix; the date in the name of an exported share card, M1.18). Never used for response times: those come from `performance.now()` and rAF
  * timestamps (CLAUDE.md, §11.6). This is the one file under `web/src` allowed to read the wall
  * clock (`scripts/timing-lint.test.ts` ALLOW list); everything else takes epoch ms as a parameter.
  *

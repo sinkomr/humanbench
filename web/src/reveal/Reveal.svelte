@@ -6,7 +6,8 @@
   4. the save file: prominent, and required before leaving. A `beforeunload` warning guards the
      tab until it is downloaded or shared, and leaving through "Back to the start" asks first. The
      20-minute focus session also leaves the results, so its form waits for the save too;
-  5. once saved: the share card slot, "Notes for your AI" and the results-talk helper;
+  5. once saved: the share card (`ShareCard.svelte`, M1.18: hide any skill, PNG / SVG, never an
+     emotion low), "Notes for your AI" and the results-talk helper;
   then three worked examples, what another session would buy (with 20-minute focus sessions and the
   7-day advice), rough external norms and the separate Pace note, and the results footer with the
   R-5.6.5 resource line (the allow-listed constant, here and nowhere else; never on a share card).
@@ -14,8 +15,8 @@
   Nothing here shows a total, an average or a single score for the person (CLAUDE.md blob rule).
 -->
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
-  import type { AxisCode } from '../engine/axes'
+  import { onMount, tick, type ComponentProps } from 'svelte'
+  import { N_AXES, type AxisCode } from '../engine/axes'
   import type { RendererTiming } from '../render/common/props'
   import type { ShareOutcome } from '../save/io'
   import type { SaveFileV1 } from '../save/types'
@@ -34,8 +35,9 @@
   import { distinctivePeaks } from './peaks'
   import RetestSection from './RetestSection.svelte'
   import RevealProfile from './RevealProfile.svelte'
-  import type { ResultsModel } from './results'
+  import { scoredSessions, type ResultsModel } from './results'
   import SavePanel from './SavePanel.svelte'
+  import ShareCard from './ShareCard.svelte'
   import WorkedSection from './WorkedSection.svelte'
   import { pickWorkedItems } from './worked'
   import './reveal.css'
@@ -63,6 +65,8 @@
     readonly share?: (save: SaveFileV1) => Promise<ShareOutcome>
     readonly canShare?: boolean
     readonly copyText?: (text: string) => Promise<boolean>
+    /** Injectable for tests: how the share card makes and hands over its images (`ShareCard.svelte`). */
+    readonly card?: Pick<ComponentProps<typeof ShareCard>, 'makePng' | 'download' | 'shareFile' | 'canShare' | 'prepareMs' | 'today'>
   }
 
   let {
@@ -83,6 +87,7 @@
     share,
     canShare,
     copyText,
+    card,
   }: Props = $props()
 
   let built = $state(false)
@@ -93,6 +98,8 @@
   const estimates = $derived(axisEstimates(results.input))
   const measured = $derived(estimates.filter((e) => e.measured).map((e) => e.code))
   const peaks = $derived(distinctivePeaks(results.rescore, measured))
+  // The card lists the strongest peaks that are ON the card, so it starts from every credible one.
+  const cardPeaks = $derived(distinctivePeaks(results.rescore, measured, { max: N_AXES }))
   const facts = $derived(normFacts(save))
   const pace = $derived(paceByAxis(save))
   const worked = $derived(pickWorkedItems(sessionId, save.seen_families))
@@ -141,7 +148,11 @@
   {#if built}
     <SavePanel {makeSave} {autosave} {saved} onsaved={() => (saved = true)} {download} {copyCode} {share} {canShare} />
     {#if saved}
-      <AfterSave {notesHref} {copyText} />
+      <AfterSave {notesHref} {copyText}>
+        {#snippet shareCard()}
+          <ShareCard {estimates} peaks={cardPeaks} sessions={scoredSessions(results)} {...card} />
+        {/snippet}
+      </AfterSave>
     {:else}
       <p class="hb-reveal-panel note" data-pending>{SAVE_PENDING}</p>
     {/if}
