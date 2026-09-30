@@ -119,6 +119,23 @@ describe('hostile and odd corpus (E11: 100% flagged)', () => {
     expect(huge.chars).toBeGreaterThan(MAX_CHECK_CHARS)
   })
 
+  it('counts length as the builder does: a file saved with a final newline, or with Windows line endings, is not over the limit for it', () => {
+    const base = BASES.short()
+    // one custom line that brings the notes to exactly the 1,500 characters short notes may have
+    const room = FORM_LIMITS.short - base.length - 1 - 2
+    expect(room, 'the short profile leaves room for one line of the person\'s own').toBeGreaterThanOrEqual(4)
+    expect(room).toBeLessThanOrEqual(200)
+    const exact = `${base}\n- ${'a'.repeat(room - 1)}.`
+    expect(exact.length).toBe(FORM_LIMITS.short)
+    for (const t of [exact, `${exact}\n`, `${exact}\n\n  `, exact.replace(/\n/g, '\r\n'), `${exact.replace(/\n/g, '\r\n')}\r\n`]) {
+      const r = checkNotes(t)
+      expect(r.flags, JSON.stringify(t.slice(-12))).toEqual([])
+      expect(r.chars).toBe(FORM_LIMITS.short)
+    }
+    // one character more is over
+    expect(checkNotes(`${base}\n- ${'a'.repeat(room)}.`).flags.map((f) => f.kind)).toEqual(['over_limit'])
+  })
+
   it('flags mutations of random notes: a hidden character, a look-alike letter, a link, a number, a trait, a steering phrase, a banned word, a long tail', () => {
     const HOMOGLYPH: Record<string, string> = { a: cp(0x430), c: cp(0x441), e: cp(0x435), i: cp(0x456), o: cp(0x43e), p: cp(0x440), x: cp(0x445), y: cp(0x443) }
     const INVISIBLE = [0x200b, 0x200c, 0x200d, 0x2060, 0xfeff, 0x202e, 0x2066, 0x00ad].map((n) => cp(n))

@@ -8,7 +8,8 @@
    *
    * Props:
    * - `saved`: true once the required save download has happened. Until then the card renders nothing.
-   * - `notesHref`: where the notes page is (the page passes its base path plus `notes.html`).
+   * - `notesHref`: where the notes page is (the page passes its base path plus `notes.html`). The link opens
+   *   in a new tab, so the reveal and its save download stay where they are.
    * - `copy`, `status`: passed to `ResultsTalk` (see there).
    * - `level`: heading level of the card title (default 2); the helper's title is one level lower.
    */
@@ -33,7 +34,7 @@
   <section class="card" aria-labelledby="{uid}-title" data-testid="reveal-card">
     <svelte:element this={`h${level}`} id="{uid}-title">{REVEAL_CARD.heading}</svelte:element>
     <p>{REVEAL_CARD.body}</p>
-    <p><a href={notesHref} data-testid="notes-link">{REVEAL_CARD.link}</a></p>
+    <p><a href={notesHref} target="_blank" rel="noopener" data-testid="notes-link">{REVEAL_CARD.link}{REVEAL_CARD.newTab}</a></p>
     <ResultsTalk {copy} {status} level={inner} />
   </section>
 {/if}

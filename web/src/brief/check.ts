@@ -183,7 +183,9 @@ function plural(n: number, one: string, many: string): string {
 export function checkNotes(input: string, opts: CheckOptions = {}): CheckReport {
   const gates = opts.gates ?? DEFAULT_GATES
   const retired = opts.retired ?? RETIRED_WORDINGS
-  const chars = input.length
+  // Length as the builder counts it: line breaks as one character (Windows adds a second), no trailing blank space
+  // (a downloaded file ends with a newline), so notes exactly at the limit are not flagged for the way they were saved.
+  const chars = input.replace(/\r\n?/gu, '\n').replace(/\s+$/u, '').length
   const trimmed = input.trim()
   if (trimmed === '') return report({ source: 'empty', form: null, format: null, lines: [], flags: [], chars, limit: null, updated: null }, 'Paste some notes to check them.')
 

@@ -44,4 +44,6 @@ export const REVEAL_CARD = {
   heading: 'Working with AI',
   body: 'You can make short, plain notes for your own AI assistant, so it explains things the way you like. They come from your own choices on a separate page, and they never contain your results.',
   link: 'Make notes for your AI',
+  /** The notes page opens in its own tab, so the reveal (and its required save download) stays where it is. */
+  newTab: ' (opens in a new tab)',
 } as const
