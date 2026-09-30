@@ -10,14 +10,16 @@
 <script lang="ts">
   import { axis as axisDef, CLUSTERS, type Cluster } from '../engine/axes'
   import type { SegmentView } from './run'
-  import { CHECKLIST_EMBEDDED_STATUS, CHECKLIST_LABEL, CHECKLIST_LATER_LABEL, CHECKLIST_STATUS } from './copy'
+  import { CHECKLIST_EMBEDDED_STATUS, CHECKLIST_FOCUS_LATER_LABEL, CHECKLIST_LABEL, CHECKLIST_LATER_LABEL, CHECKLIST_STATUS } from './copy'
   import { skipTargetName } from './segments'
 
   interface Props {
     readonly segments: readonly SegmentView[]
+    /** A focus session (M1.R) covers only the parts chosen: the rest are "not in this session", not "not in this version". */
+    readonly focus?: boolean
   }
 
-  let { segments }: Props = $props()
+  let { segments, focus = false }: Props = $props()
 
   type Status = keyof typeof CHECKLIST_STATUS
 
@@ -66,7 +68,7 @@
     {/each}
   </ol>
   {#if later.length > 0}
-    <p class="later"><span class="later-label">{CHECKLIST_LATER_LABEL}:</span> {later.join(', ')}</p>
+    <p class="later"><span class="later-label">{focus ? CHECKLIST_FOCUS_LATER_LABEL : CHECKLIST_LATER_LABEL}:</span> {later.join(', ')}</p>
   {/if}
 </nav>
 

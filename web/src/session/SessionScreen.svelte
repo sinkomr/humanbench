@@ -239,7 +239,7 @@
       </Screen>
     {/key}
     <aside class="side">
-      <Checklist segments={view.segments} />
+      <Checklist segments={view.segments} focus={view.focus} />
     </aside>
   </div>
 </div>

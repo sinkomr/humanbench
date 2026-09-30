@@ -213,6 +213,51 @@ describe('Ready: earlier saves (R-8.1, M1.17 UI wiring)', () => {
   })
 })
 
+describe('Ready: a 20-minute focus session for a returning person (ROADMAP M1.R)', () => {
+  const noop = (): void => undefined
+  const none: ReadyState = { includeFound: false, loaded: null }
+
+  it('is offered only with earlier results and a start handler, and starts on the parts chosen', async () => {
+    const file = await savedFile()
+    const restored = { save: file, keys: ['k'], failures: [], anonIds: [file.anon_id] }
+    const started: string[][] = []
+    // Nothing to build on: no focus option.
+    const bare = mountIt(Ready, { restored: null, choices: none, onchoices: noop, onpractice: noop, onbegin: noop, onfocus: (a: string[]) => started.push(a) })
+    expect(bare.querySelector('details.focus')).toBeNull()
+    cleanup?.()
+    // Earlier results but no handler: none either.
+    const noHandler = mountIt(Ready, { restored, choices: defaultReadyState(restored), onchoices: noop, onpractice: noop, onbegin: noop })
+    expect(noHandler.querySelector('details.focus')).toBeNull()
+    cleanup?.()
+    const c = mountIt(Ready, { restored, choices: defaultReadyState(restored), onchoices: noop, onpractice: noop, onbegin: noop, onfocus: (a: string[]) => started.push(a) })
+    expect(c.querySelector('details.focus summary')?.textContent).toBe('Or a 20-minute focus session')
+    const boxes = [...c.querySelectorAll<HTMLInputElement>('details.focus input[type="checkbox"]')]
+    expect(boxes).toHaveLength(6)
+    // The part of the only skill measured has the widest range, so it starts ticked.
+    expect(boxes.filter((b) => b.checked).map((b) => b.id.split('-').pop())).toEqual(['matrix_series'])
+    click(buttonByText(c, 'Start a 20-minute focus session'))
+    expect(started).toEqual([['MAT']])
+  })
+
+  it('leaves it out when the earlier autosaves are not included', async () => {
+    const file = await savedFile()
+    const restored = { save: file, keys: ['k'], failures: [], anonIds: [file.anon_id] }
+    const c = mountIt(Ready, { restored, choices: { includeFound: false, loaded: null }, onchoices: noop, onpractice: noop, onbegin: noop, onfocus: noop })
+    expect(c.querySelector('details.focus')).toBeNull()
+  })
+})
+
+describe('Checklist in a focus session (ROADMAP M1.R)', () => {
+  it('says the parts left out are "not in this session", not "not in this version"', () => {
+    const segments = [seg('spatial', 'Spatial/Memory', ['SPA'], 'current')]
+    expect(mountIt(Checklist, { segments }).querySelector('.later')?.textContent).toContain('Not in this version')
+    cleanup?.()
+    const focus = mountIt(Checklist, { segments, focus: true }).querySelector('.later')?.textContent ?? ''
+    expect(focus).toContain('Not in this session')
+    expect(focus).not.toContain('Not in this version')
+  })
+})
+
 describe('Finished', () => {
   it('shows why it ended, the profile and the save actions; downloads through the save library', async () => {
     const bot = new Bot({ sessionId: 's_FINISHEDUI00001' }, { theta: new Array<number>(17).fill(0.5) })
@@ -222,7 +267,9 @@ describe('Finished', () => {
     const c = mountIt(Finished, {
       result,
       makeSave: () => saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: 'hb_' + 'a'.repeat(17) }),
+      sessionId: 's_FINISHEDUI00001',
       autosave: 'ok',
+      motion: 'reduce',
       onrestart: () => undefined,
       download: (s: SaveFileV1) => (downloads.push(s), 'file.json'),
     })
@@ -233,7 +280,7 @@ describe('Finished', () => {
     click(buttonByText(c, 'Download save file'))
     expect(downloads).toHaveLength(1)
     expect(downloads[0]!.sessions[0]!.session_id).toBe('s_FINISHEDUI00001')
-    expect(c.querySelector('[role="status"]')?.textContent).toBe('Save file downloaded.')
+    expect(c.querySelector('[data-section="save"] [role="status"]')?.textContent).toBe('Save file downloaded.')
   })
 
   it('offers the code by hand when the clipboard is refused', async () => {

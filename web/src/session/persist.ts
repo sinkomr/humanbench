@@ -44,6 +44,8 @@ export class SessionPersister {
   readonly #saver: Autosaver
   readonly #unbind: (() => void) | null
   #status: AutosaveStatus = 'ok'
+  /** Families shown outside the session (the reveal's worked examples): left out of later sessions (§7.7). */
+  #extraSeenFamilies: string[] = []
   readonly #onStatus: ((s: AutosaveStatus) => void) | undefined
 
   constructor(run: SessionRun, opts: PersisterOptions) {
@@ -76,7 +78,23 @@ export class SessionPersister {
 
   /** Base ∪ the running session, as the save file to store or hand to the person. */
   currentSave(): SaveFileV1 {
-    return saveWithSession(this.#base, this.#run.sessionState(), { ctx: SAVE_CTX, createdMs: this.#wallClockMs(), anonId: this.anonId })
+    const state = this.#run.sessionState()
+    const seenFamilies = this.#extraSeenFamilies.length === 0 ? state.seenFamilies : [...state.seenFamilies, ...this.#extraSeenFamilies]
+    return saveWithSession(this.#base, { ...state, seenFamilies }, { ctx: SAVE_CTX, createdMs: this.#wallClockMs(), anonId: this.anonId })
+  }
+
+  /**
+   * Record families the person was shown outside the session, e.g. the reveal's worked examples
+   * (DESIGN §10, §7.7): the save lists them in `seen_families`, so a later session leaves them out.
+   * Written to the autosave at once, so nothing stays pending on the results screen; the download
+   * always includes them.
+   */
+  addSeenFamilies(ids: readonly string[]): void {
+    const fresh = ids.filter((id) => !this.#extraSeenFamilies.includes(id))
+    if (fresh.length === 0) return
+    this.#extraSeenFamilies = [...this.#extraSeenFamilies, ...fresh]
+    this.schedule()
+    this.flush()
   }
 
   /**

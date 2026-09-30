@@ -69,6 +69,7 @@ export const READY_TEXT =
 export const READY_PRACTICE = 'Try practice questions first'
 export const READY_PRACTICE_NOTE = 'Practice questions show whether you were right and are never counted.'
 export const READY_BEGIN = 'Begin'
+export const READY_FOCUS_SUMMARY = 'Or a 20-minute focus session'
 export const READY_RESTORE_HEADING = 'Earlier saves on this device'
 export const READY_LOAD_HEADING = 'Continue from a save file'
 export const READY_LOAD_HELP = 'Choose a save file, or paste a save code. This adds your new session to your earlier ones.'
@@ -138,6 +139,8 @@ export const noticeUnavailable = (name: string): string =>
 export const PROGRESS_LABEL = 'Session time'
 export const CHECKLIST_LABEL = 'Session checklist'
 export const CHECKLIST_LATER_LABEL = 'Not in this version'
+/** In a focus session (M1.R) the other parts are left out by choice. */
+export const CHECKLIST_FOCUS_LATER_LABEL = 'Not in this session'
 /** The Estimation cluster has no part of its own: it is measured by the confidence slider after each answer (A15). */
 export const CHECKLIST_EMBEDDED_STATUS = 'With each answer'
 export const CHECKLIST_STATUS: Readonly<Record<'done' | 'current' | 'upcoming' | 'partial' | 'skipped' | 'not_reached', string>> = Object.freeze({

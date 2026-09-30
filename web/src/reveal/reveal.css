@@ -1,0 +1,97 @@
+/*
+ * Styles of the results and reveal (ROADMAP M1.R; DESIGN §13 WCAG 2.2 AA). They sit on the tokens
+ * of `render/common/render.css` (>= 4.5:1 text in light and dark, visible focus, 44 px targets)
+ * inside `.hb-render`, size everything in rem so 200% zoom reflows, wrap long words, and move
+ * nothing unless the person allows it.
+ */
+
+.hb-reveal-panel {
+  /* width: 100% keeps a flex item with auto side margins from shrinking to its content (which
+     overflowed at 320 px with the worked matrix's option grid). */
+  width: 100%;
+  max-width: 52rem;
+  margin: 1.5rem auto 0;
+  min-width: 0;
+}
+
+.hb-reveal-panel > h2 {
+  margin: 0 0 0.5rem;
+}
+
+.hb-reveal-panel h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 1.0625rem;
+}
+
+.hb-reveal-panel p,
+.hb-reveal-panel li {
+  max-width: 44rem;
+}
+
+.hb-reveal-panel ul,
+.hb-reveal-panel ol {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.hb-reveal-panel li {
+  margin: 0 0 0.375rem;
+}
+
+.hb-reveal-panel .muted {
+  color: var(--r-muted);
+}
+
+.hb-reveal-panel .note {
+  font-size: 0.9375rem;
+  color: var(--r-muted);
+}
+
+.hb-reveal-panel .hb-status {
+  margin: 0.5rem 0;
+}
+
+.hb-reveal-card {
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--r-border);
+  border-radius: 0.5rem;
+  background: var(--r-surface);
+}
+
+.hb-reveal-card > h3 {
+  margin-top: 0;
+}
+
+.hb-reveal-card > :last-child {
+  margin-bottom: 0;
+}
+
+.hb-reveal-panel details {
+  margin: 0 0 1rem;
+  border: 1px solid var(--r-border);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  background: var(--r-surface);
+}
+
+.hb-reveal-panel details > summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.hb-reveal-panel details > summary:focus-visible {
+  outline: 3px solid var(--r-focus);
+  outline-offset: 2px;
+}
+
+.hb-reveal-panel details[open] > summary {
+  margin-bottom: 0.25rem;
+}
+
+.hb-reveal-panel textarea {
+  width: 100%;
+}

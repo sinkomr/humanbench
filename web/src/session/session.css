@@ -151,3 +151,20 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.hb-screen details.focus {
+  margin: 1rem 0;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--r-border);
+  border-radius: 0.5rem;
+  background: var(--r-surface);
+  max-width: 38rem;
+}
+
+.hb-screen details.focus > summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+}

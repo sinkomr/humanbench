@@ -176,3 +176,34 @@ describe('autosave hygiene', () => {
     expect(autosaveKeys(s)).toEqual([b.p.key])
   })
 })
+
+describe('families shown outside the session (the reveal’s worked examples, DESIGN §10, §7.7)', () => {
+  it('are listed in the save’s seen_families, kept in the autosave and left out of a later session', () => {
+    const bot = new Bot({ sessionId: 's_PERSISTSEEN0001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    const s = new SpyStorage()
+    const { p, t } = persister(bot, s)
+    answerOne(bot)
+    p.schedule()
+    t.fire()
+    const before = restoreAutosaves(SAVE_CTX, s).save!.seen_families
+    p.addSeenFamilies(['f:worked:aaaaaaaaaaaa', 'f:worked:bbbbbbbbbbbb'])
+    expect(p.currentSave().seen_families).toEqual(expect.arrayContaining([...before, 'f:worked:aaaaaaaaaaaa', 'f:worked:bbbbbbbbbbbb']))
+    // Written at once: nothing is left pending on the results screen.
+    expect(t.pending()).toBe(0)
+    expect(restoreAutosaves(SAVE_CTX, s).save!.seen_families).toContain('f:worked:bbbbbbbbbbbb')
+    // Twice is the same, and a new session started from this save excludes them.
+    p.addSeenFamilies(['f:worked:aaaaaaaaaaaa'])
+    expect(p.currentSave().seen_families.filter((f) => f === 'f:worked:aaaaaaaaaaaa')).toHaveLength(1)
+    expect(priorItemCounts(p.currentSave()).MAT).toBeGreaterThan(0)
+  })
+
+  it('a session with no answer writes nothing, but the download still lists them', () => {
+    const bot = new Bot({ sessionId: 's_PERSISTSEEN0002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    const s = new SpyStorage()
+    const { p, t } = persister(bot, s)
+    p.addSeenFamilies(['f:worked:cccccccccccc'])
+    t.fire()
+    expect(s.writes).toEqual([])
+    expect(p.currentSave().seen_families).toContain('f:worked:cccccccccccc')
+  })
+})

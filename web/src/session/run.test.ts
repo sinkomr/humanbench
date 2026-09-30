@@ -767,3 +767,59 @@ describe('config', () => {
     expect(run.view().phase).toBe('interstitial')
   })
 })
+
+describe('focus session (DESIGN §10 "focus sessions of 20 minutes"; ROADMAP M1.R)', () => {
+  it('plans only the parts that hold the chosen skills, in A15 order, and skips nothing', () => {
+    const bot = new Bot({ sessionId: 's_FOCUS000000001', focus: ['QR', 'SPA'], targetS: 20 * 60 })
+    const v = bot.view()
+    expect(v.segments.map((s) => s.id)).toEqual(['spatial', 'quant'])
+    expect(v.targetS).toBe(1200)
+    expect(v.skipped).toEqual([])
+    bot.finish()
+    const r = bot.run.result()
+    expect(r.skipped).toEqual([])
+    const flags = bot.run.sessionState().flags
+    expect(Object.keys(flags).some((k) => k.startsWith('skipped_'))).toBe(false)
+    // Only the chosen skills were asked, and no block ran.
+    const axes = new Set(bot.run.sessionState().responses.map((t) => parseItemId(t[0])!.family))
+    expect([...axes].every((f) => f === 'rotation' || f === 'quant')).toBe(true)
+    expect(r.blocks).toHaveLength(0)
+  })
+
+  it('a focus on a block part runs its blocks, and on reaction time alone runs only the two RT blocks', () => {
+    const bot = new Bot({ sessionId: 's_FOCUS000000002', focus: ['RT', 'WM'], targetS: 1200 })
+    expect(bot.view().segments.map((s) => s.id)).toEqual(['rt', 'memory'])
+    bot.finish()
+    expect(bot.run.result().blocks.map((b) => b.family)).toEqual(['rt_simple', 'rt_choice4', 'span_fwd', 'span_bwd', 'corsi'])
+    expect(bot.run.result().itemsByAxis).toEqual({})
+  })
+
+  it('a focus session ends by itself after about 20 minutes for a typical taker (the CAT parts share the time)', () => {
+    const bot = new Bot({ sessionId: 's_FOCUS000000003', focus: ['MAT', 'SPA', 'QR'], targetS: 1200 })
+    bot.finish()
+    expect(bot.run.result().durationS).toBeLessThan(1200 + 120)
+    expect(bot.run.result().durationS).toBeGreaterThan(300)
+  })
+
+  it('composes with skipping: a skill the person skips inside a focus session is skipped, one outside it is not', () => {
+    const bot = new Bot({ sessionId: 's_FOCUS000000004', focus: ['MAT', 'QR'], skipped: ['QR'] })
+    expect(bot.view().segments.map((s) => s.id)).toEqual(['matrix_series'])
+    expect(bot.view().skipped).toEqual(['QR'])
+  })
+
+  it('its save re-scores like any session (R-8.1, §7.8): the focus session is a test of the chosen skills only', () => {
+    const first = new Bot({ sessionId: 's_FOCUS000000005' })
+    first.finish()
+    const base = saveWithSession(null, first.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: newAnonId() })
+    const second = new Bot({ sessionId: 's_FOCUS000000006', startedMs: 1_790_000_000_000 + 8 * 86_400_000, focus: ['SPA'], targetS: 1200, seenFamilies: base.seen_families })
+    second.finish()
+    const merged = saveWithSession(base, second.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_200_000 })
+    const re = rescoreSessions(merged)
+    const s2 = re.sessions.find((s) => s.session_id === 's_FOCUS000000006')!
+    // The chosen skill, and Calibration, which every rated answer measures (A15).
+    expect(Object.keys(s2.ordinals).sort()).toEqual(['CAL', 'SPA'])
+    expect(s2.ordinals.SPA).toBe(2)
+    expect(re.next_ordinals.MAT).toBe(2) // MAT was taken once (session 1)
+    expect(re.next_ordinals.SPA).toBe(3)
+  })
+})

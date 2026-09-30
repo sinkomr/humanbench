@@ -5,12 +5,19 @@
   the person loads. `onbase` reports the save the session starts from (or null).
 -->
 <script lang="ts">
+  import type { AxisCode } from '../engine/axes'
+  import FocusPicker from '../reveal/FocusPicker.svelte'
+  import { FOCUS_TEXT } from '../reveal/copy'
+  import { focusOptions } from '../reveal/next'
+  import { buildResults } from '../reveal/results'
+  import { axisEstimates } from '../viz/profile'
   import { parseSaveText, readSaveFile } from '../save/parse'
   import type { RestoreResult } from '../save/autosave'
   import Screen from './Screen.svelte'
-  import type { ReadyState } from './ready-state'
+  import { baseOf, type ReadyState } from './ready-state'
   import {
     READY_BEGIN,
+    READY_FOCUS_SUMMARY,
     READY_HEADING,
     READY_LOAD_BUTTON,
     READY_LOAD_CODE,
@@ -31,12 +38,21 @@
     readonly onchoices: (choices: ReadyState) => void
     readonly onpractice: () => void
     readonly onbegin: () => void
+    /** Start a 20-minute focus session on these skills (M1.R); offered when there are earlier results. */
+    readonly onfocus?: (axes: AxisCode[]) => void
   }
 
-  let { restored, choices, onchoices, onpractice, onbegin }: Props = $props()
+  let { restored, choices, onchoices, onpractice, onbegin, onfocus }: Props = $props()
 
   const uid = $props.id()
   const found = $derived(restored?.save ?? null)
+  // Earlier sessions to build on (the autosaves chosen and a loaded file, merged): a returning person can focus.
+  const focus = $derived.by(() => {
+    if (onfocus === undefined) return null
+    const base = baseOf(restored, choices)
+    const results = base === null ? null : buildResults(base)
+    return results === null ? null : focusOptions(axisEstimates(results.input))
+  })
   let message = $state('')
   let messageIsError = $state(false)
   let code = $state('')
@@ -70,6 +86,14 @@
     <button type="button" class="hb-btn" onclick={onpractice}>{READY_PRACTICE}</button>
   </div>
   <p class="muted">{READY_PRACTICE_NOTE}</p>
+
+  {#if focus !== null && onfocus}
+    <details class="focus">
+      <summary>{READY_FOCUS_SUMMARY}</summary>
+      <p>{FOCUS_TEXT}</p>
+      <FocusPicker options={focus} onstart={onfocus} />
+    </details>
+  {/if}
 
   {#if found !== null}
     <h2>{READY_RESTORE_HEADING}</h2>

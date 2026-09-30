@@ -54,7 +54,7 @@
  * a {@link PublicItem}: its spec and ids, never the key, the parameters or the difficulty.
  */
 
-import { isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
+import { AXIS_CODES, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
 import {
   integrityReport,
   type IntegrityReport,
@@ -180,6 +180,8 @@ export interface RunView {
   readonly skippable: AxisCode | null
   readonly rtInput: RtInputMode
   readonly device: DeviceInfo
+  /** A focus session (`RunConfig.focus`): only the chosen parts run. */
+  readonly focus: boolean
 }
 
 export interface RunConfig {
@@ -203,6 +205,13 @@ export interface RunConfig {
   readonly seenFamilies?: readonly string[]
   /** Axes skipped from the start. */
   readonly skipped?: readonly AxisCode[]
+  /**
+   * A focus session (DESIGN §10 "focus sessions of 20 minutes that target chosen axes"; ROADMAP
+   * M1.R): only the parts that hold these skills are planned. The other skills get w_k = 0 but are
+   * NOT marked skipped: the person did not decline them, they are just not in this session, so
+   * neither the save's flags nor the profile treat them as skipped.
+   */
+  readonly focus?: readonly AxisCode[]
   /** Session target seconds (default {@link A15_TARGET_S}). */
   readonly targetS?: number
   readonly breakAtS?: number
@@ -358,6 +367,7 @@ export class SessionRun {
     this.#device = cfg.device
     this.#rtInput = cfg.rtInput
     for (const k of cfg.skipped ?? []) this.#markSkipped(k)
+    if (cfg.focus !== undefined) for (const k of AXIS_CODES) if (!cfg.focus.includes(k) && !this.#skipped.has(k)) this.#weights[k] = 0
     const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: this.#targetS, seenFamilies: this.#seenBase })
     this.#segments = SessionRun.#group(plan)
     this.#clock = new SessionClock(cfg.now)
@@ -457,6 +467,7 @@ export class SessionRun {
       skippable,
       rtInput: this.#rtInput,
       device: this.#device,
+      focus: this.#cfg.focus !== undefined,
     }
   }
 

@@ -5,6 +5,8 @@
   storage, and the consent, the autosaver and the restore of earlier saves all come after it.
 -->
 <script lang="ts">
+  import type { AxisCode } from '../engine/axes'
+  import { FOCUS_TARGET_S } from '../reveal/next'
   import { pruneAutosaves, restoreAutosaves, type RestoreResult } from '../save/autosave'
   import { newSessionId } from '../save/ids'
   import type { DeviceInfo, SaveFileV1 } from '../save/types'
@@ -83,6 +85,11 @@
   }
 
   function begin(): void {
+    startRun()
+  }
+
+  /** Start the session; a focus session (M1.R) runs only the parts of `focus` and lasts 20 minutes. */
+  function startRun(focus?: readonly AxisCode[]): void {
     if (device === null) return
     const startedMs = env.wallClockMs()
     const sessionId = newSessionId(startedMs)
@@ -95,6 +102,7 @@
       // The ≥ 3-item floor follows the axes the earlier sessions covered, not their number (coverage.ts).
       priorItemCounts: priorItemCounts(base),
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
+      ...(focus === undefined ? {} : { focus, targetS: FOCUS_TARGET_S }),
       onChange: (kind: ChangeKind) => onChange(kind),
     })
     run = r
@@ -124,6 +132,21 @@
     if (kind === 'finish' && run !== null) finishRun(run)
   }
 
+  /**
+   * A 20-minute focus session on the chosen skills (DESIGN §10, ROADMAP M1.R): the session just
+   * finished, with everything it holds, is the base of the new one, so the results afterwards are
+   * the practice-adjusted re-score of both (R-8.1, §7.8). The gate, the honour code and the device
+   * check were done in this visit, so it goes straight to the first part.
+   */
+  function startFocus(axes: AxisCode[]): void {
+    if (persister === null || device === null) return
+    const finished = persister.currentSave()
+    persister.dispose()
+    restored = null
+    readyState = { includeFound: false, loaded: finished }
+    startRun(axes)
+  }
+
   function restart(): void {
     persister?.dispose()
     persister = null
@@ -146,11 +169,20 @@
 {:else if phase === 'device'}
   <DeviceCheck {env} ondone={deviceDone} />
 {:else if phase === 'ready'}
-  <Ready {restored} choices={readyState} onchoices={(c) => (readyState = c)} onpractice={startPractice} onbegin={begin} />
+  <Ready {restored} choices={readyState} onchoices={(c) => (readyState = c)} onpractice={startPractice} onbegin={begin} onfocus={(axes) => startRun(axes)} />
 {:else if phase === 'practice' && practice !== null}
   <PracticeScreen {env} {practice} ondone={() => (phase = 'ready')} />
 {:else if phase === 'run' && run !== null}
   <SessionScreen {env} {run} {autosave} {banner} />
 {:else if phase === 'finished' && result !== null && persister !== null}
-  <Finished {result} makeSave={() => persister!.currentSave()} {autosave} onrestart={restart} />
+  <Finished
+    {result}
+    sessionId={run?.sessionId}
+    makeSave={() => persister!.currentSave()}
+    {autosave}
+    timing={env.timing}
+    onseen={(ids) => persister?.addSeenFamilies(ids)}
+    onfocus={startFocus}
+    onrestart={restart}
+  />
 {/if}

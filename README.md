@@ -20,6 +20,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/viz/`: blob and bar views, export
+  - `web/src/reveal/`: the results and reveal flow (build-up, distinctive peaks, required save, worked examples, retest advice, norms and pace)
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
@@ -149,6 +150,26 @@ seconds; response times measured that way are not valid scores. It works only wh
 constant `__HB_DEV_ROUTES__` is true (the dev server, the tests and the Playwright build). A plain
 production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds the
 flag's module both ways and runs it).
+
+### Results and reveal
+
+The end of a session (ROADMAP M1.R, DESIGN §10) is `web/src/reveal/`, shown by
+`session/Finished.svelte`. The results are the practice-adjusted re-score of the whole save
+(`results.ts`, on `save/rescore.ts`), so a returning person sees all their sessions together. The
+blob builds up skill by skill (`frames.ts`; `prefers-reduced-motion` skips it and "Skip animation"
+ends it), then come the distinctive peaks (`peaks.ts`: within-person contrasts whose 90% interval
+excludes 0, ROADMAP A12), the cluster drill-down, and the save file, which is required before
+leaving: a `beforeunload` guard (`guard.ts`) stays on until the file is downloaded or shared. Only
+then do the share card slot, the "Notes for your AI" card and the results-talk helper appear
+(`AfterSave.svelte`, `slots.ts`; Phase AI). Three worked examples (`worked/`) are fresh procedural
+items whose solutions are derived from the item and tested against the key; their families go into
+the save's `seen_families`, so later sessions leave them out. The R-5.6.5 resource line is rendered
+only in the results footer. A 20-minute focus session (`RunConfig.focus`) runs only the parts a
+person picks, from the results or from the start screen of a returning person.
+
+The browser suite cannot sit through a full session, so `web/e2e/reveal.spec.ts` loads a simulated
+earlier session (`web/scripts/e2e-save.ts`, run with `tsx` because Playwright's loader cannot import
+the passages JSON) on the ready screen and finishes at once.
 
 ### Renderers
 
