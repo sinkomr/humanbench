@@ -185,12 +185,21 @@ scans for network, storage and notes imports). Tests pin these rules:
   file is byte-identical whatever its estimate is;
 - Emotion Reading is put on a card only at or above the 0 SD ring (R-5.6.4), whether or not it is
   ticked, and no skill is ever picked out as a weakness;
-- the peaks are the credible ones (A12) that are on the card, at most three, each with its 90% range;
+- the peaks are worked out over the skills on the card only (so a hidden skill, or an Emotion Reading
+  below the 0 SD ring, never moves the numbers of the visible ones), credible ones only (A12), at
+  most three, each with its 90% range, and never a low;
 - the blob is the on-page blob (`card.dom.test.ts` compares them element by element), with a linear
   radius, its uncertainty, and no total, area or single score;
 - every text on the card is an axis label, a ring label or a line of `card-copy.ts`, so notes text
   (Phase AI), the R-5.6.5 resource line and the save file cannot reach it;
 - the panel links to the results-talk helper below it.
+
+Two departures from the letter of DESIGN §9.9, which ROADMAP M1.18 (the higher authority) does not
+require: the card says "Based on n sessions" and gives each listed peak's 90% range instead of
+"SE ±" (there is no single standard error across skills, and the blob's band and whiskers carry the
+uncertainty), and the SVG export is the card's own SVG, which `card.dom.test.ts` compares with the
+page's D3 chart element by element, rather than a serialisation of the page's node. File names carry
+the person's local date.
 
 `web/e2e/share-card.spec.ts` checks the real PNG (2400 × 1260 with the blob drawn), the SVG, the
 toggles, the reflow at 320 px and axe in Chromium, WebKit and the iPhone 13 emulation.

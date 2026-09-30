@@ -14,14 +14,14 @@ import { buttonByText, click, fakeDisplay } from '../render/common/testing'
 import type { ShareOutcome } from '../save/io'
 import type { SaveFileV1 } from '../save/types'
 import Finished from '../session/Finished.svelte'
-import { buildCard } from '../viz/card'
+import { buildCard, cardAxes } from '../viz/card'
 import { axisEstimates } from '../viz/profile'
 import NumbersSection from './NumbersSection.svelte'
 import { render } from '../render/common/testing'
 import { NOTES_TEXT, PEAKS_HEADING, TAKER_COMPARISON_TEXT, TALK_COPIED, TALK_PREAMBLE } from './copy'
 import { REVEAL_AXIS_MS } from './frames'
 import { distinctivePeaks, withinPersonContrasts } from './peaks'
-import { buildResults } from './results'
+import { buildResults, scoredSessions } from './results'
 import { TALK_ANCHOR_ID, TALK_PREAMBLE_MAX_CHARS } from './slots'
 import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
@@ -404,15 +404,24 @@ describe('the share card in the reveal (M1.18)', () => {
     return decodeURIComponent(src.slice(src.indexOf(',') + 1))
   }
 
+  /** The card the reveal must show: the peaks are taken over the skills that are ON the card. */
+  function expectedCard(b: BotSave, hidden: AxisCode[] = []): ReturnType<typeof buildCard> {
+    const { results } = peaksOf(b)
+    const estimates = axisEstimates(results.input)
+    const shown = cardAxes(estimates, hidden)
+      .filter((a) => a.status === 'shown')
+      .map((a) => a.estimate.code)
+    return buildCard({ estimates, hidden, peaks: distinctivePeaks(results.rescore, shown, { max: AXIS_CODES.length }), sessions: scoredSessions(results) })
+  }
+
   it('is the card of the person\'s own results: their measured skills, their credible peaks, the sessions that counted', () => {
     const high = new Set<AxisCode>(['MAT', 'QR', 'VOC'])
     const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 2 : -1])) as Record<AxisCode, number>
     const b = botSave('s_REVEALDOM0000101', { level })
     const m = mountFinished(b, { card: cardProps })
     click(buttonByText(m.c, 'Download save file'))
-    const { measured, results } = peaksOf(b)
-    const estimates = axisEstimates(results.input)
-    const expected = buildCard({ estimates, peaks: distinctivePeaks(results.rescore, measured, { max: AXIS_CODES.length }), sessions: 1 })
+    const { measured } = peaksOf(b)
+    const expected = expectedCard(b)
     expect(expected.peaks.length).toBeGreaterThan(0)
     expect(decode(m.c)).toBe(expected.svg)
     const boxes = [...m.c.querySelectorAll('input[data-skill]')].map((i) => i.getAttribute('data-skill'))
@@ -420,21 +429,34 @@ describe('the share card in the reveal (M1.18)', () => {
     expect(decode(m.c)).toContain('Based on 1 session<')
   })
 
-  it('starts from every credible peak: hiding the strongest brings the fourth one up', () => {
+  it('hiding the strongest peak redoes the peaks over the skills left on the card, and it is not listed', () => {
     const high = new Set<AxisCode>(['MAT', 'QR', 'SPA', 'WM'])
     const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 3 : -3])) as Record<AxisCode, number>
     const b = botSave('s_REVEALDOM0000106', { level })
     const { measured, results } = peaksOf(b)
     const all = distinctivePeaks(results.rescore, measured, { max: AXIS_CODES.length })
-    expect(all.length).toBeGreaterThanOrEqual(4) // the page lists three, the card can list the next
+    expect(all.length).toBeGreaterThanOrEqual(4) // the card can list more than the page's three
     const m = mountFinished(b, { card: cardProps })
     click(buttonByText(m.c, 'Download save file'))
-    const estimates = axisEstimates(results.input)
-    expect(decode(m.c)).toBe(buildCard({ estimates, peaks: all, sessions: 1 }).svg)
-    click(m.c.querySelector(`input[data-skill="${all[0]!.code}"]`))
-    const hidden = buildCard({ estimates, peaks: all, hidden: [all[0]!.code], sessions: 1 })
-    expect(hidden.peaks.map((p) => p.code)).toEqual(all.slice(1, 4).map((p) => p.code))
+    expect(decode(m.c)).toBe(expectedCard(b).svg)
+    const top = expectedCard(b).peaks[0]!.code
+    click(m.c.querySelector(`input[data-skill="${top}"]`))
+    const hidden = expectedCard(b, [top])
+    expect(hidden.peaks.length).toBeGreaterThan(0)
+    expect(hidden.peaks.map((p) => p.code)).not.toContain(top)
     expect(decode(m.c)).toBe(hidden.svg)
+  })
+
+  it('a session that scored nothing is in the save but not in the card\'s count', () => {
+    const one = bot('s_REVEALDOM0000107')
+    const empty = botSave('s_REVEALDOM0000108', { base: one.save, startedMs: T0_MS + 8 * DAY_MS, drive: (x) => x.run.finishEarly() })
+    const results = buildResults(empty.save)!
+    expect(results.nSessions).toBe(2)
+    expect(scoredSessions(results)).toBe(1)
+    const m = mountFinished(empty, { card: cardProps })
+    click(buttonByText(m.c, 'Download save file'))
+    expect(decode(m.c)).toContain('Based on 1 session<')
+    expect(decode(m.c)).not.toContain('Based on 2 sessions')
   })
 
   it('states the sessions a returning person\'s profile rests on', () => {

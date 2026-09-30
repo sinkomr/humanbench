@@ -21,9 +21,14 @@ export const SVG_MIME = 'image/svg+xml'
 export const PNG_W = CARD_W * PNG_SCALE
 export const PNG_H = CARD_H * PNG_SCALE
 
-/** `humanbench-card-YYYY-MM-DD.png` / `.svg`. The name carries no id, so a shared file does not point at a save. */
+/**
+ * `humanbench-card-YYYY-MM-DD.png` / `.svg`, the date being the person's local one (a card made
+ * at 8 pm in California is not dated tomorrow). The name carries no id, so a shared file does not
+ * point at a save.
+ */
 export function cardFileName(kind: 'png' | 'svg', date: Date): string {
-  return `humanbench-card-${date.toISOString().slice(0, 10)}.${kind}`
+  const two = (n: number): string => String(n).padStart(2, '0')
+  return `humanbench-card-${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}.${kind}`
 }
 
 /** An SVG document as a `data:` URL (an `<img>` source and the raster source; `#` and `%` are escaped). */

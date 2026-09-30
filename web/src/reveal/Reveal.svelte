@@ -16,7 +16,7 @@
 -->
 <script lang="ts">
   import { onMount, tick, type ComponentProps } from 'svelte'
-  import { N_AXES, type AxisCode } from '../engine/axes'
+  import type { AxisCode } from '../engine/axes'
   import type { RendererTiming } from '../render/common/props'
   import type { ShareOutcome } from '../save/io'
   import type { SaveFileV1 } from '../save/types'
@@ -98,8 +98,6 @@
   const estimates = $derived(axisEstimates(results.input))
   const measured = $derived(estimates.filter((e) => e.measured).map((e) => e.code))
   const peaks = $derived(distinctivePeaks(results.rescore, measured))
-  // The card lists the strongest peaks that are ON the card, so it starts from every credible one.
-  const cardPeaks = $derived(distinctivePeaks(results.rescore, measured, { max: N_AXES }))
   const facts = $derived(normFacts(save))
   const pace = $derived(paceByAxis(save))
   const worked = $derived(pickWorkedItems(sessionId, save.seen_families))
@@ -150,7 +148,7 @@
     {#if saved}
       <AfterSave {notesHref} {copyText}>
         {#snippet shareCard()}
-          <ShareCard {estimates} peaks={cardPeaks} sessions={scoredSessions(results)} {...card} />
+          <ShareCard {estimates} score={results.rescore} sessions={scoredSessions(results)} {...card} />
         {/snippet}
       </AfterSave>
     {:else}

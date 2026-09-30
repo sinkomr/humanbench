@@ -171,7 +171,7 @@ describe('which skills are on the card', () => {
     expect(skills).toEqual(card.shown.map((c) => axis(c).name))
   })
 
-  it('is byte-identical whatever a hidden skill estimates: nothing of a hidden value reaches the picture (property)', () => {
+  it('is byte-identical, for the same peaks, whatever a hidden skill estimates: nothing of a hidden value reaches the picture (property)', () => {
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.integer({ min: 0, max: AXIS_CODES.length - 1 }), { minLength: 1, maxLength: AXIS_CODES.length - MIN_CARD_SKILLS }),
@@ -294,7 +294,7 @@ describe('the most distinctive peaks on the card', () => {
     for (const p of card.peaks) expect(names).toContain(axis(p.code).name)
   })
 
-  it('hiding a peak brings the next one up; a hidden skill is never listed (property over any subset)', () => {
+  it('leaves out the peak of a hidden skill and lists the next one; a hidden skill is never listed (property over any subset)', () => {
     const [first, ...rest] = [...FULL_PEAKS].sort((a, b) => b.contrast - a.contrast)
     const card = buildCard({ estimates: FULL, peaks: FULL_PEAKS, hidden: [first!.code], sessions: 2 })
     expect(card.peaks.map((p) => p.code)).toEqual(rest.slice(0, CARD_MAX_PEAKS).map((p) => p.code))
@@ -329,8 +329,48 @@ describe('the most distinctive peaks on the card', () => {
     expect(cardPeaks([bad], ['MAT'])).toEqual([])
     const card = buildCard({ estimates: estimatesOf('sparse'), peaks: [], sessions: 1 })
     expect(card.peaks).toEqual([])
-    expect(textsOf(card.svg).join(' ')).toContain('No skill stands out clearly yet.')
+    expect(textsOf(card.svg).join(' ')).toContain(CARD_NO_PEAKS)
     expect(textsOf(card.svg)).not.toContain(CARD_PEAKS_HEADING)
+    // The sentence about overlapping ranges is in the small print, once; the peaks line does not repeat it.
+    expect(textsOf(card.svg).join(' ').split('Ranges that overlap are not real differences.')).toHaveLength(2)
+  })
+
+  it('never lists a low, or a peak whose range does not clear 0, whatever it is given (R-5.6.4)', () => {
+    const low: CardPeak = { code: 'MAT', contrast: -1.2, lo90: -1.8, hi90: -0.6 }
+    const unclear: CardPeak = { code: 'QR', contrast: 0.4, lo90: -0.2, hi90: 1.0 }
+    const zero: CardPeak = { code: 'SPA', contrast: 0.5, lo90: 0, hi90: 1.0 }
+    expect(cardPeaks([low, unclear, zero], ['MAT', 'QR', 'SPA'])).toEqual([])
+    const card = buildCard({ estimates: FULL, peaks: [low, unclear, zero], sessions: 1 })
+    expect(card.peaks).toEqual([])
+    const texts = textsOf(card.svg).join(' ')
+    expect(texts).not.toMatch(/Stands out|90% range/)
+    expect(texts).toContain(CARD_NO_PEAKS)
+    // A credible peak next to them is the only one listed, with its own numbers.
+    const good: CardPeak = { code: 'WM', contrast: 0.8, lo90: 0.3, hi90: 1.3 }
+    expect(cardPeaks([low, good, unclear], ['MAT', 'QR', 'WM']).map((p) => p.code)).toEqual(['WM'])
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            code: fc.constantFrom(...AXIS_CODES),
+            contrast: fc.double({ min: -3, max: 3, noNaN: true }),
+            lo90: fc.double({ min: -3, max: 3, noNaN: true }),
+            hi90: fc.double({ min: -3, max: 3, noNaN: true }),
+          }),
+          { maxLength: 8 },
+        ),
+        (peaks) => {
+          for (const p of cardPeaks(peaks, AXIS_CODES)) {
+            expect(p.contrast).toBeGreaterThan(0)
+            expect(p.lo90).toBeGreaterThan(0)
+          }
+          const words = textsOf(buildCard({ estimates: FULL, peaks, sessions: 1 }).svg).join(' ')
+          expect(words).not.toMatch(/Stands out by about -/)
+          expect(words).not.toMatch(/90% range −/)
+        },
+      ),
+      { numRuns: 60 },
+    )
   })
 })
 

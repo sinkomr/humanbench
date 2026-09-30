@@ -9,15 +9,18 @@
  * - **Only measured skills the person left on.** A skill that was hidden is not drawn at all: it is
  *   left out of the blob (the remaining spokes keep the fixed seriation order, re-spread round the
  *   circle), out of the labels, the peaks, the description and the text alternative, and no value
- *   of it reaches the output (`card.test.ts`: the SVG is byte-identical whatever a hidden skill's
- *   estimate is). Not-measured skills get no stub here: the picture shows what was measured and
- *   chosen.
+ *   of it reaches the output (`card.test.ts`: for the same peaks, the SVG is byte-identical
+ *   whatever a hidden skill's estimate is; `ShareCard.dom.test.ts`: also through the peaks, which
+ *   the panel takes over the shown skills only). Not-measured skills get no stub here: the picture
+ *   shows what was measured and chosen.
  * - **No emotion lows (R-5.6.4).** Emotion Reading is put on a card only when its estimate is at or
  *   above the 0 SD ring ({@link EMO_MIN_THETA}); below it the skill is {@link CardStatus withheld}
  *   whether or not the person hid it, so a low there is never drawn, listed or highlighted.
- * - **Peaks, never lows.** "Most distinctive peaks" are the credible peaks of the whole measured
- *   profile (A12, `reveal/peaks.ts`), restricted to skills that are on the card, at most three,
- *   each with its 90% range. No skill is picked out as a weakness (R-5.6.4).
+ * - **Peaks, never lows.** "Most distinctive peaks" are credible peaks only (A12: the 90% range
+ *   lies above 0), at most three, each with its 90% range. Their contrasts are taken against the
+ *   mean of the skills that are ON the card, so the caller computes them from the shown skills
+ *   (`ShareCard.svelte`): a mean over a hidden skill or a withheld Emotion Reading would carry that
+ *   skill's level into the visible numbers. No skill is picked out as a weakness (R-5.6.4).
  * - **No total, mean, area or single score (§9.5 a).** The blob is `buildBlob`'s: radius linear in θ
  *   over [−3, 3] (§9.1), the crisp mean curve, the ±1 SD band, the §9.3 fuzz and the 90% whiskers,
  *   the tier hatch, the muting rule, and the in-chart ring note ("Rings: SD units, provisional").
@@ -123,14 +126,15 @@ export interface CardPeak {
 }
 
 /**
- * The peaks a card lists: those on the card (never a hidden, withheld or unmeasured skill), the
- * strongest first, at most {@link CARD_MAX_PEAKS}. `peaks` are the credible peaks of the WHOLE
- * measured profile, so hiding a skill does not change what the others stand out from.
+ * The peaks a card lists: those on the card (never a hidden, withheld or unmeasured skill) that
+ * are credible peaks (a positive contrast whose 90% range lies above 0, A12), the strongest first,
+ * at most {@link CARD_MAX_PEAKS}. A low is never listed, whatever the caller passes (R-5.6.4).
+ * `peaks` must have been computed over the skills on the card (module comment): this only filters.
  */
 export function cardPeaks(peaks: readonly CardPeak[], shown: Iterable<AxisCode>, max = CARD_MAX_PEAKS): CardPeak[] {
   const on = new Set(shown)
   return peaks
-    .filter((p) => on.has(p.code) && [p.contrast, p.lo90, p.hi90].every(Number.isFinite))
+    .filter((p) => on.has(p.code) && [p.contrast, p.lo90, p.hi90].every(Number.isFinite) && p.contrast > 0 && p.lo90 > 0)
     .sort((a, b) => b.contrast - a.contrast || AXIS_INDEX[a.code] - AXIS_INDEX[b.code])
     .slice(0, max)
 }
@@ -176,7 +180,7 @@ export function columnTexts(sessions: number, allPeaks: readonly CardPeak[]): Ca
       const name = wrapLine(peakName(p), 34)
       name.forEach((line, i) => put(line, y + 26 * i, 22, 700, 'textStrong'))
       y += 26 * (name.length - 1)
-      put(cardPeakStands(Math.abs(p.contrast).toFixed(1)), y + 25, 16, 400, 'text')
+      put(cardPeakStands(p.contrast.toFixed(1)), y + 25, 16, 400, 'text')
       put(cardPeakRange(formatTheta(p.lo90, 1), formatTheta(p.hi90, 1)), y + 47, 16, 400, 'textMuted')
       y += 86
     }
@@ -334,7 +338,7 @@ export interface CardInput {
   readonly estimates: readonly AxisEstimate[]
   /** Skills the person left off the card. */
   readonly hidden?: Iterable<AxisCode>
-  /** The credible peaks of the whole measured profile, strongest first (`distinctivePeaks`). */
+  /** The credible peaks among the skills ON the card, strongest first (`distinctivePeaks` over the shown skills). */
   readonly peaks?: readonly CardPeak[]
   /** Sessions the profile rests on. */
   readonly sessions: number

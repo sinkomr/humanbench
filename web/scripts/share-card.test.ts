@@ -57,7 +57,7 @@ describe('the card makes no request and stores nothing (DESIGN §9.9)', () => {
         expect(spec, `${rel} imports ${spec}`).not.toMatch(/brief|notes|talk|slots/i)
       }
     }
-    // The card and export code never read the save either; the panel only takes estimates and peaks.
+    // The card and export code never read the save either; the panel only takes estimates and the score.
     for (const rel of ['src/viz/card.ts', 'src/viz/card-copy.ts', 'src/viz/export.ts']) {
       const imports = [...code(rel).matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]!)
       for (const spec of imports) expect(spec, `${rel} imports ${spec}`).not.toMatch(/reveal|session|save\/(?!io)/)
@@ -66,7 +66,7 @@ describe('the card makes no request and stores nothing (DESIGN §9.9)', () => {
 
   it('the panel takes no save, no notes and no copy from the reveal beyond its own share strings', () => {
     const imports = [...code('src/reveal/ShareCard.svelte').matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]!)
-    expect(imports.filter((s) => s.startsWith('.')).sort()).toEqual(['../engine/axes', '../save/clock', '../viz/card', '../viz/export', '../viz/palette', '../viz/profile', './copy'].sort())
+    expect(imports.filter((s) => s.startsWith('.')).sort()).toEqual(['../engine/axes', '../save/clock', '../viz/card', '../viz/export', '../viz/palette', '../viz/profile', './copy', './peaks'].sort())
     const names = [...code('src/reveal/ShareCard.svelte').matchAll(/import\s*\{([^}]*)\}\s*from\s*'\.\/copy'/g)].flatMap((m) => m[1]!.split(',').map((x) => x.trim()).filter((x) => x !== ''))
     expect(names.length).toBeGreaterThan(10)
     for (const n of names) expect(n, n).toMatch(/^SHARE_|^share/)

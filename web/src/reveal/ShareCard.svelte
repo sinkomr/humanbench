@@ -4,18 +4,20 @@
   or passed to the device's share sheet. Everything is made here, on this device: no request, no
   image server. The card itself (`viz/card.ts`) draws only skills that are ticked and measured, never
   an Emotion Reading estimate below the 0 SD ring, and holds no notes text, resource line or save
-  data: this component has no way to hand it any.
+  data: this component has no way to hand it any. The card's peaks are worked out here from the
+  score over the skills on the card ONLY (a mean over a hidden skill or a withheld Emotion Reading
+  would carry its level into the visible numbers), again after every tick.
 
   The PNG is prepared shortly after the card changes (debounced), so that the download and share
   buttons act inside the click, where iOS wants them. The SVG is always ready.
 -->
 <script lang="ts">
-  import type { AxisCode } from '../engine/axes'
+  import { N_AXES, type AxisCode } from '../engine/axes'
   import { wallClockMs } from '../save/clock'
-  import { buildCard, cardAxes, cardSvg, CARD_H, CARD_W, EMO_CODE, MIN_CARD_SKILLS, PNG_SCALE, type CardPeak } from '../viz/card'
+  import { buildCard, cardAxes, cardSvg, CARD_H, CARD_W, EMO_CODE, MIN_CARD_SKILLS, PNG_SCALE } from '../viz/card'
   import { canShareImage, cardFileName, downloadBlob, PNG_H, PNG_W, shareImage, svgBlob, svgDataUrl, svgToPng, type ImageShareOutcome, type Raster } from '../viz/export'
   import type { ThemeName } from '../viz/palette'
-  import type { AxisEstimate } from '../viz/profile'
+  import type { AxisEstimate, ProfileScore } from '../viz/profile'
   import {
     SHARE_COLOURS_LEGEND,
     SHARE_DARK,
@@ -40,13 +42,14 @@
     sharePngDone,
     shareTooFew,
   } from './copy'
+  import { distinctivePeaks } from './peaks'
   import './reveal.css'
 
   interface Props {
     /** All 17 estimates in spoke order (`axisEstimates`). */
     readonly estimates: readonly AxisEstimate[]
-    /** The credible peaks of the whole measured profile, strongest first (`distinctivePeaks`). */
-    readonly peaks: readonly CardPeak[]
+    /** The score the estimates came from: the peaks are worked out from it over the skills on the card. */
+    readonly score: ProfileScore
     /** Sessions the profile rests on. */
     readonly sessions: number
     /** Injectable for tests: rasterise the card's SVG (default: a canvas). */
@@ -65,7 +68,7 @@
 
   let {
     estimates,
-    peaks,
+    score,
     sessions,
     makePng = (svg, w, h) => svgToPng(svg, w, h),
     download = (blob, name) => downloadBlob(blob, name),
@@ -87,6 +90,9 @@
   // Emotion Reading, when it was measured (R-5.6.4: never on a card below the 0 SD ring).
   const emo = $derived(axes.find((a) => a.estimate.code === EMO_CODE && a.status !== 'unmeasured'))
   const shownCount = $derived(axes.filter((a) => a.status === 'shown').length)
+  const shownCodes = $derived(axes.filter((a) => a.status === 'shown').map((a) => a.estimate.code))
+  // Peaks against the mean of the skills on the card, so no hidden or withheld skill's level shows in them (A12, R-5.6.4).
+  const peaks = $derived(shownCount >= MIN_CARD_SKILLS ? distinctivePeaks(score, shownCodes, { max: N_AXES }) : [])
   const card = $derived(shownCount >= MIN_CARD_SKILLS ? buildCard({ estimates, hidden, peaks, sessions, theme }) : null)
   const previewUrl = $derived(card === null ? '' : svgDataUrl(card.svg))
 

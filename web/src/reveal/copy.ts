@@ -69,7 +69,8 @@ export const SHARE_PLACEHOLDER = 'A picture of your profile to share, where you 
 export const SHARE_INTRO =
   'A picture of your profile that you can post or send. It is made on this device and nothing is uploaded. It shows the skills you leave ticked, your most distinctive peaks and how many sessions it rests on, and never a total or a single score.'
 export const SHARE_SKILLS_LEGEND = 'Skills on the card'
-export const SHARE_SKILLS_HELP = 'Untick any skill to leave it off the card. Skills that were not measured are not on the card.'
+export const SHARE_SKILLS_HELP =
+  'Untick any skill to leave it off the card. Skills that were not measured are not on the card. The peaks on the card compare only the skills left on it, so they can differ from the peaks above.'
 export const SHARE_SHOW_ALL = 'Show all'
 export const SHARE_HIDE_ALL = 'Hide all'
 /**

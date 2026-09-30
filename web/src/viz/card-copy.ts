@@ -18,7 +18,7 @@ export function cardSessions(n: number): string {
 }
 
 export const CARD_PEAKS_HEADING = 'Most distinctive peaks'
-export const CARD_PEAKS_SUB = 'Compared with the rest of my own profile'
+export const CARD_PEAKS_SUB = 'Compared with the other skills on this card'
 /** "Stands out by about 0.9 SD" */
 export function cardPeakStands(contrast: string): string {
   return `Stands out by about ${contrast} SD`
@@ -27,7 +27,7 @@ export function cardPeakStands(contrast: string): string {
 export function cardPeakRange(lo: string, hi: string): string {
   return `90% range ${lo} to ${hi} SD`
 }
-export const CARD_NO_PEAKS = 'No skill stands out clearly yet. Ranges that overlap are not real differences.'
+export const CARD_NO_PEAKS = 'No skill stands out clearly among those shown.'
 
 /** The card's small print: the scale is provisional, the shape carries no total, and the choice of skills is mine. */
 export const CARD_NOTE_SCALE = 'Rough estimates on a provisional scale. Ranges that overlap are not real differences.'
