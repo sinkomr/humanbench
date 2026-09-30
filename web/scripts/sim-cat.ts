@@ -11,25 +11,31 @@
  *   fixture within 0.02 (n must be 300 or 2000, the sizes the fixture has Python results for).
  * - **(b)** the adaptive session (`src/sim/cat.ts`) for the same n people: the real selector,
  *   scorer and registered families (blocks included) under the A15 time rule with the session
- *   target `--target-min` (default 27.5 min, the midpoint of A15's 25–30; the time acceptance is
- *   every simulated session ≤ 30 min), then, unless `--fixed 0`, the same with a fixed length of
- *   `--fixed` items per CAT axis (DESIGN §14.3 "r ≥ .85 at 20 items/axis"). When the fixture has
- *   Python results for n, each table also shows the Python M1.4a r per axis and the gap: M1.4a
- *   is a fixed 2PL form, so this is a comparison of two designs, not the 0.02 parity of (a).
+ *   target `--target-min` (default 27.5 min, the midpoint of A15's 25–30; the acceptance is
+ *   every simulated session ≤ 30 min and 90% coverage in range; its r is REPORTED, not judged),
+ *   then, unless `--fixed 0`, the same with a fixed length of `--fixed` items per CAT axis
+ *   (default 20; acceptance: r ≥ .85 on MAT/SPA/QR and coverage in range). The r criterion is
+ *   DESIGN §14.3's "r ≥ .85 at 20 items/axis" (user decision 2026-09-29, ROADMAP M1.4b), so it is
+ *   judged only on a fixed-length run of ≥ 20 items/axis; `--fixed 0` (or under 20) leaves it
+ *   unchecked and says so, and `--strict` refuses those values (usage error) rather than exit 0
+ *   with the criterion unchecked. When the fixture has Python results for n, each table also shows the
+ *   Python M1.4a r per axis and the gap: M1.4a is a fixed 2PL form, so this is a comparison of
+ *   two designs, not the 0.02 parity of (a).
  *
  * Prints one table per run with its acceptance verdict (progress goes to stderr). `--json` writes
  * the numbers; a relative path resolves against the directory npm was run from. Exit codes: 0 (or
- * 1 with `--strict` when any acceptance fails), 2 on a usage error. The full n = 2,000 run takes
- * a few minutes (`scripts/sim-cat.slow.test.ts` runs it with `npm run test:slow`).
+ * 1 with `--strict` when any acceptance fails, as above), 2 on a usage error (including `--strict`
+ * on part b with `--fixed` under 20). The full n = 2,000
+ * run takes a few minutes (`scripts/sim-cat.slow.test.ts` runs it with `npm run test:slow`).
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { A15_TARGET_S } from '../src/engine/selector'
-import { runCat, type CatRun } from '../src/sim/cat'
+import { M1_ITEMS_PER_AXIS, runCat, type CatRun } from '../src/sim/cat'
 import { m14aFixtureProblems, parity, pythonResults, runM14a, type M14aFixture } from '../src/sim/m14a'
-import { axisTable, catAcceptanceFailures, catVsPython, formatCat, formatParity, type CatPythonRow } from '../src/sim/report'
+import { axisTable, catAcceptanceFailures, catRAxes, catVsPython, formatCat, formatParity, type CatPythonRow } from '../src/sim/report'
 import { PUB_ROOT, UsageError } from './dump-lib'
 
 export const SIM_CAT_USAGE = 'usage: npm run sim:cat -- [--part a|b|all] [--n 2000] [--seed m14b] [--target-min 27.5] [--fixed 20] [--json <file>] [--strict]'
@@ -42,7 +48,7 @@ export interface SimCatArgs {
   readonly n: number
   readonly seed: string
   readonly targetMin: number
-  /** Items per CAT axis of the fixed-length run; 0 skips it. */
+  /** Items per CAT axis of the fixed-length run (default {@link M1_ITEMS_PER_AXIS}); 0 skips it. */
   readonly fixed: number
   /** Absolute path of the JSON output, if any. */
   readonly json?: string
@@ -55,7 +61,7 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
   let n = 2000
   let seed = 'm14b'
   let targetMin = A15_TARGET_S / 60
-  let fixed = 20
+  let fixed: number = M1_ITEMS_PER_AXIS
   let json: string | undefined
   let strict = false
   const value = (i: number, flag: string): string => {
@@ -81,6 +87,11 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
   if (!(Number.isSafeInteger(n) && n >= 2)) throw new UsageError('--n must be an integer ≥ 2')
   if (!(Number.isFinite(targetMin) && targetMin > 0)) throw new UsageError('--target-min must be a positive number of minutes')
   if (!(Number.isSafeInteger(fixed) && fixed >= 0)) throw new UsageError('--fixed must be an integer ≥ 0 (0 skips the fixed-length run)')
+  // --strict is the M1.4b certificate, and its r criterion (DESIGN §14.3) is judged only at ≥ 20
+  // items/axis: without such a run a strict exit 0 would certify a criterion nobody checked.
+  if (strict && part !== 'a' && fixed < M1_ITEMS_PER_AXIS) {
+    throw new UsageError(`--strict judges r ≥ .85 at ${M1_ITEMS_PER_AXIS} items/axis (DESIGN §14.3), so it needs --fixed ${M1_ITEMS_PER_AXIS} or more (got ${fixed}); drop --strict to run without that check`)
+  }
   return { part, n, seed, targetMin, fixed, ...(json === undefined ? {} : { json }), strict }
 }
 
@@ -107,6 +118,8 @@ function catJson(run: CatRun, fails: readonly string[], python: readonly CatPyth
     floor_short: run.floorShort,
     block_observed: run.blockObserved,
     segment_ends: run.segmentEnds,
+    // The axes r ≥ .85 was judged on: MAT/SPA/QR on a run of ≥ 20 items/axis (DESIGN §14.3), [] when r is only reported.
+    r_criterion_axes: catRAxes(run),
     acceptance_failures: fails,
     ...(python === undefined ? {} : { vs_python_m14a: python }),
   }
@@ -165,6 +178,9 @@ export function main(argv: readonly string[], cwd = process.env.INIT_CWD ?? proc
       console.log('')
       failed ||= fails.length > 0
       out[key] = catJson(run, fails, python)
+    }
+    if (!runs.some(({ run }) => catRAxes(run).length > 0)) {
+      console.log(`note: no fixed-length run of ≥ ${M1_ITEMS_PER_AXIS} items/axis, so the r ≥ .85 criterion (DESIGN §14.3) was not checked (time and coverage only; --strict needs --fixed ${M1_ITEMS_PER_AXIS} or more)\n`)
     }
   }
   if (args.json !== undefined) {

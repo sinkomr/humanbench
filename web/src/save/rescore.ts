@@ -16,7 +16,10 @@
  *   server or a kept payload (M2), and the resolver is injectable for that;
  * - an item (kind 'item', A9 models) is re-scored from the stored response with the family's
  *   `score()` — raw data are authoritative (§7.8) — and becomes a 2PL (also 2PL-testlet) or 3PL
- *   observation with the item's params. When the stored response is not one the family accepts
+ *   observation with the item's params. A 2PL-testlet item is scored on its own, without the
+ *   testlet effect of §7.1 (engine `testletObservation()`, M3.9): its siblings in the session are not
+ *   grouped yet, which needs the testlet id on the item (`ItemInstance` has none) and comes with the
+ *   first family that has testlet items. When the stored response is not one the family accepts
  *   (e.g. a time-out with no answer, `MalformedResponseError`), the stored `correct` stands (§8:
  *   stored for offline re-scoring); with no stored `correct` either, the response is skipped;
  * - a block (kind 'block', A10) is scored with the family's `score()`: its GRM or Gaussian
@@ -82,7 +85,7 @@ function itemObservation(item: ItemInstance<object, object>, y: 0 | 1): Resolved
   const p = item.params
   switch (p.model) {
     case '2pl':
-    case '2pl_testlet': // scored as a 2PL observation; the testlet effect is the scorer's (M3.9)
+    case '2pl_testlet': // scored as a 2PL observation, γ left out until testlets are grouped (engine/types.ts)
       return { observation: { kind: '2pl', axis: item.axis, a: p.a, b: p.b, y } }
     case '3pl':
       return { observation: { kind: '3pl', axis: item.axis, a: p.a, b: p.b, c: p.c, y } }

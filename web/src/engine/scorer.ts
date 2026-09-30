@@ -1,11 +1,15 @@
 /**
  * Person scorer (DESIGN §7.2, §11.2): correlated-factor MAP θ with a Laplace covariance, and the
  * per-axis grid EAP. TypeScript port of the bank reference `hb.calib.mirt_score` (ROADMAP A2); it
- * matches bank `golden/scoring_v1.json` to 1e-6 on θ, cov, EAP and the log posterior.
+ * matches bank `golden/scoring_v2.json` (scoring_v1 plus the testlet cases, M3.9) to 1e-6 on θ,
+ * cov, EAP and the log posterior.
  *
  * Model (simple structure, §7.2). θ ∈ R^K over the axes in canonical order (K = mu.length, the 17
  * axes of axes.ts by default), prior θ ~ N(μ, Σ). Each observation loads on exactly one axis and
- * is a 2PL, 3PL, GRM or Gaussian term (irt.ts; wire schema in types.ts).
+ * is a 2PL, 3PL, GRM, Gaussian or testlet term (irt.ts; wire schema in types.ts). A testlet term
+ * (§7.1, M3.9) is the block of 1 to 8 2PL items of one passage / game setup that share an effect
+ * γ ~ N(0, 0.3²), integrated out; it is one term of the likelihood like a GRM block, with its own
+ * score, observed and expected information (irt.ts "testlet").
  *
  * Log posterior ({@link logPosterior}): the log joint density with every normalising constant,
  *   Σ_j log p(y_j | θ_k(j)) − ½·K·log 2π − ½·log|Σ| − ½·(θ − μ)ᵀΣ⁻¹(θ − μ),
@@ -38,10 +42,13 @@ import {
   check3pl,
   checkGaussian,
   checkGrm,
+  checkTestlet,
   observationInfo,
   observationLoglik,
   observationObservedInfo,
   observationScore,
+  TESTLET_SD,
+  testletDerivatives,
 } from './irt'
 import {
   cholesky,
@@ -53,7 +60,7 @@ import {
   type Matrix,
   type Vector,
 } from './linalg'
-import type { Observation } from './types'
+import type { Observation, TestletItem } from './types'
 
 /** Maximum Newton / Fisher-scoring iterations in {@link mapTheta} (A2). */
 export const MAP_MAX_ITER = 50
@@ -131,13 +138,17 @@ const OBSERVATION_FIELDS: Readonly<Record<Observation['kind'], readonly string[]
   '3pl': ['a', 'b', 'c', 'y'],
   grm: ['a', 'b', 'y'],
   gaussian: ['lam', 'd', 'sigma', 'x'],
+  testlet: ['tau', 'items'],
 }
+/** The fields of one item of a 'testlet' observation. */
+const TESTLET_ITEM_FIELDS: readonly string[] = ['a', 'b', 'y']
 
 /**
  * Validate one observation (the rules of bank `observation_from_json`: exactly the fields of its
  * kind, a known axis among the first `k`, finite parameters, 0 < c < 1, increasing GRM thresholds
- * with y ∈ 0..m, σ > 0) and return its axis index. Throws a RangeError otherwise, so e.g. a 3PL
- * item mislabelled `2pl` fails instead of being scored with c ignored.
+ * with y ∈ 0..m, σ > 0, a testlet of 1 to 8 items with exactly the fields a, b, y and τ ≥ 0) and
+ * return its axis index. Throws a RangeError otherwise, so e.g. a 3PL item mislabelled `2pl`
+ * fails instead of being scored with c ignored.
  */
 export function checkObservation(o: Observation, k: number = N_AXES): number {
   if (typeof o !== 'object' || o === null || Array.isArray(o)) throw new RangeError('observation must be an object')
@@ -179,10 +190,32 @@ export function checkObservation(o: Observation, k: number = N_AXES): number {
       finite('x', o.x)
       checkGaussian(o.sigma)
       break
+    case 'testlet':
+      checkTestlet(o.tau, o.items) // τ, the item count and every a, b, y
+      for (const it of o.items) {
+        const itemFields = Object.keys(it)
+        if (itemFields.length !== TESTLET_ITEM_FIELDS.length || itemFields.some((f) => !TESTLET_ITEM_FIELDS.includes(f))) {
+          throw new RangeError(`testlet item needs exactly the fields [${[...TESTLET_ITEM_FIELDS].sort().join(', ')}], got [${[...itemFields].sort().join(', ')}]`)
+        }
+      }
+      break
     default:
       throw new RangeError(`unknown observation kind ${JSON.stringify((o as { kind?: unknown }).kind)}`)
   }
   return axis
+}
+
+/**
+ * The 'testlet' observation of the 1 to 8 items of one passage / game setup that a session
+ * answered (DESIGN §7.1, ROADMAP M3.9): they share a random effect γ ~ N(0, `tau`²), `tau`
+ * defaulting to {@link TESTLET_SD} (0.3). Validated like any observation (RangeError), also when
+ * `items` is not an array of item objects.
+ */
+export function testletObservation(axis: AxisCode, items: readonly TestletItem[], tau: number = TESTLET_SD): Observation {
+  checkTestlet(tau, items) // before the copy below, which would throw a TypeError on malformed items
+  const o: Observation = { kind: 'testlet', axis, tau, items: items.map((it) => ({ a: it.a, b: it.b, y: it.y })) }
+  checkObservation(o)
+  return o
 }
 
 /** An observation with its axis index resolved. */
@@ -253,6 +286,14 @@ function derivatives(theta: Vector, items: readonly Item[]): { score: Vector; in
   const observed = new Array<number>(k).fill(0)
   for (const it of items) {
     const t = theta[it.axis]!
+    if (it.obs.kind === 'testlet') {
+      // One pass over the γ nodes gives all three (M3.9); the values are those of the separate calls.
+      const d = testletDerivatives(t, it.obs.tau, it.obs.items)
+      score[it.axis]! += d.score
+      info[it.axis]! += d.info
+      observed[it.axis]! += d.observed
+      continue
+    }
     score[it.axis]! += observationScore(it.obs, t)
     info[it.axis]! += observationInfo(it.obs, t)
     observed[it.axis]! += observationObservedInfo(it.obs, t)

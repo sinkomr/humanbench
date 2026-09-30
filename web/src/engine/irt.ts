@@ -8,6 +8,8 @@
  * - grm: Samejima graded response, y ∈ {0..m}, a > 0, thresholds b_1 < … < b_m,
  *   P*(≥j) = σ(a(θ − b_j)), P*(≥0) = 1, P*(≥m+1) = 0, P(y = j) = P*(≥j) − P*(≥j+1).
  * - gaussian: x ~ N(λθ + d, σ²) with σ > 0; λ (`lam`) may be negative (RT log-time has λ = −1).
+ * - testlet: 1 to 8 2PL items sharing an effect γ ~ N(0, τ²), integrated out on a fixed grid
+ *   (§7.1, M3.9; derivation in the "testlet" section below).
  *
  * Parameters outside these domains (c ∉ (0, 1), σ ≤ 0, unordered GRM thresholds, y outside the
  * category set, an unknown observation kind) throw a RangeError instead of returning NaN.
@@ -24,7 +26,7 @@
  * and GRM log-probabilities use log(σ(x) − σ(y)) = log σ(x) + log σ(−y) + log(−expm1(y − x)).
  */
 
-import type { Observation } from './types'
+import type { Observation, TestletItem } from './types'
 
 const LOG_2PI = Math.log(2 * Math.PI)
 
@@ -256,6 +258,217 @@ export function infoGaussian(lam: number, sigma: number): number {
   return (lam * lam) / (sigma * sigma)
 }
 
+// ------------------------------------------------------------------------------ testlet
+
+/*
+ * Testlet (passage / game-setup) block, DESIGN §7.1, ROADMAP M3.9. The n items of one testlet
+ * share a random effect γ ~ N(0, τ²), τ = TESTLET_SD = 0.3, so given γ the items are independent
+ * 2PL items on θ + γ, and the block's likelihood in θ is the marginal
+ *
+ *   L(θ) = ∫ Π_j p_j(y_j | θ + γ) N(γ; 0, τ²) dγ,   p_j(1 | t) = σ(a_j(t − b_j)).
+ *
+ * The integral is a fixed rule, part of the model and of the golden vectors (scoring_v2): the
+ * equal-spacing rule with Gaussian weights on γ = τ·z_i, z_i = −8 + i/4 for i = 0..64 (z = 0 is a
+ * node), w_i = exp(−z_i²/2)/Σ_k exp(−z_k²/2), so Σ w_i = 1 and L = Π p_j exactly when τ = 0. For
+ * smooth integrands this rule converges geometrically in the spacing. Its error against the
+ * exact integral grows with the steepness |a|τ (the sigmoids' poles sit at distance π/(|a|τ)
+ * from the real line in z) and with how improbable the response pattern is (the error is
+ * relative to L). For |a|τ ≤ TESTLET_AT_MAX (3, i.e. |a| ≤ 10 at τ = 0.3) it is below 1e-6 in
+ * log L wherever log L ≥ −20; the worst errors measured at |a|τ = 3 are about 3e-4 for
+ * log L ≥ −30 and 5e-2 for log L ≥ −40 (irt.test.ts checks the first bound against a dense
+ * integral). Those are the far tails of the posterior in θ. The rule, not the exact integral,
+ * is the model, and the ports agree on it to rounding.
+ *
+ * With π_i(θ) = w_i L_i / Σ_k w_k L_k the posterior weight of node i, S_i = Σ_j a_j (y_j − p_ij)
+ * and O_i = Σ_j a_j² p_ij (1 − p_ij) the score and the 2PL information of the items at θ + τ·z_i:
+ *
+ *   score              d log L/dθ     = Σ_i π_i S_i                       (Fisher's identity: exact)
+ *   observed info      −d² log L/dθ²  = Σ_i π_i O_i − (Σ_i π_i S_i² − (Σ_i π_i S_i)²)
+ *   expected info      Σ_y P(y|θ)·score(y)², over the 2^n response patterns y, P(y|θ) = Σ_i w_i L_i(y),
+ *                      = Σ_y (Σ_i w_i L_i(y) S_i(y))² / P(y|θ)
+ *
+ * The expected information is that of the marginal model, so it is smaller than the sum of the
+ * items' 2PL information (the shared γ makes them partly redundant: about 1/(1 + τ²·I) of it for
+ * items with total information I, i.e. a discount of roughly 10-25% for typical 3-4 item
+ * testlets, DESIGN §7.1 "about 20%"). The exact marginal log-likelihood of 2PL items is concave
+ * in θ (Prekopa), so the exact observed information is >= 0. The 65-node sum is a comb of
+ * shifted copies and need not be concave: for |a|τ ≤ TESTLET_AT_MAX the observed information
+ * stays >= −1e-9 (rounding; checked over θ ∈ [−5, 5] in irt.test.ts), but for very steep items
+ * the ripples make it clearly negative (one item with a = 50 at τ = 0.3: about −137), which is
+ * why checkTestlet rejects |a|τ > TESTLET_AT_MAX. Where the Newton Hessian is not positive
+ * definite anyway, the MAP loop (scorer.ts) falls back to Fisher scoring.
+ */
+
+/** The testlet effect SD τ, DESIGN §7.1: γ ~ N(0, 0.3²). */
+export const TESTLET_SD = 0.3
+/**
+ * Largest |a|·τ of a testlet item: 10 × 0.3, the bank item schema's cap (`A_MAX`) at the model's τ.
+ * The grid rule is validated up to it (module comment); τ = 0 has no limit (the rule is then
+ * exactly the independent 2PL).
+ */
+export const TESTLET_AT_MAX = 3
+/** Most items in one testlet observation (DESIGN §3: 3-4 questions per setup); the expected information sums 2^n patterns. */
+export const MAX_TESTLET_ITEMS = 8
+/** The γ quadrature: z_i = −TESTLET_Z_MAX + i·TESTLET_Z_STEP for i = 0..TESTLET_N_NODES − 1. */
+export const TESTLET_Z_MAX = 8
+export const TESTLET_Z_STEP = 0.25
+export const TESTLET_N_NODES = 65
+
+/** The nodes z_i (exact binary fractions) and their log weights, normalised to Σ exp = 1. */
+const TESTLET_Z: readonly number[] = Object.freeze(Array.from({ length: TESTLET_N_NODES }, (_, i) => -TESTLET_Z_MAX + i * TESTLET_Z_STEP))
+const TESTLET_LOG_W: readonly number[] = (() => {
+  let total = 0
+  for (const z of TESTLET_Z) total += Math.exp(-0.5 * z * z)
+  const logTotal = Math.log(total)
+  return Object.freeze(TESTLET_Z.map((z) => -0.5 * z * z - logTotal))
+})()
+const TESTLET_W: readonly number[] = Object.freeze(TESTLET_LOG_W.map(Math.exp))
+/** The quadrature nodes z_i and weights w_i of the γ integral (γ_i = τ·z_i), for tests and ports. */
+export const TESTLET_NODES: readonly number[] = TESTLET_Z
+export const TESTLET_WEIGHTS: readonly number[] = TESTLET_W
+
+/** Throws unless τ is finite and ≥ 0 and the items are 1 to {@link MAX_TESTLET_ITEMS} finite 2PL items with |a|·τ ≤ {@link TESTLET_AT_MAX} and binary y. */
+export function checkTestlet(tau: number, items: readonly TestletItem[]): void {
+  if (typeof tau !== 'number' || !Number.isFinite(tau) || tau < 0) throw new RangeError(`testlet tau must be finite and ≥ 0, got ${String(tau)}`)
+  if (!Array.isArray(items) || items.length < 1 || items.length > MAX_TESTLET_ITEMS) {
+    throw new RangeError(`a testlet has 1 to ${MAX_TESTLET_ITEMS} items, got ${Array.isArray(items) ? items.length : String(items)}`)
+  }
+  for (const it of items) {
+    if (typeof it !== 'object' || it === null) throw new RangeError('testlet item must be an object')
+    if (typeof it.a !== 'number' || !Number.isFinite(it.a)) throw new RangeError(`testlet item a must be finite, got ${String(it.a)}`)
+    if (Math.abs(it.a) * tau > TESTLET_AT_MAX) {
+      throw new RangeError(`testlet item |a|·tau must be ≤ ${TESTLET_AT_MAX} (|a| ≤ 10 at tau = 0.3: the grid rule's range), got |${it.a}|·${tau}`)
+    }
+    if (typeof it.b !== 'number' || !Number.isFinite(it.b)) throw new RangeError(`testlet item b must be finite, got ${String(it.b)}`)
+    checkBinary(it.y)
+  }
+}
+
+/** Per node i: log w_i + Σ_j log p_j(y_j | θ + τ z_i). */
+function testletNodeLogLik(theta: number, tau: number, items: readonly TestletItem[]): number[] {
+  return TESTLET_Z.map((z, i) => {
+    const t = theta + tau * z
+    let l = 0
+    for (const it of items) {
+      const x = it.a * (t - it.b)
+      l += it.y === 1 ? logLogistic(x) : logLogistic(-x)
+    }
+    return TESTLET_LOG_W[i]! + l
+  })
+}
+
+function logSumExp(v: readonly number[]): number {
+  let m = -Infinity
+  for (const x of v) m = Math.max(m, x)
+  let s = 0
+  for (const x of v) s += Math.exp(x - m)
+  return m + Math.log(s)
+}
+
+/** log L(θ) of a testlet: the log of the γ-marginal likelihood of its responses (module comment). */
+export function loglikTestlet(theta: number, tau: number, items: readonly TestletItem[]): number {
+  checkTestlet(tau, items)
+  return logSumExp(testletNodeLogLik(theta, tau, items))
+}
+
+/** The score, observed information and (when asked) expected information of a testlet at θ. */
+export interface TestletDerivatives {
+  /** d log L/dθ = Σ_i π_i S_i. */
+  score: number
+  /** −d² log L/dθ² = E_π[O] − Var_π[S] (module comment); ≥ −1e-9 for |a|·τ ≤ {@link TESTLET_AT_MAX}. */
+  observed: number
+  /** Expected (Fisher) information of the marginal model over the 2^n response patterns; NaN unless asked for. */
+  info: number
+}
+
+/**
+ * The three derivative quantities of a testlet in one pass over the nodes: each item's σ and 1 − σ
+ * at each node come from one exp (stable for both signs of the logit), shared by the score, the
+ * observed information and the pattern sum of the expected information. `withInfo` false skips
+ * the 2^n pattern sum (info is NaN). This is what the MAP loop calls (scorer.ts), where the three
+ * are needed together at every iteration.
+ */
+export function testletDerivatives(theta: number, tau: number, items: readonly TestletItem[], withInfo = true): TestletDerivatives {
+  checkTestlet(tau, items)
+  const n = items.length
+  const N = TESTLET_N_NODES
+  const p = new Float64Array(N * n) // p_ij = σ(a_j(θ + τ z_i − b_j))
+  const q = new Float64Array(N * n) // 1 − p_ij, from the same exp (no cancellation)
+  const pa = new Float64Array(N) // Σ_j a_j p_ij
+  const lw = new Array<number>(N) // log w_i + Σ_j log p_j(y_j | θ + τ z_i)
+  const s = new Array<number>(N) // S_i = Σ_j a_j (y_j − p_ij)
+  const o = new Array<number>(N) // O_i = Σ_j a_j² p_ij q_ij
+  for (let i = 0; i < N; i++) {
+    const t = theta + tau * TESTLET_Z[i]!
+    let l = 0
+    let si = 0
+    let oi = 0
+    let pai = 0
+    for (let j = 0; j < n; j++) {
+      const it = items[j]!
+      const x = it.a * (t - it.b)
+      const e = Math.exp(-Math.abs(x))
+      const inv = 1 / (1 + e)
+      const pj = x >= 0 ? inv : e * inv
+      const qj = x >= 0 ? e * inv : inv
+      p[i * n + j] = pj
+      q[i * n + j] = qj
+      const l1 = Math.log1p(e) // log σ(x) = −l1 (x ≥ 0) or x − l1; log σ(−x) = −x − l1 (x ≥ 0) or −l1
+      l += it.y === 1 ? (x >= 0 ? -l1 : x - l1) : x >= 0 ? -x - l1 : -l1
+      si += it.a * (it.y - pj)
+      oi += it.a * it.a * pj * qj
+      pai += it.a * pj
+    }
+    lw[i] = TESTLET_LOG_W[i]! + l
+    s[i] = si
+    o[i] = oi
+    pa[i] = pai
+  }
+  const ll = logSumExp(lw)
+  let eS = 0
+  let eSS = 0
+  let eO = 0
+  for (let i = 0; i < N; i++) {
+    const pi = Math.exp(lw[i]! - ll)
+    eS += pi * s[i]!
+    eSS += pi * s[i]! * s[i]!
+    eO += pi * o[i]!
+  }
+  let info = Number.NaN
+  if (withInfo) {
+    info = 0
+    for (let m = 0; m < 1 << n; m++) {
+      let ya = 0 // Σ_j a_j y_j
+      for (let j = 0; j < n; j++) if (((m >> j) & 1) === 1) ya += items[j]!.a
+      let prob = 0 // P(y | θ)
+      let num = 0 // P(y | θ) · score(y | θ)
+      for (let i = 0; i < N; i++) {
+        let l = TESTLET_W[i]!
+        for (let j = 0; j < n; j++) l *= ((m >> j) & 1) === 1 ? p[i * n + j]! : q[i * n + j]!
+        prob += l
+        num += l * (ya - pa[i]!)
+      }
+      if (prob > 0) info += (num * num) / prob
+    }
+  }
+  return { score: eS, observed: eO - (eSS - eS * eS), info }
+}
+
+/** d log L/dθ = Σ_i π_i S_i. */
+export function scoreTestlet(theta: number, tau: number, items: readonly TestletItem[]): number {
+  return testletDerivatives(theta, tau, items, false).score
+}
+
+/** Observed information −d² log L/dθ² = E_π[O] − Var_π[S] (module comment); ≥ −1e-9 for |a|·τ ≤ {@link TESTLET_AT_MAX}. */
+export function observedInfoTestlet(theta: number, tau: number, items: readonly TestletItem[]): number {
+  return testletDerivatives(theta, tau, items, false).observed
+}
+
+/** Expected (Fisher) information of the marginal testlet model, summed over the 2^n response patterns (module comment). */
+export function infoTestlet(theta: number, tau: number, items: readonly TestletItem[]): number {
+  return testletDerivatives(theta, tau, items, true).info
+}
+
 // ------------------------------------------------------------------- observation dispatch
 
 /** Exhaustiveness guard: an observation whose kind is outside the union (e.g. '2pl_testlet'). */
@@ -274,6 +487,8 @@ export function observationLoglik(obs: Observation, theta: number): number {
       return loglikGrm(theta, obs.a, obs.b, obs.y)
     case 'gaussian':
       return loglikGaussian(theta, obs.lam, obs.d, obs.sigma, obs.x)
+    case 'testlet':
+      return loglikTestlet(theta, obs.tau, obs.items)
     default:
       return unknownKind(obs)
   }
@@ -290,6 +505,8 @@ export function observationScore(obs: Observation, theta: number): number {
       return scoreGrm(theta, obs.a, obs.b, obs.y)
     case 'gaussian':
       return scoreGaussian(theta, obs.lam, obs.d, obs.sigma, obs.x)
+    case 'testlet':
+      return scoreTestlet(theta, obs.tau, obs.items)
     default:
       return unknownKind(obs)
   }
@@ -306,6 +523,8 @@ export function observationInfo(obs: Observation, theta: number): number {
       return infoGrm(theta, obs.a, obs.b)
     case 'gaussian':
       return infoGaussian(obs.lam, obs.sigma)
+    case 'testlet':
+      return infoTestlet(theta, obs.tau, obs.items)
     default:
       return unknownKind(obs)
   }
@@ -325,6 +544,8 @@ export function observationObservedInfo(obs: Observation, theta: number): number
       return observedInfoGrm(theta, obs.a, obs.b, obs.y)
     case 'gaussian':
       return infoGaussian(obs.lam, obs.sigma)
+    case 'testlet':
+      return observedInfoTestlet(theta, obs.tau, obs.items)
     default:
       return unknownKind(obs)
   }

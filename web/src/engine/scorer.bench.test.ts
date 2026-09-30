@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { AXES, AXIS_CODES, initialSigma, N_AXES } from './axes'
 import { grmProbs, logistic } from './irt'
 import { createRng } from './prng'
-import { mapTheta } from './scorer'
-import type { Observation } from './types'
+import { mapTheta, testletObservation } from './scorer'
+import type { Observation, TestletItem } from './types'
 
 /** The CI flag, read without Node typings (the app tsconfig has none); '', '0' and 'false' are unset. */
 const CI_ENV = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI
@@ -48,6 +48,30 @@ function session(seed: string): Observation[] {
   })
 }
 
+/**
+ * A session with testlets (M3.9): the plain session's terms on the other axes, and six 4-item
+ * testlets (the DESIGN §3 size) on each of LG and RC, whose responses follow the §7.1 model
+ * (a passage effect γ ~ N(0, 0.3²) per testlet).
+ */
+function sessionWithTestlets(seed: string): Observation[] {
+  const rng = createRng(`${seed}-testlets`)
+  const rest = session(seed).filter((o) => o.axis !== 'LG' && o.axis !== 'RC')
+  const testlets: Observation[] = []
+  for (const axis of ['LG', 'RC'] as const) {
+    const t = rng.normal()
+    for (let p = 0; p < 6; p++) {
+      const gamma = rng.normal(0, 0.3)
+      const items: TestletItem[] = Array.from({ length: 4 }, () => {
+        const a = 0.7 + 1.5 * rng.next()
+        const b = rng.normal(0, 1.2)
+        return { a, b, y: rng.next() < logistic(a * (t + gamma - b)) ? 1 : 0 }
+      })
+      testlets.push(testletObservation(axis, items))
+    }
+  }
+  return [...rest, ...testlets]
+}
+
 describe('scorer bench (ROADMAP M1.3)', () => {
   it(`MAP with K = ${N_AXES} and ${N_OBS} observations: median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
     const obs = session('m1.3-bench')
@@ -64,6 +88,25 @@ describe('scorer bench (ROADMAP M1.3)', () => {
     times.sort((x, y) => x - y)
     const median = (times[RUNS / 2 - 1]! + times[RUNS / 2]!) / 2
     if (CI) console.info(`scorer bench: median ${median.toFixed(3)} ms over ${RUNS} runs (${nIter} iterations)`)
+    expect(nIter).toBeLessThan(50)
+    expect(median).toBeLessThan(BUDGET_MS)
+  })
+  it(`MAP with K = ${N_AXES} and twelve 4-item testlets (M3.9): median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
+    const obs = sessionWithTestlets('m3.9-bench')
+    expect(obs.filter((o) => o.kind === 'testlet')).toHaveLength(12)
+    const mu = new Array<number>(N_AXES).fill(0)
+    const sigma = initialSigma()
+    for (let i = 0; i < WARMUP; i++) mapTheta(obs, mu, sigma)
+    const times: number[] = []
+    let nIter = 0
+    for (let i = 0; i < RUNS; i++) {
+      const t0 = performance.now()
+      nIter = mapTheta(obs, mu, sigma).nIter
+      times.push(performance.now() - t0)
+    }
+    times.sort((x, y) => x - y)
+    const median = (times[RUNS / 2 - 1]! + times[RUNS / 2]!) / 2
+    if (CI) console.info(`scorer bench (testlets): median ${median.toFixed(3)} ms over ${RUNS} runs (${nIter} iterations)`)
     expect(nIter).toBeLessThan(50)
     expect(median).toBeLessThan(BUDGET_MS)
   })

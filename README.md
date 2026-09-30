@@ -71,6 +71,14 @@ with a fixed 20 items per CAT axis. It prints one table per run with its accepta
 verdict; the full N = 2,000 run takes several minutes. `npm test` runs N = 300 versions;
 `npm run test:slow` runs the full size.
 
+The r criterion is DESIGN §14.3's (decided 2026-09-29): r ≥ .85 on MAT, SPA and QR **at 20
+items/axis**, judged only on the fixed-length run. The run under the A15 time budget is accepted on
+time (every session ≤ 30 min) and 90% coverage; its r is printed as informational, not judged.
+`--fixed 0` (or under 20) therefore leaves the r criterion unchecked and says so, and `--strict`
+(exit 1 on any failed acceptance) refuses it with a usage error (exit 2). `npm test` holds only a
+regression floor on r at 20 items/axis (r ≥ .80, N = 150); the criterion itself is asserted by
+`npm run test:slow`, which CI does not run.
+
 ```zsh
 npm run sim:cat
 npm run sim:cat -- --part a --n 300
