@@ -10,6 +10,8 @@
 
   interface Props {
     keywords: Keywords
+    /** Whether the page has a place to keep settings (then removal also clears what was kept). */
+    stored: boolean
     /** The last thing done in this section, announced politely. */
     status: string
     oncopysnippet: () => void
@@ -17,7 +19,7 @@
     ondownloadforai: (text: string) => void
     onremove: () => void
   }
-  let { keywords, status, oncopysnippet, ondownloadcard, ondownloadforai, onremove }: Props = $props()
+  let { keywords, stored, status, oncopysnippet, ondownloadcard, ondownloadforai, onremove }: Props = $props()
 
   const card = $derived(controlWordCardSvg(keywords))
   const forAi = forAiMarkdown()
@@ -50,8 +52,7 @@
   <div class="row"><button type="button" onclick={() => ondownloadforai(forAi)}>Download for-ai.md</button></div>
 
   <h3>Start over</h3>
-  <!-- COPY.remove (the stored-preferences wording) replaces this once AI.7 stores brief_prefs. -->
-  <p>{COPY.removeStorageless}</p>
+  <p data-testid="remove-text">{stored ? COPY.remove : COPY.removeStorageless}</p>
   <button type="button" onclick={onremove}>Remove my notes settings</button>
   <p class="status" role="status" aria-live="polite" data-testid="more-status">{status}</p>
   <p class="hint">{CLAIM}</p>

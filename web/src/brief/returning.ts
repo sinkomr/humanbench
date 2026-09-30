@@ -17,7 +17,7 @@
 import { lineStatus, type GateFile } from './gates'
 import { TEMPLATES, TEMPLATE_BY_ID } from './grammar'
 import { genericMeaning } from './meaning'
-import { REVISIT_MONTHS, addMonths, MONTH_RE, type LineId } from './types'
+import { REVISIT_MONTHS, TEMPLATES_VERSION, addMonths, MONTH_RE, type BriefLine, type LineId } from './types'
 
 /** One line as it was copied: its template id and the wording version it had. */
 export interface CopiedLine {
@@ -32,6 +32,23 @@ export interface CopiedRecord {
   /** `YYYY-MM`. */
   readonly month: string
   readonly lines: readonly CopiedLine[]
+}
+
+/**
+ * The record of what was written for one set of notes: the release, the month, and each standard
+ * line's template id and wording version. A custom line is left out (it is the person's own words
+ * and is never stored, R-17.12).
+ */
+export function copiedRecordOf(lines: readonly BriefLine[], month: string): CopiedRecord {
+  const seen = new Set<string>()
+  const out: CopiedLine[] = []
+  for (const l of lines) {
+    const t = TEMPLATE_BY_ID.get(l.id)
+    if (t === undefined || l.id === 'X1' || seen.has(l.id)) continue
+    seen.add(l.id)
+    out.push({ id: l.id, v: t.v })
+  }
+  return { templates: TEMPLATES_VERSION, month, lines: out }
 }
 
 export type ReturningKind = 'withdrawn' | 'outdated' | 'review_by'

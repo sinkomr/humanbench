@@ -10,6 +10,32 @@
  * cannot express depth), because the RFC 8785 canonicaliser (`jcs.ts`) refuses it.
  */
 
+import {
+  BRIEF_DESTINATION_RE,
+  BRIEF_FIT_ID_RE,
+  BRIEF_FORMS,
+  BRIEF_GROUPS_VERSION_RE,
+  BRIEF_LENGTHS,
+  BRIEF_LINE_KEY_RE,
+  BRIEF_MAX_FIT,
+  BRIEF_MAX_LINES,
+  BRIEF_MAX_PHRASING,
+  BRIEF_MAX_REV,
+  BRIEF_MAX_SLOTS,
+  BRIEF_MAX_TOPICS,
+  BRIEF_MAX_ZONES,
+  BRIEF_MODES,
+  BRIEF_MONTH_RE,
+  BRIEF_PRESETS,
+  BRIEF_SETTINGS,
+  BRIEF_TEMPLATES_STAMP_RE,
+  BRIEF_TEMPLATE_ID_RE,
+  BRIEF_TIERS,
+  BRIEF_TOPICS_VERSION_RE,
+  BRIEF_TOPIC_ID_RE,
+  BRIEF_VERDICTS,
+  BRIEF_WORDING_V_RE,
+} from './brief-prefs'
 import { isIJsonString } from './jcs'
 import type { SaveFileV1, SaveSession } from './types'
 
@@ -212,10 +238,120 @@ class Checker {
     return ok
   }
 
+  /** An array of at most `max` distinct strings, each matching `re` (schema: maxItems, uniqueItems, items.pattern). */
+  idList(v: unknown, path: string, re: RegExp, max: number): boolean {
+    if (!Array.isArray(v)) return this.fail(path, 'must be an array')
+    let ok = true
+    if (v.length > max) ok = this.fail(path, `at most ${max} items`)
+    ok = this.array(v, path, (x, p) => this.str(x, p, re)) && ok
+    if (ok && new Set(v).size !== v.length) ok = this.fail(path, 'items must be unique')
+    return ok
+  }
+
+  /** An object of at most `max` entries whose keys match `keyRe` and whose values are in `values` or match `valueRe`. */
+  idMap(v: unknown, path: string, keyRe: RegExp, max: number, value: (x: unknown, p: string) => boolean): boolean {
+    if (!isObj(v)) return this.fail(path, 'must be an object')
+    let ok = true
+    const keys = Object.keys(v)
+    if (keys.length > max) ok = this.fail(path, `at most ${max} entries`)
+    for (const k of keys) {
+      if (!keyRe.test(k)) ok = this.fail(`${path}/${k}`, `key must match ${keyRe.source}`)
+      ok = value(v[k], `${path}/${k}`) && ok
+    }
+    return ok
+  }
+
+  enumOf(v: unknown, path: string, allowed: readonly string[]): boolean {
+    return (typeof v === 'string' && allowed.includes(v)) || this.fail(path, `must be one of ${allowed.join(', ')}`)
+  }
+
+  intBetween(v: unknown, path: string, min: number, max: number): boolean {
+    return (isInt(v) && v >= min && v <= max) || this.fail(path, `must be an integer ${min}–${max}`)
+  }
+
+  briefCopied(v: unknown, path: string): boolean {
+    if (!isObj(v)) return this.fail(path, 'must be an object')
+    let ok = this.keys(v, path, ['templates', 'month', 'lines'])
+    if (Object.hasOwn(v, 'templates')) ok = this.str(v.templates, `${path}/templates`, BRIEF_TEMPLATES_STAMP_RE) && ok
+    if (Object.hasOwn(v, 'month')) ok = this.str(v.month, `${path}/month`, BRIEF_MONTH_RE) && ok
+    if (Object.hasOwn(v, 'lines')) {
+      if (Array.isArray(v.lines) && v.lines.length > BRIEF_MAX_LINES) ok = this.fail(`${path}/lines`, `at most ${BRIEF_MAX_LINES} items`)
+      ok =
+        this.array(v.lines, `${path}/lines`, (x, p) => {
+          if (!isObj(x)) return this.fail(p, 'must be an object')
+          let good = this.keys(x, p, ['id', 'v'])
+          if (Object.hasOwn(x, 'id')) good = this.str(x.id, `${p}/id`, BRIEF_TEMPLATE_ID_RE) && good
+          if (Object.hasOwn(x, 'v')) good = this.str(x.v, `${p}/v`, BRIEF_WORDING_V_RE) && good
+          return good
+        }) && ok
+    }
+    return ok
+  }
+
+  briefContext(v: unknown, path: string): boolean {
+    if (!isObj(v)) return this.fail(path, 'must be an object')
+    const has = (k: string): boolean => Object.hasOwn(v, k)
+    if (has('removed')) {
+      // A set the person removed: only its slot and rev remain (schema `brief_context_removed`).
+      let ok = this.keys(v, path, ['slot', 'rev', 'removed'])
+      if (has('slot')) ok = this.intBetween(v.slot, `${path}/slot`, 1, BRIEF_MAX_SLOTS) && ok
+      if (has('rev')) ok = this.intBetween(v.rev, `${path}/rev`, 0, BRIEF_MAX_REV) && ok
+      if (v.removed !== true) ok = this.fail(`${path}/removed`, 'must be true')
+      return ok
+    }
+    let ok = this.keys(v, path, ['slot', 'preset', 'destination', 'tier', 'mode', 'length', 'topics', 'lines_on', 'lines_off', 'rev'], ['form', 'topics_off', 'phrasing', 'copied'])
+    if (has('slot')) ok = this.intBetween(v.slot, `${path}/slot`, 1, BRIEF_MAX_SLOTS) && ok
+    if (has('preset')) ok = this.enumOf(v.preset, `${path}/preset`, BRIEF_PRESETS) && ok
+    if (has('destination')) ok = this.str(v.destination, `${path}/destination`, BRIEF_DESTINATION_RE) && ok
+    if (has('form')) ok = this.enumOf(v.form, `${path}/form`, BRIEF_FORMS) && ok
+    if (has('tier')) ok = this.enumOf(v.tier, `${path}/tier`, BRIEF_TIERS) && ok
+    if (has('mode')) ok = this.enumOf(v.mode, `${path}/mode`, BRIEF_MODES) && ok
+    if (has('length')) ok = this.enumOf(v.length, `${path}/length`, BRIEF_LENGTHS) && ok
+    if (has('topics')) ok = this.idMap(v.topics, `${path}/topics`, BRIEF_TOPIC_ID_RE, BRIEF_MAX_TOPICS, (x, p) => this.enumOf(x, p, BRIEF_SETTINGS)) && ok
+    if (has('topics_off')) ok = this.idList(v.topics_off, `${path}/topics_off`, BRIEF_TOPIC_ID_RE, BRIEF_MAX_TOPICS) && ok
+    if (has('lines_on')) ok = this.idList(v.lines_on, `${path}/lines_on`, BRIEF_LINE_KEY_RE, BRIEF_MAX_LINES) && ok
+    if (has('lines_off')) ok = this.idList(v.lines_off, `${path}/lines_off`, BRIEF_LINE_KEY_RE, BRIEF_MAX_LINES) && ok
+    if (has('phrasing')) ok = this.idMap(v.phrasing, `${path}/phrasing`, BRIEF_LINE_KEY_RE, BRIEF_MAX_PHRASING, (x, p) => this.str(x, p, BRIEF_TEMPLATE_ID_RE)) && ok
+    if (has('copied')) ok = this.briefCopied(v.copied, `${path}/copied`) && ok
+    if (has('rev')) ok = this.intBetween(v.rev, `${path}/rev`, 0, BRIEF_MAX_REV) && ok
+    return ok
+  }
+
+  briefFit(v: unknown, path: string): boolean {
+    if (!isObj(v)) return this.fail(path, 'must be an object')
+    let ok = this.keys(v, path, ['id', 'topic', 'verdict', 'month'])
+    if (Object.hasOwn(v, 'id')) ok = this.str(v.id, `${path}/id`, BRIEF_FIT_ID_RE) && ok
+    if (Object.hasOwn(v, 'topic')) ok = this.str(v.topic, `${path}/topic`, BRIEF_TOPIC_ID_RE) && ok
+    if (Object.hasOwn(v, 'verdict')) ok = this.enumOf(v.verdict, `${path}/verdict`, BRIEF_VERDICTS) && ok
+    if (Object.hasOwn(v, 'month')) ok = this.str(v.month, `${path}/month`, BRIEF_MONTH_RE) && ok
+    return ok
+  }
+
+  /** `brief_prefs` (schema `$defs/brief_prefs`): every string is an enum, an id, a version or a month. */
+  briefPrefs(v: unknown, path: string): boolean {
+    if (!isObj(v)) return this.fail(path, 'must be an object')
+    const has = (k: string): boolean => Object.hasOwn(v, k)
+    let ok = this.keys(v, path, ['v', 'topics', 'groups', 'notes_as_of', 'contexts', 'fit_log'], ['last_zones'])
+    if (has('v') && v.v !== 1) ok = this.fail(`${path}/v`, 'must be 1')
+    if (has('topics')) ok = this.str(v.topics, `${path}/topics`, BRIEF_TOPICS_VERSION_RE) && ok
+    if (has('groups')) ok = this.str(v.groups, `${path}/groups`, BRIEF_GROUPS_VERSION_RE) && ok
+    if (has('notes_as_of')) ok = this.str(v.notes_as_of, `${path}/notes_as_of`, BRIEF_MONTH_RE) && ok
+    if (has('contexts')) {
+      if (Array.isArray(v.contexts) && v.contexts.length > BRIEF_MAX_SLOTS) ok = this.fail(`${path}/contexts`, `at most ${BRIEF_MAX_SLOTS} items`)
+      ok = this.array(v.contexts, `${path}/contexts`, (x, p) => this.briefContext(x, p)) && ok
+    }
+    if (has('fit_log')) {
+      if (Array.isArray(v.fit_log) && v.fit_log.length > BRIEF_MAX_FIT) ok = this.fail(`${path}/fit_log`, `at most ${BRIEF_MAX_FIT} items`)
+      ok = this.array(v.fit_log, `${path}/fit_log`, (x, p) => this.briefFit(x, p)) && ok
+    }
+    if (has('last_zones')) ok = this.idMap(v.last_zones, `${path}/last_zones`, BRIEF_TOPIC_ID_RE, BRIEF_MAX_ZONES, (x, p) => this.enumOf(x, p, BRIEF_SETTINGS)) && ok
+    return ok
+  }
+
   save(v: unknown): boolean {
     if (!isObj(v)) return this.fail('', 'a save file must be a JSON object')
     const req = ['schema_version', 'bank_version', 'anon_id', 'created_utc', 'sessions', 'seen_items', 'seen_families']
-    let ok = this.keys(v, '', req, ['$schema', 'posterior_cache', 'sig'])
+    let ok = this.keys(v, '', req, ['$schema', 'posterior_cache', 'brief_prefs', 'sig'])
     const has = (k: string): boolean => Object.hasOwn(v, k)
     if (has('$schema')) ok = this.text(v.$schema, '/$schema', 0, 512) && ok
     if (has('schema_version')) ok = this.str(v.schema_version, '/schema_version', SCHEMA_VERSION_RE) && ok
@@ -226,6 +362,7 @@ class Checker {
     if (has('seen_items')) ok = this.array(v.seen_items, '/seen_items', (x, p) => this.str(x, p, ITEM_ID_RE, 3, 256)) && ok
     if (has('seen_families')) ok = this.array(v.seen_families, '/seen_families', (x, p) => this.str(x, p, FAMILY_ID_RE, 3, 256)) && ok
     if (has('posterior_cache')) ok = this.posterior(v.posterior_cache, '/posterior_cache') && ok
+    if (has('brief_prefs')) ok = this.briefPrefs(v.brief_prefs, '/brief_prefs') && ok
     if (has('sig')) ok = this.sig(v.sig, '/sig') && ok
     return ok
   }

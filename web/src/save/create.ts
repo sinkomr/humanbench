@@ -81,6 +81,8 @@ export function saveWithSession(base: SaveFileV1 | null, state: SessionState, me
     seen_items: [...(base?.seen_items ?? []), ...state.seenItems],
     seen_families: [...(base?.seen_families ?? []), ...state.seenFamilies],
   }
+  // The notes settings of the save the person started from travel with it (AI.7).
+  if (base?.brief_prefs !== undefined) doc.brief_prefs = clone(base.brief_prefs)
   if (isUsableCache(meta.posteriorCache, meta.ctx.param_version)) doc.posterior_cache = clone(meta.posteriorCache)
   assertValidSave(doc)
   return mergeAll([doc], meta.ctx)

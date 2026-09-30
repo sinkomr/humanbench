@@ -15,8 +15,10 @@
  */
 
 import { expect, test, type Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { lintText } from '../scripts/language-lint'
 import { COPY } from '../src/brief/copy'
+import { validateSave } from '../src/save/validate'
 import { expectNoSeriousAxe } from './axe'
 
 const PAGE = './notes.html'
@@ -278,7 +280,7 @@ test.describe('local only (R-17.1, R-17.12)', () => {
     expect([...origins].filter((o) => !o.startsWith('http://127.0.0.1') && o !== 'null')).toEqual([])
   })
 
-  test('writes nothing to storage, cookies or caches, however much is typed or changed (the builder is storageless; the under-18 path writes nothing)', async ({ page }) => {
+  test('writes nothing to storage, cookies or caches, however much is typed or changed, until the person says they are 18 or older and asks to keep their settings (the under-18 path writes nothing)', async ({ page }) => {
     await open(page)
     await useEverything(page)
     await useChecker(page)
@@ -296,6 +298,203 @@ test.describe('local only (R-17.1, R-17.12)', () => {
     expect(page.url()).not.toMatch(/chess|cooking|metric|evil/)
     expect(await page.title()).not.toMatch(/chess|cooking|metric|evil/)
   })
+})
+
+const KEY = 'hb:save:v1:prefs'
+const storageSnapshot = (page: Page): Promise<{ local: string[]; session: number; cookie: string; databases: number; caches: number }> =>
+  page.evaluate(`(async () => ({
+    local: Object.keys(localStorage),
+    session: sessionStorage.length,
+    cookie: document.cookie,
+    databases: indexedDB.databases ? (await indexedDB.databases()).length : 0,
+    caches: typeof caches === 'undefined' ? 0 : (await caches.keys()).length,
+  }))()`) as Promise<{ local: string[]; session: number; cookie: string; databases: number; caches: number }>
+/** The kept save, or {} while nothing has been written yet (writes land a moment after a change). */
+const storedSave = async (page: Page): Promise<Record<string, unknown>> => JSON.parse(((await page.evaluate(`localStorage.getItem(${JSON.stringify(KEY)})`)) as string | null) ?? '{}') as Record<string, unknown>
+
+/** Coding notes with two topics, typed text everywhere, then 18+ and keep. */
+async function keepSettings(page: Page): Promise<void> {
+  await page.getByRole('radio', { name: /Coding and data/ }).check()
+  await page.getByRole('button', { name: /Programming/ }).first().click()
+  await page.getByRole('button', { name: /Statistics/ }).first().click()
+  await page.getByRole('group', { name: 'Programming' }).getByLabel('I know this well').check()
+  await page.getByLabel(/Hobbies or subjects/).fill('chess, cooking')
+  await page.locator('#custom-0').fill('Use metric units')
+  await page.getByLabel('I am 18 or older').check()
+  await page.getByRole('button', { name: COPY.keepButton }).click()
+  await expect(page.getByTestId('keep-status')).toHaveText(COPY.keepNow)
+}
+
+test.describe('keeping the settings (AI.7, R-17.1, R-17.12)', () => {
+  test('keeps nothing without the 18+ tick: the error is announced and storage stays empty', async ({ page }) => {
+    await open(page)
+    await useEverything(page)
+    await page.getByRole('button', { name: COPY.keepButton }).click()
+    await expect(page.getByTestId('adult-error')).toHaveText(COPY.keepNeedAdult)
+    await expect(page.getByTestId('adult-error')).toHaveAttribute('role', 'alert')
+    await page.getByRole('button', { name: 'Copy the notes' }).click()
+    await page.reload()
+    expect(await storageSnapshot(page)).toEqual({ local: [], session: 0, cookie: '', databases: 0, caches: 0 })
+    await expect(page.getByTestId('keep-state')).toHaveCount(0)
+  })
+
+  test('keeps only the settings as a prefs-only save, never the typed interests or own lines, and brings them back on reload', async ({ page }) => {
+    await open(page)
+    await keepSettings(page)
+    await page.getByRole('button', { name: 'Copy the notes' }).click()
+    await expect(page.getByTestId('status')).toHaveText(COPY.copied)
+    // the write is coalesced; wait for it to land
+    await expect.poll(async () => (await storageSnapshot(page)).local, { timeout: 10_000 }).toEqual([KEY])
+    await expect.poll(async () => JSON.stringify(await storedSave(page)), { timeout: 10_000 }).toContain('"copied"')
+    const raw = (await page.evaluate(`localStorage.getItem(${JSON.stringify(KEY)})`)) as string
+    const save = JSON.parse(raw) as { sessions: unknown[]; anon_id: string; brief_prefs: { contexts: { topics: Record<string, string>; preset: string; copied?: { lines: { id: string }[] } }[]; fit_log: unknown[] } }
+    expect(validateSave(save).ok).toBe(true)
+    expect(save.sessions).toEqual([])
+    expect(save.anon_id).toMatch(/^hb_[0-9A-Za-z]{16,17}$/)
+    expect(save.brief_prefs.contexts[0]).toMatchObject({ preset: 'coding', topics: { 'other/programming': 'skip', 'other/statistics': 'ask_first' } })
+    expect(save.brief_prefs.contexts[0]?.copied?.lines.map((l) => l.id)).toEqual(expect.arrayContaining(['F1', 'CC']))
+    expect(raw).not.toMatch(/chess|cooking|metric|units/)
+    expect(raw).not.toMatch(/How I like explanations|assessment of me|Tell me plainly/)
+    const after = await storageSnapshot(page)
+    expect(after).toEqual({ local: [KEY], session: 0, cookie: '', databases: 0, caches: 0 })
+    // back on the next visit: the settings, not the typed text
+    await page.reload()
+    await expect(page.getByRole('radio', { name: /Coding and data/ })).toBeChecked()
+    await expect(page.getByRole('group', { name: 'Programming' }).getByLabel('I know this well')).toBeChecked()
+    await expect(page.getByTestId('keep-state')).toHaveText(COPY.keepDone)
+    await expect(page.getByLabel(/Hobbies or subjects/)).toHaveValue('')
+    await expect(page.locator('#notes-text')).not.toContainText('chess')
+    await expect(page.getByTestId('returning')).toHaveCount(0)
+  })
+
+  test('downloads the settings as a save file and loads it on a device that has none (WebKit and iOS included)', async ({ page }) => {
+    await open(page)
+    await keepSettings(page)
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('download-settings').click()])
+    const name = download.suggestedFilename()
+    expect(name).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
+    const path = await download.path()
+    const text = readFileSync(path, 'utf8')
+    const file = JSON.parse(text) as { sessions: unknown[]; brief_prefs?: { contexts: { preset: string; topics: Record<string, string> }[] } }
+    expect(validateSave(file).ok).toBe(true)
+    expect(file.sessions).toEqual([])
+    expect(file.brief_prefs?.contexts[0]).toMatchObject({ preset: 'coding', topics: { 'other/programming': 'skip' } })
+    expect(text).not.toMatch(/chess|cooking|metric/)
+    await expect(page.getByTestId('keep-status')).toHaveText(`Downloaded ${name}.`)
+
+    // a device with nothing: the file brings the settings back (by file). The kept copy is written a moment after the
+    // last change, so wait for it before clearing, or the page would write it again as it is left.
+    await expect.poll(async () => (await storageSnapshot(page)).local, { timeout: 10_000 }).toEqual([KEY])
+    await page.evaluate(`localStorage.clear()`)
+    await page.reload()
+    await expect(page.locator('input[name=preset][value=general]')).toBeChecked()
+    await page.getByTestId('load-file').setInputFiles(path)
+    await page.getByRole('button', { name: COPY.loadButton }).click()
+    await expect(page.getByTestId('load-status')).toHaveText(COPY.loadDone)
+    await expect(page.getByRole('radio', { name: /Coding and data/ })).toBeChecked()
+    await expect(page.getByRole('group', { name: 'Programming' }).getByLabel('I know this well')).toBeChecked()
+    expect((await storageSnapshot(page)).local).toEqual([]) // loading is not keeping
+
+    // ... and by paste, over a page that has other settings (the higher rev wins per set)
+    await page.reload()
+    await page.getByTestId('load-paste').fill(text)
+    await page.getByRole('button', { name: COPY.loadButton }).click()
+    await expect(page.getByTestId('load-status')).toHaveText(COPY.loadDone)
+    await expect(page.getByRole('radio', { name: /Coding and data/ })).toBeChecked()
+  })
+
+  test('says so when a file is not a save or holds no notes settings', async ({ page }) => {
+    await open(page)
+    await page.getByTestId('load-paste').fill('hello there')
+    await page.getByRole('button', { name: COPY.loadButton }).click()
+    await expect(page.getByTestId('load-status')).not.toHaveText('')
+    await expect(page.getByTestId('load-status')).not.toHaveText(COPY.loadDone)
+    await page.getByTestId('load-paste').fill('{"schema_version":"1.0.0","bank_version":"m1-static","anon_id":"hb_7Q3m9Kx2Vw5rT8pL","created_utc":"2026-11-03T10:00:00Z","sessions":[],"seen_items":[],"seen_families":[]}')
+    await page.getByRole('button', { name: COPY.loadButton }).click()
+    await expect(page.getByTestId('load-status')).toHaveText(COPY.loadNone)
+  })
+
+  test('"Remove my notes settings" clears what was kept, and the page starts over', async ({ page }) => {
+    await open(page)
+    await keepSettings(page)
+    await expect.poll(async () => (await storageSnapshot(page)).local, { timeout: 10_000 }).toEqual([KEY])
+    await expect(page.getByTestId('remove-text')).toHaveText(COPY.remove)
+    await page.getByRole('button', { name: 'Remove my notes settings' }).click()
+    await expect(page.getByTestId('more-status')).toHaveText(COPY.removeDone)
+    expect(await storageSnapshot(page)).toEqual({ local: [], session: 0, cookie: '', databases: 0, caches: 0 })
+    await expect(page.locator('input[name=preset][value=general]')).toBeChecked()
+    await expect(page.getByLabel('I am 18 or older')).not.toBeChecked()
+    await page.reload()
+    await expect(page.getByTestId('keep-state')).toHaveCount(0)
+    expect((await storageSnapshot(page)).local).toEqual([])
+  })
+
+  test('fit notes suggest a setting and change nothing until the person says so, and are kept with the settings', async ({ page }) => {
+    await open(page)
+    await keepSettings(page)
+    const group = page.getByRole('group', { name: 'Statistics' })
+    await group.getByRole('button', { name: 'Too basic' }).click()
+    await expect(group.getByRole('status')).toHaveText('Noted for Statistics: too basic.')
+    await group.getByRole('button', { name: 'Too basic' }).click()
+    await expect(page.getByTestId('fit-suggestion').first()).toContainText('point towards "I know this well"')
+    await expect(page.getByRole('group', { name: 'Statistics' }).getByLabel(/Not sure/)).toBeChecked()
+    await expect.poll(async () => ((await storedSave(page)) as { brief_prefs?: { fit_log: unknown[] } }).brief_prefs?.fit_log.length ?? 0, { timeout: 10_000 }).toBe(2)
+    const save = (await storedSave(page)) as { brief_prefs: { fit_log: { topic: string; verdict: string; month: string; id: string }[] } }
+    expect(save.brief_prefs.fit_log).toHaveLength(2)
+    expect(save.brief_prefs.fit_log.map((f) => [f.topic, f.verdict])).toEqual([['other/statistics', 'too_basic'], ['other/statistics', 'too_basic']])
+    expect(save.brief_prefs.fit_log[0]?.id).toMatch(/^[0-9a-f]{8}$/)
+    await page.getByTestId('fit-apply').first().click()
+    await expect(page.getByRole('group', { name: 'Statistics' }).getByLabel('I know this well')).toBeChecked()
+    await page.reload()
+    await expect(page.getByRole('group', { name: 'Statistics' }).getByLabel('I know this well')).toBeChecked()
+  })
+
+  test('makes no network request while keeping, downloading, loading or removing', async ({ page }) => {
+    await page.goto(PAGE, { waitUntil: 'networkidle' })
+    const requests: string[] = []
+    page.on('request', (r) => requests.push(r.url()))
+    await keepSettings(page)
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('download-settings').click()])
+    const path = await download.path()
+    await page.getByTestId('load-file').setInputFiles(path)
+    await page.getByRole('button', { name: COPY.loadButton }).click()
+    await expect(page.getByTestId('load-status')).toHaveText(COPY.loadDone)
+    await page.getByRole('button', { name: 'Remove my notes settings' }).click()
+    await page.waitForTimeout(300)
+    expect(requests.filter((u) => !u.startsWith('blob:'))).toEqual([])
+  })
+
+  test('can be kept with the keyboard alone (Chromium)', async ({ page, isMobile, browserName }) => {
+    test.skip(isMobile === true || browserName !== 'chromium', 'Tab reaches every control in Chromium; Safari needs Option+Tab by default')
+    await open(page)
+    await page.getByLabel('I am 18 or older').focus()
+    await page.keyboard.press('Space')
+    await expect(page.getByLabel('I am 18 or older')).toBeChecked()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('keep-status')).toHaveText(COPY.keepNow)
+    await page.getByTestId('download-settings').focus()
+    const [download] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Enter')])
+    expect(download.suggestedFilename()).toMatch(/\.hbsave\.json$/)
+  })
+
+  for (const colorScheme of ['light', 'dark'] as const) {
+    test(`has no serious or critical axe violations with the fit notes, the 18+ question, the kept state and the load form (${colorScheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme })
+      await open(page)
+      await page.getByRole('button', { name: /Statistics/ }).first().click()
+      await page.getByRole('group', { name: 'Statistics' }).getByRole('button', { name: 'Too basic' }).click()
+      await page.getByRole('group', { name: 'Statistics' }).getByRole('button', { name: 'Too basic' }).click()
+      await page.getByRole('button', { name: COPY.keepButton }).click() // the error state
+      await expectNoSeriousAxe(page)
+      await page.getByLabel('I am 18 or older').check()
+      await page.getByRole('button', { name: COPY.keepButton }).click()
+      await expect(page.getByTestId('keep-state')).toBeVisible()
+      await page.getByTestId('load-paste').fill('hello')
+      await page.getByRole('button', { name: COPY.loadButton }).click()
+      await expectNoSeriousAxe(page)
+    })
+  }
 })
 
 test.describe('the checker (AI.6, R-17.11)', () => {

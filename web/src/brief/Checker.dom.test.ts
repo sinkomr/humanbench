@@ -7,12 +7,13 @@
 
 import { flushSync, mount, tick, unmount } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { initialState, contextLabel, type BuilderState } from './builder'
 import { buildBrief } from './build'
 import { DEFAULT_GATES, type GateFile } from './gates'
 import NotesBuilder from './NotesBuilder.svelte'
 import { PROFILE_A, PROFILE_B_LONG } from './profiles'
 import { TEMPLATE_BY_ID } from './grammar'
-import { withdrawnMessage, type CopiedSet } from './returning'
+import { withdrawnMessage, type CopiedRecord } from './returning'
 import Checker from './ui/Checker.svelte'
 import { TEMPLATES_VERSION } from './types'
 
@@ -145,10 +146,11 @@ describe('the checker', () => {
 })
 
 describe('the load-time notices on the builder page', () => {
-  const copiedSet = (ids: string[], month = '2026-11'): CopiedSet => ({
-    label: 'Coding and data, Claude Code',
-    copied: { templates: TEMPLATES_VERSION, month, lines: ids.map((id) => ({ id, v: (TEMPLATE_BY_ID.get(id) as { v: string }).v })) },
-  })
+  /** The builder as a later visit finds it: one set of notes, with a record of what was copied for it. */
+  const visit = (ids: string[], month = '2026-11'): BuilderState => {
+    const copied: CopiedRecord = { templates: TEMPLATES_VERSION, month, lines: ids.map((id) => ({ id, v: (TEMPLATE_BY_ID.get(id) as { v: string }).v })) }
+    return { ...initialState('coding'), copied: [copied] }
+  }
   const open = (props: Record<string, unknown>): void => {
     app = mount(NotesBuilder, { target: document.body, props: { asOf: '2026-12', token: 'k3f9', ...props } })
     flushSync()
@@ -162,25 +164,26 @@ describe('the load-time notices on the builder page', () => {
   it('shows the approved withdrawal sentence exactly when a gate file withdraws a line that was copied', () => {
     const blocked: GateFile = { ...DEFAULT_GATES, lines: { ...DEFAULT_GATES.lines, DS: { v: '1', status: 'blocked' } } }
     // the person copied DS, and DS is withdrawn: the notice appears
-    open({ copied: [copiedSet(['F1', 'DS'])], gates: blocked, today: '2026-12-03' })
+    const s = visit(['F1', 'DS'])
+    open({ initial: s, gates: blocked, today: '2026-12-03' })
     expect($('[data-testid=returning-message]').textContent).toBe(withdrawnMessage('2026-11'))
     expect($('[data-testid=returning-message]').textContent).toBe('A line in notes you made in 2026-11 has been withdrawn. Re-copy your notes to replace it.')
-    expect($('[data-testid=returning] strong').textContent).toBe('Coding and data, Claude Code.')
+    expect($('[data-testid=returning] strong').textContent).toBe(`${contextLabel(s.contexts[0]!)}.`)
     expect($('h2#returning-heading').textContent).toBe('About notes you made earlier')
     void unmount(app as ReturnType<typeof mount>)
     document.body.innerHTML = ''
     // DS is withdrawn but the person never copied it: no notice
-    open({ copied: [copiedSet(['F1', 'U4'])], gates: blocked, today: '2026-12-03' })
+    open({ initial: visit(['F1', 'U4']), gates: blocked, today: '2026-12-03' })
     expect(document.querySelector('[data-testid=returning]')).toBeNull()
     void unmount(app as ReturnType<typeof mount>)
     document.body.innerHTML = ''
     // the person copied DS and nothing is withdrawn: no notice
-    open({ copied: [copiedSet(['F1', 'DS'])], today: '2026-12-03' })
+    open({ initial: visit(['F1', 'DS']), today: '2026-12-03' })
     expect(document.querySelector('[data-testid=returning]')).toBeNull()
   })
 
   it('says when the review-by month has passed', () => {
-    open({ copied: [copiedSet(['F1'], '2026-01')], today: '2026-12-03' })
+    open({ initial: visit(['F1'], '2026-01'), today: '2026-12-03' })
     expect($('[data-testid=returning-message]').textContent).toContain('due for another look')
   })
 })

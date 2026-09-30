@@ -12,7 +12,22 @@ import fc from 'fast-check'
 import { AXIS_CODES } from '../engine/axes'
 import type { JsonValue, ResponseTuple } from '../engine/types'
 import { utcSeconds } from './clock'
-import { SCHEMA_URL, SCHEMA_VERSION, type DeviceInfo, type PosteriorCache, type SaveFileV1, type SaveSession, type SaveSig, type SessionFlags, type SessionSig } from './types'
+import { BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS } from './brief-prefs'
+import {
+  SCHEMA_URL,
+  SCHEMA_VERSION,
+  type BriefContextRemovedV1,
+  type BriefContextV1,
+  type BriefFitV1,
+  type BriefPrefsV1,
+  type DeviceInfo,
+  type PosteriorCache,
+  type SaveFileV1,
+  type SaveSession,
+  type SaveSig,
+  type SessionFlags,
+  type SessionSig,
+} from './types'
 
 /** Context the arbitraries' caches are built for. */
 export const TEST_CTX = { bank_version: 'm1-static', param_version: 'p-test-1' } as const
@@ -102,7 +117,73 @@ export const arbCache: fc.Arbitrary<PosteriorCache> = fc
     }),
   )
 
+// --- brief_prefs (AI.7) ---------------------------------------------------------------------------
+// Small pools, so independently generated settings collide on slot, rev and fit id: that is what the
+// merge properties need to bite. Ids are shaped like the app's (topics-v1, the builder's tick keys).
+
+const BRIEF_TOPIC_POOL = ['quant/probability_counting', 'quant/linear', 'other/programming', 'other/statistics', 'kst/physics', 'lr/notation'] as const
+const BRIEF_KEY_POOL = ['LANG', 'U3', 'U5', 'FMT1', 'FMT2', 'VOICE', 'W1', 'W3', 'AC1', 'K2'] as const
+const BRIEF_TEMPLATE_POOL = ['DS', 'DA', 'DA.p', 'DB', 'U1', 'U1c', 'U2.b', 'U6c'] as const
+const BRIEF_MONTH_POOL = ['2026-09', '2026-10', '2026-11', '2026-12', '2027-01', '2027-02'] as const
+const BRIEF_FIT_IDS = ['00a1b2c3', '01a1b2c3', '02ffee00', '0300aa11', '04deadbe', '05c0ffee', '06123456'] as const
+
+export const arbBriefTopics: fc.Arbitrary<Record<string, (typeof BRIEF_SETTINGS)[number]>> = fc.dictionary(fc.constantFrom(...BRIEF_TOPIC_POOL), fc.constantFrom(...BRIEF_SETTINGS), { maxKeys: 4 })
+
+export const arbBriefCopied = fc.record({
+  templates: fc.constantFrom('2026.09', '2026.11'),
+  month: fc.constantFrom(...BRIEF_MONTH_POOL),
+  lines: fc.array(fc.record({ id: fc.constantFrom('F1', 'DS', 'U4', 'K2', 'U2.W3'), v: fc.constantFrom('0', '1', '2') }), { maxLength: 6 }),
+})
+
+export const arbBriefContext: fc.Arbitrary<BriefContextV1> = fc
+  .record(
+    {
+      slot: fc.integer({ min: 1, max: 5 }),
+      preset: fc.constantFrom(...BRIEF_PRESETS),
+      destination: fc.constantFrom('chatgpt_instructions', 'claude_code_skill', 'just_me'),
+      form: fc.constantFrom(...BRIEF_FORMS),
+      tier: fc.constantFrom(...BRIEF_TIERS),
+      mode: fc.constantFrom(...BRIEF_MODES),
+      length: fc.constantFrom(...BRIEF_LENGTHS),
+      topics: arbBriefTopics,
+      topics_off: fc.uniqueArray(fc.constantFrom(...BRIEF_TOPIC_POOL), { maxLength: 3 }),
+      lines_on: fc.uniqueArray(fc.constantFrom(...BRIEF_KEY_POOL), { maxLength: 5 }),
+      lines_off: fc.uniqueArray(fc.constantFrom(...BRIEF_KEY_POOL), { maxLength: 4 }),
+      phrasing: fc.dictionary(fc.constantFrom('U1', 'U2', 'U6', 'DA'), fc.constantFrom(...BRIEF_TEMPLATE_POOL), { maxKeys: 3 }),
+      copied: arbBriefCopied,
+      rev: fc.integer({ min: 0, max: 6 }),
+    },
+    { requiredKeys: ['slot', 'preset', 'destination', 'tier', 'mode', 'length', 'topics', 'lines_on', 'lines_off', 'rev'] },
+  )
+  .map((c) => c as BriefContextV1)
+
+export const arbBriefRemoved: fc.Arbitrary<BriefContextRemovedV1> = fc.record({ slot: fc.integer({ min: 1, max: 5 }), rev: fc.integer({ min: 0, max: 6 }), removed: fc.constant(true as const) })
+
+export const arbBriefFit: fc.Arbitrary<BriefFitV1> = fc.record({
+  id: fc.constantFrom(...BRIEF_FIT_IDS),
+  topic: fc.constantFrom(...BRIEF_TOPIC_POOL),
+  verdict: fc.constantFrom(...BRIEF_VERDICTS),
+  month: fc.constantFrom(...BRIEF_MONTH_POOL),
+})
+
+/** Valid notes settings (not necessarily in normal form: lists may be out of order, two sets may share a slot, a copied line may repeat). */
+export const arbBriefPrefs: fc.Arbitrary<BriefPrefsV1> = fc
+  .record(
+    {
+      topics: fc.constantFrom('topics-v1', 'topics-v2', 'topics-v10'),
+      groups: fc.constantFrom('g1', 'g2', 'g10'),
+      notes_as_of: fc.constantFrom(...BRIEF_MONTH_POOL),
+      contexts: fc.array(fc.oneof({ arbitrary: arbBriefContext, weight: 4 }, { arbitrary: arbBriefRemoved, weight: 1 }), { maxLength: 5 }),
+      fit_log: fc.array(arbBriefFit, { maxLength: 30 }),
+      last_zones: arbBriefTopics,
+    },
+    { requiredKeys: ['topics', 'groups', 'notes_as_of', 'contexts', 'fit_log'] },
+  )
+  .map((p) => ({ v: 1 as const, ...p }))
+
 export interface ArbSaveOptions {
+  /** Sometimes include notes settings (`brief_prefs`). Off by default, so older properties are unchanged. */
+  withPrefs?: boolean
   /** Sessions to draw from (default: fresh arbitrary sessions). */
   sessions?: fc.Arbitrary<SaveSession[]>
   /** Include `$schema` / the current schema_version always (a normalised-looking header). */
@@ -124,6 +205,7 @@ export const arbSave = (opts: ArbSaveOptions = {}): fc.Arbitrary<SaveFileV1> =>
       seen_items: fc.array(arbItemId, { maxLength: 6 }),
       seen_families: fc.array(arbFamilyId, { maxLength: 4 }),
       posterior_cache: fc.option(arbCache, { nil: undefined }),
+      brief_prefs: opts.withPrefs ? fc.option(arbBriefPrefs, { nil: undefined }) : fc.constant(undefined),
       sig: fc.option(arbSig, { nil: undefined, freq: 3 }),
     })
     .map((r) => {
@@ -138,6 +220,7 @@ export const arbSave = (opts: ArbSaveOptions = {}): fc.Arbitrary<SaveFileV1> =>
       }
       if (r.schema !== undefined) out.$schema = r.schema
       if (r.posterior_cache !== undefined) out.posterior_cache = r.posterior_cache
+      if (r.brief_prefs !== undefined) out.brief_prefs = r.brief_prefs
       if (r.sig !== undefined) out.sig = r.sig
       return out
     })
@@ -146,5 +229,5 @@ export const arbSave = (opts: ArbSaveOptions = {}): fc.Arbitrary<SaveFileV1> =>
  * `n` saves drawn from one shared pool of sessions (with several copies per session id), so they
  * overlap the way two devices' saves of one person do.
  */
-export const arbSaveFamily = (n: number, opts: Pick<ArbSaveOptions, 'bindSigs'> = {}): fc.Arbitrary<SaveFileV1[]> =>
+export const arbSaveFamily = (n: number, opts: Pick<ArbSaveOptions, 'bindSigs' | 'withPrefs'> = {}): fc.Arbitrary<SaveFileV1[]> =>
   fc.array(arbSession(), { minLength: 1, maxLength: 8 }).chain((pool) => fc.array(arbSave({ ...opts, sessions: fc.subarray(pool) }), { minLength: n, maxLength: n }))

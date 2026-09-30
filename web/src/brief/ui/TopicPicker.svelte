@@ -10,13 +10,20 @@
   import { floorGatePassed, type GateFile } from '../gates'
   import { AREAS, MAX_TOPICS_PER_CONTEXT, TOPICS, canonicalTopics, topicById } from '../topics'
   import { TOPIC_SETTINGS, type TopicId } from '../types'
+  import FitLog from './FitLog.svelte'
 
   interface Props {
     model: BuilderState
     gates: GateFile
+    /** The current month, `YYYY-MM`, for the fit notes. */
+    month: string
+    /** Six random hex digits for a new fit note's id. */
+    fitId: () => string
+    /** Whether the settings are being kept on this device (fit notes are kept only then). */
+    keep: boolean
     onchange: (next: BuilderState) => void
   }
-  let { model, gates, onchange }: Props = $props()
+  let { model, gates, month, fitId, keep, onchange }: Props = $props()
 
   const prefs = $derived(model.contexts[model.active])
   const picked = $derived(canonicalTopics(Object.keys(prefs?.topics ?? {})))
@@ -80,8 +87,10 @@
         {#if t?.floor === true && setting === 'build' && floorApplies}
           <p class="note">{NOTICE_TEXT.floor}</p>
         {/if}
+        <FitLog {model} topic={id} {month} {fitId} {onchange} />
       </fieldset>
     {/each}
+    <p class="hint" data-testid="fit-note">{COPY.fitLog} {keep ? '' : COPY.fitNotKept}</p>
     {#if showScience}<p class="note">{COPY.science}</p>{/if}
   {/if}
 </section>

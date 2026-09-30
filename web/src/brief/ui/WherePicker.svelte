@@ -1,9 +1,8 @@
 <script lang="ts">
   /** Step 1: where the notes will be used (context presets), and the person's sets of notes (up to five). */
-  import { addContext, choosePreset, removeContext, selectContext, type BuilderState } from '../builder'
+  import { addContext, choosePreset, contextLabel, removeContext, selectContext, type BuilderState } from '../builder'
   import { PRESET_INFO } from '../contexts'
   import { STEPS } from '../copy'
-  import { destination } from '../surfaces'
   import { MAX_CONTEXTS } from '../topics'
   import { PRESETS } from '../types'
 
@@ -17,7 +16,7 @@
   /** A label made from the preset and destination, never typed (so no free text needs storing). */
   const labelOf = (i: number): string => {
     const c = model.contexts[i]
-    return c === undefined ? '' : `${PRESET_INFO[c.preset].label}, ${destination(c.destination)?.label ?? 'no destination'}`
+    return c === undefined ? '' : contextLabel(c)
   }
 </script>
 

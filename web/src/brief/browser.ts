@@ -81,3 +81,9 @@ export function fileToken(length = 4, source: Pick<Crypto, 'getRandomValues'> = 
   const bytes = source.getRandomValues(new Uint8Array(length))
   return Array.from(bytes, (b) => alphabet.charAt(b % alphabet.length)).join('')
 }
+
+/** `length` random lowercase hex digits from the browser's crypto (fit note ids). */
+export function hexToken(length = 6, source: Pick<Crypto, 'getRandomValues'> = crypto): string {
+  const bytes = source.getRandomValues(new Uint8Array(Math.ceil(length / 2)))
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, length)
+}

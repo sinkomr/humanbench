@@ -78,6 +78,7 @@ describe('the page', () => {
       '3. Anything else?',
       '4. Your notes',
       '5. Where to paste',
+      'Keep my settings',
       'Check notes',
       'More',
     ])
@@ -97,7 +98,9 @@ describe('the page', () => {
 
   it('offers no send button, no pre-filled chat link and no external link', () => {
     open()
-    expect(document.querySelectorAll('a, [href], [src], form, [action]')).toHaveLength(0)
+    // the keep and load forms are local: they have no action, and nothing is submitted anywhere
+    expect(document.querySelectorAll('a, [href], [src], [action], form[method]')).toHaveLength(0)
+    expect([...document.querySelectorAll('form')].every((f) => f.getAttribute('action') === null && f.getAttribute('method') === null)).toBe(true)
     expect(document.body.textContent).not.toMatch(/Send to (?:ChatGPT|Claude|Gemini)/i)
     // (the control-word card's SVG namespace is the only web address in the page, and it is not a link)
     expect(document.body.innerHTML.replace('http://www.w3.org/2000/svg', '')).not.toMatch(/https?:\/\//)
