@@ -25,6 +25,7 @@ HumanBench cannot run on GitHub Pages alone, because Pages only serves static fi
 | D10 | Range | Middle school to olympiad | Accepted default |
 | D11 | Integrity | Closed book; honor code plus anomaly flags | Accepted default |
 | D12 | Population | Adults 18+, English, web; Python for backend/offline | Accepted default |
+| D13 | Purpose (extension) | Self-knowledge, plus optional notes the person gives their own AI assistant. The notes are built on the device and contain instructions only. Results feed in only as suggestions, after checks on real data. No human-vs-AI overlay (D1 unchanged) | User (Part 1 approved 2026-09-29; Part 2 pending) |
 
 **Epistemic tags.**
 - **[EST]** = established and sourced in this study.
@@ -1256,6 +1257,24 @@ git push
 | F9 | Copyright exposure | CI lint: fail if any item `source.license` is not in an allow-list (CC0, CC BY, public domain, original) or if an item's text has > 40% 8-gram overlap with the anchor corpus | Block promotion |
 | F10 | Device effects on RT | If the difference in desktop-vs-touch median RT exceeds 50 ms after N ≥ 300 per class | Keep separate norms (already planned); never compare across classes |
 | F11 | Supabase pause or limits | Cron missed for 6 days, or DB > 400 MB | Alert via Actions failure email; archive; consider Pro ($25/mo) |
+| F12 | Topic zones (skip, ask first, build up) are wrong for the person (§17, A21) | Before real data: the AI.8s sweep passes at the chosen σ_rel. On real data: held-out ladder probes and next-session items, ≥ 200 topic-instances per zone. Skip: accuracy ≥ .75 with the 95% CI lower bound ≥ .70. Build: accuracy ≤ .50 with the upper bound ≤ .55. Gross errors ≤ 2% of cells. ECE ≤ .07 | Raise the posterior requirement to .95 and widen σ_rel. If it still fails, no inferred lines |
+| F13 | A person's knowledge varies by topic too little for topic lines | The person-by-facet variance model (AI.20) gives τ̂ ≥ .20 for the axis | Review the taxonomy; no observed lines for that axis |
+| F14 | Word features do not predict vocabulary and reading item difficulty | VOC R²_cv ≥ .25 and the prevalence slope's 95% CI excludes 0; RC R²_cv ≥ .15; the VOC slope differs by < 50% across English-first-language groups | No measured word suggestions |
+| F15 | Modelled word knowledge does not match what people report knowing | A pseudoword-corrected yes/no probe with n ≥ 300: calibration slope .80–1.25 and ECE ≤ .07 | No measured word suggestions |
+| F16 | Assistants do not follow a line type (steerability, per line type, family and destination) | E7, E7d (K2), E13 and E17 pass, and the destination's surface smoke passes | Reword, or drop the type for that family or destination |
+| F17 | A line type makes assistants less accurate, more condescending or more intrusive (safety invariance) | E1–E6, E8, E10, E14–E16, E18 and E20–E22 pass (E19 for results-derived types); positive controls are detected; E9 and the trait-worded arm are reported | Type blocked. If all personal types fail, ship T0 only |
+| F18 | The notes do not help real users (Arm B, bring your own assistant) | Quiz score non-inferior at 5 pp (one-sided α .025), then superior (α .05); condescension non-inferior within 0.3 on the 5-point scale | Non-inferiority fails: withdraw topic suggestions. Superiority fails: keep them labelled "no measured benefit yet" |
+| F19 | Matched explanations do not beat mismatched ones (Arm F, aptitude-by-treatment crossover) | Condition × zone interaction p < .05, and matched > mismatched in both groups (at least one simple effect significant) | Keep results-derived lines as drawer-only information; say so publicly |
+| F20 | Misreading and coercion: notes read as an ability report, or demanded by others | n = 10 think-aloud as a qualitative screen (any ability-report reading leads to a copy fix). M2 re-check: a consented one-question item after copying, n ≥ 200, with ≤ 20% reading the notes as an ability report and the 95% CI upper bound ≤ 25%. Any credible report that an employer or school asked for notes | Topic lines off by default; add friction (download only, interstitial); publish a statement |
+| F21 | Suggestions rarely settle, or saturate at "ask first" (QR) | Users with ≥ 3 sessions or ≥ 1 goals session have a median of ≥ 2 decided suggestions, and "ask first" is ≤ 80% of their lines | Fix topic granularity and the bank (AI.16), not the thresholds |
+| F21-K | Knowledge suggestions rarely settle | Among users with ≥ 2 targeted sessions on a subject, the median has ≥ 1 decided observed line on it | Raise per-facet counts or targeting weight (AI.20, AI.21b) |
+
+F12–F21-K belong to Phase AI (§17) and decide mechanically:
+- F16 and F17 decide which line types exist;
+- F12–F15 decide which inputs may drive them;
+- F18 and F19 decide what the copy may claim.
+
+Thresholds change only through a new versioned rule (`z2` for zones) with a re-run, never by eye. F12, F13, F21 and F21-K are computed by the M4.9 nightly report from recomputed zones, and never read notes or preferences. F14 comes from AI.19 and F15 from AI.25. F16 and F17 come from the bank behaviour gate, and F18 to F20 from the pre-registered trials and the think-aloud (ROADMAP Phase AI). The metrics E1–E22 are defined in the Phase AI proposal (§17.6).
 
 **Open questions and flagged gaps (these affect the design):**
 1. ICAR's terms say academic use only (icar-project.com); permission for a hobby site is unconfirmed, so the default is to use published statistics only.
@@ -1266,3 +1285,76 @@ git push
 6. GitHub Actions minutes for private repos are 2,000/mo on GitHub Free (GitHub Docs), ≫ the need of ~150 min/mo.
 7. The name collision: no trademark search was performed.
 8. Claude API prices come from third-party trackers (benchlm.ai, aipricing.guru), not anthropic.com directly; re-check before spending.
+
+---
+
+## 17. Notes for your AI
+
+Phase AI (ROADMAP "Phase AI", ADRs A20–A24, decision D13). The detailed design, the notes wording (proposal §4.2), the worked examples (§4.9), the zone tables (§4.4), the item tags (§5.1) and the gate metrics E1–E22 (§7.3) are in the annex, the bank file `docs/proposals/ai-notes-v2.md`, cited as "proposal §x". This section holds the requirements.
+
+**17.1 Purpose.** An optional, user-controlled way to make short instructions that a person pastes into their own AI assistant, so it explains things the way they want (D13). In v1 the notes come from the person's own settings. Test results may add suggestions only after checks on real data. It makes no human-vs-AI comparison (D1).
+
+**Status.** Part 1 is approved (2026-09-29): notes built from the person's own settings, the checker, the results-talk helper, the zone-rule simulation, the behaviour-gate smoke run, the surface smoke test and the M2 strip rule. Part 2 needs a separate approval: results-derived suggestions, the calibration line, Sharpen, goals mode, trials, the word register and the MCP server. Part 2 starts only if F12 passes on real data and the behaviour gate passes.
+
+**17.2 Principles.** Instructions, not traits. Personalise depth by topic, and use universal defaults for everything that helps nearly everyone. Uncertainty becomes behaviour: when unsure, the assistant asks one quick question first. The person owns, edits and scopes every line. Nothing leaves the device.
+
+**17.3 Forms.** Short text (≤ 1,500 characters), long Markdown (≤ 5,000), `SKILL.md` (the default for coding agents), a user-level rules file, and JSON `hb-brief/1`, all from one closed grammar. Also an in-app checker, and a results-talk preamble. Contexts: coding and data, learning, reading, everyday numbers, writing, general; at most 5 topics each.
+
+**17.4 Settings.** Per topic: skip the basics, ask first, or build up; set by the person, and in Part 2 suggested by A21. Modes: teach me, just do it, challenge me. Three internal explanation settings define each by observable behaviours.
+
+**17.5 Requirements.**
+- R-17.1: Local only. Notes are generated client-side and never stored on a server, logged or transmitted. No send integration, deep link, API or LLM call. In M2, `brief_prefs` is removed by `toUploadPayload()` before every network call, rejected by the server, excluded from the mirror and outside the HMAC scope.
+- R-17.2: Instructions, not traits, enforced by the brief lint.
+- R-17.3: Closed grammar: ASCII; digits only in YYYY-MM; no URLs; no scores, estimates, percentiles, levels, school-level words, axis names or branding. The header reads "my own preferences, not an assessment of me", with a no-date fallback. Unverifiable by design.
+- R-17.4: Allowed inputs: the person's own settings. Part 2 adds: QR topic groups (inferred, ≤ 2 per note, suggestions only, after F12); observed knowledge and notation facets; a VOC register suggestion (gated); CAL direction (n ≥ 160, opt-in). Never: MAT, SPA, LR/LG as general reasoning, WM, RT, PS or reading speed, FER, EMO, SJT, CRE, integrity flags, skipped or unmeasured axes, values borrowed through Σ, or any inferred format or accessibility need.
+- R-17.5: Zones follow A21, using eligible sessions only. No results-derived lines on uncalibrated priors.
+- R-17.6: The self-expiring header and fixed clauses F1–F4 are always present, first and locked; CC in coding contexts. F1–F4 are line IDs of the notes grammar, not the §16 checks of the same name.
+- R-17.7: Tiers T0/T1/T2 with consent per line. Self-set lines are pre-ticked; results-derived lines never are. T2 never includes inferred lines. The floor rule applies to the two lowest quant groups. The person's own settings win.
+- R-17.8: For each line, the person sees, in words tied to its basis: the basis, how sure it is, what research does and doesn't support, which model families and destinations it was checked with and when, and what would change it. Never estimates. Inferred-basis text never claims observed facts.
+- R-17.9: The A22 release gate (positive controls, multi-turn, headless and surface arms) and the copy-claim rule.
+- R-17.10: Provider warning, placement guide, anti-coercion copy, and per-destination install and removal steps, dated and re-checked each release.
+- R-17.11: Checker and sanitisation; `parse(render(p)) = p`; all released versions parse; withdrawn lines trigger an in-app notice.
+- R-17.12: Data minimisation: preferences as enums, IDs, versions and months; free text never persisted; never on share cards; no notes telemetry; the fit log never enters scoring; the builder is storageless until the 18+ gate, and the under-18 path writes nothing.
+- R-17.13: The reveal and share-card screens offer a results-talk preamble and say never to paste the save file.
+- R-17.14: Accessibility: the builder meets M1.21 (320 px reflow, 200% zoom, reduced motion, an announced copy confirmation). Format lines are chosen, never inferred, and named by format.
+
+**17.6 Evaluation.** Generator properties in CI; an offline behaviour gate with positive controls and multi-turn, headless and memory arms; real-surface smoke tests; claim validity (F12, F13); language validity (F14, F15); real-user trials (F18, F19); misreading and saturation monitoring (F20, F21). See §16. The metric definitions E1–E22, the positive controls PC1 and PC2, and the rules that decide whether a line type is shipped, experimental or blocked for a destination are in proposal §7.3. The bank harness (AI.12a-run) implements them and its README restates them once it lands.
+
+**17.7 Copy drafts.** User-facing strings for the builder, the reveal and the share-card screen. Each passes the A13 lint. The task named in the last column copies its strings word for word into `web/src/brief/` and pins them to this table in a test, the way `src/copy.ts` is pinned to §13. Change the table and the code together. Rows marked "Part 2" ship only with Part 2.
+
+| Key | Text | Task |
+|---|---|---|
+| trust | Nothing on this page leaves your device. HumanBench doesn't send, store or log your notes. Copying them into an assistant is your choice. | AI.5 |
+| provider | Before you paste: anything in an AI assistant's settings goes to that company with every chat. Depending on your settings it may be kept for years, used to train future models, read by reviewers, or used to personalise ads. On work or school accounts, administrators may be able to read it. Check your assistant's data settings, prefer a personal account, and only include lines you'd be fine with anyone reading. (Checked 2026-09.) | AI.5 |
+| anti-coercion | This is yours. No employer, school or app should ask you for it, and you can always say no. HumanBench results aren't valid for decisions about hiring, admissions, grades, or anything like them. | AI.5 |
+| placement | Put these in your personal settings, a personal Project, or your own rules folder. Never put them in a file inside a shared repository. Prefer instructions over memory: memory features rewrite what you give them. | AI.5 |
+| claim | Designed from research on explanations; not yet shown to help HumanBench users. | AI.5 |
+| drawer-self-set | Research on teaching supports matching depth to what you already know; not yet tested for AI notes. | AI.5 |
+| floor-rule | We're still checking that assistants handle this line respectfully. For now your notes ask the assistant to check with you first. You can write your own line instead. | AI.5 |
+| science | Measured science lines need many more people to take HumanBench first. Until then, set these topics yourself. | AI.5 |
+| interests | Hobbies or subjects you like. Don't add health details or anything personal. This is never saved. | AI.5 |
+| fit-log | Your fit notes change only these suggestions. They never change your results. | AI.5 |
+| remove | Remove my notes settings. This deletes your notes preferences from this device. Your results stay. Download a fresh save afterwards if you keep one elsewhere. | AI.5 |
+| troubleshooting | Your assistant may not be reading your notes. Check that they are in your personal instructions, not in a chat message, and start a new chat. | AI.5 |
+| look-for-skip | On skip-the-basics topics it goes straight to the method and says when it skipped routine steps. | AI.5 |
+| look-for-ask | On ask-first topics it asks you one quick question, once per conversation, then pitches to your answer. | AI.5 |
+| look-for-build | On build-up topics it starts from a small example, shows every step and gives a way to check. | AI.5 |
+| look-for-check | On answers that matter it says how sure it is and how to check. | AI.5 |
+| look-for-voice | By voice, it speaks in short chunks, says symbols in words, and offers a written version of long steps. | AI.5 |
+| look-for-agents | In coding agents, it doesn't put these preferences into code, comments or commit messages. | AI.5 |
+| withdrawal | A line in notes you made in 2026-11 has been withdrawn. Re-copy your notes to replace it. | AI.6 |
+| reveal-card | Want your AI assistant to explain things your way? Make notes you control. For now they use your own settings. Lines based on your answers aren't available yet, because they need checks that only real results can provide. | AI.6b |
+| results-talk | Talking about your results with an AI? Paste this first. Never paste your save file: it holds your raw answers, and assistants may keep or learn from what you paste. | AI.6b |
+| results-preamble | These are rough, uncertain self-reflection results from a free online test. Ranges that overlap are not real differences. Don't turn them into an intelligence number, a rank against other people or one overall figure. Don't guess at health or medical explanations for them. Help me think about what I might practise or explore, if anything. | AI.6b |
+| mirror | Your server backup doesn't include your notes settings. Keep your downloaded save if you want them on another device. | AI.26 |
+| part2-banner | Most of your math topics say 'ask first' for now. Your results still have wide ranges, so your assistant will ask before it pitches. (Part 2) | AI.10 |
+| part2-downward | Your notes for probability and counting now say 'ask first'. Your newer answers left this topic less settled. (Part 2) | AI.10 |
+| part2-integrity | Notes use only complete sessions. (Part 2) | AI.10 |
+| part2-drawer-inferred | Why this line: based on your math answers overall and how hard these problems usually are, your notes ask first here. It isn't based on problems of this kind in particular. How sure: provisional. What would change it: new sessions, or marking two answers on this topic as 'too much' or 'too basic'. (Part 2) | AI.10 |
+| part2-drawer-observed | Why this line: from the chemistry questions you've answered so far (at least five), typical chemistry questions are likely to be new ground for you, even allowing for how uncertain that still is. (Part 2) | AI.22 |
+| part2-taste-test | You preferred the answer written with your notes in 3 of 4 comparisons. This is your own impression, not evidence that the notes help. (Part 2) | AI.15 |
+
+Notes on the drafts:
+- The results-preamble is exactly 340 characters of ASCII text (tested).
+- The provider warning's claim about ad personalisation comes from secondary sources; verify it, and re-check every dated statement, before release (R-17.10).
+- Until F18 and F19 pass, only the claim string may describe benefit, and it says "not yet shown" (A22). No other string may say or imply benefit.
