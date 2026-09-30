@@ -35,6 +35,7 @@ import {
   scoreGaussian,
   scoreGrm,
   scoreTestlet,
+  TESTLET_AT_MAX,
   TESTLET_N_NODES,
   TESTLET_NODES,
   TESTLET_SD,
@@ -638,13 +639,13 @@ describe('testlet: 2PL items sharing an effect γ ~ N(0, 0.3²) (§7.1, M3.9)', 
     )
   })
 
-  it('score is d log L/dθ; observed information is −d² log L/dθ² and is never negative', () => {
+  it('score is d log L/dθ; observed information is −d² log L/dθ² and is not negative in the supported range', () => {
     fc.assert(
       fc.property(itemsArb(), thetaArb, tauArb, (items, t, tau) => {
         close(scoreTestlet(t, tau, items), d1((u) => loglikTestlet(u, tau, items), t), 1e-6)
         const obs = observedInfoTestlet(t, tau, items)
         close(obs, -d1((u) => scoreTestlet(u, tau, items), t), 1e-6)
-        expect(obs).toBeGreaterThanOrEqual(-1e-12) // 2PL items: the marginal log-likelihood is concave (Prékopa)
+        expect(obs).toBeGreaterThanOrEqual(-1e-12) // the exact marginal log-likelihood is concave (Prékopa); the grid keeps it in range (irt.ts module comment)
       }),
       { numRuns: 60 },
     )
@@ -684,16 +685,24 @@ describe('testlet: 2PL items sharing an effect γ ~ N(0, 0.3²) (§7.1, M3.9)', 
   })
 
   it('does not overflow or lose finiteness for steep items and improbable patterns', () => {
+    // logits up to 500 at the largest supported a (|a|·τ ≤ 3)
     const items: TestletItem[] = [
-      { a: 100, b: -50, y: 1 },
-      { a: 100, b: 50, y: 0 },
-      { a: 50, b: 0, y: 1 },
+      { a: 10, b: -50, y: 1 },
+      { a: 10, b: 50, y: 0 },
+      { a: 5, b: 0, y: 1 },
     ]
     for (const y of [items, items.map((it) => ({ ...it, y: (1 - it.y) as 0 | 1 }))]) {
       for (const f of [loglikTestlet, scoreTestlet, observedInfoTestlet]) expect(Number.isFinite(f(0, 0.3, y)), f.name).toBe(true)
     }
     expect(Number.isFinite(infoTestlet(0, 0.3, items))).toBe(true)
     expect(infoTestlet(0, 0.3, [{ a: 1, b: 400, y: 0 }])).toBeGreaterThanOrEqual(0)
+    // τ = 0 is the independent 2PL, exact at any a (no limit on |a|·τ there)
+    const steep: TestletItem[] = [
+      { a: 100, b: -50, y: 1 },
+      { a: 100, b: 50, y: 0 },
+      { a: 50, b: 0, y: 1 },
+    ]
+    for (const f of [loglikTestlet, scoreTestlet, observedInfoTestlet]) expect(Number.isFinite(f(0, 0, steep)), f.name).toBe(true)
   })
 
   it('validates τ, the item count and each item', () => {
@@ -708,6 +717,72 @@ describe('testlet: 2PL items sharing an effect γ ~ N(0, 0.3²) (§7.1, M3.9)', 
     expect(() => checkTestlet(0.3, [null as unknown as TestletItem])).toThrow(RangeError)
     expect(() => checkTestlet(0, ok)).not.toThrow()
     expect(() => checkTestlet(0.3, new Array<TestletItem>(8).fill(ok[0]!))).not.toThrow()
+  })
+
+  describe('the range of the grid rule (|a|·τ ≤ 3, i.e. |a| ≤ 10 at τ = 0.3)', () => {
+    const steepItems = fc
+      .integer({ min: 1, max: MAX_TESTLET_ITEMS })
+      .chain((n) =>
+        fc.tuple(
+          fc.array(fc.double({ min: 0.5, max: 10, noNaN: true }), { minLength: n, maxLength: n }),
+          fc.array(fc.double({ min: -4, max: 4, noNaN: true }), { minLength: n, maxLength: n }),
+          fc.array(binary, { minLength: n, maxLength: n }),
+        ),
+      )
+      .map(([a, b, y]) => a.map((aj, j): TestletItem => ({ a: j === 0 ? 10 : aj, b: b[j]!, y: y[j]! }))) // the first at the largest a
+
+    it('is the bank item schema cap at the model τ, and is checked on the product', () => {
+      expect(TESTLET_AT_MAX).toBe(3)
+      expect(TESTLET_AT_MAX).toBeCloseTo(10 * TESTLET_SD, 12)
+      for (const sign of [1, -1]) {
+        expect(() => checkTestlet(0.3, [{ a: 10 * sign, b: 0, y: 1 }])).not.toThrow()
+        expect(() => checkTestlet(0.3, [{ a: 10.5 * sign, b: 0, y: 1 }])).toThrow(/\|a\|·tau/)
+      }
+      expect(() => loglikTestlet(0, 0.3, [{ a: 1, b: 0, y: 1 }, { a: 50, b: 0, y: 0 }])).toThrow(RangeError)
+      expect(() => infoTestlet(0, 0.3, [{ a: 50, b: 0, y: 1 }])).toThrow(/\|a\|·tau/)
+      expect(() => checkTestlet(1, [{ a: 3, b: 0, y: 1 }])).not.toThrow() // |a| ≤ 3 at τ = 1
+      expect(() => checkTestlet(1, [{ a: 3.5, b: 0, y: 1 }])).toThrow(/\|a\|·tau/)
+      expect(() => checkTestlet(0, [{ a: 1000, b: 0, y: 1 }])).not.toThrow() // τ = 0: exact, no limit
+    })
+
+    it('log-likelihood is within 1e-6 of a dense integral up to the largest a, wherever log L ≥ −20', () => {
+      fc.assert(
+        fc.property(steepItems, fc.double({ min: -4, max: 4, noNaN: true }), (items, t) => {
+          const want = refLoglik(t, TESTLET_SD, items)
+          fc.pre(want >= -20) // the documented envelope (irt.ts module comment)
+          expect(Math.abs(loglikTestlet(t, TESTLET_SD, items) - want)).toBeLessThan(1e-6)
+        }),
+        { numRuns: 60 },
+      )
+    })
+
+    it('observed information is not negative up to the largest a (over θ ∈ [−5, 5])', () => {
+      fc.assert(
+        fc.property(steepItems, (items) => {
+          for (let i = 0; i <= 200; i++) {
+            const t = -5 + i * 0.05
+            expect(observedInfoTestlet(t, TESTLET_SD, items), `θ = ${t}`).toBeGreaterThanOrEqual(-1e-9)
+          }
+        }),
+        { numRuns: 40 },
+      )
+    })
+
+    it('the error is small where the pattern is plausible and larger for extreme patterns', () => {
+      const items: TestletItem[] = [{ a: 10, b: 0, y: 1 }, { a: 1, b: 0, y: 1 }]
+      let worstOk = 0
+      for (let i = 0; i <= 80; i++) {
+        const t = -4 + i * 0.1
+        const want = refLoglik(t, TESTLET_SD, items)
+        if (want >= -20) worstOk = Math.max(worstOk, Math.abs(loglikTestlet(t, TESTLET_SD, items) - want))
+      }
+      expect(worstOk).toBeGreaterThan(0)
+      expect(worstOk).toBeLessThan(1e-6)
+      const far: TestletItem[] = [{ a: 10, b: 2, y: 1 }, { a: 10, b: 2.5, y: 1 }, { a: 10, b: 3, y: 1 }]
+      const want = refLoglik(-4, TESTLET_SD, far)
+      expect(want).toBeLessThan(-100)
+      expect(Math.abs(loglikTestlet(-4, TESTLET_SD, far) - want)).toBeGreaterThan(1e-6)
+    })
   })
 
   it('dispatches by kind: observationLoglik / Score / Info / ObservedInfo', () => {

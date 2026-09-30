@@ -270,8 +270,14 @@ export function infoGaussian(lam: number, sigma: number): number {
  * The integral is a fixed rule, part of the model and of the golden vectors (scoring_v2): the
  * equal-spacing rule with Gaussian weights on γ = τ·z_i, z_i = −8 + i/4 for i = 0..64 (z = 0 is a
  * node), w_i = exp(−z_i²/2)/Σ_k exp(−z_k²/2), so Σ w_i = 1 and L = Π p_j exactly when τ = 0. For
- * smooth integrands this rule converges geometrically in the spacing; with a ≤ 4 it agrees with
- * an adaptive integral to about 1e-6 in log L even for improbable response patterns.
+ * smooth integrands this rule converges geometrically in the spacing. Its error against the
+ * exact integral grows with the steepness |a|τ (the sigmoids' poles sit at distance π/(|a|τ)
+ * from the real line in z) and with how improbable the response pattern is (the error is
+ * relative to L). For |a|τ ≤ TESTLET_AT_MAX (3, i.e. |a| ≤ 10 at τ = 0.3) it is below 1e-6 in
+ * log L wherever log L ≥ −20; the worst errors measured at |a|τ = 3 are about 3e-4 for
+ * log L ≥ −30 and 5e-2 for log L ≥ −40 (irt.test.ts checks the first bound against a dense
+ * integral). Those are the far tails of the posterior in θ. The rule, not the exact integral,
+ * is the model, and the ports agree on it to rounding.
  *
  * With π_i(θ) = w_i L_i / Σ_k w_k L_k the posterior weight of node i, S_i = Σ_j a_j (y_j − p_ij)
  * and O_i = Σ_j a_j² p_ij (1 − p_ij) the score and the 2PL information of the items at θ + τ·z_i:
@@ -284,12 +290,23 @@ export function infoGaussian(lam: number, sigma: number): number {
  * The expected information is that of the marginal model, so it is smaller than the sum of the
  * items' 2PL information (the shared γ makes them partly redundant: about 1/(1 + τ²·I) of it for
  * items with total information I, i.e. a discount of roughly 10-25% for typical 3-4 item
- * testlets, DESIGN §7.1 "about 20%"). The marginal log-likelihood of 2PL items is concave in θ
- * (Prekopa), so the observed information is >= 0.
+ * testlets, DESIGN §7.1 "about 20%"). The exact marginal log-likelihood of 2PL items is concave
+ * in θ (Prekopa), so the exact observed information is >= 0. The 65-node sum is a comb of
+ * shifted copies and need not be concave: for |a|τ ≤ TESTLET_AT_MAX the observed information
+ * stays >= −1e-9 (rounding; checked over θ ∈ [−5, 5] in irt.test.ts), but for very steep items
+ * the ripples make it clearly negative (one item with a = 50 at τ = 0.3: about −137), which is
+ * why checkTestlet rejects |a|τ > TESTLET_AT_MAX. Where the Newton Hessian is not positive
+ * definite anyway, the MAP loop (scorer.ts) falls back to Fisher scoring.
  */
 
 /** The testlet effect SD τ, DESIGN §7.1: γ ~ N(0, 0.3²). */
 export const TESTLET_SD = 0.3
+/**
+ * Largest |a|·τ of a testlet item: 10 × 0.3, the bank item schema's cap (`A_MAX`) at the model's τ.
+ * The grid rule is validated up to it (module comment); τ = 0 has no limit (the rule is then
+ * exactly the independent 2PL).
+ */
+export const TESTLET_AT_MAX = 3
 /** Most items in one testlet observation (DESIGN §3: 3-4 questions per setup); the expected information sums 2^n patterns. */
 export const MAX_TESTLET_ITEMS = 8
 /** The γ quadrature: z_i = −TESTLET_Z_MAX + i·TESTLET_Z_STEP for i = 0..TESTLET_N_NODES − 1. */
@@ -310,7 +327,7 @@ const TESTLET_W: readonly number[] = Object.freeze(TESTLET_LOG_W.map(Math.exp))
 export const TESTLET_NODES: readonly number[] = TESTLET_Z
 export const TESTLET_WEIGHTS: readonly number[] = TESTLET_W
 
-/** Throws unless τ is finite and ≥ 0 and the items are 1 to {@link MAX_TESTLET_ITEMS} finite 2PL items with binary y. */
+/** Throws unless τ is finite and ≥ 0 and the items are 1 to {@link MAX_TESTLET_ITEMS} finite 2PL items with |a|·τ ≤ {@link TESTLET_AT_MAX} and binary y. */
 export function checkTestlet(tau: number, items: readonly TestletItem[]): void {
   if (typeof tau !== 'number' || !Number.isFinite(tau) || tau < 0) throw new RangeError(`testlet tau must be finite and ≥ 0, got ${String(tau)}`)
   if (!Array.isArray(items) || items.length < 1 || items.length > MAX_TESTLET_ITEMS) {
@@ -319,6 +336,9 @@ export function checkTestlet(tau: number, items: readonly TestletItem[]): void {
   for (const it of items) {
     if (typeof it !== 'object' || it === null) throw new RangeError('testlet item must be an object')
     if (typeof it.a !== 'number' || !Number.isFinite(it.a)) throw new RangeError(`testlet item a must be finite, got ${String(it.a)}`)
+    if (Math.abs(it.a) * tau > TESTLET_AT_MAX) {
+      throw new RangeError(`testlet item |a|·tau must be ≤ ${TESTLET_AT_MAX} (|a| ≤ 10 at tau = 0.3: the grid rule's range), got |${it.a}|·${tau}`)
+    }
     if (typeof it.b !== 'number' || !Number.isFinite(it.b)) throw new RangeError(`testlet item b must be finite, got ${String(it.b)}`)
     checkBinary(it.y)
   }
@@ -355,7 +375,7 @@ export function loglikTestlet(theta: number, tau: number, items: readonly Testle
 export interface TestletDerivatives {
   /** d log L/dθ = Σ_i π_i S_i. */
   score: number
-  /** −d² log L/dθ² = E_π[O] − Var_π[S] (module comment); ≥ 0. */
+  /** −d² log L/dθ² = E_π[O] − Var_π[S] (module comment); ≥ −1e-9 for |a|·τ ≤ {@link TESTLET_AT_MAX}. */
   observed: number
   /** Expected (Fisher) information of the marginal model over the 2^n response patterns; NaN unless asked for. */
   info: number
@@ -439,7 +459,7 @@ export function scoreTestlet(theta: number, tau: number, items: readonly Testlet
   return testletDerivatives(theta, tau, items, false).score
 }
 
-/** Observed information −d² log L/dθ² = E_π[O] − Var_π[S] (module comment); ≥ 0. */
+/** Observed information −d² log L/dθ² = E_π[O] − Var_π[S] (module comment); ≥ −1e-9 for |a|·τ ≤ {@link TESTLET_AT_MAX}. */
 export function observedInfoTestlet(theta: number, tau: number, items: readonly TestletItem[]): number {
   return testletDerivatives(theta, tau, items, false).observed
 }

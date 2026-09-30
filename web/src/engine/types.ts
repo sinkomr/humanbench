@@ -138,12 +138,18 @@ export interface TestletItem {
  * One scored observation on one axis, the scorer's input (simple structure, §7.2). Field names
  * are the golden-vector wire schema (see the module comment); meanings follow `irt.ts`.
  *
- * A lone '2pl_testlet' item may be scored as a '2pl' observation. The items of one testlet
- * (passage / game setup, `ItemBase.testlet_id`) answered in a session are scored together as one
- * 'testlet' observation (§7.1, M3.9): 1 to 8 2PL items that share a random effect
- * γ ~ N(0, `tau`²), with `tau` = TESTLET_SD (0.3, `irt.ts`), integrated out, so the block's
+ * The items of one testlet (passage / game setup, `ItemBase.testlet_id`) answered in a session are
+ * scored together as one 'testlet' observation (§7.1, M3.9): 1 to 8 2PL items that share a random
+ * effect γ ~ N(0, `tau`²), with `tau` = TESTLET_SD (0.3, `irt.ts`), integrated out, so the block's
  * likelihood is p(y | θ) = ∫ Π_j p_j(y_j | θ + γ) N(γ; 0, tau²) dγ with p_j the 2PL of item j.
  * Build it with `testletObservation()` (`scorer.ts`).
+ *
+ * Not yet wired: nothing in the app builds a 'testlet' observation, and a lone '2pl_testlet' item
+ * is not the same as a '2pl' one (its marginal is flatter, §7.1). Until the session / re-score
+ * paths group a session's items by `testlet_id` (they need it on the served item, which
+ * `ItemInstance` does not carry yet), `save/rescore.ts`, `sim/responders.ts` and `engine/integrity.ts`
+ * score a '2pl_testlet' item as a '2pl' observation and so leave γ out. No live family has
+ * testlet items yet (RC and LG are not built), so nothing is mis-scored today.
  */
 export type Observation =
   | { kind: '2pl'; axis: AxisCode; a: number; b: number; y: 0 | 1 }

@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, AXIS_INDEX, initialSigma, N_AXES, nearestPD, type AxisCode } from './axes'
-import { info2pl, infoTestlet, loglik2pl, loglikTestlet, MAX_TESTLET_ITEMS, observationInfo, observationObservedInfo, observationScore, observedInfoTestlet, scoreTestlet, TESTLET_N_NODES, TESTLET_SD, TESTLET_Z_MAX, TESTLET_Z_STEP } from './irt'
+import { info2pl, infoTestlet, loglik2pl, loglikTestlet, MAX_TESTLET_ITEMS, observationInfo, observationObservedInfo, observationScore, observedInfoTestlet, scoreTestlet, TESTLET_AT_MAX, TESTLET_N_NODES, TESTLET_SD, TESTLET_Z_MAX, TESTLET_Z_STEP } from './irt'
 import { choleskyLogDet, cholesky, identity, isSymmetric, matmul, maxAbsDiff, spdInverse, tryCholesky } from './linalg'
 import {
   checkObservation,
@@ -144,7 +144,7 @@ interface GoldenDocV2 extends GoldenDoc {
   v1_cases: number
   testlet_seed: number
   conventions: GoldenDoc['conventions'] & {
-    testlet: { tau_default: number; max_items: number; grid: { z_max: number; z_step: number; n_nodes: number }; terms: { tolerance: number } }
+    testlet: { tau_default: number; max_items: number; max_a_tau: number; grid: { z_max: number; z_step: number; n_nodes: number }; terms: { tolerance: number } }
   }
   testlet_terms: TestletTerm[]
 }
@@ -179,6 +179,7 @@ describe('golden vectors with testlets (bank golden/scoring_v2.json, ROADMAP M3.
     const conv = goldenV2.conventions.testlet
     expect(conv.tau_default).toBe(TESTLET_SD)
     expect(conv.max_items).toBe(MAX_TESTLET_ITEMS)
+    expect(conv.max_a_tau).toBe(TESTLET_AT_MAX)
     expect([conv.grid.z_max, conv.grid.z_step, conv.grid.n_nodes]).toEqual([TESTLET_Z_MAX, TESTLET_Z_STEP, TESTLET_N_NODES])
     expect(conv.terms.tolerance).toBe(1e-9)
   })
@@ -204,7 +205,7 @@ describe('golden vectors with testlets (bank golden/scoring_v2.json, ROADMAP M3.
     for (const t of goldenV2.testlet_terms) {
       t.theta.forEach((th, j) => {
         const e = (got: number, want: number, what: string): void =>
-          expect(Math.abs(got - want), `${t.id} ${what} at θ = ${th}`).toBeLessThanOrEqual(tol * (1 + Math.abs(want)))
+          expect(Math.abs(got - want), `${t.id} ${what} at θ = ${th}`).toBeLessThanOrEqual(tol) // absolute, as the golden states
         e(loglikTestlet(th, t.tau, t.items), t.loglik[j]!, 'loglik')
         e(scoreTestlet(th, t.tau, t.items), t.score[j]!, 'score')
         e(infoTestlet(th, t.tau, t.items), t.info[j]!, 'info')
@@ -477,6 +478,11 @@ describe('testlet observations (§7.1, M3.9)', () => {
     expect(() => testletObservation('RC', new Array<TestletItem>(9).fill(items[0]!))).toThrow(RangeError)
     expect(() => testletObservation('RC', items, -1)).toThrow(RangeError)
     expect(() => testletObservation('XYZ' as AxisCode, items)).toThrow(RangeError)
+    expect(() => testletObservation('RC', [{ a: 11, b: 0, y: 1 }])).toThrow(RangeError) // |a|·τ > 3
+    // malformed items are a RangeError too, not a TypeError from copying them
+    for (const bad of [undefined, null, 5, 'ab', {}, [null], [undefined], [5], [{ a: 1, b: 0 }], [{ a: '1', b: 0, y: 1 }]]) {
+      expect(() => testletObservation('RC', bad as unknown as TestletItem[]), JSON.stringify(bad)).toThrow(RangeError)
+    }
   })
 
   it('checkObservation takes exactly the fields tau and items, with items of exactly a, b, y', () => {

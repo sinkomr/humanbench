@@ -208,9 +208,11 @@ export function checkObservation(o: Observation, k: number = N_AXES): number {
 /**
  * The 'testlet' observation of the 1 to 8 items of one passage / game setup that a session
  * answered (DESIGN §7.1, ROADMAP M3.9): they share a random effect γ ~ N(0, `tau`²), `tau`
- * defaulting to {@link TESTLET_SD} (0.3). Validated like any observation (RangeError).
+ * defaulting to {@link TESTLET_SD} (0.3). Validated like any observation (RangeError), also when
+ * `items` is not an array of item objects.
  */
 export function testletObservation(axis: AxisCode, items: readonly TestletItem[], tau: number = TESTLET_SD): Observation {
+  checkTestlet(tau, items) // before the copy below, which would throw a TypeError on malformed items
   const o: Observation = { kind: 'testlet', axis, tau, items: items.map((it) => ({ a: it.a, b: it.b, y: it.y })) }
   checkObservation(o)
   return o

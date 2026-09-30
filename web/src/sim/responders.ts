@@ -72,7 +72,7 @@ export function pCorrect(item: Pick<AnyItem, 'params' | 'item_id'>, theta: numbe
   }
 }
 
-/** The dichotomous engine observation of a scored item (A9: '2pl_testlet' is scored as '2pl'). */
+/** The dichotomous engine observation of a scored item (A9: '2pl_testlet' is scored as '2pl', without the §7.1 testlet effect). */
 export function itemObservation(item: Pick<AnyItem, 'params' | 'axis' | 'item_id'>, y: 0 | 1): Observation {
   const p = item.params
   if (p.model === '3pl') return { kind: '3pl', axis: item.axis, a: p.a, b: p.b, c: p.c, y }
