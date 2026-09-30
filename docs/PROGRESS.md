@@ -30,8 +30,10 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: wf5, rerun** (`wf_2b979847-f2d`, started 2026-09-29 23:13). The user allowed 9 h, so it stops at about 08:12 on 2026-09-30. Resume ticks run at :27 from 00:27 to 07:27.
-- **If interrupted:** check `git branch --list 'wf5/*'` and `git worktree list` in both repos. Merge the green task commits into `dev`, then run all gates.
+- **wf5 done** (2026-09-30 08:10; 51 agents; all 6 chains are green, merged, audited and repaired, then pushed).
+  - Tasks: AI.1–AI.7 and AI.6b, M1.15, M1.R, M1.18, M1.4b (option 1), M3.3, M3.4, M3.6, M3.7, M3.9, M4.6 (Opus beat Sonnet 8.5 to 5.5), and M4.7–M4.9.
+  - Gates: pub 3,398 unit tests plus 529 e2e; bank 4,247 tests.
+  - **TODO next session:** tick these in ROADMAP. Add the AI.1 "Needs you" items from proposal §11. The follow-ups are in the wf5 output.
 - **Decisions (user, 2026-09-29):**
   - M1.4b: option 1, 20 items/axis.
   - Phase AI Part 1 is approved.
