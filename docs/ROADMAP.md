@@ -104,7 +104,7 @@ Core
 - [x] **M1.2b both** — Σ_init v2 per A8 plus `sigma_version`. Set LR to 2PL per A9. Regenerate the golden vectors. Update the TS registry test literal. Acceptance: every A8 pair is spot-tested in both repos; Σ is PD; both repos give an identical Σ (hash test). *(done 2026-09-27: pub b31d11f, bank 38e2be2)*
 - [x] **M1.3 pub** — TS scorer port (A2): MAP/Laplace + per-axis EAP + all observation kinds + per-case Σ. nearestPD matches Python (clip, rescale, shrink) on the golden `nearest_pd` pairs. Acceptance: all golden cases within 1e-6; MAP with K = 17 and 150 observations < 10 ms in Node (bench test). *(done 2026-09-27: golden parity 1e-6, bench < 10 ms)*
 - [x] **M1.4a bank** — θ-recovery simulation. N = 2,000 simulees with θ ~ MVN(0, Σ_init). Items: 2PL a ~ lognormal(0.2, 0.3), b ~ N(0, 1.2), with 20 items per axis on the 9 procedural and knowledge axes. Acceptance: r(θ̂, θ) ≥ .85 on **every** included axis. Also report coverage of the 90% intervals (0.85–0.95). *(done 2026-09-27: full N = 2,000 run gives item-axis r .890–.931 and cov90 .886–.907; slow test)*
-- [~] **M1.4b both** — (after M1.14) a TS CAT simulation (selector + scorer) on the same simulees, parity with Python within 0.02 on r. Uses a Node CLI. Use the real block families' observation parameters (RT/PS/WM), not the M1.4a stand-ins. *(built: Node CLI `npm run sim:cat`, real selector, scorer and blocks. The non-adaptive replay matches Python within 0.02. **Open:** within the A15 ~25–30 min budget, CAT r on MAT/SPA/QR is .815/.798/.743, below .85; it passes at 20 items/axis (.903/.868/.905). Needs the user's decision.)* **Decided 2026-09-29 (user): option 1. The M1 criterion is r ≥ .85 at 20 items/axis (DESIGN §14.3); remove the `.fails` markers.**
+- [x] **M1.4b both** — (after M1.14) a TS CAT simulation (selector + scorer) on the same simulees, parity with Python within 0.02 on r. Uses a Node CLI. Use the real block families' observation parameters (RT/PS/WM), not the M1.4a stand-ins. *(built: Node CLI `npm run sim:cat`, real selector, scorer and blocks. The non-adaptive replay matches Python within 0.02. **Open:** within the A15 ~25–30 min budget, CAT r on MAT/SPA/QR is .815/.798/.743, below .85; it passes at 20 items/axis (.903/.868/.905). Needs the user's decision.)* **Decided 2026-09-29 (user): option 1. The M1 criterion is r ≥ .85 at 20 items/axis (DESIGN §14.3); remove the `.fails` markers.**
 - [x] **M1.P both** — difficulty and time priors for procedural families (§6.ii). A v0 feature → b regression anchored to ICAR type means (rotation .19, matrix .52, series .59; b ≈ −logit(p)) with σ_b = 1.0, plus `expected_time_s` per family. The provisional location/scale for the RT, PS, WM, FER and CAL models (A10; Brysbaert 238 wpm; span norms fwd 6–7, bwd 4–5). *(done 2026-09-28: the pool mean b equals the ICAR anchor for rotation, matrices and series; quant uses band centres; the rule stratum == stratumOfB(b) is part of the contract; FER and CAL norms are provisional until M4.8)*
 
 Family contract + procedural families (each: TS gen + TS verify + 10k property test; Python twin + verifier; cross-check of ≥1,000 dumped TS instances with 0 disagreements; b prior + expected time; `family_id` per A11)
@@ -128,10 +128,10 @@ UI
 - [x] **M1.14 pub** — adaptive selector: info/second (§7.4), randomesque top-5 (chi-square uniformity test), coverage floor ≥ 3 per axis, family exclusion, w_k = 0 for skipped axes. RT, span, coding and reading run as fixed blocks, not CAT items. *(done; quant sibling sets g:quant:<label>, at least 8 units per stratum)*
 - [x] **M1.17 pub** — save file (§8): `schema/save-v1.json` (the §8 example validates), RFC 8785 canonical JSON, an unsigned MVP save, download / Web Share / copy-code (gzip + base64url round trip), upload by content (a `.txt` rename still parses), paste, localStorage autosave per item, merge R-8.1 (idempotent property test), and a migrations scaffold. *(done: library only; UI wiring in M1.15/M1.R and WebKit e2e in M1.22)*
 - [x] **M1.19 pub** — integrity flags (§13): visibility hidden > 10 s, paste, too fast (< 25% of median on items with median > 20 s), uniform RT (CV of log-RT < 0.1 across items whose expected times differ by ≥ 2×), accuracy on b > θ + 1.5 items above expectation (p < .01 binomial), lz* < −2 with ≥ 20 items. Tests on synthetic patterns. *(done)*
-- [ ] **M1.15 pub** — session flow (R-7.4, §10, §13, A15): consent + 18+ gate (the under-18 path writes nothing to storage), privacy/terms page, honour code, device check + RT input mode, blocks with interstitials, time-based progress ring, per-cluster checklist, break at 30 min, finish early, skip axis, hard stop, per-axis early stop SD < 0.3, and the confidence slider (floor 1/k for MC, 0 for entry; Brier). Practice mode (feedback, not counted). A `?fast=1` dev flag compresses timings; production builds ignore it (test). Playwright with a fake clock covers every listed rule. *Amended (Phase AI Part 2, only if approved):* the honour-code sentence "Your notes are only useful if the answers are yours" once results feed the notes.
+- [x] **M1.15 pub** — session flow (R-7.4, §10, §13, A15): consent + 18+ gate (the under-18 path writes nothing to storage), privacy/terms page, honour code, device check + RT input mode, blocks with interstitials, time-based progress ring, per-cluster checklist, break at 30 min, finish early, skip axis, hard stop, per-axis early stop SD < 0.3, and the confidence slider (floor 1/k for MC, 0 for entry; Brier). Practice mode (feedback, not counted). A `?fast=1` dev flag compresses timings; production builds ignore it (test). Playwright with a fake clock covers every listed rule. *Amended (Phase AI Part 2, only if approved):* the honour-code sentence "Your notes are only useful if the answers are yours" once results feed the notes.
 - [x] **M1.16 pub** — blob viz (§9, A12): linear radius; rings in SD units, "provisional"; Catmull-Rom closed with overshoot ≤ 0.1 ring, else cardinal(0.6) (numeric test); 20-curve fuzz + crisp mean; seriation matches brute force for K ≤ 10 and keeps clusters contiguous; muting rule; tier glyphs/hatch; not-measured stubs; bar/lollipop view (the screen-reader default); Okabe–Ito palette with ≥ 4.5:1 text contrast; no area or total in the DOM (test); drill-down to facet EAPs (≥ 5 items). *(done; the fuzz follows §9.3: 20 nested curves at θ ± z·SD)*
-- [ ] **M1.R pub** — reveal flow (§10): the blob builds axis by axis → credible distinctive peaks (A12) → drill-down → required save download with a beforeunload guard → share card → 3 procedural items with worked solutions. Results copy: disclaimer, the R-5.6.5 resource line, "vs other HumanBench takers" wording (hidden until A12 allows it), external norms (Brysbaert wpm, digit span, web-relative RT), the Pace tooltip, and the "practice-adjusted" label. Retest-motivation UI: predicted shrinkage from §7.6, fuzziest axes, 20-min focus sessions, ≥ 7-day spacing advice. *Amended (Phase AI, AI.6b):* a "Working with AI" card appears after the required save download, never on share cards, and the results-talk helper (DESIGN §17.7) has a slot on the reveal screen.
-- [ ] **M1.18 pub** — export: SVG, 2× PNG, a share card at exactly 1200×630 CSS px (2400×1260 at 2×). The card has a toggle to hide any axis and never shows emotion lows or hidden axes (tests). *Amended (Phase AI, AI.6b):* notes text never appears on the card (test); the results-talk helper is linked from the share-card screen.
+- [x] **M1.R pub** — reveal flow (§10): the blob builds axis by axis → credible distinctive peaks (A12) → drill-down → required save download with a beforeunload guard → share card → 3 procedural items with worked solutions. Results copy: disclaimer, the R-5.6.5 resource line, "vs other HumanBench takers" wording (hidden until A12 allows it), external norms (Brysbaert wpm, digit span, web-relative RT), the Pace tooltip, and the "practice-adjusted" label. Retest-motivation UI: predicted shrinkage from §7.6, fuzziest axes, 20-min focus sessions, ≥ 7-day spacing advice. *Amended (Phase AI, AI.6b):* a "Working with AI" card appears after the required save download, never on share cards, and the results-talk helper (DESIGN §17.7) has a slot on the reveal screen.
+- [x] **M1.18 pub** — export: SVG, 2× PNG, a share card at exactly 1200×630 CSS px (2400×1260 at 2×). The card has a toggle to hide any axis and never shows emotion lows or hidden axes (tests). *Amended (Phase AI, AI.6b):* notes text never appears on the card (test); the results-talk helper is linked from the share-card screen.
 - [ ] **M1.21 pub** — accessibility pass: axe 0 serious/critical on every route, a keyboard-only full session e2e, prefers-reduced-motion, 200% zoom, a contrast unit test. *Amended (Phase AI, AI.5):* the Notes for your AI builder routes join the route list.
 - [ ] **M1.22 pub** — Playwright e2e: a full `?fast=1` session; WebKit/iOS emulation of save download and upload (M1 acceptance 4). *Amended (Phase AI, AI.7):* the WebKit round trip covers `brief_prefs` if AI.7 lands first; if M1.22 lands first, AI.7 re-runs it as its own acceptance.
 - [x] **M1.Q both** — retest priors ρ_k(s) (§7.8) applied when re-scoring multi-session saves. *(done: library; rescoreSessions applies §7.8, retest_v1 golden parity 1e-9)*
@@ -148,10 +148,10 @@ UI
 - [x] **M4.3 bank** — linking: anchor drift check and Stocking–Lord. Acceptance: an injected shift is recovered within 0.05. *(done)*
 - [x] **M4.4 bank** — QA rules §4.5 + distractor analysis §4.3 + report thresholds → quarantine. Acceptance: an injected negative-a item is quarantined. *(done; see A19)*
 - [x] **M4.5 bank** — Σ re-estimation from disattenuated posteriors + nearest-PD. Acceptance: Frobenius error < .1 at N = 2,000. *(done under A19: relative Frobenius error 0.085)*
-- [ ] **M4.6 bank** — M4 acceptance simulation: 300 users, r(b̂, b) ≥ .9, drift < 0.1.
-- [ ] **M4.7 bank** — retest model ρ_k(s) estimation, plus re-scoring from raw responses. Acceptance: ρ recovery in simulation. *Amended (Phase AI Part 2, only if approved; AI.20):* also estimates the between-session drift κ per axis, replacing κ = .01 per month [SPEC].
-- [ ] **M4.8 bank** — calibrate the non-2PL models: RT β/σ, PS location/scale, GRM thresholds, Fermi δ, CAL standardisation.
-- [ ] **M4.9 bank** — nightly falsifiable-check report (F1, F3, F4, F7, F8, F10, F11) with thresholds and injected-violation tests; Mantel–Haenszel DIF (§13). *Amended (Phase AI Part 2, only if approved; AI.20):* the nightly report adds F12, F13, F21 and F21-K (from recomputed zones; no notes or preferences are read).
+- [x] **M4.6 bank** — M4 acceptance simulation: 300 users, r(b̂, b) ≥ .9, drift < 0.1.
+- [x] **M4.7 bank** — retest model ρ_k(s) estimation, plus re-scoring from raw responses. Acceptance: ρ recovery in simulation. *Amended (Phase AI Part 2, only if approved; AI.20):* also estimates the between-session drift κ per axis, replacing κ = .01 per month [SPEC].
+- [x] **M4.8 bank** — calibrate the non-2PL models: RT β/σ, PS location/scale, GRM thresholds, Fermi δ, CAL standardisation.
+- [x] **M4.9 bank** — nightly falsifiable-check report (F1, F3, F4, F7, F8, F10, F11) with thresholds and injected-violation tests; Mantel–Haenszel DIF (§13). *Amended (Phase AI Part 2, only if approved; AI.20):* the nightly report adds F12, F13, F21 and F21-K (from recomputed zones; no notes or preferences are read).
 - [ ] **M4.10 bank** — write versioned item_parameters, publish param_version/bank_version, re-score recent sessions (after M2.1; DB adapter tested locally).
 
 ## M2 — Backend (SQL written + tested locally; deploy needs user)
@@ -166,12 +166,12 @@ UI
 
 ## M3 — Knowledge & verbal banks (bank)
 - [x] **M3.2** — verifiers: z3 logic games, RC passage-dependence (no-passage rate logged in `verification`, reject > 1.5 × chance), citations G5, sensitivity lint G6, license allow-list + 8-gram overlap lint F9 (the anchor corpus needs the user). *(done: z3, RC no-passage, G5, G6, F9. F9 returns not_run until the anchor corpus exists)*
-- [ ] **M3.3** — solver gate G4 (Claude now; Ollama adapter for ≥ 2 model families).
-- [ ] **M3.4** — `hb review` (Typer + FastAPI :8765); `--take` stores author responses flagged and excluded from calibration.
-- [ ] **M3.6** — procedural logic-game generator (Z3, 2–500 models per setup). **Blocked by AI.2** (Phase AI, A23): the generator emits the item tags (`topic`, `curriculum_level`, `notation[]`); if it landed first, AI.2 adds a retag pass by re-running it.
-- [ ] **M3.7** — `hb gen`, `hb verify`, `hb push` CLIs (§14.5); `fact_volatility` field (fast facts only in Fermi). **Blocked by AI.2** (Phase AI, A23): `hb gen` emits the item tags; if it landed first, AI.2 adds a retag pass for its outputs.
+- [x] **M3.3** — solver gate G4 (Claude now; Ollama adapter for ≥ 2 model families).
+- [x] **M3.4** — `hb review` (Typer + FastAPI :8765); `--take` stores author responses flagged and excluded from calibration.
+- [x] **M3.6** — procedural logic-game generator (Z3, 2–500 models per setup). **Blocked by AI.2** (Phase AI, A23): the generator emits the item tags (`topic`, `curriculum_level`, `notation[]`); if it landed first, AI.2 adds a retag pass by re-running it.
+- [x] **M3.7** — `hb gen`, `hb verify`, `hb push` CLIs (§14.5); `fact_volatility` field (fast facts only in Fermi). **Blocked by AI.2** (Phase AI, A23): `hb gen` emits the item tags; if it landed first, AI.2 adds a retag pass for its outputs.
 - [ ] **M3.8** — anchor pipeline: NAEP released items (per-item rights check) → p → b priors; 10–20 anchors per axis.
-- [ ] **M3.9** — testlet random effect γ ~ N(0, .3²) in both scorers (§7.1) before testlet items go live.
+- [x] **M3.9** — testlet random effect γ ~ N(0, .3²) in both scorers (§7.1) before testlet items go live.
 - [ ] **M3.5** — authoring batches, per axis at S = 3: ≈ 162 items for each of the 7 finite v1 axes (LR, RC, VOC, KST, KHU, KAP, + LG pool), plus Fermi. Each batch passes G1–G6 and gets an audit-bound record (G7 needs the user). **Blocked by AI.2** (Phase AI, A23): each batch template emits the item tags of A23 (proposal §5.1) that apply to its axis: `topic`, `curriculum_level`, `notation[]` (LR/LG), private `jargon_terms[]`, and for LR/RC the `question_type` and `inference_steps`.
 
 ## M5 — Tier (b) Fermi + calibration UI
@@ -206,7 +206,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - the A13 lint passes on every new string (DESIGN §17 and its copy drafts, the F12–F21-K rows, the D13 row, this section, A20–A24);
     - every R-17.x is cited in the acceptance of at least one Part 1 task below (R-17.1–R-17.14), checked on the acceptance text and not on task headings;
     - cross-references resolve (AI.2 blocks M3.5/M3.6/M3.7; AI.26 amends M2.1/M2.3/M2.4/M2.7); this is checked by `web/scripts/docs-phase-ai.test.ts`.
-- [ ] **AI.3 both** — **[S]** Topic taxonomy and quant groups (A23).
+- [x] **AI.3 both** — **[S]** Topic taxonomy and quant groups (A23).
   - `schema/topics-v1.json`, with topics as children of facets and `other/` self-settable topics.
   - The template → group map in `web/src/tasks/quant/topics.ts` with a bank twin; `group_version` `g1`; `topics-aliases.json`.
   - The pub half is all that AI.5 needs.
@@ -217,7 +217,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - labels are digit-free and contain no school-level words (R-17.3);
     - prefix-consistency and alias-resolution property tests;
     - A17 sync test in both repos.
-- [ ] **AI.2 both** — **[M]** M3.1b: item-v1 additive tags (proposal §5.1, A23).
+- [x] **AI.2 both** — **[M]** M3.1b: item-v1 additive tags (proposal §5.1, A23).
   - Pydantic fields, a `schema/item-v1.json` minor bump, `rows.py` routing, the `hb promote` requirement, and a note on the M2.1 columns (`item_families.topic`, `item_families.curriculum_level`).
   - Deps: **AI.3**, M3.1 ✔. **Blocks M3.5, M3.6 and M3.7.**
   - Acceptance:
@@ -228,7 +228,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - an M3.5 batch template and the M3.6/M3.7 outputs emit the tags, or a retag pass covers outputs that landed first.
 
 **Stage AI-1: Notes without results (static MVP; parallel with the bank lane)**
-- [ ] **AI.4 pub** — **[M]** `web/src/brief/` core (A20).
+- [x] **AI.4 pub** — **[M]** `web/src/brief/` core (A20).
   - `grammar.ts` (`hb-brief/1` templates, each with a version and a status), `render.ts` (short, long, SKILL.md, rules, JSON), `parse.ts` (all released versions), `lint.ts`, an ASCII normaliser.
   - `surfaces.json` (limits, per-destination install and removal steps, smoke dates, `checked`), `schema/brief-v1.json`, and `npm run dump:briefs` for the harness.
   - Deps: M1.20 ✔, AI.3 (pub half).
@@ -238,7 +238,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - JSON mirrors text;
     - `surfaces.json` carries dated install and removal steps, and a staleness warning fires when `checked` is more than 120 days old (R-17.10);
     - bundle test (`web/src/brief/` is not in light barrels).
-- [ ] **AI.5 pub** — **[M]** The "Notes for your AI" builder, no results needed (A20, DESIGN §17).
+- [x] **AI.5 pub** — **[M]** The "Notes for your AI" builder, no results needed (A20, DESIGN §17).
   - Context presets; self-set topics with the floor rule; T0, CC, LANG, W, FMT, VOICE and AC lines; mode and length; interests; constrained edits and custom lines.
   - Live preview with a per-destination counter and no silent truncation; the drawer (default and self-set templates).
   - Destination picker with download-first, per-OS install and removal steps; "Remove my notes settings".
@@ -258,7 +258,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - install blocks contain no `#` and use the refuse-to-overwrite form (test);
     - every string in DESIGN §17.7 assigned to AI.5 matches the table word for word (test);
     - A13 and brief lint pass.
-- [ ] **AI.6 pub** — **[S]** Checker, out-of-date diff and withdrawal notice.
+- [x] **AI.6 pub** — **[S]** Checker, out-of-date diff and withdrawal notice.
   - Deps: AI.4.
   - Acceptance (R-17.11):
     - 100% of a hostile or odd corpus of ≥ 50 cases is flagged (injections, URLs, zero-width/bidi characters, homoglyphs, digits, trait wording (R-17.2), A13 terms, over-length, off-grammar lines);
@@ -266,7 +266,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - it parses fixtures from every released `hb-brief/N`;
     - the diff marks changed lines correctly;
     - the load-time withdrawal notice fires exactly when a fixture gates file withdraws a copied line.
-- [ ] **AI.6b pub** — **[S]** "Talking about your results with an AI" helper and the reveal card (R-17.13).
+- [x] **AI.6b pub** — **[S]** "Talking about your results with an AI" helper and the reveal card (R-17.13).
   - Deps: AI.4, M1.R and M1.18 (slots).
   - Acceptance:
     - 0 A13 hits, and the strings match DESIGN §17.7 (`reveal-card`, `results-talk`, `results-preamble`, 340 characters) word for word;
@@ -274,7 +274,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - the card appears only after the save download;
     - the share-card renderer never contains notes strings (M1.18 test);
     - E22 is in the smoke gate.
-- [ ] **AI.7 pub** — **[S]** `brief_prefs` (proposal §5.5), the fit log and the prefs-only save.
+- [x] **AI.7 pub** — **[S]** `brief_prefs` (proposal §5.5), the fit log and the prefs-only save.
   - Deps: M1.17 ✔; Q3.
   - Acceptance:
     - the schema admits no free-text string (property) (R-17.12);

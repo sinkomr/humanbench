@@ -33,7 +33,10 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 - **wf5 done** (2026-09-30 08:10; 51 agents; all 6 chains are green, merged, audited and repaired, then pushed).
   - Tasks: AI.1–AI.7 and AI.6b, M1.15, M1.R, M1.18, M1.4b (option 1), M3.3, M3.4, M3.6, M3.7, M3.9, M4.6 (Opus beat Sonnet 8.5 to 5.5), and M4.7–M4.9.
   - Gates: pub 3,398 unit tests plus 529 e2e; bank 4,247 tests.
-  - **TODO next session:** tick these in ROADMAP. Add the AI.1 "Needs you" items from proposal §11. The follow-ups are in the wf5 output.
+  - Ticked in ROADMAP. **TODO next session:** add the AI.1 "Needs you" items from proposal §11. Decide whether RC and VOC items must carry topic tags (AI.2 follow-up) before M3.5.
+  - CI fixes on 2026-09-30:
+    - Bank: Typer forced colour in the CLI tests.
+    - Pub: the e2e job is split by browser project, the apt step is capped at 8 min, and the job limit is 35 min.
 - **Decisions (user, 2026-09-29):**
   - M1.4b: option 1, 20 items/axis.
   - Phase AI Part 1 is approved.

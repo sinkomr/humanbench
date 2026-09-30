@@ -37,9 +37,14 @@ jobs:
   e2e:
     # Playwright + axe-core (ROADMAP M1.A): builds the app, serves it with `vite preview` under
     # /humanbench/, and runs e2e/ in Chromium, WebKit and iPhone 13 (WebKit) emulation.
-    name: web e2e (Playwright + axe)
+    # One job per Playwright project: ~530 tests on 2 workers outgrew a single 20-min job.
+    name: web e2e (Playwright + axe, ${{ matrix.project }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, webkit, iphone]
     defaults:
       run:
         working-directory: web
@@ -66,18 +71,21 @@ jobs:
 
       - name: Install browsers and their system dependencies
         if: steps.browsers.outputs.cache-hit != 'true'
+        timeout-minutes: 12
         run: npm run e2e:install
 
+      # apt mirrors occasionally hang; fail fast instead of eating the job budget.
       - name: Install the browsers' system dependencies (browsers cached)
         if: steps.browsers.outputs.cache-hit == 'true'
+        timeout-minutes: 8
         run: npx playwright install-deps chromium webkit
 
-      - run: npm run e2e
+      - run: npm run e2e -- --project=${{ matrix.project }}
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.project }}
           path: |
             web/playwright-report/
             web/test-results/
