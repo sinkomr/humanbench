@@ -271,7 +271,7 @@ export interface ItemInstance<Spec extends object = JsonObject, Key extends obje
   /**
    * Family metadata (A23, AI.2): `true` marks a held-out ladder probe for the F12 zone check
    * (AI.17). Present only when true (never `false`), only on axis QR, never with `practice_only`;
-   * every instance of a family_id agrees. Nothing sets it yet.
+   * every instance of a family_id agrees (`runFamilyProperties` checks it). Nothing sets it yet.
    */
   readonly ladder_probe?: true
   /**
