@@ -16,5 +16,5 @@
   <div class="hb-actions">
     <button type="button" class="hb-btn hb-primary" onclick={onstart}>{WELCOME_START}</button>
   </div>
-  <p><a href="#/privacy">{PRIVACY_LINK}</a></p>
+  <p><a class="hb-standalone-link" href="#/privacy">{PRIVACY_LINK}</a></p>
 </Screen>

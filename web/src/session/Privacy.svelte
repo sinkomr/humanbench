@@ -35,5 +35,5 @@
     <button type="button" class="hb-btn" onclick={forget}>{PRIVACY_FORGET}</button>
   </div>
   <p role="status">{message}</p>
-  <p><a href="#/">{PRIVACY_BACK}</a></p>
+  <p><a class="hb-standalone-link" href="#/">{PRIVACY_BACK}</a></p>
 </Screen>

@@ -49,3 +49,11 @@ button {
   display: flex;
   flex-direction: column;
 }
+
+/* A link alone on its line is a target, not inline text, so it needs the 24 px WCAG 2.2
+   target size (axe target-size) even with wider Linux fonts. */
+.hb-standalone-link {
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
+}

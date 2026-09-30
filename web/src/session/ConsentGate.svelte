@@ -43,7 +43,7 @@
         <li>{point}</li>
       {/each}
     </ul>
-    <p><a href="#/privacy" target="_blank" rel="noopener">{GATE_LINK}</a></p>
+    <p><a class="hb-standalone-link" href="#/privacy" target="_blank" rel="noopener">{GATE_LINK}</a></p>
     <form onsubmit={submit} novalidate>
       <div class="check">
         <input id="{uid}-agree" type="checkbox" bind:checked={agreed} aria-describedby={showError ? `${uid}-err` : undefined} />

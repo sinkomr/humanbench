@@ -72,7 +72,7 @@ describe('Playwright config (M1.A)', () => {
     const ci = read('../.github/workflows/ci.yml')
     const job = ci.slice(ci.indexOf('\n  e2e:'))
     expect(job.length).toBeGreaterThan(10)
-    for (const step of ['npm ci', 'npm run e2e:install', 'npx playwright install-deps chromium webkit', 'npm run e2e', 'actions/cache@', '~/.cache/ms-playwright']) {
+    for (const step of ['npm ci', 'npm run e2e:install', 'npx playwright install-deps "$BROWSER"', 'npm run e2e', 'actions/cache@', '~/.cache/ms-playwright']) {
       expect(job).toContain(step)
     }
   })
