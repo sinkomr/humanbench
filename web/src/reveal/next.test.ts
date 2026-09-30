@@ -2,7 +2,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { axisEstimates } from '../viz/profile'
 import { syntheticProfile } from '../viz/synthetic'
-import { FOCUS_TARGET_S, SPACING_DAYS, focusAxes, focusOptions, fuzziestAxes, predictedShrinkage, projectedSe, shrinkagePercent } from './next'
+import { AXIS_CODES, type AxisCode } from '../engine/axes'
+import { FOCUS_TARGET_S, SPACING_DAYS, focusAxes, focusOptions, focusOptionsKey, fuzziestAxes, predictedShrinkage, projectedSe, shrinkagePercent, typicalSessions } from './next'
 
 describe('predicted shrinkage (§7.6)', () => {
   it('reproduces the §7.6 SE table: 0.57, 0.44, 0.37, 0.33, 0.29, 0.25, 0.21 for 1, 2, 3, 4, 5, 7, 10 sessions', () => {
@@ -82,5 +83,48 @@ describe('fuzziest skills and focus options', () => {
     const o = focusOptions(est)
     expect(focusAxes(o, new Set(['spatial', 'quant']))).toEqual(['SPA', 'QR'])
     expect(focusAxes(o, new Set())).toEqual([])
+  })
+})
+
+describe('typicalSessions (the shrinkage line speaks for the profile)', () => {
+  const next = (over: Partial<Record<AxisCode, number>>, base = 1): Record<AxisCode, number> => Object.fromEntries(AXIS_CODES.map((k) => [k, over[k] ?? base])) as Record<AxisCode, number>
+
+  it('is the lower median of the sessions that took each measured skill (next test number − 1)', () => {
+    expect(typicalSessions(next({}, 2), ['MAT', 'QR', 'VOC'])).toBe(1)
+    expect(typicalSessions(next({}, 3), ['MAT', 'QR', 'VOC'])).toBe(2)
+    // A focus session on two of five skills: most have had one session.
+    expect(typicalSessions(next({ MAT: 3, QR: 3 }, 2), ['MAT', 'QR', 'VOC', 'RC', 'LG'])).toBe(1)
+    // On three of five: most have had two.
+    expect(typicalSessions(next({ MAT: 3, QR: 3, VOC: 3 }, 2), ['MAT', 'QR', 'VOC', 'RC', 'LG'])).toBe(2)
+    // An even count takes the lower middle.
+    expect(typicalSessions(next({ MAT: 3, QR: 3 }, 2), ['MAT', 'QR', 'VOC', 'RC'])).toBe(1)
+  })
+
+  it('counts only the measured skills, is at least 1 for one of them and 0 for none', () => {
+    expect(typicalSessions(next({ SPA: 9 }, 2), ['MAT', 'QR'])).toBe(1)
+    expect(typicalSessions(next({}, 1), ['MAT'])).toBe(1)
+    expect(typicalSessions(next({}, 2), [])).toBe(0)
+  })
+
+  it('never exceeds the most sessions any measured skill has had', () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer({ min: 2, max: 12 }), { minLength: 1, maxLength: 17 }), (ords) => {
+        const measured = AXIS_CODES.slice(0, ords.length)
+        const n = typicalSessions(next(Object.fromEntries(measured.map((k, i) => [k, ords[i]!]))), measured)
+        expect(n).toBeGreaterThanOrEqual(Math.min(...ords) - 1)
+        expect(n).toBeLessThanOrEqual(Math.max(...ords) - 1)
+      }),
+    )
+  })
+})
+
+describe('focusOptionsKey', () => {
+  it('changes with the suggested parts and stays put otherwise', () => {
+    const a = axisEstimates(syntheticProfile('full')!.input)
+    const b = axisEstimates(syntheticProfile('full')!.input)
+    expect(focusOptionsKey(focusOptions(a))).toBe(focusOptionsKey(focusOptions(b)))
+    const opts = focusOptions(a)
+    const flipped = opts.map((o, i) => (i === 0 ? { ...o, suggested: !o.suggested } : o))
+    expect(focusOptionsKey(flipped)).not.toBe(focusOptionsKey(opts))
   })
 })

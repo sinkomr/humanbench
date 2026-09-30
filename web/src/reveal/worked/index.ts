@@ -3,21 +3,26 @@
  * one quantitative item, each a fresh procedural item from a family the person has not met.
  *
  * - **Fresh.** Items are generated from the session id (so a reload shows the same three) and
- *   skipped when their `family_id` is in `seen_families` (the person's earlier sessions and this
- *   one), so an example never repeats something they were asked.
- * - **Left out afterwards.** The families of the examples are added to the save's `seen_families`
- *   by the caller (`SessionPersister.addSeenFamilies`): a person who has seen a worked solution
- *   must not meet that exact question type as a counted item later (§7.7; it would inflate the
- *   practice effect and leak the solution).
+ *   skipped when their `family_id`, or that of a near-isomorph sibling, is in `seen_families` (the
+ *   person's earlier sessions and this one), so an example never repeats something they were asked
+ *   or hands over the method for it.
+ * - **Left out afterwards.** The families of the examples, and of their siblings, are added to the
+ *   save's `seen_families` by the caller (`SessionPersister.addSeenFamilies`): a person who has
+ *   seen a worked solution must not meet that question type, or a near-isomorph of it, as a counted
+ *   item later (§7.7; it would inflate the practice effect and leak the solution). `seen_families`
+ *   holds family ids only, so a sibling group is spelled out as the ids of its members
+ *   ({@link siblingFamilyIds}). No quant variant of the stratum used here is grouped today (the
+ *   groups sit in strata 1, 3 and 4), so this is exact bookkeeping for a change of stratum or of
+ *   the solved variants rather than a case a taker meets now; `worked.test.ts` pins both.
  * - **Uncounted.** Nothing here is scored, stored as a response or fed to the estimate.
  * - Easy-to-follow strata: matrix 2, series 3, quant 2, and only quant variants that have a
  *   worked solution (`quant.ts`).
  */
 
 import { getFamily } from '../../tasks/registry'
-import type { ItemInstance } from '../../tasks/family'
+import { siblingGroupId, type ItemInstance } from '../../tasks/family'
 import type { MatrixItem } from '../../tasks/matrices'
-import type { QuantItem } from '../../tasks/quant'
+import { QUANT_SIBLING_SETS, type QuantItem } from '../../tasks/quant'
 import type { SeriesItem } from '../../tasks/series/types'
 import { matrixSolution } from './matrices'
 import { QUANT_SOLVED_VARIANTS, hasQuantSolution, quantSolution } from './quant'
@@ -51,28 +56,50 @@ export function workedSolutionOf(item: ItemInstance<object, object>): WorkedSolu
   }
 }
 
+/**
+ * The family ids of `item`'s sibling group, its own included: a family that is its own group has
+ * just its own id; a grouped quant variant (`g:quant:<label>`, `QUANT_SIBLING_SETS`) has the ids of
+ * every variant of the set, which show the same givens and differ only in what is asked.
+ */
+export function siblingFamilyIds(item: ItemInstance<object, object>): string[] {
+  const quant = getFamily('quant')
+  if (item.family === 'quant' && quant !== undefined && item.sibling_group !== item.family_id) {
+    for (const [label, members] of Object.entries(QUANT_SIBLING_SETS)) {
+      if (siblingGroupId('quant', label) !== item.sibling_group) continue
+      const ids = members.map((m) => {
+        const [template, variant] = m.split('/')
+        return quant.familyIdOf({ template: template!, variant: variant! })
+      })
+      return [...new Set([item.family_id, ...ids])]
+    }
+  }
+  return [item.family_id]
+}
+
 /** The seed of the n-th try for `kind` in a session. */
 export const workedSeed = (sessionId: string, kind: WorkedKind, n: number): string => `worked.${sessionId}.${kind}.${n}`
 
-/** Up to three worked examples for `sessionId`, none from a family in `seenFamilies` (module comment). */
-export function pickWorkedItems(sessionId: string, seenFamilies: Iterable<string>): WorkedItem[] {
+/** Up to three worked examples for `sessionId`, none from a family in `seenFamilies` (module comment). `strata` overrides a kind's stratum (tests). */
+export function pickWorkedItems(sessionId: string, seenFamilies: Iterable<string>, strata: Partial<Record<WorkedKind, 1 | 2 | 3 | 4 | 5>> = {}): WorkedItem[] {
   const seen = new Set(seenFamilies)
   const out: WorkedItem[] = []
   for (const kind of WORKED_KINDS) {
-    const { family: name, stratum, title } = SPEC[kind]
+    const { family: name, title } = SPEC[kind]
+    const stratum = strata[kind] ?? SPEC[kind].stratum
     const family = getFamily(name)
     if (family === undefined) continue
     for (let n = 0; n < WORKED_ATTEMPTS; n++) {
       const item = family.generate(workedSeed(sessionId, kind, n), { stratum })
-      if (seen.has(item.family_id) || seen.has(item.sibling_group)) continue
+      const families = siblingFamilyIds(item as ItemInstance<object, object>)
+      if (families.some((f) => seen.has(f))) continue
       if (kind === 'quant') {
         const sp = item.structural_params as { template?: string; variant?: string }
         if (!hasQuantSolution(String(sp.template), String(sp.variant))) continue
       }
       const solution = workedSolutionOf(item as ItemInstance<object, object>)
       if (solution === null) continue
-      out.push({ kind, title, item: item as ItemInstance<object, object>, solution })
-      seen.add(item.family_id) // two kinds never share a family
+      out.push({ kind, title, item: item as ItemInstance<object, object>, solution, families })
+      for (const f of families) seen.add(f) // two kinds never share a family
       break
     }
   }

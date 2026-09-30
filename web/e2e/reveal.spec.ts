@@ -41,6 +41,14 @@ test.describe('the build-up, axis by axis (§10)', () => {
     await expect(page.locator('.reveal')).toHaveAttribute('data-building', 'false')
   })
 
+  test('pressing Skip animation with the keyboard leaves focus on Replay animation, not on the page body', async ({ page }) => {
+    await toResults(page)
+    await button(page, 'Skip animation').focus()
+    await page.keyboard.press('Enter')
+    await expect(status(page)).toHaveText('Your profile is ready.')
+    await expect(button(page, 'Replay animation')).toBeFocused()
+  })
+
   test('runs by itself, and the last frame is exactly the static profile; replay draws it again', async ({ page }) => {
     await toResults(page)
     await expect(status(page)).toHaveText('Your profile is ready.', { timeout: 20_000 })
@@ -92,7 +100,7 @@ test.describe('the flow: peaks → drill-down → save → the rest (§10)', () 
     const peaks = section(page, 'peaks')
     await expect(peaks.getByRole('heading', { level: 2, name: 'Your most distinctive peaks' })).toBeVisible()
     await expect(peaks.locator('[data-peak]')).toHaveCount(sim.peaks.length)
-    for (const name of sim.peaks) await expect(peaks.locator('[data-peak]', { hasText: name })).toContainText(/stands out by about \d\.\d SD from your other skills \(90% range [+−]\d\.\d to [+−]\d\.\d SD\)/)
+    for (const name of sim.peaks) await expect(peaks.locator('[data-peak]', { hasText: name })).toContainText(/stands out by about \d\.\d SD from your profile as a whole \(90% range \+\d\.\d to \+\d\.\d SD\)/)
     await expect(peaks).toContainText('It is not a comparison with other people')
     expect(await peaks.innerText()).not.toMatch(/\b(total|overall|average|score)\b/i)
     await expectNoSeriousAxe(page)
@@ -134,6 +142,9 @@ test.describe('the required save (§10)', () => {
     await expect(page.locator('[data-slot]')).toHaveCount(0)
     await expect(page.getByText(TALK_PREAMBLE)).toHaveCount(0)
     await expect(page.locator('[data-pending]')).toHaveText('Save your file first to see the next steps.')
+    // A focus session leaves the results, so its form waits for the file too.
+    await expect(section(page, 'retest').locator('[data-focus-locked]')).toHaveText('Save your file above first. Then you can start a focus session.')
+    await expect(section(page, 'retest').locator('[data-focus-form]')).toHaveCount(0)
     if (!isMobile) {
       const download = page.waitForEvent('download')
       await button(page, 'Download save file').click()
@@ -149,6 +160,8 @@ test.describe('the required save (§10)', () => {
     await expect(page.locator('[data-slot="share-card"]')).toContainText('not available in this version yet')
     await expect(page.locator('[data-slot="notes-for-ai"]')).toContainText('Notes for your AI')
     await expect(page.locator('[data-placeholder]')).toContainText('not available in this version yet')
+    await expect(section(page, 'retest').locator('[data-focus-locked]')).toHaveCount(0)
+    await expect(section(page, 'retest').locator('[data-focus-form]')).toBeVisible()
     await expectNoSeriousAxe(page)
   })
 
@@ -156,12 +169,15 @@ test.describe('the required save (§10)', () => {
     test.skip(isMobile, 'a download event cannot be observed on the iOS emulation (M1.22 covers the WebKit save)')
     await still(page)
     const sim = await toResults(page)
+    const shown = await section(page, 'worked').locator('article[data-worked]').evaluateAll((els) => els.map((e) => e.getAttribute('data-family')))
     const download = page.waitForEvent('download')
     await button(page, 'Download save file').click()
     const saved = JSON.parse(readFileSync((await (await download).path())!, 'utf8')) as { seen_families: string[]; sessions: unknown[] }
     const before = new Set((sim.save as { seen_families: string[] }).seen_families)
     const added = saved.seen_families.filter((f) => !before.has(f) && /^f:(matrices|series|quant):/.test(f))
     expect(new Set(added.map((f) => f.split(':')[1])).size).toBe(3)
+    // Exactly the three examples on the page.
+    expect([...added].sort()).toEqual([...shown].sort() as string[])
     expect(saved.sessions.length).toBe(2) // the simulated session and this (empty) one
   })
 
@@ -264,9 +280,19 @@ test.describe('worked examples (§10)', () => {
     await languageClean(page)
   })
 
-  test('the examples are not the person’s own questions and are the same after a reload of the screen (seeded by the session)', async ({ page }) => {
+  test('the examples are not the person’s own questions: their families are ones the person has not met', async ({ page }) => {
     await still(page)
-    await toResults(page)
+    const sim = await toResults(page)
+    const cards = section(page, 'worked').locator('article[data-worked]')
+    const families = (await cards.evaluateAll((els) => els.map((e) => e.getAttribute('data-family')))) as string[]
+    expect(families).toHaveLength(3)
+    expect(new Set(families).size).toBe(3)
+    const own = new Set((sim.save as { seen_families: string[] }).seen_families)
+    expect(own.size).toBeGreaterThan(0)
+    for (const f of families) {
+      expect(f).toMatch(/^f:(matrices|series|quant):/)
+      expect(own.has(f), f).toBe(false)
+    }
     const stems = await section(page, 'worked').locator('article[data-worked="quant"] .terms').innerText()
     expect(stems.length).toBeGreaterThan(10)
   })
@@ -287,6 +313,8 @@ test.describe('coming back for more (§10, §7.6)', () => {
   test('a focus session runs only the chosen part for about 20 minutes, and its results add to the first (M1.Q)', async ({ page }) => {
     await still(page)
     await toResults(page)
+    // The file first: a focus session leaves the results.
+    await button(page, 'Download save file').click()
     const form = section(page, 'retest').locator('[data-focus-form]')
     for (const box of await form.getByRole('checkbox').all()) await box.uncheck()
     await button(page, 'Start a 20-minute focus session').click()
@@ -304,9 +332,10 @@ test.describe('coming back for more (§10, §7.6)', () => {
     await button(page, 'Finish early').click()
     await button(page, 'Finish now').click()
     await expect(h1(page)).toHaveText('Session complete')
-    // Two sessions with data now: practice-adjusted, and a smaller further gain.
+    // Two sessions with data now: practice-adjusted. The focus session covered one part, so most skills have had one session:
+    // the line speaks for the profile as a whole, and the next full session is a second one for most of it.
     await expect(page.locator('[data-practice-adjusted]')).toContainText('each later session is credited')
-    await expect(section(page, 'retest').locator('[data-shrinkage]')).toHaveText('Another session would typically tighten the ranges in your profile by about 15%.')
+    await expect(section(page, 'retest').locator('[data-shrinkage]')).toHaveText('A second session would typically tighten the ranges in your profile by about 25%.')
     // Nothing was marked skipped: the parts left out of a focus session are not "declined".
     await expect(page.locator('table.hb-bars tbody tr.unmeasured')).toHaveCount(17 - simulatedSave().measured.length)
   })

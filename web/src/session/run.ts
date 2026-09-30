@@ -458,7 +458,7 @@ export class SessionRun {
       confidence,
       unavailable: cur?.unavailable ?? false,
       notice: this.#notice,
-      elapsedS: this.#clock.elapsedS(),
+      elapsedS: this.elapsedS(),
       targetS: this.#targetS,
       breakAtS: this.#breakAtS,
       hardStopS: this.#hardStopS,
@@ -475,9 +475,13 @@ export class SessionRun {
     return this.#phase
   }
 
-  /** Active seconds so far (cheap; the ring reads it every tick). */
+  /**
+   * Active seconds so far (cheap; the ring reads it every tick). Never more than the hard stop: a
+   * stop noticed late (a block on screen, a throttled timer) ends the session at the limit
+   * (`#finish`), so a reading above it would go backwards when the session ends.
+   */
   elapsedS(): number {
-    return this.#clock.elapsedS()
+    return Math.min(this.#clock.elapsedS(), this.#hardStopS)
   }
 
   // ---------------------------------------------------------------------------- limits

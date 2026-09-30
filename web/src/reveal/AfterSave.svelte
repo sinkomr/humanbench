@@ -2,8 +2,9 @@
   What comes after the save download (DESIGN §10 "download the save file … → share card"; Phase AI
   proposal v2 §3.3; ROADMAP M1.R): three slots that appear only once the save is safe.
   - **Share card** (M1.18 fills it): a slot with a placeholder until the card exists.
-  - **Notes for your AI** (AI.5): a link to the builder route when there is one (`slots.ts`), else a
-    placeholder. The notes come from the person's own choices, never from results.
+  - **Notes for your AI** (AI.5): a link to the builder page when there is one (`slots.ts`), else a
+    placeholder. The link opens in a new tab, so the results and their save stay where they are (the
+    app has no way back to them). The notes come from the person's own choices, never from results.
   - **Talking about your results with an AI** (AI.6b): the 340-character preamble with a copy button,
     and the line that says never to paste the save file.
   Nothing here is drawn on a share card, and no results enter the preamble.
@@ -14,6 +15,7 @@
     AFTER_HEADING,
     NOTES_HEADING,
     NOTES_LINK,
+    NOTES_NEW_TAB,
     NOTES_SOON,
     NOTES_TEXT,
     SHARE_HEADING,
@@ -81,7 +83,7 @@
     <h3 id="{uid}-notes">{NOTES_HEADING}</h3>
     <p>{NOTES_TEXT}</p>
     {#if notesHref}
-      <p><a class="hb-btn" href={notesHref}>{NOTES_LINK}</a></p>
+      <p><a class="hb-btn" href={notesHref} target="_blank" rel="noopener">{NOTES_LINK}{NOTES_NEW_TAB}</a></p>
     {:else}
       <p class="muted" data-placeholder>{NOTES_SOON}</p>
     {/if}

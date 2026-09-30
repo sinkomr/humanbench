@@ -10,12 +10,12 @@ import type { ItemInstance } from '../../tasks/family'
 import { matrices } from '../../tasks/matrices'
 import type { MatrixItem } from '../../tasks/matrices'
 import { quant, type QuantItem } from '../../tasks/quant'
-import { QUANT_TEMPLATES } from '../../tasks/quant'
+import { QUANT_SIBLING_SETS, QUANT_TEMPLATES } from '../../tasks/quant'
 import { variantsOf } from '../../tasks/quant/templates'
 import { series } from '../../tasks/series'
 import type { SeriesItem } from '../../tasks/series/types'
 import { RULE_NAMES } from '../../tasks/series/rules'
-import { QUANT_SOLVED_VARIANTS, hasQuantSolution, matrixSolution, pickWorkedItems, quantSolution, seriesSolution, workedSeed, workedSolutionOf } from '.'
+import { QUANT_SOLVED_VARIANTS, hasQuantSolution, matrixSolution, pickWorkedItems, quantSolution, seriesSolution, siblingFamilyIds, workedSeed, workedSolutionOf } from '.'
 import { Fraction, frac } from '../../tasks/quant/fraction'
 import { decimalText } from './quant'
 import { WORKED_KINDS } from './types'
@@ -164,14 +164,13 @@ describe('pickWorkedItems', () => {
     for (const w of a) expect(w.item.item_id).toContain(workedSeed('s_WORKEDTEST00001', w.kind, 0).slice(0, 20))
   })
 
-  it('leaves out every family the person has seen, and its sibling group', () => {
+  it('leaves out every family the person has seen', () => {
     const first = pickWorkedItems('s_WORKEDTEST00003', [])
     const seen = first.map((w) => w.item.family_id)
     const second = pickWorkedItems('s_WORKEDTEST00003', seen)
     expect(second).toHaveLength(3)
     for (const w of second) {
       expect(seen).not.toContain(w.item.family_id)
-      expect(seen).not.toContain(w.item.sibling_group)
     }
     // Also across many sessions: never a seen family.
     const seenAll = new Set<string>()
@@ -182,6 +181,57 @@ describe('pickWorkedItems', () => {
         seenAll.add(x.item.family_id)
       }
     }
+  })
+
+  it('no quant variant at the worked stratum is in a sibling group today (so the sibling bookkeeping below is latent)', () => {
+    for (let i = 0; i < 400; i++) {
+      const q = pickWorkedItems(`s_LATENT${String(i).padStart(5, '0')}`, []).find((w) => w.kind === 'quant')!
+      expect(q.item.sibling_group).toBe(q.item.family_id)
+      expect(q.families).toEqual([q.item.family_id])
+    }
+  })
+
+  it('leaves out the near-isomorph siblings of a seen family too (a grouped quant variant), and hands all of them on', () => {
+    const idOf = (member: string): string => {
+      const [template, variant] = member.split('/')
+      return quant.familyIdOf({ template: template!, variant: variant! })
+    }
+    const set = QUANT_SIBLING_SETS.fraction_of!
+    const ids = set.map(idOf)
+    expect(set.every((m) => hasQuantSolution(m.split('/')[0]!, m.split('/')[1]!))).toBe(true)
+    // Stratum 1 holds the fraction_of pair. Having met ONE variant (its family id is all a save holds), no other one is shown.
+    for (const met of ids) {
+      for (let i = 0; i < 300; i++) {
+        const q = pickWorkedItems(`s_SIBLING${String(i).padStart(5, '0')}`, [met], { quant: 1 }).find((w) => w.kind === 'quant')
+        expect(q, `session ${i}`).toBeDefined()
+        expect(q!.item.sibling_group, `session ${i}`).not.toBe('g:quant:fraction_of')
+      }
+    }
+    // A shown grouped variant reports every member, for the save's seen families.
+    let grouped = 0
+    for (let i = 0; i < 300 && grouped < 3; i++) {
+      const id = `s_SIBLING${String(i).padStart(5, '0')}`
+      const q = pickWorkedItems(id, [], { quant: 1 }).find((w) => w.kind === 'quant')!
+      expect(q.families).toContain(q.item.family_id)
+      expect(q.families).toEqual(siblingFamilyIds(q.item))
+      if (q.item.sibling_group === q.item.family_id) {
+        expect(q.families).toEqual([q.item.family_id])
+        continue
+      }
+      grouped++
+      expect(q.item.sibling_group).toBe('g:quant:fraction_of')
+      expect([...q.families].sort()).toEqual([...ids].sort())
+      // Those ids, once seen, keep every member out.
+      const again = pickWorkedItems(id, q.families, { quant: 1 }).find((w) => w.kind === 'quant')!
+      expect(again.item.sibling_group).not.toBe(q.item.sibling_group)
+      expect(again.families.some((f) => q.families.includes(f))).toBe(false)
+    }
+    expect(grouped).toBeGreaterThan(0)
+  })
+
+  it('a family that is its own group has just its own id', () => {
+    const m = matrices.generate('sib', { stratum: 2 }) as ItemInstance<object, object>
+    expect(siblingFamilyIds(m)).toEqual([m.family_id])
   })
 
   it('leaves a kind out when every family of it was seen (no infinite search)', () => {

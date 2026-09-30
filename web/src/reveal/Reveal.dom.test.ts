@@ -9,13 +9,19 @@
 import { flushSync } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RESOURCE_LINE } from '../copy'
+import { AXIS_CODES, type AxisCode } from '../engine/axes'
 import { buttonByText, click, fakeDisplay } from '../render/common/testing'
 import type { ShareOutcome } from '../save/io'
 import type { SaveFileV1 } from '../save/types'
 import Finished from '../session/Finished.svelte'
+import { axisEstimates } from '../viz/profile'
 import NumbersSection from './NumbersSection.svelte'
 import { render } from '../render/common/testing'
 import { PEAKS_HEADING, TAKER_COMPARISON_TEXT, TALK_COPIED, TALK_PREAMBLE } from './copy'
+import { REVEAL_AXIS_MS } from './frames'
+import { distinctivePeaks, withinPersonContrasts } from './peaks'
+import { buildResults } from './results'
+import { TALK_PREAMBLE_MAX_CHARS } from './slots'
 import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
 let cleanup: (() => void) | undefined
@@ -110,16 +116,43 @@ describe('the order of the reveal (§10)', () => {
   })
 })
 
+/** The measured skills of a save and the model's peaks (what the page must show, and nothing else). */
+function peaksOf(b: BotSave): { measured: AxisCode[]; results: NonNullable<ReturnType<typeof buildResults>> } {
+  const results = buildResults(b.save)!
+  const measured = axisEstimates(results.input)
+    .filter((e) => e.measured)
+    .map((e) => e.code)
+  return { measured, results }
+}
+
 describe('distinctive peaks', () => {
-  it('lists credible peaks with their range, or says none stand out; never a mean or total', () => {
-    const m = mountFinished(bot('s_REVEALDOM0000007', 0.6))
-    const peaks = section(m.c, 'peaks')!
-    const items = peaks.querySelectorAll('li[data-peak]')
-    if (items.length > 0) {
-      expect(items.length).toBeLessThanOrEqual(3)
-      for (const li of items) expect(li.textContent).toMatch(/stands out by about \d\.\d SD from your other skills \(90% range [+−]\d\.\d to [+−]\d\.\d SD\)/)
-    } else {
-      expect(peaks.textContent).toMatch(/No skill stands out clearly|Too few skills/)
+  it('a flat profile has none: a contrast above the person’s own mean is not shown unless its 90% range is clear of 0', () => {
+    const b = bot('s_REVEALDOM0000007', 0.6)
+    const { measured, results } = peaksOf(b)
+    // The test bites: some skill sits above the person's own mean, only not clearly.
+    expect(withinPersonContrasts(results.rescore, measured).some((c) => c.contrast > 0 && c.lo90 <= 0)).toBe(true)
+    expect(distinctivePeaks(results.rescore, measured)).toEqual([])
+    const peaks = section(mountFinished(b).c, 'peaks')!
+    expect(peaks.querySelectorAll('li[data-peak]')).toHaveLength(0)
+    expect(peaks.textContent).toContain('No skill stands out clearly')
+  })
+
+  it('lists exactly the credible peaks, each with a range that starts above 0; never a mean or total', () => {
+    // High on three skills, low on the rest: a person with peaks.
+    const high = new Set<AxisCode>(['MAT', 'QR', 'VOC'])
+    const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 2 : -1])) as Record<AxisCode, number>
+    const b = botSave('s_REVEALDOM0000042', { level })
+    const { measured, results } = peaksOf(b)
+    const model = distinctivePeaks(results.rescore, measured)
+    expect(model.length).toBeGreaterThan(0)
+    const peaks = section(mountFinished(b).c, 'peaks')!
+    const items = [...peaks.querySelectorAll('li[data-peak]')]
+    expect(items.map((li) => li.getAttribute('data-peak'))).toEqual(model.map((c) => c.code))
+    expect(items.length).toBeLessThanOrEqual(3)
+    for (const li of items) {
+      const m = /stands out by about (\d\.\d) SD from your profile as a whole \(90% range \+(\d\.\d) to \+(\d\.\d) SD\)/.exec(li.textContent ?? '')
+      expect(m, li.textContent ?? '').not.toBeNull()
+      expect(Number(m![2])).toBeGreaterThanOrEqual(0)
     }
     expect(peaks.textContent).toContain('It is not a comparison with other people')
     expect(peaks.textContent).not.toMatch(/\b(total|overall|average|mean|score)\b/i)
@@ -171,15 +204,36 @@ describe('the build-up, axis by axis', () => {
     const m = mountFinished(bot('s_REVEALDOM0000010'), { motion: 'full', timing: display })
     const n = Number(m.c.querySelector('svg.hb-blob')!.getAttribute('data-spokes'))
     expect(n).toBe(17)
-    display.advance(40_000)
+    // n skills at REVEAL_AXIS_MS each, plus a little: no need for more frames than the build-up takes.
+    const buildMs = n * REVEAL_AXIS_MS + 500
+    display.advance(buildMs)
     expect(m.c.querySelector('.reveal')!.getAttribute('data-building')).toBe('false')
     expect(section(m.c, 'peaks')).not.toBeNull()
     click(buttonByText(m.c, 'Replay animation'))
     expect(m.c.querySelector('.reveal')!.getAttribute('data-building')).toBe('true')
     // The sections that appeared stay: replaying is only the picture.
     expect(section(m.c, 'save')).not.toBeNull()
-    display.advance(40_000)
+    display.advance(buildMs)
     expect(m.c.querySelector('.reveal')!.getAttribute('data-building')).toBe('false')
+  })
+
+  it('keeps keyboard focus on the button that stands in for the one just pressed (Skip ↔ Replay)', async () => {
+    const display = fakeDisplay()
+    const m = mountFinished(bot('s_REVEALDOM0000046'), { motion: 'full', timing: display })
+    const skip = buttonByText(m.c, 'Skip animation')
+    skip.focus()
+    expect(document.activeElement).toBe(skip)
+    click(skip)
+    await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Replay animation'))
+    click(document.activeElement as HTMLElement)
+    await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Skip animation'))
+    // A build-up that ends by itself does not steal focus from somewhere else.
+    const other = m.c.querySelector<HTMLElement>('.reveal')!
+    other.tabIndex = -1
+    other.focus()
+    display.advance(20 * REVEAL_AXIS_MS + 500)
+    expect(m.c.querySelector('.reveal')!.getAttribute('data-building')).toBe('false')
+    expect(document.activeElement).toBe(other)
   })
 
   it('with reduced motion (or no matchMedia) there is no animation at all: the profile is complete at once, and no replay', () => {
@@ -313,6 +367,10 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     click(buttonByText(m.c, 'Download save file'))
     const a = m.c.querySelector('[data-slot="notes-for-ai"] a')!
     expect(a.getAttribute('href')).toBe('#/notes')
+    // A new tab, said so: the results and their required save stay where they are.
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noopener')
+    expect(a.textContent).toBe('Build your notes (opens in a new tab)')
     expect(m.c.querySelector('[data-placeholder]')).toBeNull()
   })
 
@@ -328,7 +386,8 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     click(buttonByText(m.c, 'Download save file'))
     const after = section(m.c, 'after-save')!
     expect(after.textContent).not.toContain(RESOURCE_LINE)
-    expect(TALK_PREAMBLE.length).toBeLessThanOrEqual(340)
+    expect(TALK_PREAMBLE.length).toBeLessThanOrEqual(TALK_PREAMBLE_MAX_CHARS)
+    expect(TALK_PREAMBLE_MAX_CHARS).toBe(340)
     expect(/\d/.test(TALK_PREAMBLE)).toBe(false)
   })
 })
@@ -347,16 +406,24 @@ describe('worked examples (§10)', () => {
     }
     expect(cards[0]!.querySelectorAll('svg').length).toBeGreaterThanOrEqual(9 + 6)
     expect(cards[1]!.querySelector('.terms')?.textContent).toContain(', ?')
-    // Their families are handed over to be left out of later sessions (§7.7).
+    // Their families are handed over to be left out of later sessions (§7.7): the three shown, and
+    // the near-isomorph siblings of a grouped quant variant.
     expect(m.seen).toHaveLength(1)
-    expect(m.seen[0]).toHaveLength(3)
+    expect(m.seen[0]!.length).toBeGreaterThanOrEqual(3)
     expect(m.seen[0]!.every((f) => f.startsWith('f:'))).toBe(true)
+    for (const card of cards) expect(m.seen[0]).toContain(card.getAttribute('data-family'))
   })
 
-  it('the examples are not the person’s own questions', () => {
+  it('the examples are not the person’s own questions, and the same three come back for the same session', () => {
     const b = bot('s_REVEALDOM0000029')
     const m = mountFinished(b)
+    expect(b.save.seen_families.length).toBeGreaterThan(0)
     for (const f of m.seen[0]!) expect(b.save.seen_families).not.toContain(f)
+    const ids = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll('article[data-worked]')].map((x) => x.getAttribute('data-family'))
+    const first = ids(m.c)
+    expect(first).toHaveLength(3)
+    cleanup?.()
+    expect(ids(mountFinished(b).c)).toEqual(first)
   })
 })
 
@@ -371,6 +438,18 @@ describe('retest motivation (§10, §7.6)', () => {
     expect(r.textContent).not.toMatch(/\b(total|overall|score)\b/i)
   })
 
+  it('a focus session on one part does not make the whole profile a second-session profile', () => {
+    const a = bot('s_REVEALDOM0000044')
+    const b = botSave('s_REVEALDOM0000045', {
+      base: a.save,
+      startedMs: T0_MS + 8 * DAY_MS,
+      cfg: { focus: ['MAT', 'LR', 'LG'] },
+    })
+    const m = mountFinished(b)
+    // Most skills have had one session: the next full session is a second one for them.
+    expect(section(m.c, 'retest')!.querySelector('[data-shrinkage]')?.textContent).toBe('A second session would typically tighten the ranges in your profile by about 25%.')
+  })
+
   it('a returning person is told about a smaller gain', () => {
     const a = bot('s_REVEALDOM0000031')
     const b = botSave('s_REVEALDOM0000032', { base: a.save, startedMs: T0_MS + 8 * DAY_MS })
@@ -378,8 +457,21 @@ describe('retest motivation (§10, §7.6)', () => {
     expect(section(m.c, 'retest')!.querySelector('[data-shrinkage]')?.textContent).toBe('Another session would typically tighten the ranges in your profile by about 15%.')
   })
 
+  it('a focus session leaves the results, so its form waits for the save file (§10) and then opens', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000043'))
+    const retest = section(m.c, 'retest')!
+    expect(retest.querySelector('form')).toBeNull()
+    expect(retest.querySelector('[data-focus-locked]')?.textContent).toBe('Save your file above first. Then you can start a focus session.')
+    expect(retest.textContent).toContain('A 20-minute focus session')
+    expect(m.focus).toHaveLength(0)
+    click(buttonByText(m.c, 'Download save file'))
+    expect(retest.querySelector('[data-focus-locked]')).toBeNull()
+    expect(retest.querySelector('form')).not.toBeNull()
+  })
+
   it('offers a 20-minute focus session on the parts of the widest ranges, and starts it with their skills', () => {
     const m = mountFinished(bot('s_REVEALDOM0000033'))
+    click(buttonByText(m.c, 'Download save file'))
     const form = section(m.c, 'retest')!.querySelector('form')!
     const boxes = [...form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
     expect(boxes).toHaveLength(6)
@@ -408,10 +500,6 @@ describe('about these numbers (§7.3, §7.1)', () => {
     const n = section(m.c, 'numbers')!
     expect(n.querySelector('[data-norm="rt"]')?.textContent).toMatch(/simple reaction time was about \d+ ms\. Times on the web run tens of milliseconds slower than in a lab/)
     expect(n.querySelector('[data-norm="rt"]')?.textContent).toContain('about 300 ms')
-    const span = n.querySelector('[data-norm="span"]')
-    if (span) expect(span.textContent).toContain('Typical adults manage about 6 to 7 digits forwards and 4 to 5 backwards')
-    const reading = n.querySelector('[data-norm="reading"]')
-    if (reading) expect(reading.textContent).toContain('238 words per minute for non-fiction and 260 for fiction')
     const pace = n.querySelector('details.pace')!
     expect(pace.querySelector('summary')?.textContent).toBe('Pace')
     expect(pace.textContent).toContain('separate from your skill estimates')
@@ -419,6 +507,19 @@ describe('about these numbers (§7.3, §7.1)', () => {
     // Hidden until A12 allows percentiles.
     expect(m.c.textContent).not.toContain('vs other HumanBench takers')
     expect(m.c.textContent).not.toContain('self-selected')
+  })
+
+  it('says what a reading speed and a digit span are compared with', () => {
+    const facts = { readingWpm: 250, digitsForward: 7, digitsBackward: 5, simpleRtMs: null }
+    const r = render(NumbersSection, { facts, pace: [] })
+    cleanup = r.destroy
+    const span = r.container.querySelector('[data-norm="span"]')!
+    expect(span.textContent).toContain('You repeated up to 7 digits forwards and 5 digits backwards')
+    expect(span.textContent).toContain('Typical adults manage about 6 to 7 digits forwards and 4 to 5 backwards')
+    const reading = r.container.querySelector('[data-norm="reading"]')!
+    expect(reading.textContent).toContain('about 250 words per minute')
+    expect(reading.textContent).toContain('238 words per minute for non-fiction and 260 for fiction')
+    expect(r.container.querySelector('[data-norm="rt"]')).toBeNull()
   })
 
   it('the "vs other HumanBench takers" wording exists, and shows only when asked (A12 allows percentiles after M4 with N ≥ 500)', () => {

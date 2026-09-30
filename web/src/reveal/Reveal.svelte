@@ -4,7 +4,8 @@
   2. your most distinctive peaks (credible ones only, A12);
   3. the cluster drill-down (inside the profile view, below the peaks);
   4. the save file: prominent, and required before leaving. A `beforeunload` warning guards the
-     tab until it is downloaded or shared, and leaving through "Back to the start" asks first;
+     tab until it is downloaded or shared, and leaving through "Back to the start" asks first. The
+     20-minute focus session also leaves the results, so its form waits for the save too;
   5. once saved: the share card slot, "Notes for your AI" and the results-talk helper;
   then three worked examples, what another session would buy (with 20-minute focus sessions and the
   7-day advice), rough external norms and the separate Pace note, and the results footer with the
@@ -27,6 +28,7 @@
   import { LEAVE_HEADING, LEAVE_NO, LEAVE_TEXT, LEAVE_YES, SAVE_PENDING } from './copy'
   import { installUnloadGuard } from './guard'
   import NumbersSection from './NumbersSection.svelte'
+  import { typicalSessions } from './next'
   import { normFacts, paceByAxis } from './norms'
   import PeaksSection from './PeaksSection.svelte'
   import { distinctivePeaks } from './peaks'
@@ -94,7 +96,8 @@
   const facts = $derived(normFacts(save))
   const pace = $derived(paceByAxis(save))
   const worked = $derived(pickWorkedItems(sessionId, save.seen_families))
-  const sessions = $derived(results.rescore.sessions.filter((s) => s.n_observations > 0).length)
+  // The shrinkage line speaks for the profile: a focus session on one part is not one more session for the rest.
+  const sessions = $derived(Math.max(1, typicalSessions(results.rescore.next_ordinals, measured)))
 
   // The tab is guarded until the save is downloaded or shared (§10).
   $effect(() => {
@@ -104,7 +107,7 @@
 
   // The examples shown must not come up as counted questions in a later session (§7.7).
   onMount(() => {
-    if (worked.length > 0) onseen(worked.map((w) => w.item.family_id))
+    if (worked.length > 0) onseen(worked.flatMap((w) => w.families))
   })
 
   function leave(): void {
@@ -143,7 +146,7 @@
       <p class="hb-reveal-panel note" data-pending>{SAVE_PENDING}</p>
     {/if}
     <WorkedSection items={worked} />
-    <RetestSection {estimates} {sessions} {onfocus} />
+    <RetestSection {estimates} {sessions} {onfocus} focusLocked={!saved} />
     <NumbersSection {facts} {pace} {takerComparison} />
   {/if}
 

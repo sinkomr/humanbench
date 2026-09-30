@@ -10,7 +10,6 @@
 
 // ------------------------------------------------------------------------------- profile
 
-export const REVEAL_PROFILE_LABEL = 'Your profile'
 /** Announced once when the build-up starts. */
 export const REVEAL_BUILDING = 'Building your profile, one skill at a time.'
 export const REVEAL_READY = 'Your profile is ready.'
@@ -30,15 +29,15 @@ export const PRACTICE_ADJUSTED_LATER =
 
 export const PEAKS_HEADING = 'Your most distinctive peaks'
 export const PEAKS_INTRO =
-  'A peak is a skill that stands out from your own other skills, with a range that stays clearly above them. It is not a comparison with other people.'
+  'A peak is a skill that stands out from the rest of your own profile, with a range that stays clearly above it. It is not a comparison with other people.'
 export const PEAKS_NONE =
   'No skill stands out clearly from your others yet. That is common after one session. Ranges that overlap are not real differences.'
 export const PEAKS_TOO_FEW = 'Too few skills were measured to compare them with each other.'
 export const PEAKS_NOTE =
-  'Peaks compare each skill with your own other skills, so they can differ from the hollow grey and filled blue marks in the chart, which compare with 0 SD.'
-/** "stands out by about 0.9 SD from your other skills (90% range +0.4 to +1.4 SD)" */
+  'Peaks compare each skill with the rest of your own profile, so they can differ from the hollow grey and filled blue marks in the chart, which compare with 0 SD.'
+/** "stands out by about 0.9 SD from your profile as a whole (90% range +0.4 to +1.4 SD)" */
 export const peakDetail = (contrast: string, lo: string, hi: string): string =>
-  `stands out by about ${contrast} SD from your other skills (90% range ${lo} to ${hi} SD)`
+  `stands out by about ${contrast} SD from your profile as a whole (90% range ${lo} to ${hi} SD)`
 
 // ---------------------------------------------------------------------------------- save
 
@@ -48,7 +47,7 @@ export const SAVE_PANEL_REQUIRED =
 export const SAVE_SHARE = 'Share or save to an app'
 export const SAVE_SHARED = 'Save file shared.'
 export const SAVE_SHARE_CANCELLED = 'Sharing was cancelled. Nothing was saved yet.'
-export const SAVE_DONE = 'Your save file is downloaded. You can leave this page safely.'
+export const SAVE_DONE = 'Your results are saved in your file. You can leave this page safely.'
 export const SAVE_COPIED_NOT_SAVED = 'Save code copied. Downloading the file is still the safest way to keep your results.'
 export const SAVE_PENDING = 'Save your file first to see the next steps.'
 export const LEAVE_HEADING = 'Leave without saving?'
@@ -69,6 +68,8 @@ export const NOTES_HEADING = 'Notes for your AI'
 export const NOTES_TEXT =
   'Make short notes about how you like explanations, to paste into your own AI assistant. They come from your own choices, never from your results, and they stay on your device.'
 export const NOTES_LINK = 'Build your notes'
+/** Said next to the link: it opens beside the results, so the results and their save stay where they are. */
+export const NOTES_NEW_TAB = ' (opens in a new tab)'
 export const NOTES_SOON = 'The notes builder is not available in this version yet.'
 
 /** Phase AI, AI.6b results-talk helper (proposal §3.3). */
@@ -112,6 +113,8 @@ export const FOCUS_TEXT = 'Pick the parts you want to sharpen. A focus session t
 export const FOCUS_LEGEND = 'Parts to include'
 export const FOCUS_START = 'Start a 20-minute focus session'
 export const FOCUS_NONE_SELECTED = 'Pick at least one part.'
+/** Shown in place of the form until the save file is safe (DESIGN §10: the save is required before leaving). */
+export const FOCUS_SAVE_FIRST = 'Save your file above first. Then you can start a focus session.'
 export const FOCUS_SUGGESTED = 'wide range'
 export const SPACING_HEADING = 'When to come back'
 export const SPACING_TEXT =
@@ -142,7 +145,6 @@ export const TAKER_COMPARISON_TEXT = 'vs other HumanBench takers (a self-selecte
 export const PACE_HEADING = 'Pace'
 export const PACE_TEXT =
   'Pace is how long you took on each question compared with the typical time for questions like it. It is separate from your skill estimates, which do not reward speed on these questions.'
-export const PACE_TOGGLE = 'What is pace?'
 export const PACE_LABEL: Readonly<Record<'quicker' | 'typical' | 'slower', string>> = Object.freeze({
   quicker: 'quicker than typical',
   typical: 'close to typical',

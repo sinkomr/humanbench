@@ -52,7 +52,7 @@
   {:else}
     <p>{WORKED_INTRO}</p>
     {#each items as w, i (w.item.item_id)}
-      <article class="hb-reveal-card" data-worked={w.kind} aria-labelledby="{uid}-t{i}">
+      <article class="hb-reveal-card" data-worked={w.kind} data-family={w.item.family_id} aria-labelledby="{uid}-t{i}">
         <h3 id="{uid}-t{i}">{workedTitle(i + 1, w.title)}</h3>
         {#if w.kind === 'matrix'}
           {@const spec = matrixSpec(w)}

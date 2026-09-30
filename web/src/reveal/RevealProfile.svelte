@@ -10,7 +10,7 @@
   there, so the order is build-up, peaks, drill-down (§10).
 -->
 <script lang="ts">
-  import { onMount, untrack, type Snippet } from 'svelte'
+  import { onMount, tick, untrack, type Snippet } from 'svelte'
   import { browserFrameSource, type FrameSource } from '../tasks/rt/timing'
   import ProfileView from '../viz/ProfileView.svelte'
   import { axisEstimates, type ProfileInput } from '../viz/profile'
@@ -48,22 +48,30 @@
   let building = $state(!reduced && untrack(() => count) > 0)
   let progress = $state(0)
   let handle: RevealHandle | null = null
+  let skipButton: HTMLButtonElement | undefined = $state()
+  let replayButton: HTMLButtonElement | undefined = $state()
   let announced = $state(untrack(() => (!reduced && count > 0 ? REVEAL_BUILDING : REVEAL_READY)))
 
   function run(): void {
+    // "Replay animation" is replaced by "Skip animation": keep keyboard focus on the button in its place.
+    const replayHadFocus = replayButton !== undefined && document.activeElement === replayButton
     handle?.stop()
     building = true
     progress = 0
     announced = REVEAL_BUILDING
+    if (replayHadFocus) void tick().then(() => skipButton?.focus())
     handle = startReveal({
       count,
       frames,
       onProgress: (p) => (progress = p),
       onDone: () => {
+        // "Skip animation" goes away when the build-up ends: keyboard focus moves to "Replay" (WCAG 2.4.3).
+        const skipHadFocus = skipButton !== undefined && document.activeElement === skipButton
         building = false
         announced = REVEAL_READY
         handle = null
         onbuilt()
+        if (skipHadFocus) void tick().then(() => replayButton?.focus())
       },
     })
   }
@@ -85,9 +93,9 @@
     </p>
     <div class="anim">
       {#if building}
-        <button type="button" class="hb-btn" onclick={() => handle?.skip()}>{REVEAL_SKIP}</button>
+        <button type="button" class="hb-btn" bind:this={skipButton} onclick={() => handle?.skip()}>{REVEAL_SKIP}</button>
       {:else if !reduced && count > 0}
-        <button type="button" class="hb-btn" onclick={run}>{REVEAL_REPLAY}</button>
+        <button type="button" class="hb-btn" bind:this={replayButton} onclick={run}>{REVEAL_REPLAY}</button>
       {/if}
       <p class="now" aria-hidden="true">{now === null ? '' : revealNow(now.name, now.index, now.count)}</p>
     </div>

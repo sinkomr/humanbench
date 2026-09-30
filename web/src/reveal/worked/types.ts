@@ -34,4 +34,9 @@ export interface WorkedItem {
   readonly title: string
   readonly item: ItemInstance<object, object>
   readonly solution: WorkedSolution
+  /**
+   * The family ids to leave out of later sessions once this example has been shown: the item's own
+   * and those of its near-isomorph siblings (§7.7; A11 amended, `sibling_group`).
+   */
+  readonly families: readonly string[]
 }

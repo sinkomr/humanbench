@@ -391,6 +391,22 @@ describe('finish early and the hard stop (§7.4)', () => {
     expect(b.run.sessionState().flags.breaks).toBe(1)
   })
 
+  it('the elapsed time never runs backwards when the stop is noticed late (a block still on screen)', () => {
+    // M1.R review: the clock ran past the limit inside a block, then the finish pulled it back to the limit.
+    const bot = new Bot({ sessionId: 's_FUZZ00000000012', hardStopS: 900 })
+    bot.step()
+    bot.step()
+    const seen: number[] = [bot.view().elapsedS]
+    bot.wait(910 - bot.view().elapsedS)
+    seen.push(bot.view().elapsedS, bot.run.elapsedS())
+    bot.run.takeBreak() // every call checks the clock: this ends the session at the stop
+    seen.push(bot.view().elapsedS, bot.run.elapsedS())
+    expect(bot.run.view().ended).toBe('hard_stop')
+    for (let i = 1; i < seen.length; i++) expect(seen[i]!, `reading ${i}`).toBeGreaterThanOrEqual(seen[i - 1]!)
+    expect(Math.max(...seen)).toBe(900)
+    expect(bot.run.sessionState().durationS).toBe(900)
+  })
+
   it('finishing early records the real duration (the cap is for the hard stop only)', () => {
     const bot = new Bot({ sessionId: 's_FINISHNOCAP001', hardStopS: 100 })
     bot.wait(400)

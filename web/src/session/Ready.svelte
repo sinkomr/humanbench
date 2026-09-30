@@ -8,7 +8,7 @@
   import type { AxisCode } from '../engine/axes'
   import FocusPicker from '../reveal/FocusPicker.svelte'
   import { FOCUS_TEXT } from '../reveal/copy'
-  import { focusOptions } from '../reveal/next'
+  import { focusOptions, focusOptionsKey } from '../reveal/next'
   import { buildResults } from '../reveal/results'
   import { axisEstimates } from '../viz/profile'
   import { parseSaveText, readSaveFile } from '../save/parse'
@@ -91,7 +91,9 @@
     <details class="focus">
       <summary>{READY_FOCUS_SUMMARY}</summary>
       <p>{FOCUS_TEXT}</p>
-      <FocusPicker options={focus} onstart={onfocus} />
+      {#key focusOptionsKey(focus)}
+        <FocusPicker options={focus} onstart={onfocus} />
+      {/key}
     </details>
   {/if}
 

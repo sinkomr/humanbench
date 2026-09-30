@@ -50,6 +50,19 @@ export function shrinkagePercent(sessions: number): number {
   return Math.max(5, Math.round((predictedShrinkage(sessions) * 100) / 5) * 5)
 }
 
+/**
+ * How many sessions the typical measured skill has had: the lower median, over `measured`, of the
+ * sessions that took each skill (`next_ordinals − 1`, §7.8). The shrinkage line is worded for the
+ * profile as a whole, so a 20-minute focus session on one part must not count as another session
+ * for the skills it did not cover. At least 1 (the session just finished measured something), 0
+ * for no measured skill.
+ */
+export function typicalSessions(nextOrdinals: Readonly<Record<AxisCode, number>>, measured: readonly AxisCode[]): number {
+  if (measured.length === 0) return 0
+  const taken = measured.map((k) => Math.max(1, nextOrdinals[k] - 1)).sort((a, b) => a - b)
+  return taken[Math.floor((taken.length - 1) / 2)]!
+}
+
 export interface Fuzzy {
   readonly code: AxisCode
   readonly name: string
@@ -86,6 +99,9 @@ export function focusOptions(estimates: readonly AxisEstimate[], nFuzzy = 3): Fo
     suggested: s.axes.some((k) => fuzzy.has(k)),
   }))
 }
+
+/** Changes when the options do (which parts, which suggested): the picker is keyed on it, so new options start it afresh. */
+export const focusOptionsKey = (options: readonly FocusOption[]): string => options.map((o) => `${o.segment}:${o.suggested}`).join()
 
 /** The skills of the chosen parts, canonical order, no repeats. */
 export function focusAxes(options: readonly FocusOption[], chosen: ReadonlySet<SegmentId>): AxisCode[] {

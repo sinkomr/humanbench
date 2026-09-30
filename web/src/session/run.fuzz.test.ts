@@ -119,11 +119,11 @@ function apply(bot: Bot, op: Op): void {
 
 describe('SessionRun under arbitrary event sequences (fuzz)', () => {
   it('never throws, keeps time and the record monotone, and always yields a valid, re-scorable save', () => {
-    let n = 0
     fc.assert(
-      fc.property(fc.array(opArb, { minLength: 1, maxLength: 70 }), fc.integer({ min: 0, max: 3 }), (ops, config) => {
+      // The session id comes from the inputs (not a counter), so a printed counterexample replays.
+      fc.property(fc.array(opArb, { minLength: 1, maxLength: 70 }), fc.integer({ min: 0, max: 3 }), fc.nat(99_999_999_999), (ops, config, idNum) => {
         const bot = new Bot(
-          { sessionId: `s_FUZZ${String(n++).padStart(11, '0')}`, ...(config === 1 ? { breakAtS: 60 } : config === 2 ? { hardStopS: 900 } : config === 3 ? { priorItemCounts: { MAT: 3, SPA: 3, QR: 3 } } : {}) },
+          { sessionId: `s_FUZZ${String(idNum).padStart(11, '0')}`, ...(config === 1 ? { breakAtS: 60 } : config === 2 ? { hardStopS: 900 } : config === 3 ? { priorItemCounts: { MAT: 3, SPA: 3, QR: 3 } } : {}) },
           { theta: undefined },
         )
         let lastElapsed = 0
