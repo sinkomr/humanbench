@@ -12,8 +12,8 @@
  * reading, memory, speed, language-background, school-level or digit wording).
  *
  * Topic ids are `<axis>/<facet>[/<topic>]`; a knowledge topic's facet segment must equal the
- * item's `facet` (prefix-consistent, proposal §5.1). Curriculum level stays internal: no
- * school-level word appears in a label (R-17.3, §4.3).
+ * item's `facet` (prefix-consistent, proposal §5.1). The bank's school-level tag of an item stays
+ * internal (A23): no school-level word appears in a label (R-17.3, §4.3).
  */
 
 import type { ContextPreset } from './types'

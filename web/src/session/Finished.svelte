@@ -36,7 +36,7 @@
     /** The flow's rAF and clock (`?fast=1` speeds the build-up up). */
     readonly timing?: RendererTiming
     readonly motion?: 'auto' | 'reduce' | 'full'
-    readonly notesHref?: string | null
+    readonly notesHref?: string
     /** Injectable for tests. */
     readonly download?: (save: SaveFileV1) => string
     readonly copyCode?: (save: SaveFileV1) => Promise<{ code: string; copied: boolean }>

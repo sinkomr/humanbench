@@ -3,27 +3,24 @@
  * "Amendments to existing tasks": "M1.R: card slot after the save download; results-talk helper
  * slot"). Both are shown only after the save download and never on a share card.
  *
- * - **Notes for your AI** (AI.5): a link to the builder page once it exists. It does not yet, so
- *   the card shows a placeholder. AI.5 sets {@link NOTES_BUILDER_HREF} to that page (the notes
- *   module serves `notes.html` under the app's base path) and the card becomes a link that opens in
- *   a new tab, so the results and their required save stay where they are. At merge the notes
- *   module's own reveal card (AI.6b `RevealCard`) can fill `AfterSave`'s `ai` snippet instead; the
- *   `TALK_*` constants of `copy.ts` are then the ones to delete, so the gated preamble has one home.
- * - **Results-talk helper** (AI.6b): the preamble (at most {@link TALK_PREAMBLE_MAX_CHARS}
- *   characters) to paste before talking about results with an assistant, and the line that says
- *   never to paste the save file. The text is `copy.ts` TALK_PREAMBLE; the card only offers it.
- *   Notes text never appears on a share card (M1.18 test) and no results enter the preamble.
+ * - **Working with AI** (AI.6b `RevealCard`, `AfterSave`): a link to the "Notes for your AI"
+ *   builder page {@link NOTES_BUILDER_HREF} (AI.5, `notes.html` under the app's base path), which
+ *   opens in a new tab so the results and their required save stay where they are, and the
+ *   results-talk helper (AI.6b `ResultsTalk`): the gated preamble (at most
+ *   {@link TALK_PREAMBLE_MAX_CHARS} characters) to paste before talking about results with an
+ *   assistant, and the line that says never to paste the save file. The text has one home,
+ *   `brief/results-talk.ts`. Notes text never appears on a share card (M1.18 test) and no results
+ *   enter the preamble.
  * - **Share card** (M1.18, `ShareCard.svelte`): the picture, its skill toggles and its exports fill
- *   the share slot. The slot also links to the results-talk helper by {@link TALK_ANCHOR_ID}: the
- *   notes module's own card, if it replaces the built-in one (`AfterSave`'s `ai` snippet), must
- *   carry an element with that id, so the link keeps working.
+ *   the share slot. The slot also links to the results-talk helper by {@link TALK_ANCHOR_ID}, which
+ *   `AfterSave` passes to the helper, so the link moves focus to it.
  */
 
 /** The id of the results-talk helper's card, which the share card links to (proposal §8, M1.18). */
 export const TALK_ANCHOR_ID = 'hb-results-talk'
 
-/** Route of the "Notes for your AI" builder, or null while there is none (AI.5). */
-export const NOTES_BUILDER_HREF: string | null = null
+/** The "Notes for your AI" builder page (AI.5), under the app's base path. */
+export const NOTES_BUILDER_HREF: string = `${import.meta.env.BASE_URL}notes.html`
 
 /** The most characters the results-talk preamble may have (proposal §3.3). */
 export const TALK_PREAMBLE_MAX_CHARS = 340

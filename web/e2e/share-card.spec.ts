@@ -14,7 +14,8 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { RESOURCE_LINE } from '../src/copy'
-import { NOTES_TEXT, TALK_PREAMBLE } from '../src/reveal/copy'
+import { NOTES_LEAK_MARKERS } from '../src/brief/leak-markers'
+import { PREAMBLE, RESULTS_TALK, REVEAL_CARD } from '../src/brief/results-talk'
 import { expectNoSeriousAxe } from './axe'
 import { button, languageClean, overflow, scheme, toResults, type SimulatedSave } from './flow'
 
@@ -191,7 +192,7 @@ test.describe('what is on the card, and what is not', () => {
   test('has no notes text, results-talk helper, resource line, save-file content or total', async ({ page }) => {
     await toCard(page)
     const svg = await previewSvg(page)
-    for (const probe of [TALK_PREAMBLE, NOTES_TEXT, RESOURCE_LINE, 'Notes for your AI', 'Never paste your save file', 'anon_id']) expect(svg).not.toContain(probe)
+    for (const probe of [PREAMBLE, REVEAL_CARD.body, ...NOTES_LEAK_MARKERS, RESOURCE_LINE, 'Notes for your AI', 'Never paste your save file', 'anon_id']) expect(svg).not.toContain(probe)
     expect(svgTexts(svg).join('\n')).not.toMatch(/\b(total|overall|average|score|rank|percentile)\b/i)
     await expect(panel(page)).not.toContainText(RESOURCE_LINE)
   })
@@ -203,11 +204,11 @@ test.describe('the results-talk helper is linked from the card (proposal §8)', 
     const link = page.locator('[data-slot="share-card"]').getByRole('link', { name: 'Talking about your results with an AI' })
     await expect(link).toBeVisible()
     await link.click()
-    const talk = page.locator('[data-slot="results-talk"]')
+    const talk = page.getByTestId('results-talk')
     await expect(talk).toBeFocused()
     await expect(talk).toBeInViewport()
     await expect(talk).toContainText('Never paste your save file')
-    await expect(talk.getByRole('button', { name: 'Copy this preamble' })).toBeVisible()
+    await expect(talk.getByRole('button', { name: RESULTS_TALK.copyButton })).toBeVisible()
     // Following the link did not navigate away or open another route.
     expect(new URL(page.url()).hash).toBe('')
   })
@@ -219,7 +220,7 @@ test.describe('the results-talk helper is linked from the card (proposal §8)', 
     await link.focus()
     await expect(link).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(page.locator('[data-slot="results-talk"]')).toBeFocused()
+    await expect(page.getByTestId('results-talk')).toBeFocused()
   })
 })
 

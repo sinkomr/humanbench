@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { RESOURCE_LINE } from '../src/copy'
-import { TALK_PREAMBLE } from '../src/reveal/copy'
+import { PREAMBLE as TALK_PREAMBLE, RESULTS_TALK, REVEAL_CARD } from '../src/brief/results-talk'
 import { expectNoSeriousAxe } from './axe'
 import { answerItem, button, h1, languageClean, loadSave, openDetails, overflow, scheme, simulatedSave, toReady, toResults, unloadIsGuarded } from './flow'
 
@@ -156,10 +156,12 @@ test.describe('the required save (§10)', () => {
     await expect(section(page, 'save')).toContainText('You can leave this page safely')
     expect(await unloadIsGuarded(page)).toBe(false)
     await expect(section(page, 'after-save')).toBeVisible()
-    await expect(page.locator('[data-slot]')).toHaveCount(3)
+    await expect(page.locator('[data-slot]')).toHaveCount(2)
     await expect(page.locator('[data-slot="share-card"] [data-share-card]')).toBeVisible()
-    await expect(page.locator('[data-slot="notes-for-ai"]')).toContainText('Notes for your AI')
-    await expect(page.locator('[data-placeholder]')).toContainText('not available in this version yet')
+    // The "Working with AI" card (AI.6b) links to the notes builder page (AI.5) in a new tab.
+    await expect(page.locator('[data-slot="working-with-ai"]')).toContainText(REVEAL_CARD.heading)
+    await expect(page.getByTestId('notes-link')).toHaveAttribute('href', /\/notes\.html$/)
+    await expect(page.getByTestId('notes-link')).toHaveAttribute('target', '_blank')
     await expect(section(page, 'retest').locator('[data-focus-locked]')).toHaveCount(0)
     await expect(section(page, 'retest').locator('[data-focus-form]')).toBeVisible()
     await expectNoSeriousAxe(page)
@@ -243,14 +245,15 @@ test.describe('the cards after the save: share slot, notes, results-talk helper 
     await still(page)
     await toResults(page)
     await button(page, 'Download save file').click()
-    const talk = page.locator('[data-slot="results-talk"]')
+    const talk = page.getByTestId('results-talk')
     await expect(talk).toContainText('Never paste your save file')
     await expect(talk).toContainText(TALK_PREAMBLE)
-    await expect(button(page, 'Copy this preamble')).toBeVisible()
-    await button(page, 'Copy this preamble').click()
-    await expect(talk.locator('[role="status"]')).toContainText(/Preamble copied\.|could not be copied/)
+    await expect(button(page, RESULTS_TALK.copyButton)).toBeVisible()
+    await button(page, RESULTS_TALK.copyButton).click()
+    const esc = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    await expect(talk.locator('[role="status"]')).toHaveText(new RegExp(`^(${esc(RESULTS_TALK.copied)}|${esc(RESULTS_TALK.copyFailed)})$`))
     if (browserName === 'chromium') {
-      await expect(talk.locator('[role="status"]')).toHaveText('Preamble copied.')
+      await expect(talk.locator('[role="status"]')).toHaveText(RESULTS_TALK.copied)
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(TALK_PREAMBLE)
     }
     // Nothing of the cards is a share card: the resource line is not in any of them.
@@ -419,8 +422,8 @@ test.describe('the whole results page', () => {
     await button(page, 'Download save file').focus()
     await page.keyboard.press('Enter')
     await expect(section(page, 'after-save')).toBeVisible()
-    await button(page, 'Copy this preamble').focus()
-    await expect(button(page, 'Copy this preamble')).toBeFocused()
+    await button(page, RESULTS_TALK.copyButton).focus()
+    await expect(button(page, RESULTS_TALK.copyButton)).toBeFocused()
     await page.locator('details.pace summary').focus()
     await page.keyboard.press('Enter')
     await expect(page.locator('details.pace')).toHaveAttribute('open', '')

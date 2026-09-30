@@ -98,24 +98,8 @@ export const SHARE_PNG_FAILED = 'This browser could not make the PNG. The vector
 export const SHARE_TALK_LEAD = 'Before you ask an AI about your results:'
 export const SHARE_TALK_LINK = 'Talking about your results with an AI'
 
-/** Phase AI, AI.5 builder card (slot until the route exists). */
-export const NOTES_HEADING = 'Notes for your AI'
-export const NOTES_TEXT =
-  'Make short notes about how you like explanations, to paste into your own AI assistant. They come from your own choices, never from your results, and they stay on your device.'
-export const NOTES_LINK = 'Build your notes'
-/** Said next to the link: it opens beside the results, so the results and their save stay where they are. */
-export const NOTES_NEW_TAB = ' (opens in a new tab)'
-export const NOTES_SOON = 'The notes builder is not available in this version yet.'
-
-/** Phase AI, AI.6b results-talk helper (proposal §3.3). */
-export const TALK_HEADING = 'Talking about your results with an AI'
-export const TALK_TEXT =
-  'Talking about your results with an AI? Paste this first. Never paste your save file: it holds your raw answers, and assistants may keep or learn from what you paste.'
-export const TALK_PREAMBLE =
-  "These are rough, uncertain self-reflection results from a free online test. Ranges that overlap are not real differences. Don't turn them into an intelligence number, a rank against other people or one overall figure. Don't guess at health or medical explanations for them. Help me think about what I might practise or explore, if anything."
-export const TALK_COPY = 'Copy this preamble'
-export const TALK_COPIED = 'Preamble copied.'
-export const TALK_COPY_FAILED = 'The preamble could not be copied automatically. Select the text above and copy it yourself.'
+// The "Working with AI" card and the results-talk helper take their text from the notes module
+// (`brief/results-talk.ts`: REVEAL_CARD, RESULTS_TALK, PREAMBLE), its one home (AI.6b, A22).
 
 // ----------------------------------------------------------------------------- worked items
 

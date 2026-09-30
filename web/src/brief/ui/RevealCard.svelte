@@ -12,6 +12,7 @@
    *   in a new tab, so the reveal and its save download stay where they are.
    * - `copy`, `status`: passed to `ResultsTalk` (see there).
    * - `level`: heading level of the card title (default 2); the helper's title is one level lower.
+   * - `talkId`: passed to `ResultsTalk` as its `anchorId` (the share card links to the helper by it).
    */
   import { REVEAL_CARD } from '../results-talk'
   import type { ResultsTalkStatus } from '../results-talk-gate'
@@ -23,8 +24,9 @@
     copy?: (text: string) => Promise<boolean>
     status?: ResultsTalkStatus
     level?: 2 | 3
+    talkId?: string
   }
-  let { saved, notesHref, copy, status, level = 2 }: Props = $props()
+  let { saved, notesHref, copy, status, level = 2, talkId }: Props = $props()
 
   const uid = $props.id()
   const inner = $derived((level + 1) as 3 | 4)
@@ -35,7 +37,7 @@
     <svelte:element this={`h${level}`} id="{uid}-title">{REVEAL_CARD.heading}</svelte:element>
     <p>{REVEAL_CARD.body}</p>
     <p><a href={notesHref} target="_blank" rel="noopener" data-testid="notes-link">{REVEAL_CARD.link}{REVEAL_CARD.newTab}</a></p>
-    <ResultsTalk {copy} {status} level={inner} />
+    <ResultsTalk {copy} {status} level={inner} anchorId={talkId} />
   </section>
 {/if}
 

@@ -36,16 +36,17 @@ import { mergeAll } from '../save/merge'
 import { readSaveFile, parseSaveText } from '../save/parse'
 import { SCHEMA_URL, SCHEMA_VERSION, type SaveContext, type SaveFileV1 } from '../save/types'
 import { assertValidSave } from '../save/validate'
+import { SAVE_CTX } from '../session/constants'
 
 /** The "session id" of the settings autosave: its key is `hb:save:v1:prefs`. */
 export const PREFS_AUTOSAVE_ID = 'prefs'
 
 /**
- * The versions a save written from the notes page is stamped with. The same values as the session
- * flow's (`session/constants.ts` SAVE_CTX, M1.15); a merge restamps a save with the running app's
- * context, so the stamp only matters for a file downloaded from this page.
+ * The versions a save written from the notes page is stamped with: the session flow's own
+ * (`session/constants.ts` SAVE_CTX, M1.15), so the two cannot drift apart. A merge restamps a save
+ * with the running app's context, so the stamp only matters for a file downloaded from this page.
  */
-export const STATIC_SAVE_CTX: SaveContext = Object.freeze({ bank_version: 'm1-static', param_version: 'm1-provisional' })
+export const STATIC_SAVE_CTX: SaveContext = SAVE_CTX
 
 export interface PrefsStoreOptions {
   /** Default: `localStorage`, or none when the browser blocks it. */

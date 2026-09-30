@@ -11,7 +11,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { DISCLAIMER, RESOURCE_LINE } from '../copy'
 import { AXIS_CODES, axis, type AxisCode } from '../engine/axes'
-import { NOTES_HEADING, NOTES_LINK, NOTES_TEXT, TALK_HEADING, TALK_PREAMBLE, TALK_TEXT } from '../reveal/copy'
+import { NOTES_LEAK_MARKERS } from '../brief/leak-markers'
+import { PREAMBLE, RESULTS_TALK, RESULTS_TALK_TEXT, REVEAL_CARD } from '../brief/results-talk'
 import { distinctivePeaks } from '../reveal/peaks'
 import { DEFAULT_R, MIN_TEXT_PX, N_FUZZ } from './blob'
 import {
@@ -84,12 +85,16 @@ function markerRadii(svg: string): number[] {
 }
 
 const NOTES_PROBES: readonly string[] = [
-  TALK_PREAMBLE,
-  TALK_TEXT,
-  TALK_HEADING,
-  NOTES_HEADING,
-  NOTES_TEXT,
-  NOTES_LINK,
+  // The "Working with AI" card and the results-talk helper (AI.6b), and the notes module's own list
+  // of what a share card must not contain (leak-markers.ts).
+  PREAMBLE,
+  RESULTS_TALK_TEXT,
+  RESULTS_TALK.heading,
+  RESULTS_TALK.neverPaste,
+  REVEAL_CARD.heading,
+  REVEAL_CARD.body,
+  REVEAL_CARD.link,
+  ...NOTES_LEAK_MARKERS,
   RESOURCE_LINE,
   DISCLAIMER,
   // The notes grammar (Phase AI proposal v2 §3.4, §4): header and fixed clauses.

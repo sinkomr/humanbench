@@ -18,11 +18,12 @@ import { buildCard, cardAxes } from '../viz/card'
 import { axisEstimates } from '../viz/profile'
 import NumbersSection from './NumbersSection.svelte'
 import { render } from '../render/common/testing'
-import { NOTES_TEXT, PEAKS_HEADING, TAKER_COMPARISON_TEXT, TALK_COPIED, TALK_PREAMBLE } from './copy'
+import { PREAMBLE as TALK_PREAMBLE, RESULTS_TALK, REVEAL_CARD } from '../brief/results-talk'
+import { PEAKS_HEADING, TAKER_COMPARISON_TEXT } from './copy'
 import { REVEAL_AXIS_MS } from './frames'
 import { distinctivePeaks, withinPersonContrasts } from './peaks'
 import { buildResults, scoredSessions } from './results'
-import { TALK_ANCHOR_ID, TALK_PREAMBLE_MAX_CHARS } from './slots'
+import { NOTES_BUILDER_HREF, TALK_ANCHOR_ID, TALK_PREAMBLE_MAX_CHARS } from './slots'
 import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
 let cleanup: (() => void) | undefined
@@ -345,45 +346,49 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     expect(m.c.textContent).not.toContain(TALK_PREAMBLE)
   })
 
-  it('after the download: the share card slot, the notes card (placeholder) and the results-talk helper', async () => {
+  it('after the download: the share card slot, then the "Working with AI" card (AI.6b) with the results-talk helper', async () => {
     const m = mountFinished(bot('s_REVEALDOM0000024'))
     click(buttonByText(m.c, 'Download save file'))
     const after = section(m.c, 'after-save')!
     expect(before(section(m.c, 'save')!, after)).toBe(true)
-    expect([...after.querySelectorAll('[data-slot]')].map((e) => e.getAttribute('data-slot'))).toEqual(['share-card', 'notes-for-ai', 'results-talk'])
+    expect([...after.querySelectorAll('[data-slot]')].map((e) => e.getAttribute('data-slot'))).toEqual(['share-card', 'working-with-ai'])
     // M1.18: the share slot holds the card panel (its own tests: ShareCard.dom.test.ts).
     const share = after.querySelector('[data-slot="share-card"]')!
     expect(share.querySelector('[data-share-card]')).not.toBeNull()
     expect(share.querySelector('img[data-preview]')).not.toBeNull()
     expect(share.textContent).not.toContain('not available')
-    const notes = after.querySelector('[data-slot="notes-for-ai"]')!
-    expect(notes.querySelector('[data-placeholder]')).not.toBeNull()
-    expect(notes.querySelector('a')).toBeNull()
-    const talk = after.querySelector('[data-slot="results-talk"]')!
+    const ai = after.querySelector('[data-slot="working-with-ai"]')!
+    expect(ai.querySelector('[data-testid="reveal-card"]')?.textContent).toContain(REVEAL_CARD.heading)
+    const talk = ai.querySelector('[data-testid="results-talk"]')!
+    expect(talk.id).toBe(TALK_ANCHOR_ID)
     expect(talk.textContent).toContain('Never paste your save file')
     expect(talk.textContent).toContain(TALK_PREAMBLE)
-    click(buttonByText(talk as HTMLElement, 'Copy this preamble'))
-    await vi.waitFor(() => expect(talk.querySelector('[role="status"]')?.textContent).toBe(TALK_COPIED))
+    click(buttonByText(talk as HTMLElement, RESULTS_TALK.copyButton))
+    await vi.waitFor(() => expect(talk.querySelector('[role="status"]')?.textContent).toBe(RESULTS_TALK.copied))
     expect(m.copied).toEqual([TALK_PREAMBLE])
   })
 
-  it('links the notes card to the builder route when there is one', () => {
-    const m = mountFinished(bot('s_REVEALDOM0000025'), { notesHref: '#/notes' })
+  it('links the card to the notes builder page (AI.5), in a new tab', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000025'))
     click(buttonByText(m.c, 'Download save file'))
-    const a = m.c.querySelector('[data-slot="notes-for-ai"] a')!
-    expect(a.getAttribute('href')).toBe('#/notes')
+    const a = m.c.querySelector('[data-slot="working-with-ai"] [data-testid="notes-link"]')!
+    expect(NOTES_BUILDER_HREF).toMatch(/\/notes\.html$/)
+    expect(a.getAttribute('href')).toBe(NOTES_BUILDER_HREF)
     // A new tab, said so: the results and their required save stay where they are.
     expect(a.getAttribute('target')).toBe('_blank')
     expect(a.getAttribute('rel')).toBe('noopener')
-    expect(a.textContent).toBe('Build your notes (opens in a new tab)')
-    expect(m.c.querySelector('[data-placeholder]')).toBeNull()
+    expect(a.textContent).toBe(`${REVEAL_CARD.link}${REVEAL_CARD.newTab}`)
+    cleanup?.()
+    const other = mountFinished(bot('s_REVEALDOM0000028'), { notesHref: '/elsewhere/notes.html' })
+    click(buttonByText(other.c, 'Download save file'))
+    expect(other.c.querySelector('[data-testid="notes-link"]')?.getAttribute('href')).toBe('/elsewhere/notes.html')
   })
 
   it('says so when the preamble cannot be copied', async () => {
     const m = mountFinished(bot('s_REVEALDOM0000026'), { copyText: async () => false })
     click(buttonByText(m.c, 'Download save file'))
-    click(buttonByText(m.c, 'Copy this preamble'))
-    await vi.waitFor(() => expect(m.c.querySelector('[data-slot="results-talk"] [role="status"]')?.textContent).toContain('could not be copied'))
+    click(buttonByText(m.c, RESULTS_TALK.copyButton))
+    await vi.waitFor(() => expect(m.c.querySelector('[data-testid="results-talk"] [role="status"]')?.textContent).toBe(RESULTS_TALK.copyFailed))
   })
 
   it('never puts notes text or the results into the preamble, and keeps the share slot free of the resource line', () => {
@@ -472,7 +477,7 @@ describe('the share card in the reveal (M1.18)', () => {
     expect(m.c.querySelector('[data-share-card]')).toBeNull()
     click(buttonByText(m.c, 'Download save file'))
     const svg = decode(m.c)
-    for (const probe of [TALK_PREAMBLE, NOTES_TEXT, RESOURCE_LINE, 'Notes for your AI', 'Never paste your save file']) expect(svg).not.toContain(probe)
+    for (const probe of [TALK_PREAMBLE, REVEAL_CARD.body, RESULTS_TALK.neverPaste, RESOURCE_LINE, 'Notes for your AI', 'Never paste your save file']) expect(svg).not.toContain(probe)
     expect(m.c.querySelector('[data-share-card]')!.textContent).not.toContain(RESOURCE_LINE)
   })
 
@@ -483,7 +488,7 @@ describe('the share card in the reveal (M1.18)', () => {
     const link = share.querySelector<HTMLAnchorElement>('[data-talk-link] a')!
     expect(link.getAttribute('href')).toBe(`#${TALK_ANCHOR_ID}`)
     expect(link.textContent).toBe('Talking about your results with an AI')
-    const talk = m.c.querySelector('[data-slot="results-talk"]') as HTMLElement
+    const talk = m.c.querySelector('[data-testid="results-talk"]') as HTMLElement
     expect(talk.id).toBe(TALK_ANCHOR_ID)
     expect(before(share, talk)).toBe(true)
     // The helper is on the same screen with its copy button and the "never paste" line.

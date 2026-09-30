@@ -7,8 +7,8 @@
  * - on the reveal screen (after the download) and on the share-card screen, the copy button for the
  *   preamble and the "never paste your save file" line are visible, and copying puts exactly the
  *   preamble on the clipboard and announces it;
- * - OPEN until M1.18 (no share-card renderer exists yet): the real share card contains none of the notes
- *   strings (`test.fixme` below), and E22 is in the smoke gate (AI.12a, bank);
+ * - the real share card contains none of the notes strings (`leak-markers.ts`): checked on the M1.18
+ *   renderer's output in `share-card.spec.ts` and `viz/card.test.ts`; E22 in the smoke gate is AI.12a (bank);
  * - axe: 0 serious or critical issues in light and dark; 320 px reflow; keyboard use;
  * - nothing is stored and nothing is sent, and the rendered page passes the language lint (A13).
  * The e2e tsconfig has no DOM lib, so page code is passed as strings.
@@ -71,9 +71,8 @@ test.describe('the preamble and the warning are visible on both screens', () => 
     await expect(page.getByRole('heading', { level: 2, name: RESULTS_TALK.heading })).toBeVisible()
   })
 
-  // OPEN until M1.18 adds the real share-card renderer: the demo's card is a placeholder box with fixed text, so a check of
-  // it against the notes strings (leak-markers.ts) would prove nothing about the product. M1.18 replaces this with a test of the renderer's output.
-  test.fixme('the real share card contains none of the notes strings (M1.18; AI.6b acceptance)', async () => {})
+  // The demo's card is a placeholder box with fixed text, so the check of the real card against the notes strings
+  // (leak-markers.ts) is on the M1.18 renderer's output: share-card.spec.ts ("has no notes text …") and viz/card.test.ts.
 })
 
 test.describe('accessibility, keyboard, storage and language', () => {

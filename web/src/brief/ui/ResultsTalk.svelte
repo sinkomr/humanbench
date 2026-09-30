@@ -12,6 +12,8 @@
    * - `status`: the gate status of the preamble (default: from the bundled gates file). `blocked`
    *   hides the preamble and its button but keeps the warning; `experimental` adds a badge.
    * - `level`: the heading level of the title (default 3, for use inside a card or a page section).
+   * - `anchorId`: an id for the helper, so a link elsewhere on the page can jump to it and move focus
+   *   there (the share card's link on the reveal screen, M1.18; the helper is then focusable by script).
    */
   import { copyText } from '../browser'
   import { RESULTS_TALK, PREAMBLE } from '../results-talk'
@@ -21,11 +23,14 @@
     copy?: (text: string) => Promise<boolean>
     status?: ResultsTalkStatus
     level?: 2 | 3 | 4
+    anchorId?: string
   }
-  let { copy = (t: string) => copyText(t), status = resultsTalkStatus(), level = 3 }: Props = $props()
+  let { copy = (t: string) => copyText(t), status = resultsTalkStatus(), level = 3, anchorId }: Props = $props()
 
   const uid = $props.id()
   let message = $state('')
+  /** With an `anchorId`, the helper is a link target that script can focus (tabindex -1: not in the tab order). */
+  const anchor = $derived(anchorId === undefined ? {} : { id: anchorId, tabindex: -1 })
 
   function selectPreamble(): void {
     const el = document.getElementById(`${uid}-preamble`)
@@ -47,7 +52,7 @@
   }
 </script>
 
-<div class="results-talk" data-testid="results-talk">
+<div class="results-talk" data-testid="results-talk" {...anchor}>
   <svelte:element this={`h${level}`} id="{uid}-title">{RESULTS_TALK.heading}</svelte:element>
   {#if status !== 'blocked'}
     <p>
@@ -87,6 +92,13 @@
       --rt-quote-bg: #1e1d25;
       --rt-quote-edge: #a9a7b3;
     }
+  }
+  .results-talk:focus {
+    outline: none;
+  }
+  .results-talk:focus-visible {
+    outline: 3px solid var(--r-focus, currentColor);
+    outline-offset: 2px;
   }
   .preamble {
     margin: 0.5rem 0;

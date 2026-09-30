@@ -16,7 +16,8 @@ import type { ImageShareOutcome, Raster } from '../viz/export'
 import { axisEstimates, type AxisEstimate, type ProfileInput } from '../viz/profile'
 import { syntheticProfile } from '../viz/synthetic'
 import { distinctivePeaks } from './peaks'
-import { NOTES_HEADING, NOTES_TEXT, TALK_PREAMBLE, TALK_TEXT } from './copy'
+import { NOTES_LEAK_MARKERS } from '../brief/leak-markers'
+import { PREAMBLE, RESULTS_TALK_TEXT, REVEAL_CARD } from '../brief/results-talk'
 import ShareCard from './ShareCard.svelte'
 
 let cleanup: (() => void) | undefined
@@ -443,7 +444,7 @@ describe('the share sheet', () => {
 describe('what the panel does not carry (M1.18 amendment)', () => {
   it('has no notes text, results-talk preamble, resource line or save-file content, on the page or in the picture', () => {
     const m = mountCard()
-    for (const probe of [TALK_PREAMBLE, TALK_TEXT, NOTES_HEADING, NOTES_TEXT, RESOURCE_LINE, 'Never paste your save file']) {
+    for (const probe of [PREAMBLE, RESULTS_TALK_TEXT, REVEAL_CARD.heading, REVEAL_CARD.body, ...NOTES_LEAK_MARKERS, RESOURCE_LINE, 'Never paste your save file']) {
       expect(m.c.textContent).not.toContain(probe)
       expect(svgOf(m.c)).not.toContain(probe)
     }

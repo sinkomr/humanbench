@@ -58,7 +58,8 @@
     /** Start a 20-minute focus session on these skills. */
     readonly onfocus?: (axes: AxisCode[]) => void
     readonly onrestart: () => void
-    readonly notesHref?: string | null
+    /** The notes builder page (default `slots.ts` NOTES_BUILDER_HREF). */
+    readonly notesHref?: string
     readonly takerComparison?: boolean
     readonly download?: (save: SaveFileV1) => string
     readonly copyCode?: (save: SaveFileV1) => Promise<{ code: string; copied: boolean }>
