@@ -22,6 +22,7 @@
     "dump:families": "tsx scripts/dump-families.ts",
     "dump:coding-scores": "tsx scripts/dump-coding-scores.ts",
     "dump:rt-scores": "tsx scripts/dump-rt-scores.ts",
+    "dump:briefs": "tsx scripts/dump-briefs.ts",
     "dump:language-terms": "tsx scripts/language-terms.ts",
     "sync:reading-render": "tsx scripts/sync-reading-render.ts",
     "sim:cat": "tsx scripts/sim-cat.ts"

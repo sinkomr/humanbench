@@ -15,14 +15,20 @@
  */
 
 import { fileURLToPath } from 'node:url'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { build, type Plugin, type Rolldown } from 'vite'
 import { describe, expect, it } from 'vitest'
 import { AUTHORED_PASSAGES } from '../src/tasks/reading/authoring'
+import { PAGES } from '../vite.config'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const TASKS = fileURLToPath(new URL('../src/tasks/', import.meta.url))
 const SAVE = fileURLToPath(new URL('../src/save/', import.meta.url))
 const ENGINE = fileURLToPath(new URL('../src/engine/', import.meta.url))
+const BRIEF = fileURLToPath(new URL('../src/brief/', import.meta.url))
+const VIZ = fileURLToPath(new URL('../src/viz/', import.meta.url))
+/** A sentence only the notes grammar contains (src/brief/grammar.ts, header). */
+const NOTES_MARKER = 'not an assessment of me'
 
 const RATIONALES = AUTHORED_PASSAGES.flatMap((p) => p.questions.flatMap((q) => q.option_rationales))
 const EVIDENCE = AUTHORED_PASSAGES.flatMap((p) => p.questions.map((q) => q.evidence_span))
@@ -101,4 +107,24 @@ describe('production bundles (A14)', () => {
     for (const s of PASSAGE_OPENINGS) expect(text).toContain(s)
     expect(authoringLeaks(text)).toEqual([])
   }, 60_000)
+
+  it('the notes core (brief/, Phase AI) is light: no ajv, no fast-check, no task families, no passages', async () => {
+    const text = await bundle(`export * from ${JSON.stringify(`${BRIEF}index.ts`)}`)
+    expect(text).toContain(NOTES_MARKER)
+    expect(text.length).toBeLessThan(100_000)
+    expect(text).not.toMatch(/ajv|fast-check|json-schema-traverse/i)
+    expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
+    for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
+  }, 60_000)
+
+  it('the light barrels and the main app do not carry the notes grammar (AI.4)', async () => {
+    for (const entry of [`${TASKS}index.ts`, `${SAVE}index.ts`, `${VIZ}index.ts`]) {
+      const text = await bundle(`export * from ${JSON.stringify(entry)}`)
+      expect(text, entry).not.toContain(NOTES_MARKER)
+    }
+    // The main page alone (index.html only, so the notes page is not among the inputs).
+    const app = textOf(await build({ configFile: false, root: WEB, mode: 'production', logLevel: 'silent', plugins: [svelte()], build: { write: false, rolldownOptions: { input: PAGES.index as string } } }))
+    expect(app).toContain('HumanBench')
+    expect(app).not.toContain(NOTES_MARKER)
+  }, 120_000)
 })

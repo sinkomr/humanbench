@@ -18,8 +18,9 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
+  - `web/src/brief/`: "Notes for your AI" (Phase AI): a pure, deterministic generator of short notes a person pastes into their own assistant. Closed grammar `hb-brief/1`, lint, parser, `surfaces.json` (install and removal steps), no network and no storage; `npm run dump:briefs -- --as-of YYYY-MM` writes the notes the bank's behaviour harness reads
   - `web/src/viz/`: blob and bar views, export
-- `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
+- `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`); `schema/brief-v1.json` is the JSON form of the notes (mirrored by `web/src/brief/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
 
