@@ -31,7 +31,7 @@ describe('src/brief/ (R-17.1: local only)', () => {
   })
 
   it('imports nothing from scoring, saves, tasks or renderers (scoring isolation), except the save module\'s types for the stored form', () => {
-    const FORBIDDEN = /^(?:engine|save|tasks|render|viz|review|selftest|sim|dev)\//
+    const FORBIDDEN = /^(?:engine|save|session|tasks|render|viz|review|selftest|sim|dev)\//
     for (const f of files) {
       const text = readFileSync(join(DIR, f), 'utf8')
       const imports = [...text.matchAll(/(?:import|export)(\s+type)?\s[^'"]*?from\s+'(\.\.?\/[^']+)'/g)].map((m) => ({ type: m[1] !== undefined, path: m[2] as string }))
@@ -42,6 +42,8 @@ describe('src/brief/ (R-17.1: local only)', () => {
         if (target === 'save/clock') continue
         // The stored form of the settings is the save module's type (AI.7): a type is erased, so no save code runs in the notes.
         if (i.type && target === 'save/types' && (f === 'stored.ts' || f === 'store-types.ts')) continue
+        // The page entry asks the session's consent record whether the person already passed the 18+ gate (M1.15, AI.5): reading it writes nothing.
+        if (f === 'main.ts' && target === 'session/gate') continue
         // The page entry hands the page the store that keeps the settings (brief-store/, which is checked below).
         if (f === 'main.ts' && target === 'brief-store/persist') continue
         expect(FORBIDDEN.test(`${target}/`), `${f} imports ${i.path} (src/${target})`).toBe(false)

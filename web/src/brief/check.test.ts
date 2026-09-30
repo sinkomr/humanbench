@@ -71,7 +71,7 @@ describe('hostile and odd corpus (E11: 100% flagged)', () => {
   it('has at least 50 line cases in the categories the proposal names', () => {
     expect(CASES.length).toBeGreaterThanOrEqual(50)
     const cats = new Set(CASES.map((c) => c.category))
-    for (const c of ['injection', 'url', 'hidden', 'homoglyph', 'digit', 'trait', 'a13', 'off_grammar']) expect(cats.has(c), c).toBe(true)
+    for (const c of ['injection', 'url', 'hidden', 'homoglyph', 'digit', 'trait', 'level', 'a13', 'off_grammar']) expect(cats.has(c), c).toBe(true)
   })
 
   for (const form of ['short', 'long', 'skill'] as const) {

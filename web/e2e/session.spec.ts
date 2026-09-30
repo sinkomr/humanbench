@@ -119,11 +119,13 @@ async function overflow(page: Page, where: string): Promise<void> {
 }
 
 /**
- * Switch the colour scheme and let it settle: no motion is asked for, so the buttons' colour
- * transition (`render.css`, only under no-preference) cannot be caught half way by axe.
+ * Switch the colour scheme and let it settle: motion is switched off first and the scheme second, in two
+ * calls, so the buttons' colour transition (`render.css`, only under no-preference) never starts and cannot
+ * be caught half way by axe (`flow.ts` has the same helper; `axe.ts` also waits for running transitions).
  */
 async function scheme(page: Page, colorScheme: 'light' | 'dark'): Promise<void> {
-  await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.emulateMedia({ colorScheme })
 }
 
 async function languageClean(page: Page): Promise<void> {
@@ -568,9 +570,14 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await expect(h1(page)).toHaveText('Time for a break?')
   })
 
-  test('the hard stop ends the session at 57 minutes, wherever it is', async ({ page }) => {
+  test('the hard stop ends the session at 57 minutes, wherever it is: not at 56, and by 57:01', async ({ page }) => {
     await toFirstItem(page)
-    await page.clock.fastForward('58:00')
+    // The clock runs on by itself a few seconds while the page is set up, so the bounds are 56:00 (a stop at 56 would already have ended it) and 57:01 (a stop at 58 would not have).
+    await page.clock.fastForward('56:00')
+    await page.clock.runFor(1000)
+    await expect(page.getByText('The session reached its time limit')).toHaveCount(0)
+    await expect(h1(page)).not.toHaveText('Session complete')
+    await page.clock.fastForward('01:01')
     await expect(h1(page)).toHaveText('Session complete', { timeout: 15_000 })
     await expect(page.getByText('The session reached its time limit')).toBeVisible()
     await expectNoSeriousAxe(page)

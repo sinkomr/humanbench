@@ -56,6 +56,21 @@ describe('sanitizeCustomLine', () => {
     expect(sanitizeCustomLine(' \n ')).toEqual({ text: null, problems: [] })
   })
 
+  it('refuses a level, an age, a school year, a rank or a test result written in words', () => {
+    for (const bad of [
+      'I came in the top ten percent on this test',
+      'Explain things as you would to a fifth grader',
+      'Treat me as a year nine pupil',
+      'Explain as if to a ten-year-old',
+      'Use a kindergarten standard',
+    ]) {
+      const r = sanitizeCustomLine(bad)
+      expect(r.text, bad).toBeNull()
+      expect(r.problems.length, bad).toBeGreaterThan(0)
+    }
+    for (const bad of ['top ten percent', 'a year nine pupil', 'fifth grader']) expect(sanitizeInterests(bad).items, bad).toEqual([])
+  })
+
   it('refuses web addresses, digits, wording about the person, background cues, other alphabets and clinical words', () => {
     for (const bad of [
       'See https://example.org',

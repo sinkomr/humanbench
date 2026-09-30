@@ -365,6 +365,25 @@ describe('finish early and the hard stop (§7.4)', () => {
     expect(bot.run.sessionState().durationS).toBe(HARD_STOP_S)
   })
 
+  it('pins the limits of the spec: a break at 30 active minutes and the hard stop at 57 (DESIGN §7.4, §10)', () => {
+    expect(BREAK_AT_S).toBe(30 * 60)
+    expect(HARD_STOP_S).toBe(57 * 60)
+  })
+
+  it('does not stop a second early: at 56:59 the session is still going, and at 57:00 it ends', () => {
+    const bot = new Bot({ sessionId: 's_HARDSTOP000002' })
+    bot.until((v) => v.phase === 'item')
+    bot.wait(HARD_STOP_S - 1 - bot.run.view().elapsedS) // the session has already run a few seconds
+    bot.run.tick()
+    expect(bot.run.view().elapsedS).toBeCloseTo(HARD_STOP_S - 1, 3)
+    expect(bot.run.view().ended).not.toBe('hard_stop')
+    expect(bot.run.sessionState().flags.hard_stop).toBeFalsy()
+    bot.wait(1)
+    bot.run.tick()
+    expect(bot.run.view().ended).toBe('hard_stop')
+    expect(bot.run.sessionState().durationS).toBe(HARD_STOP_S)
+  })
+
   it('a tab suspended past the stop is recorded at the limit, not at the late reading (breaks left out)', () => {
     const bot = new Bot({ sessionId: 's_HARDSTOPLATE01' })
     bot.until((v) => v.phase === 'item')

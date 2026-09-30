@@ -20,6 +20,7 @@ import { lintText } from '../scripts/language-lint'
 import { COPY } from '../src/brief/copy'
 import { validateSave } from '../src/save/validate'
 import { expectNoSeriousAxe } from './axe'
+import { agreeGate, button } from './flow'
 
 const PAGE = './notes.html'
 
@@ -304,6 +305,7 @@ test.describe('local only (R-17.1, R-17.12)', () => {
 })
 
 const KEY = 'hb:save:v1:prefs'
+const CONSENT_KEY = 'hb:consent:v1'
 const storageSnapshot = (page: Page): Promise<{ local: string[]; session: number; cookie: string; databases: number; caches: number }> =>
   page.evaluate(`(async () => ({
     local: Object.keys(localStorage),
@@ -339,6 +341,34 @@ test.describe('keeping the settings (AI.7, R-17.1, R-17.12)', () => {
     await page.reload()
     expect(await storageSnapshot(page)).toEqual({ local: [], session: 0, cookie: '', databases: 0, caches: 0 })
     await expect(page.getByTestId('keep-state')).toHaveCount(0)
+  })
+
+  test('does not ask for the 18+ tick again after the session gate was passed (M1.15, AI.5), and keeps the settings', async ({ page }) => {
+    await page.goto('./')
+    await button(page, 'Start').click()
+    await agreeGate(page)
+    await open(page)
+    await expect(page.getByLabel('I am 18 or older')).toHaveCount(0)
+    await page.getByRole('radio', { name: /Coding and data/ }).check()
+    await page.getByRole('button', { name: COPY.keepButton }).click()
+    await expect(page.getByTestId('keep-status')).toHaveText(COPY.keepNow)
+    await expect(page.getByTestId('adult-error')).toHaveCount(0)
+    // the consent record is the gate's own; the settings are the only other key
+    await expect.poll(async () => (await storageSnapshot(page)).local.sort(), { timeout: 10_000 }).toEqual([CONSENT_KEY, KEY].sort())
+  })
+
+  test('the under-18 path writes nothing, and the notes page then still asks for the 18+ tick before it keeps anything', async ({ page }) => {
+    await page.goto('./')
+    await button(page, 'Start').click()
+    await button(page, 'I am under 18').click()
+    await open(page)
+    expect(await storageSnapshot(page)).toEqual({ local: [], session: 0, cookie: '', databases: 0, caches: 0 })
+    await expect(page.getByLabel('I am 18 or older')).toBeVisible()
+    await useEverything(page)
+    await page.getByRole('button', { name: COPY.keepButton }).click()
+    await expect(page.getByTestId('adult-error')).toHaveText(COPY.keepNeedAdult)
+    await page.reload()
+    expect(await storageSnapshot(page)).toEqual({ local: [], session: 0, cookie: '', databases: 0, caches: 0 })
   })
 
   test('keeps only the settings as a prefs-only save, never the typed interests or own lines, and brings them back on reload', async ({ page }) => {

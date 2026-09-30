@@ -8,11 +8,14 @@
  * - **clock** (all of `src/`): no `Date.now`, no argless `new Date()` / `new Date`, no `Date()`
  *   call. Response times come from `performance.now()` and rAF timestamps only. `new Date(x)` with
  *   an argument (parsing or formatting a given time) is fine.
- * - **random** (`src/engine/`, `src/tasks/`, `src/render/`, `src/viz/`): no `Math.random`,
- *   `getRandomValues` or `randomUUID`. Items and scores must regenerate from their seed (A11):
- *   draw from the seeded engine stream. Renderers must never reorder or randomise what the spec
- *   fixes (A18: option order is the item's), and the blob draws the same for a given profile
- *   (§9.3), so both are covered too. `save/ids.ts` (crypto session ids) stays outside.
+ * - **random** (`src/engine/`, `src/tasks/`, `src/render/`, `src/viz/`, `src/session/`,
+ *   `src/reveal/`, `src/brief/`): no `Math.random`, `getRandomValues` or `randomUUID`. Items and
+ *   scores must regenerate from their seed (A11): draw from the seeded engine stream. Renderers
+ *   must never reorder or randomise what the spec fixes (A18: option order is the item's), and the
+ *   blob draws the same for a given profile (§9.3), so both are covered too. The session run and
+ *   practice pick the items and the reveal draws its worked examples from the session id (A11), and
+ *   the notes text is a pure function of the person's choices, so those three are covered as well.
+ *   `save/ids.ts` (crypto session ids) stays outside.
  *
  * A file that legitimately needs one of these (e.g. a save file's wall-clock `created_at`, §8)
  * goes in {@link ALLOW} with the rule and the reason; stale entries fail. Svelte markup outside
@@ -41,10 +44,11 @@ const SRC = join(PUB_ROOT, 'web', 'src')
  */
 const ALLOW: Readonly<Record<string, Partial<Record<Rule, string>>>> = {
   'save/clock.ts': { clock: 'save-file metadata only (§8 created_utc, started_utc, session-id time prefix); never RT' },
+  'brief/browser.ts': { random: 'download file-name and fit-note id tokens that only have to differ between downloads (AI.5); never an item, a score or the notes text' },
 }
 
 /** Directories (under `web/src`) where the random rule applies (module comment; A11, A18). */
-const SEEDED_DIRS = ['engine/', 'tasks/', 'render/', 'viz/']
+const SEEDED_DIRS = ['engine/', 'tasks/', 'render/', 'viz/', 'session/', 'reveal/', 'brief/']
 
 /** Whether the random rule applies to a file (posix path under `web/src`). */
 const isSeeded = (f: string): boolean => SEEDED_DIRS.some((d) => f.startsWith(d))
@@ -134,12 +138,12 @@ describe('timing and determinism lint over web/src (CLAUDE.md, §11.6, A11)', ()
     expect(files.length).toBeGreaterThan(100)
   })
 
-  it('no file reads the wall clock, and nothing in engine/, tasks/, render/ or viz/ uses an unseeded random source', () => {
+  it('no file reads the wall clock, and nothing in engine/, tasks/, render/, viz/, session/, reveal/ or brief/ uses an unseeded random source', () => {
     expect(violations()).toEqual([])
   })
 
-  it('applies the random rule to renderers and the viz, not to save-file ids (A18, §9.3)', () => {
-    for (const f of ['engine/prng.ts', 'tasks/family.ts', 'render/choice/OptionGroup.svelte', 'render/entry.ts', 'viz/profile.ts', 'viz/BlobChart.svelte']) expect(isSeeded(f), f).toBe(true)
+  it('applies the random rule to renderers, the viz, the session run and the reveal, not to save-file ids (A11, A18, §9.3)', () => {
+    for (const f of ['engine/prng.ts', 'tasks/family.ts', 'render/choice/OptionGroup.svelte', 'render/entry.ts', 'viz/profile.ts', 'viz/BlobChart.svelte', 'session/run.ts', 'session/practice.ts', 'reveal/Reveal.svelte', 'brief/build.ts']) expect(isSeeded(f), f).toBe(true)
     for (const f of ['save/ids.ts', 'save/clock.ts', 'App.svelte', 'review/verdicts.ts']) expect(isSeeded(f), f).toBe(false)
     const files = sourceFiles()
     for (const d of SEEDED_DIRS) expect(files.some((f) => f.startsWith(d)), d).toBe(true)

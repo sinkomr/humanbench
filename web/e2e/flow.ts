@@ -98,9 +98,15 @@ export async function overflow(page: Page, where: string): Promise<void> {
   expect(px, `${where} overflows sideways`).toBeLessThanOrEqual(0)
 }
 
-/** Switch the colour scheme and let it settle: no motion is asked for, so no colour transition is caught half way by axe. */
+/**
+ * Switch the colour scheme and let it settle: motion is switched off first and the scheme second,
+ * in two calls, so the colour change never starts a transition that axe could catch half way
+ * (one call let a loaded WebKit run scan a button between its light and dark colours). `axe.ts`
+ * also waits for running transitions before it scans.
+ */
 export async function scheme(page: Page, colorScheme: 'light' | 'dark'): Promise<void> {
-  await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.emulateMedia({ colorScheme })
 }
 
 /** The rendered page passes the language lint (A13; the two allow-listed sentences aside). */

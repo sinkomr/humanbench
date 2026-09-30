@@ -8,9 +8,10 @@
  * - digits only inside a `YYYY-MM` month;
  * - no web address, no markup characters inside a line (the only markup is the `#` heading, `-`
  *   list and `---` front matter that `lintNotes` strips before it looks at the content);
- * - no wording about how good, weak, quick or slow the person is, no level or score words, no
- *   education or first-language cues (the trigger that made assistants worse and condescending in
- *   the study behind proposal §2.2 point 1), and no product, axis or estimate words;
+ * - no wording about how good, weak, quick or slow the person is, no level, score, percent or rank
+ *   words (also in spelled-out form: "top ten percent", "year nine", "a ten-year-old"), no test
+ *   results, no education, age or first-language cues (the trigger that made assistants worse and
+ *   condescending in the study behind proposal §2.2 point 1), and no product, axis or estimate words;
  * - no wording that tries to steer the assistant away from the notes' own clauses or towards an
  *   action (ignore/forget/override instructions, a new role, revealing a prompt or a key, running a
  *   command): the prompt-injection shapes of proposal §6 rows 14 and 15;
@@ -39,6 +40,20 @@ interface Rule {
   readonly re: RegExp
 }
 
+/**
+ * Spelled-out numbers, for the rules that keep a level, an age, a school year, a rank or a percent out
+ * of the notes when it is written in words (R-17.3: "digits only in YYYY-MM" would otherwise be one
+ * word away). Number words alone are not banned: a standard line says "a sentence or two", "one quick
+ * question" and "out of a hundred". Only the shapes that state a level or a position are.
+ */
+const ONES = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen'
+const TENS = 'twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety'
+const ORDS =
+  'zeroth|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth|hundredth|thousandth'
+const BIG = 'hundred|thousand|million|billion'
+/** One number word, cardinal or ordinal, including "twenty-one" and "twenty first". */
+const NUMBER_WORD = `(?:(?:${TENS})(?:[- ](?:${ONES}|${ORDS}))?|${ONES}|${ORDS}|${BIG})`
+
 const RULES: readonly Rule[] = [
   { rule: 'url', re: /https?:|ftp:|:\/\/|www\.|\]\(|@|\b[a-z0-9-]+\.(?:com|org|net|io|edu|gov|co|app|dev|ai|me|info|uk|us|de|ly|gg|xyz|sh|md)\b|[a-z]\.[a-z]/giu },
   { rule: 'markup', re: /[#*_`[\]<>|\\{}~^]/gu },
@@ -48,7 +63,21 @@ const RULES: readonly Rule[] = [
   },
   {
     rule: 'level',
-    re: /\b(?:levels?|abilit(?:y|ies)|aptitude|competen(?:ce|cy)|proficien\w*|numeracy|literacy|intelligen\w*|iq|scores?|scored|scoring|percentiles?|ranks?|ranked|ranking|grades?|graded|ratings?|theta|sd|standard deviation|deciles?|quartiles?|terciles?)\b/giu,
+    re: /\b(?:levels?|abilit(?:y|ies)|aptitude|competen(?:ce|cy)|proficien\w*|numeracy|literacy|intelligen\w*|iq|scores?|scored|scoring|percentiles?|ranks?|ranked|ranking|grades?|graders?|grading|graded|percent|percents|per[- ]cent|pct|ratings?|theta|sd|standard deviation|deciles?|quartiles?|terciles?)\b/giu,
+  },
+  {
+    // A position in a group or a result on a test, in words ("top ten", "top of my class", "better than most", "my test results", "I passed the exam").
+    rule: 'level',
+    re: new RegExp(
+      [
+        `\\b(?:top|bottom)\\s+(?:${NUMBER_WORD}|half|third|quarter|fifth|tenth|group|tier|band|bracket|of\\s+(?:my|the|our|a|his|her|their)\\s+(?:class|cohort|year|group|form|range|scale|pack))\\b`,
+        `\\b(?:best|worst|top|bottom)\\s+in\\s+(?:my\\s+|the\\s+|our\\s+)?(?:class|cohort|year|group|form)\\b`,
+        `\\b(?:better|worse|smarter|faster|slower|ahead|behind)\\s+(?:of|than)\\s+(?:most|others|other people|the others|average|the average|my peers|everyone|anyone|the rest|the class)\\b`,
+        `\\b(?:my|our)\\s+(?:\\w+\\s+){0,2}(?:test|quiz|exam|assessment|survey|humanbench)\\s+(?:results?|marks?|outcomes?|performance|standing|answers?)\\b`,
+        `\\b(?:i|we)\\s+(?:\\w+\\s+){0,2}(?:came|placed|finished|passed|failed|aced|flunked|got|achieved|scored|ranked)\\b[^.\\n]{0,40}\\b(?:test|quiz|exam|assessment)\\b`,
+      ].join('|'),
+      'giu',
+    ),
   },
   {
     // First person plus a self-description ("I am bad at ...", "my memory is ...").
@@ -57,7 +86,23 @@ const RULES: readonly Rule[] = [
   },
   {
     rule: 'education',
-    re: /\b(?:education\w*|uneducated|degrees?|college|university|universities|school\w*|high-school|graduates?|undergrad\w*|phd|doctorate|masters|bachelors?|diploma|dropouts?|students?|teenagers?|teens?|elderly)\b/giu,
+    re: /\b(?:education\w*|uneducated|degrees?|college|university|universities|school\w*|high-school|undergrad\w*|phd|doctorate|masters|bachelors?|diploma|dropouts?|students?|teenagers?|teens?|elderly|sixth[- ]form\w*|pupils?|kindergarten\w*|pre-?school\w*|nursery|sophomores?|freshm[ae]n|gcses?|a-levels?|graduat\w*|alumn\w+|toddlers?|preteens?|tweens?|youngsters?|adolescents?|pensioners?|middle-aged)\b/giu,
+  },
+  {
+    // A school year, an age or years of experience, in words ("year nine", "grade five", "a ten-year-old", "for twenty years", "like I'm five").
+    rule: 'education',
+    re: new RegExp(
+      [
+        `\\b(?:year|grade|form|class|standard|band|tier|division)\\s+(?:${NUMBER_WORD})\\b`,
+        `\\b(?:${NUMBER_WORD})[- ](?:grade|graders?)\\b`,
+        `\\b(?:like|as\\s+if|as\\s+though|as\\s+you\\s+would\\s+(?:to|for)|(?:talk|explain|speak|write)(?:ing)?\\s+to|for)\\s+(?:(?:i|you)\\s+(?:am|are|was|were)\\s+|i'?m\\s+)?(?:an?\\s+|the\\s+)?(?:child|children|kids?|toddlers?|preteens?|tweens?|youngsters?)\\b`,
+        `\\b(?:${NUMBER_WORD})[- ]years?\\b`,
+        `\\byears?[- ]olds?\\b|\\byears? of age\\b|\\b(?:my|our)\\s+age\\b|\\bage\\s+(?:group|range|bracket|band)\\b|\\baged\\s+(?:${NUMBER_WORD})\\b`,
+        `\\b(?:like|as if)\\s+(?:i'?m|i am|i was|i were)\\s+(?:${NUMBER_WORD})\\b`,
+        `\\bin\\s+my\\s+(?:(?:early|mid|late)\\s+)?(?:teens|twenties|thirties|forties|fifties|sixties|seventies|eighties|nineties)\\b`,
+      ].join('|'),
+      'giu',
+    ),
   },
   { rule: 'language', re: /\b(?:native|non-native|second language|first language|mother tongue|esl|efl|english learner|foreign|immigrants?|accent)\b/giu },
   { rule: 'brand', re: /\b(?:humanbench|human bench|hb-brief|blob|axis|axes|estimates?|estimated|posterior|bayesian)\b/giu },
@@ -167,9 +212,9 @@ export const LINT_MESSAGES: Readonly<Record<LintRule, string>> = {
   url: 'Leave out web addresses and email addresses.',
   markup: 'Leave out symbols such as hash signs, stars, brackets and underscores.',
   trait: 'Describe how you want answers, not how good or weak you are at something.',
-  level: 'Leave out levels, grades, ranks and scores.',
+  level: 'Leave out levels, grades, ranks, percents, test results and scores.',
   self: 'Describe how you want answers, not what you are like.',
-  education: 'Leave out schooling and background. Notes describe wording and depth only.',
+  education: 'Leave out schooling, age and background. Notes describe wording and depth only.',
   language: 'Leave out first-language or background details. The notes already apply in any language.',
   brand: 'Leave out product names, estimates and technical scoring words.',
   override: 'Leave out wording that tells the assistant to drop its rules, take a new role, reveal something or run something. Describe wording, depth and checking only.',

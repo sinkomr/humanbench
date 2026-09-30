@@ -116,7 +116,9 @@ describe('quant topic groups', () => {
 
   it('gives every generated item a group through its facet', () => {
     fc.assert(
-      fc.property(fc.string({ minLength: 1, maxLength: 12 }), fc.integer({ min: 1, max: 4 }), (seed, stratum) => {
+      // A seed that already ends in `@s<k>` names its own stratum and throws for another one (tasks/ids.ts `resolveSeed`):
+      // fast-check found ' @s1' with stratum 2 in the wf5 gates, once in a few runs.
+      fc.property(fc.string({ minLength: 1, maxLength: 12 }).filter((s) => !/@s[1-6]$/.test(s)), fc.integer({ min: 1, max: 4 }), (seed, stratum) => {
         const item = quant.generate(seed, { stratum: stratum as 1 | 2 | 3 | 4 })
         const group = quantGroupOfItem(item)
         expect(group, item.facet).toBeDefined()

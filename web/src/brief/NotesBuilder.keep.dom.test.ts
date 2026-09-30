@@ -159,6 +159,7 @@ describe('nothing is kept until the person asks (the under-18 path writes nothin
     await vi.waitFor(() => expect($('[data-testid=keep-status]').textContent).toBe(COPY.keepNow))
     expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepDone)
     expect($('[data-testid=download-settings]')).toBeTruthy()
+    expect($('[data-testid=download-note]').textContent).toBe(COPY.keepDownloadNote) // also when the settings are kept
     expect(document.querySelector('[data-testid=adult]')).toBeNull()
   })
 
@@ -178,6 +179,10 @@ describe('nothing is kept until the person asks (the under-18 path writes nothin
     // the copy says "you can still download them as a save file", so there is a button, behind the same question
     expect(COPY.keepUnavailable).toContain('download')
     expect($('[data-testid=download-settings]').textContent).toBe(COPY.keepDownload)
+    // the download is the device's whole save, so the page says the file also holds any test answers
+    expect($('[data-testid=download-note]').textContent).toBe(COPY.keepDownloadNote)
+    expect($('[data-testid=download-settings]').getAttribute('aria-describedby')).toBe($('[data-testid=download-note]').id)
+    expect(COPY.keepDownloadNote).toMatch(/test answers/)
     click(chip('Programming'))
     click($('[data-testid=download-settings]'))
     expect($('[data-testid=adult-error]').textContent).toBe(COPY.keepNeedAdult)

@@ -98,16 +98,18 @@
   {#if keep}
     <p data-testid="keep-state">{status === 'unavailable' ? COPY.keepUnavailable : status === 'error' ? COPY.keepFailed : COPY.keepDone}</p>
     <div class="row actions">
-      <button type="button" data-testid="download-settings" onclick={ondownload}>{COPY.keepDownload}</button>
+      <button type="button" data-testid="download-settings" aria-describedby="{uid}-dl-note" onclick={ondownload}>{COPY.keepDownload}</button>
     </div>
+    <p class="hint" id="{uid}-dl-note" data-testid="download-note">{COPY.keepDownloadNote}</p>
   {:else if !available}
     <p class="warn" data-testid="keep-state">{canDownload ? COPY.keepUnavailable : COPY.keepNowhere}</p>
     {#if canDownload}
       <form onsubmit={submitDownload} novalidate>
         {@render adultBox()}
         <div class="row actions">
-          <button type="submit" data-testid="download-settings">{COPY.keepDownload}</button>
+          <button type="submit" data-testid="download-settings" aria-describedby="{uid}-dl-note">{COPY.keepDownload}</button>
         </div>
+        <p class="hint" id="{uid}-dl-note" data-testid="download-note">{COPY.keepDownloadNote}</p>
       </form>
     {/if}
   {:else}

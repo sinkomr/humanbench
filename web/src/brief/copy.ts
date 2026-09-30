@@ -47,7 +47,9 @@ export const COPY = {
   keepNow: 'Your settings are now kept on this device.',
   keepUnavailable: 'This browser would not keep the settings (private browsing or blocked storage). You can still download them as a save file.',
   keepFailed: 'The settings could not be kept just now. You can still download them as a save file.',
-  keepDownload: 'Download my settings (save file)',
+  keepDownload: 'Download a save file with my settings',
+  /** The download is the device's whole save (`PrefsStore.download`), so the label cannot say "settings" alone. */
+  keepDownloadNote: 'The file also holds any test answers saved on this device. Keep it to yourself and never paste it into an assistant.',
   loadHeading: 'Load settings from a save file',
   loadHint: 'A save file from an earlier visit, or one you downloaded here. Only the notes settings are used; any test answers in it are left alone.',
   loadFile: 'Choose a save file',

@@ -283,6 +283,30 @@
   {
    "category": "off_grammar",
    "line": "-"
+  },
+  {
+   "category": "level",
+   "line": "I came in the top ten percent on this test."
+  },
+  {
+   "category": "level",
+   "line": "Explain things as you would to a fifth grader."
+  },
+  {
+   "category": "level",
+   "line": "Treat me as a year nine pupil."
+  },
+  {
+   "category": "level",
+   "line": "Explain as if to a ten-year-old."
+  },
+  {
+   "category": "level",
+   "line": "Use a kindergarten standard."
+  },
+  {
+   "category": "level",
+   "line": "I scored in the ninetieth percentile."
   }
  ]
 }

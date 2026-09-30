@@ -3,6 +3,7 @@
  * only digits, and clean text stays clean.
  */
 
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { LINT_MESSAGES, contentLines, lintLine, lintMessages, lintNotes, type LintRule } from './lint'
 
@@ -61,6 +62,105 @@ describe('lintLine', () => {
     for (const s of ['at a high school level', 'my ability', 'a score of nothing', 'the percentile', 'grade eight words', 'a rank', 'standard deviation']) {
       expect(rules(s).length, s).toBeGreaterThan(0)
     }
+  })
+
+  // The wf5 audit: spelled-out numbers, school-year words, ages and percent slipped through a digit-only, fixed-word lint.
+  const LEVEL_IN_WORDS = [
+    'I came in the top ten percent on this test',
+    'Explain things as you would to a fifth grader',
+    'Treat me as a year nine pupil',
+    'Explain as if to a ten-year-old',
+    'Use a kindergarten standard',
+    'I scored in the ninetieth percentile',
+    'Pitch it for grade five reading',
+    'Talk to me like I am five',
+    'Explain it as you would to a child',
+    'I have coded for twenty years',
+    'My exam results were average',
+    'I passed the quiz on the first try',
+    'I am in the top half of my class',
+    'I am better than most people at this',
+    'Assume a sixth form standard',
+    'Write for a nine year old',
+    'Seventy per cent of the time',
+  ]
+  it('flags a level, an age, a school year, a rank or a percent written in words (A20: no scores, percentiles, levels, school-level words)', () => {
+    for (const s of LEVEL_IN_WORDS) expect(lintLine(s).length, s).toBeGreaterThan(0)
+  })
+
+  const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+  const TENS = ['twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
+  const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'twentieth', 'thirtieth', 'hundredth']
+  const arbNumber = fc.oneof(
+    fc.constantFrom(...ONES),
+    fc.constantFrom(...TENS),
+    fc.constantFrom('hundred', 'thousand', 'million'),
+    fc.tuple(fc.constantFrom(...TENS), fc.constantFrom(...ONES.slice(1, 10)), fc.constantFrom('-', ' ')).map(([t, o, sep]) => `${t}${sep}${o}`),
+  )
+  const arbOrdinal = fc.constantFrom(...ORDINALS)
+  const arbCase = fc.constantFrom<(s: string) => string>(
+    (s) => s,
+    (s) => s.toUpperCase(),
+    (s) => s.charAt(0).toUpperCase() + s.slice(1),
+  )
+  const arbFrame = fc.constantFrom('', 'Keep answers plain. ', 'Note: ', 'If you can, ')
+
+  it('flags every spelled-out number in a school-year, age, experience, percent or rank phrase (property)', () => {
+    const phrases: fc.Arbitrary<string> = fc.oneof(
+      arbNumber.map((n) => `year ${n}`),
+      arbNumber.map((n) => `grade ${n}`),
+      arbNumber.map((n) => `${n}-year-old`),
+      arbNumber.map((n) => `${n} years old`),
+      arbNumber.map((n) => `${n} years of experience`),
+      arbNumber.map((n) => `top ${n} percent`),
+      arbNumber.map((n) => `${n} percent`),
+      arbNumber.map((n) => `${n} per cent`),
+      arbNumber.map((n) => `like I'm ${n}`),
+      arbNumber.map((n) => `as if I were ${n}`),
+      arbNumber.map((n) => `aged ${n}`),
+      arbNumber.map((n) => `top ${n}`),
+      arbOrdinal.map((n) => `${n} grader`),
+      arbOrdinal.map((n) => `${n}-grade level`),
+      arbOrdinal.map((n) => `top ${n}`),
+      arbOrdinal.map((n) => `${n} percentile`),
+    )
+    fc.assert(
+      fc.property(arbFrame, phrases, arbCase, fc.constantFrom('', '.', ' please.'), (frame, phrase, recase, tail) => {
+        const text = `${frame}${recase(phrase)}${tail}`
+        expect(lintLine(text).length, text).toBeGreaterThan(0)
+      }),
+      { numRuns: 1500 },
+    )
+  })
+
+  it('flags the grade, pupil and school-stage words on their own', () => {
+    for (const s of ['a grader', 'graders', 'a pupil', 'pupils', 'kindergarten', 'a preschool level', 'sophomore', 'gcse', 'a-levels', 'a percent', 'pct', 'per-cent']) {
+      expect(lintLine(s).length, s).toBeGreaterThan(0)
+    }
+  })
+
+  it('leaves a bare number word alone: the standard lines use "or two", "one quick", "a hundred", and "percentages"', () => {
+    for (const s of [
+      'Start with the answer in a sentence or two.',
+      'Ask one quick question instead of guessing.',
+      'Give chances and risks as counts (so many out of a hundred) as well as percentages.',
+      'Use three examples per answer.',
+      'Introduce only a few new ideas at a time.',
+      'Explain first-class functions and third normal form when they come up.',
+      'Explain what a child process is.',
+      'Read the file top to bottom before you suggest a fix.',
+      'Show the test results after you run the tests.',
+      'Put the first step first and the second step second.',
+      'Give the second example in the same style.',
+    ]) {
+      expect(lintLine(s), s).toEqual([])
+    }
+    fc.assert(
+      fc.property(arbNumber, fc.constantFrom('Give me {n} examples.', 'Ask me {n} questions at most.', 'Keep it to {n} steps.', 'Offer {n} options.'), (n, t) => {
+        expect(lintLine(t.replace('{n}', n)), t).toEqual([])
+      }),
+      { numRuns: 300 },
+    )
   })
 
   it('flags education, first-language and age cues', () => {

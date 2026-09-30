@@ -25,8 +25,21 @@ export interface AxeScope {
   readonly exclude?: readonly string[]
 }
 
+/**
+ * Wait for running CSS transitions to end, so axe never reads a colour half way between two themes
+ * (a button caught mid-fade after a switch to dark mode measured 4.08:1 in a loaded WebKit run, while
+ * both ends pass). Only transitions are waited for: an animation that never ends must not hold up a
+ * scan. If a transition outlasts the wait, the scan goes ahead and reports what it sees.
+ */
+export async function settleTransitions(page: Page, timeout = 3000): Promise<void> {
+  // An expression, not a function: a string that is a function would be truthy at once and never wait.
+  const idle = `!document.getAnimations().some((a) => typeof CSSTransition !== 'undefined' && a instanceof CSSTransition && a.playState !== 'finished')`
+  await page.waitForFunction(idle, undefined, { timeout }).catch(() => undefined)
+}
+
 /** The serious and critical WCAG A/AA violations on the page as it is now. */
 export async function seriousAxeViolations(page: Page, scope: AxeScope = {}): Promise<AxeViolation[]> {
+  await settleTransitions(page)
   let builder = new AxeBuilder({ page }).withTags([...WCAG_AA_TAGS])
   for (const s of scope.include ?? []) builder = builder.include(s)
   for (const s of scope.exclude ?? []) builder = builder.exclude(s)
