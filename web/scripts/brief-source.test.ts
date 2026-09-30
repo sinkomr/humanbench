@@ -9,7 +9,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PUB_ROOT } from './dump-lib'
 
@@ -31,9 +31,16 @@ describe('src/brief/ (R-17.1: local only)', () => {
   })
 
   it('imports nothing from scoring, saves, tasks or renderers (scoring isolation)', () => {
+    const FORBIDDEN = /^(?:engine|save|tasks|render|viz|review|selftest|sim|dev)\//
     for (const f of files) {
       const imports = [...readFileSync(join(DIR, f), 'utf8').matchAll(/from '(\.\.?\/[^']+)'/g)].map((m) => m[1] as string)
-      for (const i of imports) expect(i, `${f} imports ${i}`).not.toMatch(/^\.\.\/(?:engine|save|tasks|render|viz|review|selftest|sim|dev)\b/)
+      for (const i of imports) {
+        // Resolved against src/, so `../render` from src/brief/ui/ (the notes' own renderer) is not src/render/.
+        const target = posix.normalize(posix.join('brief', posix.dirname(f), i))
+        // The page entry reads the month through the one module allowed to read the wall clock.
+        if (target === 'save/clock') continue
+        expect(FORBIDDEN.test(`${target}/`), `${f} imports ${i} (src/${target})`).toBe(false)
+      }
     }
   })
 

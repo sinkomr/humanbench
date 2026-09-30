@@ -72,7 +72,7 @@ const recase = (s: string, flips: readonly boolean[]): string => [...s].map((c, 
 describe('language lint scope (ROADMAP M1.20)', () => {
   it('scans web/src, web/public, the HTML pages and the README, but not tests or test data', () => {
     const files = collectFiles()
-    for (const f of ['README.md', 'web/index.html', 'web/rt-selftest.html', 'web/src/selftest/RtSelfTest.svelte', 'web/src/App.svelte', 'web/src/copy.ts', 'web/src/main.ts', 'web/src/app.css', 'web/public/favicon.svg', 'web/src/tasks/reading/passages.render.json', 'web/src/tasks/reading/passages.json']) {
+    for (const f of ['README.md', 'web/index.html', 'web/notes.html', 'web/rt-selftest.html', 'web/src/brief/NotesBuilder.svelte', 'web/src/brief/grammar.ts', 'web/src/brief/surfaces.json', 'web/src/selftest/RtSelfTest.svelte', 'web/src/App.svelte', 'web/src/copy.ts', 'web/src/main.ts', 'web/src/app.css', 'web/public/favicon.svg', 'web/src/tasks/reading/passages.render.json', 'web/src/tasks/reading/passages.json']) {
       expect(files).toContain(f)
     }
     expect(files.some((f) => /\.test\.ts$|__fixtures__/.test(f))).toBe(false)

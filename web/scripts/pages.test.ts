@@ -21,11 +21,19 @@ describe('HTML pages', () => {
     const built = Object.values(PAGES).map((p) => basename(p))
     expect(HTML.sort()).toEqual([...built, ...DEV_ONLY_PAGES].sort())
     expect(built.filter((p) => DEV_ONLY_PAGES.includes(p))).toEqual([])
-    expect(built.sort()).toEqual(['index.html', 'rt-selftest.html'])
+    expect(built.sort()).toEqual(['index.html', 'notes.html', 'rt-selftest.html'])
   })
 
   it('every web/*.html is scanned by the language lint (A13)', () => {
     for (const f of HTML) expect(SCAN_FILES).toContain(`web/${f}`)
+  })
+
+  it('the notes page mounts its own entry, is titled and described, and needs no external file (Phase AI)', () => {
+    const html = readFileSync(`${WEB}notes.html`, 'utf8')
+    expect(html).toContain('<script type="module" src="/src/brief/main.ts"></script>')
+    expect(html).toContain('<html lang="en">')
+    expect(html).toContain('<title>Notes for your AI')
+    expect(html).not.toMatch(/https?:\/\/|<link[^>]+stylesheet/)
   })
 
   it('the self-test page mounts its own entry and asks not to be indexed', () => {

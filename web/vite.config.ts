@@ -8,11 +8,13 @@ const SCHEMA_DIR = fileURLToPath(new URL('../schema/', import.meta.url))
 
 /**
  * HTML entry points. Besides the app, the RT timing self-test (ROADMAP M1.23, DESIGN §11.6) is its
- * own page at <base>rt-selftest.html, linked from nowhere prominent.
+ * own page at <base>rt-selftest.html, linked from nowhere prominent, and the "Notes for your AI"
+ * builder (Phase AI, ROADMAP AI.5) is <base>notes.html (the Home link comes with M1.15).
  */
 export const PAGES: Readonly<Record<string, string>> = {
   index: fileURLToPath(new URL('./index.html', import.meta.url)),
   rt_selftest: fileURLToPath(new URL('./rt-selftest.html', import.meta.url)),
+  notes: fileURLToPath(new URL('./notes.html', import.meta.url)),
 }
 
 /**

@@ -56,8 +56,8 @@ describe('visual renderer bundles (M1.13)', () => {
     const outputs = outputsOf(await build({ configFile: `${WEB}vite.config.ts`, root: WEB, mode: 'production', logLevel: 'silent', build: { write: false } }))
     const names = outputs.map((o) => o.fileName)
     expect(names).toContain('index.html')
-    // Only the build pages (the app and the public RT self-test, M1.23), never the gallery.
-    expect(names.filter((n) => n.endsWith('.html')).sort()).toEqual(['index.html', 'rt-selftest.html'])
+    // Only the build pages (the app, the notes builder of Phase AI and the public RT self-test, M1.23), never the gallery.
+    expect(names.filter((n) => n.endsWith('.html')).sort()).toEqual(['index.html', 'notes.html', 'rt-selftest.html'])
     const text = outputs.map(textOfOutput).join('\n')
     expect(text).toContain('HumanBench')
     for (const m of GALLERY_MARKERS) expect(text, m).not.toContain(m)
