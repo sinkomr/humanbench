@@ -217,7 +217,12 @@ selector serves) or `kind: 'block'` (a fixed block run whole, one family per sub
 `score()` returns the engine observation or the reasons there is none). The families registered
 in `web/src/tasks/registry.ts` are rotation, matrices, series and quant (items), and span_fwd,
 span_bwd, corsi, rt_simple, rt_choice4, coding and reading (blocks); `registry.test.ts` runs every
-registered family through the property suite at n = 500. The private bank repo re-verifies at least 1,000 TS instances of every family with
+registered family through the property suite at n = 500. A QR instance may carry the family flags
+`ladder_probe` (a held-out ladder probe) or `practice_only` (a quiz item that never enters a
+scored session), each `true` or absent and never both (ROADMAP A23, AI.2; `web/src/tasks/family.ts`).
+No family sets them yet. The other item tags (topic, curriculum level, notation, ...) are added
+to bank records only; the public repo never sees a curriculum level, and
+`web/scripts/item-tags.test.ts` keeps it out of every rendered or saved surface. The private bank repo re-verifies at least 1,000 TS instances of every family with
 its Python twin. Dump them into the sibling bank checkout (`../humanbench-bank`, or
 `$HB_BANK_DIR`) with:
 

@@ -79,6 +79,10 @@ describe('validateItemInstance', () => {
 
   const cases: [string, (x: Record<string, unknown>) => void, RegExp][] = [
     ['unknown field', (x) => (x.answer = 1), /unknown field answer/],
+    ['ladder_probe false (omit it instead)', (x) => (x.ladder_probe = false), /ladder_probe must be true, or omitted/],
+    ['practice_only null', (x) => (x.practice_only = null), /practice_only must be true, or omitted/],
+    ['both family flags', (x) => ((x.ladder_probe = true), (x.practice_only = true)), /not both ladder_probe and practice_only/],
+    ['a family flag off QR', (x) => ((x.axis = 'SPA'), (x.practice_only = true)), /practice_only is for QR items, not axis SPA/],
     ['missing field', (x) => delete x.params, /missing field params/],
     ['undefined optional field', (x) => (x.time_limit_s = undefined), /plain JSON/],
     ['NaN', (x) => (x.expected_time_s = Number.NaN), /plain JSON/],
@@ -153,6 +157,28 @@ describe('validateItemInstance', () => {
   })
 })
 
+describe('family flags (A23, AI.2)', () => {
+  it('a QR instance may carry ladder_probe or practice_only, each true', () => {
+    expect(validateItemInstance({ ...sample(), ladder_probe: true }, example)).toEqual([])
+    expect(validateItemInstance({ ...sample(), practice_only: true }, example)).toEqual([])
+    expect(parseItemInstance({ ...sample(), practice_only: true }, example).practice_only).toBe(true)
+  })
+
+  it('survives a JSON round trip and is omitted when unset, never undefined', () => {
+    const item = { ...example.generate('flags'), ladder_probe: true as const }
+    expect(JSON.parse(JSON.stringify(item))).toEqual(item)
+    expect(validateItemInstance(JSON.parse(JSON.stringify(item)), example)).toEqual([])
+    expect('ladder_probe' in example.generate('flags')).toBe(false)
+    expect('practice_only' in example.generate('flags')).toBe(false)
+    expect(validateItemInstance({ ...sample(), ladder_probe: undefined })).toEqual(['an item instance must be plain JSON (finite numbers, no undefined, no class instances)'])
+  })
+
+  it('the flags are optional wire fields, so the golden dumps without them stay valid', () => {
+    expect(Object.keys(sample())).not.toContain('ladder_probe')
+    expect(validateItemInstance(sample(), example)).toEqual([])
+  })
+})
+
 describe('toItemBase', () => {
   it('maps an instance to the engine item metadata with the axis gold tier', () => {
     const item = example.generate('base')
@@ -214,6 +240,20 @@ describe('defineFamily', () => {
     expect('options_count' in item).toBe(false)
     expect(item.time_limit_s).toBe(powerTimeLimit(30))
     expect(validateItemInstance(item, fam)).toEqual([])
+  })
+
+  it('copies the A23 family flags from build() and leaves them out otherwise', () => {
+    expect('ladder_probe' in defineFamily(base).generate('s')).toBe(false)
+    const probe = defineFamily({ ...base, build: () => ({ ...built(), ladder_probe: true as const }) }).generate('s')
+    expect(probe.ladder_probe).toBe(true)
+    expect('practice_only' in probe).toBe(false)
+    expect(validateItemInstance(probe)).toEqual([])
+    const practice = defineFamily({ ...base, build: () => ({ ...built(), practice_only: true as const }) }).generate('s')
+    expect(practice.practice_only).toBe(true)
+    expect(validateItemInstance(practice)).toEqual([])
+    // a family whose axis is not QR builds a flagged item that its own validator rejects
+    const off = defineFamily({ ...base, axis: 'SPA' as const, build: () => ({ ...built(), practice_only: true as const }) })
+    expect(validateItemInstance(off.generate('s'), off).join()).toMatch(/practice_only is for QR items/)
   })
 
   it('keeps params and the time window returned by a block build (A10), with no §13 cap', () => {
