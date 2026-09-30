@@ -30,7 +30,8 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **wf5 was stopped** at 23:10 on 2026-09-29, long after the 06:10 window. **Nothing was committed:** the 6 build agents never finished a task (the machine was likely asleep or at the usage limit). The empty worktrees and branches were removed. Rerun wf5 from scratch when the user OKs it.
+- **In flight: wf5, rerun** (`wf_2b979847-f2d`, started 2026-09-29 23:13). The user allowed 9 h, so it stops at about 08:12 on 2026-09-30. Resume ticks run at :27 from 00:27 to 07:27.
+- **If interrupted:** check `git branch --list 'wf5/*'` and `git worktree list` in both repos. Merge the green task commits into `dev`, then run all gates.
 - **Decisions (user, 2026-09-29):**
   - M1.4b: option 1, 20 items/axis.
   - Phase AI Part 1 is approved.
