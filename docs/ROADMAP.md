@@ -149,19 +149,19 @@ UI
 - [x] **M4.4 bank** — QA rules §4.5 + distractor analysis §4.3 + report thresholds → quarantine. Acceptance: an injected negative-a item is quarantined. *(done; see A19)*
 - [x] **M4.5 bank** — Σ re-estimation from disattenuated posteriors + nearest-PD. Acceptance: Frobenius error < .1 at N = 2,000. *(done under A19: relative Frobenius error 0.085)*
 - [ ] **M4.6 bank** — M4 acceptance simulation: 300 users, r(b̂, b) ≥ .9, drift < 0.1.
-- [ ] **M4.7 bank** — retest model ρ_k(s) estimation, plus re-scoring from raw responses. Acceptance: ρ recovery in simulation. *Amended (Phase AI Part 2, AI.20):* also estimates the between-session drift κ per axis, replacing κ = .01 per month [SPEC].
+- [ ] **M4.7 bank** — retest model ρ_k(s) estimation, plus re-scoring from raw responses. Acceptance: ρ recovery in simulation. *Amended (Phase AI Part 2, only if approved; AI.20):* also estimates the between-session drift κ per axis, replacing κ = .01 per month [SPEC].
 - [ ] **M4.8 bank** — calibrate the non-2PL models: RT β/σ, PS location/scale, GRM thresholds, Fermi δ, CAL standardisation.
-- [ ] **M4.9 bank** — nightly falsifiable-check report (F1, F3, F4, F7, F8, F10, F11) with thresholds and injected-violation tests; Mantel–Haenszel DIF (§13). *Amended (Phase AI Part 2, AI.20):* the nightly report adds F12, F13, F21 and F21-K (from recomputed zones; no notes or preferences are read).
+- [ ] **M4.9 bank** — nightly falsifiable-check report (F1, F3, F4, F7, F8, F10, F11) with thresholds and injected-violation tests; Mantel–Haenszel DIF (§13). *Amended (Phase AI Part 2, only if approved; AI.20):* the nightly report adds F12, F13, F21 and F21-K (from recomputed zones; no notes or preferences are read).
 - [ ] **M4.10 bank** — write versioned item_parameters, publish param_version/bank_version, re-score recent sessions (after M2.1; DB adapter tested locally).
 
 ## M2 — Backend (SQL written + tested locally; deploy needs user)
 - [ ] **M2.0** — choose the local Postgres engine (brew postgresql@17 if the user installs it, else pip `pgserver` or PGlite) with stubbed anon/authenticated roles and a Vault shim.
 - [ ] **M2.1 pub** — migrations: §12 schema + mirror, rate, survey and exposure-log tables; RLS on **every** table; default privileges revoked; EXECUTE revoked except whitelisted RPCs; SECURITY DEFINER functions with `search_path = ''`. RPCs: start_session(device, save), next_item, submit, finish, report_problem, rescore(save), delete_my_data, mirror_put/get. Add `item_families.sibling_group` (text not null, default family_id); the server selector (M2.2) excludes by it per session. *Amended (Phase AI, AI.26):* `brief_prefs` never reaches the server (RPCs reject a payload containing the key; no notes tables). *Amended (Phase AI Part 2; the default is to add it during M2.1 even before Part 2):* `rescore(save)` also returns `eap[axis]` (own-axis, practice-adjusted, eligible sessions only) and facet EAPs, with a parity test against the client zone engine; `item_families` gains the `topic` and `curriculum_level` columns of AI.2.
-- [ ] **M2.2 pub** — PL/pgSQL scoring: EAP grid (equal weights, 61 points) in `sessions.state`, correlated MAP at finish (golden parity 1e-6), selection SQL with the 0.25 exposure cap, pretest slots (≤ 10%, Thompson sampling), calibration_eligible at finish. *Amended (Phase AI Part 2, AI.21b):* facet-weighted item selection in goals sessions only, keeping the 0.25 exposure cap and the per-session sibling exclusion.
+- [ ] **M2.2 pub** — PL/pgSQL scoring: EAP grid (equal weights, 61 points) in `sessions.state`, correlated MAP at finish (golden parity 1e-6), selection SQL with the 0.25 exposure cap, pretest slots (≤ 10%, Thompson sampling), calibration_eligible at finish. *Amended (Phase AI Part 2, only if approved; AI.21b):* facet-weighted item selection in goals sessions only, keeping the 0.25 exposure cap and the per-session sibling exclusion.
 - [ ] **M2.3 pub** — per-session HMAC saves (A16), Vault key + kid rotation, unverified path. *Amended (Phase AI, AI.26):* the per-session HMAC covers session data only, so editing preferences never marks a session unverified (test).
 - [ ] **M2.4 pub** — local tests: anon cannot select any table; anon can EXECUTE only whitelisted RPCs; no payload contains `key` (fuzz 1,000 items); tampered save → unverified; rate limits (5 sessions/day per hashed IP+salt, 200 items, ≥ 2 s/item average). *Amended (Phase AI, AI.26):* a fuzz of 1,000 random saves finds no `brief_prefs` key in any RPC body or mirror blob, and the RPCs reject a crafted payload that contains it.
 - [ ] **M2.5 bank** — `hb load push`, `calibrate.yml` (exits cleanly when `SUPABASE_DB_URL` is unset), `backup.yml` (restore round trip tested locally, keep 8), nightly archive/compaction, DB-size check.
-- [ ] **M2.7 pub** — front-end integration: supabase-js; start/next/submit/finish flow; static fallback; unverified-save UI; Report-a-problem button (5 categories); optional 2-question survey; deletion and mirror UI. *Amended (Phase AI, AI.26):* `toUploadPayload()` strips `brief_prefs` before every network call; the mirror stores the stripped file and the UI says so (DESIGN §17.7 `mirror`); the save dialog carries the anti-coercion text; Report-a-problem gains a category "someone asked me for my notes" (6 in all); the privacy notice says notes preferences stay on the device.
+- [ ] **M2.7 pub** — front-end integration: supabase-js; start/next/submit/finish flow; static fallback; unverified-save UI; Report-a-problem button (5 categories); optional 2-question survey; deletion and mirror UI. *Amended (Phase AI, AI.26):* `toUploadPayload()` strips `brief_prefs` before every network call; the mirror stores the stripped file and the UI says so (DESIGN §17.7 `mirror`); the save dialog carries the anti-coercion text; Report-a-problem gains a category "someone asked me for my notes" (6 in all; it is not an item category and never counts toward quarantine, DESIGN §4.5); the privacy notice says notes preferences stay on the device.
 - [!] **M2.6 user** — Supabase project, secrets, Vault HMAC key, age keypair, CAPTCHA keys, region; then the p95 < 300 ms latency check against the live project.
 
 ## M3 — Knowledge & verbal banks (bank)
@@ -172,7 +172,7 @@ UI
 - [ ] **M3.7** — `hb gen`, `hb verify`, `hb push` CLIs (§14.5); `fact_volatility` field (fast facts only in Fermi). **Blocked by AI.2** (Phase AI, A23): `hb gen` emits the item tags; if it landed first, AI.2 adds a retag pass for its outputs.
 - [ ] **M3.8** — anchor pipeline: NAEP released items (per-item rights check) → p → b priors; 10–20 anchors per axis.
 - [ ] **M3.9** — testlet random effect γ ~ N(0, .3²) in both scorers (§7.1) before testlet items go live.
-- [ ] **M3.5** — authoring batches, per axis at S = 3: ≈ 162 items for each of the 7 finite v1 axes (LR, RC, VOC, KST, KHU, KAP, + LG pool), plus Fermi. Each batch passes G1–G6 and gets an audit-bound record (G7 needs the user). **Blocked by AI.2** (Phase AI, A23): each batch template emits the item tags (`topic`, `curriculum_level`, private `jargon_terms[]`, and for LR/RC the `question_type` and `inference_steps`).
+- [ ] **M3.5** — authoring batches, per axis at S = 3: ≈ 162 items for each of the 7 finite v1 axes (LR, RC, VOC, KST, KHU, KAP, + LG pool), plus Fermi. Each batch passes G1–G6 and gets an audit-bound record (G7 needs the user). **Blocked by AI.2** (Phase AI, A23): each batch template emits the item tags of A23 (proposal §5.1) that apply to its axis: `topic`, `curriculum_level`, `notation[]` (LR/LG), private `jargon_terms[]`, and for LR/RC the `question_type` and `inference_steps`.
 
 ## M5 — Tier (b) Fermi + calibration UI
 - [ ] **M5.1** — Fermi items (≥ 2 sources, uncertainty in dex, down-weighting above 0.15 dex, reject above 0.3), the magnitude + unit entry UI, 80% intervals, server-side Brier.
@@ -197,14 +197,14 @@ A person builds short, plain notes on their own device and pastes them into thei
 ### Part 1 (approved 2026-09-29)
 
 **Stage AI-0: Foundations (before the bank lane runs M3.5, M3.6 or M3.7)**
-- [x] **AI.1 pub** — **[S]** Plan docs. *(done 2026-09-29 on `wf5/aidocs`)*
+- [x] **AI.1 pub** — **[S]** Plan docs. *(done 2026-09-29)*
   - DESIGN: the D13 row, new §17 (proposal §10, R-17.1–R-17.14, plus the copy drafts in §17.7), §16 rows F12–F21 and F21-K.
   - ROADMAP: ADRs A20–A23 and the draft A24; Part 1 and Part 2 as separate backlogs; the amendments to existing tasks; the Phase AI open questions.
-  - PROGRESS.md is not touched by this commit. Its "Needs you" items (proposal §11) and the "Next batch" ordering (AI.3 then AI.2 ahead of M3.5, M3.6 and M3.7) are updated with the session log.
+  - PROGRESS.md is not edited by this commit. The session that merges it updates the "Needs you" items (proposal §11) and the "Next batch" ordering (AI.3 then AI.2 ahead of M3.5, M3.6 and M3.7) in PROGRESS.md.
   - Deps: the user's OK on Part 1 (given 2026-09-29).
   - Acceptance:
     - the A13 lint passes on every new string (DESIGN §17 and its copy drafts, the F12–F21-K rows, the D13 row, this section, A20–A24);
-    - every R-17.x is cited by at least one task's acceptance below (R-17.1–R-17.14);
+    - every R-17.x is cited in the acceptance of at least one Part 1 task below (R-17.1–R-17.14), checked on the acceptance text and not on task headings;
     - cross-references resolve (AI.2 blocks M3.5/M3.6/M3.7; AI.26 amends M2.1/M2.3/M2.4/M2.7); this is checked by `web/scripts/docs-phase-ai.test.ts`.
 - [ ] **AI.3 both** — **[S]** Topic taxonomy and quant groups (A23).
   - `schema/topics-v1.json`, with topics as children of facets and `other/` self-settable topics.
@@ -234,7 +234,7 @@ A person builds short, plain notes on their own device and pastes them into thei
   - Deps: M1.20 ✔, AI.3 (pub half).
   - Acceptance:
     - the generator invariants of proposal §7.2 except the zone properties, including the closed grammar, ASCII, no URLs and digits only in YYYY-MM (R-17.2, R-17.3) and the self-expiring header with the locked clauses first (R-17.6);
-    - `parse(render(p)) = p` for every form on 10k random notes, and every released `hb-brief/N` parses (R-17.11);
+    - round trip: `parse(render(p)) = p` for every form on 10k random notes, and every released `hb-brief/N` parses (R-17.11);
     - JSON mirrors text;
     - `surfaces.json` carries dated install and removal steps, and a staleness warning fires when `checked` is more than 120 days old (R-17.10);
     - bundle test (`web/src/brief/` is not in light barrels).
@@ -253,7 +253,8 @@ A person builds short, plain notes on their own device and pastes them into thei
     - a storage snapshot shows interests and custom text never reach storage, and **the under-18 path writes nothing from the builder** (Playwright) (R-17.12);
     - fixed clauses and CC cannot be unticked; tiers and pre-ticking follow R-17.7 (self-set lines pre-ticked and badged experimental until the smoke gate passes; the floor rule renders a self-set "New to me" on the two lowest quant groups as ask-first with the floor-rule note); a custom line is checked for URLs, digits and trait wording, flagged, and never saved (R-17.2);
     - the drawer shows basis, how sure, what research does and does not support, and what was checked (R-17.8);
-    - provider warning, anti-coercion, placement and claim copy appear above the copy button, dated (R-17.10), and no other string implies benefit (A22);
+    - provider warning, anti-coercion notice, placement advice and "What to look for" appear above the copy button, and the dated statements carry their `checked` month (R-17.10); the claim string is shown in the builder, and no other string implies benefit (A22);
+    - the builder reads no results and renders no results-derived line: the grammar has no such line type before Part 2 (test) (R-17.5);
     - install blocks contain no `#` and use the refuse-to-overwrite form (test);
     - every string in DESIGN §17.7 assigned to AI.5 matches the table word for word (test);
     - A13 and brief lint pass.
@@ -269,7 +270,7 @@ A person builds short, plain notes on their own device and pastes them into thei
   - Deps: AI.4, M1.R and M1.18 (slots).
   - Acceptance:
     - 0 A13 hits, and the strings match DESIGN §17.7 (`reveal-card`, `results-talk`, `results-preamble`, 340 characters) word for word;
-    - on the reveal and share-card screens, the preamble copy button and the "never paste your save file" line are visible (e2e);
+    - on the reveal and share-card screens, the preamble copy button and the "never paste your save file" line are visible (e2e) (R-17.13);
     - the card appears only after the save download;
     - the share-card renderer never contains notes strings (M1.18 test);
     - E22 is in the smoke gate.
@@ -290,10 +291,11 @@ A person builds short, plain notes on their own device and pastes them into thei
   - It drives the **real M1.4b CAT** (A15 budget, randomesque selection, coverage floor, sibling exclusion), through `npm run sim:cat` output or a Python port with parity.
   - It runs the M1 and post-M4 misspecification sweeps for 1 and 3 sessions.
   - Committed to bank `studies/zone_rule/` with fixed seeds.
-  - Deps: M1.4b (decided 2026-09-29: option 1), **M1.15** (the QR coverage-floor fix), AI.3.
+  - Deps: the M1.4b decision (decided 2026-09-29: option 1), **M1.15** (the QR coverage-floor fix), AI.3.
   - Acceptance:
     - tables are regenerated from M1.4b and published;
-    - the smallest passing σ_rel per sweep is reported, or "none";
+    - the sweeps count `calibration_eligible` sessions only, and ineligible ones count as practice exposures (R-17.5);
+    - the smallest passing σ_rel per sweep is reported, or "none"; whatever it says, M1 ships no results-derived line on uncalibrated priors (R-17.5);
     - the proposal §4.4 headline is restated from the output;
     - reruns are byte-identical.
 - [ ] **AI.12s bank** — **[S]** The E1 accuracy set.
@@ -312,6 +314,7 @@ A person builds short, plain notes on their own device and pastes them into thei
   - Deps: AI.12a-run, AI.13.
   - Acceptance:
     - every E-metric is reported with a CI;
+    - statuses cover the positive-control, multi-turn and headless arms, and the surface arm is recorded by AI.12c; no line type is marked shipped without a pass (A22, R-17.9);
     - a family whose positive controls are missed is marked invalid;
     - the pub test shows statuses gate rendering;
     - pub's copy has no numeric metric fields.
@@ -326,6 +329,7 @@ A person builds short, plain notes on their own device and pastes them into thei
     - an M2.4-style fuzz (1,000 random saves) finds no `brief_prefs` key in any RPC body or mirror blob;
     - editing preferences never makes a session unverified (e2e);
     - the RPCs reject a crafted payload containing the key;
+    - the "someone asked me for my notes" report carries no item and never counts toward item quarantine (DESIGN §4.5);
     - a schema grep finds no notes table.
 
 ### Part 2 (needs separate approval)
@@ -460,7 +464,7 @@ Applied inline to each task above, marked "Amended (Phase AI …)".
 ### Phase AI open questions
 Numbered as in proposal §11. The defaults apply until the user decides otherwise; the user's answers go in PROGRESS "Needs you".
 1. Approve Part 1 and the names: **approved 2026-09-29.**
-2. Results-derived lines in M1: none. AI.8s found no σ_rel that passes on M1 priors.
+2. Results-derived lines in M1: none. The proposal's preliminary sweep (proposal §4.4) found no σ_rel that passes; AI.8s re-checks this on the real CAT.
 3. Where preferences live (Q3): an optional `brief_prefs` field in save 1.0 if Part 1 lands before M1 goes public; otherwise localStorage `hb.brief.v1` until the next save minor bump.
 4. Pre-ticking: fixed clauses locked; T0 and self-set lines pre-ticked (self-set ones badged "experimental" until the smoke gate passes); results-derived lines never pre-ticked.
 5. The M1.4b criterion: **decided 2026-09-29, option 1** (r ≥ .85 at 20 items/axis). AI.8s runs on the real CAT.

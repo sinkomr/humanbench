@@ -5,8 +5,10 @@
  * Part 1 task, every task and milestone reference resolves, the amendments to existing tasks are
  * in place (AI.2 blocks M3.5/M3.6/M3.7; AI.26 amends M2.1/M2.3/M2.4/M2.7), the dependency graph
  * has no cycle, and every new string passes the A13 language lint (`language-lint.ts`). When the
- * sibling bank repo is present, the transcription from the proposal is checked word for word
- * (the A17 pattern: skip when the sibling is absent).
+ * sibling bank repo is present, the transcription from the proposal is checked (the A17 pattern:
+ * skip when the sibling is absent): the requirements and the copy drafts word for word; the tasks
+ * (proposal §8) and the ADRs (proposal §9) bullet by bullet, on every number and on the content
+ * words, so a changed threshold or a dropped acceptance item fails.
  */
 
 import { existsSync, readFileSync } from 'node:fs'
@@ -56,6 +58,14 @@ for (const l of lines(section17)) {
   const m = /^\| ([a-z0-9-]+) \| (.+) \| (AI\.[0-9a-z]+) \|$/.exec(l)
   if (m?.[1] !== undefined && m[2] !== undefined && m[3] !== undefined) copy.set(m[1], { text: m[2], task: m[3] })
 }
+/** The slots in braces (§17.7), with the example values the proposal uses. The code fills them at render time. */
+const SLOT_FIXTURES: Record<string, Record<string, string>> = {
+  withdrawal: { month: '2026-11' },
+  'part2-downward': { topic: 'probability and counting' },
+  'part2-drawer-observed': { topic: 'chemistry' },
+  'part2-taste-test': { k: '3', n: '4' },
+}
+const fillSlots = (key: string, text: string): string => text.replace(/\{(\w+)\}/g, (all, name: string) => SLOT_FIXTURES[key]?.[name] ?? all)
 
 // --- ROADMAP --------------------------------------------------------------------------------
 
@@ -74,6 +84,8 @@ interface Task {
   readonly size: string
   readonly mark: string
   readonly block: string
+  /** The text from the task's Acceptance bullet to its end ('' when it has none). */
+  readonly acceptance: string
   readonly deps: readonly string[]
 }
 
@@ -88,7 +100,8 @@ function tasksIn(text: string): Task[] {
     for (let j = i + 1; j < ls.length && /^ {2}/.test(ls[j] ?? ''); j++) body.push(ls[j] ?? '')
     const block = body.join('\n')
     const depText = /Deps?:([^\n]*)/.exec(block)?.[1] ?? ''
-    out.push({ id: m[2], repo: m[3].trim(), size: m[4], mark: m[1], block, deps: unique(depText.match(/AI\.\d+[a-z]?(?:-(?:run|gate))?/g) ?? []) })
+    const at = block.search(/\n {2}- Acceptance/)
+    out.push({ id: m[2], repo: m[3].trim(), size: m[4], mark: m[1], block, acceptance: at < 0 ? '' : block.slice(at), deps: unique(depText.match(/AI\.\d+[a-z]?(?:-(?:run|gate))?/g) ?? []) })
   }
   return out
 }
@@ -190,8 +203,12 @@ describe('DESIGN §17 (Notes for your AI)', () => {
   })
 
   it('every F-check and A-decision that §17 and the new rows cite exists', () => {
-    const cited = unique(`${section17}\n${F_NEW.map(s16Row).join('\n')}`.match(/\bF\d+(?:-K)?\b/g) ?? [])
+    // "F1–F4" in §17.6 are the grammar's line ids (R-17.6 says so), not the §16 checks F1 and F4.
+    const text = `${section17}\n${F_NEW.map(s16Row).join('\n')}`.replace(/\bF1–F4\b/g, ' ')
+    const cited = unique(text.match(/\bF\d+(?:-K)?\b/g) ?? [])
     for (const f of cited) expect(s16Ids, f).toContain(f)
+    // What remains are the new checks only, so a stray F1 or F4 would mean the two namespaces got mixed.
+    for (const f of cited) expect(F_NEW as readonly string[], f).toContain(f)
     for (const a of unique(section17.match(/\bA2\d\b/g) ?? [])) expect(adrBlock, a).toContain(`- **${a}`)
   })
 })
@@ -206,6 +223,16 @@ describe('DESIGN §17.7 copy drafts', () => {
       expect(text.length, key).toBeGreaterThan(20)
       expect(allTasks.map((t) => t.id), key).toContain(task)
     }
+  })
+
+  it('slots in braces are the documented ones, each with a fixture, and no other row has a brace', () => {
+    for (const [key, { text }] of copy) {
+      const slots = text.match(/\{[^}]*\}/g) ?? []
+      for (const slot of slots) expect(Object.keys(SLOT_FIXTURES[key] ?? {}), `${key} ${slot}`).toContain(slot.slice(1, -1))
+      expect(fillSlots(key, text), key).not.toMatch(/[{}]/)
+    }
+    expect([...copy].filter(([, { text }]) => /\{/.test(text)).map(([key]) => key)).toEqual(Object.keys(SLOT_FIXTURES))
+    expect(section17).toMatch(/the test compares the template with the slot filled from a fixture, so an example value is never hardcoded/)
   })
 
   it('every draft passes the A13 language lint', () => {
@@ -298,9 +325,8 @@ describe('ROADMAP Phase AI backlog', () => {
     expect(unique(allTasks.map((t) => t.id))).toHaveLength(34)
   })
 
-  it('AI.1 is done and no other Phase AI task is; Part 2 stays unticked while it needs approval', () => {
+  it('AI.1 is done; Part 2 stays unticked while it needs approval (later Part 1 tasks may be ticked)', () => {
     expect(part1.find((t) => t.id === 'AI.1')?.mark).toBe('x')
-    expect(part1.filter((t) => t.id !== 'AI.1' && t.mark === 'x')).toEqual([])
     if (/### Part 2 \(needs separate approval\)/.test(phase)) expect(part2.filter((t) => t.mark !== ' ')).toEqual([])
   })
 
@@ -308,9 +334,11 @@ describe('ROADMAP Phase AI backlog', () => {
     for (const t of allTasks) expect(t.repo, t.id).toMatch(/^(pub|bank|both|user|user \+ Claude)$/)
   })
 
-  it('every R-17.1–R-17.14 is cited by at least one Part 1 task other than AI.1', () => {
-    const cited = new Set(part1.filter((t) => t.id !== 'AI.1').flatMap((t) => t.block.match(/R-17\.\d+/g) ?? []))
+  it('every R-17.1–R-17.14 is cited in the acceptance of a Part 1 task other than AI.1 (AI.1 acceptance)', () => {
+    // The acceptance text only: a mention in a task heading does not count.
+    const cited = new Set(part1.filter((t) => t.id !== 'AI.1').flatMap((t) => t.acceptance.match(/R-17\.\d+/g) ?? []))
     for (const id of R_IDS) expect(cited.has(`R-${id}`), `R-${id}`).toBe(true)
+    expect(part1.find((t) => t.id === 'AI.1')?.acceptance).toMatch(/acceptance of at least one Part 1 task/)
   })
 
   it('every R-17.x and F-check the ROADMAP cites exists in DESIGN', () => {
@@ -336,7 +364,22 @@ describe('ROADMAP Phase AI backlog', () => {
       expect(ai26?.block, m).toContain(m)
       expect(milestoneLine(m), m).toMatch(/\*Amended \(Phase AI, AI\.26\):\*/)
     }
-    expect(milestoneLine('M2.7')).toMatch(/"someone asked me for my notes" \(6 in all\)/)
+    expect(milestoneLine('M2.7')).toMatch(/"someone asked me for my notes" \(6 in all; it is not an item category and never counts toward quarantine, DESIGN §4\.5\)/)
+    expect(ai26?.acceptance).toMatch(/"someone asked me for my notes" report carries no item and never counts toward item quarantine \(DESIGN §4\.5\)/)
+    // DESIGN §4.5 lists only item categories toward quarantine and says the notes category never counts.
+    expect(design.match(/^\| User reports \|.*$/m)?.[0]).toMatch(/item categories: wrong key.*"someone asked me for my notes".*never counts here/)
+  })
+
+  it('a Part 2 amendment to an existing task is guarded by "only if approved", except the M2.1 default', () => {
+    const marked = lines(roadmap).filter((l) => /\*Amended \(Phase AI Part 2/.test(l))
+    expect(marked).toHaveLength(5)
+    for (const l of marked) {
+      const id = /^- \[[ x~!]\] \*\*(M\d\.[0-9A-Za-z]+)[ *]/.exec(l)?.[1]
+      const marker = /\*Amended \(Phase AI Part 2[^)]*\)/.exec(l)?.[0] ?? ''
+      if (id === 'M2.1') expect(marker).toMatch(/the default is to add it during M2\.1 even before Part 2/)
+      else expect(marker, id).toMatch(/only if approved/)
+    }
+    expect(marked.map((l) => /\*\*(M\d\.[0-9A-Za-z]+)[ *]/.exec(l)?.[1]).sort()).toEqual(['M1.15', 'M2.1', 'M2.2', 'M4.7', 'M4.9'])
   })
 
   it('the other amendments to existing tasks are in place', () => {
@@ -345,10 +388,10 @@ describe('ROADMAP Phase AI backlog', () => {
     expect(milestoneLine('M1.21')).toMatch(/\*Amended \(Phase AI, AI\.5\):\*.*route list/)
     expect(milestoneLine('M1.22')).toMatch(/\*Amended \(Phase AI, AI\.7\):\*.*`brief_prefs`/)
     expect(milestoneLine('M2.1')).toMatch(/\*Amended \(Phase AI Part 2;.*`rescore\(save\)` also returns `eap\[axis\]`/)
-    expect(milestoneLine('M2.2')).toMatch(/\*Amended \(Phase AI Part 2, AI\.21b\):\*.*0\.25 exposure cap/)
+    expect(milestoneLine('M2.2')).toMatch(/\*Amended \(Phase AI Part 2, only if approved; AI\.21b\):\*.*0\.25 exposure cap/)
     expect(milestoneLine('M1.15')).toMatch(/\*Amended \(Phase AI Part 2, only if approved\):\*.*honour-code sentence/)
-    expect(milestoneLine('M4.7')).toMatch(/\*Amended \(Phase AI Part 2, AI\.20\):\*.*κ/)
-    expect(milestoneLine('M4.9')).toMatch(/\*Amended \(Phase AI Part 2, AI\.20\):\*.*F12, F13, F21 and F21-K/)
+    expect(milestoneLine('M4.7')).toMatch(/\*Amended \(Phase AI Part 2, only if approved; AI\.20\):\*.*κ/)
+    expect(milestoneLine('M4.9')).toMatch(/\*Amended \(Phase AI Part 2, only if approved; AI\.20\):\*.*F12, F13, F21 and F21-K/)
   })
 
   it('every amendment marker in the ROADMAP names a task that exists, and the summary lists the same tasks', () => {
@@ -436,6 +479,67 @@ describe('A13 language lint on the new Phase AI text', () => {
   })
 })
 
+/** Ids whose digits are not values: AI.5, A21, F12–F15, R-17.5, E1, §7.2, hb-brief/1, item-v1, z1, g1. */
+const ID_TOKEN = /\b(?:AI|M|A|F|E|Q|R|D|G|C|S|T|P|W|PC)[-.]?\d[\w.\-–]*|§\d+(?:\.\d+)*|\bwf\d+\b|hb-brief\/\d|item-v\d|\bz\d\b|\bg\d\b/g
+/** The numbers of a text as a multiset (number → count), ids removed. */
+function numbersOf(text: string): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const n of text.replace(ID_TOKEN, ' ').match(/\d*\.\d+|\d+/g) ?? []) out.set(n, (out.get(n) ?? 0) + 1)
+  return out
+}
+const missingNumbers = (need: Map<string, number>, have: Map<string, number>): string[] => [...need].filter(([n, c]) => (have.get(n) ?? 0) < c).map(([n]) => n)
+/** The words of five letters or more, lower case. */
+const contentWords = (text: string): Set<string> => new Set(text.toLowerCase().match(/[a-z]{5,}/g) ?? [])
+/** The text of every list item (or task line) of a block, without the marker. */
+const bulletsOf = (block: string): string[] => lines(block).flatMap((l) => (/^ *- /.test(l) ? [l.replace(/^ *- (?:\[[ x~!]\] )?/, '')] : []))
+
+/** What is in the proposal block that the ROADMAP block does not carry: see the comment above the tests that use it. */
+function bulletProblems(theirs: string, ours: string): string[] {
+  const problems: string[] = []
+  const ourBullets = bulletsOf(ours)
+  const ourAll = numbersOf(ours)
+  for (const b of bulletsOf(theirs)) {
+    const words = contentWords(b)
+    const nums = numbersOf(b)
+    if (words.size < 2) {
+      // Too little text to pair by words (for example "0 A13 hits"): the numbers must be somewhere in the block.
+      const miss = missingNumbers(nums, ourAll)
+      if (miss.length > 0) problems.push(`"${b.slice(0, 60)}": numbers ${miss.join(' ')}`)
+      continue
+    }
+    let best = ''
+    let bestHits = -1
+    for (const o of ourBullets) {
+      const w = contentWords(o)
+      const hits = [...words].filter((x) => w.has(x)).length
+      if (hits > bestHits) {
+        best = o
+        bestHits = hits
+      }
+    }
+    const bestWords = contentWords(best)
+    const lost = [...words].filter((x) => !bestWords.has(x))
+    const miss = missingNumbers(nums, numbersOf(best))
+    if (lost.length / words.size > 0.2 || miss.length > 0) problems.push(`"${b.slice(0, 60)}": words ${lost.join(' ')}; numbers ${miss.join(' ')}`)
+  }
+  return problems
+}
+
+/** The ADR blocks of a text (`- **A20 …` and its indented lines), id → block. */
+function adrsIn(text: string): Map<string, string> {
+  const out = new Map<string, string[]>()
+  let cur: string[] | undefined
+  for (const l of lines(text)) {
+    const m = /^- \*\*(A2[0-4]) /.exec(l)
+    if (m?.[1] !== undefined) {
+      cur = [l]
+      out.set(m[1], cur)
+    } else if (cur !== undefined && (/^ {2,}\S/.test(l) || l.trim() === '')) cur.push(l)
+    else if (!/^ /.test(l)) cur = undefined
+  }
+  return new Map([...out].map(([id, ls]) => [id, ls.join('\n')] as const))
+}
+
 /** The proposal annex, when the sibling bank repo is present (the A17 pattern). */
 describe.skipIf(!hasProposal)('transcription from the proposal annex (bank docs/proposals/ai-notes-v2.md)', () => {
   const proposal = hasProposal ? readFileSync(PROPOSAL, 'utf8') : ''
@@ -459,31 +563,15 @@ describe.skipIf(!hasProposal)('transcription from the proposal annex (bank docs/
     }
   })
 
-  it('the copy drafts of proposal §6 appear word for word in §17.7', () => {
-    const labels: Record<string, string> = {
-      trust: 'Trust line',
-      provider: 'Provider warning',
-      'anti-coercion': 'Anti-coercion',
-      placement: 'Placement',
-      claim: 'Claim',
-      'results-talk': 'Results talk',
-      'part2-banner': 'Part 2 banner',
-      'part2-downward': 'Downward move',
-      withdrawal: 'Withdrawal',
-      'floor-rule': 'Floor rule',
-      science: 'Science',
-      remove: 'Remove',
-      mirror: 'Mirror',
-      'fit-log': 'Fit log',
-      interests: 'Interests',
-      'part2-integrity': 'Integrity (generic)',
-    }
-    for (const [key, label] of Object.entries(labels)) {
-      const escaped = label.replace(/[()]/g, '\\$&')
-      const theirs = new RegExp(`^- \\*\\*${escaped}:\\*\\* "(.+?)"`, 'm').exec(proposal)?.[1]
-      expect(theirs, label).toBeDefined()
-      const ours = (copy.get(key)?.text ?? '').replace(/ \(Part 2\)$/, '')
-      expect(ours, key).toBe(theirs)
+  it('every one of the copy drafts of §17.7 is in the proposal word for word, in its quotes (slots filled from the fixtures)', () => {
+    const flat = (t: string): string => t.replace(/\s+/g, ' ')
+    const flatProposal = flat(proposal)
+    expect(copy.size).toBe(29)
+    for (const [key, { text }] of copy) {
+      if (key === 'results-preamble') continue // a code block in the proposal, checked below
+      const ours = fillSlots(key, text).replace(/ \(Part 2\)$/, '')
+      // A boolean, so a failure names the draft and does not print the whole proposal.
+      expect(flatProposal.includes(`"${flat(ours)}"`), `${key}: ${ours}`).toBe(true)
     }
     const pre = /The preamble \(340 characters[^\n]*\n\s*```\n([^\n]+)\n\s*```/.exec(proposal)?.[1]
     expect(pre).toBeDefined()
@@ -510,5 +598,44 @@ describe.skipIf(!hasProposal)('transcription from the proposal annex (bank docs/
     }
     const theirs = unique(proposal.slice(proposal.indexOf('## 8. Task breakdown')).match(/^- \[ \] \*\*(AI\.[0-9a-z-]+) /gm)?.map((l) => /\*\*(AI\.[0-9a-z-]+) /.exec(l)?.[1] ?? '') ?? [])
     expect(theirs.sort()).toEqual([...PART1_IDS, ...PART2_IDS].sort())
+  })
+
+  // Tasks and ADRs are not copied verbatim (the ROADMAP adds R-17.x citations, "proposal §x" prefixes and
+  // "the user's" for "your"), so each bullet of the proposal must find its counterpart in the ROADMAP task or
+  // ADR: every number of the bullet must occur there the same number of times, and at least 80% of its words
+  // of five letters or more. A changed threshold or a dropped acceptance item fails.
+  it('every bullet of every task in proposal §8 has its numbers and words in the ROADMAP task (AI.1 is rewritten on purpose)', () => {
+    const theirs = tasksIn(proposal.slice(proposal.indexOf('## 8. Task breakdown'), proposal.indexOf('## 9. ADR text')))
+    expect(theirs.map((t) => t.id).sort()).toEqual([...PART1_IDS, ...PART2_IDS].sort())
+    const problems: string[] = []
+    for (const t of theirs) {
+      if (t.id === 'AI.1') continue
+      const ours = allTasks.find((o) => o.id === t.id)
+      if (ours === undefined) problems.push(`${t.id}: missing`)
+      else problems.push(...bulletProblems(t.block, ours.block).map((p) => `${t.id}: ${p}`))
+    }
+    expect(problems).toEqual([])
+  })
+
+  it('every bullet of the ADRs A20–A24 in proposal §9 has its numbers and words in the ROADMAP ADR', () => {
+    const theirs = adrsIn(proposal.slice(proposal.indexOf('## 9. ADR text'), proposal.indexOf('## 10. DESIGN')))
+    const ours = adrsIn(adrBlock)
+    expect([...theirs.keys()]).toEqual(['A20', 'A21', 'A22', 'A23', 'A24'])
+    expect([...ours.keys()]).toEqual(['A20', 'A21', 'A22', 'A23', 'A24'])
+    const problems: string[] = []
+    for (const [id, block] of theirs) {
+      // The heading differs on purpose ("proposed 2026-09-28" becomes "Part 1 approved 2026-09-29").
+      problems.push(...bulletProblems(block.split('\n').slice(1).join('\n'), (ours.get(id) ?? '').split('\n').slice(1).join('\n')).map((p) => `${id}: ${p}`))
+    }
+    expect(problems).toEqual([])
+  })
+
+  it('the bullet comparison catches a changed threshold, a dropped item and a dropped bullet', () => {
+    const base = '- [ ] **AI.9 both** — **[S]** Signed calibration.\n  - Acceptance:\n    - no suggestion when n < 160, the 96% CI includes 0;\n    - Playwright copy and download on chromium, WebKit and iPhone 13;'
+    expect(bulletProblems(base, base)).toEqual([])
+    expect(bulletProblems(base, base.replace('n < 160', 'n < 120'))).toHaveLength(1)
+    expect(bulletProblems(base, base.replace('on chromium, WebKit and iPhone 13', 'on chromium'))).toHaveLength(1)
+    expect(bulletProblems(base, base.replace(/\n {4}- Playwright[^\n]*/, ''))).toHaveLength(1)
+    expect(bulletProblems(base, base.replace('Signed', 'Signed and more'))).toEqual([])
   })
 })

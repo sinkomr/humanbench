@@ -322,7 +322,7 @@ Sanity check: for n = 100, 1 − 0.05^{0.01} = 1 − e^{−0.02996} = 0.0295 ✓
 |---|---|---|
 | Negative discrimination | Estimated a < 0 with n ≥ 150, or point-biserial < 0 with 95% CI excluding 0 | Auto-quarantine: probable key error |
 | Item misfit | Standardised S-X² p < .001 after n ≥ 300, or infit/outfit MSQ outside [0.7, 1.4] | Flag for review |
-| User reports | "Report a problem" button (categories: wrong key / ambiguous / typo / offensive / broken) | ≥3 reports, or ≥1% of exposures with ≥2 reports, triggers auto-quarantine |
+| User reports | "Report a problem" button (item categories: wrong key / ambiguous / typo / offensive / broken; the separate non-item category "someone asked me for my notes" (R-17.10, AI.26) carries no item and never counts here) | ≥3 reports, or ≥1% of exposures with ≥2 reports, triggers auto-quarantine |
 | Solve rate far off prior | \|b̂ − b_prior\| > 1.5 after n ≥ 100 | Re-review; inform the difficulty model (§6) |
 | Distractor anomaly | §4.3 | Quarantine or regenerate |
 
@@ -1274,7 +1274,7 @@ F12–F21-K belong to Phase AI (§17) and decide mechanically:
 - F12–F15 decide which inputs may drive them;
 - F18 and F19 decide what the copy may claim.
 
-Thresholds change only through a new versioned rule (`z2` for zones) with a re-run, never by eye. F12, F13, F21 and F21-K are computed by the M4.9 nightly report from recomputed zones, and never read notes or preferences. F14 comes from AI.19 and F15 from AI.25. F16 and F17 come from the bank behaviour gate, and F18 to F20 from the pre-registered trials and the think-aloud (ROADMAP Phase AI). The metrics E1–E22 are defined in the Phase AI proposal (§17.6).
+Thresholds change only through a new versioned rule (`z2` for zones) with a re-run, never by eye. F12, F13, F21 and F21-K are computed by the M4.9 nightly report from recomputed zones, and never read notes or preferences. F14 comes from AI.19 and F15 from AI.25. F16 and F17 come from the bank behaviour gate, and F18 to F20 from the pre-registered trials and the think-aloud (ROADMAP Phase AI). The metrics E1–E22 are defined in the Phase AI proposal (proposal §7.3; see §17.6).
 
 **Open questions and flagged gaps (these affect the design):**
 1. ICAR's terms say academic use only (icar-project.com); permission for a hobby site is unconfirmed, so the default is to use published statistics only.
@@ -1290,7 +1290,7 @@ Thresholds change only through a new versioned rule (`z2` for zones) with a re-r
 
 ## 17. Notes for your AI
 
-Phase AI (ROADMAP "Phase AI", ADRs A20–A24, decision D13). The detailed design, the notes wording (proposal §4.2), the worked examples (§4.9), the zone tables (§4.4), the item tags (§5.1) and the gate metrics E1–E22 (§7.3) are in the annex, the bank file `docs/proposals/ai-notes-v2.md`, cited as "proposal §x". This section holds the requirements.
+Phase AI (ROADMAP "Phase AI", ADRs A20–A24, decision D13). The detailed design, the notes wording (proposal §4.2), the worked examples (proposal §4.9), the zone tables (proposal §4.4), the item tags (proposal §5.1) and the gate metrics E1–E22 (proposal §7.3) are in the annex, the bank file `docs/proposals/ai-notes-v2.md`, cited as "proposal §x". This section holds the requirements.
 
 **17.1 Purpose.** An optional, user-controlled way to make short instructions that a person pastes into their own AI assistant, so it explains things the way they want (D13). In v1 the notes come from the person's own settings. Test results may add suggestions only after checks on real data. It makes no human-vs-AI comparison (D1).
 
@@ -1320,7 +1320,7 @@ Phase AI (ROADMAP "Phase AI", ADRs A20–A24, decision D13). The detailed design
 
 **17.6 Evaluation.** Generator properties in CI; an offline behaviour gate with positive controls and multi-turn, headless and memory arms; real-surface smoke tests; claim validity (F12, F13); language validity (F14, F15); real-user trials (F18, F19); misreading and saturation monitoring (F20, F21). See §16. The metric definitions E1–E22, the positive controls PC1 and PC2, and the rules that decide whether a line type is shipped, experimental or blocked for a destination are in proposal §7.3. The bank harness (AI.12a-run) implements them and its README restates them once it lands.
 
-**17.7 Copy drafts.** User-facing strings for the builder, the reveal and the share-card screen. Each passes the A13 lint. The task named in the last column copies its strings word for word into `web/src/brief/` and pins them to this table in a test, the way `src/copy.ts` is pinned to §13. Change the table and the code together. Rows marked "Part 2" ship only with Part 2.
+**17.7 Copy drafts.** User-facing strings for the builder, the reveal and the share-card screen. Each passes the A13 lint. The task named in the last column copies its strings word for word into `web/src/brief/` and pins them to this table in a test, the way `src/copy.ts` is pinned to §13. Where a row has a slot in braces (`{month}`, `{topic}`, `{k}`, `{n}`), the code fills it at render time and the test compares the template with the slot filled from a fixture, so an example value is never hardcoded. Change the table and the code together. Rows marked "Part 2" ship only with Part 2.
 
 | Key | Text | Task |
 |---|---|---|
@@ -1342,17 +1342,17 @@ Phase AI (ROADMAP "Phase AI", ADRs A20–A24, decision D13). The detailed design
 | look-for-check | On answers that matter it says how sure it is and how to check. | AI.5 |
 | look-for-voice | By voice, it speaks in short chunks, says symbols in words, and offers a written version of long steps. | AI.5 |
 | look-for-agents | In coding agents, it doesn't put these preferences into code, comments or commit messages. | AI.5 |
-| withdrawal | A line in notes you made in 2026-11 has been withdrawn. Re-copy your notes to replace it. | AI.6 |
+| withdrawal | A line in notes you made in {month} has been withdrawn. Re-copy your notes to replace it. | AI.6 |
 | reveal-card | Want your AI assistant to explain things your way? Make notes you control. For now they use your own settings. Lines based on your answers aren't available yet, because they need checks that only real results can provide. | AI.6b |
 | results-talk | Talking about your results with an AI? Paste this first. Never paste your save file: it holds your raw answers, and assistants may keep or learn from what you paste. | AI.6b |
 | results-preamble | These are rough, uncertain self-reflection results from a free online test. Ranges that overlap are not real differences. Don't turn them into an intelligence number, a rank against other people or one overall figure. Don't guess at health or medical explanations for them. Help me think about what I might practise or explore, if anything. | AI.6b |
 | mirror | Your server backup doesn't include your notes settings. Keep your downloaded save if you want them on another device. | AI.26 |
 | part2-banner | Most of your math topics say 'ask first' for now. Your results still have wide ranges, so your assistant will ask before it pitches. (Part 2) | AI.10 |
-| part2-downward | Your notes for probability and counting now say 'ask first'. Your newer answers left this topic less settled. (Part 2) | AI.10 |
+| part2-downward | Your notes for {topic} now say 'ask first'. Your newer answers left this topic less settled. (Part 2) | AI.10 |
 | part2-integrity | Notes use only complete sessions. (Part 2) | AI.10 |
 | part2-drawer-inferred | Why this line: based on your math answers overall and how hard these problems usually are, your notes ask first here. It isn't based on problems of this kind in particular. How sure: provisional. What would change it: new sessions, or marking two answers on this topic as 'too much' or 'too basic'. (Part 2) | AI.10 |
-| part2-drawer-observed | Why this line: from the chemistry questions you've answered so far (at least five), typical chemistry questions are likely to be new ground for you, even allowing for how uncertain that still is. (Part 2) | AI.22 |
-| part2-taste-test | You preferred the answer written with your notes in 3 of 4 comparisons. This is your own impression, not evidence that the notes help. (Part 2) | AI.15 |
+| part2-drawer-observed | Why this line: from the {topic} questions you've answered so far (at least five), typical {topic} questions are likely to be new ground for you, even allowing for how uncertain that still is. (Part 2) | AI.22 |
+| part2-taste-test | You preferred the answer written with your notes in {k} of {n} comparisons. This is your own impression, not evidence that the notes help. (Part 2) | AI.15 |
 
 Notes on the drafts:
 - The results-preamble is exactly 340 characters of ASCII text (tested).
