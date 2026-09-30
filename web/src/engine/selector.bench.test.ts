@@ -23,6 +23,14 @@ const WARMUP = 5
  */
 const COLD_BUDGET_MS = CI ? 1000 : 150
 
+type CpuUsage = { user: number; system: number }
+/** This process's CPU time in ms, or null where `process.cpuUsage` is missing (no Node typings in the app tsconfig). */
+function cpuMs(): number | null {
+  const p = (globalThis as { process?: { cpuUsage?: () => CpuUsage } }).process
+  const u = p?.cpuUsage?.()
+  return u === undefined ? null : (u.user + u.system) / 1000
+}
+
 /**
  * A realistic mid-session state: 24 CAT items already administered over MAT, QR and SPA with
  * simulated responses (plus the 7 fixed blocks' worth of RT/WM/PS observations), and 60
@@ -59,9 +67,15 @@ function midSession(): { state: SelectorState; obs: Observation[] } {
 describe('selector bench (ROADMAP M1.14)', () => {
   // Must stay the first test of this file: the module graph is fresh per file, so this is cold.
   it(`the first (cold) selection over every CAT axis < ${COLD_BUDGET_MS} ms`, () => {
+    const c0 = cpuMs()
     const t0 = performance.now()
     const sel = selectNext({ sessionSeed: 'cold', posterior: sessionPosterior([]), administered: [] }, selectionRng('cold', 0))
-    const ms = performance.now() - t0
+    const wallMs = performance.now() - t0
+    const c1 = cpuMs()
+    // Wall time counts the time this process waited for a core: on a machine running other suites (a load
+    // of 100+ was seen with several worktrees) one cold selection took 185–219 ms of wall time. The CPU time it
+    // used is not inflated by that, and a real regression raises both, so the smaller of the two is judged.
+    const ms = c0 === null || c1 === null ? wallMs : Math.min(wallMs, c1 - c0)
     if (CI) console.info(`selector bench: cold first selection ${ms.toFixed(1)} ms`)
     expect(sel.kind).toBe('item')
     expect(ms).toBeLessThan(COLD_BUDGET_MS)

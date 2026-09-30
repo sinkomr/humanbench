@@ -33,12 +33,12 @@ describe('copy', () => {
     expect(RESOURCE_LINE).toBe(expected)
   })
 
-  it('the M0 heading says hello (DESIGN §14.3 M0: Pages URL serves "hello")', () => {
-    expect(HEADING).toBe('HumanBench — hello')
+  it('the heading is the product name (the start screen of the M1.15 session flow)', () => {
+    expect(HEADING).toBe('HumanBench')
   })
 
-  it('index.html says hello without JavaScript, so a plain fetch of the Pages URL finds it', () => {
-    expect(noscriptText()).toContain('HumanBench — hello')
+  it('index.html names the site and says it needs JavaScript, so a plain fetch of the Pages URL finds it', () => {
+    expect(noscriptText()).toContain('HumanBench needs JavaScript')
   })
 
   it('index.html carries the §13 disclaimer word for word without JavaScript too (M1.20)', () => {

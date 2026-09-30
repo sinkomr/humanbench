@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { build, type Rolldown } from 'vite'
 import { afterEach, describe, expect, it } from 'vitest'
 import config from '../playwright.config'
+import { FAST_FACTOR } from '../src/session/constants'
 import { devRoutesEnabled } from '../vite.config'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
@@ -37,8 +38,34 @@ async function appBuild(flag: string | undefined): Promise<{ files: string[]; te
   }
 }
 
-/** Strings only the dev routes contain. */
-const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)']
+/**
+ * `sessionTimeScale` (session/fast.ts) as a build with `__HB_DEV_ROUTES__` = `devRoutes` makes it:
+ * the module is bundled on its own (minified, as in production), with the constant defined the way
+ * vite.config.ts defines it, and the function is evaluated. This checks what the flag does, not
+ * what strings the bundle holds, so a build that honoured `?fast=1` fails whatever its code looks like.
+ */
+async function builtSessionTimeScale(devRoutes: boolean): Promise<(search: string) => number> {
+  const result = await build({
+    configFile: false,
+    root: WEB,
+    mode: 'production',
+    logLevel: 'silent',
+    define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutes) },
+    build: { write: false, minify: true, lib: { entry: `${WEB}src/session/fast.ts`, formats: ['iife'], name: 'HbFast' } },
+  })
+  const outputs = (Array.isArray(result) ? result : [result]) as Rolldown.RolldownOutput[]
+  const chunk = outputs.flatMap((o) => o.output).find((c) => c.type === 'chunk')
+  if (chunk?.type !== 'chunk') throw new Error('no chunk built for session/fast.ts')
+  const mod = new Function(`${chunk.code}\nreturn HbFast;`)() as { sessionTimeScale: (search: string) => number }
+  return mod.sessionTimeScale
+}
+
+/**
+ * Strings only the dev routes contain, and the dev banner of the `?fast=1` flag (ROADMAP M1.15:
+ * "production builds ignore it"): `sessionTimeScale` folds to 1 where `__HB_DEV_ROUTES__` is false,
+ * and the banner text goes with it.
+ */
+const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)', 'Fast mode (development only)']
 
 describe('dev-only routes (M1.16)', () => {
   it('are on in dev and tests, off in production unless VITE_HB_DEV_ROUTES=1', () => {
@@ -54,6 +81,23 @@ describe('dev-only routes (M1.16)', () => {
     expect(text).toContain('HumanBench')
     expect(files.filter((f) => /BlobDemo|RevealAiDemo|routes|synthetic/i.test(f))).toEqual([])
     for (const m of DEV_MARKERS) expect(text, m).not.toContain(m)
+  }, 60_000)
+
+  it('a plain production build ignores ?fast=1: the flag parser and its banner are not shipped (M1.15)', async () => {
+    const { text } = await appBuild(undefined)
+    expect(text).not.toContain('Fast mode (development only)')
+    expect(text).not.toContain('Response times are not valid scores')
+  }, 60_000)
+
+  it('the production time scale is 1 whatever the query says; with the dev constant on, ?fast=1 is 20 (M1.15, behaviour)', async () => {
+    const production = await builtSessionTimeScale(false)
+    for (const q of ['?fast=1', '?fast=true', '?a=b&fast=1', '', '?fast=0']) expect(production(q), `production ${q}`).toBe(1)
+    // Not vacuous: the same module built with the constant on does honour the flag.
+    const dev = await builtSessionTimeScale(true)
+    expect(dev('?fast=1')).toBe(FAST_FACTOR)
+    expect(dev('?fast=true')).toBe(FAST_FACTOR)
+    expect(dev('')).toBe(1)
+    expect(dev('?fast=0')).toBe(1)
   }, 60_000)
 
   it('the e2e build (VITE_HB_DEV_ROUTES=1) does ship them, so the check above is not vacuous', async () => {

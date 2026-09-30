@@ -28,6 +28,12 @@
  *   §8 example's layout, `response` = "trials" with the trial data in `extra`, is read too
  *   ({@link blockResponseOf}; convention in `engine/types.ts` `ResponseTuple`).
  *
+ * Calibration (CAL, §7.1): the confidence a person stated with each power answer (the tuple's
+ * `confidence_pct`) is part of the raw data, so each session also gets its calibration observation
+ * (`tasks/calibration.ts`, the one the session flow shows), built from the session's rated answers
+ * (pretest responses left out; the outcome is the re-scored one, else the stored `correct`), once
+ * it has at least `CAL_NORMS.min_responses` of them.
+ *
  * Test numbers count exposure, not scorability (engine/retest.ts): every skipped response still
  * marks its session as having taken the item's axis (`exposed_axes`), taken from the resolver's
  * answer or else from the family named in the id ({@link itemAxis}; e.g. an id from before a
@@ -43,6 +49,7 @@
 import { AXIS_CODES, N_AXES, type AxisCode } from '../engine/axes'
 import { rescoreRetest, type RetestOptions, type RetestScore, type RetestSession } from '../engine/retest'
 import type { JsonValue, Observation, ResponseTuple } from '../engine/types'
+import { calibrationObservation, type RatedAnswer } from '../tasks/calibration'
 import { MalformedResponseError, type AnyFamily, type ItemInstance } from '../tasks/family'
 import { parseItemId } from '../tasks/ids'
 import { getFamily, resolveItem } from '../tasks/registry'
@@ -160,16 +167,23 @@ export function rescoreSessions(save: SaveFileV1, opts: RescoreOptions = {}): Sa
   const sessions: RetestSession[] = save.sessions.map((s) => {
     const observations: Observation[] = []
     const exposed = new Set<AxisCode>()
+    const rated: RatedAnswer[] = []
     s.responses.forEach((t, index) => {
       const r = resolve(t)
+      const pct = t[5]
       if ('observation' in r) {
         observations.push(r.observation)
+        const o = r.observation
+        if (pct !== null && (o.kind === '2pl' || o.kind === '3pl')) rated.push({ pct, correct: o.y })
         return
       }
+      if (pct !== null && r.skip !== 'pretest' && (t[3] === 0 || t[3] === 1)) rated.push({ pct, correct: t[3] })
       skipped.push({ session_id: s.session_id, index, item_id: t[0], reason: r.skip, ...(r.detail !== undefined ? { detail: r.detail } : {}) })
       const axis = r.axis ?? itemAxis(t[0]) // exposure still counts as a test of the axis (§7.8)
       if (axis !== undefined) exposed.add(axis)
     })
+    const cal = calibrationObservation(rated)
+    if (cal !== null) observations.push(cal)
     const exposed_axes = AXIS_CODES.filter((k) => exposed.has(k))
     return { session_id: s.session_id, started_utc: s.started_utc, observations, ...(exposed_axes.length > 0 ? { exposed_axes } : {}) }
   })

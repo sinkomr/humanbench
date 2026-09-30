@@ -24,7 +24,7 @@
    *
    * Nothing here shows a sum, an average or the size of the shape (§9.5 a, CLAUDE.md blob rule).
    */
-  import { onMount } from 'svelte'
+  import { onMount, type Snippet } from 'svelte'
   import BarTable from './BarTable.svelte'
   import BlobChart from './BlobChart.svelte'
   import { buildBlob, fitLayout, type BlobModel } from './blob'
@@ -54,7 +54,7 @@
   } from './copy'
   import { clusterFacets, unmeasuredReasons, type FacetEstimate, type FacetObservation, type FacetOptions } from './facets'
   import { themeVars, THEMES, type ThemeName } from './palette'
-  import { axisEstimates, type ProfileInput } from './profile'
+  import { axisEstimates, type AxisEstimate, type ProfileInput } from './profile'
   import { widthOf } from './width'
   import type { Cluster } from '../engine/axes'
 
@@ -66,9 +66,17 @@
     facetCatalog?: FacetOptions['catalog']
     /** Colour scheme; default follows prefers-color-scheme. */
     theme?: ThemeName
+    /**
+     * Maps the final estimates to what the BLOB draws (the reveal's build-up frames, M1.R). The
+     * table, the drill-down and the text layout always use the final estimates; without this the
+     * blob draws them too.
+     */
+    display?: (estimates: AxisEstimate[]) => AxisEstimate[]
+    /** Drawn under the chart and above the cluster drill-down (the reveal's distinctive peaks, M1.R). */
+    between?: Snippet
   }
 
-  let { input, facetObservations = [], facetCatalog, theme }: Props = $props()
+  let { input, facetObservations = [], facetCatalog, theme, display, between }: Props = $props()
 
   const uid = `hb-profile-${++instances}`
   /** Facet sub-blobs need at least 3 spokes and stay legible up to 24. */
@@ -100,7 +108,7 @@
   // Once any chart on the page has laid out, later mounts measure from their first frame.
   const measure = $derived(blobWidth > 0 || subWidth > 0 ? textMeasure() : (pageMeasure ?? undefined))
   const layout = $derived(fitLayout(estimates, blobWidth, { measure }))
-  const model = $derived(buildBlob(estimates, { layout, measure }))
+  const model = $derived(buildBlob(display === undefined ? estimates : display(estimates), { layout, measure }))
   const clusters = $derived([...new Set(estimates.map((e) => e.cluster))])
   const unmeasured = $derived(unmeasuredReasons(estimates))
   const facets: FacetEstimate[] = $derived(
@@ -155,6 +163,10 @@
   {#if view === 'bars'}
     <p class="note">{BARS_NOTE}</p>
     <p class="note">{TIER_LEGEND}</p>
+  {/if}
+
+  {#if between}
+    {@render between()}
   {/if}
 
   <div class="drill" role="group" aria-labelledby="{uid}-drill">

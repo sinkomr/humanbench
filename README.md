@@ -14,12 +14,14 @@ Status: static MVP in progress (milestone M1). The design spec is in
 - `web/`: the app (Vite, Svelte 5, TypeScript strict), deployed to GitHub Pages under `/humanbench/`
   - `web/src/engine/`: scoring (MAP/Laplace, EAP, the §7.8 retest model for multi-session saves), timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
+  - `web/src/session/`: the session flow (consent and 18+ gate, honour code, device check, practice, the A15 blocks and items with their clock, break, hard stop and confidence slider, results and save)
   - `web/src/tasks/`: task families
   - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/brief/`: "Notes for your AI" (Phase AI): a pure, deterministic generator of short notes a person pastes into their own assistant. Closed grammar `hb-brief/1`, lint, parser, checker (`check.ts`: paste any notes, see what they say and what is foreign, edited, out of date or switched off), `surfaces.json` (install and removal steps), no network; storage only when the person says they are 18 or older and asks to keep their settings, as the optional `brief_prefs` of a prefs-only save (`web/src/brief-store/`, `hb:save:v1:prefs`; settings and fit notes only, never what was typed); the builder page is `web/notes.html`; `npm run dump:briefs -- --as-of YYYY-MM` writes the notes (and the results-talk preamble) the bank's behaviour harness reads; `reveal.ts` is the light barrel the reveal and share-card screens import for the "Working with AI" card and the "Talking about your results with an AI" helper (demo at `#/dev/reveal-ai`, dev builds only)
-  - `web/src/viz/`: blob and bar views, export
+  - `web/src/viz/`: blob and bar views, the share card and its export
+  - `web/src/reveal/`: the results and reveal flow (build-up, distinctive peaks, required save, worked examples, retest advice, norms and pace)
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`; its optional `brief_prefs` holds the notes settings, `web/src/save/brief-prefs.ts`); `schema/brief-v1.json` is the JSON form of the notes (mirrored by `web/src/brief/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
@@ -134,6 +136,82 @@ The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `ma
 pull requests, with the browsers cached, and uploads the report as an artifact.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+
+### Session flow
+
+The session (ROADMAP M1.15) is `web/src/session/`. `run.ts` is the state machine: it plans the A15
+order with the M1.14 scheduler, runs the blocks and the adaptive items, keeps the active-time clock,
+and records §8 response tuples that `save/rescore.ts` scores to the same observations. It has no DOM
+and no timers of its own, so its tests (`run.test.ts`) drive it on a fake timeline with the simulated
+takers of `web/src/sim/`. The screens are Svelte components around it (`SessionApp.svelte`
+orchestrates them); `persist.ts` writes the autosave through the save library after every answer
+(a session with no answer yet writes nothing). The rules that depend on minutes (the break at 30,
+the hard stop at 57, the coverage floor when the time budget is gone) are covered in Playwright on a
+fake clock (`web/e2e/session.spec.ts`). The 3-item coverage floor is per axis: items that earlier
+sessions hold count toward it (`coverage.ts`), so an abandoned start does not lift it.
+
+The under-18 path keeps nothing: the gate screens hold their state in memory, and the consent
+record, the autosave and the restore of earlier saves all come after the gate is passed.
+
+For development, `?fast=1` (for example `http://localhost:5173/humanbench/?fast=1`) makes the session
+timeline run 20 times faster, so the break, the hard stop and the progress ring can be seen in
+seconds; response times measured that way are not valid scores. It works only where the build-time
+constant `__HB_DEV_ROUTES__` is true (the dev server, the tests and the Playwright build). A plain
+production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds the
+flag's module both ways and runs it).
+
+### Results and reveal
+
+The end of a session (ROADMAP M1.R, DESIGN §10) is `web/src/reveal/`, shown by
+`session/Finished.svelte`. The results are the practice-adjusted re-score of the whole save
+(`results.ts`, on `save/rescore.ts`), so a returning person sees all their sessions together. The
+blob builds up skill by skill (`frames.ts`; `prefers-reduced-motion` skips it and "Skip animation"
+ends it), then come the distinctive peaks (`peaks.ts`: within-person contrasts whose 90% interval
+excludes 0, ROADMAP A12), the cluster drill-down, and the save file, which is required before
+leaving: a `beforeunload` guard (`guard.ts`) stays on until the file is downloaded or shared. Only
+then do the share card, the "Notes for your AI" card and the results-talk helper appear
+(`AfterSave.svelte`, `slots.ts`; Phase AI). Three worked examples (`worked/`) are fresh procedural
+items whose solutions are derived from the item and tested against the key; their families go into
+the save's `seen_families`, so later sessions leave them out. The R-5.6.5 resource line is rendered
+only in the results footer. A 20-minute focus session (`RunConfig.focus`) runs only the parts a
+person picks, from the results or from the start screen of a returning person.
+
+The browser suite cannot sit through a full session, so `web/e2e/reveal.spec.ts` loads a simulated
+earlier session (`web/scripts/e2e-save.ts`, run with `tsx` because Playwright's loader cannot import
+the passages JSON) on the ready screen and finishes at once.
+
+### Share card
+
+The share card (ROADMAP M1.18, DESIGN §9.9) is a 1200 × 630 picture of the blob, the most distinctive
+peaks and the number of sessions. `web/src/viz/card.ts` builds it as an SVG string (so it is
+deterministic and tested in Node), `card-copy.ts` holds every line of text on it, `export.ts` draws
+the 2400 × 1260 PNG on a canvas and offers the SVG file and the share sheet, and
+`web/src/reveal/ShareCard.svelte` is the panel in the share slot after the save. Everything happens
+on the device: no request is made and there is no image server (`web/scripts/share-card.test.ts`
+scans for network, storage and notes imports). Tests pin these rules:
+
+- only measured skills the person leaves ticked are drawn, and a hidden skill leaves no trace: the
+  file is byte-identical whatever its estimate is;
+- Emotion Reading is put on a card only at or above the 0 SD ring (R-5.6.4), whether or not it is
+  ticked, and no skill is ever picked out as a weakness;
+- the peaks are worked out over the skills on the card only (so a hidden skill, or an Emotion Reading
+  below the 0 SD ring, never moves the numbers of the visible ones), credible ones only (A12), at
+  most three, each with its 90% range, and never a low;
+- the blob is the on-page blob (`card.dom.test.ts` compares them element by element), with a linear
+  radius, its uncertainty, and no total, area or single score;
+- every text on the card is an axis label, a ring label or a line of `card-copy.ts`, so notes text
+  (Phase AI), the R-5.6.5 resource line and the save file cannot reach it;
+- the panel links to the results-talk helper below it.
+
+Two departures from the letter of DESIGN §9.9, which ROADMAP M1.18 (the higher authority) does not
+require: the card says "Based on n sessions" and gives each listed peak's 90% range instead of
+"SE ±" (there is no single standard error across skills, and the blob's band and whiskers carry the
+uncertainty), and the SVG export is the card's own SVG, which `card.dom.test.ts` compares with the
+page's D3 chart element by element, rather than a serialisation of the page's node. File names carry
+the person's local date.
+
+`web/e2e/share-card.spec.ts` checks the real PNG (2400 × 1260 with the blob drawn), the SVG, the
+toggles, the reflow at 320 px and axe in Chromium, WebKit and the iPhone 13 emulation.
 
 ### Renderers
 

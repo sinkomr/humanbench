@@ -8,7 +8,7 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
-import { DISCLAIMER } from '../src/copy'
+import { DISCLAIMER, HEADING } from '../src/copy'
 import { expectNoSeriousAxe } from './axe'
 
 const CI = Boolean(process.env.CI)
@@ -294,5 +294,5 @@ test.describe('blob demo route (M1.16)', () => {
 
 test('an unknown dev route falls back to the home page', async ({ page }) => {
   await page.goto('./#/dev/nope')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('HumanBench — hello')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING)
 })
