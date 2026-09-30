@@ -486,6 +486,75 @@ describe('coverage floor protects itself from the time budget (M1.15, §7.4 L584
   })
 })
 
+describe('coverage floor counts earlier sessions per axis (priorCounts; M1.15 review, §7.4 L584)', () => {
+  it('an axis that earlier sessions did not cover keeps the floor: a session behind the person is not enough', () => {
+    // The person has a session behind them, but it never reached QR: QR is still a first look.
+    const pool = candidatePool(state({ remainingS: 0, floorRemainingS: 600, priorCounts: { MAT: 5 } }), { axes: ['QR'] })
+    expect(pool.floorAxes).toEqual(['QR'])
+    expect(pool.ranked.length).toBeGreaterThan(0)
+    const none = candidatePool(state({ remainingS: 0, floorRemainingS: 600, priorCounts: {} }), { axes: ['QR'] })
+    expect(none.floorAxes).toEqual(['QR'])
+  })
+
+  it('earlier items count toward the 3: 2 before need 1 more, 3 before need none', () => {
+    const two = candidatePool(state({ remainingS: 0, floorRemainingS: 600, priorCounts: { QR: 2 } }), { axes: ['QR'] })
+    expect(two.floorAxes).toEqual(['QR'])
+    expect(two.ranked.length).toBeGreaterThan(0)
+    const three = candidatePool(state({ remainingS: 0, floorRemainingS: 600, priorCounts: { QR: COVERAGE_FLOOR } }), { axes: ['QR'] })
+    expect(three.floorAxes).toEqual([])
+    expect(three.reason).toBe('time') // the segment budget applies again
+    // Earlier and current items are added together: 2 + 1 = 3.
+    const mixed = candidatePool(state({ administered: [fakeAdministered('QR', 0)], remainingS: 0, floorRemainingS: 600, priorCounts: { QR: 2 } }), { axes: ['QR'] })
+    expect(mixed.reason).toBe('time')
+  })
+
+  it('only the uncovered axes compete while any is under the floor', () => {
+    const pool = candidatePool(state({ priorCounts: { MAT: 3 } }))
+    expect(pool.floorAxes).toEqual(['QR', 'SPA'])
+    for (const c of pool.ranked) expect(['SPA', 'QR']).toContain(c.axis)
+    expect(candidatePool(state({ priorCounts: { MAT: 3, SPA: 4, QR: 3 } })).floorAxes).toEqual([])
+  })
+
+  it('the session number alone still means what it did (no floor after the first); counts are what the session flow gives', () => {
+    expect(coverageFloor(2)).toBe(0)
+    const byNumber = candidatePool(state({ remainingS: 0, floorRemainingS: 600, sessionNumber: 2 }), { axes: ['QR'] })
+    expect(byNumber.floorAxes).toEqual([])
+    const byCounts = candidatePool(state({ remainingS: 0, floorRemainingS: 600, priorCounts: { MAT: 3 } }), { axes: ['QR'] })
+    expect(byCounts.floorAxes).toEqual(['QR'])
+  })
+
+  it('adds to this session’s administered items and does not touch the counts it is given', () => {
+    const prior = Object.freeze({ MAT: 1 })
+    const administered = [fakeAdministered('MAT', 0), fakeAdministered('MAT', 1)]
+    // 1 earlier + 2 now = 3: MAT is covered; QR and SPA are not.
+    expect(candidatePool(state({ administered, priorCounts: prior })).floorAxes).toEqual(['QR', 'SPA'])
+    // 2 now alone are not.
+    expect(candidatePool(state({ administered })).floorAxes).toEqual(['MAT', 'QR', 'SPA'])
+    expect(prior).toEqual({ MAT: 1 })
+  })
+
+  it('rejects an unknown axis and a count that is not a non-negative integer', () => {
+    expect(() => candidatePool(state({ priorCounts: { XX: 1 } as never }))).toThrow(RangeError)
+    for (const bad of [-1, 1.5, Number.NaN, '3' as unknown as number]) {
+      expect(() => candidatePool(state({ priorCounts: { QR: bad } })), String(bad)).toThrow(RangeError)
+    }
+  })
+
+  it('property: the floor axes are exactly those under 3, and only they compete while there are any', () => {
+    const countArb = fc.integer({ min: 0, max: 5 })
+    fc.assert(
+      fc.property(seedArb, countArb, countArb, countArb, (seed, mat, qr, spa) => {
+        const priorCounts = { MAT: mat, QR: qr, SPA: spa }
+        const pool = candidatePool(state({ sessionSeed: seed, priorCounts }))
+        const under = CAT_AXES.filter((k) => priorCounts[k as keyof typeof priorCounts] < COVERAGE_FLOOR)
+        expect(pool.floorAxes).toEqual(under)
+        if (under.length > 0) for (const c of pool.ranked) expect(under).toContain(c.axis)
+      }),
+      { numRuns: 30 },
+    )
+  })
+})
+
 // ----------------------------------------------------------------------------- properties
 
 const seedArb = fc.string({ minLength: 1, maxLength: 12 })

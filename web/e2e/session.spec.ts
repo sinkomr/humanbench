@@ -62,6 +62,8 @@ async function begin(page: Page): Promise<void> {
 /** Skip the part on the current interstitial; returns the next heading. */
 async function skipPart(page: Page): Promise<void> {
   await button(page, 'Skip this part').click()
+  // It asks first, like the skip during an item.
+  await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()
 }
 
 /** From Begin to the first Matrix & Series item, with reaction time skipped. */
@@ -324,9 +326,13 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     const ring = page.getByRole('progressbar', { name: 'Session time' })
     await expect(ring).toHaveAttribute('aria-valuetext', '0 of about 28 min')
     const list = page.getByRole('navigation', { name: 'Session checklist' })
-    await expect(list.getByRole('listitem')).toHaveCount(4)
+    await expect(list.getByRole('listitem')).toHaveCount(5)
     await expect(list.getByRole('listitem').nth(1)).toContainText('Reasoning')
+    // Estimation is measured by the confidence slider, so it has a row and is not listed as missing.
+    await expect(list.getByRole('listitem').nth(4)).toContainText('Estimation')
+    await expect(list.getByRole('listitem').nth(4)).toContainText('With each answer')
     await expect(list).toContainText('Not in this version')
+    await expect(list.locator('.later')).not.toContainText('Estimation')
     await expect(page.getByRole('contentinfo')).toHaveText(DISCLAIMER)
     for (const colorScheme of ['light', 'dark'] as const) {
       await scheme(page, colorScheme)
@@ -480,6 +486,12 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await button(page, 'Load').click()
     await expect(page.getByText('Loaded 1 earlier session')).toBeVisible()
     await button(page, 'Begin').click()
+    // A session with no answer yet is not written (a start that is abandoned leaves nothing behind):
+    // its first answer writes the save of both sessions.
+    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await skipPart(page)
+    await button(page, 'Start').click()
+    await answerItem(page)
     await expect
       .poll(async () =>
         page.evaluate(() => {
@@ -580,13 +592,16 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
       .toEqual([null, 0, null])
   })
 
-  test('QR keeps its coverage floor of 3 items when the time budget is gone (the known issue), and gets no more', async ({ page }) => {
-    await begin(page)
+  /**
+   * From the reaction-time interstitial: skip to Quantitative Reasoning, let the time budget be gone
+   * (long span blocks before it would have used it up: a jump past the 27.5-minute target), and answer
+   * what it serves. Returns the families of the answers saved for the session, in order.
+   */
+  async function quantWithoutBudget(page: Page): Promise<string[]> {
     for (const next of ['Up next: Matrix & Series', 'Up next: Spatial', 'Up next: Working Memory', 'Up next: Quantitative Reasoning']) {
       await skipPart(page)
       await expect(h1(page)).toHaveText(next)
     }
-    // Long span blocks before it would have used the time up: jump past the 27.5-minute target.
     await page.clock.fastForward('28:00')
     await button(page, 'Start').click()
     for (let n = 1; n <= 3; n++) {
@@ -594,15 +609,47 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
       if (n < 3) await expect(page.locator('form.entry')).toBeVisible()
     }
     await expect(h1(page)).toHaveText('Up next: Processing & Reading Speed')
+    let families: string[] = []
     await expect
-      .poll(async () =>
-        page.evaluate(() => {
+      .poll(async () => {
+        families = await page.evaluate(() => {
           const key = Object.keys(localStorage).find((k) => k.startsWith('hb:save:v1:')) ?? ''
-          const r = (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][] }[] }).sessions?.[0]?.responses ?? []
-          return r.map((t) => String(t[0]).split(':')[1])
-        }),
-      )
-      .toEqual(['quant', 'quant', 'quant'])
+          const sessions = (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][] }[] }).sessions ?? []
+          return (sessions.at(-1)?.responses ?? []).map((t) => String(t[0]).split(':')[1] ?? '')
+        })
+        return families.length
+      })
+      .toBe(3)
+    return families
+  }
+
+  test('QR keeps its coverage floor of 3 items when the time budget is gone (the known issue), and gets no more', async ({ page }) => {
+    await begin(page)
+    expect(await quantWithoutBudget(page)).toEqual(['quant', 'quant', 'quant'])
+  })
+
+  test('a start that was abandoned before any answer is not an earlier session: after a reload QR still gets its floor (M1.15 review, §7.4)', async ({ page }) => {
+    await begin(page) // Begin pressed, nothing answered
+    // Nothing is kept for a session without an answer, neither at once nor when the page goes away.
+    const saves = (): Promise<string[]> => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hb:save:v1:')))
+    await page.clock.fastForward('00:05')
+    expect(await saves()).toEqual([])
+    await page.reload()
+    expect(await saves()).toEqual([])
+    // Back through the (short) second visit: the consent is kept, no earlier session is offered.
+    await button(page, 'Start').click()
+    await expect(h1(page)).toHaveText('Honour code')
+    await page.getByRole('checkbox', { name: /honour code/ }).check()
+    await button(page, 'Continue').click()
+    await expect(button(page, 'Continue')).toBeEnabled({ timeout: 20_000 })
+    await page.getByRole('radio', { name: 'Keyboard' }).check()
+    await button(page, 'Continue').click()
+    await expect(h1(page)).toHaveText('Ready when you are')
+    await expect(page.getByText('Earlier saves on this device')).toHaveCount(0)
+    await button(page, 'Begin').click()
+    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    // Counted as session 2, QR would have had no floor (0 items after long span blocks).
+    expect(await quantWithoutBudget(page)).toEqual(['quant', 'quant', 'quant'])
   })
 
   test('the ring follows session time', async ({ page }) => {

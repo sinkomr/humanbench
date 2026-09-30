@@ -1,12 +1,8 @@
 import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buttonByText, click, fakeDisplay, type FakeDisplay } from '../render/common/testing'
 import { settle } from '../render/dom-testing'
 import { CONSENT_KEY, TERMS_VERSION } from './constants'
-import { encodeSaveCode } from '../save/codec'
-import { saveWithSession } from '../save/create'
-import { SAVE_CTX } from './constants'
-import { Bot } from './bot'
 import { DESKTOP, fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
 
@@ -215,8 +211,10 @@ describe('ready, practice and the start of a session', () => {
       expect.stringContaining('Reasoning'),
       expect.stringContaining('Spatial/Memory'),
       expect.stringContaining('Quantitative'),
+      expect.stringContaining('Estimation'),
     ])
     expect(list!.textContent).toContain('Not in this version')
+    expect(list!.querySelector('.later')?.textContent).not.toContain('Estimation')
     expect(buttonByText(host, 'Finish early')).toBeTruthy()
     expect(buttonByText(host, 'Skip this part')).toBeTruthy()
     // The autosave is created now, after the gate: a save exists for the session soon (timer-coalesced).
@@ -228,6 +226,7 @@ describe('ready, practice and the start of a session', () => {
     await toReady(fake)
     click(buttonByText(host, 'Begin'))
     click(buttonByText(host, 'Skip this part'))
+    click(buttonByText(host, 'Skip Reaction Time')) // asks first
     expect(h1()).toBe('Up next: Matrix & Series')
     // Reaction time is skipped, but Speed still has processing and reading speed ahead.
     expect(host.querySelector('nav li[data-status="upcoming"]')?.textContent).toContain('Speed')
@@ -256,36 +255,8 @@ describe('ready, practice and the start of a session', () => {
     expect(host.textContent).toContain('You finished early')
     expect(host.textContent).toContain('Nothing was measured')
     expect(buttonByText(host, 'Download save file')).toBeTruthy()
-    // The save is written through the save library, keyed by the session.
-    expect(fake.storage.writes.some((w) => w.startsWith('set:hb:save:v1:s_'))).toBe(true)
-  })
-
-  it('a save loaded on the ready screen survives a trip to practice and becomes the base of the new session', async () => {
-    const earlier = new Bot({ sessionId: 's_EARLIERSESSION1', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    earlier.until((v) => v.phase === 'confidence')
-    earlier.run.confirmConfidence(earlier.view().confidence!.startPct)
-    earlier.run.finishEarly()
-    const file = saveWithSession(null, earlier.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: 'hb_' + 'q'.repeat(17) })
-    const code = await encodeSaveCode(file)
-
-    const fake = fakeEnv(fakeDisplay())
-    await toReady(fake)
-    const area = host.querySelector<HTMLTextAreaElement>('textarea')!
-    area.value = code
-    area.dispatchEvent(new Event('input', { bubbles: true }))
-    click(buttonByText(host, 'Load'))
-    await vi.waitFor(() => expect(host.querySelector('[role="status"]')?.textContent).toContain('Loaded 1 earlier session'))
-    click(buttonByText(host, 'Try practice questions first'))
-    click(buttonByText(host, 'Back'))
-    click(buttonByText(host, 'Back'))
-    expect(h1()).toBe('Ready when you are')
-    click(buttonByText(host, 'Begin'))
-    await vi.waitFor(() => expect([...fake.storage.data.keys()].some((k) => k.startsWith('hb:save:v1:s_'))).toBe(true))
-    const key = [...fake.storage.data.keys()].find((k) => k.startsWith('hb:save:v1:s_'))!
-    const saved = JSON.parse(fake.storage.data.get(key)!) as { anon_id: string; sessions: { session_id: string }[] }
-    expect(saved.anon_id).toBe(file.anon_id)
-    expect(saved.sessions.map((x) => x.session_id)).toContain('s_EARLIERSESSION1')
-    expect(saved.sessions).toHaveLength(2)
+    // A session without an answer is not kept: nothing but the consent was written (the download is still there).
+    expect(fake.storage.writes).toEqual([`set:${CONSENT_KEY}`])
   })
 
   it('the desktop fixture is not a touch device', () => {

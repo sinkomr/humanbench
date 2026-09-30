@@ -123,7 +123,7 @@ describe('SessionRun under arbitrary event sequences (fuzz)', () => {
     fc.assert(
       fc.property(fc.array(opArb, { minLength: 1, maxLength: 70 }), fc.integer({ min: 0, max: 3 }), (ops, config) => {
         const bot = new Bot(
-          { sessionId: `s_FUZZ${String(n++).padStart(11, '0')}`, ...(config === 1 ? { breakAtS: 60 } : config === 2 ? { hardStopS: 900 } : config === 3 ? { sessionNumber: 2 } : {}) },
+          { sessionId: `s_FUZZ${String(n++).padStart(11, '0')}`, ...(config === 1 ? { breakAtS: 60 } : config === 2 ? { hardStopS: 900 } : config === 3 ? { priorItemCounts: { MAT: 3, SPA: 3, QR: 3 } } : {}) },
           { theta: undefined },
         )
         let lastElapsed = 0
@@ -151,8 +151,8 @@ describe('SessionRun under arbitrary event sequences (fuzz)', () => {
         const save = saveWithSession(null, st, { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: newAnonId() })
         assertValidSave(save)
         const re = rescoreSessions(save)
-        const noCal = bot.run.result().observations.filter((o) => o.axis !== 'CAL')
-        expect(re.n_scored).toBe(noCal.length)
+        // The save re-scores to every observation the session showed, its calibration one included.
+        expect(re.n_scored).toBe(bot.run.result().observations.length)
         // The record has one tuple per counted unit, each id once.
         const ids = st.responses.map((t) => t[0])
         expect(new Set(ids).size).toBe(ids.length)

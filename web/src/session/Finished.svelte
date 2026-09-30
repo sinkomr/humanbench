@@ -3,7 +3,9 @@
   what it covered, the profile from the profile view of M1.16 (the blob and its table; a skipped or
   unmeasured axis is "not measured"), and the save file, which holds the answers and is the only copy
   besides this browser's autosave: download it, or copy the save code. The reveal's build-up, the
-  distinctive peaks, the required download, the share card and worked solutions are M1.R's.
+  distinctive peaks, the required download, the share card and worked solutions are M1.R's. The profile
+  shown is this session's own; for a returning person the merged, practice-adjusted re-score of all
+  their sessions (`save/rescore.ts`, DESIGN §7.8) is M1.Q/M1.R's to show.
 -->
 <script lang="ts">
   import { copySaveCode, downloadSave } from '../save/io'

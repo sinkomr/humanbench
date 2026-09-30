@@ -37,10 +37,21 @@ export class SessionClock {
     return this.#stoppedAt !== null
   }
 
-  /** Stop counting for good (the session ended); {@link elapsedS} then stays fixed. */
-  stop(): void {
+  /**
+   * Stop counting for good (the session ended); {@link elapsedS} then stays fixed. With `capS`, the
+   * active time is at most that: a stop noticed late (a suspended tab, a throttled timer) is
+   * recorded at the limit, not at the later reading. Not applied during a break, when time is not
+   * running anyway.
+   */
+  stop(capS?: number): void {
     if (this.#startedAt === null || this.#stoppedAt !== null) return
-    this.#stoppedAt = this.#now()
+    const now = this.#now()
+    let at = now
+    if (capS !== undefined && this.#pausedAt === null) {
+      const overMs = now - this.#startedAt - this.#pausedMs - capS * 1000
+      if (overMs > 0) at = now - overMs
+    }
+    this.#stoppedAt = at
   }
 
   /** Stop counting active time (a break). No effect when not running or already paused. */

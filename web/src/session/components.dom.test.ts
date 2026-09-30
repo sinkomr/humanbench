@@ -88,8 +88,11 @@ describe('Checklist (DESIGN §10: per-cluster checklist)', () => {
       ['done', 'Done'],
       ['current', 'Now'],
       ['upcoming', 'Up next'],
+      // Estimation has no part of its own: the confidence slider measures it with each answer (A15).
+      ['embedded', 'With each answer'],
     ])
-    expect(c.querySelector('.later')?.textContent).toContain('Verbal, Estimation, Knowledge, Social-Creative')
+    expect(c.querySelector('.later')?.textContent).toContain('Verbal, Knowledge, Social-Creative')
+    expect(c.querySelector('.later')?.textContent).not.toContain('Estimation')
     expect(c.querySelector('nav')?.getAttribute('aria-label')).toBe('Session checklist')
     expect(c.querySelector('li .axes')?.textContent).toBe('Reaction Time, Processing & Reading Speed')
   })
@@ -98,8 +101,8 @@ describe('Checklist (DESIGN §10: per-cluster checklist)', () => {
     const c = mountIt(Checklist, {
       segments: [seg('rt', 'Speed', ['RT'], 'skipped'), seg('matrix_series', 'Reasoning', ['MAT'], 'done'), seg('spatial', 'Spatial/Memory', ['SPA'], 'not_reached'), seg('quant', 'Quantitative', ['QR'], 'skipped')],
     })
-    expect([...c.querySelectorAll('li')].map((li) => li.getAttribute('data-status'))).toEqual(['skipped', 'done', 'not_reached', 'skipped'])
-    expect([...c.querySelectorAll('.status')].map((s) => s.textContent)).toEqual(['Skipped', 'Done', 'Not reached', 'Skipped'])
+    expect([...c.querySelectorAll('li')].map((li) => li.getAttribute('data-status'))).toEqual(['skipped', 'done', 'not_reached', 'skipped', 'embedded'])
+    expect([...c.querySelectorAll('.status')].map((s) => s.textContent)).toEqual(['Skipped', 'Done', 'Not reached', 'Skipped', 'With each answer'])
   })
 })
 

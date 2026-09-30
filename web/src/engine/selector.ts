@@ -38,10 +38,13 @@
  *    discounted by 20% per §7.1), never the axis default; θ̂_k and Var(θ_k) are the current
  *    posterior mean and variance (§7.4 L576), and E[T_j] is `expected_time_s` (§7.4 L575).
  * 4. **Coverage floor** (§7.4 L584): in session 1, while any eligible axis has fewer than 3
- *    administered items, only those axes' candidates compete. The floor is a requirement, not part
- *    of the time budget: those axes' candidates are checked against `floorRemainingS` (the time to
- *    the hard stop) when it exceeds `remainingS`, so a segment that lost its budget to slow blocks
- *    still reaches 3 (M1.15; before this, QR fell short in about 5% of simulated sessions).
+ *    administered items, only those axes' candidates compete. `priorCounts` (items of earlier
+ *    sessions) count toward the 3, so the session flow, which passes them, applies the floor per
+ *    axis: an axis a person has not yet covered gets it, whatever the session number (M1.15
+ *    review). The floor is a requirement, not part of the time budget: those axes' candidates are
+ *    checked against `floorRemainingS` (the time to the hard stop) when it exceeds `remainingS`, so
+ *    a segment that lost its budget to slow blocks still reaches 3 (M1.15; before this, QR fell
+ *    short in about 5% of simulated sessions).
  * 5. **Randomesque** (§6.iii L490, §7.4 L579): a uniform pick from the top 5 (ties in score are
  *    broken by item_id, so the top 5 is a deterministic set), drawn from the injected seeded RNG.
  *
@@ -130,6 +133,13 @@ export interface SelectorState {
   readonly floorRemainingS?: number
   /** 1 for a person's first session (the coverage floor applies only then, §7.4 L584). Default 1. */
   readonly sessionNumber?: number
+  /**
+   * CAT items per axis the person answered in earlier sessions. They count toward the floor, so
+   * the floor is about an axis being covered, not about which session it is: a session that was
+   * abandoned before it reached an axis does not lift that axis's floor for the next one (M1.15
+   * review; the axis still gets its ≥ 3 items, once). Default: none.
+   */
+  readonly priorCounts?: Readonly<Partial<Record<AxisCode, number>>>
 }
 
 /** Selector settings; every field has a default. */
@@ -417,6 +427,11 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   const seenFamilies = new Set<string>(state.seenFamilies ?? [])
   const usedSiblings = new Set<string>()
   const counts = new Map<AxisCode, number>()
+  for (const [k, n] of Object.entries(state.priorCounts ?? {})) {
+    if (!isAxisCode(k)) throw new RangeError(`priorCounts: unknown axis ${JSON.stringify(k)}`)
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new RangeError(`priorCounts.${k} must be an integer ≥ 0, got ${String(n)}`)
+    counts.set(k, n)
+  }
   for (const a of state.administered) {
     seenFamilies.add(a.family_id)
     usedSiblings.add(a.sibling_group)

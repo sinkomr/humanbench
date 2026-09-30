@@ -11,7 +11,7 @@
  * The flag exists only where the build-time constant `__HB_DEV_ROUTES__` (vite.config.ts) is true:
  * `vite` dev, tests and the Playwright build. A plain production build folds `sessionTimeScale` to
  * 1, drops this module's parser and banner from the bundle, and ignores the query
- * (`scripts/fast-flag.test.ts` builds it and looks).
+ * (`scripts/dev-routes.test.ts` builds it and evaluates it).
  */
 
 import { browserFrameSource, performanceClock, type Clock, type FrameSource } from '../tasks/rt/timing'

@@ -138,6 +138,8 @@ export const noticeUnavailable = (name: string): string =>
 export const PROGRESS_LABEL = 'Session time'
 export const CHECKLIST_LABEL = 'Session checklist'
 export const CHECKLIST_LATER_LABEL = 'Not in this version'
+/** The Estimation cluster has no part of its own: it is measured by the confidence slider after each answer (A15). */
+export const CHECKLIST_EMBEDDED_STATUS = 'With each answer'
 export const CHECKLIST_STATUS: Readonly<Record<'done' | 'current' | 'upcoming' | 'partial' | 'skipped' | 'not_reached', string>> = Object.freeze({
   done: 'Done',
   current: 'Now',

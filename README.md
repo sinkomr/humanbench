@@ -134,9 +134,11 @@ order with the M1.14 scheduler, runs the blocks and the adaptive items, keeps th
 and records §8 response tuples that `save/rescore.ts` scores to the same observations. It has no DOM
 and no timers of its own, so its tests (`run.test.ts`) drive it on a fake timeline with the simulated
 takers of `web/src/sim/`. The screens are Svelte components around it (`SessionApp.svelte`
-orchestrates them); `persist.ts` writes the autosave through the save library after every answer.
-The rules that depend on minutes (the break at 30, the hard stop at 57, the coverage floor when the
-time budget is gone) are covered in Playwright on a fake clock (`web/e2e/session.spec.ts`).
+orchestrates them); `persist.ts` writes the autosave through the save library after every answer
+(a session with no answer yet writes nothing). The rules that depend on minutes (the break at 30,
+the hard stop at 57, the coverage floor when the time budget is gone) are covered in Playwright on a
+fake clock (`web/e2e/session.spec.ts`). The 3-item coverage floor is per axis: items that earlier
+sessions hold count toward it (`coverage.ts`), so an abandoned start does not lift it.
 
 The under-18 path keeps nothing: the gate screens hold their state in memory, and the consent
 record, the autosave and the restore of earlier saves all come after the gate is passed.
@@ -145,8 +147,8 @@ For development, `?fast=1` (for example `http://localhost:5173/humanbench/?fast=
 timeline run 20 times faster, so the break, the hard stop and the progress ring can be seen in
 seconds; response times measured that way are not valid scores. It works only where the build-time
 constant `__HB_DEV_ROUTES__` is true (the dev server, the tests and the Playwright build). A plain
-production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds one and
-looks).
+production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds the
+flag's module both ways and runs it).
 
 ### Renderers
 

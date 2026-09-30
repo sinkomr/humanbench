@@ -180,7 +180,7 @@
           <p>{SEGMENT_INFO[segment.id].blurb}</p>
           <div class="hb-actions">
             <button type="button" class="hb-btn hb-primary" onclick={() => run.startSegment()}>{INTERSTITIAL_START}</button>
-            <button type="button" class="hb-btn" onclick={() => run.skipAxis()}>{INTERSTITIAL_SKIP}</button>
+            <button type="button" class="hb-btn" onclick={(e) => ask('skip', e)}>{INTERSTITIAL_SKIP}</button>
           </div>
         {:else if view.phase === 'block' && view.block !== null}
           <Stage

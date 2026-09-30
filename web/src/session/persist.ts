@@ -79,8 +79,14 @@ export class SessionPersister {
     return saveWithSession(this.#base, this.#run.sessionState(), { ctx: SAVE_CTX, createdMs: this.#wallClockMs(), anonId: this.anonId })
   }
 
-  /** Something changed: write the save soon (coalesced). */
+  /**
+   * Something changed: write the save soon (coalesced). A session with no answer yet has nothing
+   * worth keeping and writes nothing: a start that was abandoned at the first screen leaves no
+   * session behind, so it is neither restored nor counted as an earlier session later (M1.15
+   * review). The download on the results screen is not affected (`currentSave`).
+   */
   schedule(): void {
+    if (this.#run.sessionState().responses.length === 0) return
     this.#saver.schedule(() => this.currentSave())
   }
 

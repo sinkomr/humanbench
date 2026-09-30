@@ -12,7 +12,7 @@ describe('the ?fast=1 dev flag (M1.15)', () => {
 
   it('is honoured where the dev constant is on (dev server, tests, the e2e build) and ignored where it is off', () => {
     // In this test run __HB_DEV_ROUTES__ is true (vite.config.ts `define`); the production build folds it to
-    // false, which scripts/fast-flag.test.ts checks on a real build.
+    // false, which scripts/dev-routes.test.ts checks by building the module both ways and running it.
     expect(__HB_DEV_ROUTES__).toBe(true)
     expect(sessionTimeScale('?fast=1')).toBe(FAST_FACTOR)
     expect(sessionTimeScale('')).toBe(1)

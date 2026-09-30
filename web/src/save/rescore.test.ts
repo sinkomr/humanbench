@@ -5,9 +5,11 @@ import { createRng } from '../engine/prng'
 import { RHO_MAX_PRIOR, rescoreRetest, retestGain } from '../engine/retest'
 import { scoreAll } from '../engine/scorer'
 import type { Observation, ResponseTuple } from '../engine/types'
+import { calibrationObservation } from '../tasks/calibration'
 import type { ItemInstance } from '../tasks/family'
 import { matrices } from '../tasks/matrices'
 import { rotation } from '../tasks/rotation'
+import { CAL_NORMS } from '../tasks/priors'
 import { rtSimple } from '../tasks/rt'
 import { rtValidResponse } from '../tasks/rt/synthetic'
 import * as saveBarrel from './index'
@@ -242,6 +244,52 @@ describe('rescoreSessions (§7.8 re-scoring of a multi-session save, M1.Q)', () 
       }),
       { numRuns: 25 },
     )
+  })
+})
+
+describe('rescoreSessions: the calibration observation (§7.1, M1.15 review)', () => {
+  const rated = (t: ResponseTuple, pct: number): ResponseTuple => [t[0], t[1], t[2], t[3], t[4], pct]
+  const n = CAL_NORMS.min_responses
+  const items = Array.from({ length: n + 2 }, (_, i) => rot(`cal-${i}`))
+  /** Answers alternate right / wrong; confidences cycle through 55, 70, 85, 95. */
+  const answers = (list: AnyItem[]): ResponseTuple[] => list.map((it, i) => rated(mcTuple(it, i % 2 === 0 ? 1 : 0), [55, 70, 85, 95][i % 4]!))
+  it('adds the session’s CAL observation once it has min_responses rated answers: exactly what the session flow shows', () => {
+    const tuples = answers(items)
+    const r = rescoreSessions(saveOf([session(S1, 1, tuples)]))
+    const cal = calibrationObservation(tuples.map((t) => ({ pct: t[5] as number, correct: t[3] as 0 | 1 })))!
+    const itemObs = tuples.map((t) => (registryObservation(t) as { observation: Observation }).observation)
+    const byHand = rescoreRetest([{ session_id: S1, started_utc: '2026-10-01T10:00:00Z', observations: [...itemObs, cal] }])
+    expect(r.n_scored).toBe(items.length + 1)
+    for (let i = 0; i < N_AXES; i++) expect(r.theta[i], AXIS_CODES[i]).toBeCloseTo(byHand.theta[i]!, 12)
+    expect(r.eap.CAL).toBeDefined()
+    // The ratings are raw data: without them the same answers carry no CAL evidence.
+    const unrated = tuples.map((t): ResponseTuple => [t[0], t[1], t[2], t[3], t[4], null])
+    const bare = rescoreSessions(saveOf([session(S1, 1, unrated)]))
+    expect(bare.n_scored).toBe(items.length)
+    expect(bare.eap.CAL).toBeUndefined()
+    expect(r.theta[AXIS_INDEX.CAL]).not.toBe(bare.theta[AXIS_INDEX.CAL])
+  })
+
+  it('needs min_responses rated answers: fewer give none', () => {
+    const few = answers(items).map((t, i) => (i < n - 1 ? t : ([t[0], t[1], t[2], t[3], t[4], null] as ResponseTuple)))
+    const r = rescoreSessions(saveOf([session(S1, 1, few)]))
+    expect(r.n_scored).toBe(items.length)
+    expect(r.eap.CAL).toBeUndefined()
+  })
+
+  it('leaves pretest responses out, and takes the outcome from the re-scored response over a stored correct that disagrees', () => {
+    const tuples = answers(items)
+    const withPretest = [...tuples, rated([items[0]!.item_id, 1, keyIndex(items[0]!), 1, 1000, null], 99)]
+    expect(rescoreSessions(saveOf([session(S1, 1, withPretest)])).theta[AXIS_INDEX.CAL]).toBeCloseTo(rescoreSessions(saveOf([session(S1, 1, tuples)])).theta[AXIS_INDEX.CAL]!, 12)
+    // Stored `correct` flipped on every tuple: the raw responses still say what they said.
+    const flipped = tuples.map((t) => [t[0], t[1], t[2], t[3] === 1 ? 0 : 1, t[4], t[5]] as ResponseTuple)
+    expect(rescoreSessions(saveOf([session(S1, 1, flipped)])).theta[AXIS_INDEX.CAL]).toBeCloseTo(rescoreSessions(saveOf([session(S1, 1, tuples)])).theta[AXIS_INDEX.CAL]!, 12)
+  })
+
+  it('is per session: two sessions of a few ratings each are two separate short sessions, not one CAL observation', () => {
+    const half = Math.floor(n / 2)
+    const r = rescoreSessions(saveOf([session(S1, 1, answers(items.slice(0, half))), session(S2, 8, answers(items.slice(half, 2 * half)))]))
+    expect(r.eap.CAL).toBeUndefined()
   })
 })
 

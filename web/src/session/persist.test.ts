@@ -4,6 +4,7 @@ import { sameSave } from '../save/merge'
 import { SAVE_CTX } from './constants'
 import { SessionPersister } from './persist'
 import { Bot, SpyStorage } from './bot'
+import { priorItemCounts } from './coverage'
 
 const WALL = 1_790_000_600_000
 
@@ -22,6 +23,14 @@ function persister(bot: Bot, storage: SpyStorage | null, extra: Partial<Construc
   const p = new SessionPersister(bot.run, { base: null, storage, wallClockMs: () => WALL, setTimer: t.setTimer, clearTimer: t.clearTimer, bindHide: false, ...extra })
   return { p, t }
 }
+
+/** Runs the bot to its first counted answer (Matrix & Series only), so the session holds one response. */
+function answerOne(bot: Bot): void {
+  bot.until((v) => v.phase === 'confidence')
+  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+}
+
+const MAT_ONLY = ['RT', 'WM', 'PS', 'SPA', 'QR'] as const
 
 describe('autosave through the save library (M1.15, M1.17)', () => {
   it('writes the session as a complete save under its own key, coalescing changes', () => {
@@ -63,7 +72,7 @@ describe('autosave through the save library (M1.15, M1.17)', () => {
     first.run.finishEarly()
     const base = a.p.currentSave()
 
-    const second = new Bot({ sessionId: 's_PERSIST00000004', sessionNumber: 2, seenFamilies: base.seen_families, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    const second = new Bot({ sessionId: 's_PERSIST00000004', priorItemCounts: priorItemCounts(base), seenFamilies: base.seen_families, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     const s2 = new SpyStorage()
     const b = persister(second, s2, { base })
     second.until((v) => v.phase === 'confidence')
@@ -85,8 +94,30 @@ describe('autosave through the save library (M1.15, M1.17)', () => {
     expect(save.created_utc).toBe('2026-09-21T14:23:20Z')
   })
 
+  it('a session with no answer yet writes nothing: an abandoned start leaves no session behind', () => {
+    const bot = new Bot({ sessionId: 's_PERSIST0000000A', skipped: [...MAT_ONLY] })
+    const s = new SpyStorage()
+    const { p, t } = persister(bot, s)
+    p.schedule()
+    expect(t.pending()).toBe(0)
+    expect(p.flush()).toBe(true) // nothing pending
+    p.dispose()
+    expect(s.writes).toEqual([])
+    expect(restoreAutosaves(SAVE_CTX, s).save).toBeNull()
+    // The first answer makes it a session.
+    answerOne(bot)
+    p.schedule()
+    expect(t.pending()).toBe(1)
+    t.fire()
+    expect(restoreAutosaves(SAVE_CTX, s).save!.sessions).toHaveLength(1)
+    // The download is not affected: currentSave still holds the (empty) session.
+    const empty = new Bot({ sessionId: 's_PERSIST0000000B' })
+    expect(persister(empty, s).p.currentSave().sessions[0]!.responses).toEqual([])
+  })
+
   it('reports storage that is missing or refuses, and the session goes on', () => {
-    const bot = new Bot({ sessionId: 's_PERSIST00000006' })
+    const bot = new Bot({ sessionId: 's_PERSIST00000006', skipped: [...MAT_ONLY] })
+    answerOne(bot)
     const seen: string[] = []
     const none = persister(bot, null, { onStatus: (s) => seen.push(s) })
     none.p.schedule()
@@ -104,13 +135,14 @@ describe('autosave through the save library (M1.15, M1.17)', () => {
     b.t.fire()
     expect(b.p.status).toBe('error')
     expect(seen2).toEqual(['error'])
-    expect(bot.run.view().phase).toBe('interstitial')
+    expect(bot.run.view().phase).toBe('item') // the session goes on
   })
 
   it('dispose writes what is pending', () => {
-    const bot = new Bot({ sessionId: 's_PERSIST00000007' })
+    const bot = new Bot({ sessionId: 's_PERSIST00000007', skipped: [...MAT_ONLY] })
     const s = new SpyStorage()
     const { p } = persister(bot, s)
+    answerOne(bot)
     p.schedule()
     p.dispose()
     expect(s.writes).toEqual([`set:${AUTOSAVE_PREFIX}s_PERSIST00000007`])
@@ -131,7 +163,7 @@ describe('autosave hygiene', () => {
     expect(a.p.key).toBe(autosaveKey('s_PERSIST00000008'))
     const base = a.p.currentSave()
 
-    const second = new Bot({ sessionId: 's_PERSIST00000009', sessionNumber: 2, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], seenFamilies: base.seen_families })
+    const second = new Bot({ sessionId: 's_PERSIST00000009', priorItemCounts: priorItemCounts(base), skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], seenFamilies: base.seen_families })
     const b = persister(second, s, { base })
     second.until((v) => v.phase === 'confidence')
     second.run.confirmConfidence(second.view().confidence!.startPct)

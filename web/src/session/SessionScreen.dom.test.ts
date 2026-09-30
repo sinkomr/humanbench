@@ -165,17 +165,49 @@ describe('the running session screen (M1.15)', () => {
     const bot = new Bot({ sessionId: 's_UISESSION00009' })
     open(bot)
     const rows = (): string[] => [...host.querySelectorAll('nav li')].map((li) => li.getAttribute('data-status') ?? '')
-    expect(rows()).toEqual(['current', 'upcoming', 'upcoming', 'upcoming'])
+    expect(rows()).toEqual(['current', 'upcoming', 'upcoming', 'upcoming', 'embedded'])
     // Skip reaction time from its interstitial: Speed still has processing and reading speed ahead.
     bot.run.skipAxis()
     flushSync()
-    expect(rows()).toEqual(['upcoming', 'current', 'upcoming', 'upcoming'])
+    expect(rows()).toEqual(['upcoming', 'current', 'upcoming', 'upcoming', 'embedded'])
     // Skip Matrix & Series, Spatial, Working Memory and Quantitative too: Speed's last part is all that is left.
     for (const axis of ['MAT', 'SPA', 'WM', 'QR'] as const) bot.run.skipAxis(axis)
     flushSync()
-    expect(rows()).toEqual(['current', 'skipped', 'skipped', 'skipped'])
+    expect(rows()).toEqual(['current', 'skipped', 'skipped', 'skipped', 'embedded'])
     expect(host.querySelector('nav li[data-status="current"] .status')?.textContent).toBe('Now')
     expect(host.querySelector('nav li[data-status="skipped"] .status')?.textContent).toBe('Skipped')
+  })
+
+  it('Estimation is a row of its own that says it is measured with each answer, and is not listed as missing', () => {
+    const bot = new Bot({ sessionId: 's_UISESSION00011' })
+    open(bot)
+    const row = host.querySelector('nav li[data-status="embedded"]')!
+    expect(row.textContent).toContain('Estimation')
+    expect(row.querySelector('.status')?.textContent).toBe('With each answer')
+    const later = host.querySelector('nav .later')?.textContent ?? ''
+    expect(later).toContain('Not in this version')
+    expect(later).not.toContain('Estimation')
+    expect(later).toContain('Verbal')
+  })
+
+  it('skipping a part from its interstitial asks first, like the skip during an item; keeping going changes nothing', async () => {
+    const bot = new Bot({ sessionId: 's_UISESSION00012' })
+    open(bot)
+    const skip = buttonByText(host, 'Skip this part')
+    click(skip)
+    expect(host.querySelector('section.confirm h2')?.textContent).toBe('Skip Reaction Time?')
+    expect(bot.view().skipped).toEqual([])
+    expect(bot.view().phase).toBe('interstitial')
+    click(buttonByText(host, 'Keep going'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    flushSync()
+    expect(host.querySelector('section.confirm')).toBeNull()
+    expect(document.activeElement).toBe(skip)
+    expect(bot.view().skipped).toEqual([])
+    click(skip)
+    click(buttonByText(host.querySelector<HTMLElement>('section.confirm')!, 'Skip Reaction Time'))
+    expect(bot.view().skipped).toEqual(['RT'])
+    expect(bot.view().segment?.id).toBe('matrix_series')
   })
 
   it('warns when the browser would not let the session be saved as it goes', () => {

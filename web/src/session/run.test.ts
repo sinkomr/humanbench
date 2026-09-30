@@ -7,7 +7,9 @@ import { saveWithSession } from '../save/create'
 import { rescoreSessions } from '../save/rescore'
 import { parseItemId } from '../tasks/ids'
 import { CAL_NORMS } from '../tasks/priors'
+import { RT_NORMS_VERSION } from '../tasks/rt'
 import { BREAK_AT_S, HARD_STOP_S, SAVE_CTX } from './constants'
+import { priorItemCounts } from './coverage'
 import { SessionRun } from './run'
 import { Bot, TEST_DEVICE } from './bot'
 
@@ -94,9 +96,10 @@ describe('the A15 flow (M1.15)', () => {
   })
 })
 
-describe('coverage floor and the session clock (M1.15 known issue)', () => {
-  const CAT: readonly AxisCode[] = ['MAT', 'SPA', 'QR']
+/** The power (CAT) axes of the M1 session. */
+const CAT: readonly AxisCode[] = ['MAT', 'SPA', 'QR']
 
+describe('coverage floor and the session clock (M1.15 known issue)', () => {
   it('every CAT axis reaches 3 items in session 1 even when the blocks before it ran very long', () => {
     // Memory blocks (and the rest) taking 6× their model time: the time budget of Quant is gone
     // before it starts. The floor still gives it exactly 3 items (before M1.15: 0–2 in some sessions).
@@ -142,12 +145,68 @@ describe('coverage floor and the session clock (M1.15 known issue)', () => {
     expect(v.elapsedS).toBeLessThan(HARD_STOP_S + 20 * 60) // the last step may overshoot by one block
   })
 
-  it('in session 2 there is no floor: a segment without budget serves nothing', () => {
-    const bot = new Bot({ sessionId: 's_FLOORSESS200001', sessionNumber: 2 })
+  it('an axis that earlier sessions covered (3 items) has no floor: a segment without budget serves nothing', () => {
+    const bot = new Bot({ sessionId: 's_FLOORSESS200001', priorItemCounts: { MAT: 3, SPA: 3, QR: 3 } })
     bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
     bot.wait(A15_TARGET_S)
     bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
     expect(bot.run.result().itemsByAxis.QR ?? 0).toBe(0)
+  })
+})
+
+/** The prior counts a later session gets from a session that ended as `bot` left it (the real path: save, then count). */
+function priorFrom(bot: Bot): ReturnType<typeof priorItemCounts> {
+  const st = bot.run.sessionState()
+  return priorItemCounts(saveWithSession(null, st, { ctx: SAVE_CTX, createdMs: st.startedMs + 1000, anonId: newAnonId() }))
+}
+
+describe('the coverage floor follows the axes covered, not the session number (M1.15 review)', () => {
+  const LONG_SPANS = { span_fwd: 6, span_bwd: 6, corsi: 6 }
+
+  it('a first session abandoned before any answer does not lift the floor: the next one still gives every axis 3 items', () => {
+    const abandoned = new Bot({ sessionId: 's_ABANDONED00000' })
+    expect(abandoned.run.sessionState().responses).toHaveLength(0)
+    const prior = priorFrom(abandoned)
+    expect(prior).toEqual({})
+    for (let i = 0; i < 12; i++) {
+      const bot = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}`, priorItemCounts: prior }, { blockScale: LONG_SPANS })
+      const r = bot.finish().result()
+      expect(r.reason, `session ${i}`).toBe('complete')
+      for (const k of CAT) expect(r.itemsByAxis[k] ?? 0, `${k} in session ${i}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('a session that stopped after reaction time leaves the power axes uncovered, so they keep the floor', () => {
+    const partial = new Bot({ sessionId: 's_PARTIALRT00001' })
+    partial.until((v) => v.phase === 'interstitial' && v.segment?.id === 'matrix_series')
+    expect(partial.run.sessionState().responses.length).toBeGreaterThan(0) // the RT blocks
+    const prior = priorFrom(partial)
+    expect(prior).toEqual({})
+    for (let i = 0; i < 6; i++) {
+      const r = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}`, priorItemCounts: prior }, { blockScale: LONG_SPANS }).finish().result()
+      for (const k of CAT) expect(r.itemsByAxis[k] ?? 0, `${k} in session ${i}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('only the uncovered axes keep the floor: with Matrix & Series covered, Quantitative and Spatial still get 3', () => {
+    const first = new Bot({ sessionId: 's_COVEREDMAT0001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    first.finish()
+    const prior = priorFrom(first)
+    expect(prior.MAT ?? 0).toBeGreaterThanOrEqual(3)
+    expect(prior.QR).toBeUndefined()
+    for (let i = 0; i < 6; i++) {
+      const bot = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}`, priorItemCounts: prior }, { blockScale: LONG_SPANS })
+      const r = bot.finish().result()
+      for (const k of ['SPA', 'QR'] as const) expect(r.itemsByAxis[k] ?? 0, `${k} in session ${i}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('earlier items count toward the 3: an axis with 2 before needs only 1 more, and one with 3 needs none', () => {
+    const one = new Bot({ sessionId: 's_FLOORSHORT0001', priorItemCounts: { QR: 2 } })
+    one.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
+    one.wait(A15_TARGET_S) // the budget of the rest is gone
+    one.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
+    expect(one.run.result().itemsByAxis.QR).toBe(1)
   })
 })
 
@@ -303,7 +362,41 @@ describe('finish early and the hard stop (§7.4)', () => {
     expect(v.ended).toBe('hard_stop')
     expect(bot.run.sessionState().responses.length).toBe(before)
     expect(bot.run.sessionState().flags.hard_stop).toBe(true)
-    expect(bot.run.sessionState().durationS).toBeGreaterThanOrEqual(HARD_STOP_S)
+    expect(bot.run.sessionState().durationS).toBe(HARD_STOP_S)
+  })
+
+  it('a tab suspended past the stop is recorded at the limit, not at the late reading (breaks left out)', () => {
+    const bot = new Bot({ sessionId: 's_HARDSTOPLATE01' })
+    bot.until((v) => v.phase === 'item')
+    bot.wait(3 * 3600) // three hours in a background tab
+    bot.run.tick()
+    expect(bot.run.view().ended).toBe('hard_stop')
+    expect(bot.run.sessionState().durationS).toBe(HARD_STOP_S)
+    expect(bot.run.result().durationS).toBe(HARD_STOP_S)
+    expect(bot.run.view().elapsedS).toBe(HARD_STOP_S)
+    bot.wait(3600) // and the number stays fixed
+    expect(bot.run.sessionState().durationS).toBe(HARD_STOP_S)
+
+    // With a break taken earlier the paused time is not counted, and the cap is still the active limit.
+    const b = new Bot({ sessionId: 's_HARDSTOPLATE02', breakAtS: 60 }, { onBreakOffer: 'take', breakS: 900 })
+    b.until((v) => v.phase === 'on_break')
+    const paused = b.view().elapsedS
+    b.wait(900)
+    b.run.resume()
+    expect(b.view().elapsedS).toBeCloseTo(paused, 3)
+    b.wait(2 * 3600)
+    b.run.tick()
+    expect(b.run.view().ended).toBe('hard_stop')
+    expect(b.run.sessionState().durationS).toBe(HARD_STOP_S)
+    expect(b.run.sessionState().flags.breaks).toBe(1)
+  })
+
+  it('finishing early records the real duration (the cap is for the hard stop only)', () => {
+    const bot = new Bot({ sessionId: 's_FINISHNOCAP001', hardStopS: 100 })
+    bot.wait(400)
+    bot.run.finishEarly()
+    expect(bot.run.view().ended).toBe('finish_early')
+    expect(bot.run.sessionState().durationS).toBeCloseTo(400, 6)
   })
 
   it('every call checks the clock, so a missed tick cannot let the session run past the stop', () => {
@@ -338,15 +431,19 @@ describe('the 30-minute break (§10)', () => {
   it('is offered once, at a boundary, after 30 active minutes; declining carries on', () => {
     const bot = new Bot({ sessionId: 's_BREAKDECLINE01' }, { blockScale: 2, itemScale: 1.5, onBreakOffer: 'decline' })
     let offers = 0
+    let prev = ''
     for (let i = 0; i < 3000; i++) {
       const v = bot.view()
       if (v.phase === 'finished') break
       if (v.phase === 'break_offer') {
         offers++
         expect(v.elapsedS).toBeGreaterThanOrEqual(BREAK_AT_S)
-      } else if (v.phase === 'item' || v.phase === 'block' || v.phase === 'confidence') {
-        // Never mid-unit: a unit that began before 30 min is finished first.
+        // Never mid-unit: it comes right after a unit ended (an answer rated, a block done, an item timed out), with nothing on screen.
+        expect(['confidence', 'block', 'item'], `phase before the offer`).toContain(prev)
+        expect(v.item).toBeNull()
+        expect(v.block).toBeNull()
       }
+      prev = v.phase
       bot.run.tick()
       bot.step()
     }
@@ -384,10 +481,19 @@ describe('the 30-minute break (§10)', () => {
     expect(bot.view().elapsedS).toBeGreaterThan(BREAK_AT_S)
   })
 
-  it('is not offered again after the hard stop, and not at all in a short session', () => {
+  it('is not offered in a short session, nor once the hard stop has come first', () => {
     const short = new Bot({ sessionId: 's_BREAKSHORT0001' })
     short.finish()
     expect(short.phases).not.toContain('break_offer')
+    expect(short.run.view().elapsedS).toBeLessThan(BREAK_AT_S)
+    // A hard stop earlier than the break time ends the session first, and never offers a break after it.
+    const early = new Bot({ sessionId: 's_BREAKSTOP00001', hardStopS: 600, breakAtS: 1200 }, { blockScale: 2, itemScale: 2 })
+    early.finish()
+    expect(early.run.view().ended).toBe('hard_stop')
+    expect(early.phases).not.toContain('break_offer')
+    early.run.takeBreak()
+    expect(early.run.view().phase).toBe('finished')
+    expect(early.run.sessionState().flags.breaks).toBeUndefined()
   })
 
   it('a break cannot be taken when none is offered', () => {
@@ -514,10 +620,28 @@ describe('blocks and RT input (A18)', () => {
     expect(t[3]).toBeNull()
     expect(t[4]).toBe(90_000)
     expect(t[6]).toMatchObject({ input_type: 'touch', device_class: 'desktop', refresh_hz_est: 60 })
+    // What is stored is the scorer's own record of the block, made from the RtDevice the session passed it (A18).
+    expect(t[6]).toMatchObject({ mode: 'simple', norms_version: RT_NORMS_VERSION, n_valid: 30, n_anticipations: 0 })
     expect(st.device.input).toBe('touch')
     const obs = bot.run.result().observations
     expect(obs).toHaveLength(1)
     expect(obs[0]).toMatchObject({ kind: 'gaussian', axis: 'RT' })
+  })
+
+  it('without an input type from the renderer, none is recorded (the RtDevice carries none)', () => {
+    const bot = new Bot({ sessionId: 's_BLOCKRTNOINP01', skipped: ['MAT', 'SPA', 'WM', 'QR', 'PS'] })
+    bot.step()
+    const item = bot.fullItem(bot.view().block!.item_id)
+    const spec = item.spec as { positions: number[]; practice_positions: number[] }
+    bot.run.blockResponded({
+      rt_ms: spec.positions.map(() => 250),
+      choice: spec.positions.map(() => 0),
+      practice_rt_ms: spec.practice_positions.map(() => 300),
+      practice_choice: spec.practice_positions.map(() => 0),
+    })
+    const extra = bot.run.sessionState().responses[0]![6] as Record<string, unknown>
+    expect(extra).toMatchObject({ device_class: 'desktop', norms_version: RT_NORMS_VERSION })
+    expect(extra).not.toHaveProperty('input_type')
   })
 
   it('an RT block with too few valid trials yields no observation, only the reason', () => {
@@ -554,15 +678,13 @@ describe('the record the save library takes (§8, M1.17, M1.Q)', () => {
     expect(save.seen_items.length).toBe(st.responses.length)
     const re = rescoreSessions(save)
     const own = bot.run.result()
-    const noCal = own.observations.filter((o) => o.axis !== 'CAL')
-    expect(re.n_scored).toBe(noCal.length)
+    // The session's calibration observation is rebuilt from the stored confidences: the save re-scores to every observation shown.
+    expect(own.observations.some((o) => o.axis === 'CAL')).toBe(true)
+    expect(re.n_scored).toBe(own.observations.length)
     expect(re.skipped).toEqual([])
-    // Session 1 has no practice gain (ρ_k(1) = 0), so the re-score is the session's own MAP without CAL.
-    const own2 = bot.run.result()
-    expect(own2.score).not.toBeNull()
-    for (const k of ['MAT', 'QR', 'WM', 'RT', 'PS', 'SPA'] as const) {
-      expect(re.theta[AXIS_INDEX[k]]).toBeDefined()
-    }
+    // Session 1 has no practice gain (ρ_k(1) = 0), so the re-score is the session's own MAP, axis by axis.
+    expect(own.score).not.toBeNull()
+    for (let i = 0; i < N_AXES; i++) expect(re.theta[i], String(i)).toBeCloseTo(own.score!.theta[i]!, 9)
   })
 
   it('time-outs are stored as not correct and re-score as such', () => {
@@ -583,7 +705,7 @@ describe('the record the save library takes (§8, M1.17, M1.Q)', () => {
     const a = new Bot({ sessionId: 's_SEENFIRST00001' })
     a.finish()
     const seen = a.run.sessionState().seenFamilies
-    const b = new Bot({ sessionId: 's_SEENSECOND0001', sessionNumber: 2, seenFamilies: seen })
+    const b = new Bot({ sessionId: 's_SEENSECOND0001', priorItemCounts: priorFrom(a), seenFamilies: seen })
     b.finish()
     const ids = new Set(seen)
     for (const r of b.run.sessionState().responses) {

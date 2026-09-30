@@ -22,15 +22,18 @@
  * - **Segment budgets.** A CAT segment starts with `(target − elapsed − time of the blocks still
  *   to run) / CAT segments left`, so slow or fast blocks and unused time move to the segments
  *   after them (never below 0).
- * - **Coverage floor** (§7.4 L584, the M1.15 fix). The ≥ 3-item floor of session 1 is a
- *   requirement, not part of a segment's budget: the selector is given the time to the hard stop
- *   as `floorRemainingS`, so a segment whose budget ran out (long span blocks, slow items before
- *   it) still gets its 3 items, and no more than that once the budget is gone. Before this, QR
- *   fell below 3 items in about 5% of simulated sessions.
+ * - **Coverage floor** (§7.4 L584, the M1.15 fix). The ≥ 3-item floor is a requirement, not part
+ *   of a segment's budget: the selector is given the time to the hard stop as `floorRemainingS`,
+ *   so a segment whose budget ran out (long span blocks, slow items before it) still gets its 3
+ *   items, and no more than that once the budget is gone. Before this, QR fell below 3 items in
+ *   about 5% of simulated sessions. The floor is per axis, not per session number: earlier
+ *   sessions' items are given as `priorItemCounts` (`coverage.ts`), so an axis that no earlier
+ *   session covered keeps its floor, e.g. after a session that was abandoned before it.
  * - **Break** (§10): once the session has run 30 active minutes a break is offered at the next
  *   boundary (never mid-item); taking it pauses the clock. Offered once.
  * - **Hard stop** (§7.4): at 57 active minutes the session ends where it is; an item in progress is
- *   dropped, an answered item still waiting for its confidence is kept without one.
+ *   dropped, an answered item still waiting for its confidence is kept without one. The hard stop
+ *   is noticed on the next `tick()`, but the recorded time is the limit, not the late reading.
  * - **Item cap** (§13): a power item that gets no answer within `time_limit_s` is recorded as not
  *   correct (a time-out).
  *
@@ -44,8 +47,9 @@
  * ## What is recorded
  *
  * §8 response tuples (`[item_id, 0, response, correct, rt_ms, confidence_pct, extra?]`) that
- * `save/rescore.ts` re-scores to the same observations (a block's tuple holds the family's block
- * response, RT's `extra` the input type, A18); the session's integrity logs (`visibilitychange`,
+ * `save/rescore.ts` re-scores to the same observations, the session's calibration one included
+ * (a block's tuple holds the family's block response, RT's `extra` the scorer's record of the block
+ * with the device and input type it was given, A18); the session's integrity logs (`visibilitychange`,
  * paste; M1.19) become `flags` when the state is read. Everything the UI is given about an item is
  * a {@link PublicItem}: its spec and ids, never the key, the parameters or the difficulty.
  */
@@ -62,6 +66,7 @@ import {
 import { scoreAll, type ScoreResult } from '../engine/scorer'
 import {
   A15_TARGET_S,
+  COVERAGE_FLOOR,
   STOP_SD,
   planSession,
   selectNext,
@@ -81,15 +86,8 @@ import type { DeviceInfo, SessionFlags } from '../save/types'
 import { MalformedResponseError, type AnyFamily } from '../tasks/family'
 import { getFamily } from '../tasks/registry'
 import { rtBlockObservation, type RtItem, type RtResponse } from '../tasks/rt'
-import {
-  calibrationObservation,
-  calibrationSummary,
-  confidenceFloorPct,
-  confidenceStartPct,
-  isConfidencePct,
-  type CalibrationSummary,
-  type RatedAnswer,
-} from './calibration'
+import { calibrationObservation, calibrationSummary, type CalibrationSummary, type RatedAnswer } from '../tasks/calibration'
+import { confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
 import { BREAK_AT_S, DEFAULT_ITEM_LIMIT_S, HARD_STOP_S } from './constants'
 import { SEGMENT_INFO } from './segments'
 import { SessionClock, type NowMs } from './clock'
@@ -195,8 +193,12 @@ export interface RunConfig {
   readonly rtInput: RtInputMode
   /** Seed of the plan and the selection; default the session id. */
   readonly seed?: string
-  /** The person's session number (coverage floor in session 1 only; default 1). */
-  readonly sessionNumber?: number
+  /**
+   * CAT items per axis earlier sessions already hold (`coverage.ts` `priorItemCounts`; default
+   * none). The ≥ 3-item coverage floor is per axis: an axis with 3 or more is free of it, so a
+   * session that was abandoned early does not lift the floor of an axis it never reached.
+   */
+  readonly priorItemCounts?: Readonly<Partial<Record<AxisCode, number>>>
   /** family_ids seen in earlier sessions (§7.7), excluded from this one. */
   readonly seenFamilies?: readonly string[]
   /** Axes skipped from the start. */
@@ -306,7 +308,7 @@ export class SessionRun {
   readonly #breakAtS: number
   readonly #hardStopS: number
   readonly #stopSd: number
-  readonly #sessionNumber: number
+  readonly #priorCounts: Readonly<Partial<Record<AxisCode, number>>>
   readonly #seenBase: readonly string[]
   readonly #segments: Segment[]
   readonly #weights: Partial<Record<AxisCode, number>> = {}
@@ -351,7 +353,7 @@ export class SessionRun {
     this.#breakAtS = cfg.breakAtS ?? BREAK_AT_S
     this.#hardStopS = cfg.hardStopS ?? HARD_STOP_S
     this.#stopSd = cfg.stopSd ?? STOP_SD
-    this.#sessionNumber = cfg.sessionNumber ?? 1
+    this.#priorCounts = cfg.priorItemCounts ?? {}
     this.#seenBase = cfg.seenFamilies ?? []
     this.#device = cfg.device
     this.#rtInput = cfg.rtInput
@@ -398,7 +400,7 @@ export class SessionRun {
     let seconds: number
     if (s.kind === 'block') seconds = s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : 0), 0)
     else seconds = s.status === 'current' && s.budgetS > 0 ? s.budgetS : this.#budgetFor(idx)
-    if (s.kind === 'cat' && this.#sessionNumber === 1) seconds = Math.max(seconds, FLOOR_SEGMENT_MIN_S)
+    if (s.kind === 'cat' && s.axes.some((k) => !this.#skipped.has(k) && this.#itemsOn(k) < COVERAGE_FLOOR)) seconds = Math.max(seconds, FLOOR_SEGMENT_MIN_S)
     return { id: s.id, title: info.title, cluster: info.cluster, axes: s.axes, kind: s.kind, minutes: minutesOf(seconds), status: s.status }
   }
 
@@ -497,6 +499,13 @@ export class SessionRun {
 
   // ------------------------------------------------------------------------- segments
 
+  /** CAT items on `axis` so far: earlier sessions' and this one's (the coverage floor counts both). */
+  #itemsOn(axis: AxisCode): number {
+    let n = this.#priorCounts[axis] ?? 0
+    for (const a of this.#administered) if (a.axis === axis) n++
+    return n
+  }
+
   /** Budget in seconds for the CAT segment at `idx` if it started now (see the module comment). */
   #budgetFor(idx: number): number {
     const elapsed = this.#clock.elapsedS()
@@ -588,7 +597,7 @@ export class SessionRun {
         seenFamilies: this.#seenBase,
         remainingS: s.budgetS - (elapsed - s.startedAtS),
         floorRemainingS: Math.max(0, this.#hardStopS - elapsed),
-        sessionNumber: this.#sessionNumber,
+        priorCounts: this.#priorCounts,
       },
       selectionRng(this.#seed, this.#administered.length),
       { axes, weights: this.#weights as AxisWeights, stopSd: this.#stopSd },
@@ -720,12 +729,11 @@ export class SessionRun {
         const r = rtBlockObservation(item as RtItem, response as RtResponse, device)
         if (r.status === 'ok') observation = r.observation
         else reasons = [r.reason]
-        extra.device_class = this.#device.class
-        if (inputType !== undefined) {
-          extra.input_type = inputType
-          this.#device = { ...this.#device, input: inputType }
-        }
-        if (this.#device.refresh_hz_est !== null) extra.refresh_hz_est = this.#device.refresh_hz_est
+        // What the save keeps is the scorer's own record of the block: the device class, the input
+        // type and the refresh rate it was given (A18, §13: normed separately), the norms version
+        // and the trial counts. So the RtDevice passed above is what is stored.
+        for (const [k, v] of Object.entries(r.meta)) if (v !== undefined) extra[k] = v as JsonValue
+        if (inputType !== undefined) this.#device = { ...this.#device, input: inputType }
       } else {
         const s = (familyOf(step.family).score(item as never, response as never) as { observation?: Observation; flags: readonly string[]; reasons: readonly string[] })
         observation = s.observation
@@ -809,7 +817,9 @@ export class SessionRun {
     this.#current = null
     this.#currentBlock = null
     this.#afterBreak = null
-    this.#clock.stop()
+    // At the hard stop the recorded time is the limit itself: a tab that was suspended past it (or a
+    // timer that fired late) does not put minutes on the clock that nobody worked.
+    this.#clock.stop(reason === 'hard_stop' ? this.#hardStopS : undefined)
     this.#endReason = reason
     this.#phase = 'finished'
     for (const s of this.#segments) if (s.status === 'upcoming' || s.status === 'current') s.status = 'not_reached'

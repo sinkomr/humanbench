@@ -21,6 +21,7 @@
   import { browserSessionEnv, type SessionEnv } from './env'
   import { FAST_BANNER } from './fast'
   import { readConsent, recordConsent } from './gate'
+  import { priorItemCounts } from './coverage'
   import { SessionPersister, type AutosaveStatus } from './persist'
   import { PracticeRun } from './practice'
   import { baseOf, defaultReadyState, type ReadyState } from './ready-state'
@@ -76,7 +77,8 @@
 
   function startPractice(): void {
     practice = new PracticeRun(newSessionId(env.wallClockMs()))
-    practiceFamilies = practice.familyIds()
+    // Every practice round keeps its families out of the counted session, not only the last one.
+    practiceFamilies = [...new Set([...practiceFamilies, ...practice.familyIds()])]
     phase = 'practice'
   }
 
@@ -90,7 +92,8 @@
       now: env.now,
       device,
       rtInput,
-      sessionNumber: (base?.sessions.length ?? 0) + 1,
+      // The ≥ 3-item floor follows the axes the earlier sessions covered, not their number (coverage.ts).
+      priorItemCounts: priorItemCounts(base),
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
       onChange: (kind: ChangeKind) => onChange(kind),
     })
