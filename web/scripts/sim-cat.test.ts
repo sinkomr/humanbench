@@ -8,9 +8,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { A15_TARGET_S } from '../src/engine/selector'
+import type * as CatModule from '../src/sim/cat'
 import type { M14aFixture } from '../src/sim/m14a'
+import { fakeCatRun } from '../src/sim/testing'
 import { UsageError } from './dump-lib'
 import { SIM_CAT_USAGE, SIM_FIXTURE, loadFixture, main, parseSimCatArgs } from './sim-cat'
+
+// A test can swap the simulation for synthetic runs (the --strict verdicts below); by default
+// `runCat` is the real one.
+const fake = vi.hoisted(() => ({ runCat: null as null | ((...args: never[]) => unknown) }))
+vi.mock('../src/sim/cat', async (importOriginal) => {
+  const actual = await importOriginal<typeof CatModule>()
+  return { ...actual, runCat: (...args: Parameters<typeof actual.runCat>) => (fake.runCat === null ? actual.runCat(...args) : (fake.runCat as typeof actual.runCat)(...args)) }
+})
 
 describe('parseSimCatArgs', () => {
   it('has the documented defaults', () => {
@@ -51,6 +61,7 @@ describe('main', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+    fake.runCat = null
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -83,6 +94,58 @@ describe('main', () => {
     expect(main(['--part', 'a', '--n', '300'], dir, path)).toBe(0)
     expect(out.join('\n')).toContain('FAIL MAT')
     expect(main(['--part', 'a', '--n', '300', '--strict'], dir, path)).toBe(1)
+  })
+
+  // ROADMAP M1.4b, user decision 2026-09-29: the M1 criterion is r ≥ .85 at 20 items/axis (DESIGN
+  // §14.3). --strict must fail on that fixed-length run only, never on the A15-budget run's r.
+  describe('--strict and the r criterion (synthetic runs: MAT / SPA / QR r = .815 / .798 / .743, the A15-budget values)', () => {
+    const lowR = { MAT: { r: 0.815 }, SPA: { r: 0.798 }, QR: { r: 0.743 } }
+    const strictB = (fixed: string, ...more: string[]): number => main(['--part', 'b', '--n', '3', '--fixed', fixed, '--strict', ...more], dir)
+    const givenFixedLength = (opts: unknown): number | null => (opts as { fixedLength?: number } | undefined)?.fixedLength ?? null
+
+    it('an A15-budget run with r below .85 passes --strict (time and coverage hold); r is printed as informational', () => {
+      fake.runCat = (...args) => fakeCatRun(lowR, { fixedLength: givenFixedLength(args[1]) })
+      expect(strictB('0')).toBe(0)
+      const text = out.join('\n')
+      expect(text).toContain('r within the A15 time budget is informational, not an acceptance criterion')
+      expect(text).toContain('MAT 0.815, SPA 0.798, QR 0.743')
+      expect(text).toContain('acceptance (cov90 in [0.85, 0.95] where observed; every session ≤ 30.0 min): PASS')
+      expect(text).toContain('the r ≥ .85 criterion (DESIGN §14.3) was not checked') // no fixed-length run to judge
+    })
+
+    it('a fixed-length run of 20 items/axis with r below .85 fails --strict, and exits 0 without it', () => {
+      fake.runCat = (...args) => fakeCatRun(lowR, { fixedLength: givenFixedLength(args[1]) })
+      expect(strictB('20', '--json', 'res.json')).toBe(1)
+      const text = out.join('\n')
+      expect(text).toContain('FAIL MAT: r = 0.815 < 0.85')
+      expect(text).toContain('FAIL QR: r = 0.743 < 0.85')
+      expect(text).not.toContain('was not checked')
+      const res = JSON.parse(readFileSync(join(dir, 'res.json'), 'utf8')) as Record<string, { r_criterion_axes: string[]; acceptance_failures: string[] }>
+      expect(res.b_a15!.r_criterion_axes).toEqual([])
+      expect(res.b_a15!.acceptance_failures).toEqual([])
+      expect(res.b_fixed!.r_criterion_axes).toEqual(['MAT', 'SPA', 'QR'])
+      expect(res.b_fixed!.acceptance_failures).toHaveLength(3)
+      expect(main(['--part', 'b', '--n', '3', '--fixed', '20'], dir)).toBe(0)
+    })
+
+    it('a fixed-length run of 20 items/axis with r ≥ .85 passes --strict; a shorter fixed length is informational', () => {
+      fake.runCat = (...args) => fakeCatRun({}, { fixedLength: givenFixedLength(args[1]) })
+      expect(strictB('20')).toBe(0)
+      expect(out.join('\n')).not.toContain('was not checked')
+      fake.runCat = (...args) => fakeCatRun(lowR, { fixedLength: givenFixedLength(args[1]) })
+      out.length = 0
+      expect(strictB('4')).toBe(0)
+      expect(out.join('\n')).toContain('r at 4 items per axis is informational')
+      expect(out.join('\n')).toContain('was not checked')
+    })
+
+    it('time and coverage still fail --strict on the A15 run', () => {
+      fake.runCat = (...args) => fakeCatRun({ MAT: { coverage: 0.7 } }, { fixedLength: givenFixedLength(args[1]) })
+      expect(strictB('0')).toBe(1)
+      expect(out.join('\n')).toContain('FAIL MAT: 90% coverage 0.700 outside [0.85, 0.95]')
+      fake.runCat = (...args) => fakeCatRun({}, { fixedLength: givenFixedLength(args[1]), timeS: { min: 1600, mean: 1700, max: 1900 } })
+      expect(strictB('0')).toBe(1)
+    })
   })
 
   it('usage errors exit 2 with the usage line', () => {

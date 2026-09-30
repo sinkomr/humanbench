@@ -1,41 +1,16 @@
 /**
  * M1.4b acceptance checks and tables (`report.ts`) on synthetic runs: which criterion applies to
- * which axis, the time rule only for A15 runs, the verdict lines, and the CAT-vs-Python rows.
+ * which axis, r ≥ .85 only at 20 items/axis (the user's decision of 2026-09-29) and merely reported
+ * within the A15 budget, the time rule only for A15 runs, the verdict lines, and the CAT-vs-Python
+ * rows.
  */
 
 import { describe, expect, it } from 'vitest'
-import { AXIS_CODES, type AxisCode } from '../engine/axes'
-import type { Observation } from '../engine/types'
-import type { CatRun, SessionResult } from './cat'
+import { AXIS_CODES } from '../engine/axes'
+import { CAT_AXES, M1_ITEMS_PER_AXIS } from './cat'
 import type { M14aAxisResult } from './m14a'
-import { catAcceptanceFailures, catVsPython, formatCat } from './report'
-import type { AxisRecovery } from './stats'
-
-const OBSERVED: readonly AxisCode[] = ['MAT', 'QR', 'SPA', 'WM', 'RT', 'PS']
-const obs: Observation[] = OBSERVED.map((axis) => ({ kind: 'gaussian', axis, lam: 1, d: 0, sigma: 1, x: 0 }))
-const session = { observations: obs } as unknown as SessionResult
-const spread = (v: number) => ({ min: v, mean: v, max: v })
-
-function fakeRun(over: Partial<Record<AxisCode, Partial<AxisRecovery>>> = {}, extra: Partial<CatRun> = {}): CatRun {
-  const axes = AXIS_CODES.map((code) => ({ code, r: OBSERVED.includes(code) ? 0.9 : 0.2, rmse: 0.4, mean_sd: 0.4, coverage: OBSERVED.includes(code) ? 0.9 : 0.5, ...over[code] }))
-  return {
-    n: 2,
-    seed: 's',
-    targetS: 1650,
-    fixedLength: null,
-    axes,
-    itemsPerAxis: { MAT: spread(10), SPA: spread(12), QR: spread(6) },
-    timeS: { min: 1600, mean: 1640, max: 1700 },
-    catTimeS: spread(900),
-    overTarget: 0.5,
-    targeting: { MAT: 0.6, SPA: 0.5, QR: 0.55 },
-    floorShort: { MAT: 0, SPA: 0, QR: 0.05 },
-    blockObserved: { coding: 1 },
-    segmentEnds: { time: 6 },
-    sessions: [session, session],
-    ...extra,
-  }
-}
+import { catAcceptanceFailures, catRAxes, catVsPython, formatCat } from './report'
+import { FAKE_OBSERVED as OBSERVED, fakeCatRun as fakeRun } from './testing'
 
 describe('catAcceptanceFailures', () => {
   it('passes a run that meets every criterion', () => {
@@ -43,11 +18,31 @@ describe('catAcceptanceFailures', () => {
     expect(formatCat(fakeRun())).toMatch(/: PASS$/)
   })
 
-  it('applies r only to the CAT axes and coverage only to observed axes', () => {
-    const run = fakeRun({ QR: { r: 0.84 }, WM: { r: 0.5, coverage: 0.96 }, LR: { coverage: 0.2 } })
+  it('applies r ≥ .85 only to the CAT axes and coverage only to observed axes, at 20 items/axis', () => {
+    const run = fakeRun({ QR: { r: 0.84 }, WM: { r: 0.5, coverage: 0.96 }, LR: { coverage: 0.2 } }, { fixedLength: M1_ITEMS_PER_AXIS })
     expect(catAcceptanceFailures(run)).toEqual(['QR: r = 0.840 < 0.85', 'WM: 90% coverage 0.960 outside [0.85, 0.95]'])
     expect(catAcceptanceFailures(run, { rAxes: ['MAT'] })).toEqual(['WM: 90% coverage 0.960 outside [0.85, 0.95]'])
-    expect(catAcceptanceFailures(fakeRun({ SPA: { r: Number.NaN } }))).toEqual(['SPA: r = NaN < 0.85'])
+    expect(catAcceptanceFailures(fakeRun({ SPA: { r: Number.NaN } }, { fixedLength: 20 }))).toEqual(['SPA: r = NaN < 0.85'])
+    expect(catAcceptanceFailures(fakeRun({ MAT: { r: 0.85 } }, { fixedLength: 20 }))).toEqual([]) // the bound is inclusive
+  })
+
+  // ROADMAP M1.4b, user decision 2026-09-29: the criterion is r ≥ .85 at 20 items/axis (DESIGN
+  // §14.3). Within the A15 budget (6–13 items per axis) r is reported, not judged.
+  it('holds only a run of ≥ 20 items/axis to r ≥ .85; the A15-budget r (and a shorter fixed length) is informational', () => {
+    const lowR = { MAT: { r: 0.815 }, SPA: { r: 0.798 }, QR: { r: 0.743 } }
+    expect(M1_ITEMS_PER_AXIS).toBe(20) // DESIGN §14.3 M1 acceptance 2
+    expect(catRAxes(fakeRun(lowR))).toEqual([])
+    expect(catAcceptanceFailures(fakeRun(lowR))).toEqual([]) // A15 run: time and coverage still hold
+    expect(catRAxes(fakeRun(lowR, { fixedLength: 19 }))).toEqual([])
+    expect(catAcceptanceFailures(fakeRun(lowR, { fixedLength: 19 }))).toEqual([])
+    for (const fixedLength of [20, 25]) {
+      expect(catRAxes(fakeRun(lowR, { fixedLength }))).toEqual(CAT_AXES)
+      expect(catAcceptanceFailures(fakeRun(lowR, { fixedLength }))).toEqual(['MAT: r = 0.815 < 0.85', 'SPA: r = 0.798 < 0.85', 'QR: r = 0.743 < 0.85'])
+    }
+    // the A15 run's other criteria still fail it, and an explicit rAxes still judges r
+    expect(catAcceptanceFailures(fakeRun(lowR, { timeS: { min: 1600, mean: 1700, max: 1900 } }))).toEqual(['time: max session 31.67 min > budget 30.00 min'])
+    expect(catAcceptanceFailures(fakeRun(lowR), { rAxes: ['QR'] })).toEqual(['QR: r = 0.743 < 0.85'])
+    expect(catAcceptanceFailures(fakeRun({ WM: { coverage: 0.5 } }))).toEqual(['WM: 90% coverage 0.500 outside [0.85, 0.95]'])
   })
 
   it("checks an A15 run's simulated time against A15's upper end (30 min), not a fixed-length run's", () => {
@@ -72,7 +67,26 @@ describe('catAcceptanceFailures', () => {
     expect(text).toContain('fixed length 20 items per CAT axis (no time limit)')
     expect(text).toContain('CAT items per axis (min / mean / max): MAT 10 / 10.0 / 10, SPA 12 / 12.0 / 12, QR 6 / 6.0 / 6')
     expect(text).toContain('(no data: borrowing via Σ only)')
+    expect(text).toContain('acceptance (r ≥ 0.85 on MAT/SPA/QR; cov90 in [0.85, 0.95] where observed): FAIL')
+    expect(text).not.toContain('informational')
     expect(text.split('\n').slice(-2)).toEqual([expect.stringMatching(/: FAIL$/), '  FAIL MAT: r = 0.800 < 0.85'])
+  })
+
+  it('reports the A15-budget r as informational, and judges only time and coverage', () => {
+    const run = fakeRun({ MAT: { r: 0.815 }, SPA: { r: 0.798 }, QR: { r: 0.743 } })
+    const text = formatCat(run)
+    expect(text).toContain('r within the A15 time budget is informational, not an acceptance criterion (r ≥ 0.85 is required at 20 items/axis, DESIGN §14.3): MAT 0.815, SPA 0.798, QR 0.743')
+    expect(text).toContain('acceptance (cov90 in [0.85, 0.95] where observed; every session ≤ 30.0 min): PASS')
+    expect(text).not.toContain('FAIL')
+    expect(text.split('\n').slice(-2)[0]).toMatch(/^r within the A15/) // reported just before the verdict
+    // a late session still fails the A15 run's verdict
+    const late = formatCat(fakeRun({ MAT: { r: 0.815 } }, { timeS: { min: 1600, mean: 1700, max: 1900 } }))
+    expect(late.split('\n').slice(-2)).toEqual([expect.stringMatching(/: FAIL$/), '  FAIL time: max session 31.67 min > budget 30.00 min'])
+    // a fixed length under 20 says so; the explicit rAxes option brings the criterion back
+    expect(formatCat(fakeRun({ QR: { r: 0.7 } }, { fixedLength: 4 }))).toContain('r at 4 items per axis is informational')
+    const forced = formatCat(fakeRun({ QR: { r: 0.7 } }), { rAxes: ['QR'] })
+    expect(forced).not.toContain('informational')
+    expect(forced.split('\n').slice(-2)).toEqual([expect.stringMatching(/^acceptance \(r ≥ 0\.85 on QR;.*: FAIL$/), '  FAIL QR: r = 0.700 < 0.85'])
   })
 })
 

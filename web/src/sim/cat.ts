@@ -46,7 +46,10 @@ import { getFamily } from '../tasks/registry'
 import { answerBlock, answerItem, blockTimeS } from './responders'
 import { pearson, recoveryStats, type AxisRecovery } from './stats'
 
-/** The axes the M1 CAT segments measure (A15): the M1.4b acceptance r ≥ .85 applies to them. */
+/**
+ * The axes the M1 CAT segments measure (A15): the M1.4b (b) acceptance r ≥ .85 applies to them, at
+ * {@link M1_ITEMS_PER_AXIS} items per axis (DESIGN §14.3; decided 2026-09-29, ROADMAP M1.4b).
+ */
 export const CAT_AXES: readonly AxisCode[] = Object.freeze(['MAT', 'SPA', 'QR'] as const)
 /** The axes the M1 fixed blocks measure (A10, A15). */
 export const BLOCK_AXES: readonly AxisCode[] = Object.freeze(['WM', 'RT', 'PS'] as const)
@@ -56,6 +59,13 @@ export const BLOCK_AXES: readonly AxisCode[] = Object.freeze(['WM', 'RT', 'PS'] 
  * only when blocks take the taker longer than their E[T] ({@link blockTimeS}).
  */
 export const A15_MAX_S = 30 * 60
+
+/**
+ * Items per CAT axis at which the M1 acceptance r ≥ .85 is required (DESIGN §14.3 M1 acceptance 2:
+ * "θ recovery at 20 items/axis"; ROADMAP M1.4b, user decision 2026-09-29). It is the fixed-length
+ * run of the simulation; within the A15 time budget (fewer items per axis) r is only reported.
+ */
+export const M1_ITEMS_PER_AXIS = 20
 
 /** A fixed block as the session ran it. */
 export interface BlockRecord {
@@ -99,7 +109,8 @@ export interface SessionOptions {
   /**
    * Fixed-length stopping instead of A15 time: each CAT segment loops until every one of its axes
    * has this many items (or the selector has none left), with no time limit. DESIGN §14.3 M1
-   * acceptance 2 states θ recovery "at 20 items/axis"; the blocks run as usual.
+   * acceptance 2 states θ recovery "at 20 items/axis" ({@link M1_ITEMS_PER_AXIS}); the blocks run
+   * as usual.
    */
   readonly fixedLength?: number
   /** Prior covariance of the finish MAP and the in-session EAP (default Σ_init v2, A8). */
