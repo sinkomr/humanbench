@@ -175,11 +175,24 @@ describe('content rules', () => {
     expect(r.text).toContain('- Biology and history: skip the basics and go straight to mechanisms, evidence and open questions.')
   })
 
-  it('handles logic notation as its own topic line', () => {
+  it('handles logic notation as its own topic line, except "ask first", which is the general question line (proposal §4.2 NT row)', () => {
     const t = (s: 'skip' | 'ask_first' | 'build'): string[] => ids(buildBrief({ prefs: { ...defaultPrefs('general'), topics: { 'lr/notation': s } }, form: 'long', asOf: '2026-11' }))
     expect(t('skip')).toContain('NT.skip')
     expect(t('build')).toContain('NT.build')
-    expect(t('ask_first')).toContain('DA')
+    const alone = buildBrief({ prefs: { ...defaultPrefs('general'), topics: { 'lr/notation': 'ask_first' } }, form: 'long', asOf: '2026-11' })
+    expect(ids(alone)).not.toContain('DA')
+    expect(alone.brief.lines.flatMap((l) => l.topics ?? [])).toEqual([])
+    expect(ids(alone)).toContain('U4')
+    const note = alone.notices.find((n) => n.kind === 'notation_ask')
+    expect(note?.message).toBe(NOTICE_TEXT.notationAsk)
+    expect(note?.topics).toEqual(['lr/notation'])
+    // next to another topic line, the general line moves under the topic lines and covers logic notation too
+    const beside = buildBrief({ prefs: { ...defaultPrefs('general'), topics: { 'lr/notation': 'ask_first', 'kst/physics': 'skip' } }, form: 'long', asOf: '2026-11' })
+    expect(ids(beside)).toContain('U4.t')
+    expect(ids(beside)).not.toContain('DA')
+    expect(beside.brief.lines.find((l) => l.id === 'DS.k')?.topics).toEqual(['kst/physics'])
+    // every setting of every other topic still has its own line
+    expect(ids(buildBrief({ prefs: { ...defaultPrefs('general'), topics: { 'kst/physics': 'ask_first' } }, form: 'long', asOf: '2026-11' }))).toContain('DA')
   })
 
   it('offers a worked example on build-up topics only in learn mode, as its own line', () => {
@@ -318,6 +331,16 @@ describe('gate statuses shape the notes (A22)', () => {
     expect(ok.brief.keywords).toMatchObject({ deeper: 'up', 'more steps': 'down' })
     const short = buildBrief({ prefs: defaultPrefs('general'), form: 'short', asOf: '2026-11', gates: gatesWith({ K2: { v: '1', status: 'shipped' } }) })
     expect(ids(short)).not.toContain('K2')
+    // K2 ships only if E7d passed on this wording: no entry, or an entry for other wording, leaves it blocked
+    // (every preset ticks K2 by default, so an "experimental" fallback would have written it already ticked).
+    for (const gates of [{ ...DEFAULT_GATES, lines: {} }, gatesWith({ K2: { v: '0', status: 'shipped' } })]) {
+      for (const preset of ['general', 'coding', 'learning'] as const) {
+        const none = buildBrief({ prefs: defaultPrefs(preset), form: 'long', asOf: '2026-11', gates })
+        expect(ids(none), preset).not.toContain('K2')
+        expect(none.lines.some((l) => l.line.id === 'K2'), preset).toBe(false)
+        expect(none.blocked, preset).toContain('K2')
+      }
+    }
     const blockedDs = buildBrief({ prefs: { ...defaultPrefs('general'), topics: { 'kst/physics': 'skip' } }, form: 'long', asOf: '2026-11', gates: gatesWith({ 'DS.k': { v: '1', status: 'blocked' } }) })
     expect(ids(blockedDs)).not.toContain('DS.k')
   })
@@ -383,6 +406,23 @@ describe('the length rule (proposal §3.3 step 4, §4.1)', () => {
     expect(r.dropped.length).toBeGreaterThan(5)
   })
 
+  it('gives up "I know this well" lines before "any other topic: ask", "not sure" and "new to me" lines (proposal §2.2 point 2)', () => {
+    const p: ContextPrefs = {
+      ...defaultPrefs('general'),
+      topics: { 'quant/linear': 'skip', 'kst/biology': 'skip', 'kst/physics': 'ask_first', 'quant/probability_counting': 'build', 'khu/history': 'build' },
+    }
+    // a limit nothing but the locked lines can meet lists every unlocked line in the order it was given up
+    const all = buildBrief({ prefs: p, form: 'long', asOf: '2026-11', limit: 1 }).dropped.map((d) => d.line.id)
+    const s3 = all.filter((i) => TEMPLATE_BY_ID.get(i)?.section === 'S3')
+    expect(s3).toEqual(['DS.k', 'DS', 'U4.t', 'DA', 'DB.k', 'DB'])
+    // ... and later sections still go before any of them
+    const firstS3 = all.findIndex((i) => TEMPLATE_BY_ID.get(i)?.section === 'S3')
+    expect(all.slice(0, firstS3).every((i) => Number((TEMPLATE_BY_ID.get(i)?.section ?? 'S0').slice(1)) > 3)).toBe(true)
+    // the same holds in the short form, where there is no ask-first line
+    const short = buildBrief({ prefs: p, form: 'short', asOf: '2026-11', limit: 1 }).dropped.map((d) => d.line.id).filter((i) => TEMPLATE_BY_ID.get(i)?.section === 'S3')
+    expect(short).toEqual(['DS.k', 'DS', 'DB.k', 'DB'])
+  })
+
   it('keeps the merge decisions consistent after a drop (U4 moves back when the topic lines go)', () => {
     const p: ContextPrefs = { ...defaultPrefs('general'), topics: { 'kst/physics': 'skip' } }
     const full = buildBrief({ prefs: p, form: 'long', asOf: '2026-11' })
@@ -405,15 +445,66 @@ describe('properties over random settings (V0 generator invariants, non-zone)', 
         expect(r.chars).toBe(r.text.length)
         expect(r.chars).toBeLessThanOrEqual(FORM_LIMITS[form])
         expect(r.fits).toBe(true)
-        // every ticked line is either written or reported as dropped
-        const written = new Set(r.brief.lines.map((l) => JSON.stringify(l)))
+        // every ticked line is either written or reported as dropped, by name
         const ticked = compose({ prefs, extras, form, asOf }).lines.filter((l) => l.on)
-        const dropped = new Set(r.dropped.map((d) => d.key))
-        for (const t of ticked) expect(written.has(JSON.stringify(t.line)) || dropped.has(t.key) || r.dropped.length > 0, t.key).toBe(true)
+        const writtenKeys = new Set(r.written.map((w) => w.key))
+        const droppedKeys = new Set(r.dropped.map((d) => d.key))
+        for (const t of ticked) expect(writtenKeys.has(t.key) || droppedKeys.has(t.key), t.key).toBe(true)
         if (r.dropped.length === 0) expect(r.brief.lines).toEqual(ticked.map((t) => t.line))
       }),
       { numRuns: runs },
     )
+  })
+
+  it('writes only lines that have a ticked row in the preview, whatever is dropped for length (review fix)', () => {
+    // A dropped line must never bring another line into the notes: a line without a row has no tick box,
+    // so the person could neither see why it is there nor switch it off. Small limits force many drops.
+    fc.assert(
+      fc.property(arbPrefs, arbExtras, arbForm, arbMonth, fc.integer({ min: 150, max: 1600 }), (prefs, extras, form, asOf, limit) => {
+        const r = buildBrief({ prefs, extras, form, asOf, limit })
+        const preview = new Map(r.lines.filter((l) => l.on).map((l) => [l.key, l]))
+        const writtenKeys = new Set(r.written.map((w) => w.key))
+        const droppedKeys = new Set(r.dropped.map((d) => d.key))
+        for (const w of r.written) expect(preview.has(w.key), `${w.key} (${w.line.id}) is written but has no ticked row`).toBe(true)
+        expect(r.brief.lines).toEqual(r.written.map((w) => w.line))
+        for (const k of preview.keys()) expect(writtenKeys.has(k) || droppedKeys.has(k), `${k} vanished without being reported`).toBe(true)
+        for (const k of droppedKeys) expect(writtenKeys.has(k), `${k} is both dropped and written`).toBe(false)
+      }),
+      { numRuns: 800 },
+    )
+  })
+
+  it('does not bring "plain words" back when the word choice that replaced it is dropped for length (review fix)', () => {
+    // General preset, ChatGPT short notes, "general vocabulary is fine" on, three topics and two interests.
+    const p: ContextPrefs = { ...defaultPrefs('general'), lines_on: ['W1'], topics: { 'kst/biology': 'skip', 'khu/history': 'build', 'quant/probability_counting': 'build' } }
+    const extras = { interests: 'cooking, football', custom: [] }
+    const r = buildBrief({ prefs: p, extras, form: 'short', asOf: '2026-11' })
+    expect(r.dropped.map((d) => d.line.id)).toContain('W1')
+    expect(ids(r).filter((i) => i.startsWith('U2'))).toEqual([])
+    expect(r.text).not.toContain('Use plain words')
+    // the person's history line survives, because the longer "plain words" line did not push it out
+    expect(ids(r)).toContain('DB.k')
+    expect(r.dropped.map((d) => d.line.id)).toEqual(['U6', 'U3', 'I1', 'W1', 'K1'])
+    // the same goes for the other wording of plain words, and for W2 standing in when W1 goes
+    const alt = buildBrief({ prefs: { ...p, phrasing: { U2: 'U2.b' } }, extras, form: 'short', asOf: '2026-11' })
+    expect(ids(alt).filter((i) => i.startsWith('U2'))).toEqual([])
+    const both = buildBrief({ prefs: { ...p, lines_on: ['W1', 'W2'] }, extras, form: 'short', asOf: '2026-11' })
+    expect(ids(both)).not.toContain('W2')
+  })
+
+  it('does not bring "short sentences" back on its own when the merged plain-words line is dropped (review fix)', () => {
+    const p: ContextPrefs = { ...defaultPrefs('learning'), lines_on: ['W3'] }
+    const full = buildBrief({ prefs: p, form: 'long', asOf: '2026-11' })
+    expect(ids(full)).toContain('U2.W3')
+    // find a limit that drops the merged line: shrink until it is reported dropped
+    let hit: ReturnType<typeof buildBrief> | undefined
+    for (let limit = full.chars - 1; limit > 400 && hit === undefined; limit -= 20) {
+      const r = buildBrief({ prefs: p, form: 'long', asOf: '2026-11', limit })
+      if (r.dropped.some((d) => d.line.id === 'U2.W3')) hit = r
+    }
+    expect(hit).toBeDefined()
+    expect(ids(hit as ReturnType<typeof buildBrief>).filter((i) => i === 'W3' || i.startsWith('U2'))).toEqual([])
+    expect((hit as ReturnType<typeof buildBrief>).text).not.toContain('short sentences')
   })
 
   it('is deterministic: the same settings, extras, form and month always give the same bytes', () => {

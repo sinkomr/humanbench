@@ -66,7 +66,7 @@ export const MODE_TABLE: readonly { readonly setting: string; readonly do: strin
     setting: 'Build up',
     do: 'Intuition, then define each term, then one worked example, then the rule, then the answer, plus a way to check',
     learn: 'Worked example, then a faded one for me to finish; hints before answers; one or two recall questions at the end',
-    challenge: 'Falls back to teach me: difficulty helps only with enough background',
+    challenge: 'Falls back to teach me: harder cases suit people who already have the background',
   },
 ]
 

@@ -9,6 +9,13 @@ import { NO_EXTRAS, TICK_KEYS, defaultPrefs, normalizePrefs, type ContextPrefs, 
 import { TOPICS } from './topics'
 import { LENGTHS, MODES, PRESETS, TOPIC_SETTINGS, type Form } from './types'
 
+/**
+ * Words that say or imply the notes help (A22 copy-claim rule: no banner or drawer implies benefit
+ * until F18/F19 pass). Copy, drawer texts, the for-ai document and destination steps are all checked
+ * with this one pattern; the claim sentence itself ("not yet shown to help") is the only exception.
+ */
+export const BENEFIT_RE = /\b(?:helps?|helped|helpful|improves?|improved|boosts?|better results?|works better|more accurate|learn faster|proven|proves?|guarantee\w*|effective|easier|strong evidence)\b/i
+
 export const arbForm: fc.Arbitrary<Form> = fc.constantFrom('short', 'long', 'skill')
 export const arbMonth: fc.Arbitrary<string> = fc.tuple(fc.integer({ min: 2024, max: 2090 }), fc.integer({ min: 1, max: 12 })).map(([y, m]) => `${y}-${String(m).padStart(2, '0')}`)
 

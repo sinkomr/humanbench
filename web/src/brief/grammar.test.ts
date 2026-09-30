@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import pins from './__fixtures__/wording-pins.json'
 import {
   HEADINGS,
   KNOWN_HEADINGS,
@@ -24,6 +25,7 @@ import {
 } from './grammar'
 import { lintLine, lintNotes } from './lint'
 import { lineText } from './render'
+import { BENEFIT_RE } from './testing'
 import { PRESETS, type Form } from './types'
 
 const FORMS: Form[] = ['short', 'long', 'skill']
@@ -96,7 +98,8 @@ describe('templates', () => {
   it('give every line a drawer text that does not overclaim benefit (A22 copy-claim rule)', () => {
     for (const t of TEMPLATES) {
       expect(t.research.length, t.id).toBeGreaterThan(10)
-      expect(t.research, t.id).not.toMatch(/\b(?:proven|proves?|guarantee\w*|improves?|boosts?|will help|shown to help|strong evidence)\b/i)
+      // The same pattern as the page copy: "helps", "can help", "easier" and the like imply benefit too (A22).
+      expect(t.research, t.id).not.toMatch(BENEFIT_RE)
       expect(lintLine(t.research).filter((h) => h.rule === 'a13' || h.rule === 'ascii'), t.id).toEqual([])
     }
   })
@@ -161,5 +164,41 @@ describe('header, headings and Skill front matter', () => {
     }
     expect(SKILL_NAME).toMatch(/^[a-z][a-z-]*$/)
     expect(skillFrontMatter('coding')).toEqual(['---', 'name: working-with-me', `description: ${SKILL_DESCRIPTIONS.coding}`, '---'])
+  })
+})
+
+describe('wording pins (A22: "the wording is the treatment")', () => {
+  // A line type's gate status is keyed by (id, v). If the wording changed and v did not, the old
+  // status would silently apply to a new treatment. Each template's text is pinned by hash per
+  // version; changing the text needs a new v, which resets the status through gates.lineStatus.
+  const table = pins.pins as Record<string, Record<string, string>>
+  const hash = async (t: Pick<(typeof TEMPLATES)[number], 'long' | 'short'>): Promise<string> => {
+    const bytes = new TextEncoder().encode(JSON.stringify([t.long, t.short === undefined ? 'same' : t.short]))
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  it('fails when a template\'s wording changes without a new version', async () => {
+    for (const t of TEMPLATES) {
+      const h = await hash(t)
+      const pinned = table[t.id]?.[t.v]
+      expect(pinned, `${t.id} v${t.v} has no pin: add "${t.v}": "${h}" under "${t.id}" in wording-pins.json`).toBeDefined()
+      expect(h, `${t.id} v${t.v}: the wording changed but v did not. Bump v (this resets the gate status) and add the new hash.`).toBe(pinned)
+    }
+  })
+
+  it('catches a reworded template (mutation check of the pin itself)', async () => {
+    const t = template('AC2')
+    const reworded = { long: 'Explain each change briefly once you have made it.', short: t.short }
+    expect(await hash(reworded)).not.toBe(table.AC2?.[t.v])
+    expect(await hash(t)).toBe(table.AC2?.[t.v])
+  })
+
+  it('keeps only well-formed hashes, and every pinned version is a plain version string', () => {
+    for (const [id, versions] of Object.entries(table)) {
+      for (const [v, h] of Object.entries(versions)) {
+        expect(v, id).toMatch(/^\d+$/)
+        expect(h, `${id} v${v}`).toMatch(/^[0-9a-f]{64}$/)
+      }
+    }
   })
 })

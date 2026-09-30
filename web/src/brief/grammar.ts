@@ -145,7 +145,7 @@ export const TEMPLATES: readonly Template[] = [
   {
     id: 'U4', v: '1', section: 'S2', group: 'style', order: 250, base: 'U4', tier: 'T0', basis: 'default',
     long: "If you're unsure whether I know a prerequisite, ask one quick question instead of guessing.",
-    research: 'One quick question about what you already know can help an explanation land. The notes ask only when unsure, and only once.',
+    research: 'Research on teaching supports finding out what someone already knows before explaining; not yet tested for AI notes. The line asks only when unsure, and only once.',
   },
   {
     id: 'U5', v: '1', section: 'S2', group: 'style', order: 260, base: 'U5', tier: 'T0', basis: 'default',
@@ -155,12 +155,12 @@ export const TEMPLATES: readonly Template[] = [
   {
     id: 'U6', v: '1', section: 'S2', group: 'style', order: 270, base: 'U6', tier: 'T0', basis: 'default', fit: true,
     long: 'On answers that matter, say how sure you are and give me one quick way to check.',
-    research: 'People tend to follow assistant answers even where they are wrong. A way to check helps you catch that.',
+    research: 'Research on people using assistants found that they tend to follow answers even where they are wrong; not yet tested for AI notes. The line asks for a way to check.',
   },
   {
     id: 'U6c', v: '1', section: 'S2', group: 'style', order: 270, base: 'U6', tier: 'T0', basis: 'default', fit: true,
     long: 'On answers that matter, say how sure you are and give me one quick way to check, such as a test or a command.',
-    research: 'People tend to follow assistant answers even where they are wrong. A test or a command is a quick way to check code.',
+    research: 'Research on people using assistants found that they tend to follow answers even where they are wrong; not yet tested for AI notes. For code, a test or a command is a quick way to check.',
   },
   {
     id: 'U7', v: '1', section: 'S2', group: 'style', order: 280, base: 'U7', tier: 'T0', basis: 'default',
@@ -170,7 +170,7 @@ export const TEMPLATES: readonly Template[] = [
   {
     id: 'U8', v: '1', section: 'S2', group: 'style', order: 290, base: 'U8', tier: 'T0', basis: 'default',
     long: 'When editing my writing, keep my voice and word choices; point out unclear sentences instead of rewriting everything.',
-    research: 'Keeps your voice as the writer. HumanBench results add little to writing help, so this context uses no results.',
+    research: 'Keeps your voice as the writer. HumanBench results add little to writing feedback, so this context uses no results.',
   },
   {
     id: 'FMT1', v: '1', section: 'S2', group: 'style', order: 300, base: 'FMT1', tier: 'T1', basis: 'self_set',
@@ -257,7 +257,7 @@ export const TEMPLATES: readonly Template[] = [
     id: 'U4.t', v: '1', section: 'S3', group: 'topic', order: 480, base: 'U4', tier: 'T0', basis: 'default',
     long: "Any other topic: if you're unsure whether I know a prerequisite, ask one quick question instead of guessing.",
     short: null,
-    research: 'One quick question about what you already know can help an explanation land. The notes ask only when unsure, and only once.',
+    research: 'Research on teaching supports finding out what someone already knows before explaining; not yet tested for AI notes. The line asks only when unsure, and only once.',
   },
 
   // S5: working together with a coding agent (the person's choice)
@@ -277,14 +277,14 @@ export const TEMPLATES: readonly Template[] = [
     id: 'K1', v: '1', section: 'S4', group: 'work', order: 610, base: 'K1', tier: 'T0', basis: 'default',
     long: 'If I say "teach me", give a hint first and let me try. If I say "just do it", give the result and one quick check. If I say "challenge me", give me a harder case and ask me to justify my answer.',
     keywords: { 'teach me': 'learn', 'just do it': 'do', 'challenge me': 'challenge' },
-    research: 'Trying a problem after a hint can help learning more than being handed the answer; you choose per request. Mid-chat requests fade over a long chat, so the notes define the words up front.',
+    research: 'Research on hints and self-explanation supports trying a problem before seeing the answer; not yet tested for AI notes. You choose per request. Mid-chat requests fade over a long chat, so the notes define the words up front.',
   },
   {
     id: 'K1L', v: '1', section: 'S4', group: 'work', order: 620, base: 'K1L', tier: 'T0', basis: 'default',
     long: "By default, teach: ask what I'd try first, give hints before answers, and end with one short question that checks the idea.",
     short: `By default, teach: ask what I'd try first, give hints before answers, and end with one short question that checks the idea. If I say "just do it", give the result and one quick check.`,
     keywords: { 'just do it': 'do' },
-    research: 'Trying a problem after a hint can help learning more than being handed the answer.',
+    research: 'Research on hints and self-explanation supports trying a problem before seeing the answer; not yet tested for AI notes.',
   },
   {
     id: 'K1D', v: '1', section: 'S4', group: 'work', order: 630, base: 'K1D', tier: 'T0', basis: 'default',
@@ -298,7 +298,7 @@ export const TEMPLATES: readonly Template[] = [
     long: 'If I say "challenge me" on a topic I know, give me a harder case or an edge case and ask me to justify my answer before you comment. On a topic that is new to me, teach instead.',
     short: null,
     keywords: { 'challenge me': 'challenge' },
-    research: 'Difficulty helps only with enough background, so on new ground the notes fall back to teaching.',
+    research: 'Harder cases suit people who already have the background, so on new ground the notes fall back to teaching.',
   },
   {
     id: 'K1F', v: '1', section: 'S4', group: 'work', order: 650, base: 'K1F', tier: 'T1', basis: 'self_set',
@@ -318,7 +318,7 @@ export const TEMPLATES: readonly Template[] = [
   {
     id: 'I1', v: '1', section: 'S7', group: 'extras', order: 810, base: 'I1', tier: 'T1', basis: 'self_set',
     long: 'When you need an example, use {interests}.',
-    research: 'Examples drawn from your interests can make an explanation easier to follow. Interests are never saved.',
+    research: 'Research on examples supports drawing them from a learner\'s interests; not yet tested for AI notes. Interests are never saved.',
   },
   {
     id: 'X1', v: '1', section: 'S7', group: 'extras', order: 820, base: 'X1', tier: 'T1', basis: 'self_set',

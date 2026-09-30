@@ -24,6 +24,12 @@ export const COPY = {
   interests: "Hobbies or subjects you like. Don't add health details or anything personal. This is never saved.",
   customHint: 'One line of your own, in plain words. It is checked before it is used, and never saved.',
   remove: 'Remove my notes settings. This deletes your notes preferences from this device. Your results stay. Download a fresh save afterwards if you keep one elsewhere.',
+  /**
+   * Shown while the builder keeps nothing (before `brief_prefs`, AI.7): "Remove my notes settings"
+   * only clears this page, so it does not talk about a device copy or a fresh save download.
+   * `remove` is the approved draft for when preferences are stored.
+   */
+  removeStorageless: 'Remove my notes settings. This clears your choices on this page and starts again. This page saves nothing on your device, so there is nothing else to remove.',
   removeDone: 'Your notes settings were removed from this page.',
   fitLog: 'Your fit notes change only these suggestions. They never change your results.',
   copied: 'Copied to the clipboard.',

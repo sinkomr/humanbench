@@ -53,7 +53,11 @@ describe('lineStatus', () => {
     expect(lineStatus(shipped, 'K2')).toBe('shipped')
     const stale: GateFile = { ...base, lines: { ...base.lines, DS: { v: '0', status: 'shipped' }, K2: { v: '0', status: 'blocked' } } }
     expect(lineStatus(stale, 'DS')).toBe('experimental')
-    expect(lineStatus(stale, 'K2')).toBe('experimental')
+    // K2 ships only if E7d passed on this wording: a stale or missing entry leaves it blocked, never experimental.
+    const staleShipped: GateFile = { ...base, lines: { ...base.lines, K2: { v: '0', status: 'shipped' } } }
+    expect(lineStatus(stale, 'K2')).toBe('blocked')
+    expect(lineStatus(staleShipped, 'K2')).toBe('blocked')
+    expect(lineStatus({ ...base, lines: {} }, 'K2')).toBe('blocked')
     expect(lineStatus({ ...base, lines: {} }, 'F1')).toBe('shipped')
     expect(lineStatus({ ...base, lines: {} }, 'DS')).toBe('experimental')
   })

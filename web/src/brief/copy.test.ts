@@ -6,8 +6,10 @@
 
 import { describe, expect, it } from 'vitest'
 import { lintLine } from './lint'
+import { PRESET_INFO } from './contexts'
 import { CLAIM, COPY, DATA_FREE_SNIPPET, SETTING_LABELS, STEPS } from './copy'
 import { DESTINATIONS } from './surfaces'
+import { BENEFIT_RE as BENEFIT } from './testing'
 
 const drafts = import.meta.glob<string>('./__fixtures__/proposal/ui-copy.txt', { query: '?raw', import: 'default', eager: true })['./__fixtures__/proposal/ui-copy.txt'] ?? ''
 const helper = import.meta.glob<string>('./__fixtures__/proposal/results-helper.txt', { query: '?raw', import: 'default', eager: true })['./__fixtures__/proposal/results-helper.txt'] ?? ''
@@ -39,7 +41,7 @@ describe('approved copy drafts are used word for word', () => {
     expect(NOTICE_TEXT.floor).toBe(draft("We're still checking that assistants handle this line respectfully."))
   })
 
-  it('keeps the results-talk preamble fixture at 341 characters with no clinical words (for AI.6b)', () => {
+  it('keeps the results-talk preamble fixture at 340 characters with no clinical words (for AI.6b)', () => {
     expect(helper.trim().length).toBe(340)
     expect(lintLine(helper).filter((h) => h.rule === 'a13')).toEqual([])
   })
@@ -52,6 +54,7 @@ describe('copy rules', () => {
     DATA_FREE_SNIPPET,
     ...Object.values(STEPS).flatMap((s) => [s.heading, s.hint]),
     ...Object.values(SETTING_LABELS).flatMap((s) => [s.label, s.hint]),
+    ...Object.values(PRESET_INFO).flatMap((p) => [p.label, p.blurb, p.resultsNote]),
   ]
 
   it('uses no clinical or diagnostic word anywhere (A13)', () => {
@@ -59,7 +62,6 @@ describe('copy rules', () => {
   })
 
   it('never says or implies the notes help, on any screen, until F18/F19 pass (A22)', () => {
-    const BENEFIT = /\b(?:helps?|helped|improves?|improved|boosts?|better results?|works better|more accurate|learn faster|proven|guarantee\w*|effective)\b/i
     for (const t of all()) {
       // The claim itself is the one sentence that names "help": it says it is NOT shown to help.
       if (t === CLAIM) continue

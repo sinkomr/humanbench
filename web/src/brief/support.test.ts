@@ -8,6 +8,7 @@ import { TEMPLATES } from './grammar'
 import { lintLine } from './lint'
 import { NOTHING_APPEARS, whatToLookFor } from './look'
 import { destination } from './surfaces'
+import { BENEFIT_RE } from './testing'
 import { checkedText, drawerRows } from './why'
 
 describe('drawerRows ("Why this line?")', () => {
@@ -20,6 +21,8 @@ describe('drawerRows ("Why this line?")', () => {
       for (const r of rows) {
         expect(r.text.length, `${t.id} ${r.label}`).toBeGreaterThan(5)
         expect(r.text, `${t.id} ${r.label}`).not.toMatch(/\d/)
+        // A22: no drawer implies benefit (the drawer for every line, not only the research text).
+        expect(r.text, `${t.id} ${r.label}`).not.toMatch(BENEFIT_RE)
         expect(lintLine(r.text).filter((h) => h.rule === 'a13'), t.id).toEqual([])
       }
     }
@@ -85,6 +88,7 @@ describe('for-ai.md', () => {
     expect(md).not.toMatch(/https?:|www\.|\]\(/)
     expect(forAiMarkdown()).toBe(md)
     expect(md).toContain('not yet shown to help HumanBench users')
+    expect(md.replace('not yet shown to help HumanBench users', '')).not.toMatch(BENEFIT_RE)
     expect(lintLine(md).filter((h) => h.rule === 'a13' || h.rule === 'ascii')).toEqual([])
   })
 

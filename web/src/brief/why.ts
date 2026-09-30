@@ -18,7 +18,7 @@ export interface DrawerRow {
 }
 
 const WHY: Readonly<Record<Basis, string>> = {
-  fixed: 'It is a fixed clause of every set of notes. It keeps answers accurate and keeps you in charge.',
+  fixed: 'It is a fixed clause of every set of notes. It asks the assistant to stay accurate and puts your requests in the chat first.',
   default: 'It is a default for everyone in this kind of use.',
   self_set: 'You chose it.',
 }

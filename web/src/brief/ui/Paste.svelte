@@ -2,13 +2,15 @@
   /**
    * Step 5: where the notes will live (proposal §3.3 step 5; R-17.10). HumanBench picks the format
    * and shows the steps, a copy button and a download button. The provider warning, the anti-
-   * coercion notice and the placement advice sit above the copy button, always. For coding agents
-   * the file is downloaded under a unique name and the command that installs it refuses to
-   * overwrite an existing file; removal steps, including a memory review, are one click away.
+   * coercion notice, the placement advice and "What to look for" (§3.7, "shown before copying")
+   * sit above the copy button, always. For coding agents the file is downloaded under a unique name
+   * and the command that installs it refuses to overwrite an existing file; removal steps,
+   * including a memory review, are one click away. The steps carry the date they were last checked,
+   * and a warning once that date is more than 120 days old (R-17.10).
    */
   import { setDestination, setForm, type BuilderState } from '../builder'
   import { COPY, STEPS } from '../copy'
-  import { DESTINATIONS, commandBlocks, type Destination, type DestinationGroup, type Os } from '../surfaces'
+  import { DESTINATIONS, SURFACES, commandBlocks, surfacesStaleness, type Destination, type DestinationGroup, type Os } from '../surfaces'
   import { whatToLookFor } from '../look'
   import type { Form } from '../types'
 
@@ -19,6 +21,8 @@
     lineIds: readonly string[]
     /** Unique file name of the download. */
     fileName: string
+    /** Today, `YYYY-MM-DD`, to tell whether the install steps are out of date. */
+    today: string
     /** The last thing done with the buttons, announced politely ("Copied to the clipboard."). */
     status: string
     onchange: (next: BuilderState) => void
@@ -26,7 +30,7 @@
     ondownload: () => void
     oncopycommands: (text: string) => void
   }
-  let { model, dest, form, lineIds, fileName, status, onchange, oncopy, ondownload, oncopycommands }: Props = $props()
+  let { model, dest, form, lineIds, fileName, today, status, onchange, oncopy, ondownload, oncopycommands }: Props = $props()
 
   const prefs = $derived(model.contexts[model.active])
   const GROUPS: { id: DestinationGroup; label: string }[] = [
@@ -43,6 +47,7 @@
   const blocks = $derived(commandBlocks(dest, fileName))
   const block = $derived(blocks?.find((b) => b.os === os) ?? blocks?.[0])
   const looks = $derived(whatToLookFor(lineIds))
+  const stale = $derived(surfacesStaleness(today))
   // For agents that read a file, download is the default (proposal §3.3 step 5); copy stays available.
   const downloadFirst = $derived(dest.file?.kind === 'new_file')
 </script>
@@ -81,6 +86,18 @@
   <p class="note" data-testid="anti-coercion">{COPY.antiCoercion}</p>
   <p class="note" data-testid="placement">{COPY.placement}</p>
 
+  <div data-testid="look-for">
+    <h3>What to look for</h3>
+    {#if looks.length > 0}
+      <ul>
+        {#each looks as l (l)}
+          <li>{l}</li>
+        {/each}
+      </ul>
+    {/if}
+    <p>If none of this appears: {COPY.troubleshooting}</p>
+  </div>
+
   <div class="row actions">
     {#if downloadFirst}
       <button type="button" class="primary" onclick={ondownload}>Download {fileName}</button>
@@ -94,6 +111,10 @@
   <p class="hint">File name: <code data-testid="file-name">{fileName}</code>. {COPY.fileHint}</p>
 
   <h3>Steps for {dest.label}</h3>
+  <p class="hint" data-testid="steps-checked">Steps last checked {SURFACES.checked}.</p>
+  {#if stale.stale}
+    <p class="warn" data-testid="steps-stale">{stale.warning}</p>
+  {/if}
   <ol>
     {#each dest.install as step (step)}
       <li>{step}</li>
@@ -133,16 +154,6 @@
       <p>{COPY.memoryNote}</p>
     {/if}
   </details>
-
-  <h3>What to look for</h3>
-  {#if looks.length > 0}
-    <ul>
-      {#each looks as l (l)}
-        <li>{l}</li>
-      {/each}
-    </ul>
-  {/if}
-  <p>If none of this appears: {COPY.troubleshooting}</p>
 </section>
 
 <style>

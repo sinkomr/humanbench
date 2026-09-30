@@ -31,12 +31,14 @@
     asOf: string
     /** Random part of download file names, so a file never collides with an earlier download. */
     token: string
+    /** Today, `YYYY-MM-DD`, for the out-of-date warning on the install steps (default: the first day of `asOf`). */
+    today?: string
     gates?: GateFile
     /** Injected in tests; the page uses the browser's clipboard and a Blob download. */
     copy?: (text: string) => Promise<boolean>
     download?: (text: string, name: string, mime: string) => string
   }
-  let { asOf, token, gates = DEFAULT_GATES, copy = defaultCopy, download = defaultDownload }: Props = $props()
+  let { asOf, token, today = `${asOf}-01`, gates = DEFAULT_GATES, copy = defaultCopy, download = defaultDownload }: Props = $props()
 
   let model = $state<BuilderState>(initialState())
   let status = $state('')
@@ -125,6 +127,7 @@
     {form}
     lineIds={result.brief.lines.map((l) => l.id)}
     {fileName}
+    {today}
     {status}
     onchange={change}
     oncopy={() => void onCopy()}

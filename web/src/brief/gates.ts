@@ -7,7 +7,8 @@
  *
  * - `shipped`: renders normally. T0 lines start here (generic good practice, proposal §7.3).
  * - `experimental`: renders with a badge. The person's own lines start here until they pass.
- * - `blocked`: never renders (K2 until the direction gate E7d passes).
+ * - `blocked`: never renders (K2 until the direction gate E7d passes; with no entry at the current
+ *   wording version K2 is blocked too, `GATE_REQUIRED`).
  * - A status is keyed by (line id, wording version). A template whose `v` differs from the file's
  *   entry has changed wording, so its gate resets to the type's default ("the wording is the
  *   treatment").
@@ -81,8 +82,19 @@ export function parseGateFile(x: unknown): GateFile {
 /** The bundled statuses. The bank overwrites the JSON when a gate run finishes (A17). */
 export const DEFAULT_GATES: GateFile = parseGateFile(raw)
 
-/** The status a line type has without a gate entry (or with a stale one): T0 ships, the rest is experimental. */
+/**
+ * Line types that ship only after a specific check passes, so they are blocked until a gate entry
+ * at the current wording version says otherwise: K2 needs the direction check E7d ("Ships only if
+ * E7d passes; otherwise blocked", proposal §4.2, §7.3).
+ */
+export const GATE_REQUIRED: ReadonlySet<LineId> = new Set(['K2'])
+
+/**
+ * The status a line type has without a gate entry (or with a stale one): T0 ships, the person's own
+ * choices are experimental, and a line type that needs its check is blocked.
+ */
 export function defaultStatus(id: LineId): LineStatus {
+  if (GATE_REQUIRED.has(id)) return 'blocked'
   return TEMPLATE_BY_ID.get(id)?.tier === 'T0' ? 'shipped' : 'experimental'
 }
 

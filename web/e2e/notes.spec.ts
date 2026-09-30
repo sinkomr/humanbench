@@ -64,16 +64,16 @@ test.describe('load', () => {
     expect(problems).toEqual([])
   })
 
-  test('shows the provider warning, anti-coercion and placement notices before the copy button', async ({ page }) => {
+  test('shows the provider warning, anti-coercion, placement and what to look for before the copy button', async ({ page }) => {
     await open(page)
-    for (const id of ['provider-warning', 'anti-coercion', 'placement']) await expect(page.getByTestId(id)).toBeVisible()
+    for (const id of ['provider-warning', 'anti-coercion', 'placement', 'look-for']) await expect(page.getByTestId(id)).toBeVisible()
     const order = await page.evaluate(`(() => {
       const pos = (sel) => document.querySelector(sel).getBoundingClientRect().top
       const copy = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Copy the notes')
-      return [pos('[data-testid=provider-warning]'), pos('[data-testid=anti-coercion]'), pos('[data-testid=placement]'), copy.getBoundingClientRect().top]
+      return [pos('[data-testid=provider-warning]'), pos('[data-testid=anti-coercion]'), pos('[data-testid=placement]'), pos('[data-testid=look-for]'), copy.getBoundingClientRect().top]
     })()`)
-    const [a, b, c, d] = order as number[]
-    expect(a! < b! && b! < c! && c! < d!).toBe(true)
+    const [a, b, c, d, e] = order as number[]
+    expect(a! < b! && b! < c! && c! < d! && d! < e!).toBe(true)
   })
 
   test('the rendered page passes the language lint (A13)', async ({ page }) => {
@@ -120,6 +120,25 @@ test.describe('accessibility (M1.A, M1.21, R-17.14)', () => {
     await open(page)
     await useEverything(page)
     expect(await page.evaluate(`document.getAnimations().length`)).toBe(0)
+  })
+
+  test('switches motion off under prefers-reduced-motion even where a style would add it', async ({ page }) => {
+    // The page has no motion of its own, so the override is tested against a probe style that adds a
+    // transition and smooth scrolling: it must show up without the preference (the control) and not with it.
+    const probe = `(() => {
+      if (!document.getElementById('motion-probe')) {
+        const s = document.createElement('style')
+        s.id = 'motion-probe'
+        s.textContent = '* { transition: opacity 5s; scroll-behavior: smooth; }'
+        document.head.append(s)
+      }
+      return [getComputedStyle(document.querySelector('main')).transitionDuration, getComputedStyle(document.documentElement).scrollBehavior]
+    })()`
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await open(page)
+    expect(await page.evaluate(probe)).toEqual(['5s', 'smooth'])
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    expect(await page.evaluate(probe)).toEqual(['0s', 'auto'])
   })
 
   test('can be operated with the keyboard alone: arrow keys move within a group, Space and Enter act', async ({ page, isMobile }) => {

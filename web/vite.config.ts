@@ -46,6 +46,36 @@ function schemaAssets(): Plugin {
   }
 }
 
+/** Days after which the destination data of the notes builder counts as out of date (`src/brief/surfaces.ts`, `STALE_AFTER_DAYS`; a test keeps the two equal). */
+export const SURFACES_STALE_AFTER_DAYS = 120
+
+/**
+ * The warning for a build made on `today` (`YYYY-MM-DD`) when `src/brief/surfaces.json` was last
+ * checked on `checked`, or null while it is fresh (ROADMAP AI.4; R-17.10). The build only warns:
+ * out-of-date install steps are a reminder to re-check the menus, not a reason to fail unrelated work.
+ */
+export function surfacesStaleWarning(checked: string, today: string): string | null {
+  const days = Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${checked}T00:00:00Z`)) / 86_400_000)
+  if (days <= SURFACES_STALE_AFTER_DAYS) return null
+  if (!Number.isFinite(days)) return `src/brief/surfaces.json has an unreadable "checked" date (${checked}); it must be YYYY-MM-DD.`
+  return `src/brief/surfaces.json was last checked on ${checked}, ${days} days ago (limit ${SURFACES_STALE_AFTER_DAYS}). Re-check the install steps and limits of each destination and update "checked".`
+}
+
+/** Warns in the build log when the notes builder's destination data is more than 120 days old. */
+function surfacesStaleness(): Plugin {
+  return {
+    name: 'humanbench-surfaces-staleness',
+    apply: 'build',
+    buildStart() {
+      const file = fileURLToPath(new URL('./src/brief/surfaces.json', import.meta.url))
+      const checked = (JSON.parse(readFileSync(file, 'utf8')) as { checked?: unknown }).checked
+      if (typeof checked !== 'string') return this.warn('src/brief/surfaces.json has no "checked" date.')
+      const warning = surfacesStaleWarning(checked, new Date().toISOString().slice(0, 10))
+      if (warning !== null) this.warn(warning)
+    },
+  }
+}
+
 /** Whether the build includes the dev-only routes of src/dev/ (see `define` below; M1.16). */
 export function devRoutesEnabled(mode: string, env: Record<string, string>): boolean {
   return mode !== 'production' || env.VITE_HB_DEV_ROUTES === '1'
@@ -59,7 +89,7 @@ export default defineConfig(({ mode }) => {
   const base = (env.VITE_BASE || '/humanbench/').replace(/\/?$/, '/')
   return {
     base,
-    plugins: [svelte(), schemaAssets()],
+    plugins: [svelte(), schemaAssets(), surfacesStaleness()],
     // Dev-only routes (src/dev/, e.g. the M1.16 blob demo): on in dev and tests, and in a build
     // with VITE_HB_DEV_ROUTES=1 (the Playwright e2e build); a plain production build drops them.
     define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)) },

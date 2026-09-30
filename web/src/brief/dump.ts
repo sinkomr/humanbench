@@ -58,7 +58,9 @@ function entry(p: Profile, gates: GateFile): DumpEntry {
   for (const [id, set] of Object.entries(p.prefs.topics)) {
     const topic = topicById(id)
     if (topic === undefined) continue
-    topics[id] = { set, effective: EFFECTIVE[topicTemplate(topic, set, floorApplies, ask).id] ?? set, written: written.has(id) }
+    // Logic notation has no ask-first line of its own: the general "ask one quick question" line covers it.
+    const t = topicTemplate(topic, set, floorApplies, ask)
+    topics[id] = { set, effective: t === null ? 'ask_first' : (EFFECTIVE[t.id] ?? set), written: written.has(id) }
   }
   return {
     name: p.name,

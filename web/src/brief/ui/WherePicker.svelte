@@ -46,6 +46,10 @@
         </span>
       </label>
     {/each}
+    {#if current !== undefined}
+      <!-- What HumanBench results add in this context (proposal §3.1, last column): nothing in Part 1, and for Writing never. -->
+      <p class="hint" data-testid="results-note">{PRESET_INFO[current.preset].resultsNote}</p>
+    {/if}
   </fieldset>
 </section>
 

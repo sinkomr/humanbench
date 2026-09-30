@@ -17,7 +17,7 @@ let app: ReturnType<typeof mount> | undefined
 let copy: ReturnType<typeof vi.fn<(text: string) => Promise<boolean>>>
 let download: ReturnType<typeof vi.fn<(text: string, name: string, mime: string) => string>>
 
-function open(props: Partial<{ asOf: string; token: string }> = {}): void {
+function open(props: Partial<{ asOf: string; token: string; today: string }> = {}): void {
   app = mount(NotesBuilder, { target: document.body, props: { asOf: '2026-11', token: 'k3f9', copy, download, ...props } })
   flushSync()
 }
@@ -134,7 +134,7 @@ describe('steps 1 to 3', () => {
   it('stops at five topics and says so', () => {
     open()
     for (const l of ['Programming', 'Statistics', 'Data analysis', 'Machine learning', 'Probability and counting']) click(chip(l))
-    expect($('[role=status]:not(:empty)').textContent).toBeDefined()
+    expect([...document.querySelectorAll('[role=status]')].map((el) => el.textContent)).toContain('You have picked five topics, the most a set of notes can list. Remove one to pick another.')
     expect(document.body.textContent).toContain('You have picked five topics')
     expect(chip('Probability and counting').getAttribute('aria-pressed')).toBe('true')
     const disabled = [...document.querySelectorAll<HTMLButtonElement>('.chip')].filter((b) => b.disabled)
@@ -300,8 +300,13 @@ describe('step 5: where to paste', () => {
     const warning = $('[data-testid=provider-warning]')
     const anti = $('[data-testid=anti-coercion]')
     const placement = $('[data-testid=placement]')
+    const lookFor = $('[data-testid=look-for]')
     const copyButton = button('Copy the notes')
-    for (const el of [warning, anti, placement]) expect(el.compareDocumentPosition(copyButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // proposal §3.3 step 5: the provider warning, the anti-coercion notice, placement advice and "What to look for" come before copying
+    for (const el of [warning, anti, placement, lookFor]) expect(el.compareDocumentPosition(copyButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(lookFor.querySelector('h3')?.textContent).toBe('What to look for')
+    expect(lookFor.textContent).toContain(COPY.troubleshooting)
+    expect(button('Download hb-notes-2026-11-k3f9.txt').compareDocumentPosition(lookFor) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
     expect(warning.textContent).toBe(COPY.providerWarning)
     expect(anti.textContent).toBe(COPY.antiCoercion)
     expect(placement.textContent).toBe(COPY.placement)
@@ -384,11 +389,38 @@ describe('step 5: where to paste', () => {
     pickUse('Learning something new')
     click(chip('Physics'))
     click(setting('Physics', 'I know this well'))
-    const text = [...document.querySelectorAll('h3')].find((h) => h.textContent === 'What to look for')!.parentElement!.textContent ?? ''
+    const text = $('[data-testid=look-for]').textContent ?? ''
     expect(text).toContain('On skip-the-basics topics it goes straight to the method')
     expect(text).toContain('On answers that matter it says how sure it is')
     expect(text).toContain(`If none of this appears: ${COPY.troubleshooting}`)
     expect(text).not.toContain('By voice')
+  })
+})
+
+describe('step 5: the date of the steps (R-17.10)', () => {
+  it('shows when the install and removal steps were last checked, with no warning while they are fresh', () => {
+    open()
+    expect($('[data-testid=steps-checked]').textContent).toBe('Steps last checked 2026-09-28.')
+    expect(document.querySelector('[data-testid=steps-stale]')).toBeNull()
+  })
+
+  it('warns once the steps are more than 120 days old', () => {
+    open({ today: '2027-01-27' })
+    expect($('[data-testid=steps-stale]').textContent).toContain('last checked on 2026-09-28, 121 days ago')
+    // the warning does not hide the steps
+    expect($('[data-testid=steps-checked]').textContent).toBe('Steps last checked 2026-09-28.')
+    expect(document.body.textContent).toContain('Steps for ChatGPT custom instructions')
+  })
+})
+
+describe('what HumanBench results add (proposal §3.1)', () => {
+  it('says for Writing that HumanBench adds little and the notes never use results, and follows the chosen use', () => {
+    open()
+    expect($('[data-testid=results-note]').textContent).toBe('These notes use your own settings only.')
+    pickUse('Writing')
+    expect($('[data-testid=results-note]').textContent).toBe('HumanBench adds little here, so these notes never use results.')
+    pickUse('Coding and data')
+    expect($('[data-testid=results-note]').textContent).toBe('These notes use your own settings only.')
   })
 })
 
@@ -410,6 +442,10 @@ describe('more', () => {
 
   it('removes the settings on request and announces it', async () => {
     open()
+    // nothing is stored yet (AI.7), so the text does not talk about a device copy or a fresh save download
+    expect(document.body.textContent).toContain(COPY.removeStorageless)
+    expect(document.body.textContent).not.toContain('Download a fresh save')
+    expect(document.body.textContent).not.toContain('deletes your notes preferences from this device')
     pickUse('Coding and data')
     click(chip('Programming'))
     type(labelled<HTMLInputElement>('Hobbies or subjects'), 'chess')

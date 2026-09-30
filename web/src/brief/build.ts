@@ -66,7 +66,7 @@ export interface ComposedLine {
   readonly phrasings: readonly LineId[]
 }
 
-export type NoticeKind = 'floor' | 'cap' | 'words' | 'ask_first_short' | 'interests' | 'custom' | 'tier'
+export type NoticeKind = 'floor' | 'cap' | 'words' | 'ask_first_short' | 'notation_ask' | 'interests' | 'custom' | 'tier'
 
 export interface Notice {
   readonly kind: NoticeKind
@@ -112,15 +112,20 @@ export const NOTICE_TEXT = {
   words: 'Your word choice replaces the "plain words" line, and only one word choice is used.',
   askFirstShort: 'In the short notes, one line asks the assistant to check what you already know. Topic-by-topic "ask first" lines are in the long notes.',
   tier: 'This lists every topic you have set in all of your notes, not only the ones for this use.',
+  notationAsk: 'For logic and arguments, "Not sure" uses the general line that asks one quick question, so it has no line of its own.',
 } as const
 
 const sourcesStatus = (gates: GateFile, line: BriefLine, sources: readonly LineId[]): LineStatus =>
   line.id === 'X1' ? 'shipped' : worstStatus([lineStatus(gates, line.id), ...sources.map((s) => lineStatus(gates, s))])
 
-/** The line for each topic's setting, with the floor rule applied. */
-export function topicTemplate(topic: Topic, setting: TopicSetting, floorApplies: boolean, ask: LineId): { id: LineId; floored: boolean } {
+/**
+ * The line for each topic's setting, with the floor rule applied; `null` when the setting writes no
+ * topic line of its own. Logic notation has no ask-first line: "ask first" there is the general
+ * "ask one quick question" line, U4 (proposal §4.2, NT row).
+ */
+export function topicTemplate(topic: Topic, setting: TopicSetting, floorApplies: boolean, ask: LineId): { id: LineId; floored: boolean } | null {
+  if (topic.domain === 'notation') return setting === 'ask_first' ? null : { id: setting === 'skip' ? 'NT.skip' : 'NT.build', floored: false }
   if (setting === 'ask_first') return { id: ask, floored: false }
-  if (topic.domain === 'notation') return { id: setting === 'skip' ? 'NT.skip' : 'NT.build', floored: false }
   if (setting === 'skip') return { id: topic.domain === 'knowledge' ? 'DS.k' : 'DS', floored: false }
   if (topic.floor === true && floorApplies) return { id: ask, floored: true }
   return { id: topic.domain === 'knowledge' ? 'DB.k' : 'DB', floored: false }
@@ -141,9 +146,17 @@ export function compose(input: BuildInput, forced: ForcedOff = NO_FORCED): Compo
 
   const offByPerson = (k: string): boolean => prefs.lines_off.includes(k)
   const offAny = (k: string): boolean => offByPerson(k) || forced.keys.has(k)
-  const isOn = (k: string): boolean => !offAny(k) && (prefs.lines_on.includes(k) || preset.defaults.includes(k))
+  /**
+   * The person's own choice, before any line is dropped for length. What a line does to the other
+   * lines (a word choice replacing "plain words", "short sentences" merging into it) is decided
+   * from this, never from `forced`: dropping a line must not bring another line into the notes
+   * that has no row and no tick box in the preview (review fix, proposal §3.3 step 4, §4.1).
+   */
+  const personOn = (k: string): boolean => !offByPerson(k) && (prefs.lines_on.includes(k) || preset.defaults.includes(k))
+  /** In the notes: chosen and not dropped for length. */
+  const isOn = (k: string): boolean => personOn(k) && !forced.keys.has(k)
   /** A default the person removed still shows in the list, unticked, so they can bring it back. */
-  const shown = (k: string): boolean => isOn(k) || (preset.defaults.includes(k) && offByPerson(k))
+  const shown = (k: string): boolean => personOn(k) || (preset.defaults.includes(k) && offByPerson(k))
   const pick = (base: string): LineId => {
     const fam = PHRASING_FAMILIES[base]
     if (fam === undefined) return base
@@ -187,20 +200,20 @@ export function compose(input: BuildInput, forced: ForcedOff = NO_FORCED): Compo
   if (shown('U1')) add({ id: pick('U1') }, { kind: 'key', key: 'U1' }, isOn('U1'))
   if (prefs.length !== 'standard') add({ id: prefs.length === 'short' ? 'LEN.short' : 'LEN.detailed' }, { kind: 'key', key: 'LEN' }, !offAny('LEN'))
 
-  const w1 = isOn('W1')
-  const w2 = isOn('W2') && !w1
-  const w3 = isOn('W3')
-  if (w1 && isOn('W2')) note({ kind: 'words', message: NOTICE_TEXT.words })
+  const w1 = personOn('W1')
+  const w2 = personOn('W2') && !w1
+  const w3 = personOn('W3')
+  if (w1 && personOn('W2')) note({ kind: 'words', message: NOTICE_TEXT.words })
   const words = w1 || w2
   if (words && shown('U2')) note({ kind: 'words', message: NOTICE_TEXT.words })
   const u2Id = pick('U2')
   const u2Shown = !words && shown('U2')
-  const mergeW3 = u2Shown && isOn('U2') && u2Id === 'U2' && w3
+  const mergeW3 = u2Shown && personOn('U2') && u2Id === 'U2' && w3
   if (u2Shown) {
-    if (mergeW3) add({ id: 'U2.W3' }, { kind: 'key', key: 'U2' }, true, ['U2', 'W3'], 'U2')
+    if (mergeW3) add({ id: 'U2.W3' }, { kind: 'key', key: 'U2' }, isOn('U2'), ['U2', 'W3'], 'U2')
     else add({ id: u2Id }, { kind: 'key', key: 'U2' }, isOn('U2'))
   }
-  if (w3 && !mergeW3) add({ id: 'W3' }, { kind: 'key', key: 'W3' }, true)
+  if (w3 && !mergeW3) add({ id: 'W3' }, { kind: 'key', key: 'W3' }, isOn('W3'))
   if (shown('U3')) add({ id: 'U3' }, { kind: 'key', key: 'U3' }, isOn('U3'))
   // U4 is placed after the topic lines are known (below).
   if (shown('U5')) add({ id: 'U5' }, { kind: 'key', key: 'U5' }, isOn('U5'))
@@ -208,8 +221,8 @@ export function compose(input: BuildInput, forced: ForcedOff = NO_FORCED): Compo
   if (shown('U7')) add({ id: 'U7' }, { kind: 'key', key: 'U7' }, isOn('U7'))
   if (shown('U8')) add({ id: 'U8' }, { kind: 'key', key: 'U8' }, isOn('U8'))
   for (const id of ['FMT1', 'FMT2', 'FMT3', 'VOICE']) if (shown(id)) add({ id }, { kind: 'key', key: id }, isOn(id))
-  if (w1) add({ id: 'W1' }, { kind: 'key', key: 'W1' }, true)
-  if (w2) add({ id: 'W2' }, { kind: 'key', key: 'W2' }, true)
+  if (w1) add({ id: 'W1' }, { kind: 'key', key: 'W1' }, isOn('W1'))
+  if (w2) add({ id: 'W2' }, { kind: 'key', key: 'W2' }, isOn('W2'))
 
   // S3: depth by topic (the person's own settings; no results in Part 1).
   const floorApplies = !floorGatePassed(gates)
@@ -227,10 +240,15 @@ export function compose(input: BuildInput, forced: ForcedOff = NO_FORCED): Compo
   }
   const groups = new Map<LineId, { on: TopicId[]; off: TopicId[] }>()
   const floored: TopicId[] = []
+  const notationAsk: TopicId[] = []
   for (const [id, setting] of chosen) {
     const topic = topicById(id)
     if (topic === undefined) continue
     const t = topicTemplate(topic, setting, floorApplies, ask)
+    if (t === null) {
+      notationAsk.push(id)
+      continue
+    }
     if (t.floored) floored.push(id)
     const g = groups.get(t.id) ?? { on: [], off: [] }
     const isOff = prefs.topics_off.includes(id) || forced.topics.has(id)
@@ -238,6 +256,7 @@ export function compose(input: BuildInput, forced: ForcedOff = NO_FORCED): Compo
     groups.set(t.id, g)
   }
   if (floored.length > 0) note({ kind: 'floor', message: NOTICE_TEXT.floor, topics: floored })
+  if (notationAsk.length > 0) note({ kind: 'notation_ask', message: NOTICE_TEXT.notationAsk, topics: notationAsk })
   const topicIds = [...groups.keys()].sort((a, b) => (TEMPLATE_BY_ID.get(a)?.order ?? 0) - (TEMPLATE_BY_ID.get(b)?.order ?? 0))
   let topicLineOn = false
   for (const id of topicIds) {
@@ -257,7 +276,7 @@ export function compose(input: BuildInput, forced: ForcedOff = NO_FORCED): Compo
   if (shown('U4')) add({ id: form !== 'short' && topicLineOn ? 'U4.t' : 'U4' }, { kind: 'key', key: 'U4' }, isOn('U4'), ['U4'], 'U4')
 
   // S5 (coding contexts only) and S4: working together and the control words.
-  if (preset.coding) for (const id of ['AC1', 'AC2']) if (isOn(id)) add({ id }, { kind: 'key', key: id }, true)
+  if (preset.coding) for (const id of ['AC1', 'AC2']) if (personOn(id)) add({ id }, { kind: 'key', key: id }, isOn(id))
   if (prefs.mode === 'do') {
     if (shown('K1')) add({ id: 'K1' }, { kind: 'key', key: 'K1' }, isOn('K1'))
   } else {
@@ -314,6 +333,8 @@ export interface BuildResult {
   readonly fits: boolean
   /** The first composition: every line, ticked or not, before any line was dropped for length. */
   readonly lines: readonly ComposedLine[]
+  /** The ticked lines of the final composition, in print order: exactly what `brief.lines` was made from. */
+  readonly written: readonly ComposedLine[]
   /** Ticked lines left out because the text is over the limit, lowest priority first. Never silent. */
   readonly dropped: readonly ComposedLine[]
   readonly notices: readonly Notice[]
@@ -330,12 +351,22 @@ function droppedKeyFor(c: ComposedLine): ForcedOff {
   return { keys, topics, custom }
 }
 
+/**
+ * Within S3, how long a line is kept (0 goes first): lines that withhold help from someone who knows
+ * the topic (skip) go first, then the general "any other topic: ask" line, then ask-first, and lines
+ * that give a newcomer more help (build up, which always carry the check clause) go last. Proposal
+ * §2.2 point 2: "giving assistance to novices appears more important than withholding it for
+ * experts"; §4.1 fixes only the order between sections.
+ */
+const S3_KEPT: Readonly<Record<string, number>> = { DS: 0, 'DS.k': 0, 'NT.skip': 0, 'U4.t': 1, DA: 2, 'DA.p': 2, DB: 3, 'DB.k': 3, 'NT.build': 3 }
+
 /** Higher drops first: `fit` lines in the short form, then later sections before earlier ones (proposal §4.1). */
 const dropRank = (c: ComposedLine, form: Form): number => {
   const t = TEMPLATE_BY_ID.get(c.line.id)
   const s = Number((t?.section ?? 'S0').slice(1))
   const fit = form === 'short' && t?.fit === true ? 1_000_000 : 0
-  return fit + s * 10_000 + (t?.order ?? 0) + (c.tick.kind === 'custom' ? c.tick.index / 100 : 0)
+  const inSection = t?.section === 'S3' ? (3 - (S3_KEPT[c.line.id] ?? 0)) * 1_000 : 0
+  return fit + s * 10_000 + inSection + (t?.order ?? 0) + (c.tick.kind === 'custom' ? c.tick.index / 100 : 0)
 }
 
 /** Build a brief and write it; drop, and report, the lowest-priority lines that do not fit. */
@@ -351,13 +382,13 @@ export function buildBrief(input: BuildInput): BuildResult {
     const brief = assemble(comp, input)
     const text = renderText(brief)
     if (text.length <= limit) {
-      return { brief, text, chars: text.length, limit, fits: true, lines: first.lines, dropped, notices: first.notices, blocked: first.blocked }
+      return { brief, text, chars: text.length, limit, fits: true, lines: first.lines, written: comp.lines.filter((l) => l.on), dropped, notices: first.notices, blocked: first.blocked }
     }
     const victim = comp.lines
       .filter((l) => l.on && !l.locked)
       .sort((a, b) => dropRank(b, input.form) - dropRank(a, input.form))[0]
     if (victim === undefined) {
-      return { brief, text, chars: text.length, limit, fits: false, lines: first.lines, dropped, notices: first.notices, blocked: first.blocked }
+      return { brief, text, chars: text.length, limit, fits: false, lines: first.lines, written: comp.lines.filter((l) => l.on), dropped, notices: first.notices, blocked: first.blocked }
     }
     dropped.push(victim)
     const f = droppedKeyFor(victim)

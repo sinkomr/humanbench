@@ -50,7 +50,8 @@
   <div class="row"><button type="button" onclick={() => ondownloadforai(forAi)}>Download for-ai.md</button></div>
 
   <h3>Start over</h3>
-  <p>{COPY.remove}</p>
+  <!-- COPY.remove (the stored-preferences wording) replaces this once AI.7 stores brief_prefs. -->
+  <p>{COPY.removeStorageless}</p>
   <button type="button" onclick={onremove}>Remove my notes settings</button>
   <p class="status" role="status" aria-live="polite" data-testid="more-status">{status}</p>
   <p class="hint">{CLAIM}</p>
