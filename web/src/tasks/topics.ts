@@ -5,7 +5,8 @@
  * (`schema/topics-v1.json`) and this repo keeps a byte-identical copy next to this file (ROADMAP
  * A17: `npm run sync:topics`, checked by `scripts/sync-topics.test.ts`). `topics-aliases.json` is
  * the retirement history: every ID any release has contained, and where each retired or split ID
- * went.
+ * went. `topics-released-v1.json` is the frozen ledger of the IDs that shipped (test-only here;
+ * not imported by the app).
  *
  * IDs are lowercase `a-z` words joined by `_` and `/`, with no digits:
  * - `quant/<group>`: the six M1 quant groups (`kind: group`), over the template facets
@@ -23,8 +24,17 @@
  * words. Versioning: `topics_version` and `group_version` go into the JSON export and
  * `brief_prefs`; adding a topic is additive; retiring, renaming or splitting one keeps its ID in
  * `released` and maps it in `aliases` to its successors, so a stored override or fit-log entry
- * never dangles ({@link resolveTopic}, {@link aliasesProblems}). The bank's `hb.topics` is the
- * twin of this module.
+ * never dangles ({@link resolveTopic}, {@link aliasesProblems}). `released` cannot vouch for itself,
+ * so `topics-released-v1.json` is a frozen ledger of the IDs that shipped: `released` must keep
+ * every one and each must still resolve to a live topic ({@link releasedLedgerProblems}). A release
+ * that adds IDs appends them to the ledger; nothing is ever removed from it. The bank's
+ * `hb.topics` is the twin of this module.
+ *
+ * Measured subjects have one ID. `other/` holds only subjects HumanBench does not measure, so a
+ * subject with a measured facet or group (personal finance is `kap/personal_finance`, not an
+ * `other/` twin) is set through that ID; a second ID for it would make a person's overrides and
+ * the fit log ambiguous. Every live ID (group, facet, topic or `other/`) is a valid key for a
+ * person's own topic setting; which of them the settings UI offers is AI.5's choice.
  *
  * Not re-exported from the `tasks` barrel: the notes code imports it explicitly.
  */
@@ -83,6 +93,8 @@ const NODE_KEYS: Readonly<Record<TopicKind, readonly string[]>> = {
 }
 const ROOT_KEYS = ['about', 'denied_words', 'group_version', 'nodes', 'topics_version']
 const ALIAS_KEYS = ['about', 'aliases', 'released', 'topics_version']
+const LEDGER_KEYS = ['about', 'ids', 'topics_version']
+const LEDGER_FILE = 'topics-released-v1.json'
 
 type Json = unknown
 const isRecord = (v: Json): v is Record<string, Json> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -155,8 +167,10 @@ export function taxonomyProblems(raw: Json, groups: readonly QuantGroup[] = QUAN
   if (raw.topics_version !== TOPICS_VERSION) problems.push(`topics_version must be '${TOPICS_VERSION}'`)
   if (raw.group_version !== GROUP_VERSION) problems.push(`group_version must be '${GROUP_VERSION}'`)
   problems.push(...deniedProblems(raw.denied_words))
-  const denied: Record<string, string[]> = {}
-  if (isRecord(raw.denied_words)) for (const [k, v] of Object.entries(raw.denied_words)) if (isStringList(v)) denied[k] = v
+  // fromEntries, not `denied[k] = v`: a list named `__proto__` must stay an own key
+  const denied: Record<string, string[]> = isRecord(raw.denied_words)
+    ? Object.fromEntries(Object.entries(raw.denied_words).filter((e): e is [string, string[]] => isStringList(e[1])))
+    : {}
   const nodes = raw.nodes
   if (!Array.isArray(nodes) || nodes.length === 0) return [...problems, 'nodes must be a non-empty list']
 
@@ -182,7 +196,7 @@ export function taxonomyProblems(raw: Json, groups: readonly QuantGroup[] = QUAN
     if (seen.has(id)) problems.push(`${id}: listed twice`)
     seen.set(id, node)
     const prefix = id.split('/')[0] as string
-    const wantAxis = AXIS_OF_PREFIX[prefix]
+    const wantAxis = Object.hasOwn(AXIS_OF_PREFIX, prefix) ? AXIS_OF_PREFIX[prefix] : undefined // not `constructor` etc.
     if (k !== 'other' && node.axis !== wantAxis) problems.push(`${id}: axis must be ${wantAxis} for the ${prefix}/ prefix`)
     const label = node.label
     if (typeof label !== 'string' || !LABEL_RE.test(label) || label.length > LABEL_MAX) {
@@ -260,7 +274,8 @@ export function aliasesProblems(raw: Json, live: ReadonlySet<string> | readonly 
   if (released.join() !== [...releasedSet].sort().join()) problems.push('released must be sorted and free of duplicates')
   for (const x of released) if (!anyTopicId(x)) problems.push(`released: '${x}' is not a valid topic ID`)
   for (const x of [...liveSet].sort()) if (!releasedSet.has(x)) problems.push(`${x} is live but missing from released: append it (released is append-only)`)
-  const valid: Record<string, string[]> = {}
+  // a Map and Object.hasOwn throughout: a successor named `constructor`, `toString` or `__proto__` is just an unknown ID
+  const valid = new Map<string, string[]>()
   for (const [key, successors] of Object.entries(aliases)) {
     if (!releasedSet.has(key)) problems.push(`alias ${key}: not in released`)
     if (liveSet.has(key)) problems.push(`alias ${key}: is a live ID; remove it from the aliases`)
@@ -268,16 +283,16 @@ export function aliasesProblems(raw: Json, live: ReadonlySet<string> | readonly 
       problems.push(`alias ${key}: needs a non-empty list of successor IDs`)
       continue
     }
-    valid[key] = successors
+    valid.set(key, successors)
     if (new Set(successors).size !== successors.length || successors.includes(key)) problems.push(`alias ${key}: successors must be distinct and not the ID itself`)
-    for (const s of successors) if (!liveSet.has(s) && !(s in aliases)) problems.push(`alias ${key}: successor ${s} is neither live nor an alias`)
+    for (const s of successors) if (!liveSet.has(s) && !Object.hasOwn(aliases, s)) problems.push(`alias ${key}: successor ${s} is neither live nor an alias`)
   }
   for (const key of [...releasedSet].filter((x) => !liveSet.has(x)).sort()) {
-    if (!(key in valid)) problems.push(`${key} was released and is no longer live but has no alias`)
+    if (!valid.has(key)) problems.push(`${key} was released and is no longer live but has no alias`)
   }
-  for (const start of Object.keys(valid)) {
+  for (const start of valid.keys()) {
     const seen = new Set<string>()
-    const stack = [...(valid[start] as string[])]
+    const stack = [...(valid.get(start) as string[])]
     for (let x = stack.pop(); x !== undefined; x = stack.pop()) {
       if (x === start) {
         problems.push(`alias ${start}: the successors loop back to it`)
@@ -285,11 +300,44 @@ export function aliasesProblems(raw: Json, live: ReadonlySet<string> | readonly 
       }
       if (!seen.has(x)) {
         seen.add(x)
-        stack.push(...(valid[x] ?? []))
+        stack.push(...(valid.get(x) ?? []))
       }
     }
   }
-  for (const x of released) if (resolveTopic(x, liveSet, valid).length === 0) problems.push(`${x} does not resolve to any live topic`)
+  const validRecord = Object.fromEntries(valid)
+  for (const x of released) if (resolveTopic(x, liveSet, validRecord).length === 0) problems.push(`${x} does not resolve to any live topic`)
+  return problems
+}
+
+/**
+ * Everything wrong with the frozen ledger `topics-released-v1.json`, or with the alias file's
+ * `released` list against it; never throws. The ledger is sorted, unique and well-formed; every ID
+ * in it is still in `released` (a released ID is never removed, so dropping one from the taxonomy
+ * and from `released` together is caught: {@link aliasesProblems} alone cannot see it); and every
+ * one still resolves to at least one live topic, directly or through the alias map, so a stored
+ * override or fit-log entry is never orphaned.
+ */
+export function releasedLedgerProblems(rawLedger: Json, rawAliases: Json, live: ReadonlySet<string> | readonly string[]): string[] {
+  if (!isRecord(rawLedger)) return ['the ledger must be a JSON object']
+  const problems: string[] = []
+  if (!sameKeys(rawLedger, LEDGER_KEYS)) problems.push(`top-level keys must be exactly ${LEDGER_KEYS.join(', ')}`)
+  if (rawLedger.topics_version !== TOPICS_VERSION) problems.push(`topics_version must be '${TOPICS_VERSION}'`)
+  const ids = rawLedger.ids
+  if (!isStringList(ids) || ids.length === 0) return [...problems, 'ids must be a non-empty list of IDs']
+  if (ids.join() !== [...new Set(ids)].sort().join()) problems.push('ids must be sorted and free of duplicates')
+  for (const x of ids) if (!anyTopicId(x)) problems.push(`ledger: '${x}' is not a valid topic ID`)
+  const released = new Set(isRecord(rawAliases) && isStringList(rawAliases.released) ? rawAliases.released : [])
+  const aliasMap = isRecord(rawAliases) && isRecord(rawAliases.aliases) ? rawAliases.aliases : {}
+  const aliases: Record<string, string[]> = Object.fromEntries(Object.entries(aliasMap).filter((e): e is [string, string[]] => isStringList(e[1])))
+  const liveSet = new Set(live)
+  const shipped = `shipped in ${TOPICS_VERSION} (${LEDGER_FILE})`
+  const unique = [...new Set(ids)].sort()
+  for (const x of unique.filter((y) => !released.has(y))) {
+    problems.push(`${x} ${shipped} but is missing from released: a released ID is never removed; if it was retired, keep it in released and map it in aliases`)
+  }
+  for (const x of unique) {
+    if (resolveTopic(x, liveSet, aliases).length === 0) problems.push(`${x} ${shipped} but no longer resolves to a live topic: map it in aliases to its successors`)
+  }
   return problems
 }
 

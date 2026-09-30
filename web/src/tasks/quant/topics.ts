@@ -8,7 +8,8 @@
  * `family_id` or an item's `facet`. `group_version` `g1` is written into the JSON export and into
  * `brief_prefs`. A new group_version is required when a template moves to another group or a
  * group is added, split or retired (with aliases in `topics-aliases.json`); a new template
- * joining an existing group keeps `g1`.
+ * joining an existing group keeps `g1`. (The same wording is in the bank's
+ * `hb.gen.quant.topics`.)
  *
  * This module is dependency-free on purpose (no import of `templates.ts`): the notes builder
  * needs the ids and labels without pulling in the quant generators. The tests check it against

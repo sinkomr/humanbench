@@ -1,7 +1,7 @@
 {
-  "about": "Retirement history of the topic IDs in topics-v1.json (ROADMAP A23, AI.3). `released` lists every ID any released taxonomy has contained, sorted, append-only. When a topic is retired, renamed or split: remove it from topics-v1.json, keep it in `released`, and map it here to its successors, which must be live IDs or other aliased IDs. Never reuse a retired ID. Stored preferences and item tags resolve through this map, so no stored ID is orphaned (tests in both repos). `released` may never lose an ID: the frozen ledger topics-released-v1.json pins every ID that shipped, and `hb topics check` and the tests fail when one is missing from `released` or no longer resolves.",
+  "about": "Frozen ledger of the topic IDs that shipped in topics-v1 (ROADMAP A23, AI.3): a stand-in for every topic ID a save could have stored (brief_prefs topic settings, fit-log entries, item tags). topics-aliases.json `released` may never lose one, and each must still resolve to a live topic, directly or through the alias map, so no stored ID is orphaned (`hb topics check`, tests in both repos). Sorted, append-only: when a release adds IDs, append them here in the same change; never remove or edit an ID. Edited in the bank repo; the public repo keeps a byte-identical copy (ROADMAP A17, `uv run hb sync topics`).",
   "topics_version": "topics-v1",
-  "released": [
+  "ids": [
     "fer/counts",
     "fer/counts/everyday_objects",
     "fer/counts/populations",
@@ -163,6 +163,5 @@
     "quant/probability_counting",
     "quant/ratios_rates_averages",
     "quant/series_number"
-  ],
-  "aliases": {}
+  ]
 }

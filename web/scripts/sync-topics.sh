@@ -1,18 +1,18 @@
 #!/bin/sh
 # Copy the topic taxonomy bank -> pub (ROADMAP A23, A17):
-#   ../humanbench-bank/schema/{topics-v1,topics-aliases}.json -> web/src/tasks/
+#   ../humanbench-bank/schema/{topics-v1,topics-aliases,topics-released-v1}.json -> web/src/tasks/
 # The bank repo owns the taxonomy and is the sibling of this repo's root (override with
 # HB_BANK_DIR; the destination can be overridden with HB_TOPICS_DIR). When the bank is absent
 # (e.g. in CI) nothing is copied and the committed copies stay as they are. When the bank lacks
-# either file (e.g. it is checked out on an older branch) nothing is copied and the script fails,
-# so the pair is never updated halfway. It prints the bank's branch and commit.
+# any file (e.g. it is checked out on an older branch) nothing is copied and the script fails,
+# so the set is never updated halfway. It prints the bank's branch and commit.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 bank=${HB_BANK_DIR:-"$repo/../humanbench-bank"}
 dest=${HB_TOPICS_DIR:-"$repo/web/src/tasks"}
-files="topics-v1.json topics-aliases.json"
+files="topics-v1.json topics-aliases.json topics-released-v1.json"
 
 if [ ! -d "$bank/schema" ]; then
   echo "sync-topics: no bank repo at $bank; topic files left unchanged"

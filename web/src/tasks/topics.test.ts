@@ -9,13 +9,16 @@
  *   pinned samples so the lists in the file cannot be emptied unnoticed);
  * - prefix consistency (a topic sits under its item's axis and facet), as a property test;
  * - alias resolution: every ID ever released resolves to live IDs directly or through the alias
- *   map, as a property test over random retirement histories.
+ *   map, as a property test over random retirement histories;
+ * - the frozen ledger `topics-released-v1.json`: `released` keeps every ID that shipped and each
+ *   still resolves, so a consistent edit of the taxonomy and `released` cannot orphan a stored ID.
  */
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { QUANT_GROUPS } from './quant/topics'
 import rawAliases from './topics-aliases.json'
+import rawLedger from './topics-released-v1.json'
 import rawTaxonomy from './topics-v1.json'
 import {
   DENIED_CATEGORIES,
@@ -34,6 +37,7 @@ import {
   facetsOf,
   isTopicId,
   nodesOfKind,
+  releasedLedgerProblems,
   resolveTopic,
   resolveTopicId,
   taxonomyProblems,
@@ -47,6 +51,7 @@ import {
 type Raw = { nodes: Record<string, unknown>[]; denied_words: Record<string, string[]>; [k: string]: unknown }
 const RAW = rawTaxonomy as unknown as Raw
 const RAW_ALIASES = rawAliases as unknown as { released: string[]; aliases: Record<string, string[]>; [k: string]: unknown }
+const RAW_LEDGER = rawLedger as unknown as { ids: string[]; [k: string]: unknown }
 
 /** A deep copy of the taxonomy file with `edit` applied. */
 function mutated(edit: (r: Raw) => void): Raw {
@@ -137,11 +142,23 @@ describe('the committed files', () => {
 
 describe('the deny-list (R-17.3)', () => {
   const MUST_CATCH: Record<string, string[]> = {
-    general_ability: ['General intelligence', 'Cognitive ability', 'Aptitude', 'Reasoning', 'Being smart', 'Attention'],
+    general_ability: ['General intelligence', 'Cognitive ability', 'Aptitude', 'Reasoning', 'Being smart', 'Attention', 'Mental math', 'Clever shortcuts', 'Bright students'],
     reading: ['Reading comprehension', 'Vocabulary', 'Literacy', 'Verbal skills', 'Reader'],
-    memory: ['Working memory', 'Recall', 'Digit span', 'Memorization', 'Mnemonics'],
-    speed: ['Processing speed', 'Reaction time', 'Fast thinking', 'Quick answers', 'Timing'],
-    language_background: ['Native English speaker', 'First language', 'Bilingual', 'English fluency', 'Mother tongue', 'Second language', 'Fluent speakers'],
+    memory: ['Working memory', 'Recall', 'Digit span', 'Memorization', 'Mnemonics', 'Memorizing formulas', 'Memorising dates'],
+    speed: ['Processing speed', 'Reaction time', 'Fast thinking', 'Quick answers', 'Timing', 'Response time', 'Slow and careful', 'Timed drills'],
+    language_background: [
+      'Native English speaker',
+      'First language',
+      'Bilingual',
+      'English fluency',
+      'Mother tongue',
+      'Second language',
+      'Fluent speakers',
+      'Foreign languages',
+      'Learning English',
+      'Heritage speakers',
+      'English learners',
+    ],
     school_level: [
       'High school algebra',
       'Grade',
@@ -153,11 +170,26 @@ describe('the deny-list (R-17.3)', () => {
       'Basics of finance',
       'University maths',
       'Expert level',
+      'Secondary maths',
+      'Primary maths',
+      'Highschool algebra',
+      'Honors chemistry',
+      'Preschool counting',
+      'Tertiary physics',
+      'Uni chemistry',
+      'Elem math',
     ],
   }
 
   it('pins samples for every category', () => {
     expect(Object.keys(MUST_CATCH).sort()).toEqual([...DENIED_CATEGORIES].sort())
+  })
+
+  it.each(['elem', 'ms', 'hs', 'intro_college', 'college', 'grad', 'expert'])('the curriculum_level value "%s" is a denied school-level word', (level) => {
+    // proposal §5.1: the curriculum_level enum is never rendered into notes (R-17.3, A20), so neither
+    // its values nor their abbreviations may appear in a topic label or ID
+    expect(deniedWordHits(level, DENIED_WORDS).map(([c]) => c)).toContain('school_level')
+    expect(deniedWordHits(`Some ${level} topic`, DENIED_WORDS).length).toBeGreaterThan(0)
   })
 
   it.each(Object.entries(MUST_CATCH).flatMap(([category, samples]) => samples.map((s) => [category, s] as const)))('%s catches "%s"', (category, sample) => {
@@ -255,6 +287,8 @@ describe('structure', () => {
       fc.property(fc.jsonValue(), (value) => {
         expect(taxonomyProblems(value).length).toBeGreaterThan(0)
         expect(aliasesProblems(value, TOPIC_IDS).length).toBeGreaterThan(0)
+        expect(releasedLedgerProblems(value, RAW_ALIASES, TOPIC_IDS).length).toBeGreaterThan(0)
+        releasedLedgerProblems(RAW_LEDGER, value, TOPIC_IDS) // any alias file shape: no throw
       }),
     )
   })
@@ -437,5 +471,130 @@ describe('alias resolution', () => {
       expect(got.every((y) => TOPIC_IDS.has(y))).toBe(true)
     }
     expect(resolveTopicId('kst/chemistry/never_existed')).toEqual([])
+  })
+})
+
+describe('inherited property names are just unknown IDs', () => {
+  // AI.3 review: `in` and `x[key]` saw Object.prototype, so a successor named `constructor` threw
+  const PROTOTYPE_NAMES = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf', 'isPrototypeOf']
+  const live = new Set(['other/a'])
+  const file = (released: string[], aliases: string): unknown => JSON.parse(`{"about":"x","topics_version":"${TOPICS_VERSION}","released":${JSON.stringify(released)},"aliases":${aliases}}`)
+
+  it.each(PROTOTYPE_NAMES)('a successor named %s is reported, not thrown', (name) => {
+    const raw = file(['other/a', 'other/old'], `{"other/old":[${JSON.stringify(name)}]}`)
+    const problems = aliasesProblems(raw, live)
+    expect(problems).toContain(`alias other/old: successor ${name} is neither live nor an alias`)
+    expect(problems).toContain('other/old does not resolve to any live topic')
+  })
+
+  it.each(PROTOTYPE_NAMES)('an alias key named %s is reported, not thrown', (name) => {
+    const raw = file(['other/a', 'other/old'], `{"other/old":["other/a"],${JSON.stringify(name)}:["other/a"]}`)
+    expect(aliasesProblems(raw, live)).toContain(`alias ${name}: not in released`)
+  })
+
+  it('reports an arbitrary mix of prototype names in released, keys and successors without throwing', () => {
+    const name = fc.constantFrom(...PROTOTYPE_NAMES, 'other/a', 'other/old')
+    fc.assert(
+      fc.property(fc.array(name, { maxLength: 4 }), fc.array(fc.tuple(name, fc.array(name, { maxLength: 3 })), { maxLength: 4 }), (released, entries) => {
+        const raw = file([...new Set(released)].sort(), JSON.stringify(Object.fromEntries(entries))) // fromEntries keeps a `__proto__` key
+        expect(() => aliasesProblems(raw, live)).not.toThrow()
+        expect(() => releasedLedgerProblems(RAW_LEDGER, raw, live)).not.toThrow()
+      }),
+    )
+  })
+
+  it('does not treat a prototype name as an axis prefix or a denied list', () => {
+    const raw = mutated((r) => {
+      r.nodes[nodeIndex('other/statistics')]!.id = 'constructor/statistics'
+      r.nodes[nodeIndex('other/statistics')]!.kind = 'facet'
+      r.nodes[nodeIndex('other/statistics')]!.axis = 'KST'
+    })
+    const problems = taxonomyProblems(raw)
+    expect(problems.some((p) => p.startsWith('constructor/statistics:'))).toBe(true)
+    expect(problems.join('\n')).not.toContain('native code')
+    expect(() => taxonomyProblems(JSON.parse('{"denied_words":{"__proto__":["x"]},"nodes":[{"id":"toString/x","kind":"other","label":"X"}]}'))).not.toThrow()
+  })
+})
+
+describe('the frozen ledger of released IDs', () => {
+  const RELEASED = RAW_ALIASES.released
+  const aliasFile = (released: string[], aliases: Record<string, string[]> = {}): unknown => ({ ...RAW_ALIASES, released, aliases })
+
+  it('is valid and pins every ID that shipped in topics-v1', () => {
+    expect(releasedLedgerProblems(RAW_LEDGER, RAW_ALIASES, TOPIC_IDS)).toEqual([])
+    expect(RAW_LEDGER.topics_version).toBe(TOPICS_VERSION)
+    expect(RAW_LEDGER.ids).toEqual([...new Set(RAW_LEDGER.ids)].sort())
+    expect(RAW_LEDGER.ids.every((x) => RELEASED.includes(x))).toBe(true)
+    expect(new Set(RAW_LEDGER.ids)).toEqual(TOPIC_IDS) // topics-v1 as first released (AI.3): every live ID shipped
+    expect(RAW_LEDGER.ids).toHaveLength(161)
+  })
+
+  it('catches an ID removed from the taxonomy and from released together, which the alias check cannot see', () => {
+    // AI.3 review: a consistent edit of both files leaves every alias check green
+    const gone = 'other/accounting'
+    const live = new Set([...TOPIC_IDS].filter((x) => x !== gone))
+    const raw = aliasFile(RELEASED.filter((x) => x !== gone))
+    expect(aliasesProblems(raw, live)).toEqual([])
+    const problems = releasedLedgerProblems(RAW_LEDGER, raw, live)
+    expect(problems.some((p) => p.startsWith(`${gone} `) && p.includes('missing from released'))).toBe(true)
+    expect(problems.some((p) => p.startsWith(`${gone} `) && p.includes('no longer resolves'))).toBe(true)
+  })
+
+  it('catches a rename without an alias, and accepts it with one', () => {
+    const old = 'other/accounting'
+    const renamed = 'other/accounting_and_books'
+    const live = new Set([...TOPIC_IDS].filter((x) => x !== old).concat(renamed))
+    const released = [...RELEASED, renamed].sort()
+    expect(releasedLedgerProblems(RAW_LEDGER, aliasFile(released), live).some((p) => p.startsWith(`${old} `) && p.includes('no longer resolves'))).toBe(true)
+    const withAlias = aliasFile(released, { [old]: [renamed] })
+    expect(aliasesProblems(withAlias, live)).toEqual([])
+    expect(releasedLedgerProblems(RAW_LEDGER, withAlias, live)).toEqual([])
+    expect(resolveTopic(old, live, { [old]: [renamed] })).toEqual([renamed])
+  })
+
+  it('lets a release add IDs without touching the ledger', () => {
+    const live = new Set([...TOPIC_IDS, 'other/geometry'])
+    expect(releasedLedgerProblems(RAW_LEDGER, aliasFile([...RELEASED, 'other/geometry'].sort()), live)).toEqual([])
+  })
+
+  it('reports every ID dropped from released and the taxonomy, whichever they are', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.constantFrom(...RAW_LEDGER.ids), { minLength: 1, maxLength: 8 }), (dropped) => {
+        const live = new Set([...TOPIC_IDS].filter((x) => !dropped.includes(x)))
+        const problems = releasedLedgerProblems(RAW_LEDGER, aliasFile(RELEASED.filter((x) => !dropped.includes(x))), live)
+        for (const x of dropped) expect(problems.some((p) => p.startsWith(`${x} `) && p.includes('missing from released')), x).toBe(true)
+      }),
+    )
+  })
+
+  it('resolves every topic ID stored in a fixture save under the committed files', () => {
+    // proposal §5.2: the IDs a save stores (brief_prefs topic settings, fit-log entries) resolve
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.constantFrom(...RAW_LEDGER.ids), { maxLength: 40 }), (stored) => {
+        const briefPrefs = { topics: TOPICS_VERSION, settings: Object.fromEntries(stored.map((x) => [x, 'skip'])) }
+        const fitLog = stored.map((x) => ({ topic: x, mark: 'about_right' }))
+        for (const x of [...Object.keys(briefPrefs.settings), ...fitLog.map((e) => e.topic)]) expect(resolveTopicId(x).length, x).toBeGreaterThan(0)
+      }),
+    )
+  })
+
+  it('reports the mistakes a ledger file can make', () => {
+    const cases: Record<string, (r: Record<string, unknown>) => void> = {
+      'top-level keys': (r) => void (r.extra = 1),
+      topics_version: (r) => void (r.topics_version = 'topics-v9'),
+      sorted: (r) => void (r.ids as string[]).reverse(),
+      'not a valid topic ID': (r) => void (r.ids as string[]).push('Bad-ID'),
+      'sorted and free of duplicates': (r) => void (r.ids as string[]).push((r.ids as string[])[0] as string),
+      'missing from released': (r) => void (r.ids as string[]).push('other/zzz'),
+      'no longer resolves': (r) => void (r.ids as string[]).push('other/zzz'),
+      'non-empty list': (r) => void (r.ids = []),
+    }
+    for (const [expected, edit] of Object.entries(cases)) {
+      const raw = structuredClone(RAW_LEDGER) as Record<string, unknown>
+      edit(raw)
+      expect(releasedLedgerProblems(raw, RAW_ALIASES, TOPIC_IDS).some((p) => p.includes(expected)), expected).toBe(true)
+    }
+    expect(releasedLedgerProblems([], RAW_ALIASES, TOPIC_IDS)).toEqual(['the ledger must be a JSON object'])
+    expect(releasedLedgerProblems(RAW_LEDGER, null, TOPIC_IDS).length).toBeGreaterThan(0) // an unreadable alias file drops all
   })
 })

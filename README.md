@@ -253,8 +253,9 @@ analysis fixture, and fails on any file in `golden/ts_dumps/` that nothing here 
 coding and RT parity dumps (`coding_scores.json`, `rt_simple_scores.json`,
 `rt_choice4_scores.json`), and
 `web/scripts/sync-golden.test.ts` the golden fixtures. The bank also owns the topic taxonomy
-(Phase AI, ROADMAP A23): `schema/topics-v1.json` and `schema/topics-aliases.json` there are copied
-into `web/src/tasks/` by `npm run sync:topics` (`uv run hb sync topics` in the bank does the same
+(Phase AI, ROADMAP A23): `schema/topics-v1.json`, `schema/topics-aliases.json` and the frozen
+ledger of released IDs `schema/topics-released-v1.json` (test-only here) there are copied into
+`web/src/tasks/` by `npm run sync:topics` (`uv run hb sync topics` in the bank does the same
 copy), and `web/scripts/sync-topics.test.ts` checks them. Without the bank (as in CI) these checks
 skip and name the path they looked at.
 

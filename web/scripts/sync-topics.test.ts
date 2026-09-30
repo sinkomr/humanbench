@@ -1,6 +1,7 @@
 /**
- * Cross-repo topic taxonomy (ROADMAP A23, AI.3; A17): the bank owns `schema/topics-v1.json` and
- * `schema/topics-aliases.json`, and `scripts/sync-topics.sh` copies them into `src/tasks/`. The
+ * Cross-repo topic taxonomy (ROADMAP A23, AI.3; A17): the bank owns `schema/topics-v1.json`,
+ * `schema/topics-aliases.json` and the frozen ledger `schema/topics-released-v1.json`, and
+ * `scripts/sync-topics.sh` copies them into `src/tasks/`. The
  * copies must be byte-identical to the bank files whenever the sibling bank repo is present
  * (skipped with the path otherwise, e.g. in CI). The bank's `tests/test_crossrepo.py` checks the
  * same copies from its side.
@@ -17,7 +18,7 @@ const SCRIPT = join(WEB, 'scripts', 'sync-topics.sh')
 const TASKS = join(WEB, 'src', 'tasks')
 /** `$HB_BANK_DIR`, else the sibling `humanbench-bank` (as for the dumps). */
 const BANK = dirname(dirname(bankDumpsDir()))
-const FILES = ['topics-v1.json', 'topics-aliases.json'] as const
+const FILES = ['topics-v1.json', 'topics-aliases.json', 'topics-released-v1.json'] as const
 
 describe('topic taxonomy files match the sibling bank repo (A17)', () => {
   it('has both copies committed next to topics.ts', () => {
@@ -52,7 +53,7 @@ describe('scripts/sync-topics.sh', () => {
   })
   const run = (env: Record<string, string>): string => execFileSync('sh', [SCRIPT], { env: { ...process.env, ...env }, encoding: 'utf8' })
 
-  it('copies both files byte for byte', () => {
+  it('copies every file byte for byte', () => {
     const tmp = mkTmp()
     const bank = join(tmp, 'bank')
     const dest = join(tmp, 'dest')
@@ -73,7 +74,7 @@ describe('scripts/sync-topics.sh', () => {
     writeFileSync(join(dest, 'topics-v1.json'), '{"old": true}\n')
     const res = spawnSync('sh', [SCRIPT], { env: { ...process.env, HB_BANK_DIR: bank, HB_TOPICS_DIR: dest }, encoding: 'utf8' })
     expect(res.status).toBe(1)
-    expect(res.stderr).toContain('lacks: topics-aliases.json')
+    expect(res.stderr).toContain('lacks: topics-aliases.json topics-released-v1.json')
     expect(res.stdout).toContain('not a git checkout')
     expect(readdirSync(dest)).toEqual(['topics-v1.json'])
     expect(readFileSync(join(dest, 'topics-v1.json'), 'utf8')).toBe('{"old": true}\n')
