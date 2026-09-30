@@ -93,6 +93,19 @@ describe('production bundles (A14)', () => {
     for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
   }, 60_000)
 
+  it('the topic taxonomy (AI.3, A23) is light: no task family, generator or passage data', async () => {
+    const text = await bundle(
+      `export * from ${JSON.stringify(`${TASKS}topics.ts`)}\n` + `export * from ${JSON.stringify(`${TASKS}quant/topics.ts`)}`,
+    )
+    // the labels ship (the builder's chips); the quant templates, hints and passages do not
+    expect(text).toContain('Chemical equilibrium')
+    expect(text).toContain('Series and number puzzles')
+    expect(text.length).toBeLessThan(60_000)
+    expect(text).not.toContain('Enter an integer, such as 42')
+    for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
+    expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
+  }, 60_000)
+
   it('the registry and the selector ship the passages but none of their verifier-only data', async () => {
     const text = await bundle(
       `export { FAMILIES } from ${JSON.stringify(`${TASKS}registry.ts`)}\n` +

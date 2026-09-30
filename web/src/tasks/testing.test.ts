@@ -264,6 +264,21 @@ describe('runFamilyProperties', () => {
     expect(runFamilyProperties(grouped, { ...W, n: 20 }).distinctSiblingGroups).toBe(1)
   })
 
+  it('catches items of one family_id that disagree on a family flag (A23)', () => {
+    const one = { min: 0.001, reason: 'one family' }
+    const flagged = (flag: 'ladder_probe' | 'practice_only') => (flag === 'ladder_probe' ? { ladder_probe: true as const } : { practice_only: true as const })
+    for (const flag of ['ladder_probe', 'practice_only'] as const) {
+      const mixed = make({ build: (rng, ctx) => ({ ...healthy.build(rng, ctx), structural_params: { t: 'one' }, ...(ctx.seed.length === 6 ? flagged(flag) : {}) }) })
+      const msg = failuresOf(() => runFamilyProperties(mixed, { ...W, n: 12, familyIdRatio: one }))
+      expect(msg).toMatch(/prop-10: family_id \S+ disagrees on its family flags: \[ladder_probe, practice_only\] is \[/)
+      expect(msg).toContain('one value per family_id')
+      // a flag every instance carries is fine
+      const always = withBuild((b) => ({ ...b, ...flagged(flag) }))
+      expect(() => runFamilyProperties(always, { ...W, n: 20 })).not.toThrow()
+    }
+    expect(() => runFamilyProperties(make({}), { ...W, n: 20 })).not.toThrow()
+  })
+
   it('catches a hand-written family whose ids ignore the seed or the stratum', () => {
     const good = make({})
     const sameId: ItemFamily<Spec, Key, number> = {

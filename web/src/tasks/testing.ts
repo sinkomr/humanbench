@@ -466,8 +466,9 @@ function malformedProblem(family: AnyFamily, item: ItemInstance<object, object>,
  *   every generic and family-specific malformed response throws a `MalformedResponseError`.
  * Over the run: no spec path copies a scalar key leaf ({@link KeyEchoTracker}, unless
  * `allowKeyInSpec`), ≥ 95% (or `contentRatio.min`) distinct contents, ≥ 50% (or
- * `familyIdRatio.min`) distinct family_ids, one sibling_group per family_id, and MC keys
- * balanced over option positions ({@link KEY_POSITION_MAX_SD}).
+ * `familyIdRatio.min`) distinct family_ids, one sibling_group and one value of each family flag
+ * (`ladder_probe`, `practice_only`; A23) per family_id, and MC keys balanced over option positions
+ * ({@link KEY_POSITION_MAX_SD}).
  */
 export function runFamilyProperties<Spec extends object, Key extends object, Resp>(
   family: ProceduralFamily<Spec, Key, Resp>,
@@ -502,6 +503,7 @@ export function runFamilyProperties<Spec extends object, Key extends object, Res
   const contents = new Set<string>()
   const familyIds = new Set<string>()
   const groupOf = new Map<string, string>()
+  const flagsOf = new Map<string, string>()
   const echoes = new KeyEchoTracker()
   const strataCounts: Record<Stratum, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
   /** Key positions of MC items by options_count k: counts[k][i]. */
@@ -532,6 +534,10 @@ export function runFamilyProperties<Spec extends object, Key extends object, Res
       const group = groupOf.get(item.family_id)
       if (group === undefined) groupOf.set(item.family_id, item.sibling_group)
       else if (group !== item.sibling_group) fail(`family_id ${item.family_id} is in sibling groups ${group} and ${item.sibling_group}`)
+      const flags = JSON.stringify([item.ladder_probe === true, item.practice_only === true])
+      const seenFlags = flagsOf.get(item.family_id)
+      if (seenFlags === undefined) flagsOf.set(item.family_id, flags)
+      else if (seenFlags !== flags) fail(`family_id ${item.family_id} disagrees on its family flags: [ladder_probe, practice_only] is ${seenFlags} and ${flags} (family metadata is one value per family_id, A23)`)
       strataCounts[item.stratum]++
       const b = item.difficulty.b_prior
       bMin = Math.min(bMin, b)

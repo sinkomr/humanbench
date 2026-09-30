@@ -19,6 +19,7 @@
     "e2e": "playwright test",
     "e2e:install": "playwright install --with-deps chromium webkit",
     "sync:golden": "sh scripts/sync-golden.sh",
+    "sync:topics": "sh scripts/sync-topics.sh",
     "dump:families": "tsx scripts/dump-families.ts",
     "dump:coding-scores": "tsx scripts/dump-coding-scores.ts",
     "dump:rt-scores": "tsx scripts/dump-rt-scores.ts",

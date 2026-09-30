@@ -217,7 +217,12 @@ selector serves) or `kind: 'block'` (a fixed block run whole, one family per sub
 `score()` returns the engine observation or the reasons there is none). The families registered
 in `web/src/tasks/registry.ts` are rotation, matrices, series and quant (items), and span_fwd,
 span_bwd, corsi, rt_simple, rt_choice4, coding and reading (blocks); `registry.test.ts` runs every
-registered family through the property suite at n = 500. The private bank repo re-verifies at least 1,000 TS instances of every family with
+registered family through the property suite at n = 500. A QR instance may carry the family flags
+`ladder_probe` (a held-out ladder probe) or `practice_only` (a quiz item that never enters a
+scored session), each `true` or absent and never both (ROADMAP A23, AI.2; `web/src/tasks/family.ts`).
+No family sets them yet. The other item tags (topic, curriculum level, notation, ...) are added
+to bank records only; the public repo never sees a curriculum level, and
+`web/scripts/item-tags.test.ts` keeps it out of every rendered or saved surface. The private bank repo re-verifies at least 1,000 TS instances of every family with
 its Python twin. Dump them into the sibling bank checkout (`../humanbench-bank`, or
 `$HB_BANK_DIR`) with:
 
@@ -252,7 +257,11 @@ analysis fixture, and fails on any file in `golden/ts_dumps/` that nothing here 
 `web/scripts/coding-scores-dump.test.ts` and `web/scripts/rt-scores-dump.test.ts` check the
 coding and RT parity dumps (`coding_scores.json`, `rt_simple_scores.json`,
 `rt_choice4_scores.json`), and
-`web/scripts/sync-golden.test.ts` the golden fixtures. Without the bank (as in CI) these checks
+`web/scripts/sync-golden.test.ts` the golden fixtures. The bank also owns the topic taxonomy
+(Phase AI, ROADMAP A23): `schema/topics-v1.json`, `schema/topics-aliases.json` and the frozen
+ledger of released IDs `schema/topics-released-v1.json` (test-only here) there are copied into
+`web/src/tasks/` by `npm run sync:topics` (`uv run hb sync topics` in the bank does the same
+copy), and `web/scripts/sync-topics.test.ts` checks them. Without the bank (as in CI) these checks
 skip and name the path they looked at.
 
 The reading passages are authored in `web/src/tasks/reading/passages.json`, with evidence spans

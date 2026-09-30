@@ -82,6 +82,12 @@
  *   explicitly as `g:<family>:<label>` ({@link siblingGroupId}); quant groups its
  *   near-isomorph variants (`QUANT_SIBLING_SETS`: the same givens, only the question
  *   differs). Items of one family_id always share one sibling_group.
+ * - **Family flags** (A23, AI.2; additive to contract v2). A QR instance may carry `ladder_probe`
+ *   (a held-out F12 ladder probe, AI.17) or `practice_only` (a quiz item that never enters a
+ *   scored session, AI.16), each `true` or absent, never both, and the same for every instance of
+ *   a family_id. No family sets either yet. The other item tags (topic, curriculum level,
+ *   notation, ...) are bank-side: topics come from `topics-v1.json` (`topics.ts`) and a quant
+ *   item's topic group from its facet (`quant/topics.ts`), so they are not on the wire.
  * - **Facets** (§3 drill-down). A family declares its `facets`; each item's `facet` is one of
  *   them (quant: the template, e.g. "percent"; most families have exactly one).
  * - **Versions.** `generatorVersion` has no `+` build tag; bump it whenever `generate` output
@@ -262,6 +268,18 @@ export interface ItemInstance<Spec extends object = JsonObject, Key extends obje
   readonly expected_time_s: number
   /** Items: the shared cap `powerTimeLimit(expected_time_s)` (§13); blocks: their timed window, if any. */
   readonly time_limit_s?: number
+  /**
+   * Family metadata (A23, AI.2): `true` marks a held-out ladder probe for the F12 zone check
+   * (AI.17). Present only when true (never `false`), only on axis QR, never with `practice_only`;
+   * every instance of a family_id agrees (`runFamilyProperties` checks it). Nothing sets it yet.
+   */
+  readonly ladder_probe?: true
+  /**
+   * Family metadata (A23, AI.2): `true` marks a quiz or taste-test item that must never enter a
+   * scored session (AI.16). Same rules as `ladder_probe`. Whatever serves scored items has to
+   * skip it; AI.16 adds the first family that sets it, with the disjointness test.
+   */
+  readonly practice_only?: true
 }
 
 /** Result of a family verifier (gates G2/G3, §4.1): `checks` is recorded like §12 `verification.checks`. */
@@ -466,6 +484,10 @@ export interface BuiltItem<Spec extends object, Key extends object> {
   readonly time_limit_s?: number
   /** Blocks only (required there): the A10 model, GRM (span) or Gaussian (RT, PS). Items get A9 params. */
   readonly params?: ItemParams
+  /** A23 family metadata, QR only ({@link ItemInstance.ladder_probe}); omit unless true. */
+  readonly ladder_probe?: true
+  /** A23 family metadata, QR only ({@link ItemInstance.practice_only}); omit unless true. */
+  readonly practice_only?: true
 }
 
 export interface BuildContext {
@@ -580,6 +602,8 @@ export function defineFamily<Spec extends object, Key extends object, Resp>(def:
       difficulty: built.difficulty,
       expected_time_s: built.expected_time_s,
       ...(timeLimit === undefined ? {} : { time_limit_s: timeLimit }),
+      ...(built.ladder_probe === undefined ? {} : { ladder_probe: built.ladder_probe }),
+      ...(built.practice_only === undefined ? {} : { practice_only: built.practice_only }),
     }
   }
   const core = {
@@ -619,7 +643,9 @@ const REQUIRED_FIELDS = [
   'difficulty',
   'expected_time_s',
 ] as const
-const OPTIONAL_FIELDS = ['options_count', 'time_limit_s'] as const
+const OPTIONAL_FIELDS = ['options_count', 'time_limit_s', 'ladder_probe', 'practice_only'] as const
+/** Axes whose instances may carry `ladder_probe` or `practice_only` (A23: procedural QR). */
+export const FAMILY_FLAG_AXES: readonly AxisCode[] = Object.freeze(['QR'] as const)
 const ALL_FIELDS: ReadonlySet<string> = new Set<string>([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS])
 const DIFFICULTY_FIELDS: ReadonlySet<string> = new Set(['features', 'b_prior', 'sd_prior', 'provenance'])
 
@@ -685,6 +711,18 @@ function kindOfParams(p: unknown): FamilyKind | undefined {
   return isPlainObject(p) && typeof p.model === 'string' && PARAM_MODELS.has(p.model) ? kindOfModel(p.model as ItemParams['model']) : undefined
 }
 
+/** `ladder_probe` and `practice_only` are `true` or absent, only on QR, never both (A23; the bank's `ItemInstance` checks the same). */
+function familyFlagProblems(x: Record<string, unknown>): string[] {
+  const out: string[] = []
+  for (const name of ['ladder_probe', 'practice_only'] as const) {
+    if (!(name in x)) continue
+    if (x[name] !== true) out.push(`${name} must be true, or omitted`)
+    if (!(FAMILY_FLAG_AXES as readonly unknown[]).includes(x.axis)) out.push(`${name} is for ${FAMILY_FLAG_AXES.join(', ')} items, not axis ${String(x.axis)}`)
+  }
+  if (x.ladder_probe === true && x.practice_only === true) out.push('an item is not both ladder_probe and practice_only')
+  return out
+}
+
 /** MC option order and key shape (M1.13): `spec.options` has exactly k entries, `key.index` ∈ 0 … k − 1. */
 function optionProblems(x: Record<string, unknown>): string[] {
   if (!('options_count' in x)) return []
@@ -741,6 +779,7 @@ export function validateItemInstance(x: unknown, family?: AnyFamily): string[] {
   }
   if (!isFinitePositive(x.expected_time_s)) out.push('expected_time_s must be finite and > 0')
   if ('time_limit_s' in x && !isFinitePositive(x.time_limit_s)) out.push('time_limit_s must be finite and > 0')
+  out.push(...familyFlagProblems(x))
   const kind = kindOfParams(x.params)
   if (kind === 'item' && isFinitePositive(x.expected_time_s)) {
     const cap = powerTimeLimit(x.expected_time_s)
