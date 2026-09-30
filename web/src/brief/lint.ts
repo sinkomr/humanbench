@@ -11,6 +11,9 @@
  * - no wording about how good, weak, quick or slow the person is, no level or score words, no
  *   education or first-language cues (the trigger that made assistants worse and condescending in
  *   the study behind proposal §2.2 point 1), and no product, axis or estimate words;
+ * - no wording that tries to steer the assistant away from the notes' own clauses or towards an
+ *   action (ignore/forget/override instructions, a new role, revealing a prompt or a key, running a
+ *   command): the prompt-injection shapes of proposal §6 rows 14 and 15;
  * - nothing on the A13 list (ROADMAP A13, `scripts/language-terms.json`, DESIGN R-5.6.1).
  *
  * The rules are deliberately blunt: a false alarm on a typed line only asks the person to reword,
@@ -20,7 +23,7 @@
 import a13 from '../../scripts/language-terms.json'
 import { MONTH_RE } from './types'
 
-export type LintRule = 'ascii' | 'digit' | 'url' | 'markup' | 'trait' | 'level' | 'self' | 'education' | 'language' | 'brand' | 'a13'
+export type LintRule = 'ascii' | 'digit' | 'url' | 'markup' | 'trait' | 'level' | 'self' | 'education' | 'language' | 'brand' | 'override' | 'a13'
 
 export interface LintHit {
   readonly rule: LintRule
@@ -58,6 +61,14 @@ const RULES: readonly Rule[] = [
   },
   { rule: 'language', re: /\b(?:native|non-native|second language|first language|mother tongue|esl|efl|english learner|foreign|immigrants?|accent)\b/giu },
   { rule: 'brand', re: /\b(?:humanbench|human bench|hb-brief|blob|axis|axes|estimates?|estimated|posterior|bayesian)\b/giu },
+  // Steering wording (R-17.3, proposal §6 rows 14-15). Each pattern needs a second-person or
+  // instruction shape, so a hobby or subject name ("role-playing games", "sudoku") is not caught.
+  { rule: 'override', re: /\b(?:ignore|disregard|forget|override|overrule|bypass|disobey|stop following|no longer follow|(?:do not|don't|dont|never) follow)\b[^.\n]{0,40}?\b(?:previous|prior|earlier|above|preceding|former|all|any|every|everything|anything|these|those|your|system|safety|rules?|instructions?|guidelines?|directions?|prompts?|polic(?:y|ies)|restrictions?|filters?|notes|preferences)\b/giu },
+  { rule: 'override', re: /\b(?:system|developer|hidden|secret|original|initial|first)\s+(?:prompt|message|instructions?)\b|\b(?:jailbreak\w*|dan mode|developer mode|god mode|prompt injection|unfiltered|uncensored)\b|\b(?:without|no)\s+(?:any\s+)?(?:restrictions?|limits?|filters?|rules|guardrails?)\b/giu },
+  { rule: 'override', re: /\b(?:you are now|you are no longer|you will now|from now on|pretend (?:to be|you|that|this)|act as (?:a|an|if|though|the|my|you)|role-?play as|behave as|new (?:instructions?|rules?|persona|role|system))\b/giu },
+  { rule: 'override', re: /\b(?:reveal|leak|expose|exfiltrate|disclose|repeat back|print out|dump|output)\b[^.\n]{0,40}?\b(?:prompt|instructions?|conversation|chat history|memory|memories|secrets?|passwords?|keys?|tokens?|credentials?|notes)\b/giu },
+  { rule: 'override', re: /\b(?:passwords?|api keys?|secret keys?|private keys?|access tokens?|credentials?|ssh keys?|bearer|sudo|rm -rf|curl|wget|powershell|chmod|base64|eval|exec)\b/giu },
+  { rule: 'override', re: /\b(?:run|execute|install|download|open|visit|click|paste|fetch)\b[^.\n]{0,30}?\b(?:command|script|link|website|url|page|file|program|payload|code)\b/giu },
 ]
 
 /** A13 vocabulary, compiled once with the lint's own boundary rule ("between letters", ROADMAP A13). */
@@ -137,6 +148,7 @@ export const LINT_MESSAGES: Readonly<Record<LintRule, string>> = {
   education: 'Leave out schooling and background. Notes describe wording and depth only.',
   language: 'Leave out first-language or background details. The notes already apply in any language.',
   brand: 'Leave out product names, estimates and technical scoring words.',
+  override: 'Leave out wording that tells the assistant to drop its rules, take a new role, reveal something or run something. Describe wording, depth and checking only.',
   a13: 'That wording is not allowed here.',
 }
 

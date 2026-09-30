@@ -88,6 +88,19 @@ input[type='text'] {
   width: 100%;
 }
 
+textarea {
+  font: inherit;
+  width: 100%;
+  min-height: 8rem;
+  box-sizing: border-box;
+  color: var(--text-strong);
+  background: var(--bg);
+  border: 1px solid var(--muted);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+}
+
 input[type='radio'],
 input[type='checkbox'] {
   width: 1.25rem;

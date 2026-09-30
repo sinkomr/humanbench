@@ -12,6 +12,8 @@
 import { KNOWN_HEADINGS, NOTES_TITLE, SKILL_DESCRIPTIONS, SKILL_NAME, parseHeaderBody } from './grammar'
 import { lintLine, type LintRule } from './lint'
 import { matchLine } from './match'
+import { RETIRED_WORDINGS, type RetiredWording } from './retired'
+import { MAX_CUSTOM_CHARS } from './sanitize'
 import { validateBrief } from './validate'
 import { BRIEF_FORMAT, type Brief, type BriefFormat, type BriefLine, type Form, type LineId } from './types'
 
@@ -20,7 +22,16 @@ export interface ForeignLine {
   readonly line: number
   readonly text: string
   /** Why it is foreign: lint rules that fired, or `off-grammar` for a line that is not a bullet or heading we know. */
-  readonly reasons: readonly (LintRule | 'off-grammar' | 'unknown-heading')[]
+  readonly reasons: readonly (LintRule | 'off-grammar' | 'unknown-heading' | 'too-long')[]
+}
+
+/** A line that reads as a standard line in an older wording (`retired.ts`). */
+export interface RetiredLine {
+  /** 1-based line number in the text. */
+  readonly line: number
+  readonly id: LineId
+  /** The wording version the text had. */
+  readonly v: string
 }
 
 export interface ParsedNotes {
@@ -31,10 +42,14 @@ export interface ParsedNotes {
   readonly revisit: string | null
   /** Lines in order of appearance, without gate statuses (the text carries none). */
   readonly lines: readonly BriefLine[]
+  /** For each entry of `lines`, its 1-based line number in the text (the header's is its first line). */
+  readonly lineNos: readonly number[]
   readonly foreign: readonly ForeignLine[]
   readonly headings: readonly string[]
   /** Lines whose wording belongs to the other form (a long-form line in short notes). */
   readonly offForm: readonly LineId[]
+  /** Lines written in wording that has since changed (`retired.ts`); they are also in `lines`. */
+  readonly retired: readonly RetiredLine[]
   /** Set for a Skill file whose front matter is not ours. */
   readonly problems: readonly string[]
 }
@@ -46,14 +61,16 @@ function splitLines(text: string): string[] {
   return text.replace(/\r\n?/gu, '\n').split('\n')
 }
 
-/** Parse notes of the `hb-brief/1` grammar. */
-export function parseText(text: string): ParsedNotes {
+/** Parse notes of the `hb-brief/1` grammar. `retired` is the released wording that has since changed. */
+export function parseText(text: string, retired: readonly RetiredWording[] = RETIRED_WORDINGS): ParsedNotes {
   const raw = splitLines(text)
   const problems: string[] = []
   const foreign: ForeignLine[] = []
   const lines: BriefLine[] = []
+  const lineNos: number[] = []
   const headings: string[] = []
   const offForm: LineId[] = []
+  const retiredLines: RetiredLine[] = []
   let i = 0
   let form: Form = 'short'
 
@@ -75,6 +92,7 @@ export function parseText(text: string): ParsedNotes {
   let revisit: string | null = null
   let headerOk = false
   const first = raw[i] ?? ''
+  const headerLineNo = i + 1
   if (first === `# ${NOTES_TITLE}`) {
     if (form !== 'skill') form = 'long'
     const h = parseHeaderBody(raw[i + 1] ?? '')
@@ -94,7 +112,10 @@ export function parseText(text: string): ParsedNotes {
     }
   }
   if (!headerOk) problems.push('header is missing or not ours')
-  else lines.push({ id: 'H' })
+  else {
+    lines.push({ id: 'H' })
+    lineNos.push(headerLineNo)
+  }
 
   for (; i < raw.length; i++) {
     const t = raw[i] as string
@@ -113,27 +134,35 @@ export function parseText(text: string): ParsedNotes {
       continue
     }
     const content = b[1] as string
-    const m = matchLine(content, form)
+    const m = matchLine(content, form, retired)
     if (m) {
       lines.push(m.line)
+      lineNos.push(lineNo)
       if (m.offForm) offForm.push(m.line.id)
+      if (m.retiredV !== undefined) retiredLines.push({ line: lineNo, id: m.line.id, v: m.retiredV })
       continue
     }
     const hits = lintLine(content)
-    if (hits.length > 0) foreign.push({ line: lineNo, text: t, reasons: [...new Set(hits.map((x) => x.rule))] })
-    else lines.push({ id: 'X1', text: content, custom: true })
+    const reasons: ForeignLine['reasons'][number][] = [...new Set(hits.map((x) => x.rule))]
+    // A line of the person's own is short (sanitize.ts); a long one is not one of ours.
+    if (content.length > MAX_CUSTOM_CHARS) reasons.push('too-long')
+    if (reasons.length > 0) foreign.push({ line: lineNo, text: t, reasons })
+    else {
+      lines.push({ id: 'X1', text: content, custom: true })
+      lineNos.push(lineNo)
+    }
   }
-  return { format: headerOk ? BRIEF_FORMAT : null, form, as_of: asOf, revisit, lines, foreign, headings, offForm, problems }
+  return { format: headerOk ? BRIEF_FORMAT : null, form, as_of: asOf, revisit, lines, lineNos, foreign, headings, offForm, retired: retiredLines, problems }
 }
 
 /** Released grammar parsers by format. Add the next release's parser here; never remove one. */
-export const PARSERS: Readonly<Record<string, (text: string) => ParsedNotes>> = { [BRIEF_FORMAT]: parseText }
+export const PARSERS: Readonly<Record<string, (text: string, retired?: readonly RetiredWording[]) => ParsedNotes>> = { [BRIEF_FORMAT]: parseText }
 
 /** Parse notes against every released grammar and keep the reading with the fewest foreign lines. */
-export function parseAnyText(text: string): ParsedNotes {
+export function parseAnyText(text: string, retired: readonly RetiredWording[] = RETIRED_WORDINGS): ParsedNotes {
   let best: ParsedNotes | undefined
   for (const parse of Object.values(PARSERS)) {
-    const p = parse(text)
+    const p = parse(text, retired)
     if (best === undefined || p.foreign.length + p.problems.length < best.foreign.length + best.problems.length) best = p
   }
   return best as ParsedNotes

@@ -18,11 +18,14 @@
   import { CLAIM, COPY, DATA_FREE_SNIPPET } from './copy'
   import { DEFAULT_GATES, type GateFile } from './gates'
   import { asFile, renderJson } from './render'
+  import { returningNotices, type CopiedSet } from './returning'
   import { destination, downloadName, resolveForm } from './surfaces'
   import About from './ui/About.svelte'
+  import Checker from './ui/Checker.svelte'
   import ExtrasPicker from './ui/ExtrasPicker.svelte'
   import Paste from './ui/Paste.svelte'
   import Preview from './ui/Preview.svelte'
+  import Returning from './ui/Returning.svelte'
   import TopicPicker from './ui/TopicPicker.svelte'
   import WherePicker from './ui/WherePicker.svelte'
 
@@ -34,11 +37,13 @@
     /** Today, `YYYY-MM-DD`, for the out-of-date warning on the install steps (default: the first day of `asOf`). */
     today?: string
     gates?: GateFile
+    /** What the person copied on earlier visits, to say what has been withdrawn or has new wording since (AI.6; stored settings supply it, AI.7). */
+    copied?: readonly CopiedSet[]
     /** Injected in tests; the page uses the browser's clipboard and a Blob download. */
     copy?: (text: string) => Promise<boolean>
     download?: (text: string, name: string, mime: string) => string
   }
-  let { asOf, token, today = `${asOf}-01`, gates = DEFAULT_GATES, copy = defaultCopy, download = defaultDownload }: Props = $props()
+  let { asOf, token, today = `${asOf}-01`, gates = DEFAULT_GATES, copied = [], copy = defaultCopy, download = defaultDownload }: Props = $props()
 
   let model = $state<BuilderState>(initialState())
   let status = $state('')
@@ -53,6 +58,7 @@
   const result = $derived(buildBrief({ prefs: effective, extras, form, asOf, gates, otherContexts: otherContexts(model) }))
   const shown = $derived(dest.output === 'json' ? renderJson(result.brief) : result.text)
   const fileName = $derived(downloadName(dest, form, asOf, token))
+  const notices = $derived(returningNotices(copied, gates, today))
   const mime = $derived(dest.output === 'json' ? 'application/json' : form === 'short' ? 'text/plain' : 'text/markdown')
 
   /** Announce politely; the message is cleared first so the same text is announced again. */
@@ -117,6 +123,8 @@
     <p class="hint">{COPY.notSaved}</p>
   </header>
 
+  <Returning {notices} />
+
   <WherePicker {model} onchange={change} />
   <TopicPicker {model} {gates} onchange={change} />
   <ExtrasPicker {model} onchange={change} />
@@ -134,6 +142,7 @@
     ondownload={onDownload}
     oncopycommands={(t) => void onCopyCommands(t)}
   />
+  <Checker {gates} {today} />
   <About
     keywords={result.brief.keywords}
     status={moreStatus}

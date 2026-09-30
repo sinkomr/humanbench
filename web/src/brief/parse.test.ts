@@ -142,6 +142,42 @@ describe('odd and hostile input never throws and is reported', () => {
   })
 })
 
+describe('line numbers, older wording and long lines (AI.6)', () => {
+  const t = notes(PROFILE_A)
+  const rawLines = t.split('\n')
+
+  it('gives the line number of every parsed line, in order, at the header and at each bullet', () => {
+    const p = parseText(t)
+    expect(p.lineNos.length).toBe(p.lines.length)
+    expect(p.lineNos).toEqual([...p.lineNos].sort((a, b) => a - b))
+    expect(rawLines[(p.lineNos[0] as number) - 1]).toBe('# How I like explanations')
+    for (const n of p.lineNos.slice(1)) expect(rawLines[n - 1]?.startsWith('- ')).toBe(true)
+    // foreign lines and parsed lines together account for every bullet
+    const bullets = rawLines.filter((l) => l.startsWith('- ')).length
+    expect(p.lineNos.length - 1 + p.foreign.length).toBe(bullets)
+  })
+
+  it('reads older wording of a line as that line and says which wording it was', () => {
+    const retired = [{ id: 'F4', v: '0', long: "Please tell me plainly if I'm wrong." }]
+    const old = t.replace("Tell me plainly when I'm wrong.", "Please tell me plainly if I'm wrong.")
+    expect(parseText(old).foreign.length).toBe(0) // it is a clean line of the person's own
+    expect(parseText(old).lines.some((l) => l.id === 'F4')).toBe(false)
+    const p = parseText(old, retired)
+    expect(p.lines.filter((l) => l.id === 'F4')).toHaveLength(1)
+    expect(p.retired).toEqual([{ line: p.lineNos[p.lines.findIndex((l) => l.id === 'F4')], id: 'F4', v: '0' }])
+    expect(parseText(t, retired).retired).toEqual([])
+  })
+
+  it('keeps a line of the person\'s own to 200 characters, and reports a longer one as foreign', () => {
+    const ok = `- ${'Use metric units and plain words. '.repeat(5).trim()}`
+    expect(ok.length - 2).toBeLessThanOrEqual(200)
+    expect(parseText(`${t}\n${ok}`).foreign).toEqual([])
+    const long = `- ${'Use metric units and plain words. '.repeat(8).trim()}`
+    const p = parseText(`${t}\n${long}`)
+    expect(p.foreign.map((f) => f.reasons)).toEqual([['too-long']])
+  })
+})
+
 describe('released versions', () => {
   it('registers hb-brief/1 and picks the reading with the fewest foreign lines', () => {
     expect(Object.keys(PARSERS)).toEqual(['hb-brief/1'])

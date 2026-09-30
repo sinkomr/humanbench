@@ -45,7 +45,7 @@ describe('src/brief/ (R-17.1: local only)', () => {
   })
 
   it('reads no clock and draws no random numbers in the generator files', () => {
-    const generator = ['build.ts', 'grammar.ts', 'render.ts', 'parse.ts', 'match.ts', 'lint.ts', 'sanitize.ts', 'normalize.ts', 'validate.ts', 'topics.ts', 'gates.ts', 'surfaces.ts', 'prefs.ts', 'dump.ts', 'contexts.ts', 'interests.ts']
+    const generator = ['build.ts', 'grammar.ts', 'render.ts', 'parse.ts', 'match.ts', 'lint.ts', 'sanitize.ts', 'normalize.ts', 'validate.ts', 'topics.ts', 'gates.ts', 'surfaces.ts', 'prefs.ts', 'dump.ts', 'contexts.ts', 'interests.ts', 'check.ts', 'diff.ts', 'meaning.ts', 'retired.ts', 'returning.ts']
     for (const f of generator) {
       expect(files, f).toContain(f)
       expect(/Date\.now|new Date\b|\bDate\(\)|Math\.random|getRandomValues|randomUUID|performance\./.test(source(f)), f).toBe(false)

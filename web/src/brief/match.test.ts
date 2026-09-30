@@ -65,3 +65,27 @@ describe('interest lists', () => {
     expect(isInterest('chess ')).toBe(false)
   })
 })
+
+describe('older wording (AI.6)', () => {
+  const retired = [
+    { id: 'F4', v: '0', long: "Please tell me plainly if I'm wrong." },
+    { id: 'DS', v: '0', long: '{Topics}: skip the basics.', short: '{Topics}: skip basics.' },
+    { id: 'U4', v: '0', long: "Ask me if you're unsure what I know." },
+  ]
+
+  it('matches a retired wording after the current one, and says which wording it was', () => {
+    expect(matchLine("Please tell me plainly if I'm wrong.", 'long', retired)).toEqual({ line: { id: 'F4' }, offForm: false, retiredV: '0' })
+    expect(matchLine("Please tell me plainly if I'm wrong.", 'long')).toBeNull()
+    expect(matchLine('Programming and statistics: skip the basics.', 'long', retired)).toEqual({ line: { id: 'DS', topics: ['other/programming', 'other/statistics'] }, offForm: false, retiredV: '0' })
+    expect(matchLine('Programming: skip basics.', 'short', retired)?.retiredV).toBe('0')
+    expect(matchLine('Programming: skip basics.', 'long', retired)).toMatchObject({ offForm: true, retiredV: '0' })
+    // the current wording never reports a retired version
+    expect(matchLine("Tell me plainly when I'm wrong.", 'long', retired)).toEqual({ line: { id: 'F4' }, offForm: false })
+  })
+
+  it('lets a current wording win when both readings exist', () => {
+    const same = [{ id: 'F1', v: '0', long: "Tell me plainly when I'm wrong." }]
+    expect(matchLine("Tell me plainly when I'm wrong.", 'long', same)?.line.id).toBe('F4')
+    expect(matchLine("Tell me plainly when I'm wrong.", 'long', same)?.retiredV).toBeUndefined()
+  })
+})

@@ -60,9 +60,11 @@ describe('worked profiles (proposal §4.9) match their golden text', () => {
   it('reads Profile B\'s long notes except the two lines the taxonomy relabelled or merged', () => {
     const p = parseText(proposal('B-long.md'))
     // "Fractions and percentages" is now "Arithmetic, fractions and percentages", and the worked-example
-    // sentence is its own bullet here. Those two read as the person's own (custom) lines; the rest is grammar.
-    expect(p.foreign).toEqual([])
-    expect(p.lines.filter((l) => l.custom === true).map((l) => l.text?.slice(0, 30))).toEqual(['Fractions and percentages: bef', "By default, teach: ask what I'"])
+    // sentence is its own bullet here. The first reads as the person's own (custom) line; the second is over
+    // the 200 characters a line of the person's own may have (two sentences in one bullet), so it is foreign;
+    // the rest is grammar.
+    expect(p.foreign.map((f) => [f.text.startsWith('- By default, teach:'), f.reasons])).toEqual([[true, ['too-long']]])
+    expect(p.lines.filter((l) => l.custom === true).map((l) => l.text?.slice(0, 30))).toEqual(['Fractions and percentages: bef'])
   })
 
   it('keeps the short notes of Profile B within the limit the way the proposal\'s example does', () => {

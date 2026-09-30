@@ -78,6 +78,7 @@ describe('the page', () => {
       '3. Anything else?',
       '4. Your notes',
       '5. Where to paste',
+      'Check notes',
       'More',
     ])
     expect($('[data-testid=trust]').textContent).toBe(COPY.trust)
