@@ -137,6 +137,8 @@ export function adjustObservation(o: Observation, rho: number): Observation {
       return { kind: 'grm', axis: o.axis, a: o.a, b: o.b.map((t) => t - rho), y: o.y }
     case 'gaussian':
       return { kind: 'gaussian', axis: o.axis, lam: o.lam, d: o.d + o.lam * rho, sigma: o.sigma, x: o.x }
+    case 'testlet': // every item at θ + ρ; the shared γ does not depend on the shift
+      return { kind: 'testlet', axis: o.axis, tau: o.tau, items: o.items.map((it) => ({ a: it.a, b: it.b - rho, y: it.y })) }
   }
 }
 

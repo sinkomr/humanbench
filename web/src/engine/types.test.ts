@@ -106,7 +106,7 @@ describe('item and observation types', () => {
   it('ItemParams has one variant per ModelKind; Observation kinds are the scorer kinds', () => {
     // Checked by `tsc` (npm run check): a new ModelKind without an ItemParams variant fails here.
     expect(assertType<Equal<ItemParams['model'], ModelKind>>()).toBe(true)
-    expect(assertType<Equal<ObservationKind, '2pl' | '3pl' | 'grm' | 'gaussian'>>()).toBe(true)
+    expect(assertType<Equal<ObservationKind, '2pl' | '3pl' | 'grm' | 'gaussian' | 'testlet'>>()).toBe(true)
     expect(assertType<Equal<Extract<Observation, { kind: 'grm' }>['b'], readonly number[]>>()).toBe(true)
   })
 

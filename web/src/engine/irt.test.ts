@@ -4,6 +4,7 @@ import {
   check3pl,
   checkGaussian,
   checkGrm,
+  checkTestlet,
   grmCumulative,
   grmLogProbs,
   grmProbs,
@@ -11,26 +12,37 @@ import {
   info3pl,
   infoGaussian,
   infoGrm,
+  infoTestlet,
   logistic,
   loglik2pl,
   loglik3pl,
   loglikGaussian,
   loglikGrm,
+  loglikTestlet,
   logLogistic,
+  MAX_TESTLET_ITEMS,
   observationInfo,
   observationLoglik,
   observationObservedInfo,
   observationScore,
   observedInfo3pl,
   observedInfoGrm,
+  observedInfoTestlet,
   p2pl,
   p3pl,
   score2pl,
   score3pl,
   scoreGaussian,
   scoreGrm,
+  scoreTestlet,
+  TESTLET_N_NODES,
+  TESTLET_NODES,
+  TESTLET_SD,
+  TESTLET_WEIGHTS,
+  TESTLET_Z_MAX,
+  TESTLET_Z_STEP,
 } from './irt'
-import type { Observation } from './types'
+import type { Observation, TestletItem } from './types'
 
 const theta = fc.double({ min: -4, max: 4, noNaN: true })
 const disc = fc.double({ min: 0.2, max: 3, noNaN: true })
@@ -543,5 +555,177 @@ describe('observed information (the MAP Newton curvature, ROADMAP A2)', () => {
     expect(observationObservedInfo(og, t)).toBe(observedInfoGrm(t, 1.5, [-1, 0, 1.2], 2))
     const bad = { kind: '2pl_testlet', axis: 'LG', a: 1, b: 0, y: 1 } as unknown as Observation
     expect(() => observationObservedInfo(bad, t)).toThrow(RangeError)
+  })
+})
+
+describe('testlet: 2PL items sharing an effect γ ~ N(0, 0.3²) (§7.1, M3.9)', () => {
+  const item = fc.record({ a: fc.double({ min: 0.5, max: 2.5, noNaN: true }), b: fc.double({ min: -2.5, max: 2.5, noNaN: true }), y: binary })
+  const itemsArb = (maxLength = MAX_TESTLET_ITEMS): fc.Arbitrary<TestletItem[]> => fc.array(item, { minLength: 1, maxLength })
+  const tauArb = fc.constantFrom(0.1, 0.3, 0.6)
+  const thetaArb = fc.double({ min: -2.5, max: 2.5, noNaN: true })
+  /** Every response pattern of n items. */
+  const patterns = (items: readonly TestletItem[]): TestletItem[][] =>
+    Array.from({ length: 2 ** items.length }, (_, m) => items.map((it, j) => ({ ...it, y: ((m >> j) & 1) as 0 | 1 })))
+  /** log ∫ Π p_j N(γ; 0, τ²) dγ on a dense trapezoid over ±10τ (a different rule from the 65-node one). */
+  const refLoglik = (t: number, tau: number, items: readonly TestletItem[]): number => {
+    const n = 8001
+    const h = (20 * tau) / (n - 1)
+    const terms = Array.from({ length: n }, (_, i) => {
+      const g = -10 * tau + i * h
+      let l = -0.5 * (g / tau) ** 2 - Math.log(tau * Math.sqrt(2 * Math.PI))
+      for (const it of items) l += loglik2pl(t + g, it.a, it.b, it.y)
+      return l
+    })
+    const m = Math.max(...terms)
+    return m + Math.log(terms.reduce((acc, v) => acc + Math.exp(v - m), 0) * h)
+  }
+
+  it('records the grid rule: 65 nodes z = −8 + i/4, Gaussian weights summing to 1, τ = 0.3', () => {
+    expect([TESTLET_SD, MAX_TESTLET_ITEMS, TESTLET_N_NODES, TESTLET_Z_MAX, TESTLET_Z_STEP]).toEqual([0.3, 8, 65, 8, 0.25])
+    expect(TESTLET_NODES).toHaveLength(65)
+    expect(TESTLET_NODES.map((z, i) => z - (-8 + i * 0.25))).toEqual(new Array(65).fill(0)) // exact
+    expect([TESTLET_NODES[0], TESTLET_NODES[32], TESTLET_NODES[64]]).toEqual([-8, 0, 8])
+    close(TESTLET_WEIGHTS.reduce((s, w) => s + w, 0), 1, 1e-15)
+    const raw = TESTLET_NODES.map((z) => Math.exp(-0.5 * z * z))
+    const total = raw.reduce((s, v) => s + v, 0)
+    TESTLET_WEIGHTS.forEach((w, i) => close(w, raw[i]! / total, 1e-14))
+    TESTLET_WEIGHTS.forEach((w, i) => expect(w).toBe(TESTLET_WEIGHTS[64 - i]))
+    close(TESTLET_WEIGHTS.reduce((s, w, i) => s + w * TESTLET_NODES[i]! ** 2, 0), 1, 1e-12) // Var(z) = 1
+    close(TESTLET_WEIGHTS.reduce((s, w, i) => s + w * TESTLET_NODES[i]! ** 4, 0), 3, 1e-10) // E z⁴ = 3
+    expect(Object.isFrozen(TESTLET_NODES)).toBe(true)
+    expect(Object.isFrozen(TESTLET_WEIGHTS)).toBe(true)
+  })
+
+  it('log-likelihood equals an independent dense integral of the γ mixture', () => {
+    fc.assert(
+      fc.property(itemsArb(), thetaArb, tauArb, (items, t, tau) => {
+        const want = refLoglik(t, tau, items)
+        fc.pre(want > -15) // beyond that the pattern's mass is inside the ±8σ truncation tail
+        expect(Math.abs(loglikTestlet(t, tau, items) - want)).toBeLessThan(1e-6)
+      }),
+      { numRuns: 60 },
+    )
+    const items: TestletItem[] = [
+      { a: 1.2, b: -0.5, y: 1 },
+      { a: 0.9, b: 0.2, y: 1 },
+      { a: 1.5, b: 0.6, y: 0 },
+      { a: 1.1, b: 1.0, y: 1 },
+    ]
+    for (const t of [-2, -0.5, 0, 0.7, 2]) expect(Math.abs(loglikTestlet(t, 0.3, items) - refLoglik(t, 0.3, items))).toBeLessThan(1e-9)
+  })
+
+  it('with τ = 0 is the independent 2PL likelihood: log-likelihood, score, information', () => {
+    fc.assert(
+      fc.property(itemsArb(), thetaArb, (items, t) => {
+        const ll = items.reduce((s, it) => s + loglik2pl(t, it.a, it.b, it.y), 0)
+        const sc = items.reduce((s, it) => s + score2pl(t, it.a, it.b, it.y), 0)
+        const inf = items.reduce((s, it) => s + info2pl(t, it.a, it.b), 0)
+        expect(Math.abs(loglikTestlet(t, 0, items) - ll)).toBeLessThan(1e-12)
+        expect(Math.abs(scoreTestlet(t, 0, items) - sc)).toBeLessThan(1e-12)
+        expect(Math.abs(observedInfoTestlet(t, 0, items) - inf)).toBeLessThan(1e-12)
+        expect(Math.abs(infoTestlet(t, 0, items) - inf)).toBeLessThan(1e-12)
+      }),
+    )
+  })
+
+  it('the probabilities of the 2^n response patterns sum to 1', () => {
+    fc.assert(
+      fc.property(itemsArb(6), thetaArb, tauArb, (items, t, tau) => {
+        const total = patterns(items).reduce((s, y) => s + Math.exp(loglikTestlet(t, tau, y)), 0)
+        expect(Math.abs(total - 1)).toBeLessThan(1e-12)
+      }),
+      { numRuns: 40 },
+    )
+  })
+
+  it('score is d log L/dθ; observed information is −d² log L/dθ² and is never negative', () => {
+    fc.assert(
+      fc.property(itemsArb(), thetaArb, tauArb, (items, t, tau) => {
+        close(scoreTestlet(t, tau, items), d1((u) => loglikTestlet(u, tau, items), t), 1e-6)
+        const obs = observedInfoTestlet(t, tau, items)
+        close(obs, -d1((u) => scoreTestlet(u, tau, items), t), 1e-6)
+        expect(obs).toBeGreaterThanOrEqual(-1e-12) // 2PL items: the marginal log-likelihood is concave (Prékopa)
+      }),
+      { numRuns: 60 },
+    )
+  })
+
+  it('expected information is the pattern average of score² and of the observed information', () => {
+    fc.assert(
+      fc.property(itemsArb(6), thetaArb, tauArb, (items, t, tau) => {
+        let bySquare = 0
+        let byObserved = 0
+        for (const y of patterns(items)) {
+          const p = Math.exp(loglikTestlet(t, tau, y))
+          bySquare += p * scoreTestlet(t, tau, y) ** 2
+          byObserved += p * observedInfoTestlet(t, tau, y)
+        }
+        const info = infoTestlet(t, tau, items)
+        expect(Math.abs(info - bySquare)).toBeLessThanOrEqual(1e-9 * info + 1e-12)
+        expect(Math.abs(info - byObserved)).toBeLessThanOrEqual(1e-8 * info + 1e-10) // the information identity
+      }),
+      { numRuns: 40 },
+    )
+  })
+
+  it('discounts the information of its items by about 20% (§7.1) and more with a larger τ', () => {
+    const b = [-0.6, -0.2, 0.2, 0.6]
+    for (const a of [1, 1.4, 1.8, 2.2]) {
+      const items = b.map((bj): TestletItem => ({ a, b: bj, y: 1 }))
+      const ind = items.reduce((s, it) => s + info2pl(0, it.a, it.b), 0)
+      const ratio = infoTestlet(0, TESTLET_SD, items) / ind
+      expect(ratio).toBeGreaterThan(0.65)
+      expect(ratio).toBeLessThan(0.95)
+      close(ratio, 1 / (1 + TESTLET_SD ** 2 * ind), 0.04) // ≈ 1/(1 + τ² I)
+    }
+    const items: TestletItem[] = [1.3, 1.1, 1.6].map((a, j) => ({ a, b: [-0.4, 0.1, 0.5][j]!, y: 1 }))
+    const infos = [0, 0.15, 0.3, 0.6, 1].map((tau) => infoTestlet(0.1, tau, items))
+    for (let i = 1; i < infos.length; i++) expect(infos[i]!).toBeLessThan(infos[i - 1]!)
+  })
+
+  it('does not overflow or lose finiteness for steep items and improbable patterns', () => {
+    const items: TestletItem[] = [
+      { a: 100, b: -50, y: 1 },
+      { a: 100, b: 50, y: 0 },
+      { a: 50, b: 0, y: 1 },
+    ]
+    for (const y of [items, items.map((it) => ({ ...it, y: (1 - it.y) as 0 | 1 }))]) {
+      for (const f of [loglikTestlet, scoreTestlet, observedInfoTestlet]) expect(Number.isFinite(f(0, 0.3, y)), f.name).toBe(true)
+    }
+    expect(Number.isFinite(infoTestlet(0, 0.3, items))).toBe(true)
+    expect(infoTestlet(0, 0.3, [{ a: 1, b: 400, y: 0 }])).toBeGreaterThanOrEqual(0)
+  })
+
+  it('validates τ, the item count and each item', () => {
+    const ok: TestletItem[] = [{ a: 1, b: 0, y: 1 }]
+    for (const tau of [-0.1, Number.NaN, Infinity]) expect(() => loglikTestlet(0, tau, ok)).toThrow(/tau/)
+    expect(() => checkTestlet(0, [])).toThrow(/1 to 8 items/)
+    expect(() => infoTestlet(0, 0.3, new Array<TestletItem>(9).fill(ok[0]!))).toThrow(/1 to 8 items/)
+    expect(() => checkTestlet(0.3, undefined as unknown as TestletItem[])).toThrow(RangeError)
+    expect(() => checkTestlet(0.3, [{ a: Infinity, b: 0, y: 1 }])).toThrow(/finite/)
+    expect(() => checkTestlet(0.3, [{ a: 1, b: Number.NaN, y: 1 }])).toThrow(/finite/)
+    expect(() => checkTestlet(0.3, [{ a: 1, b: 0, y: 2 as 1 }])).toThrow(/0 or 1/)
+    expect(() => checkTestlet(0.3, [null as unknown as TestletItem])).toThrow(RangeError)
+    expect(() => checkTestlet(0, ok)).not.toThrow()
+    expect(() => checkTestlet(0.3, new Array<TestletItem>(8).fill(ok[0]!))).not.toThrow()
+  })
+
+  it('dispatches by kind: observationLoglik / Score / Info / ObservedInfo', () => {
+    const items: TestletItem[] = [
+      { a: 1.2, b: 0, y: 1 },
+      { a: 1, b: 0.5, y: 0 },
+      { a: 0.9, b: -0.5, y: 1 },
+    ]
+    const o: Observation = { kind: 'testlet', axis: 'RC', tau: 0.3, items }
+    const t = 0.2
+    expect(observationLoglik(o, t)).toBe(loglikTestlet(t, 0.3, items))
+    expect(observationScore(o, t)).toBe(scoreTestlet(t, 0.3, items))
+    expect(observationInfo(o, t)).toBe(infoTestlet(t, 0.3, items))
+    expect(observationObservedInfo(o, t)).toBe(observedInfoTestlet(t, 0.3, items))
+    // the same numbers as the bank reference (hb.calib.irt), printed by the Python implementation
+    close(observationLoglik(o, t), -1.5879781401467614, 1e-12)
+    close(observationScore(o, t), 0.39121693114076733, 1e-12)
+    close(observationInfo(o, t), 0.7159513496185569, 1e-12)
+    close(observationObservedInfo(o, t), 0.7148696646003072, 1e-12)
   })
 })

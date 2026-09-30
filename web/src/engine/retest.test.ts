@@ -133,6 +133,32 @@ describe('adjustObservation (exact re-expression on θ_k)', () => {
     )
   })
 
+  it('shifts every item of a testlet by ρ, keeping τ and the responses (M3.9)', () => {
+    const o: Observation = {
+      kind: 'testlet',
+      axis: 'RC',
+      tau: 0.3,
+      items: [
+        { a: 1.2, b: -0.5, y: 1 },
+        { a: 0.9, b: 0.2, y: 0 },
+        { a: 1.5, b: 0.6, y: 1 },
+      ],
+    }
+    const before = JSON.stringify(o)
+    const adj = adjustObservation(o, 0.35)
+    expect(JSON.stringify(o)).toBe(before)
+    expect(adj).toMatchObject({ kind: 'testlet', axis: 'RC', tau: 0.3 })
+    if (adj.kind !== 'testlet') throw new Error('unreachable')
+    expect(adj.items.map((it) => [it.a, it.y])).toEqual([[1.2, 1], [0.9, 0], [1.5, 1]])
+    adj.items.forEach((it, j) => expect(it.b).toBeCloseTo([-0.5, 0.2, 0.6][j]! - 0.35, 15))
+    for (const t of [-1, 0, 1.3]) {
+      expect(observationLoglik(adj, t)).toBeCloseTo(observationLoglik(o, t + 0.35), 12)
+      expect(observationScore(adj, t)).toBeCloseTo(observationScore(o, t + 0.35), 12)
+      expect(observationInfo(adj, t)).toBeCloseTo(observationInfo(o, t + 0.35), 12)
+    }
+    expect(() => adjustObservation({ ...o, tau: -1 }, 0.1)).toThrow(RangeError)
+  })
+
   it('shifts b (2PL/3PL), every GRM threshold, and a Gaussian d by λ·ρ', () => {
     expect(adjustObservation({ kind: '2pl', axis: 'MAT', a: 1, b: 0.5, y: 1 }, 0.2)).toMatchObject({ b: 0.3 })
     expect(adjustObservation({ kind: 'grm', axis: 'WM', a: 1, b: [-1, 1], y: 1 }, 0.5)).toMatchObject({ b: [-1.5, 0.5] })
