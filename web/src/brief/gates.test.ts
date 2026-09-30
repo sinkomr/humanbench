@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import raw from './brief-gates.json'
 import { DEFAULT_GATES, FLOOR_GATE, checkedWith, defaultStatus, floorGatePassed, lineStatus, parseGateFile, worstStatus, type GateFile } from './gates'
 import { TEMPLATES, template } from './grammar'
+import { RESULTS_TALK_ID, RESULTS_TALK_V } from './results-talk'
 import { TEMPLATES_VERSION } from './types'
 
 const walk = (v: unknown, visit: (x: unknown, path: string) => void, path = ''): void => {
@@ -21,9 +22,10 @@ describe('brief-gates.json (pub carries statuses only)', () => {
     walk(raw, (x, path) => expect(typeof x, path).not.toBe('number'))
   })
 
-  it('has an entry for every template (except the custom line) at its current wording version', () => {
+  it('has an entry for every template (except the custom line) at its current wording version, plus the bottom-rung gate and the results-talk preamble', () => {
     const want = TEMPLATES.filter((t) => t.id !== 'X1').map((t) => t.id)
-    expect(Object.keys(DEFAULT_GATES.lines).filter((k) => k !== FLOOR_GATE).sort()).toEqual(want.sort())
+    expect(Object.keys(DEFAULT_GATES.lines).filter((k) => k !== FLOOR_GATE && k !== RESULTS_TALK_ID).sort()).toEqual(want.sort())
+    expect(DEFAULT_GATES.lines[RESULTS_TALK_ID]).toEqual({ v: RESULTS_TALK_V, status: 'shipped' })
     for (const id of want) expect(DEFAULT_GATES.lines[id]?.v, id).toBe(template(id).v)
     expect(DEFAULT_GATES.templates).toBe(TEMPLATES_VERSION)
   })

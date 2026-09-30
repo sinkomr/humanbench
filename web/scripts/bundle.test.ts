@@ -44,8 +44,8 @@ function textOf(result: Awaited<ReturnType<typeof build>>): string {
     .join('\n')
 }
 
-/** Build `code` as a single-entry production bundle and return its text. */
-async function bundle(code: string): Promise<string> {
+/** Build `code` as a single-entry production bundle and return its text. `svelte` compiles .svelte files in it. */
+async function bundle(code: string, opts: { svelte?: boolean } = {}): Promise<string> {
   const id = '\0hb-bundle-probe'
   const probe: Plugin = {
     name: 'hb-bundle-probe',
@@ -56,7 +56,7 @@ async function bundle(code: string): Promise<string> {
     configFile: false,
     root: WEB,
     logLevel: 'silent',
-    plugins: [probe],
+    plugins: opts.svelte === true ? [probe, svelte()] : [probe],
     build: { write: false, minify: true, rollupOptions: { input: 'hb-bundle-probe', preserveEntrySignatures: 'strict' } },
   })
   return textOf(result)
@@ -115,6 +115,20 @@ describe('production bundles (A14)', () => {
     expect(text).not.toMatch(/ajv|fast-check|json-schema-traverse/i)
     expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
     for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
+  }, 60_000)
+
+  it('the reveal barrel (AI.6b: the card and the results-talk helper) is light: no grammar, topics, gates code or checker', async () => {
+    const text = await bundle(`export * from ${JSON.stringify(`${BRIEF}reveal.ts`)}`, { svelte: true })
+    // it carries its own words ...
+    expect(text).toContain('Never paste your save file')
+    expect(text).toContain('Working with AI')
+    // ... and none of the notes grammar, so a screen that imports it does not put the notes in the main app
+    expect(text).not.toContain(NOTES_MARKER)
+    expect(text).not.toContain('How I like explanations')
+    expect(text).not.toContain('quant/probability_counting')
+    expect(text).not.toMatch(/ajv|fast-check|json-schema-traverse/i)
+    // the Svelte runtime is about 45 KB of it; the notes grammar alone is over 60 KB more
+    expect(text.length).toBeLessThan(80_000)
   }, 60_000)
 
   it('the light barrels and the main app do not carry the notes grammar (AI.4)', async () => {

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DUMP_CONTEXTS, DUMP_FORMAT, buildDump, serializeDump } from '../src/brief/dump'
 import { lintNotes } from '../src/brief/lint'
+import { PREAMBLE } from '../src/brief/results-talk'
 import { FORM_LIMITS, PRESETS } from '../src/brief/types'
 import { UsageError, parseDumpBriefsArgs } from './dump-briefs'
 
@@ -50,6 +51,11 @@ describe('buildDump', () => {
     const c = dump.briefs.find((x) => x.name === 'C-reading-own-settings')!
     expect(c.topics['kst/biology']).toEqual({ set: 'skip', effective: 'skip', written: true })
     expect(c.topics['lr/notation']?.effective).toBe('build')
+  })
+
+  it('carries the results-talk preamble for the E22 arm: its id, wording version and exact text', () => {
+    expect(dump.results_talk).toEqual({ id: 'RT', v: '1', text: PREAMBLE, chars: 340 })
+    expect(serializeDump(dump)).toContain('"results_talk"')
   })
 
   it('carries the JSON that mirrors each text, and no result-derived field', () => {

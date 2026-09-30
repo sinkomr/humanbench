@@ -10,7 +10,8 @@ describe('dev route hashes (M1.16)', () => {
     for (const h of ['', '#', '#/blob', '#/dev/', '#/dev/Blob', '#/devx/blob', '#/dev/blob/x']) expect(parseDevHash(h), h).toBeNull()
   })
 
-  it('registers the blob demo', () => {
-    expect(Object.keys(DEV_ROUTES)).toEqual(['blob'])
+  it('registers the blob demo and the reveal screens demo (AI.6b)', () => {
+    expect(Object.keys(DEV_ROUTES)).toEqual(['blob', 'reveal-ai'])
+    expect(parseDevHash('#/dev/reveal-ai?screen=share')?.name).toBe('reveal-ai')
   })
 })

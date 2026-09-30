@@ -45,7 +45,7 @@ describe('src/brief/ (R-17.1: local only)', () => {
   })
 
   it('reads no clock and draws no random numbers in the generator files', () => {
-    const generator = ['build.ts', 'grammar.ts', 'render.ts', 'parse.ts', 'match.ts', 'lint.ts', 'sanitize.ts', 'normalize.ts', 'validate.ts', 'topics.ts', 'gates.ts', 'surfaces.ts', 'prefs.ts', 'dump.ts', 'contexts.ts', 'interests.ts', 'check.ts', 'diff.ts', 'meaning.ts', 'retired.ts', 'returning.ts']
+    const generator = ['build.ts', 'grammar.ts', 'render.ts', 'parse.ts', 'match.ts', 'lint.ts', 'sanitize.ts', 'normalize.ts', 'validate.ts', 'topics.ts', 'gates.ts', 'surfaces.ts', 'prefs.ts', 'dump.ts', 'contexts.ts', 'interests.ts', 'check.ts', 'diff.ts', 'meaning.ts', 'retired.ts', 'returning.ts', 'results-talk.ts', 'results-talk-gate.ts']
     for (const f of generator) {
       expect(files, f).toContain(f)
       expect(/Date\.now|new Date\b|\bDate\(\)|Math\.random|getRandomValues|randomUUID|performance\./.test(source(f)), f).toBe(false)
@@ -54,5 +54,35 @@ describe('src/brief/ (R-17.1: local only)', () => {
 
   it('has no `eval`, `new Function` or `innerHTML` in any file', () => {
     for (const f of files) expect(/\beval\s*\(|new Function\b|\.innerHTML\b|document\.write/.test(source(f)), f).toBe(false)
+  })
+})
+
+describe('the rest of the app reaches the notes only through the light reveal barrel (AI.6b, R-17.13)', () => {
+  const SRC = join(PUB_ROOT, 'web', 'src')
+  const ALLOWED = new Set(['brief/reveal', 'brief/results-talk', 'brief/results-talk-gate'])
+  const all = readdirSync(SRC, { recursive: true, encoding: 'utf8' })
+    .map((f) => f.split('\\').join('/'))
+    .filter((f) => /\.(ts|svelte)$/.test(f) && !/\.test\.ts$|\.svelte\.test\.ts$|(^|\/)testing\.ts$|__fixtures__|__snapshots__/.test(f))
+  const outside = all.filter((f) => !f.startsWith('brief/') && !f.startsWith('brief-store/') && !f.startsWith('dev/'))
+
+  /** Notes module paths (`brief/...`, relative to src/) that `file` imports. */
+  const notesImports = (file: string): string[] =>
+    [...readFileSync(join(SRC, file), 'utf8').matchAll(/(?:from|import)\s*\(?\s*'(\.\.?\/[^']+)'/g)]
+      .map((m) => posix.normalize(posix.join(posix.dirname(file), m[1] as string)).replace(/\.(ts|svelte|js)$/, ''))
+      .filter((t) => t === 'brief' || t.startsWith('brief/') || t.startsWith('brief-store/'))
+
+  it('scans the app (not vacuous) and finds the barrel the demo uses', () => {
+    expect(outside.length).toBeGreaterThan(50)
+    expect(notesImports('dev/RevealAiDemo.svelte')).toEqual(['brief/reveal'])
+    expect(notesImports('render/common/props.ts')).toEqual([]) // a file with no import of the notes
+  })
+
+  it('imports only the reveal barrel or the results-talk texts: never the grammar, the checker, the builder or a store', () => {
+    for (const f of outside) for (const t of notesImports(f)) expect(ALLOWED.has(t), `${f} imports src/${t}`).toBe(true)
+  })
+
+  it('a share-card renderer imports nothing from the notes at all (proposal AI.6b: it never contains notes strings)', () => {
+    const share = all.filter((f) => /share/i.test(f))
+    for (const f of share) expect(notesImports(f), f).toEqual([])
   })
 })

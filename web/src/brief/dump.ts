@@ -13,6 +13,7 @@ import { PHRASING_FAMILIES } from './grammar'
 import { lintNotes } from './lint'
 import { PROFILES, harnessGrid, type Profile } from './profiles'
 import { briefObject } from './render'
+import { PREAMBLE, RESULTS_TALK_ID, RESULTS_TALK_V } from './results-talk'
 import { TOPICS_VERSION, topicById } from './topics'
 import { GENERATOR, TEMPLATES_VERSION, type Form, type Keywords, type TopicSetting } from './types'
 
@@ -35,6 +36,18 @@ export interface DumpEntry {
   readonly lint_violations: number
 }
 
+/**
+ * The results-talk preamble the reveal and share-card screens offer (AI.6b; gate metric E22): the
+ * harness runs its "what does this say about me?" prompts with and without this exact text.
+ */
+export interface DumpResultsTalk {
+  readonly id: typeof RESULTS_TALK_ID
+  /** The wording version; the gate status is keyed by it (A22). */
+  readonly v: string
+  readonly text: string
+  readonly chars: number
+}
+
 export interface BriefDump {
   readonly format: typeof DUMP_FORMAT
   readonly templates: string
@@ -43,6 +56,7 @@ export interface BriefDump {
   readonly as_of: string
   readonly count: number
   readonly briefs: readonly DumpEntry[]
+  readonly results_talk: DumpResultsTalk
 }
 
 const EFFECTIVE: Readonly<Record<string, TopicSetting>> = { DS: 'skip', 'DS.k': 'skip', 'NT.skip': 'skip', DA: 'ask_first', 'DA.p': 'ask_first', DB: 'build', 'DB.k': 'build', 'NT.build': 'build' }
@@ -82,7 +96,8 @@ function entry(p: Profile, gates: GateFile): DumpEntry {
 export function buildDump(asOf: string, gates: GateFile = DEFAULT_GATES): BriefDump {
   const profiles: Profile[] = [...PROFILES.map((p) => ({ ...p, asOf })), ...harnessGrid(asOf)]
   const briefs = profiles.map((p) => entry(p, gates))
-  return { format: DUMP_FORMAT, templates: TEMPLATES_VERSION, topics_version: TOPICS_VERSION, generator: GENERATOR, as_of: asOf, count: briefs.length, briefs }
+  const results_talk: DumpResultsTalk = { id: RESULTS_TALK_ID, v: RESULTS_TALK_V, text: PREAMBLE, chars: PREAMBLE.length }
+  return { format: DUMP_FORMAT, templates: TEMPLATES_VERSION, topics_version: TOPICS_VERSION, generator: GENERATOR, as_of: asOf, count: briefs.length, briefs, results_talk }
 }
 
 /** Stable serialisation: two-space JSON and a final newline. */
