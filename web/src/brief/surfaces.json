@@ -1,0 +1,383 @@
+{
+  "format": "hb-surfaces/1",
+  "checked": "2026-09-28",
+  "source": "Assembled from the Phase AI research notes (mechanics, September 2026). Limits and menu names change; the page tells people to trust the counter and the labels in their own assistant. AI.12c re-checks each destination and records smoke results here.",
+  "limits": {
+    "short": 1500,
+    "long": 5000,
+    "skill": 5000
+  },
+  "destinations": [
+    {
+      "id": "chatgpt_instructions",
+      "label": "ChatGPT custom instructions",
+      "group": "assistant",
+      "forms": [
+        "short",
+        "long"
+      ],
+      "default_form": "short",
+      "limit_note": "Free plans have allowed about 1,500 characters per box. Paid plans were reported raised to 5,000 in July 2026 (secondary source, not verified). Trust the counter in your own box.",
+      "install": [
+        "Open ChatGPT and go to Settings, then Personalization, then Custom instructions.",
+        "Paste the notes into the box for how you want ChatGPT to respond. On a free plan use the short notes.",
+        "Save, then start a new chat to check that the notes are used."
+      ],
+      "remove": [
+        "Open Settings, then Personalization, then Custom instructions.",
+        "Delete the notes from the box and save.",
+        "If you ever pasted the notes into a chat message, also review Settings, Personalization, Memory, and delete any saved item that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "chatgpt_project",
+      "label": "ChatGPT Project",
+      "group": "assistant",
+      "forms": [
+        "long",
+        "short"
+      ],
+      "default_form": "long",
+      "limit_note": "The limit for project instructions is not verified. The long notes are written to fit 5,000 characters.",
+      "install": [
+        "In ChatGPT, open Projects and create a project for this use, for example one for study.",
+        "Open the project's instructions and paste the notes.",
+        "Start your chats inside that project so they use the notes."
+      ],
+      "remove": [
+        "Open the project and clear its instructions, or delete the project.",
+        "If you ever pasted the notes into a chat message, review Settings, Personalization, Memory, and delete any saved item that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "claude_preferences",
+      "label": "Claude preferences",
+      "group": "assistant",
+      "forms": [
+        "short",
+        "long"
+      ],
+      "default_form": "short",
+      "limit_note": "No limit is documented for Claude's account-wide instructions. The short notes fit anywhere.",
+      "install": [
+        "Open Claude and go to Settings. Find the personal instructions (called instructions for Claude, or personal preferences).",
+        "Paste the notes there and save.",
+        "Start a new chat to check that the notes are used."
+      ],
+      "remove": [
+        "Open Settings and find the personal instructions.",
+        "Delete the notes and save.",
+        "If you ever pasted the notes into a chat message, review Claude's memory settings and delete any saved item that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "claude_project",
+      "label": "Claude Project",
+      "group": "assistant",
+      "forms": [
+        "long",
+        "short"
+      ],
+      "default_form": "long",
+      "limit_note": "The long notes are written to fit 5,000 characters. Free plans allow a small number of projects.",
+      "install": [
+        "In Claude, open Projects and create a project for this use, for example one for study.",
+        "Open the project's instructions and paste the notes.",
+        "Start your chats inside that project so they use the notes."
+      ],
+      "remove": [
+        "Open the project and clear its instructions, or delete the project.",
+        "If you ever pasted the notes into a chat message, review Claude's memory settings and delete any saved item that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "gemini_instructions",
+      "label": "Gemini instructions",
+      "group": "assistant",
+      "forms": [
+        "short"
+      ],
+      "default_form": "short",
+      "limit_note": "The limit is not verified. The short notes are the safe choice.",
+      "install": [
+        "Open Gemini and go to Settings, then find Instructions for Gemini (saved info).",
+        "Add the notes and save.",
+        "Start a new chat to check that the notes are used."
+      ],
+      "remove": [
+        "Open Settings and find Instructions for Gemini (saved info).",
+        "Delete the notes and save.",
+        "If you ever pasted the notes into a chat message, review Gemini's saved info and past chats settings, and delete anything that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "gemini_gem",
+      "label": "Gemini Gem",
+      "group": "assistant",
+      "forms": [
+        "long",
+        "short"
+      ],
+      "default_form": "long",
+      "limit_note": "The limit for a Gem's instructions is not verified. The long notes are written to fit 5,000 characters.",
+      "install": [
+        "In Gemini, open Gems and create a new Gem for this use.",
+        "Paste the notes into the Gem's instructions and save.",
+        "Start your chats with that Gem so they use the notes."
+      ],
+      "remove": [
+        "Open the Gem and clear its instructions, or delete the Gem.",
+        "If you ever pasted the notes into a chat message, review Gemini's saved info settings, and delete anything that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "microsoft_copilot",
+      "label": "Microsoft Copilot",
+      "group": "assistant",
+      "forms": [
+        "short"
+      ],
+      "default_form": "short",
+      "limit_note": "The limit is not verified. The short notes are the safe choice.",
+      "install": [
+        "Open Copilot and go to Settings, then Personalization, then custom instructions.",
+        "Paste the notes and save.",
+        "Start a new chat to check that the notes are used."
+      ],
+      "remove": [
+        "Open Settings, Personalization, custom instructions, and delete the notes.",
+        "If you ever pasted the notes into a chat message, review Copilot's saved memories and delete any that describe you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "claude_code_skill",
+      "label": "Claude Code skill (recommended for coding agents)",
+      "group": "agent",
+      "forms": [
+        "skill"
+      ],
+      "default_form": "skill",
+      "limit_note": "A skill loads only when you ask for an explanation or teaching, so the notes stay out of the way the rest of the time.",
+      "file": {
+        "kind": "new_file",
+        "posix_dir": "~/.claude/skills/working-with-me",
+        "windows_dir": "$HOME\\.claude\\skills\\working-with-me",
+        "name": "SKILL.md",
+        "own_dir": true
+      },
+      "install": [
+        "Download the file. Your browser saves it to your Downloads folder under the name shown below. If it saved under a different name, for example with (1) added, use that name.",
+        "Open a terminal and run the commands for your computer. They move the file into place and stop without changing anything if a file is already there.",
+        "Start a new Claude Code session. The skill loads when you ask to be taught or given an explanation."
+      ],
+      "remove": [
+        "Open a terminal and run the removal commands for your computer.",
+        "If you ever pasted the notes into a chat message, also review the memory of that assistant and delete anything that describes you."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "claude_code_rules",
+      "label": "Claude Code personal rules file",
+      "group": "agent",
+      "forms": [
+        "long"
+      ],
+      "default_form": "long",
+      "limit_note": "A personal rules file applies in every project on this computer. It is never a file inside a repository.",
+      "file": {
+        "kind": "new_file",
+        "posix_dir": "~/.claude/rules",
+        "windows_dir": "$HOME\\.claude\\rules",
+        "name": "working-with-me.md",
+        "own_dir": false
+      },
+      "install": [
+        "Download the file. Your browser saves it to your Downloads folder under the name shown below. If it saved under a different name, for example with (1) added, use that name.",
+        "Open a terminal and run the commands for your computer. They move the file into place and stop without changing anything if a file is already there.",
+        "Start a new Claude Code session."
+      ],
+      "remove": [
+        "Open a terminal and run the removal commands for your computer."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "codex_agents",
+      "label": "Codex personal instructions",
+      "group": "agent",
+      "forms": [
+        "long"
+      ],
+      "default_form": "long",
+      "limit_note": "This is your own file in your home folder, never a file inside a repository.",
+      "file": {
+        "kind": "shared_file",
+        "posix_path": "~/.codex/AGENTS.md",
+        "windows_path": "$HOME\\.codex\\AGENTS.md"
+      },
+      "install": [
+        "Open the file ~/.codex/AGENTS.md in a text editor. If it does not exist, create it.",
+        "Paste the notes at the end of the file. Never replace the file: it may already hold other instructions.",
+        "Save, then start a new Codex session."
+      ],
+      "remove": [
+        "Open ~/.codex/AGENTS.md in a text editor.",
+        "Delete the block that starts with the line How I like explanations, through the end of the notes, and save."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "gemini_cli",
+      "label": "Gemini CLI personal instructions",
+      "group": "agent",
+      "forms": [
+        "long"
+      ],
+      "default_form": "long",
+      "limit_note": "This is your own file in your home folder, never a file inside a repository.",
+      "file": {
+        "kind": "shared_file",
+        "posix_path": "~/.gemini/GEMINI.md",
+        "windows_path": "$HOME\\.gemini\\GEMINI.md"
+      },
+      "install": [
+        "Open the file ~/.gemini/GEMINI.md in a text editor. If it does not exist, create it.",
+        "Paste the notes at the end of the file. Never replace the file: it may already hold other instructions.",
+        "Save, then start a new Gemini CLI session."
+      ],
+      "remove": [
+        "Open ~/.gemini/GEMINI.md in a text editor.",
+        "Delete the block that starts with the line How I like explanations, through the end of the notes, and save."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor user rules",
+      "group": "agent",
+      "forms": [
+        "long",
+        "short"
+      ],
+      "default_form": "long",
+      "limit_note": "Use your personal (user) rules, never the project rules of a shared repository.",
+      "install": [
+        "Open Cursor's settings and find Rules, then your user rules (personal, not project rules).",
+        "Paste the notes and save.",
+        "Start a new chat to check that the notes are used."
+      ],
+      "remove": [
+        "Open Cursor's settings, Rules, your user rules, and delete the notes."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "github_copilot",
+      "label": "GitHub Copilot personal instructions",
+      "group": "agent",
+      "forms": [
+        "long",
+        "short"
+      ],
+      "default_form": "long",
+      "limit_note": "Use your personal instructions, never a file inside a shared repository: collaborators and the history would see it.",
+      "install": [
+        "Open your GitHub Copilot settings and find your personal custom instructions.",
+        "Paste the notes and save.",
+        "Start a new chat to check that the notes are used."
+      ],
+      "remove": [
+        "Open your GitHub Copilot settings, personal custom instructions, and delete the notes."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    },
+    {
+      "id": "own_app",
+      "label": "Your own app (JSON)",
+      "group": "other",
+      "forms": [
+        "long"
+      ],
+      "default_form": "long",
+      "limit_note": "The JSON mirrors the long notes line for line. It carries no numbers.",
+      "install": [
+        "Download the JSON file.",
+        "Read it in your own tool and treat it as instructions for wording and depth only."
+      ],
+      "remove": [
+        "Delete the file from wherever you stored it."
+      ],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      },
+      "output": "json"
+    },
+    {
+      "id": "just_me",
+      "label": "Just for me",
+      "group": "other",
+      "forms": [
+        "long",
+        "short"
+      ],
+      "default_form": "long",
+      "limit_note": "Nothing is installed. Read, copy or download the notes.",
+      "install": [
+        "Read the notes, copy them, or download them."
+      ],
+      "remove": [],
+      "smoke": {
+        "date": null,
+        "result": "not_run"
+      }
+    }
+  ]
+}

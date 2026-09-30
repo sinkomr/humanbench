@@ -5,6 +5,7 @@ import design from '../../../docs/DESIGN.md?raw'
 import schemaText from '../../../schema/save-v1.json?raw'
 import { jcs } from './jcs'
 import { arbSave, TEST_CTX } from './testing'
+import type { BriefPrefsV1 } from './types'
 import { SCHEMA_URL, SCHEMA_VERSION } from './types'
 import { UTC_SECONDS_RE, validateSave } from './validate'
 import { normalizeSave } from './merge'
@@ -91,12 +92,114 @@ const MUTATIONS: Mutation[] = [
   ['file sig with anon_id', (d) => (d.sig = { alg: 'HMAC-SHA256', kid: 'k', mac: 'AA', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' })],
 ]
 
+/** Valid notes settings (AI.7) to break one rule at a time. */
+const PREFS: BriefPrefsV1 = {
+  v: 1,
+  topics: 'topics-v1',
+  groups: 'g1',
+  notes_as_of: '2026-11',
+  contexts: [
+    {
+      slot: 1,
+      preset: 'coding',
+      destination: 'claude_code_skill',
+      tier: 'T1',
+      mode: 'do',
+      length: 'short',
+      topics: { 'other/programming': 'skip', 'quant/probability_counting': 'ask_first' },
+      lines_on: ['AC1'],
+      lines_off: ['U3'],
+      copied: { templates: '2026.09', month: '2026-11', lines: [{ id: 'F1', v: '1' }, { id: 'DS', v: '1' }] },
+      rev: 7,
+    },
+    { slot: 2, rev: 3, removed: true },
+  ],
+  fit_log: [{ id: '3f9a01c2', topic: 'quant/probability_counting', verdict: 'too_basic', month: '2026-12' }],
+  last_zones: {},
+}
+
+type PrefsDoc = { brief_prefs: { contexts: Doc[]; fit_log: Doc[] } & Doc }
+const ctx0 = (d: Doc): Doc => (d as PrefsDoc).brief_prefs.contexts[0]!
+
+/** One rule break per entry in the notes settings; each must make both validators reject. */
+const PREFS_MUTATIONS: Mutation[] = [
+  ['brief_prefs not an object', (d) => (d.brief_prefs = [])],
+  ['brief_prefs extra key', (d) => ((d.brief_prefs as Doc).note = 'hello')],
+  ['brief_prefs v 2', (d) => ((d.brief_prefs as Doc).v = 2)],
+  ['brief_prefs drop fit_log', (d) => delete (d.brief_prefs as Doc).fit_log],
+  ['topics version free text', (d) => ((d.brief_prefs as Doc).topics = 'my topics')],
+  ['groups version free text', (d) => ((d.brief_prefs as Doc).groups = 'group one')],
+  ['notes_as_of with a day', (d) => ((d.brief_prefs as Doc).notes_as_of = '2026-11-05')],
+  ['notes_as_of month 13', (d) => ((d.brief_prefs as Doc).notes_as_of = '2026-13')],
+  ['six contexts', (d) => ((d.brief_prefs as Doc).contexts = [1, 2, 3, 4, 5, 6].map((slot) => ({ slot, rev: 0, removed: true })))],
+  ['context slot 0', (d) => (ctx0(d).slot = 0)],
+  ['context slot 6', (d) => (ctx0(d).slot = 6)],
+  ['context slot 1.5', (d) => (ctx0(d).slot = 1.5)],
+  ['context preset unknown', (d) => (ctx0(d).preset = 'my level is low')],
+  ['context destination sentence', (d) => (ctx0(d).destination = 'I am not good at maths')],
+  ['context destination too long', (d) => (ctx0(d).destination = `a${'b'.repeat(41)}`)],
+  ['context form unknown', (d) => (ctx0(d).form = 'huge')],
+  ['context tier T9', (d) => (ctx0(d).tier = 'T9')],
+  ['context mode unknown', (d) => (ctx0(d).mode = 'be nice')],
+  ['context length unknown', (d) => (ctx0(d).length = 'verbose')],
+  ['context topic key sentence', (d) => ((ctx0(d).topics as Doc)['I am bad at maths'] = 'skip')],
+  ['context topic setting unknown', (d) => ((ctx0(d).topics as Doc)['other/programming'] = 'i give up')],
+  ['context topics 41 entries', (d) => (ctx0(d).topics = Object.fromEntries(Array.from({ length: 41 }, (_, i) => [`a/t${i}`, 'skip'])))],
+  ['context topics_off duplicate', (d) => (ctx0(d).topics_off = ['quant/linear', 'quant/linear'])],
+  ['context lines_on duplicate', (d) => (ctx0(d).lines_on = ['AC1', 'AC1'])],
+  ['context lines_on sentence', (d) => (ctx0(d).lines_on = ['a sentence about me'])],
+  ['context lines_off 61 entries', (d) => (ctx0(d).lines_off = Array.from({ length: 61 }, (_, i) => `K${i}`))],
+  ['context phrasing value sentence', (d) => (ctx0(d).phrasing = { U1: 'a custom wording' })],
+  ['context phrasing key sentence', (d) => (ctx0(d).phrasing = { 'my own line': 'U1' })],
+  ['context rev negative', (d) => (ctx0(d).rev = -1)],
+  ['context rev fraction', (d) => (ctx0(d).rev = 1.5)],
+  ['context rev huge', (d) => (ctx0(d).rev = 1000001)],
+  ['context extra key (interests)', (d) => (ctx0(d).interests = 'chess')],
+  ['context missing lines_on', (d) => delete ctx0(d).lines_on],
+  ['context copied without month', (d) => delete (ctx0(d).copied as Doc).month],
+  ['context copied line free text', (d) => ((ctx0(d).copied as { lines: Doc[] }).lines[0]!.id = 'Keep it short')],
+  ['context copied line v text', (d) => ((ctx0(d).copied as { lines: Doc[] }).lines[0]!.v = 'one')],
+  ['context copied extra key', (d) => ((ctx0(d).copied as Doc).text = 'the notes')],
+  ['removed set with a preset', (d) => ((d.brief_prefs as { contexts: Doc[] }).contexts[1]!.preset = 'coding')],
+  ['removed false', (d) => ((d.brief_prefs as { contexts: Doc[] }).contexts[1]!.removed = false)],
+  ['fit id uppercase', (d) => ((d as PrefsDoc).brief_prefs.fit_log[0]!.id = '3F9A01C2')],
+  ['fit id short', (d) => ((d as PrefsDoc).brief_prefs.fit_log[0]!.id = '3f9a')],
+  ['fit verdict free text', (d) => ((d as PrefsDoc).brief_prefs.fit_log[0]!.verdict = 'far too easy for me')],
+  ['fit month with a day', (d) => ((d as PrefsDoc).brief_prefs.fit_log[0]!.month = '2026-12-01')],
+  ['fit extra key (a note)', (d) => ((d as PrefsDoc).brief_prefs.fit_log[0]!.note = 'boring')],
+  ['fit topic sentence', (d) => ((d as PrefsDoc).brief_prefs.fit_log[0]!.topic = 'Probability, I guess')],
+  ['last_zones value unknown', (d) => ((d.brief_prefs as Doc).last_zones = { 'quant/linear': 'expert' })],
+  ['last_zones key sentence', (d) => ((d.brief_prefs as Doc).last_zones = { 'my best topic': 'skip' })],
+]
+
 describe('schema/save-v1.json (DESIGN §8)', () => {
   it('is a JSON Schema 2020-12 document whose $id is the §8 $schema URL', () => {
     expect(schema.$schema).toBe('https://json-schema.org/draft/2020-12/schema')
     expect(schema.$id).toBe(SCHEMA_URL)
     expect((designExample() as Doc).$schema).toBe(SCHEMA_URL)
     expect(SCHEMA_VERSION).toMatch(/^1\.\d+\.\d+$/)
+  })
+
+  it('the §8 example plus valid notes settings (a prefs-only save too) validates, under ajv and the TS validator', () => {
+    const ex = clone(designExample()) as Doc
+    ex.brief_prefs = clone(PREFS)
+    expect(ajvValidate(ex), JSON.stringify(ajvValidate.errors)).toBe(true)
+    expect(tsOk(ex)).toBe(true)
+    const prefsOnly = { ...clone(ex), sessions: [], seen_items: [], seen_families: [] } as Doc
+    delete prefsOnly.posterior_cache
+    delete prefsOnly.sig
+    expect(ajvOk(prefsOnly)).toBe(true)
+    expect(tsOk(prefsOnly)).toBe(true)
+  })
+
+  it('every targeted mutation of valid notes settings is rejected by both validators', () => {
+    for (const [name, apply] of PREFS_MUTATIONS) {
+      const d = clone(designExample()) as Doc
+      d.brief_prefs = clone(PREFS)
+      apply(d)
+      expect([name, ajvOk(d)]).toEqual([name, false])
+      expect([name, tsOk(d)]).toEqual([name, false])
+    }
   })
 
   it('the §8 example validates, under ajv and the TS validator', () => {
@@ -146,6 +249,40 @@ describe('schema/save-v1.json (DESIGN §8)', () => {
       }),
       { numRuns: 500 },
     )
+  })
+
+  it('agrees with ajv on generated saves with notes settings, and on random mutations inside them (property)', () => {
+    const seen = { valid: 0, invalid: 0 }
+    const replacement = fc.oneof(fc.constant(undefined), fc.constant(null), fc.constant(-1), fc.constant(1.5), fc.constant(''), fc.constant('x'), fc.constant('a b'), fc.constant('T1'), fc.constant('skip'), fc.constant(6), fc.constant([]), fc.constant({}), fc.constant(true))
+    fc.assert(
+      fc.property(arbSave({ withPrefs: true }), fc.array(fc.nat(), { minLength: 1, maxLength: 5 }), replacement, (s, path, rep) => {
+        expect(ajvOk(s)).toBe(true)
+        expect(tsOk(s)).toBe(true)
+        expect(ajvOk(normalizeSave(s, TEST_CTX))).toBe(true)
+        if (s.brief_prefs === undefined) return
+        const d = clone(s) as unknown as Doc
+        let cur: unknown = d.brief_prefs
+        for (let i = 0; i < path.length; i++) {
+          if (cur === null || typeof cur !== 'object') break
+          const keys = Object.keys(cur)
+          if (keys.length === 0) break
+          const k = keys[(path[i] ?? 0) % keys.length] as string
+          const last = i === path.length - 1 || typeof (cur as Doc)[k] !== 'object' || (cur as Doc)[k] === null
+          if (last) {
+            if (rep === undefined && !Array.isArray(cur)) delete (cur as Doc)[k]
+            else (cur as Doc)[k] = rep === undefined ? null : rep
+            break
+          }
+          cur = (cur as Doc)[k]
+        }
+        const ok = ajvOk(d)
+        expect(tsOk(d)).toBe(ok)
+        seen[ok ? 'valid' : 'invalid']++
+      }),
+      { numRuns: 1500 },
+    )
+    expect(seen.invalid).toBeGreaterThan(300)
+    expect(seen.valid).toBeGreaterThan(30)
   })
 
   it('agrees with ajv on mutated saves (property)', () => {

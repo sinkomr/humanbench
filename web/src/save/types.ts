@@ -96,6 +96,77 @@ export interface PosteriorCache {
   cov_lower: number[]
 }
 
+/** A per-topic setting the person chose (`schema/save-v1.json` `brief_topic_setting`). */
+export type BriefTopicSetting = 'skip' | 'ask_first' | 'build'
+
+/**
+ * What a person last copied or downloaded for one set of notes: the template release, the month,
+ * and each line's template id and wording version. No note text (R-17.12).
+ */
+export interface BriefCopiedV1 {
+  templates: string
+  /** `YYYY-MM`. */
+  month: string
+  lines: { id: string; v: string }[]
+}
+
+/**
+ * One set of notes in `brief_prefs` (proposal §5.5). Every string is an enum, an id, a version or a
+ * `YYYY-MM` month: interests, custom lines and names are typed, used and never stored (R-17.12).
+ */
+export interface BriefContextV1 {
+  slot: number
+  preset: 'coding' | 'learning' | 'reading' | 'numbers' | 'writing' | 'general'
+  destination: string
+  form?: 'short' | 'long' | 'skill'
+  tier: 'T1' | 'T2'
+  mode: 'do' | 'learn'
+  length: 'short' | 'standard' | 'detailed'
+  topics: Record<string, BriefTopicSetting>
+  topics_off?: string[]
+  lines_on: string[]
+  lines_off: string[]
+  phrasing?: Record<string, string>
+  copied?: BriefCopiedV1
+  /** Rises with every edit; a merge keeps the copy with the higher rev per slot (last writer wins). */
+  rev: number
+}
+
+/** A set of notes the person removed: keeps its slot and a rev above the removed set's, so an older copy does not bring it back. */
+export interface BriefContextRemovedV1 {
+  slot: number
+  rev: number
+  removed: true
+}
+
+export interface BriefFitV1 {
+  /** Eight hex digits: a sequence number for the month, then random digits, so entries of a month sort in the order they were made. */
+  id: string
+  topic: string
+  verdict: 'too_basic' | 'about_right' | 'too_much'
+  /** `YYYY-MM`. */
+  month: string
+}
+
+/**
+ * The notes settings inside a save file (Phase AI, ROADMAP AI.7; proposal §5.5; ADR A20). Optional;
+ * removed before any upload (M2, AI.26); never read by scoring (`rescoreSessions` output is
+ * byte-identical with or without it, `brief-prefs.test.ts`).
+ */
+export interface BriefPrefsV1 {
+  v: 1
+  /** Topic vocabulary version the ids were written under, e.g. `topics-v1`. */
+  topics: string
+  /** Quant grouping version, e.g. `g1`. */
+  groups: string
+  /** `YYYY-MM` of the latest change. */
+  notes_as_of: string
+  contexts: (BriefContextV1 | BriefContextRemovedV1)[]
+  fit_log: BriefFitV1[]
+  /** Part 2 (A21): the zones last suggested per topic. Nothing writes it in Part 1. */
+  last_zones?: Record<string, BriefTopicSetting>
+}
+
 export interface SaveFileV1 {
   $schema?: string
   schema_version: string
@@ -106,6 +177,8 @@ export interface SaveFileV1 {
   seen_items: string[]
   seen_families: string[]
   posterior_cache?: PosteriorCache
+  /** Notes settings (Phase AI, AI.7). Optional; merged by `save/brief-prefs.ts`; never uploaded. */
+  brief_prefs?: BriefPrefsV1
   /** §8 file-level MAC, superseded by A16. Never written by the client. */
   sig?: SaveSig
 }

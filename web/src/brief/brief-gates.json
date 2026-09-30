@@ -1,0 +1,199 @@
+{
+  "format": "hb-brief-gates/1",
+  "templates": "2026.09",
+  "lines": {
+    "AC1": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "AC2": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "CC": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "DA": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "DA.p": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "DB": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "DB.floor": {
+      "v": "1",
+      "status": "blocked"
+    },
+    "DB.k": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "DS": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "DS.k": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "F1": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "F2": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "F3": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "F4": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "FMT1": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "FMT2": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "FMT3": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "H": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "I1": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "K1": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "K1C": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "K1D": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "K1F": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "K1L": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "K2": {
+      "v": "1",
+      "status": "blocked"
+    },
+    "LANG": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "LEN.detailed": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "LEN.short": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "NT.build": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "NT.skip": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "RT": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U1": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U1c": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U2": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U2.W3": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U2.b": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U3": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U4": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U4.t": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U5": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U6": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U6c": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U7": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "U8": {
+      "v": "1",
+      "status": "shipped"
+    },
+    "VOICE": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "W1": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "W2": {
+      "v": "1",
+      "status": "experimental"
+    },
+    "W3": {
+      "v": "1",
+      "status": "experimental"
+    }
+  },
+  "surfaces": {}
+}

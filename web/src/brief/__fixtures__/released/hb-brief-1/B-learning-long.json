@@ -1,0 +1,103 @@
+{
+  "format": "hb-brief/1",
+  "templates": "2026.09",
+  "topics": "topics-v1",
+  "groups": "g1",
+  "as_of": "2026-11",
+  "revisit": "2027-05",
+  "context": "learning",
+  "form": "long",
+  "tier": "T1",
+  "mode_default": "learn",
+  "length": "standard",
+  "lines": [
+    {
+      "id": "H"
+    },
+    {
+      "id": "F1"
+    },
+    {
+      "id": "F2"
+    },
+    {
+      "id": "F3"
+    },
+    {
+      "id": "F4"
+    },
+    {
+      "id": "LANG"
+    },
+    {
+      "id": "U1"
+    },
+    {
+      "id": "U2.W3",
+      "status": "experimental"
+    },
+    {
+      "id": "U3"
+    },
+    {
+      "id": "U5"
+    },
+    {
+      "id": "U6"
+    },
+    {
+      "id": "VOICE",
+      "status": "experimental"
+    },
+    {
+      "id": "DA",
+      "topics": [
+        "quant/arith_fractions_percent"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "DB",
+      "topics": [
+        "quant/probability_counting"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "U4.t"
+    },
+    {
+      "id": "K1L"
+    },
+    {
+      "id": "K1D"
+    },
+    {
+      "id": "K1C"
+    },
+    {
+      "id": "K1F",
+      "topics": [
+        "quant/probability_counting"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "I1",
+      "interests": [
+        "cooking",
+        "football"
+      ],
+      "status": "experimental"
+    }
+  ],
+  "keywords": {
+    "just do it": "do",
+    "challenge me": "challenge"
+  },
+  "generator": {
+    "version": "brief-0.1.0",
+    "zone_rule": "z1",
+    "param_version": "p0-spec"
+  }
+}

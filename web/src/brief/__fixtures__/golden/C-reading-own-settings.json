@@ -1,0 +1,95 @@
+{
+  "format": "hb-brief/1",
+  "templates": "2026.09",
+  "topics": "topics-v1",
+  "groups": "g1",
+  "as_of": "2027-11",
+  "revisit": "2028-05",
+  "context": "reading",
+  "form": "skill",
+  "tier": "T1",
+  "mode_default": "do",
+  "length": "standard",
+  "lines": [
+    {
+      "id": "H"
+    },
+    {
+      "id": "F1"
+    },
+    {
+      "id": "F2"
+    },
+    {
+      "id": "F3"
+    },
+    {
+      "id": "F4"
+    },
+    {
+      "id": "LANG"
+    },
+    {
+      "id": "U1"
+    },
+    {
+      "id": "U6"
+    },
+    {
+      "id": "U7"
+    },
+    {
+      "id": "FMT1",
+      "status": "experimental"
+    },
+    {
+      "id": "W1",
+      "status": "experimental"
+    },
+    {
+      "id": "DS.k",
+      "topics": [
+        "kst/biology",
+        "khu/history"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "DA",
+      "topics": [
+        "quant/powers_quadratics"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "DB.k",
+      "topics": [
+        "kst/chemistry"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "NT.build",
+      "topics": [
+        "lr/notation"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "U4.t"
+    },
+    {
+      "id": "K1"
+    }
+  ],
+  "keywords": {
+    "teach me": "learn",
+    "just do it": "do",
+    "challenge me": "challenge"
+  },
+  "generator": {
+    "version": "brief-0.1.0",
+    "zone_rule": "z1",
+    "param_version": "p0-spec"
+  }
+}

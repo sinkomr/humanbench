@@ -21,6 +21,9 @@
  *   {@link distinctAnonIds} first and ask before combining (`restoreAutosaves` reports them).
  * - `created_utc`: the later one (fixed-width UTC sorts as text).
  * - `$schema`, `schema_version`, `bank_version`: those of the running app ({@link SaveContext}).
+ * - `brief_prefs` (AI.7, proposal §5.5): joined by `mergeBriefPrefs` (`brief-prefs.ts`): the higher rev
+ *   per slot, a union of fit notes, the later month. It is not part of a session, so editing it never
+ *   changes a session's canonical form or its A16 MAC.
  * - `posterior_cache` (§8 step 4): kept only if its `param_version` is the context's, its shapes
  *   are consistent, and it was computed over exactly the merged sessions; otherwise dropped, and
  *   the caller re-scores from `responses` (§8 step 3, §7.8: `rescoreSessions` in `rescore.ts`,
@@ -32,6 +35,7 @@
  */
 
 import { isAxisCode } from '../engine/axes'
+import { briefPrefsCovered, mergeBriefPrefs } from './brief-prefs'
 import { jcs } from './jcs'
 import { SCHEMA_URL, SCHEMA_VERSION, type PosteriorCache, type SaveContext, type SaveFileV1, type SaveSession } from './types'
 
@@ -143,6 +147,8 @@ export function mergeAll(saves: readonly SaveFileV1[], ctx: SaveContext): SaveFi
       .map((s) => s.posterior_cache as PosteriorCache),
   )
   if (cache !== undefined) out.posterior_cache = cache
+  const prefs = mergeBriefPrefs(saves.map((s) => s.brief_prefs))
+  if (prefs !== undefined) out.brief_prefs = prefs
   const body = jcs(out)
   const sig = canonicalMax(saves.filter((s) => s.sig !== undefined && bodyWithoutSig(s) === body).map((s) => s.sig))
   if (sig !== undefined) out.sig = sig
@@ -173,9 +179,10 @@ export function sameSave(a: SaveFileV1, b: SaveFileV1): boolean {
 }
 
 /**
- * True iff `save` already holds all of `other`'s data: every seen id, and for every session of
- * `other` the copy a merge would keep. Header fields (`anon_id`, `created_utc`, versions), the
- * posterior cache and signatures are not data here. Used to prune redundant autosaves.
+ * True iff `save` already holds all of `other`'s data: every seen id, for every session of
+ * `other` the copy a merge would keep, and its notes settings. Header fields (`anon_id`,
+ * `created_utc`, versions), the posterior cache and signatures are not data here. Used to prune
+ * redundant autosaves (a prefs-only autosave is never pruned in favour of a save without its settings).
  */
 export function subsumes(save: SaveFileV1, other: SaveFileV1): boolean {
   const seen = (mine: readonly string[], theirs: readonly string[]): boolean => {
@@ -185,6 +192,7 @@ export function subsumes(save: SaveFileV1, other: SaveFileV1): boolean {
   return (
     seen(save.seen_items, other.seen_items) &&
     seen(save.seen_families, other.seen_families) &&
-    jcs(mergeSessions([save.sessions, other.sessions])) === jcs(mergeSessions([save.sessions]))
+    jcs(mergeSessions([save.sessions, other.sessions])) === jcs(mergeSessions([save.sessions])) &&
+    briefPrefsCovered(save.brief_prefs, other.brief_prefs)
   )
 }

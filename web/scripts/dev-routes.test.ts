@@ -38,7 +38,7 @@ async function appBuild(flag: string | undefined): Promise<{ files: string[]; te
 }
 
 /** Strings only the dev routes contain. */
-const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session']
+const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)']
 
 describe('dev-only routes (M1.16)', () => {
   it('are on in dev and tests, off in production unless VITE_HB_DEV_ROUTES=1', () => {
@@ -52,13 +52,14 @@ describe('dev-only routes (M1.16)', () => {
   it('a plain production build ships no dev route, demo page or synthetic profile', async () => {
     const { files, text } = await appBuild(undefined)
     expect(text).toContain('HumanBench')
-    expect(files.filter((f) => /BlobDemo|routes|synthetic/i.test(f))).toEqual([])
+    expect(files.filter((f) => /BlobDemo|RevealAiDemo|routes|synthetic/i.test(f))).toEqual([])
     for (const m of DEV_MARKERS) expect(text, m).not.toContain(m)
   }, 60_000)
 
   it('the e2e build (VITE_HB_DEV_ROUTES=1) does ship them, so the check above is not vacuous', async () => {
     const { files, text } = await appBuild('1')
     expect(files.some((f) => /BlobDemo/.test(f))).toBe(true)
+    expect(files.some((f) => /RevealAiDemo/.test(f))).toBe(true)
     for (const m of DEV_MARKERS) expect(text, m).toContain(m)
   }, 60_000)
 

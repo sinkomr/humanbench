@@ -11,6 +11,7 @@
  * `save/rescore` explicitly.
  */
 export * from './autosave'
+export * from './brief-prefs'
 export * from './clock'
 export * from './codec'
 export * from './create'

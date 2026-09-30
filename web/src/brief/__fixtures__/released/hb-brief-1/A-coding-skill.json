@@ -1,0 +1,77 @@
+{
+  "format": "hb-brief/1",
+  "templates": "2026.09",
+  "topics": "topics-v1",
+  "groups": "g1",
+  "as_of": "2026-11",
+  "revisit": "2027-05",
+  "context": "coding",
+  "form": "skill",
+  "tier": "T1",
+  "mode_default": "do",
+  "length": "short",
+  "lines": [
+    {
+      "id": "H"
+    },
+    {
+      "id": "F1"
+    },
+    {
+      "id": "F2"
+    },
+    {
+      "id": "F3"
+    },
+    {
+      "id": "F4"
+    },
+    {
+      "id": "CC"
+    },
+    {
+      "id": "U1c"
+    },
+    {
+      "id": "LEN.short"
+    },
+    {
+      "id": "U6c"
+    },
+    {
+      "id": "DS",
+      "topics": [
+        "other/programming",
+        "other/statistics"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "DA",
+      "topics": [
+        "quant/probability_counting"
+      ],
+      "status": "experimental"
+    },
+    {
+      "id": "U4.t"
+    },
+    {
+      "id": "AC1",
+      "status": "experimental"
+    },
+    {
+      "id": "K1"
+    }
+  ],
+  "keywords": {
+    "teach me": "learn",
+    "just do it": "do",
+    "challenge me": "challenge"
+  },
+  "generator": {
+    "version": "brief-0.1.0",
+    "zone_rule": "z1",
+    "param_version": "p0-spec"
+  }
+}

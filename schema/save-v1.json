@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sinkomr.github.io/humanbench/schema/save-v1.json",
   "title": "HumanBench save file, schema v1",
-  "description": "DESIGN §8 (R-8.x) save file: sessions of raw responses, seen item and family ids, and an optional posterior cache. Strings are I-JSON (RFC 7493: no lone surrogates) so every valid file has an RFC 8785 canonical form. Signatures: the static MVP writes none, so its files are unverified; the per-session MAC of ROADMAP A16 (`sessions[].sig`, which names the anon_id it binds so it survives a merge) supersedes the file-level `sig` of the §8 example, which stays valid here. Versions: minor and patch bumps are additive within a major; a reader that cannot validate a file from a newer minor reports it as made by a newer version rather than dropping unknown fields. The TypeScript validator web/src/save/validate.ts mirrors this schema exactly and additionally rejects JSON nested deeper than 64 levels.",
+  "description": "DESIGN §8 (R-8.x) save file: sessions of raw responses, seen item and family ids, and an optional posterior cache. Strings are I-JSON (RFC 7493: no lone surrogates) so every valid file has an RFC 8785 canonical form. Signatures: the static MVP writes none, so its files are unverified; the per-session MAC of ROADMAP A16 (`sessions[].sig`, which names the anon_id it binds so it survives a merge) supersedes the file-level `sig` of the §8 example, which stays valid here. Notes settings: the optional `brief_prefs` (Phase AI, ROADMAP AI.7) holds the settings behind the \"Notes for your AI\" builder as enums, ids, versions, months and integers only, never free text; it was added to 1.0 before any save existed in the wild, so it needs no version bump. Versions: minor and patch bumps are additive within a major; a reader that cannot validate a file from a newer minor reports it as made by a newer version rather than dropping unknown fields. The TypeScript validator web/src/save/validate.ts mirrors this schema exactly and additionally rejects JSON nested deeper than 64 levels.",
   "type": "object",
   "required": ["schema_version", "bank_version", "anon_id", "created_utc", "sessions", "seen_items", "seen_families"],
   "additionalProperties": false,
@@ -20,6 +20,7 @@
     "seen_items": { "type": "array", "items": { "$ref": "#/$defs/item_id" } },
     "seen_families": { "type": "array", "items": { "$ref": "#/$defs/family_id" } },
     "posterior_cache": { "$ref": "#/$defs/posterior_cache" },
+    "brief_prefs": { "$ref": "#/$defs/brief_prefs" },
     "sig": { "$ref": "#/$defs/sig" }
   },
   "$defs": {
@@ -151,6 +152,129 @@
         },
         "mean": { "type": "array", "items": { "type": "number" } },
         "cov_lower": { "type": "array", "items": { "type": "number" } }
+      }
+    },
+    "brief_month": {
+      "description": "YYYY-MM, the only date the notes settings keep (no day-level timestamps).",
+      "type": "string",
+      "pattern": "^(?:19|20|21)[0-9]{2}-(?:0[1-9]|1[0-2])$"
+    },
+    "brief_topic_id": {
+      "description": "A topic id of the controlled vocabulary (topics-v1), e.g. quant/probability_counting. Content labels only; the reader resolves it through the alias map.",
+      "type": "string",
+      "pattern": "^[a-z]+/[a-z0-9_]+(?:/[a-z0-9_]+)?$"
+    },
+    "brief_template_id": {
+      "description": "A line template id of the notes grammar, e.g. DS or U2.W3.",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9.]{0,15}$"
+    },
+    "brief_line_key": {
+      "description": "A tick key or phrasing family root of the notes builder, e.g. FMT1 or U1.",
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9]{0,15}$"
+    },
+    "brief_topic_setting": { "enum": ["skip", "ask_first", "build"] },
+    "brief_copied": {
+      "description": "What the person last copied or downloaded from the builder for one set of notes: the template release, the month, and each line's template id and wording version. It lets the app say, on a later visit, that a line was withdrawn or has new wording. No note text.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templates", "month", "lines"],
+      "properties": {
+        "templates": { "type": "string", "pattern": "^[0-9]{4}\\.[0-9]{2}$" },
+        "month": { "$ref": "#/$defs/brief_month" },
+        "lines": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "v"],
+            "properties": {
+              "id": { "$ref": "#/$defs/brief_template_id" },
+              "v": { "type": "string", "pattern": "^[0-9]{1,4}$" }
+            }
+          }
+        }
+      }
+    },
+    "brief_context": {
+      "description": "One set of notes: where it is for and the person's own settings. Every string is an enum, an id or a version; interests, custom lines and names are never stored. `rev` rises with every edit; a merge keeps the copy with the higher rev per slot.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "preset", "destination", "tier", "mode", "length", "topics", "lines_on", "lines_off", "rev"],
+      "properties": {
+        "slot": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "preset": { "enum": ["coding", "learning", "reading", "numbers", "writing", "general"] },
+        "destination": { "enum": ["chatgpt_instructions", "chatgpt_project", "claude_preferences", "claude_project", "gemini_instructions", "gemini_gem", "microsoft_copilot", "claude_code_skill", "claude_code_rules", "codex_agents", "gemini_cli", "cursor", "github_copilot", "own_app", "just_me"] },
+        "form": { "enum": ["short", "long", "skill"] },
+        "tier": { "enum": ["T1", "T2"] },
+        "mode": { "enum": ["do", "learn"] },
+        "length": { "enum": ["short", "standard", "detailed"] },
+        "topics": {
+          "type": "object",
+          "maxProperties": 40,
+          "propertyNames": { "$ref": "#/$defs/brief_topic_id" },
+          "additionalProperties": { "$ref": "#/$defs/brief_topic_setting" }
+        },
+        "topics_off": { "type": "array", "maxItems": 40, "uniqueItems": true, "items": { "$ref": "#/$defs/brief_topic_id" } },
+        "lines_on": { "type": "array", "maxItems": 60, "uniqueItems": true, "items": { "$ref": "#/$defs/brief_line_key" } },
+        "lines_off": { "type": "array", "maxItems": 60, "uniqueItems": true, "items": { "$ref": "#/$defs/brief_line_key" } },
+        "phrasing": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": { "$ref": "#/$defs/brief_line_key" },
+          "additionalProperties": { "$ref": "#/$defs/brief_template_id" }
+        },
+        "copied": { "$ref": "#/$defs/brief_copied" },
+        "rev": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+      }
+    },
+    "brief_context_removed": {
+      "description": "A set of notes the person removed. It keeps the slot and a rev above the removed set's, so a merge with an older copy of the save does not bring the set back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "rev", "removed"],
+      "properties": {
+        "slot": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "rev": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "removed": { "const": true }
+      }
+    },
+    "brief_fit": {
+      "description": "One fit note: the person marked an explanation on a topic as too basic, about right or too much. Month only. It never enters scoring and is never uploaded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "topic", "verdict", "month"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-f]{8}$" },
+        "topic": { "$ref": "#/$defs/brief_topic_id" },
+        "verdict": { "enum": ["too_basic", "about_right", "too_much"] },
+        "month": { "$ref": "#/$defs/brief_month" }
+      }
+    },
+    "brief_prefs": {
+      "description": "Notes settings (Phase AI, ROADMAP AI.7; proposal 5.5): sets of notes, fit notes and, in Part 2, the last suggested zones. Free text is never stored. They are removed before any upload (M2), never enter scoring, and merge by slot rev and by union of fit notes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "topics", "groups", "notes_as_of", "contexts", "fit_log"],
+      "properties": {
+        "v": { "const": 1 },
+        "topics": { "description": "Topic vocabulary version the ids were written under.", "type": "string", "pattern": "^topics-v[0-9]{1,4}$" },
+        "groups": { "description": "Quant grouping version.", "type": "string", "pattern": "^g[0-9]{1,4}$" },
+        "notes_as_of": { "$ref": "#/$defs/brief_month" },
+        "contexts": {
+          "type": "array",
+          "maxItems": 5,
+          "items": { "oneOf": [{ "$ref": "#/$defs/brief_context" }, { "$ref": "#/$defs/brief_context_removed" }] }
+        },
+        "fit_log": { "type": "array", "maxItems": 2000, "items": { "$ref": "#/$defs/brief_fit" } },
+        "last_zones": {
+          "type": "object",
+          "maxProperties": 200,
+          "propertyNames": { "$ref": "#/$defs/brief_topic_id" },
+          "additionalProperties": { "$ref": "#/$defs/brief_topic_setting" }
+        }
       }
     },
     "sig": {

@@ -1,0 +1,150 @@
+{
+  "format": "hb-wording-pins/1",
+  "note": "sha256 of [long, short] per template id and wording version. A wording change needs a new version (which resets the gate status, A22) and a new entry here; never edit an existing entry.",
+  "pins": {
+    "H": {
+      "1": "7534a374b156c48a080196b328078dcc5fa365c104b2062459aaca44cf10d67b"
+    },
+    "F1": {
+      "1": "901118425a3a2f5a7b764f64cfe58985023019772808775e721aa94f8efc48dd"
+    },
+    "F2": {
+      "1": "16feb80b3b0f62ac2bfe130d052a01f6249628be48c9f7f5d8bb1cfabdcf5e6c"
+    },
+    "F3": {
+      "1": "bc1770b48e7299162e95906d3ff1843ae952ba622f18c4b2d639fab85d42c640"
+    },
+    "F4": {
+      "1": "fdfde1efd897746e135c7e2f0f731ca69e5349520fec998acb9afb87aeb1c633"
+    },
+    "CC": {
+      "1": "b3427dc502275000d37c10256dbfded5469db88f087c7a2c4dba7f31c67bc037"
+    },
+    "LANG": {
+      "1": "fce522301b8d8fe512f9b5259c7b12b3b97cc4e8dd1e8b0a5de1b6ffbb6d132c"
+    },
+    "U1": {
+      "1": "d5e14296d1b9261ac3fab09f3dbd3b05f81b8db7ea7853ba0754b311cf758374"
+    },
+    "U1c": {
+      "1": "1fe3ed22a4a6ed5d7514f7845a30b484a7af96428e74ea117c4c20591b15bab1"
+    },
+    "LEN.short": {
+      "1": "56f20d2853e2e033ed4212ee07e7cd4e6c6601c8c06b191a84e5ed1e759c4ea1"
+    },
+    "LEN.detailed": {
+      "1": "3bbe39126cd15e53226ca84680908818951dfc14496e85823bc4c821ce0e1ae0"
+    },
+    "U2": {
+      "1": "29acaed1f1317c954524aeb7ef933ed7f7e94e874b4166cbcfb5acd97878638c"
+    },
+    "U2.b": {
+      "1": "3bf90d2f88edc9ae18fe16f3d87cabf3224fc6316d31ba06abc98b12e85477e6"
+    },
+    "U2.W3": {
+      "1": "2d4000608bd45856f1121057d30537498ed3e43c191086fd86b921967ca81ace"
+    },
+    "U3": {
+      "1": "7e1fca0496667802b3f02edf1fb7e5fd84786ca816eafb384406d8cbfa9e23b6"
+    },
+    "U4": {
+      "1": "c0c465ffe8a096f860ed8f59922c76e84fab89ff428f403a270825b7ae8b8548"
+    },
+    "U5": {
+      "1": "f5fcca9a61c11f47b250a491894613d4a766c2abb685feb485db60172f6640c5"
+    },
+    "U6": {
+      "1": "03b0d50fc216f17f6aef313bfea6960e1d4fbedfe6de5cc10f73c583c9336e7d"
+    },
+    "U6c": {
+      "1": "4d70b32a8b3bf76fa2a80b9927de553c68937f5083f82f8dff68ec0e43fdaa62"
+    },
+    "U7": {
+      "1": "2b2bf0353d32f65b62e691c13e4b23157730f7bbbf7072eb4b992de1840990da"
+    },
+    "U8": {
+      "1": "5e24aabde91883f7d4498654d86c335fa81c9747e05fa31dbcb73239778ca7ed"
+    },
+    "FMT1": {
+      "1": "ae7ef10b8563e575f1a7ac17dd6d8edc64d5b50d93574996dbd2c26e70800ec0"
+    },
+    "FMT2": {
+      "1": "75a400c2f696a074394873b26ddfd0971c5b3e8ec5aed3f3fd26a76e2d2ef4f1"
+    },
+    "FMT3": {
+      "1": "a72fac36db140e431375a17c8963178f635fbeb81b7035b078a450edc8de88ac"
+    },
+    "VOICE": {
+      "1": "7f0dd6d7f0cc2a3c9c0df26cf7696c8705715b679ee86774b40cd2958759c9cd"
+    },
+    "W1": {
+      "1": "71aa48d36923bd31f89949ba78e0210daf5063af21b6d4bd083c36a0a6e8f34d"
+    },
+    "W2": {
+      "1": "986ec6f3259a0d80541ecc6c1885d6148b85c186cf3705c58e940018e12fc863"
+    },
+    "W3": {
+      "1": "451f67ed562f37e23651b791798bac29607d559076e319b27aa6539d7866fea0"
+    },
+    "DS": {
+      "1": "c618e1569366dac78720029042983b2d0a5fe485bf970818b02cca6e907ad1e9"
+    },
+    "DS.k": {
+      "1": "3be0779f52472ece7ccc2c8c7ae9b5ad683ec4f3293d9eaad6e115fe5bfdd2ec"
+    },
+    "DA": {
+      "1": "f628e3d84e8eb98b580833f092044f6f6a42d54ec4a2010ec09ccfbec05e492c"
+    },
+    "DA.p": {
+      "1": "19ba946a569b98fecb1def47c36036d87e134e403d4a74add2adbf8c29f2a742"
+    },
+    "DB": {
+      "1": "86f552d098265433c197c0d412e8210391a0203ecfde76dab14b27cdbabff097"
+    },
+    "DB.k": {
+      "1": "c0bdaa3b9ae14799c28b06e2860864a05d28c6a26c44c59ece802924a8bf8999"
+    },
+    "NT.skip": {
+      "1": "de9c60c43aae20b78842c8664f3490f00d907ec42f2443cba2f75571e11f7334"
+    },
+    "NT.build": {
+      "1": "e5d39fb2f270079b0daa6a58b35f57dac838f35be2b01fb7c6b793538bb455f2"
+    },
+    "U4.t": {
+      "1": "80db6a8a547078ce39c493db8d7dbeb5e4045f24c0966b1ed7d2450cee02edd1"
+    },
+    "AC1": {
+      "1": "cb2b3eb0dc2b4db0b86c2d3b6b096cf0c8611a954b584af0d32518705d7c09e6"
+    },
+    "AC2": {
+      "1": "c15b264fece9db6be7a58946d6fceebccf163f6c7c631522e0ebe153fb0852e4"
+    },
+    "K1": {
+      "1": "f6b411ab36fd43b39a66c28b5f61a41c2460fbfc808fa977ba2e73ccb5c448e2"
+    },
+    "K1L": {
+      "1": "42e67287bdd8b5652192d37e3721e8621f632a0dc2bbe394a3ea5cb935fd5923"
+    },
+    "K1D": {
+      "1": "3c626bb9a3d0b02996936fabe60c42abc7bb1b1eceedee478c0f4870afa6255f"
+    },
+    "K1C": {
+      "1": "5f8e059b2885a811606a96ca3418456228f6fbd383a69a9d372ca0128f409de4"
+    },
+    "K1F": {
+      "1": "d641993d44512324e343355a5b13e95a0765a9490a67706bc5942b970301cb41"
+    },
+    "K2": {
+      "1": "4d85255e232d964e48fe6e58b9160d58634a3644a7caa139e86cf976af692594"
+    },
+    "I1": {
+      "1": "1aa091eb6ce4b6eecc43414deb7fb0ee9f22cff0f79dd5af074aba69f3c5369f"
+    },
+    "X1": {
+      "1": "f0441a39c69ac542c5d398e16242f2c1408c892601a282d5c6fa59a1e6c36eb6"
+    },
+    "RT": {
+      "1": "1349c123a3b125c4724e4d3d93ebb283f558977a651cbed8084ad06deed664e3"
+    }
+  }
+}

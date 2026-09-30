@@ -1,0 +1,22 @@
+Nothing on this page leaves your device. HumanBench doesn't send, store or log your notes. Copying them into an assistant is your choice.
+Before you paste: anything in an AI assistant's settings goes to that company with every chat. Depending on your settings it may be kept for years, used to train future models, read by reviewers, or used to personalise ads. On work or school accounts, administrators may be able to read it. Check your assistant's data settings, prefer a personal account, and only include lines you'd be fine with anyone reading. (Checked 2026-09.)
+This is yours. No employer, school or app should ask you for it, and you can always say no. HumanBench results aren't valid for decisions about hiring, admissions, grades, or anything like them.
+Put these in your personal settings, a personal Project, or your own rules folder. Never put them in a file inside a shared repository. Prefer instructions over memory: memory features rewrite what you give them.
+Designed from research on explanations; not yet shown to help HumanBench users.
+Want your AI assistant to explain things your way? Make notes you control. For now they use your own settings. Lines based on your answers aren't available yet, because they need checks that only real results can provide.
+Talking about your results with an AI? Paste this first. Never paste your save file: it holds your raw answers, and assistants may keep or learn from what you paste.
+Why this line: you chose it. How sure: it is your own setting. Research on teaching supports matching depth to what you already know; not yet tested for AI notes. Checked with: Claude and Qwen (2026-12). On ChatGPT instructions: not yet checked. What would change it: you, at any time.
+Why this line: based on your math answers overall and how hard these problems usually are, you'd likely solve most of them. It isn't based on problems of this kind in particular. How sure: provisional. What would change it: new sessions, or marking two answers on this topic as "too much".
+Why this line: from the chemistry questions you've answered so far (at least five), typical chemistry questions are likely to be new ground for you, even allowing for how uncertain that still is.
+Most of your math topics say "ask first" for now. Your results still have wide ranges, so your assistant will ask before it pitches.
+Your notes for probability and counting now say "ask first". Your newer answers left this topic less settled.
+A line in notes you made in 2026-11 has been withdrawn. Re-copy your notes to replace it.
+Measured science lines need many more people to take HumanBench first. Until then, set these topics yourself.
+We're still checking that assistants handle this line respectfully. For now your notes ask the assistant to check with you first. You can write your own line instead.
+Your fit notes change only these suggestions. They never change your results.
+You preferred the answer written with your notes in 3 of 4 comparisons. This is your own impression, not evidence that the notes help.
+Hobbies or subjects you like. Don't add health details or anything personal. This is never saved.
+Notes use only complete sessions.
+Remove my notes settings. This deletes your notes preferences from this device. Your results stay. Download a fresh save afterwards if you keep one elsewhere.
+Your server backup doesn't include your notes settings. Keep your downloaded save if you want them on another device.
+Your assistant may not be reading your notes. Check that they are in your personal instructions, not in a chat message, and start a new chat.

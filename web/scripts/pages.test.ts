@@ -10,7 +10,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DEV_ONLY_PAGES, PAGES } from '../vite.config'
+import { SURFACES, STALE_AFTER_DAYS, surfacesStaleness } from '../src/brief/surfaces'
+import { DEV_ONLY_PAGES, PAGES, SURFACES_STALE_AFTER_DAYS, surfacesStaleWarning } from '../vite.config'
 import { SCAN_FILES } from './language-lint'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
@@ -21,11 +22,31 @@ describe('HTML pages', () => {
     const built = Object.values(PAGES).map((p) => basename(p))
     expect(HTML.sort()).toEqual([...built, ...DEV_ONLY_PAGES].sort())
     expect(built.filter((p) => DEV_ONLY_PAGES.includes(p))).toEqual([])
-    expect(built.sort()).toEqual(['index.html', 'rt-selftest.html'])
+    expect(built.sort()).toEqual(['index.html', 'notes.html', 'rt-selftest.html'])
   })
 
   it('every web/*.html is scanned by the language lint (A13)', () => {
     for (const f of HTML) expect(SCAN_FILES).toContain(`web/${f}`)
+  })
+
+  it('the notes page mounts its own entry, is titled and described, and needs no external file (Phase AI)', () => {
+    const html = readFileSync(`${WEB}notes.html`, 'utf8')
+    expect(html).toContain('<script type="module" src="/src/brief/main.ts"></script>')
+    expect(html).toContain('<html lang="en">')
+    expect(html).toContain('<title>Notes for your AI')
+    expect(html).not.toMatch(/https?:\/\/|<link[^>]+stylesheet/)
+  })
+
+  it('the build warns when the notes builder\'s destination data is older than 120 days, with the same rule as the page (AI.4)', () => {
+    expect(SURFACES_STALE_AFTER_DAYS).toBe(STALE_AFTER_DAYS)
+    for (const today of ['2026-09-29', '2027-01-26', '2027-01-27', '2030-01-01']) {
+      expect(surfacesStaleWarning(SURFACES.checked, today) === null, today).toBe(!surfacesStaleness(today).stale)
+    }
+    expect(surfacesStaleWarning('2026-09-28', '2027-01-26')).toBeNull()
+    expect(surfacesStaleWarning('2026-09-28', '2027-01-27')).toContain('121 days ago')
+    expect(surfacesStaleWarning('soon', '2027-01-27')).toContain('unreadable')
+    // the bundled data is fresh on the day it was assembled, so a normal build prints nothing
+    expect(surfacesStaleWarning(SURFACES.checked, SURFACES.checked)).toBeNull()
   })
 
   it('the self-test page mounts its own entry and asks not to be indexed', () => {

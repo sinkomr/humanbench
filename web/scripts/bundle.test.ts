@@ -15,14 +15,20 @@
  */
 
 import { fileURLToPath } from 'node:url'
+import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { build, type Plugin, type Rolldown } from 'vite'
 import { describe, expect, it } from 'vitest'
 import { AUTHORED_PASSAGES } from '../src/tasks/reading/authoring'
+import { PAGES } from '../vite.config'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const TASKS = fileURLToPath(new URL('../src/tasks/', import.meta.url))
 const SAVE = fileURLToPath(new URL('../src/save/', import.meta.url))
 const ENGINE = fileURLToPath(new URL('../src/engine/', import.meta.url))
+const BRIEF = fileURLToPath(new URL('../src/brief/', import.meta.url))
+const VIZ = fileURLToPath(new URL('../src/viz/', import.meta.url))
+/** A sentence only the notes grammar contains (src/brief/grammar.ts, header). */
+const NOTES_MARKER = 'not an assessment of me'
 
 const RATIONALES = AUTHORED_PASSAGES.flatMap((p) => p.questions.flatMap((q) => q.option_rationales))
 const EVIDENCE = AUTHORED_PASSAGES.flatMap((p) => p.questions.map((q) => q.evidence_span))
@@ -38,8 +44,8 @@ function textOf(result: Awaited<ReturnType<typeof build>>): string {
     .join('\n')
 }
 
-/** Build `code` as a single-entry production bundle and return its text. */
-async function bundle(code: string): Promise<string> {
+/** Build `code` as a single-entry production bundle and return its text. `svelte` compiles .svelte files in it. */
+async function bundle(code: string, opts: { svelte?: boolean } = {}): Promise<string> {
   const id = '\0hb-bundle-probe'
   const probe: Plugin = {
     name: 'hb-bundle-probe',
@@ -50,7 +56,7 @@ async function bundle(code: string): Promise<string> {
     configFile: false,
     root: WEB,
     logLevel: 'silent',
-    plugins: [probe],
+    plugins: opts.svelte === true ? [probe, svelte()] : [probe],
     build: { write: false, minify: true, rollupOptions: { input: 'hb-bundle-probe', preserveEntrySignatures: 'strict' } },
   })
   return textOf(result)
@@ -114,4 +120,38 @@ describe('production bundles (A14)', () => {
     for (const s of PASSAGE_OPENINGS) expect(text).toContain(s)
     expect(authoringLeaks(text)).toEqual([])
   }, 60_000)
+
+  it('the notes core (brief/, Phase AI) is light: no ajv, no fast-check, no task families, no passages', async () => {
+    const text = await bundle(`export * from ${JSON.stringify(`${BRIEF}index.ts`)}`)
+    expect(text).toContain(NOTES_MARKER)
+    expect(text.length).toBeLessThan(100_000)
+    expect(text).not.toMatch(/ajv|fast-check|json-schema-traverse/i)
+    expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
+    for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
+  }, 60_000)
+
+  it('the reveal barrel (AI.6b: the card and the results-talk helper) is light: no grammar, topics, gates code or checker', async () => {
+    const text = await bundle(`export * from ${JSON.stringify(`${BRIEF}reveal.ts`)}`, { svelte: true })
+    // it carries its own words ...
+    expect(text).toContain('Never paste your save file')
+    expect(text).toContain('Working with AI')
+    // ... and none of the notes grammar, so a screen that imports it does not put the notes in the main app
+    expect(text).not.toContain(NOTES_MARKER)
+    expect(text).not.toContain('How I like explanations')
+    expect(text).not.toContain('quant/probability_counting')
+    expect(text).not.toMatch(/ajv|fast-check|json-schema-traverse/i)
+    // the Svelte runtime is about 45 KB of it; the notes grammar alone is over 60 KB more
+    expect(text.length).toBeLessThan(80_000)
+  }, 60_000)
+
+  it('the light barrels and the main app do not carry the notes grammar (AI.4)', async () => {
+    for (const entry of [`${TASKS}index.ts`, `${SAVE}index.ts`, `${VIZ}index.ts`]) {
+      const text = await bundle(`export * from ${JSON.stringify(entry)}`)
+      expect(text, entry).not.toContain(NOTES_MARKER)
+    }
+    // The main page alone (index.html only, so the notes page is not among the inputs).
+    const app = textOf(await build({ configFile: false, root: WEB, mode: 'production', logLevel: 'silent', plugins: [svelte()], build: { write: false, rolldownOptions: { input: PAGES.index as string } } }))
+    expect(app).toContain('HumanBench')
+    expect(app).not.toContain(NOTES_MARKER)
+  }, 120_000)
 })
