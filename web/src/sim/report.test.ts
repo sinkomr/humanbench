@@ -45,6 +45,26 @@ describe('catAcceptanceFailures', () => {
     expect(catAcceptanceFailures(fakeRun({ WM: { coverage: 0.5 } }))).toEqual(['WM: 90% coverage 0.500 outside [0.85, 0.95]'])
   })
 
+  // catRAxes() goes by the requested length; the run itself must have delivered it (the selector
+  // can run dry), or r "at 20 items/axis" would be claimed for fewer items.
+  it('fails a fixed-length run whose least-served session got fewer items than the length r is judged at', () => {
+    const spread = (min: number, max: number) => ({ min, mean: (min + max) / 2, max })
+    const ok = spread(20, 20)
+    const dry = fakeRun({}, { fixedLength: 20, itemsPerAxis: { MAT: ok, SPA: spread(19, 20), QR: spread(0, 20) } })
+    expect(catAcceptanceFailures(dry)).toEqual([
+      'SPA: only 19 items in the least-served session, fewer than the 20 items/axis r is judged at',
+      'QR: only 0 items in the least-served session, fewer than the 20 items/axis r is judged at',
+    ])
+    expect(catAcceptanceFailures(fakeRun({}, { fixedLength: 20, itemsPerAxis: { MAT: ok, SPA: ok } }))).toEqual([
+      'QR: only 0 items in the least-served session, fewer than the 20 items/axis r is judged at', // no entry at all
+    ])
+    expect(catAcceptanceFailures(fakeRun({}, { fixedLength: 20, itemsPerAxis: { MAT: ok, SPA: ok, QR: ok } }))).toEqual([])
+    // items are checked where r is judged: not for the A15 run (its length is the time), nor a length under 20
+    expect(catAcceptanceFailures(fakeRun({}, { itemsPerAxis: { MAT: spread(1, 5), SPA: ok, QR: ok } }))).toEqual([])
+    expect(catAcceptanceFailures(fakeRun({}, { fixedLength: 4, itemsPerAxis: { MAT: spread(1, 4), SPA: ok, QR: ok } }))).toEqual([])
+    expect(formatCat(dry)).toMatch(/^acceptance \(.*: FAIL$/m)
+  })
+
   it("checks an A15 run's simulated time against A15's upper end (30 min), not a fixed-length run's", () => {
     expect(catAcceptanceFailures(fakeRun({}, { timeS: { min: 1600, mean: 1700, max: 1800 } }))).toEqual([]) // over the 27.5 target, within 30
     const late = { timeS: { min: 1600, mean: 1700, max: 1830 } }
@@ -65,7 +85,8 @@ describe('catAcceptanceFailures', () => {
   it('formats the verdict with every failure', () => {
     const text = formatCat(fakeRun({ MAT: { r: 0.8 } }, { fixedLength: 20 }))
     expect(text).toContain('fixed length 20 items per CAT axis (no time limit)')
-    expect(text).toContain('CAT items per axis (min / mean / max): MAT 10 / 10.0 / 10, SPA 12 / 12.0 / 12, QR 6 / 6.0 / 6')
+    expect(text).toContain('CAT items per axis (min / mean / max): MAT 20 / 20.0 / 20, SPA 20 / 20.0 / 20, QR 20 / 20.0 / 20')
+    expect(formatCat(fakeRun())).toContain('MAT 10 / 10.0 / 10, SPA 12 / 12.0 / 12, QR 6 / 6.0 / 6') // an A15 run: what the budget allowed
     expect(text).toContain('(no data: borrowing via Σ only)')
     expect(text).toContain('acceptance (r ≥ 0.85 on MAT/SPA/QR; cov90 in [0.85, 0.95] where observed): FAIL')
     expect(text).not.toContain('informational')
@@ -84,6 +105,11 @@ describe('catAcceptanceFailures', () => {
     expect(late.split('\n').slice(-2)).toEqual([expect.stringMatching(/: FAIL$/), '  FAIL time: max session 31.67 min > budget 30.00 min'])
     // a fixed length under 20 says so; the explicit rAxes option brings the criterion back
     expect(formatCat(fakeRun({ QR: { r: 0.7 } }, { fixedLength: 4 }))).toContain('r at 4 items per axis is informational')
+    // the caller's own empty rAxes on a run of 20 items/axis does not read as "not a criterion"
+    const none = formatCat(fakeRun({ QR: { r: 0.7 } }, { fixedLength: 20 }), { rAxes: [] })
+    expect(none).toContain('r at 20 items per axis is not judged here (the caller passed rAxes: []): MAT 0.900, SPA 0.900, QR 0.700')
+    expect(none).not.toContain('informational')
+    expect(none.split('\n').slice(-1)[0]).toMatch(/: PASS$/)
     const forced = formatCat(fakeRun({ QR: { r: 0.7 } }), { rAxes: ['QR'] })
     expect(forced).not.toContain('informational')
     expect(forced.split('\n').slice(-2)).toEqual([expect.stringMatching(/^acceptance \(r ≥ 0\.85 on QR;.*: FAIL$/), '  FAIL QR: r = 0.700 < 0.85'])

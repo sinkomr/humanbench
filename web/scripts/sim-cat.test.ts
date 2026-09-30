@@ -28,8 +28,18 @@ describe('parseSimCatArgs', () => {
   })
 
   it('reads every option; --json resolves against the given directory', () => {
-    const a = parseSimCatArgs(['--', '--part', 'b', '--n', '300', '--seed', 's1', '--target-min', '30', '--fixed', '0', '--json', 'out.json', '--strict'], '/w')
-    expect(a).toEqual({ part: 'b', n: 300, seed: 's1', targetMin: 30, fixed: 0, json: '/w/out.json', strict: true })
+    const a = parseSimCatArgs(['--', '--part', 'b', '--n', '300', '--seed', 's1', '--target-min', '30', '--fixed', '25', '--json', 'out.json', '--strict'], '/w')
+    expect(a).toEqual({ part: 'b', n: 300, seed: 's1', targetMin: 30, fixed: 25, json: '/w/out.json', strict: true })
+  })
+
+  // --strict is the M1.4b certificate; its r criterion needs a run of >= 20 items/axis (DESIGN §14.3).
+  it('--strict on part b (or all) needs --fixed of at least 20; part a has no r criterion and takes any', () => {
+    for (const argv of [['--strict', '--fixed', '0'], ['--strict', '--part', 'b', '--fixed', '0'], ['--strict', '--part', 'all', '--fixed', '19']]) {
+      expect(() => parseSimCatArgs(argv, '/w'), argv.join(' ')).toThrow(/--strict judges r ≥ \.85 at 20 items\/axis.*--fixed 20 or more/)
+    }
+    expect(parseSimCatArgs(['--strict', '--fixed', '20'], '/w').strict).toBe(true)
+    expect(parseSimCatArgs(['--strict', '--part', 'a', '--fixed', '0'], '/w')).toMatchObject({ part: 'a', fixed: 0, strict: true })
+    expect(parseSimCatArgs(['--part', 'b', '--fixed', '0'], '/w')).toMatchObject({ fixed: 0, strict: false }) // without --strict, r is simply reported
   })
 
   it.each([
@@ -103,14 +113,26 @@ describe('main', () => {
     const strictB = (fixed: string, ...more: string[]): number => main(['--part', 'b', '--n', '3', '--fixed', fixed, '--strict', ...more], dir)
     const givenFixedLength = (opts: unknown): number | null => (opts as { fixedLength?: number } | undefined)?.fixedLength ?? null
 
-    it('an A15-budget run with r below .85 passes --strict (time and coverage hold); r is printed as informational', () => {
+    it('an A15-budget run with r below .85 passes (time and coverage hold); r is printed as informational and not checked', () => {
       fake.runCat = (...args) => fakeCatRun(lowR, { fixedLength: givenFixedLength(args[1]) })
-      expect(strictB('0')).toBe(0)
+      expect(main(['--part', 'b', '--n', '3', '--fixed', '0'], dir)).toBe(0)
       const text = out.join('\n')
       expect(text).toContain('r within the A15 time budget is informational, not an acceptance criterion')
       expect(text).toContain('MAT 0.815, SPA 0.798, QR 0.743')
       expect(text).toContain('acceptance (cov90 in [0.85, 0.95] where observed; every session ≤ 30.0 min): PASS')
       expect(text).toContain('the r ≥ .85 criterion (DESIGN §14.3) was not checked') // no fixed-length run to judge
+    })
+
+    // A strict exit 0 must never certify a criterion nobody checked: without a run of >= 20
+    // items/axis, --strict is a usage error (exit 2, before any simulation).
+    it('--strict without a fixed length of 20 or more is a usage error, not an exit 0 with r unchecked', () => {
+      let calls = 0
+      fake.runCat = (...args) => (calls++, fakeCatRun(lowR, { fixedLength: givenFixedLength(args[1]) }))
+      expect(strictB('0')).toBe(2)
+      expect(strictB('4')).toBe(2)
+      expect(calls).toBe(0)
+      expect(err.filter((e) => e.includes('--strict judges r ≥ .85 at 20 items/axis') && e.includes(SIM_CAT_USAGE))).toHaveLength(2)
+      expect(main(['--part', 'a', '--n', '300', '--fixed', '0', '--strict'], dir)).toBe(0) // part a has no r criterion
     })
 
     it('a fixed-length run of 20 items/axis with r below .85 fails --strict, and exits 0 without it', () => {
@@ -128,23 +150,32 @@ describe('main', () => {
       expect(main(['--part', 'b', '--n', '3', '--fixed', '20'], dir)).toBe(0)
     })
 
-    it('a fixed-length run of 20 items/axis with r ≥ .85 passes --strict; a shorter fixed length is informational', () => {
+    it('a fixed-length run of 20 items/axis with r ≥ .85 passes --strict; a shorter fixed length (no --strict) is informational', () => {
       fake.runCat = (...args) => fakeCatRun({}, { fixedLength: givenFixedLength(args[1]) })
       expect(strictB('20')).toBe(0)
       expect(out.join('\n')).not.toContain('was not checked')
       fake.runCat = (...args) => fakeCatRun(lowR, { fixedLength: givenFixedLength(args[1]) })
       out.length = 0
-      expect(strictB('4')).toBe(0)
+      expect(main(['--part', 'b', '--n', '3', '--fixed', '4'], dir)).toBe(0)
       expect(out.join('\n')).toContain('r at 4 items per axis is informational')
       expect(out.join('\n')).toContain('was not checked')
     })
 
+    it('a fixed-length run that did not reach 20 items on an axis fails --strict', () => {
+      const short = { min: 17, mean: 19.9, max: 20 }
+      fake.runCat = (...args) => fakeCatRun({}, { fixedLength: givenFixedLength(args[1]), ...(givenFixedLength(args[1]) === null ? {} : { itemsPerAxis: { MAT: short, SPA: short, QR: short } }) })
+      expect(strictB('20')).toBe(1)
+      expect(out.join('\n')).toContain('FAIL MAT: only 17 items in the least-served session, fewer than the 20 items/axis r is judged at')
+    })
+
     it('time and coverage still fail --strict on the A15 run', () => {
       fake.runCat = (...args) => fakeCatRun({ MAT: { coverage: 0.7 } }, { fixedLength: givenFixedLength(args[1]) })
-      expect(strictB('0')).toBe(1)
+      expect(strictB('20')).toBe(1)
       expect(out.join('\n')).toContain('FAIL MAT: 90% coverage 0.700 outside [0.85, 0.95]')
       fake.runCat = (...args) => fakeCatRun({}, { fixedLength: givenFixedLength(args[1]), timeS: { min: 1600, mean: 1700, max: 1900 } })
-      expect(strictB('0')).toBe(1)
+      out.length = 0
+      expect(strictB('20')).toBe(1) // the A15 run is 31.7 min at its slowest
+      expect(out.join('\n')).toContain('FAIL time: max session 31.67 min > budget 30.00 min')
     })
   })
 

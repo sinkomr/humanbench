@@ -17,13 +17,15 @@
  *   (default 20; acceptance: r ≥ .85 on MAT/SPA/QR and coverage in range). The r criterion is
  *   DESIGN §14.3's "r ≥ .85 at 20 items/axis" (user decision 2026-09-29, ROADMAP M1.4b), so it is
  *   judged only on a fixed-length run of ≥ 20 items/axis; `--fixed 0` (or under 20) leaves it
- *   unchecked and says so. When the fixture has Python results for n, each table also shows the
+ *   unchecked and says so, and `--strict` refuses those values (usage error) rather than exit 0
+ *   with the criterion unchecked. When the fixture has Python results for n, each table also shows the
  *   Python M1.4a r per axis and the gap: M1.4a is a fixed 2PL form, so this is a comparison of
  *   two designs, not the 0.02 parity of (a).
  *
  * Prints one table per run with its acceptance verdict (progress goes to stderr). `--json` writes
  * the numbers; a relative path resolves against the directory npm was run from. Exit codes: 0 (or
- * 1 with `--strict` when any acceptance fails, as above), 2 on a usage error. The full n = 2,000
+ * 1 with `--strict` when any acceptance fails, as above), 2 on a usage error (including `--strict`
+ * on part b with `--fixed` under 20). The full n = 2,000
  * run takes a few minutes (`scripts/sim-cat.slow.test.ts` runs it with `npm run test:slow`).
  */
 
@@ -85,6 +87,11 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
   if (!(Number.isSafeInteger(n) && n >= 2)) throw new UsageError('--n must be an integer ≥ 2')
   if (!(Number.isFinite(targetMin) && targetMin > 0)) throw new UsageError('--target-min must be a positive number of minutes')
   if (!(Number.isSafeInteger(fixed) && fixed >= 0)) throw new UsageError('--fixed must be an integer ≥ 0 (0 skips the fixed-length run)')
+  // --strict is the M1.4b certificate, and its r criterion (DESIGN §14.3) is judged only at ≥ 20
+  // items/axis: without such a run a strict exit 0 would certify a criterion nobody checked.
+  if (strict && part !== 'a' && fixed < M1_ITEMS_PER_AXIS) {
+    throw new UsageError(`--strict judges r ≥ .85 at ${M1_ITEMS_PER_AXIS} items/axis (DESIGN §14.3), so it needs --fixed ${M1_ITEMS_PER_AXIS} or more (got ${fixed}); drop --strict to run without that check`)
+  }
   return { part, n, seed, targetMin, fixed, ...(json === undefined ? {} : { json }), strict }
 }
 
@@ -173,7 +180,7 @@ export function main(argv: readonly string[], cwd = process.env.INIT_CWD ?? proc
       out[key] = catJson(run, fails, python)
     }
     if (!runs.some(({ run }) => catRAxes(run).length > 0)) {
-      console.log(`note: no fixed-length run of ≥ ${M1_ITEMS_PER_AXIS} items/axis, so the r ≥ .85 criterion (DESIGN §14.3) was not checked; --strict judges time and coverage only\n`)
+      console.log(`note: no fixed-length run of ≥ ${M1_ITEMS_PER_AXIS} items/axis, so the r ≥ .85 criterion (DESIGN §14.3) was not checked (time and coverage only; --strict needs --fixed ${M1_ITEMS_PER_AXIS} or more)\n`)
     }
   }
   if (args.json !== undefined) {

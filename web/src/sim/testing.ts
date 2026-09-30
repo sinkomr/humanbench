@@ -19,7 +19,8 @@ const spread = (v: number) => ({ min: v, mean: v, max: v })
 /**
  * A run that meets every criterion (r .9 and 90% coverage on the observed axes, sessions within
  * 30 min); `over` overrides per-axis recovery numbers, `extra` the run's own fields (for example
- * `fixedLength: 20`).
+ * `fixedLength: 20`, which also gives every CAT axis exactly that many items unless `extra`
+ * overrides `itemsPerAxis`).
  */
 export function fakeCatRun(over: Partial<Record<AxisCode, Partial<AxisRecovery>>> = {}, extra: Partial<CatRun> = {}): CatRun {
   const axes = AXIS_CODES.map((code) => ({
@@ -36,7 +37,7 @@ export function fakeCatRun(over: Partial<Record<AxisCode, Partial<AxisRecovery>>
     targetS: 1650,
     fixedLength: null,
     axes,
-    itemsPerAxis: { MAT: spread(10), SPA: spread(12), QR: spread(6) },
+    itemsPerAxis: extra.fixedLength == null ? { MAT: spread(10), SPA: spread(12), QR: spread(6) } : { MAT: spread(extra.fixedLength), SPA: spread(extra.fixedLength), QR: spread(extra.fixedLength) },
     timeS: { min: 1600, mean: 1640, max: 1700 },
     catTimeS: spread(900),
     overTarget: 0.5,

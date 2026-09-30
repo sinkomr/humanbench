@@ -12,9 +12,14 @@
  *
  * The acceptance (user decision 2026-09-29, ROADMAP M1.4b option 1) is DESIGN §14.3's: r ≥ .85 on
  * MAT, SPA and QR at 20 items/axis. That is the fixed-length run, asserted at full size in the slow
- * test (at N = 300 sampling error alone puts SPA at .844, so the fast tier cannot hold it to .85).
- * This run is the A15 time budget, accepted on time and coverage; its r is reported (the table
- * printed below), not asserted, since the budget gives only 6–13 items per CAT axis: with the
+ * test (`npm run test:slow`, HB_SLOW; CI runs only `npm test`, so that criterion is checked only
+ * when someone runs it, not on every push). At small N sampling error alone puts SPA near .84, so the
+ * fast tier cannot hold it to .85; what it does hold, in the last describe below, is a REGRESSION
+ * FLOOR on the same fixed-length design (r ≥ .80 at N = 150), so a broken finish scorer or
+ * selector still fails `npm test`.
+ *
+ * The A15-budget run is accepted on time and coverage; its r is reported (the table printed
+ * below), not asserted, since the budget gives only 6–13 items per CAT axis: with the
  * families' provisional parameters (a = 1.0 for every item, 3PL c = 1/4 for 4-option rotation, A9)
  * a first session gives r = .815 / .798 / .743 (MAT / SPA / QR) at N = 300 and .831 / .813 / .766
  * at N = 2,000, in line with DESIGN §7.6's projected session-1 SE of ≈ 0.57 (the precision Phase AI
@@ -40,7 +45,7 @@ import simText from '../engine/__fixtures__/sim_m14a_v1.json?raw'
 import type { Observation } from '../engine/types'
 import { A15_TARGET_S, COVERAGE_FLOOR } from '../engine/selector'
 import { resolveItem } from '../tasks/registry'
-import { A15_MAX_S, BLOCK_AXES, CAT_AXES, administeredB, observedAxes, runCat, sessionSeedOf, simulateSession, targetingR, type CatRun } from './cat'
+import { A15_MAX_S, BLOCK_AXES, CAT_AXES, M1_ITEMS_PER_AXIS, administeredB, observedAxes, runCat, sessionSeedOf, simulateSession, targetingR, type CatRun } from './cat'
 import { pythonResults, type M14aFixture } from './m14a'
 import { catAcceptanceFailures, catRAxes, catVsPython, formatCat } from './report'
 import { SPAN_FAMILIES } from './responders'
@@ -58,6 +63,14 @@ const N_FAST = 300
  * the provisional a = 1.0 items and ≈ 5 min per axis it gives about the same r.)
  */
 const TARGETING_MIN = 0.3
+
+/**
+ * The fast tier's REGRESSION FLOOR on r at 20 items/axis (N_GUARD simulees), well under the
+ * acceptance of R_MIN = .85 that only the full-size slow test holds: measured .904 / .844 / .921
+ * (MAT / SPA / QR, N = 150). A finish MAP that ignores the QR items gives QR r ≈ .5–.6 and fails it.
+ */
+const R_FLOOR_FIXED = 0.8
+const N_GUARD = 150
 
 const BLOCK_ORDER = ['rt_simple', 'rt_choice4', 'span_fwd', 'span_bwd', 'corsi', 'coding', 'reading']
 
@@ -241,5 +254,26 @@ describe(`M1.4b (b): adaptive session under the A15 time rule, N = ${N_FAST} (fa
     expect(rows.map((r) => r.code).sort()).toEqual([...CAT_AXES, ...BLOCK_AXES].sort())
     for (const r of rows) expect(r.delta).toBeCloseTo(r.r_cat - r.r_py, 12)
     expect(formatCat(run, {}, rows)).toContain('python r')
+  })
+})
+
+// The only fast-tier check that the CAT's items still drive θ recovery on MAT, SPA and QR. It is a
+// regression floor, not the M1.4b acceptance (R_FLOOR_FIXED vs R_MIN; the acceptance is the slow
+// test's), and says nothing about the A15-budget run above, whose r is reported, not asserted.
+describe(`M1.4b (b) regression floor: fixed length of ${M1_ITEMS_PER_AXIS} items per CAT axis, N = ${N_GUARD} (fast)`, () => {
+  let run: CatRun
+
+  beforeAll(() => {
+    run = runCat(THETAS.slice(0, N_GUARD), { seed: 'm14b', fixedLength: M1_ITEMS_PER_AXIS })
+  }, 300_000)
+
+  it('every session gives every CAT axis all 20 items, so this is the design r ≥ .85 is asked at', () => {
+    expect(catRAxes(run)).toEqual(CAT_AXES)
+    for (const k of CAT_AXES) expect(run.itemsPerAxis[k], k).toEqual({ min: M1_ITEMS_PER_AXIS, mean: M1_ITEMS_PER_AXIS, max: M1_ITEMS_PER_AXIS })
+  })
+
+  it(`the CAT items recover θ: r ≥ ${R_FLOOR_FIXED} on MAT, SPA and QR (a floor; ${R_MIN} is the slow test's)`, () => {
+    for (const k of CAT_AXES) expect(run.axes[AXIS_INDEX[k]]!.r, k).toBeGreaterThanOrEqual(R_FLOOR_FIXED)
+    expect(catAcceptanceFailures(run, { rMin: R_FLOOR_FIXED }).filter((f) => f.includes(' r = '))).toEqual([])
   })
 })

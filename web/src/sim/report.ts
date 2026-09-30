@@ -35,10 +35,12 @@ export function catRAxes(run: CatRun): readonly AxisCode[] {
 
 /**
  * The M1.4b (b) checks a CAT run fails (empty = pass): r ≥ rMin on each axis of {@link catRAxes}
- * (only the run of ≥ 20 items/axis, DESIGN §14.3); 90% coverage in [0.85, 0.95] on every axis with
- * observations; and, for an A15 run, every session's simulated time within the A15 budget (≤ 30
- * min, the upper end of A15's "about 25–30 min"; the plan targets 27.5). A fixed-length run has no
- * time criterion.
+ * (only the run of ≥ 20 items/axis, DESIGN §14.3), and on a fixed-length run every session really
+ * gave that axis the requested number of items (the selector can run dry, and r "at 20 items/axis"
+ * must not be claimed for fewer); 90% coverage in [0.85, 0.95] on every axis with observations;
+ * and, for an A15 run, every session's simulated time within the A15 budget (≤ 30 min, the upper
+ * end of A15's "about 25–30 min"; the plan targets 27.5). A fixed-length run has no time
+ * criterion.
  */
 export function catAcceptanceFailures(run: CatRun, opts: CatAcceptanceOptions = {}): string[] {
   const rMin = opts.rMin ?? R_MIN
@@ -48,6 +50,10 @@ export function catAcceptanceFailures(run: CatRun, opts: CatAcceptanceOptions = 
   for (const k of opts.rAxes ?? catRAxes(run)) {
     const ax = by.get(k)!
     if (!(ax.r >= rMin)) fails.push(`${k}: r = ${ax.r.toFixed(3)} < ${rMin}`)
+    const given = run.itemsPerAxis[k]?.min
+    if (run.fixedLength !== null && !(given !== undefined && given >= run.fixedLength)) {
+      fails.push(`${k}: only ${given ?? 0} items in the least-served session, fewer than the ${run.fixedLength} items/axis r is judged at`)
+    }
   }
   for (const k of observedAxes(run)) {
     const c = by.get(k)!.coverage
@@ -166,8 +172,12 @@ export function formatCat(run: CatRun, opts: CatAcceptanceOptions = {}, python?:
   if (rAxes.length === 0) {
     // Reported, not judged (ROADMAP M1.4b, 2026-09-29): the r criterion belongs to the fixed-length run.
     const rs = CAT_AXES.map((k) => `${k} ${f3(run.axes.find((a) => a.code === k)!.r)}`).join(', ')
-    const why = run.fixedLength === null ? 'within the A15 time budget' : `at ${run.fixedLength} items per axis`
-    lines.push(`r ${why} is informational, not an acceptance criterion (r ≥ ${rMin} is required at ${M1_ITEMS_PER_AXIS} items/axis, DESIGN §14.3): ${rs}`)
+    if (catRAxes(run).length > 0) {
+      lines.push(`r at ${run.fixedLength} items per axis is not judged here (the caller passed rAxes: []): ${rs}`)
+    } else {
+      const why = run.fixedLength === null ? 'within the A15 time budget' : `at ${run.fixedLength} items per axis`
+      lines.push(`r ${why} is informational, not an acceptance criterion (r ≥ ${rMin} is required at ${M1_ITEMS_PER_AXIS} items/axis, DESIGN §14.3): ${rs}`)
+    }
   }
   lines.push(`acceptance (${criteria.join('; ')}): ${fails.length === 0 ? 'PASS' : 'FAIL'}`)
   for (const f of fails) lines.push(`  FAIL ${f}`)
