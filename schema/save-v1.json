@@ -206,7 +206,7 @@
       "properties": {
         "slot": { "type": "integer", "minimum": 1, "maximum": 5 },
         "preset": { "enum": ["coding", "learning", "reading", "numbers", "writing", "general"] },
-        "destination": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,40}$" },
+        "destination": { "enum": ["chatgpt_instructions", "chatgpt_project", "claude_preferences", "claude_project", "gemini_instructions", "gemini_gem", "microsoft_copilot", "claude_code_skill", "claude_code_rules", "codex_agents", "gemini_cli", "cursor", "github_copilot", "own_app", "just_me"] },
         "form": { "enum": ["short", "long", "skill"] },
         "tier": { "enum": ["T1", "T2"] },
         "mode": { "enum": ["do", "learn"] },

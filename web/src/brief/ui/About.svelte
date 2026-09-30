@@ -12,14 +12,17 @@
     keywords: Keywords
     /** Whether the page has a place to keep settings (then removal also clears what was kept). */
     stored: boolean
+    /** After the settings were removed, the device still holds a save: offer a fresh download of it (proposal §3.3 "Removing"). */
+    freshSave?: boolean
     /** The last thing done in this section, announced politely. */
     status: string
     oncopysnippet: () => void
     ondownloadcard: (svg: string) => void
     ondownloadforai: (text: string) => void
     onremove: () => void
+    ondownloadfresh?: () => void
   }
-  let { keywords, stored, status, oncopysnippet, ondownloadcard, ondownloadforai, onremove }: Props = $props()
+  let { keywords, stored, freshSave = false, status, oncopysnippet, ondownloadcard, ondownloadforai, onremove, ondownloadfresh }: Props = $props()
 
   const card = $derived(controlWordCardSvg(keywords))
   const forAi = forAiMarkdown()
@@ -54,6 +57,11 @@
   <h3>Start over</h3>
   <p data-testid="remove-text">{stored ? COPY.remove : COPY.removeStorageless}</p>
   <button type="button" onclick={onremove}>Remove my notes settings</button>
+  {#if freshSave}
+    <div class="row">
+      <button type="button" data-testid="download-fresh" onclick={ondownloadfresh}>{COPY.removeFresh}</button>
+    </div>
+  {/if}
   <p class="status" role="status" aria-live="polite" data-testid="more-status">{status}</p>
   <p class="hint">{CLAIM}</p>
 </section>

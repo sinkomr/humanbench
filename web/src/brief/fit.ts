@@ -13,7 +13,7 @@
  *
  * Notes keep a month, not a day (proposal §5.5: no day-level timestamps), so "180 days" is read at
  * month granularity as the current month and the five before it. Within a month, notes order by
- * their id, whose first two hex digits count up as the month's notes are made (`newFitEntry`).
+ * their id, whose first two hex digits go up as the month's notes are made (`newFitEntry`).
  * Pure: the current month and the random digits come in.
  */
 
@@ -100,16 +100,21 @@ export function fitSuggestion(log: readonly FitEntry[], topic: TopicId, own: Top
 }
 
 /**
- * A new note. Its id starts with the number of notes already made in `month` (so notes of a month
- * sort in the order they were made), then `random` (six hex digits from the caller); the number
- * moves on until the id is unused.
+ * A new note. Its id starts with a number one above the highest already used in `month` (so a new
+ * note sorts after every note of its month that is there, in the order they were made), then
+ * `random` (six hex digits from the caller). It is not a count of the month's notes: a merge keeps
+ * only the newest notes per topic, so after it a count falls below the ids that are left and new
+ * notes would sort as older than the ones stored. The number stops at 255 (`ff`) and does not wrap
+ * round to zero: past 256 notes in one month the rest share `ff` and tell apart by their random
+ * digits, and a merge keeps far fewer notes than that.
  */
 export function newFitEntry(log: readonly FitEntry[], topic: TopicId, verdict: FitVerdict, month: string, random: string): FitEntry {
   if (!MONTH_RE.test(month)) throw new RangeError(`newFitEntry: not a YYYY-MM month: ${JSON.stringify(month)}`)
   if (!/^[0-9a-f]{6}$/u.test(random)) throw new RangeError('newFitEntry: random must be six hex digits')
   const taken = new Set(log.map((f) => f.id))
-  let seq = log.filter((f) => f.month === month).length % 256
-  for (let tries = 0; tries < 256; tries++, seq = (seq + 1) % 256) {
+  let highest = -1
+  for (const f of log) if (f.month === month && FIT_ID_RE.test(f.id)) highest = Math.max(highest, Number.parseInt(f.id.slice(0, 2), 16))
+  for (let seq = Math.min(highest + 1, 255); seq <= 255; seq++) {
     const id = `${seq.toString(16).padStart(2, '0')}${random}`
     if (!taken.has(id)) return { id, topic, verdict, month }
   }

@@ -34,7 +34,7 @@
   const KIND_LABEL: Record<LineFinding['kind'], string> = {
     header: 'Header',
     standard: 'Standard line',
-    own: 'Line of your own',
+    own: 'Not a standard line',
     foreign: 'Not from the builder',
     heading: 'Heading',
   }
@@ -42,6 +42,7 @@
     const out: string[] = [KIND_LABEL[f.kind]]
     if (f.status === 'blocked') out.push('Switched off')
     else if (f.status === 'experimental' && f.kind === 'standard') out.push('Still being checked')
+    if (f.typed === true && f.kind !== 'own') out.push('Has words someone typed')
     if (f.outdatedV !== undefined) out.push('Older wording')
     if (f.offForm === true) out.push('Written for the other length')
     if (f.editedFrom !== undefined) out.push(`Looks like an edit of ${f.editedFrom}`)

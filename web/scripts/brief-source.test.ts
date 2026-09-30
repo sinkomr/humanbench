@@ -86,10 +86,17 @@ describe('the rest of the app reaches the notes only through the light reveal ba
     for (const f of outside) for (const t of notesImports(f)) expect(ALLOWED.has(t), `${f} imports src/${t}`).toBe(true)
   })
 
-  it('a share-card renderer imports nothing from the notes at all (proposal AI.6b: it never contains notes strings)', () => {
-    const share = all.filter((f) => /share/i.test(f))
-    for (const f of share) expect(notesImports(f), f).toEqual([])
-  })
+  // OPEN until M1.18: no share-card renderer exists yet (nothing in src/ has "share" in its name), so a
+  // check over "the share files" would pass on an empty list and prove nothing. It is a todo while the list
+  // is empty, and a real check the moment M1.18 adds a file (AI.6b acceptance: the renderer never contains
+  // notes strings; M1.18 also adds a test of its output against NOTES_LEAK_MARKERS).
+  const share = all.filter((f) => /share/i.test(f))
+  if (share.length === 0) it.todo('a share-card renderer imports nothing from the notes at all (proposal AI.6b; open until M1.18 adds the renderer)')
+  else {
+    it('a share-card renderer imports nothing from the notes at all (proposal AI.6b: it never contains notes strings)', () => {
+      for (const f of share) expect(notesImports(f), f).toEqual([])
+    })
+  }
 })
 
 describe('src/brief-store/ (AI.7): where the settings are kept', () => {

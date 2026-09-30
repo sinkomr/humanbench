@@ -5,7 +5,8 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { StoredPrefs } from '../brief/stored'
+import { stateFromStored } from '../brief/builder'
+import { fromStored, type StoredPrefs } from '../brief/stored'
 import { AUTOSAVE_PREFIX, autosaveKey, type StorageLike } from '../save/autosave'
 import { jcs } from '../save/jcs'
 import { saveFileName, type DownloadEnv } from '../save/io'
@@ -233,11 +234,57 @@ describe('download', () => {
 describe('importSave', () => {
   const saveText = (bp?: StoredPrefs): string => jcs(sessionSave(bp))
 
-  it('merges the settings of a pasted save into the current ones, keeping the higher rev per set', async () => {
+  it('restores the settings of a pasted save over the current ones, slot by slot, whatever the revs say', async () => {
     const { s } = store(fakeStorage())
     const r = await s.importSave(saveText(prefs({ contexts: [context(1, 9, { mode: 'learn' }), context(3, 1)] })), prefs({ contexts: [context(1, 2), context(2, 4)] }))
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.prefs.contexts.map((c) => [c.slot, c.rev])).toEqual([[1, 9], [2, 4], [3, 1]])
+    if (!r.ok) return
+    // slot 1: the loaded set, one rev above the page's and the loaded one; slot 2: only on the page; slot 3: only in the save
+    expect(r.prefs.contexts.map((c) => [c.slot, c.rev])).toEqual([[1, 10], [2, 4], [3, 1]])
+    expect((r.prefs.contexts[0] as BriefContextV1).mode).toBe('learn')
+    expect(r.unchanged).toBeUndefined()
+  })
+
+  it('the loaded settings win over a page that has been edited more often since (revs of two devices do not compare)', async () => {
+    const { s } = store(fakeStorage())
+    // the save: slot 1 = coding at rev 2; the page after five clicks: slot 1 = general at rev 5
+    const older = prefs({ contexts: [context(1, 2, { preset: 'coding', destination: 'claude_code_skill' })] })
+    const page = prefs({ contexts: [context(1, 5, { preset: 'general', destination: 'chatgpt_instructions' })] })
+    // the plain join (what loading used to do) keeps the page's set: the loaded settings are quietly thrown away
+    expect((mergeBriefPrefs([page, older])?.contexts[0] as BriefContextV1).preset).toBe('general')
+    const r = await s.importSave(saveText(older), page)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const now = fromStored(r.prefs)
+    expect(now?.contexts[0]).toMatchObject({ slot: 1, preset: 'coding', destination: 'claude_code_skill', rev: 6 })
+    expect(stateFromStored(now as NonNullable<typeof now>).contexts[0]).toMatchObject({ preset: 'coding' })
+    // and it still joins with the older save on another device: the restored set (rev 6) beats both
+    expect((mergeBriefPrefs([older, page, r.prefs])?.contexts[0] as BriefContextV1).preset).toBe('coding')
+  })
+
+  it('brings back a set the page removed, and removes one the save removed', async () => {
+    const { s } = store(fakeStorage())
+    const gone = { slot: 2, rev: 4, removed: true as const }
+    const fromPage = prefs({ contexts: [context(1, 1), gone] })
+    const r1 = await s.importSave(saveText(prefs({ contexts: [context(1, 1), context(2, 1, { preset: 'reading' })] })), fromPage)
+    expect(r1.ok && r1.prefs.contexts.find((c) => c.slot === 2)).toMatchObject({ preset: 'reading', rev: 5 })
+    const r2 = await s.importSave(saveText(prefs({ contexts: [context(1, 1), { slot: 2, rev: 1, removed: true }] })), prefs({ contexts: [context(1, 1), context(2, 3, { preset: 'reading' })] }))
+    expect(r2.ok && r2.prefs.contexts.find((c) => c.slot === 2)).toMatchObject({ removed: true, rev: 4 })
+  })
+
+  it('says so, and changes nothing, when the save holds nothing the page does not have', async () => {
+    const { s } = store(fakeStorage())
+    const page = prefs({ contexts: [context(1, 7)], fit_log: [{ id: '01a1b2c3', topic: 'quant/linear', verdict: 'too_basic', month: '2026-10' }] })
+    const same = await s.importSave(saveText(prefs({ contexts: [context(1, 2)], fit_log: page.fit_log })), page)
+    expect(same).toMatchObject({ ok: true, unchanged: true })
+    if (same.ok) expect(same.prefs).toEqual(mergeBriefPrefs([page]))
+    // a new fit note is something the page did not have
+    const more = await s.importSave(saveText(prefs({ contexts: [context(1, 2)], fit_log: [...page.fit_log, { id: '02a1b2c3', topic: 'quant/linear', verdict: 'about_right', month: '2026-10' }] })), page)
+    expect(more).toMatchObject({ ok: true })
+    expect(more.ok && more.unchanged).toBeFalsy()
+    // no settings on the page at all: everything in the save is new
+    const fresh = await s.importSave(saveText(page), null)
+    expect(fresh.ok && fresh.unchanged).toBeFalsy()
   })
 
   it('reads a file too, whatever its name', async () => {
@@ -265,14 +312,15 @@ describe('importSave', () => {
 })
 
 describe('remove', () => {
-  it('deletes the settings save and strips the settings from the other saves, leaving their sessions', () => {
+  it('deletes the settings save and strips the settings from the other saves, leaving their sessions', async () => {
     const other = autosaveKey('s_01J9ZK3QA')
     const storage = fakeStorage({ [other]: jcs(sessionSave(prefs())), unrelated: 'keep me' })
-    const { s, fire } = store(storage)
+    const d = downloadEnv()
+    const { s, fire } = store(storage, { downloadEnv: d.env })
     s.write(prefs())
     fire()
     expect(storage.data.has(KEY)).toBe(true)
-    s.remove()
+    expect(s.remove()).toBe(true) // the session save is still on the device: a fresh download of it is worth offering
     expect(storage.data.has(KEY)).toBe(false)
     const rest = JSON.parse(storage.data.get(other) as string) as SaveFileV1
     expect(rest.brief_prefs).toBeUndefined()
@@ -280,6 +328,21 @@ describe('remove', () => {
     expect(validateSave(rest).ok).toBe(true)
     expect(storage.data.get('unrelated')).toBe('keep me')
     expect(store(storage).s.load().prefs).toBeNull()
+    // the fresh download has the sessions and no settings (proposal 3.3 "Removing")
+    s.download(null)
+    await vi.waitFor(() => expect(d.saved().sessions).toHaveLength(1))
+    const fresh = d.saved()
+    expect(fresh.brief_prefs).toBeUndefined()
+    expect(validateSave(fresh).ok).toBe(true)
+  })
+
+  it('says whether a save is left: nothing left after a settings-only device, so no fresh download is offered', () => {
+    const storage = fakeStorage()
+    const { s, fire } = store(storage)
+    s.write(prefs())
+    fire()
+    expect(s.remove()).toBe(false)
+    expect(() => s.download(null)).toThrow(RangeError)
   })
 
   it('cancels a write that has not happened yet, and leaves saves without settings and unreadable keys alone', () => {
@@ -297,7 +360,7 @@ describe('remove', () => {
   })
 
   it('does nothing when there is no storage', () => {
-    expect(() => store(null).s.remove()).not.toThrow()
+    expect(store(null).s.remove()).toBe(false)
   })
 })
 

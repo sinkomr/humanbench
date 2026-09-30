@@ -7,7 +7,8 @@
  * - on the reveal screen (after the download) and on the share-card screen, the copy button for the
  *   preamble and the "never paste your save file" line are visible, and copying puts exactly the
  *   preamble on the clipboard and announces it;
- * - the share card itself contains none of the notes strings;
+ * - OPEN until M1.18 (no share-card renderer exists yet): the real share card contains none of the notes
+ *   strings (`test.fixme` below), and E22 is in the smoke gate (AI.12a, bank);
  * - axe: 0 serious or critical issues in light and dark; 320 px reflow; keyboard use;
  * - nothing is stored and nothing is sent, and the rendered page passes the language lint (A13).
  * The e2e tsconfig has no DOM lib, so page code is passed as strings.
@@ -15,7 +16,6 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
-import { NOTES_LEAK_MARKERS } from '../src/brief/leak-markers'
 import { PREAMBLE, RESULTS_TALK, REVEAL_CARD } from '../src/brief/results-talk'
 import { expectNoSeriousAxe } from './axe'
 
@@ -66,12 +66,14 @@ test.describe('the preamble and the warning are visible on both screens', () => 
     })
   }
 
-  test('the share card contains none of the notes strings, and the screen text after it says what to paste first', async ({ page }) => {
+  test('the share-card screen says what to paste first, under its own heading', async ({ page }) => {
     await open(page, SHARE)
-    const card = (await page.getByTestId('share-card').innerText()) + (await page.getByTestId('share-card').getAttribute('aria-label'))
-    for (const m of NOTES_LEAK_MARKERS) expect(card, m).not.toContain(m)
     await expect(page.getByRole('heading', { level: 2, name: RESULTS_TALK.heading })).toBeVisible()
   })
+
+  // OPEN until M1.18 adds the real share-card renderer: the demo's card is a placeholder box with fixed text, so a check of
+  // it against the notes strings (leak-markers.ts) would prove nothing about the product. M1.18 replaces this with a test of the renderer's output.
+  test.fixme('the real share card contains none of the notes strings (M1.18; AI.6b acceptance)', async () => {})
 })
 
 test.describe('accessibility, keyboard, storage and language', () => {

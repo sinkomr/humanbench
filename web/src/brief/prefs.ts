@@ -11,6 +11,7 @@
 
 import { PRESET_INFO } from './contexts'
 import { PHRASING_FAMILIES, TEMPLATE_BY_ID } from './grammar'
+import { DESTINATIONS } from './surfaces'
 import { isTopicId, topicIndex } from './topics'
 import { LENGTHS, MODES, PRESETS, TOPIC_SETTINGS, type ContextPreset, type DestinationId, type Form, type Length, type LineId, type Mode, type Tier, type TopicId, type TopicSetting } from './types'
 
@@ -64,6 +65,9 @@ export function defaultPrefs(preset: ContextPreset, slot = 1): ContextPrefs {
   }
 }
 
+/** The destinations this build knows (`surfaces.json`); the save schema holds the same closed list. */
+const DESTINATION_IDS: ReadonlySet<string> = new Set(DESTINATIONS.map((d) => d.id))
+
 /** Tick keys a person can switch (every template's `base` except the locked clauses). */
 export const TICK_KEYS: readonly string[] = [
   ...new Set([...TEMPLATE_BY_ID.values()].filter((t) => t.locked !== true && t.id !== 'X1').map((t) => t.base)),
@@ -96,7 +100,7 @@ export function normalizePrefs(x: unknown): ContextPrefs {
   }
   const slot = typeof o.slot === 'number' && Number.isInteger(o.slot) && o.slot >= 1 && o.slot <= 5 ? o.slot : 1
   const rev = typeof o.rev === 'number' && Number.isInteger(o.rev) && o.rev >= 0 && o.rev <= 1_000_000 ? o.rev : 0
-  const destination = typeof o.destination === 'string' && /^[a-z][a-z0-9_]{0,40}$/u.test(o.destination) ? o.destination : d.destination
+  const destination = typeof o.destination === 'string' && DESTINATION_IDS.has(o.destination) ? o.destination : d.destination
   const form = o.form === 'short' || o.form === 'long' || o.form === 'skill' ? o.form : undefined
   return {
     slot,

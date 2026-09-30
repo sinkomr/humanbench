@@ -61,14 +61,38 @@ const RULES: readonly Rule[] = [
   },
   { rule: 'language', re: /\b(?:native|non-native|second language|first language|mother tongue|esl|efl|english learner|foreign|immigrants?|accent)\b/giu },
   { rule: 'brand', re: /\b(?:humanbench|human bench|hb-brief|blob|axis|axes|estimates?|estimated|posterior|bayesian)\b/giu },
-  // Steering wording (R-17.3, proposal §6 rows 14-15). Each pattern needs a second-person or
-  // instruction shape, so a hobby or subject name ("role-playing games", "sudoku") is not caught.
-  { rule: 'override', re: /\b(?:ignore|disregard|forget|override|overrule|bypass|disobey|stop following|no longer follow|(?:do not|don't|dont|never) follow)\b[^.\n]{0,40}?\b(?:previous|prior|earlier|above|preceding|former|all|any|every|everything|anything|these|those|your|system|safety|rules?|instructions?|guidelines?|directions?|prompts?|polic(?:y|ies)|restrictions?|filters?|notes|preferences)\b/giu },
-  { rule: 'override', re: /\b(?:system|developer|hidden|secret|original|initial|first)\s+(?:prompt|message|instructions?)\b|\b(?:jailbreak\w*|dan mode|developer mode|god mode|prompt injection|unfiltered|uncensored)\b|\b(?:without|no)\s+(?:any\s+)?(?:restrictions?|limits?|filters?|rules|guardrails?)\b/giu },
-  { rule: 'override', re: /\b(?:you are now|you are no longer|you will now|from now on|pretend (?:to be|you|that|this)|act as (?:a|an|if|though|the|my|you)|role-?play as|behave as|new (?:instructions?|rules?|persona|role|system))\b/giu },
-  { rule: 'override', re: /\b(?:reveal|leak|expose|exfiltrate|disclose|repeat back|print out|dump|output)\b[^.\n]{0,40}?\b(?:prompt|instructions?|conversation|chat history|memory|memories|secrets?|passwords?|keys?|tokens?|credentials?|notes)\b/giu },
-  { rule: 'override', re: /\b(?:passwords?|api keys?|secret keys?|private keys?|access tokens?|credentials?|ssh keys?|bearer|sudo|rm -rf|curl|wget|powershell|chmod|base64|eval|exec)\b/giu },
-  { rule: 'override', re: /\b(?:run|execute|install|download|open|visit|click|paste|fetch)\b[^.\n]{0,30}?\b(?:command|script|link|website|url|page|file|program|payload|code)\b/giu },
+  // Steering wording (R-17.3, proposal §6 rows 14-15). Each pattern needs an instruction-override shape
+  // (a verb that drops or replaces the rules, aimed at an instruction noun), so a hobby, a subject or an
+  // ordinary coding sentence ("ignore any typos", "explain what eval does", "never print api keys") is not
+  // caught. These are a courtesy for the person typing: the checker does not rely on them, because it flags
+  // every line that is not a standard line however it is worded (check.ts, `typed_words`).
+  {
+    rule: 'override',
+    re: /\b(?:ignore|disregard|forget|override|overrule|bypass|disobey|stop following|no longer follow|(?:do not|don't|dont|never) follow)\b[^.\n]{0,40}?\b(?:instructions?|rules?|guidelines?|directions?|prompts?|polic(?:y|ies)|restrictions?|filters?|guardrails?|safeguards?|safety|notes|preferences)\b/giu,
+  },
+  {
+    rule: 'override',
+    re: /\b(?:ignore|disregard|forget)\s+(?:the\s+)?(?:above|previous|prior|preceding)\b|\b(?:ignore|disregard|forget)\s+(?:everything|anything|all)\s+(?:above|before|previously|earlier|so far|you (?:were|have been|know)|i (?:said|told)|that (?:was|came))\b/giu,
+  },
+  { rule: 'override', re: /\b(?:system|developer|hidden|secret)\s+(?:prompt|message|instructions?)\b|\b(?:original|initial)\s+(?:prompt|instructions?)\b|\b(?:jailbreak\w*|dan mode|developer mode|god mode|prompt injection|unfiltered|uncensored)\b|\b(?:without|no)\s+(?:any\s+)?(?:restrictions?|guardrails?|safeguards?|censorship)\b/giu },
+  {
+    rule: 'override',
+    re: /\b(?:you are now|you are no longer|you will now|you must now|from now on,? you|pretend (?:that )?you|pretend to be (?:the |an? )?(?:developer|admin\w*|system|root|owner|human)|act as (?:if|though) you|act as (?:the |an? |my )?(?:developer|admin\w*|system|root|operator|owner|unrestricted|unfiltered)|role-?play as (?:the |an? )?(?:developer|admin\w*|system|root)|new (?:instructions?|persona))\b/giu,
+  },
+  // Revealing or sending out secrets. A negated sentence ("never leak secrets into logs") is a protective
+  // instruction, not a steer, so a negation just before the verb (up to two words back) lets it through.
+  {
+    rule: 'override',
+    re: /(?<!\b(?:never|not|don't|dont|without|avoid|no)\s+(?:\w+\s+){0,2})\b(?:reveal|leak|expose|exfiltrate|disclose|repeat back|print out)\b[^.\n]{0,40}?\b(?:prompt|instructions?|conversation|chat history|secrets?|passwords?|credentials?|tokens?|memory|memories)\b/giu,
+  },
+  {
+    rule: 'override',
+    re: /(?<!\b(?:never|not|don't|dont|without|avoid|no)\s+(?:\w+\s+){0,2})\b(?:paste|send|share|give|provide|type|enter|post|tell)\s+(?:me\s+)?your\s+(?:\w+\s+){0,2}(?:passwords?|api keys?|secret keys?|private keys?|credentials?|tokens?|ssh keys?)\b/giu,
+  },
+  {
+    rule: 'override',
+    re: /\b(?:execute|run|install|download|visit|click|fetch|open)\s+(?:this|that|any|every|the following|the attached|the linked)\s+(?:command|script|link|website|url|payload|file)\b|\b(?:execute|run)\s+(?:the|any|every)\s+(?:command|script)s?\s+(?:in|from)\s+(?:my|the|any|a)\b/giu,
+  },
 ]
 
 /** A13 vocabulary, compiled once with the lint's own boundary rule ("between letters", ROADMAP A13). */

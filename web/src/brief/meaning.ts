@@ -60,7 +60,7 @@ const MEANING: Readonly<Record<LineId, string>> = {
   K1F: 'On {topics}: show one worked example, then give you a similar one to finish yourself.',
   K2: 'Defines "deeper" (assume more, skip routine steps) and "more steps" (show every step and add an example).',
   I1: 'When the assistant needs an example, it draws on {interests}.',
-  X1: 'Your own line: "{text}"',
+  X1: 'A line in someone\'s own words, not one of the builder\'s: "{text}"',
 }
 
 /** Template ids that have a description (all of them; `meaning.test.ts`). */

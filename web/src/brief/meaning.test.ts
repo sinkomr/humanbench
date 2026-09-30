@@ -17,7 +17,7 @@ describe('meaning', () => {
     expect(meaningOf({ id: 'DS', topics: ['quant/linear', 'kst/physics'] })).toBe('On linear equations and systems and physics: skip the basics and go straight to the method, mentioning a step only if it is unusual.')
     expect(meaningOf({ id: 'I1', interests: ['chess', 'jazz'] })).toBe('When the assistant needs an example, it draws on chess or jazz.')
     expect(genericMeaning('I1')).toBe('When the assistant needs an example, it draws on your interests.')
-    expect(genericMeaning('X1')).toBe('Your own line: "your own words"')
+    expect(genericMeaning('X1')).toBe('A line in someone\'s own words, not one of the builder\'s: "your own words"')
   })
 
   it('uses no clinical word, no digit, no level or ability word, and never says or implies benefit', () => {

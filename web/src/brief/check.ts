@@ -10,6 +10,9 @@
  *   tries to steer the assistant, or a line that is not a bullet or heading of the format at all);
  * - `not_ours`, `front_matter`, `missing_clause`: the header is missing or changed, a Skill file's
  *   front matter is not the builder's, or one of the fixed clauses F1-F4 has been taken out;
+ * - `typed_words`: a line that is not one of the builder's fixed wordings, or a line that has words a
+ *   person typed in it (interests): the lint cannot tell a reworded steer from a harmless line of the
+ *   person's own, so the checker never calls such notes clean and says to read those lines yourself;
  * - `over_limit`: more characters than the form allows (1,500 short, 5,000 long and Skill);
  * - `withdrawn`: a line whose type the gate file now blocks (`gates.ts`);
  * - `outdated`: a line in wording that has since changed (`retired.ts`), or a JSON made with an older
@@ -17,7 +20,10 @@
  * - `review_by`: the notes' review-by month has passed;
  * - `save_file`, `invalid_json`: what was pasted is a save file or a save code (never paste those
  *   into an assistant), or JSON that is not `hb-brief/N`.
- * A line of the person's own that passes every rule is fine (`kind: 'own'`); it is listed, not flagged.
+ * A line that passes every rule and is not a standard line is listed as `kind: 'own'`, and flagged as
+ * `typed_words` with the others. What the lint catches is shown as `foreign`, with reasons; what it does not
+ * catch is exactly the wording nobody thought of, so no rule is the only thing between such a line and a
+ * "clean" verdict. Notes made with the builder and no line of the person's own read as clean.
  *
  * Pure and deterministic: the current day comes in as `today`, and nothing here reads a clock.
  */
@@ -56,6 +62,8 @@ export interface LineFinding {
   readonly outdatedV?: string
   /** Written for the other form (a long-form line in short notes). */
   readonly offForm?: boolean
+  /** The line holds words a person typed (a line of their own, or interests), which no fixed wording vouches for. */
+  readonly typed?: true
   /** Why a foreign line is flagged, in plain words. */
   readonly reasons: readonly string[]
   /** For a foreign or own line: the standard line it looks like an edit of. */
@@ -64,6 +72,7 @@ export interface LineFinding {
 
 export type FlagKind =
   | 'foreign_line'
+  | 'typed_words'
   | 'not_ours'
   | 'front_matter'
   | 'missing_clause'
@@ -169,9 +178,23 @@ function standardFinding(line: BriefLine, n: number, text: string, gates: GateFi
     id: line.id,
     says: meaningOf(line),
     status,
+    ...(hasTypedWords(line) ? { typed: true as const } : {}),
     ...(extra.outdatedV === undefined ? {} : { outdatedV: extra.outdatedV }),
     ...(extra.offForm ? { offForm: true } : {}),
     reasons: [],
+  }
+}
+
+/** A line with words a person typed: a line of their own (X1) or interests (I1). Topic lists come from a fixed vocabulary. */
+const hasTypedWords = (line: BriefLine): boolean => line.id === 'X1' || line.custom === true || (line.interests?.length ?? 0) > 0
+
+/** The flag for lines that hold typed words (`lines` are 1-based text lines, empty for JSON). */
+function typedFlag(count: number, lines: readonly number[]): Flag {
+  const it = plural(count, 'it', 'them')
+  return {
+    kind: 'typed_words',
+    message: `${count} ${plural(count, 'line is', 'lines are')} not ${plural(count, 'a standard line', 'standard lines')} of the builder, or ${plural(count, 'holds', 'hold')} words someone typed. ${plural(count, 'It may be a line', 'They may be lines')} you typed yourself in the builder; if you did not, someone else added ${it}. No rule can tell a harmless line from a reworded instruction, so read ${it} yourself before you paste.`,
+    lines,
   }
 }
 
@@ -233,6 +256,7 @@ export function checkNotes(input: string, opts: CheckOptions = {}): CheckReport 
     if (msg !== undefined) flags.push({ kind: 'front_matter', message: msg, lines: [] })
   }
   const foreignLines = findings.filter((f) => f.kind === 'foreign').map((f) => f.line)
+  const typedLines = findings.filter((f) => f.typed === true).map((f) => f.line)
   if (foreignLines.length > 0) {
     const one = foreignLines.length === 1
     flags.push({
@@ -241,6 +265,7 @@ export function checkNotes(input: string, opts: CheckOptions = {}): CheckReport 
       lines: foreignLines,
     })
   }
+  if (typedLines.length > 0) flags.push(typedFlag(typedLines.length, typedLines))
   if (p.format !== null) {
     const ids = new Set(p.lines.map((l) => l.id))
     const missing = ['F1', 'F2', 'F3', 'F4'].filter((id) => !ids.has(id))
@@ -290,11 +315,14 @@ function checkJson(text: string, chars: number, flags: Flag[], opts: CheckOption
     id: l.id,
     says: meaningOf(l),
     status: lineStatus(gates, l.id),
+    ...(hasTypedWords(l) ? { typed: true as const } : {}),
     reasons: [],
   }))
   const rendered = renderText(b)
   const limit = FORM_LIMITS[b.form]
   if (rendered.length > limit) flags.push({ kind: 'over_limit', message: `The notes these lines make are ${rendered.length.toLocaleString('en-US')} characters; ${b.form === 'short' ? 'short notes' : 'long notes and Skill files'} are at most ${limit.toLocaleString('en-US')}.`, lines: [] })
+  const typed = findings.filter((f) => f.typed === true).length
+  if (typed > 0) flags.push(typedFlag(typed, []))
   const withdrawn = findings.filter((f) => f.status === 'blocked')
   if (withdrawn.length > 0) flags.push({ kind: 'withdrawn', message: `${withdrawn.length} ${plural(withdrawn.length, 'line has', 'lines have')} been switched off in this version of the builder. Make the notes again to leave ${plural(withdrawn.length, 'it', 'them')} out.`, lines: [] })
   if (b.templates !== TEMPLATES_VERSION) flags.push({ kind: 'outdated', message: `These lines were made with the ${b.templates} release of the builder; the current one is ${TEMPLATES_VERSION}. Make the notes again to use the current wording.`, lines: [] })
@@ -306,11 +334,9 @@ function report(r: Omit<CheckReport, 'verdict' | 'summary'>, summary?: string): 
   const verdict = r.flags.length === 0 ? 'clean' : 'attention'
   if (summary !== undefined) return { ...r, verdict, summary }
   const standard = r.lines.filter((l) => l.kind === 'standard' || l.kind === 'header').length
-  const own = r.lines.filter((l) => l.kind === 'own').length
-  const ownText = own > 0 ? ` and ${own} ${plural(own, 'line of your own', 'lines of your own')}` : ''
   const text =
     verdict === 'clean'
-      ? `These read as notes made with the builder: ${standard} standard ${plural(standard, 'line', 'lines')}${ownText}, and nothing that needs a second look.`
+      ? `These read as notes made with the builder: ${standard} standard ${plural(standard, 'line', 'lines')}, and nothing that needs a second look.`
       : `${r.flags.length} ${plural(r.flags.length, 'thing needs', 'things need')} a look before these go into an assistant.`
   return { ...r, verdict, summary: text }
 }

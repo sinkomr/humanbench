@@ -12,7 +12,7 @@ import fc from 'fast-check'
 import { AXIS_CODES } from '../engine/axes'
 import type { JsonValue, ResponseTuple } from '../engine/types'
 import { utcSeconds } from './clock'
-import { BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS } from './brief-prefs'
+import { BRIEF_DESTINATIONS, BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS } from './brief-prefs'
 import {
   SCHEMA_URL,
   SCHEMA_VERSION,
@@ -140,7 +140,7 @@ export const arbBriefContext: fc.Arbitrary<BriefContextV1> = fc
     {
       slot: fc.integer({ min: 1, max: 5 }),
       preset: fc.constantFrom(...BRIEF_PRESETS),
-      destination: fc.constantFrom('chatgpt_instructions', 'claude_code_skill', 'just_me'),
+      destination: fc.constantFrom(...BRIEF_DESTINATIONS),
       form: fc.constantFrom(...BRIEF_FORMS),
       tier: fc.constantFrom(...BRIEF_TIERS),
       mode: fc.constantFrom(...BRIEF_MODES),

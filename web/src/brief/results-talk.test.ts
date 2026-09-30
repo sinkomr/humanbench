@@ -9,6 +9,7 @@ import pins from './__fixtures__/wording-pins.json'
 import drafts from './__fixtures__/proposal/ui-copy.txt?raw'
 import helper from './__fixtures__/proposal/results-helper.txt?raw'
 import raw from './brief-gates.json'
+import { CLAIM } from './copy'
 import { DEFAULT_GATES } from './gates'
 import { lintLine } from './lint'
 import { NOTES_LEAK_MARKERS } from './leak-markers'
@@ -46,6 +47,14 @@ describe('the preamble', () => {
   it('never says or implies the notes or the preamble help (A22)', () => {
     for (const t of [...Object.values(RESULTS_TALK), ...Object.values(REVEAL_CARD)]) expect(BENEFIT_RE.test(t), t).toBe(false)
     expect(BENEFIT_RE.test(PREAMBLE.replace('Help me think', 'Think with me'))).toBe(false)
+  })
+
+  it('words the reveal card as purpose only: no outcome ("so it ...", "the way you like") and no promise, since it carries no CLAIM sentence (A22, proposal 3.7)', () => {
+    // BENEFIT_RE catches benefit words; an outcome clause is a benefit claim without one, so it is checked here too.
+    const OUTCOME_RE = /\bso (?:it|that|the assistant|you|answers?)\b|\bthe way you (?:like|want|prefer)\b|\bexplains? (?:things )?(?:better|clearly|well)\b|\bfits? you\b/i
+    for (const t of Object.values(REVEAL_CARD)) expect(OUTCOME_RE.test(t), t).toBe(false)
+    expect(REVEAL_CARD.body).toContain('tell your own AI assistant how you like explanations')
+    expect(REVEAL_CARD.body).not.toContain(CLAIM)
   })
 
   it('is pinned by hash: a wording change needs a new version and a new pin (the wording is the treatment)', async () => {

@@ -7,9 +7,12 @@
 
 import { flushSync, mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPrefsStore, prefsOnlySave } from '../brief-store/persist'
+import type { StorageLike } from '../save/autosave'
+import { jcs } from '../save/jcs'
 import { hexToken } from './browser'
 import type { BriefContextV1 } from '../save/types'
-import { initialState, recordCopied, recordFit, setTopic, stateFromStored, toggleTopic } from './builder'
+import { initialState, persistedOf, recordCopied, recordFit, setTopic, stateFromStored, toggleTopic } from './builder'
 import { COPY } from './copy'
 import NotesBuilder from './NotesBuilder.svelte'
 import { copiedRecordOf } from './returning'
@@ -26,6 +29,8 @@ interface FakeStore extends NotesStore {
   listeners: ((s: StoreStatus) => void)[]
   result: ImportOutcome
   available: boolean
+  /** What `remove()` reports: the device still holds a save with test answers. */
+  saveLeft: boolean
 }
 function fakeStore(over: Partial<FakeStore> = {}): FakeStore {
   const s: FakeStore = {
@@ -36,6 +41,7 @@ function fakeStore(over: Partial<FakeStore> = {}): FakeStore {
     imports: [],
     listeners: [],
     result: { ok: false, message: 'nothing set' },
+    saveLeft: false,
     write: (p) => void s.writes.push(JSON.parse(JSON.stringify(p)) as StoredPrefs),
     flush: () => undefined,
     status: () => 'ok',
@@ -51,7 +57,10 @@ function fakeStore(over: Partial<FakeStore> = {}): FakeStore {
       s.imports.push(input)
       return s.result
     },
-    remove: () => void (s.removed += 1),
+    remove: () => {
+      s.removed += 1
+      return s.saveLeft
+    },
     ...over,
   }
   return s
@@ -161,14 +170,41 @@ describe('nothing is kept until the person asks (the under-18 path writes nothin
     expect(store.writes).toHaveLength(1)
   })
 
-  it('says so when the browser cannot keep anything, with no way to keep', () => {
-    open({ store: fakeStore({ available: false }) })
+  it('says so when the browser cannot keep anything: no way to keep, but a download of the save file, after the 18+ tick', async () => {
+    const store = fakeStore({ available: false })
+    open({ store })
     expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepUnavailable)
     expect(document.querySelector('[data-testid=keep-button]')).toBeNull()
-    void unmount(app as ReturnType<typeof mount>)
-    document.body.innerHTML = ''
+    // the copy says "you can still download them as a save file", so there is a button, behind the same question
+    expect(COPY.keepUnavailable).toContain('download')
+    expect($('[data-testid=download-settings]').textContent).toBe(COPY.keepDownload)
+    click(chip('Programming'))
+    click($('[data-testid=download-settings]'))
+    expect($('[data-testid=adult-error]').textContent).toBe(COPY.keepNeedAdult)
+    expect(store.downloads).toEqual([])
+    click($('[data-testid=adult]'))
+    click($('[data-testid=download-settings]'))
+    await tick()
+    expect(store.downloads).toHaveLength(1)
+    expect(store.downloads[0]?.contexts[0]).toMatchObject({ topics: { 'other/programming': 'ask_first' } })
+    await vi.waitFor(() => expect($('[data-testid=keep-status]').textContent).toBe('Downloaded humanbench-abc123-2026-11-03.hbsave.json.'))
+    expect(store.writes).toEqual([]) // a download is not storage
+    expect(document.querySelector('[data-testid=keep-button]')).toBeNull()
+  })
+
+  it('does not ask again in the no-storage case when the person already confirmed elsewhere (adultKnown)', () => {
+    const store = fakeStore({ available: false })
+    open({ store, adultKnown: true })
+    expect(document.querySelector('[data-testid=adult]')).toBeNull()
+    click($('[data-testid=download-settings]'))
+    expect(store.downloads).toHaveLength(1)
+  })
+
+  it('says there is nowhere to keep or load settings, and offers no download it cannot make, when the page has no store at all', () => {
     open({ store: null })
-    expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepUnavailable)
+    expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepNowhere)
+    expect(document.querySelector('[data-testid=keep-button]')).toBeNull()
+    expect(document.querySelector('[data-testid=download-settings]')).toBeNull()
   })
 })
 
@@ -311,6 +347,46 @@ describe('download and load', () => {
     submit($('[data-testid=load-button]').closest('form') as HTMLFormElement)
     expect(document.body.textContent).toContain(COPY.loadEmpty)
   })
+
+  it('says nothing changed, and leaves the page alone, when the save holds nothing new', async () => {
+    const store = fakeStore({ result: { ok: true, prefs: toStored(persistedOf(initialState()), '2026-11'), unchanged: true } })
+    open({ store })
+    click(chip('Programming'))
+    type($<HTMLTextAreaElement>('[data-testid=load-paste]'), '{"a":"save"}')
+    submit($('[data-testid=load-button]').closest('form') as HTMLFormElement)
+    await vi.waitFor(() => expect($('[data-testid=load-status]').textContent).toBe(COPY.loadSame))
+    expect(setting('Programming', 'Not sure').checked).toBe(true) // the page keeps what it had
+  })
+
+  /** A storage in memory, for the real store below. */
+  function memoryStorage(): StorageLike {
+    const data = new Map<string, string>()
+    return { get length() { return data.size }, key: (i) => [...data.keys()][i] ?? null, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }
+  }
+
+  it('through the real store: settings loaded from an older save win over a page that has been clicked on since, and loading them again changes nothing', async () => {
+    const realStore = createPrefsStore({ storage: memoryStorage(), wallClockMs: () => Date.UTC(2026, 10, 3), bindHide: false, newAnonId: () => 'hb_7Q3m9Kx2Vw5rT8pL' })
+    const older = toStored({ contexts: initialState('reading').contexts, copied: [null], tombstones: [], fitLog: [] }, '2026-11')
+    const text = jcs(prefsOnlySave(older, 'hb_7Q3m9Kx2Vw5rT8pL', Date.UTC(2026, 10, 3)))
+    open({ store: realStore })
+    // five clicks: the page's set is now at a higher rev than the saved one (rev 0)
+    pickUse('Coding and data')
+    click(chip('Programming'))
+    click(chip('Statistics'))
+    click(setting('Programming', 'I know this well'))
+    click(setting('Statistics', 'New to me'))
+    expect(document.querySelector<HTMLInputElement>('input[name=preset][value=coding]')?.checked).toBe(true)
+    type($<HTMLTextAreaElement>('[data-testid=load-paste]'), text)
+    submit($('[data-testid=load-button]').closest('form') as HTMLFormElement)
+    await vi.waitFor(() => expect($('[data-testid=load-status]').textContent).toBe(COPY.loadDone))
+    expect(document.querySelector<HTMLInputElement>('input[name=preset][value=reading]')?.checked).toBe(true)
+    expect(document.querySelector<HTMLInputElement>('input[name=preset][value=coding]')?.checked).toBe(false)
+    // the same save again holds nothing new
+    type($<HTMLTextAreaElement>('[data-testid=load-paste]'), `${text} `)
+    submit($('[data-testid=load-button]').closest('form') as HTMLFormElement)
+    await vi.waitFor(() => expect($('[data-testid=load-status]').textContent).toBe(COPY.loadSame))
+    expect(document.querySelector<HTMLInputElement>('input[name=preset][value=reading]')?.checked).toBe(true)
+  })
 })
 
 describe('"Remove my notes settings"', () => {
@@ -331,6 +407,46 @@ describe('"Remove my notes settings"', () => {
     click(chip('Statistics'))
     await tick()
     expect(store.writes).toEqual([]) // nothing is kept again until asked
+  })
+
+  it('offers a fresh save download after removal when the device still holds a save, and that download has no settings', async () => {
+    const store = fakeStore({ saveLeft: true })
+    open({ store })
+    expect(document.querySelector('[data-testid=download-fresh]')).toBeNull()
+    click(button('Remove my notes settings'))
+    await tick()
+    expect($('[data-testid=download-fresh]').textContent).toBe(COPY.removeFresh)
+    click($('[data-testid=download-fresh]'))
+    await tick()
+    expect(store.downloads).toEqual([null])
+    await vi.waitFor(() => expect($('[data-testid=more-status]').textContent).toBe('Downloaded humanbench-abc123-2026-11-03.hbsave.json.'))
+    // keeping settings again takes the offer away: they are back in the next download
+    click($('[data-testid=adult]'))
+    click($('[data-testid=keep-button]'))
+    await tick()
+    expect(document.querySelector('[data-testid=download-fresh]')).toBeNull()
+  })
+
+  it('offers no download when nothing is left on the device, and says so in plain words if the store cannot make one', async () => {
+    const none = fakeStore({ saveLeft: false })
+    open({ store: none })
+    click(button('Remove my notes settings'))
+    await tick()
+    expect(document.querySelector('[data-testid=download-fresh]')).toBeNull()
+    void unmount(app as ReturnType<typeof mount>)
+    document.body.innerHTML = ''
+    const refusing = fakeStore({
+      saveLeft: true,
+      download: () => {
+        throw new RangeError('download: no settings to put in a save')
+      },
+    })
+    open({ store: refusing })
+    click(button('Remove my notes settings'))
+    await tick()
+    click($('[data-testid=download-fresh]'))
+    await vi.waitFor(() => expect($('[data-testid=more-status]').textContent).toBe(COPY.removeNoSave))
+    expect(document.querySelector('[data-testid=download-fresh]')).toBeNull()
   })
 
   it('without a place to keep settings, says it only clears the page', () => {

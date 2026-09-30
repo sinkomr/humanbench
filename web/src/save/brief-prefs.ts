@@ -34,14 +34,34 @@ export const BRIEF_MONTH_RE = /^(?:19|20|21)[0-9]{2}-(?:0[1-9]|1[0-2])$/u
 export const BRIEF_TOPIC_ID_RE = /^[a-z]+\/[a-z0-9_]+(?:\/[a-z0-9_]+)?$/u
 export const BRIEF_TEMPLATE_ID_RE = /^[A-Za-z][A-Za-z0-9.]{0,15}$/u
 export const BRIEF_LINE_KEY_RE = /^[A-Za-z][A-Za-z0-9]{0,15}$/u
-export const BRIEF_DESTINATION_RE = /^[a-z][a-z0-9_]{0,40}$/u
 export const BRIEF_TOPICS_VERSION_RE = /^topics-v([0-9]{1,4})$/u
 export const BRIEF_GROUPS_VERSION_RE = /^g([0-9]{1,4})$/u
 export const BRIEF_TEMPLATES_STAMP_RE = /^[0-9]{4}\.[0-9]{2}$/u
 export const BRIEF_WORDING_V_RE = /^[0-9]{1,4}$/u
 export const BRIEF_FIT_ID_RE = /^[0-9a-f]{8}$/u
 
-/** The closed sets of `schema/save-v1.json`; `brief/types.ts` holds the same lists (a test keeps them equal). */
+/**
+ * The closed sets of `schema/save-v1.json`; `brief/types.ts` and `brief/surfaces.json` hold the same lists
+ * (tests keep them equal). Adding a value is an additive change of the schema (a minor version), like a
+ * new destination in `surfaces.json`.
+ */
+export const BRIEF_DESTINATIONS = [
+  'chatgpt_instructions',
+  'chatgpt_project',
+  'claude_preferences',
+  'claude_project',
+  'gemini_instructions',
+  'gemini_gem',
+  'microsoft_copilot',
+  'claude_code_skill',
+  'claude_code_rules',
+  'codex_agents',
+  'gemini_cli',
+  'cursor',
+  'github_copilot',
+  'own_app',
+  'just_me',
+] as const
 export const BRIEF_PRESETS = ['coding', 'learning', 'reading', 'numbers', 'writing', 'general'] as const
 export const BRIEF_MODES = ['do', 'learn'] as const
 export const BRIEF_LENGTHS = ['short', 'standard', 'detailed'] as const
@@ -141,6 +161,42 @@ export function mergeBriefPrefs(list: readonly (BriefPrefsV1 | undefined)[]): Br
   }
   if (zones?.z !== undefined) out.last_zones = clone(zones.z)
   return out
+}
+
+/** The settings with every `rev` set to 0, to compare what they say and not how often they were edited. */
+function withoutRevs(p: BriefPrefsV1): BriefPrefsV1 {
+  const out = clone(p)
+  out.contexts = out.contexts.map((c) => ({ ...c, rev: 0 }))
+  return out
+}
+
+/**
+ * **Load my settings from a save** is a restore, not a merge (AI.7 review; proposal §3.3): the person
+ * chose that save on purpose, so its sets replace the page's sets in the same slot, whatever the
+ * revs say. Revs count edits per device, so a save from another device or an older visit can carry a
+ * lower rev than a page that has had a few clicks since, and a plain join would quietly keep the
+ * page's sets. Each loaded set therefore gets a rev one above the page's rev for its slot (a removed
+ * set too), which makes it win the join; sets of other slots and the fit notes join as usual.
+ *
+ * `changed` is false when the join says nothing new (the settings are the page's already, apart from
+ * their revs); `prefs` is then the page's own settings unchanged, so the page can say so.
+ */
+export function restoreBriefPrefs(current: BriefPrefsV1 | undefined, loaded: BriefPrefsV1): { prefs: BriefPrefsV1; changed: boolean } {
+  const mine = mergeBriefPrefs([current])
+  const pageRev = new Map<number, number>()
+  for (const c of mine?.contexts ?? []) pageRev.set(c.slot, c.rev)
+  // Normal form first: one set per slot (the higher rev among the loaded ones), so raising them keeps that choice.
+  const one = mergeBriefPrefs([loaded]) as BriefPrefsV1
+  const raised: BriefPrefsV1 = {
+    ...one,
+    contexts: one.contexts.map((c) => {
+      const page = pageRev.get(c.slot)
+      return page === undefined ? c : { ...c, rev: Math.min(Math.max(page, c.rev) + 1, BRIEF_MAX_REV) }
+    }),
+  }
+  const merged = mergeBriefPrefs([current, raised]) as BriefPrefsV1
+  if (mine !== undefined && jcs(withoutRevs(merged)) === jcs(withoutRevs(mine))) return { prefs: mine, changed: false }
+  return { prefs: merged, changed: true }
 }
 
 /** Whether `save` already holds all of `other`'s notes settings (used to prune redundant autosaves). */

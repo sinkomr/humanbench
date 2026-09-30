@@ -199,6 +199,37 @@ describe('fromStored', () => {
     fc.assert(fc.property(fc.anything(), (x) => void fromStored(x)), { numRuns: 500 })
     fc.assert(fc.property(fc.jsonValue(), (x) => void fromStored({ contexts: [x], fit_log: [x], notes_as_of: x })), { numRuns: 500 })
   })
+
+  it('drops text that fits an id pattern of the save schema but is not one of this build\'s ids: a bare word or snake_case in any id position (R-17.12)', () => {
+    const back = fromStored({
+      contexts: [
+        {
+          slot: 1,
+          preset: 'coding',
+          destination: 'my_child_has_dyslexia',
+          topics: { 'other/health_anxiety': 'skip', 'other/programming': 'skip' },
+          topics_off: ['other/health_anxiety', 'other/programming'],
+          lines_on: ['Dyslexia', 'AC1'],
+          lines_off: ['my_notes', 'U3'],
+          phrasing: { U2: 'Dyslexia', U1: 'U1c' },
+          copied: { templates: '2026.11', month: '2026-11', lines: [{ id: 'Dyslexia', v: '1' }, { id: 'DS', v: '1' }] },
+          rev: 1,
+        },
+      ],
+      fit_log: [{ id: '00abcdef', topic: 'other/health_anxiety', verdict: 'too_basic', month: '2026-11' }],
+    })
+    const c = back?.contexts[0]
+    // the destination falls back to the preset's own, and every unknown id is gone
+    expect(c?.destination).toBe('claude_code_skill')
+    expect(c?.topics).toEqual({ 'other/programming': 'skip' })
+    expect(c?.topics_off).toEqual(['other/programming'])
+    expect(c?.lines_on).toEqual(['AC1'])
+    expect(c?.lines_off).toEqual(['U3'])
+    expect(c?.phrasing).toEqual({ U1: 'U1c' })
+    expect(back?.fitLog).toEqual([])
+    // a destination the builder offers is kept
+    for (const d of DESTINATIONS) expect(fromStored({ contexts: [{ slot: 1, preset: 'general', destination: d.id }] })?.contexts[0]?.destination, d.id).toBe(d.id)
+  })
 })
 
 describe('the builder state and its stored form', () => {

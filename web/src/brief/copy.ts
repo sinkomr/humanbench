@@ -55,6 +55,11 @@ export const COPY = {
   loadButton: 'Load settings',
   loadDone: 'Loaded your notes settings from the save.',
   loadNone: 'That save has no notes settings.',
+  loadSame: 'Those settings are already on this page, so nothing changed.',
+  /** The page has no store at all (never in the app; a page embedded without one): nothing to keep, nothing to download. */
+  keepNowhere: 'This page has nowhere to keep or load settings just now.',
+  removeFresh: 'Download a fresh save (without my notes settings)',
+  removeNoSave: 'There is no save left on this device to download.',
   loadEmpty: 'Choose a file or paste something to load.',
   copied: 'Copied to the clipboard.',
   copyFailed: 'Copying was blocked. The notes are selected above; copy them yourself.',

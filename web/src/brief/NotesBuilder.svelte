@@ -78,6 +78,8 @@
   let moreStatus = $state('')
   let keepMessage = $state('')
   let loadMessage = $state('')
+  /** After "Remove my notes settings": the device still holds a save, so a fresh download of it is offered (proposal §3.3 "Removing"). */
+  let freshSave = $state(false)
 
   const prefs = $derived(activePrefs(model))
   const extras = $derived(activeExtras(model))
@@ -160,6 +162,7 @@
   function onKeep(): void {
     if (store === null) return
     keep = true
+    freshSave = false
     lastWritten = ''
     void announce((m) => (keepMessage = m), COPY.keepNow)
   }
@@ -170,12 +173,16 @@
   }
   async function onLoad(input: Blob | string): Promise<void> {
     if (store === null) {
-      void announce((m) => (loadMessage = m), COPY.keepUnavailable)
+      void announce((m) => (loadMessage = m), COPY.keepNowhere)
       return
     }
     const r = await store.importSave(input, stored)
     if (!r.ok) {
       void announce((m) => (loadMessage = m), r.none === true ? COPY.loadNone : r.message)
+      return
+    }
+    if (r.unchanged === true) {
+      void announce((m) => (loadMessage = m), COPY.loadSame)
       return
     }
     const read = fromStored(r.prefs)
@@ -187,13 +194,24 @@
     void announce((m) => (loadMessage = m), COPY.loadDone)
   }
   function onRemove(): void {
-    store?.remove()
+    freshSave = store?.remove() === true
     keep = false
     lastWritten = ''
     model = resetAll()
     status = ''
     keepMessage = ''
     void announce((m) => (moreStatus = m), COPY.removeDone)
+  }
+  /** A save of what the device still holds, without the notes settings (they were just removed). */
+  function onDownloadFresh(): void {
+    if (store === null) return
+    try {
+      const name = store.download(null)
+      void announce((m) => (moreStatus = m), COPY.downloaded(name))
+    } catch {
+      freshSave = false
+      void announce((m) => (moreStatus = m), COPY.removeNoSave)
+    }
   }
   const change = (next: BuilderState): void => {
     model = next
@@ -232,6 +250,7 @@
   <SaveSettings
     {keep}
     available={store !== null && store.available}
+    canDownload={store !== null}
     status={storeStatus}
     {adultKnown}
     message={keepMessage}
@@ -244,11 +263,13 @@
   <About
     keywords={result.brief.keywords}
     stored={store !== null}
+    {freshSave}
     status={moreStatus}
     oncopysnippet={() => void onCopySnippet()}
     ondownloadcard={onDownloadCard}
     ondownloadforai={onDownloadForAi}
     onremove={onRemove}
+    ondownloadfresh={onDownloadFresh}
   />
 </main>
 

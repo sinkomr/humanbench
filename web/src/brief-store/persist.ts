@@ -27,7 +27,7 @@
 import type { NotesStore, ImportOutcome, StoreStatus } from '../brief/store-types'
 import type { StoredPrefs } from '../brief/stored'
 import { autosaveKey, autosaveKeys, bindFlushOnHide, browserStorage, createAutosaver, restoreAutosaves, type Autosaver, type StorageLike } from '../save/autosave'
-import { mergeBriefPrefs } from '../save/brief-prefs'
+import { restoreBriefPrefs } from '../save/brief-prefs'
 import { utcSeconds } from '../save/clock'
 import { newAnonId } from '../save/ids'
 import { downloadSave, type DownloadEnv } from '../save/io'
@@ -167,13 +167,14 @@ export function createPrefsStore(opts: PrefsStoreOptions): PrefsStore {
       if (!r.ok) return { ok: false, message: r.message }
       const loaded = r.save.brief_prefs
       if (loaded === undefined) return { ok: false, message: 'That save has no notes settings.', none: true }
-      const merged = mergeBriefPrefs([current ?? undefined, loaded])
-      return merged === undefined ? { ok: false, message: 'That save has no notes settings.', none: true } : { ok: true, prefs: merged }
+      // A restore: the loaded sets win over the page's sets in the same slot (the revs of two devices are not comparable).
+      const restored = restoreBriefPrefs(current ?? undefined, loaded)
+      return restored.changed ? { ok: true, prefs: restored.prefs } : { ok: true, prefs: restored.prefs, unchanged: true }
     },
 
-    remove(): void {
+    remove(): boolean {
       saver?.cancel()
-      if (storage === null) return
+      if (storage === null) return false
       for (const key of autosaveKeys(storage)) {
         try {
           if (key === autosaveKey(PREFS_AUTOSAVE_ID)) {
@@ -192,6 +193,8 @@ export function createPrefsStore(opts: PrefsStoreOptions): PrefsStore {
       }
       anonId = null
       setStatus('ok')
+      // What is left is a save with test answers (or nothing): the page offers a fresh download of it.
+      return restored() !== null
     },
   }
 }

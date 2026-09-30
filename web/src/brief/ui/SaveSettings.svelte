@@ -9,7 +9,9 @@
    *
    * Props:
    * - `keep`: the settings are being kept on this device.
-   * - `available`: this browser lets the page keep anything at all.
+   * - `available`: this browser lets the page keep anything at all. When it does not, the settings can still
+   *   be downloaded as a save file (after the same 18+ question), if `canDownload`.
+   * - `canDownload`: the page has a store to build the save file with (default true).
    * - `status`: `ok`, `unavailable` or `error`, from the store's last write.
    * - `adultKnown`: the person already confirmed they are 18 or older elsewhere (the session's consent
    *   gate, M1.15), so the question is not asked again.
@@ -22,6 +24,7 @@
   interface Props {
     keep: boolean
     available: boolean
+    canDownload?: boolean
     status: StoreStatus
     adultKnown?: boolean
     message: string
@@ -30,7 +33,7 @@
     ondownload: () => void
     onload: (input: Blob | string) => void
   }
-  let { keep, available, status, adultKnown = false, message, loadMessage, onkeep, ondownload, onload }: Props = $props()
+  let { keep, available, canDownload = true, status, adultKnown = false, message, loadMessage, onkeep, ondownload, onload }: Props = $props()
 
   const uid = $props.id()
   let adult = $state(false)
@@ -55,6 +58,16 @@
     showError = false
     onkeep()
   }
+  /** A download without a place to keep anything: still only after the 18+ answer (the under-18 path writes no file either). */
+  function submitDownload(event: SubmitEvent): void {
+    event.preventDefault()
+    if (!adultKnown && !adult) {
+      showError = true
+      return
+    }
+    showError = false
+    ondownload()
+  }
   function load(event: SubmitEvent): void {
     event.preventDefault()
     if (file === null && pasted.trim() === '') {
@@ -66,6 +79,18 @@
   }
 </script>
 
+{#snippet adultBox()}
+  {#if !adultKnown}
+    <label class="choice">
+      <input type="checkbox" bind:checked={adult} aria-describedby={showError && !adult ? `${uid}-err` : undefined} data-testid="adult" />
+      <span>{COPY.keepAdult}</span>
+    </label>
+  {/if}
+  {#if showError && !adult && !adultKnown}
+    <p class="warn" id="{uid}-err" role="alert" data-testid="adult-error">{COPY.keepNeedAdult}</p>
+  {/if}
+{/snippet}
+
 <section aria-labelledby="{uid}-heading" data-testid="keep-settings">
   <h2 id="{uid}-heading">{COPY.keepHeading}</h2>
   <p>{COPY.keepIntro}</p>
@@ -76,18 +101,18 @@
       <button type="button" data-testid="download-settings" onclick={ondownload}>{COPY.keepDownload}</button>
     </div>
   {:else if !available}
-    <p class="warn" data-testid="keep-state">{COPY.keepUnavailable}</p>
+    <p class="warn" data-testid="keep-state">{canDownload ? COPY.keepUnavailable : COPY.keepNowhere}</p>
+    {#if canDownload}
+      <form onsubmit={submitDownload} novalidate>
+        {@render adultBox()}
+        <div class="row actions">
+          <button type="submit" data-testid="download-settings">{COPY.keepDownload}</button>
+        </div>
+      </form>
+    {/if}
   {:else}
     <form onsubmit={submit} novalidate>
-      {#if !adultKnown}
-        <label class="choice">
-          <input type="checkbox" bind:checked={adult} aria-describedby={showError && !adult ? `${uid}-err` : undefined} data-testid="adult" />
-          <span>{COPY.keepAdult}</span>
-        </label>
-      {/if}
-      {#if showError && !adult && !adultKnown}
-        <p class="warn" id="{uid}-err" role="alert" data-testid="adult-error">{COPY.keepNeedAdult}</p>
-      {/if}
+      {@render adultBox()}
       <div class="row actions">
         <button type="submit" class="primary" data-testid="keep-button">{COPY.keepButton}</button>
       </div>

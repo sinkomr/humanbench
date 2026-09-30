@@ -42,7 +42,8 @@ export const RESULTS_TALK_TEXT = `${RESULTS_TALK.heading} ${RESULTS_TALK.paste} 
 /** The "Working with AI" card on the reveal screen (proposal §3.3): shown only after the save download. */
 export const REVEAL_CARD = {
   heading: 'Working with AI',
-  body: 'You can make short, plain notes for your own AI assistant, so it explains things the way you like. They come from your own choices on a separate page, and they never contain your results.',
+  // Purpose only (A22, proposal §3.7): this card is not a notes screen, so it carries no CLAIM sentence and may not say or imply any benefit either.
+  body: 'You can make short, plain notes that tell your own AI assistant how you like explanations. They come from your own choices on a separate page, and they never contain your results.',
   link: 'Make notes for your AI',
   /** The notes page opens in its own tab, so the reveal (and its required save download) stays where it is. */
   newTab: ' (opens in a new tab)',

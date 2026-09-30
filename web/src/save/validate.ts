@@ -11,7 +11,7 @@
  */
 
 import {
-  BRIEF_DESTINATION_RE,
+  BRIEF_DESTINATIONS,
   BRIEF_FIT_ID_RE,
   BRIEF_FORMS,
   BRIEF_GROUPS_VERSION_RE,
@@ -302,7 +302,7 @@ class Checker {
     let ok = this.keys(v, path, ['slot', 'preset', 'destination', 'tier', 'mode', 'length', 'topics', 'lines_on', 'lines_off', 'rev'], ['form', 'topics_off', 'phrasing', 'copied'])
     if (has('slot')) ok = this.intBetween(v.slot, `${path}/slot`, 1, BRIEF_MAX_SLOTS) && ok
     if (has('preset')) ok = this.enumOf(v.preset, `${path}/preset`, BRIEF_PRESETS) && ok
-    if (has('destination')) ok = this.str(v.destination, `${path}/destination`, BRIEF_DESTINATION_RE) && ok
+    if (has('destination')) ok = this.enumOf(v.destination, `${path}/destination`, BRIEF_DESTINATIONS) && ok
     if (has('form')) ok = this.enumOf(v.form, `${path}/form`, BRIEF_FORMS) && ok
     if (has('tier')) ok = this.enumOf(v.tier, `${path}/tier`, BRIEF_TIERS) && ok
     if (has('mode')) ok = this.enumOf(v.mode, `${path}/mode`, BRIEF_MODES) && ok

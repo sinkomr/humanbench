@@ -33,11 +33,12 @@ describe('released versions', () => {
 
   for (const [dir, set] of byVersion) {
     for (const [name, text] of Object.entries(set)) {
-      it(`${dir}/${name} reads with no foreign line and no problem, and the checker finds nothing to flag`, () => {
+      it(`${dir}/${name} reads with no foreign line and no problem, and the checker flags nothing but the words a person typed (profile B's interests)`, () => {
         if (name.endsWith('.json')) {
           const j = parseJson(text)
           expect(j.ok, name).toBe(true)
-          expect(checkNotes(text).flags, name).toEqual([])
+          const typed = j.ok && j.brief.lines.some((l) => l.id === 'X1' || (l.interests?.length ?? 0) > 0)
+          expect(checkNotes(text).flags.map((f) => f.kind), name).toEqual(typed ? ['typed_words'] : [])
           return
         }
         const p = parseAnyText(text)
@@ -46,8 +47,10 @@ describe('released versions', () => {
         expect(p.format, name).not.toBeNull()
         expect(parseText(text).lines.length).toBeGreaterThan(8)
         const c = checkNotes(text)
-        expect(c.flags, name).toEqual([])
-        expect(c.verdict).toBe('clean')
+        // interests are words a person typed: the checker lists them for reading and never calls such notes clean
+        const typed = parseText(text).lines.some((l) => l.id === 'X1' || (l.interests?.length ?? 0) > 0)
+        expect(c.flags.map((f) => f.kind), name).toEqual(typed ? ['typed_words'] : [])
+        expect(c.verdict).toBe(typed ? 'attention' : 'clean')
       })
     }
   }

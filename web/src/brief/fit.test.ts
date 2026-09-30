@@ -8,9 +8,14 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { FIT_BASE, FIT_MONTHS, FIT_NET, FIT_VERDICTS, FIT_WINDOW, compareFit, fitNet, fitShift, fitSuggestion, isFitEntry, monthsBetween, newFitEntry, recentFit, type FitEntry, type FitVerdict } from './fit'
+import { mergeBriefPrefs } from '../save/brief-prefs'
+import type { BriefPrefsV1 } from '../save/types'
+import { fromStored } from './stored'
 import { TOPIC_SETTINGS, type TopicSetting } from './types'
 
 const T = 'quant/probability_counting'
+/** Stored settings holding only a fit log (what a save carries). */
+const storedOf = (fit_log: readonly FitEntry[]): BriefPrefsV1 => ({ v: 1, topics: 'topics-v1', groups: 'g1', notes_as_of: '2026-11', contexts: [], fit_log: fit_log.map((f) => ({ id: f.id, topic: f.topic, verdict: f.verdict, month: f.month })) })
 const NOW = '2026-12'
 let n = 0
 const note = (verdict: FitVerdict, month = '2026-12', topic = T, id?: string): FitEntry => ({ id: id ?? `${(n++ % 256).toString(16).padStart(2, '0')}abcdef`, topic, verdict, month })
@@ -152,6 +157,46 @@ describe('new notes', () => {
     expect([...log].sort(compareFit)).toEqual(log)
     // another month starts again from zero
     expect(newFitEntry(log, T, 'too_much', '2027-01', 'aaaaaa').id).toBe('00aaaaaa')
+  })
+
+  it('go on from the highest id of the month, not from a count: a merge that trimmed the log leaves new notes after the stored ones', () => {
+    // 20 notes on one topic in a month (16 "about right", then 4 "too much"), kept as a merge keeps them: the newest 12 (ids 08 to 13)
+    let log: FitEntry[] = []
+    const verdicts: FitVerdict[] = [...Array<FitVerdict>(16).fill('about_right'), ...Array<FitVerdict>(4).fill('too_much')]
+    verdicts.forEach((v, i) => void (log = [...log, newFitEntry(log, T, v, '2026-11', (i * 4099).toString(16).padStart(6, '0').slice(-6))]))
+    const kept = fromStored(mergeBriefPrefs([storedOf(log)]))?.fitLog ?? []
+    expect(kept).toHaveLength(12)
+    expect(kept.map((f) => f.id.slice(0, 2))).toEqual(['08', '09', '0a', '0b', '0c', '0d', '0e', '0f', '10', '11', '12', '13'])
+    // four new "too basic" notes must be the newest four, whatever the count of stored notes is
+    let after = [...kept]
+    for (let i = 0; i < 4; i++) after = [...after, newFitEntry(after, T, 'too_basic', '2026-11', `0000a${i}`)]
+    expect(after.slice(-4).map((f) => f.id.slice(0, 2))).toEqual(['14', '15', '16', '17'])
+    expect(recentFit(after, T, '2026-11').map((f) => f.verdict)).toEqual(['too_basic', 'too_basic', 'too_basic', 'too_basic'])
+    expect(fitSuggestion(after, T, 'ask_first', '2026-11')).toMatchObject({ to: 'skip', net: 4 })
+  })
+
+  it('always sort after every stored note of their month, through any number of merges and reloads (property)', () => {
+    const arbOp = fc.record({ verdict: fc.constantFrom(...FIT_VERDICTS), topic: fc.constantFrom(T, 'kst/physics'), reload: fc.boolean() })
+    fc.assert(
+      fc.property(fc.array(arbOp, { minLength: 1, maxLength: 60 }), fc.array(fc.stringMatching(/^[0-9a-f]{6}$/u), { minLength: 60, maxLength: 60 }), (ops, randoms) => {
+        let log: FitEntry[] = []
+        ops.forEach((op, i) => {
+          const before = log.filter((f) => f.month === '2026-11')
+          const made = newFitEntry(log, op.topic, op.verdict, '2026-11', randoms[i] as string)
+          for (const other of before) expect(compareFit(other, made), `${other.id} before ${made.id}`).toBeLessThan(0)
+          log = [...log, made]
+          // a merge keeps the newest 12 per topic; reloading goes through the stored form
+          if (op.reload) log = fromStored(mergeBriefPrefs([storedOf(log)]))?.fitLog.map((f) => ({ ...f })) ?? []
+        })
+      }),
+      { numRuns: 200 },
+    )
+  })
+
+  it('stops at ff: the number does not wrap round to zero, and a taken id there is refused', () => {
+    const log = [note('too_basic', '2026-12', T, 'ff000000')]
+    expect(newFitEntry(log, T, 'too_basic', '2026-12', 'abcdef').id).toBe('ffabcdef')
+    expect(() => newFitEntry([...log, note('too_basic', '2026-12', T, 'ffabcdef')], T, 'too_basic', '2026-12', 'abcdef')).toThrow(RangeError)
   })
 
   it('never reuses an id, and rejects a bad month or bad random digits', () => {
