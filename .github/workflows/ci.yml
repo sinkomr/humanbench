@@ -40,7 +40,7 @@ jobs:
     # One job per Playwright project: ~530 tests on 2 workers outgrew a single 20-min job.
     name: web e2e (Playwright + axe, ${{ matrix.project }})
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -74,11 +74,13 @@ jobs:
         timeout-minutes: 12
         run: npm run e2e:install
 
-      # apt mirrors occasionally hang; fail fast instead of eating the job budget.
+      # Only this job's browser; apt mirrors are sometimes very slow, so retry once.
       - name: Install the browsers' system dependencies (browsers cached)
         if: steps.browsers.outputs.cache-hit == 'true'
-        timeout-minutes: 8
-        run: npx playwright install-deps chromium webkit
+        timeout-minutes: 20
+        run: |
+          BROWSER=${{ matrix.project == 'chromium' && 'chromium' || 'webkit' }}
+          npx playwright install-deps "$BROWSER" || npx playwright install-deps "$BROWSER"
 
       - run: npm run e2e -- --project=${{ matrix.project }}
 
