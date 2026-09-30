@@ -14,6 +14,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
 - `web/`: the app (Vite, Svelte 5, TypeScript strict), deployed to GitHub Pages under `/humanbench/`
   - `web/src/engine/`: scoring (MAP/Laplace, EAP, the §7.8 retest model for multi-session saves), timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
+  - `web/src/session/`: the session flow (consent and 18+ gate, honour code, device check, practice, the A15 blocks and items with their clock, break, hard stop and confidence slider, results and save)
   - `web/src/tasks/`: task families
   - `web/src/render/`: the item and block renderers (what the taker sees), by family
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
@@ -125,6 +126,27 @@ The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `ma
 pull requests, with the browsers cached, and uploads the report as an artifact.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
+
+### Session flow
+
+The session (ROADMAP M1.15) is `web/src/session/`. `run.ts` is the state machine: it plans the A15
+order with the M1.14 scheduler, runs the blocks and the adaptive items, keeps the active-time clock,
+and records §8 response tuples that `save/rescore.ts` scores to the same observations. It has no DOM
+and no timers of its own, so its tests (`run.test.ts`) drive it on a fake timeline with the simulated
+takers of `web/src/sim/`. The screens are Svelte components around it (`SessionApp.svelte`
+orchestrates them); `persist.ts` writes the autosave through the save library after every answer.
+The rules that depend on minutes (the break at 30, the hard stop at 57, the coverage floor when the
+time budget is gone) are covered in Playwright on a fake clock (`web/e2e/session.spec.ts`).
+
+The under-18 path keeps nothing: the gate screens hold their state in memory, and the consent
+record, the autosave and the restore of earlier saves all come after the gate is passed.
+
+For development, `?fast=1` (for example `http://localhost:5173/humanbench/?fast=1`) makes the session
+timeline run 20 times faster, so the break, the hard stop and the progress ring can be seen in
+seconds; response times measured that way are not valid scores. It works only where the build-time
+constant `__HB_DEV_ROUTES__` is true (the dev server, the tests and the Playwright build). A plain
+production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds one and
+looks).
 
 ### Renderers
 

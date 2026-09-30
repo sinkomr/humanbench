@@ -419,6 +419,73 @@ describe('coverage floor (§7.4 L584)', () => {
   })
 })
 
+describe('coverage floor protects itself from the time budget (M1.15, §7.4 L584–585)', () => {
+  it('without floorRemainingS a segment whose budget ran out serves nothing (the M1.14 gap)', () => {
+    const sel = selectNext(state({ remainingS: 0 }), createRng('x'), { axes: ['QR'] })
+    expect(sel).toEqual({ kind: 'none', reason: 'time' })
+    const tight = candidatePool(state({ remainingS: 5 }), { axes: ['QR'] })
+    expect(tight.ranked).toEqual([])
+    expect(tight.reason).toBe('time')
+  })
+
+  it('an axis under the floor is served past its budget, up to the time to the hard stop', () => {
+    const pool = candidatePool(state({ remainingS: 0, floorRemainingS: 600 }), { axes: ['QR'] })
+    expect(pool.ranked.length).toBeGreaterThan(0)
+    expect(pool.floorAxes).toEqual(['QR'])
+    for (const c of pool.ranked) expect(c.item.expected_time_s).toBeLessThanOrEqual(600)
+    // Not more than the hard stop allows: a floor item that cannot finish before it is not offered.
+    const short = candidatePool(state({ remainingS: 0, floorRemainingS: 5 }), { axes: ['QR'] })
+    expect(short.ranked).toEqual([])
+    expect(short.reason).toBe('time')
+  })
+
+  it('once the axis has its 3 items the budget applies again', () => {
+    const administered = [0, 1, 2].map((i) => fakeAdministered('QR', i))
+    const done = selectNext(state({ administered, remainingS: 0, floorRemainingS: 600 }), createRng('x'), { axes: ['QR'] })
+    expect(done).toEqual({ kind: 'none', reason: 'time' })
+    const two = selectNext(state({ administered: administered.slice(0, 2), remainingS: 0, floorRemainingS: 600 }), createRng('x'), { axes: ['QR'] })
+    expect(two.kind).toBe('item')
+  })
+
+  it('only the under-floor axes use the longer limit; the others keep the segment budget', () => {
+    const administered = [0, 1, 2].map((i) => fakeAdministered('MAT', i))
+    const pool = candidatePool(state({ administered, remainingS: 40, floorRemainingS: 600 }))
+    expect(pool.floorAxes).toEqual(['QR', 'SPA'])
+    for (const c of pool.ranked) expect(['SPA', 'QR']).toContain(c.axis)
+    const later = candidatePool(state({ administered, remainingS: 40, floorRemainingS: 600, sessionNumber: 2 }))
+    for (const c of later.ranked) expect(c.item.expected_time_s).toBeLessThanOrEqual(40)
+  })
+
+  it('never lengthens the limit of a later session (no floor there) and rejects a non-number', () => {
+    const later = candidatePool(state({ remainingS: 0, floorRemainingS: 600, sessionNumber: 2 }), { axes: ['QR'] })
+    expect(later.reason).toBe('time')
+    expect(() => selectNext(state({ floorRemainingS: Number.NaN }), createRng('x'))).toThrow(RangeError)
+  })
+
+  it('a session that lost its whole budget still ends every CAT axis with exactly the floor', () => {
+    const seed = 'floor-budget-gone'
+    const obs: Observation[] = []
+    const administered: AdministeredItem[] = []
+    const resp = createRng('floor-budget-resp')
+    for (const axis of CAT_AXES) {
+      for (let n = 0; n < 5; n++) {
+        const sel = selectNext(
+          { sessionSeed: seed, posterior: sessionPosterior(obs), administered, remainingS: 0, floorRemainingS: 3600 },
+          selectionRng(seed, administered.length),
+          { axes: [axis] },
+        )
+        if (sel.kind !== 'item') {
+          expect(sel).toEqual({ kind: 'none', reason: 'time' })
+          break
+        }
+        administered.push(sel.item)
+        obs.push(respond(sel.item, 0, resp.next()))
+      }
+    }
+    expect(CAT_AXES.map((k) => administered.filter((a) => a.axis === k).length)).toEqual([3, 3, 3])
+  })
+})
+
 // ----------------------------------------------------------------------------- properties
 
 const seedArb = fc.string({ minLength: 1, maxLength: 12 })

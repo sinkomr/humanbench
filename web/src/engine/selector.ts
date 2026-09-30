@@ -38,7 +38,10 @@
  *    discounted by 20% per §7.1), never the axis default; θ̂_k and Var(θ_k) are the current
  *    posterior mean and variance (§7.4 L576), and E[T_j] is `expected_time_s` (§7.4 L575).
  * 4. **Coverage floor** (§7.4 L584): in session 1, while any eligible axis has fewer than 3
- *    administered items, only those axes' candidates compete.
+ *    administered items, only those axes' candidates compete. The floor is a requirement, not part
+ *    of the time budget: those axes' candidates are checked against `floorRemainingS` (the time to
+ *    the hard stop) when it exceeds `remainingS`, so a segment that lost its budget to slow blocks
+ *    still reaches 3 (M1.15; before this, QR fell short in about 5% of simulated sessions).
  * 5. **Randomesque** (§6.iii L490, §7.4 L579): a uniform pick from the top 5 (ties in score are
  *    broken by item_id, so the top 5 is a deterministic set), drawn from the injected seeded RNG.
  *
@@ -118,6 +121,13 @@ export interface SelectorState {
   readonly seenFamilies?: Iterable<string>
   /** Seconds left in the current block or session, whichever ends first (default: no limit). */
   readonly remainingS?: number
+  /**
+   * Seconds a coverage-floor item may still take: an axis still under the floor (§7.4 L584, session
+   * 1) is offered candidates that fit `max(remainingS, floorRemainingS)`, so a segment whose time
+   * budget ran out (e.g. after long span blocks, M1.15) still gets its ≥ 3 items. The session
+   * passes the time to the hard stop (§7.4 L585). Default: `remainingS` (no protection).
+   */
+  readonly floorRemainingS?: number
   /** 1 for a person's first session (the coverage floor applies only then, §7.4 L584). Default 1. */
   readonly sessionNumber?: number
 }
@@ -382,6 +392,8 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   if (!Array.isArray(state.administered)) throw new RangeError('administered must be an array')
   const remaining = state.remainingS ?? Infinity
   if (typeof remaining !== 'number' || Number.isNaN(remaining)) throw new RangeError('remainingS must be a number')
+  const floorRemaining = state.floorRemainingS ?? remaining
+  if (typeof floorRemaining !== 'number' || Number.isNaN(floorRemaining)) throw new RangeError('floorRemainingS must be a number')
   const floor = opts.floor ?? coverageFloor(state.sessionNumber ?? 1)
   if (!Number.isInteger(floor) || floor < 0) throw new RangeError(`floor must be an integer ≥ 0, got ${floor}`)
   const stopSd = opts.stopSd ?? STOP_SD
@@ -399,7 +411,6 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   for (const k of open) checkPosterior(`posterior of ${k}`, state.posterior[k])
   const eligible = open.filter((k) => !axisDone(state.posterior[k]!, stopSd))
   if (eligible.length === 0) return { ranked: [], eligibleAxes: [], floorAxes: [], reason: 'axes_done' }
-  if (!(remaining > 0)) return { ranked: [], eligibleAxes: eligible, floorAxes: [], reason: 'time' }
 
   // 2. Exclusions: families seen this session or earlier (§7.7), this session's sibling groups
   // (A11 amended, M1.F2 `sibling_group`).
@@ -412,6 +423,12 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
     counts.set(a.axis, (counts.get(a.axis) ?? 0) + 1)
   }
   const counter = state.administered.length
+
+  // Time left for a candidate of axis k: the segment's `remaining`, or, for an axis still under
+  // the coverage floor, the (longer) time to the hard stop (`floorRemainingS`; §7.4 L584–585).
+  const underFloor = new Set(eligible.filter((k) => (counts.get(k) ?? 0) < floor))
+  const timeFor = (k: AxisCode): number => (underFloor.has(k) ? Math.max(remaining, floorRemaining) : remaining)
+  if (!eligible.some((k) => timeFor(k) > 0)) return { ranked: [], eligibleAxes: eligible, floorAxes: [], reason: 'time' }
 
   // 2–3. Candidates per (family, stratum), scored by the §7.4 criterion; one per family_id.
   const best = new Map<string, Candidate>()
@@ -429,7 +446,7 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
       if (!isDichotomousParams(item.params)) continue // defensive: blocks are never CAT items (A10)
       if (seenFamilies.has(item.family_id)) continue
       if (usedSiblings.has(item.sibling_group)) continue
-      if (item.expected_time_s > remaining) {
+      if (item.expected_time_s > timeFor(p.fam.axis)) {
         overTime++
         continue
       }

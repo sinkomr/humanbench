@@ -37,8 +37,12 @@ async function appBuild(flag: string | undefined): Promise<{ files: string[]; te
   }
 }
 
-/** Strings only the dev routes contain. */
-const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session']
+/**
+ * Strings only the dev routes contain, and the dev banner of the `?fast=1` flag (ROADMAP M1.15:
+ * "production builds ignore it"): `sessionTimeScale` folds to 1 where `__HB_DEV_ROUTES__` is false,
+ * and the banner text goes with it.
+ */
+const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Fast mode (development only)']
 
 describe('dev-only routes (M1.16)', () => {
   it('are on in dev and tests, off in production unless VITE_HB_DEV_ROUTES=1', () => {
@@ -54,6 +58,12 @@ describe('dev-only routes (M1.16)', () => {
     expect(text).toContain('HumanBench')
     expect(files.filter((f) => /BlobDemo|routes|synthetic/i.test(f))).toEqual([])
     for (const m of DEV_MARKERS) expect(text, m).not.toContain(m)
+  }, 60_000)
+
+  it('a plain production build ignores ?fast=1: the flag parser and its banner are not shipped (M1.15)', async () => {
+    const { text } = await appBuild(undefined)
+    expect(text).not.toContain('Fast mode (development only)')
+    expect(text).not.toContain('Response times are not valid scores')
   }, 60_000)
 
   it('the e2e build (VITE_HB_DEV_ROUTES=1) does ship them, so the check above is not vacuous', async () => {

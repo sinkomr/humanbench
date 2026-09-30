@@ -1,0 +1,153 @@
+/*
+ * Styles of the session flow screens (ROADMAP M1.15; DESIGN §13 WCAG 2.2 AA). They sit on the
+ * renderer tokens of `render/common/render.css` (`.hb-render`: >= 4.5:1 text contrast in light and
+ * dark, a visible focus ring, 44 px targets), so every screen looks like the items it hosts. Sizes
+ * are in rem, long words wrap, and nothing moves unless the person allows it.
+ */
+
+.hb-screen {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hb-screen.wide {
+  max-width: 72rem;
+}
+
+.hb-screen h1 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.5rem, 5vw, 2.25rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.hb-screen h1:focus {
+  outline: none;
+}
+
+.hb-screen h2 {
+  margin: 1.5rem 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.hb-screen p {
+  margin: 0 0 1rem;
+  max-width: 38rem;
+}
+
+.hb-screen .lead {
+  font-size: 1.125rem;
+}
+
+.hb-screen ul.points {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+  max-width: 38rem;
+}
+
+.hb-screen ul.points li {
+  margin: 0 0 0.5rem;
+}
+
+.hb-screen a {
+  color: var(--r-accent);
+}
+
+.hb-screen a:focus-visible {
+  outline: 3px solid var(--r-focus);
+  outline-offset: 2px;
+}
+
+.hb-screen .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  min-height: 2.75rem;
+}
+
+.hb-screen .check input {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: 0.125rem 0 0;
+}
+
+.hb-screen .error {
+  color: var(--r-note);
+  margin: 0.5rem 0;
+}
+
+.hb-screen fieldset {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--r-border);
+  border-radius: 0.5rem;
+  min-width: 0;
+}
+
+.hb-screen legend {
+  padding: 0 0.25rem;
+  font-weight: 600;
+}
+
+.hb-screen .radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+}
+
+.hb-screen .radio input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
+.hb-screen dl.facts {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 0.25rem 1rem;
+  margin: 1rem 0;
+}
+
+.hb-screen dl.facts dt {
+  font-weight: 600;
+}
+
+.hb-screen dl.facts dd {
+  margin: 0;
+}
+
+.hb-screen textarea,
+.hb-screen input[type='file'] {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 38rem;
+  font: inherit;
+  color: var(--r-fg);
+  background: var(--r-bg);
+  border: 2px solid var(--r-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+}
+
+.hb-screen .muted {
+  color: var(--r-muted);
+}
+
+@media (max-width: 30rem) {
+  .hb-screen {
+    padding: 1.25rem 1rem;
+  }
+
+  .hb-screen dl.facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

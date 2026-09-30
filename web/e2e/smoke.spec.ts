@@ -1,5 +1,5 @@
 /**
- * Smoke e2e of the hello page (ROADMAP M0.1, M1.A; DESIGN §13): the production build loads under
+ * Smoke e2e of the start page (ROADMAP M0.1, M1.A, M1.15; DESIGN §13): the production build loads under
  * the Pages base path with every asset, shows the §13 disclaimer, passes the language lint as
  * rendered (A13, M1.20), and has no serious or critical axe violations in light or dark mode.
  * Also checks that the axe helper does fail on a page with known violations.
@@ -10,7 +10,7 @@ import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER, HEADING } from '../src/copy'
 import { expectNoSeriousAxe, seriousAxeViolations } from './axe'
 
-test.describe('hello page', () => {
+test.describe('start page', () => {
   test('loads under /humanbench/ with every asset and no errors', async ({ page }) => {
     const problems: string[] = []
     page.on('response', (r) => {

@@ -1,39 +1,53 @@
 <script lang="ts">
-  import { DISCLAIMER, HEADING, TAGLINE } from './copy'
+  import { onMount } from 'svelte'
+  import { DISCLAIMER } from './copy'
+  import Privacy from './session/Privacy.svelte'
+  import SessionApp from './session/SessionApp.svelte'
+  import { browserSessionEnv, type SessionEnv } from './session/env'
+
+  interface Props {
+    /** Browser services for the session flow; tests inject fakes. */
+    readonly env?: SessionEnv
+  }
+
+  let { env = browserSessionEnv() }: Props = $props()
+
+  /** `#/privacy` shows the privacy notice and terms; every other hash is the session flow. */
+  const isPrivacy = (hash: string): boolean => hash === '#/privacy'
+  let privacy = $state(isPrivacy(location.hash))
+
+  onMount(() => {
+    const on = (): void => {
+      privacy = isPrivacy(location.hash)
+    }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  })
 </script>
 
-<main>
-  <h1>{HEADING}</h1>
-  <p class="tagline">{TAGLINE}</p>
-</main>
+<!-- The session flow stays mounted (hidden) while the privacy notice is open, so a person who reads it
+     mid-way through the start screens comes back to where they were. -->
+<div class="flow" hidden={privacy}>
+  <SessionApp {env} />
+</div>
+{#if privacy}
+  <Privacy />
+{/if}
 
 <footer>
   <p class="disclaimer">{DISCLAIMER}</p>
 </footer>
 
 <style>
-  main {
+  .flow {
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 3rem 1rem;
-    text-align: center;
+    min-width: 0;
   }
 
-  h1 {
-    margin: 0;
-    font-size: clamp(2.25rem, 8vw, 3.5rem);
-    font-weight: 600;
-    letter-spacing: -0.02em;
-    color: var(--text-strong);
-  }
-
-  .tagline {
-    margin: 0;
-    font-size: 1.125rem;
+  .flow[hidden] {
+    display: none;
   }
 
   footer {

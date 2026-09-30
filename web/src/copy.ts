@@ -17,8 +17,5 @@ export const DISCLAIMER =
 export const RESOURCE_LINE =
   "If you're curious about autism or social-communication differences, a qualified clinician is the right route; online tests can't tell you."
 
-/** M0 placeholder heading: ROADMAP M0.1 "HumanBench — hello" page (DESIGN §14.3 M0: Pages serves "hello"). */
-export const HEADING = 'HumanBench — hello'
-
-/** M0 placeholder tagline (not DESIGN copy). */
-export const TAGLINE = 'A jagged-blob cognitive profile — coming soon'
+/** The product name: the heading of the start screen (ROADMAP M0.1 hello page, replaced by the M1.15 session flow). */
+export const HEADING = 'HumanBench'
