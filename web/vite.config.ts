@@ -108,7 +108,8 @@ export default defineConfig(({ mode }) => {
             name: 'unit',
             environment: 'node',
             include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
-            exclude: ['src/**/*.dom.test.ts', 'src/**/*.svelte.test.ts'],
+            // *.db.test.ts need a real Postgres: `npm run test:db` (vitest.db.config.ts, ROADMAP M2.0).
+            exclude: ['src/**/*.dom.test.ts', 'src/**/*.svelte.test.ts', 'scripts/**/*.db.test.ts'],
           },
         },
         {
