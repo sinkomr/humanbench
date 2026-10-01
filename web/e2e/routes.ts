@@ -14,6 +14,8 @@
 
 import { expect, type Page } from '@playwright/test'
 import { COPY as NOTES_COPY } from '../src/brief/copy'
+import { ENTRY_COPY as FERMI_COPY, MAGNITUDE_NOTES } from '../src/tasks/fermi/copy'
+import { demoFermiItem } from '../src/tasks/fermi/demo'
 import { REVIEW_URL, visualGalleryUrl } from './dev-server'
 import { agreeGate, answerItem, button, h1, loadSave, simulatedSave, toReady, toResults } from './flow'
 
@@ -162,6 +164,15 @@ async function resultsSaved(page: Page): Promise<void> {
 }
 
 // -------------------------------------------------------------------------- the routes
+
+/** The Fermi demo (M5.1) on its first made-up question, and a unit that question offers. */
+const FERMI_DEMO_UNIT = demoFermiItem(1).spec.units[0] as string
+
+async function openFermi(page: Page): Promise<void> {
+  await page.goto('./#/dev/fermi?seed=1')
+  await expect(page.getByRole('heading', { level: 1, name: 'Estimation entry demo (development only)' })).toBeVisible()
+  await expect(page.getByLabel(FERMI_COPY.value)).toBeVisible()
+}
 
 export const ROUTES: readonly Route[] = [
   // ---- the start of the session flow
@@ -756,6 +767,44 @@ export const ROUTES: readonly Route[] = [
     open: async (page) => {
       await page.goto('./#/dev/reveal-ai?screen=share')
       await expect(page.getByRole('heading', { level: 2 }).first()).toBeVisible()
+    },
+  },
+  {
+    id: 'dev-fermi',
+    group: 'dev',
+    state: '#/dev/fermi: the estimation entry (best guess, 80% range, unit) on a made-up question',
+    covers: ['#/dev/fermi', 'dev/FermiDemo.svelte', 'render/fermi/FermiRenderer.svelte'],
+    open: async (page) => {
+      await openFermi(page)
+    },
+  },
+  {
+    id: 'dev-fermi-notes',
+    group: 'dev',
+    state: '#/dev/fermi: a note under each number box (a unit typed in, a decimal comma, a minus sign)',
+    covers: ['#/dev/fermi', 'render/fermi/FermiRenderer.svelte'],
+    open: async (page) => {
+      await openFermi(page)
+      await page.getByLabel(FERMI_COPY.value).fill('3 million')
+      await page.getByLabel(FERMI_COPY.low).fill('2,5')
+      await page.getByLabel(FERMI_COPY.high).fill('-4')
+      await page.getByRole('button', { name: FERMI_COPY.submit }).click()
+      for (const note of [MAGNITUDE_NOTES.has_unit, MAGNITUDE_NOTES.decimal_comma, MAGNITUDE_NOTES.negative]) await expect(page.getByText(note, { exact: true })).toBeVisible()
+    },
+  },
+  {
+    id: 'dev-fermi-feedback',
+    group: 'dev',
+    state: '#/dev/fermi: the answer recorded, with the demo feedback under the entry',
+    covers: ['#/dev/fermi', 'dev/FermiDemo.svelte'],
+    open: async (page) => {
+      await openFermi(page)
+      await page.getByLabel(FERMI_COPY.value).fill('5')
+      await page.getByLabel(FERMI_COPY.low).fill('1')
+      await page.getByLabel(FERMI_COPY.high).fill('9')
+      await page.getByRole('combobox', { name: FERMI_COPY.unit }).selectOption(FERMI_DEMO_UNIT)
+      await page.getByRole('button', { name: FERMI_COPY.submit }).click()
+      await expect(page.getByTestId('fermi-feedback')).toBeVisible()
     },
   },
   {
