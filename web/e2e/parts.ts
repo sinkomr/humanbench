@@ -3,12 +3,11 @@
  * M1.21, and `session-save.spec.ts`, M1.22). A driver records, for each part of the session (by the title of its
  * interstitial), the kinds of screen it met; this says which kinds a part cannot do without.
  *
- * A part that serves a random item cannot be asked for a particular family: the session seed is the random session id
- * (`src/session/run.ts`), and the selector picks by information per second, so the Matrix & Series part serves series
- * items (typed entry) almost always and matrix items (multiple choice) rarely: none in 60 simulated sessions, 2 of 60 with
- * short items. A test that required one of the two failed on one run in six. The part is asked for what it always
- * has, an item of either kind and its confidence rating, and each renderer has its own route in the accessibility
- * sweep and its own tests.
+ * The Matrix & Series part serves both families: the selector balances the families of one axis (`balanceFamilies`
+ * in `src/engine/selector.ts`, M1.14), so after its first item it owes the family it has served less, whatever the
+ * random session id (the seed, `src/session/run.ts`) leads to. Before that, pure information per second served series
+ * (typed entry) almost always and matrices (multiple choice) in about 1 session of 30. The part is asked for one item of
+ * each kind, and its confidence rating.
  */
 
 import { SEGMENT_TITLES } from './routes'
@@ -19,7 +18,7 @@ type Kind = 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'codin
 /** Per part, groups of kinds: from each group at least one must have been on screen. */
 export const PART_SCREENS: Readonly<Record<(typeof SEGMENT_TITLES)[number], readonly (readonly Kind[])[]>> = {
   'Reaction time': [['rt']],
-  'Matrix & Series': [['choice', 'entry'], ['confidence']],
+  'Matrix & Series': [['choice'], ['entry'], ['confidence']],
   Spatial: [['choice'], ['confidence']],
   'Working Memory': [['span'], ['corsi']],
   'Quantitative Reasoning': [['entry'], ['confidence']],

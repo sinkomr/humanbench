@@ -37,3 +37,23 @@ export function judgedMs(wallMedianMs: number, cpuBefore: number | null, cpuAfte
   if (cpuBefore === null || cpuAfter === null || runs <= 0) return wallMedianMs
   return Math.min(wallMedianMs, (cpuAfter - cpuBefore) / runs)
 }
+
+/**
+ * How much slack a timing budget gets on this machine right now. CPU time is not immune to a busy machine
+ * (cache and SMT contention, frequency scaling, GC and JIT threads sharing the cores all inflate it), so when the
+ * 1-minute load average per core is above 1.5 the budget is tripled; a pathological slowdown (10x and more)
+ * still fails. Where `process.loadavg` or the core count is unknown, the factor is 1.
+ */
+export function loadFactor(): number {
+  const p = (globalThis as { process?: { loadavg?: () => number[] } }).process
+  const cores = (globalThis as { navigator?: { hardwareConcurrency?: number } }).navigator?.hardwareConcurrency ?? 4
+  const load = p?.loadavg?.()[0]
+  return load !== undefined && load / cores > 1.5 ? 3 : 1
+}
+
+/** `budgetMs` with the {@link loadFactor}, logging when it was widened so a pass under load is visible. */
+export function loadAdjusted(name: string, budgetMs: number): number {
+  const f = loadFactor()
+  if (f > 1) console.info(`${name}: machine busy, budget ${budgetMs} ms widened x${f}`)
+  return budgetMs * f
+}

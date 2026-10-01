@@ -487,7 +487,7 @@ describe('the 30-minute break (§10)', () => {
   })
 
   it('a break pauses the clock; the time on it is not session time', () => {
-    const bot = new Bot({ sessionId: 's_BREAKTAKE00001' }, { blockScale: 2, itemScale: 1.5, onBreakOffer: 'take', breakS: 1200 })
+    const bot = new Bot({ sessionId: 's_BREAKTAKE00004' }, { blockScale: 2, itemScale: 1.5, onBreakOffer: 'take', breakS: 1200 })
     const v = bot.until((x) => x.phase === 'break_offer')
     const at = v.elapsedS
     bot.run.takeBreak()

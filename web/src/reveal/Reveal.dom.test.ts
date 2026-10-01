@@ -28,6 +28,7 @@ import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
 /** Frame time of the fake display in the tests that run a whole build-up: 10 Hz (see 'finishes by itself' below). */
 const SLOW_FRAME_MS = 100
+const VERY_SLOW_FRAME_MS = 250
 /** Their budget when the machine is busy: 2 s alone, 18 s at a load average of 35, and the default is 30 s. */
 const BUSY_MACHINE_MS = 120_000
 
@@ -209,7 +210,9 @@ describe('the build-up, axis by axis', () => {
   it('finishes by itself after about 400 ms per measured skill, then offers a replay', () => {
     // A 10 Hz display: the build-up is timed by the frame timestamps, not by counting frames, and every frame redraws the
     // blob in jsdom. At 60 Hz this test drew 880 of them and took 9 s alone, which a busy machine stretched past the limit.
-    const display = fakeDisplay(SLOW_FRAME_MS)
+    // 4 Hz here (the build-up reads the frame timestamps, so the frame rate only sets how often jsdom redraws): about 30
+    // frames per build instead of 73, so the test does a third of the work, and no wall-clock timer is involved at all.
+    const display = fakeDisplay(VERY_SLOW_FRAME_MS)
     const m = mountFinished(bot('s_REVEALDOM0000010'), { motion: 'full', timing: display })
     const n = Number(m.c.querySelector('svg.hb-blob')!.getAttribute('data-spokes'))
     expect(n).toBe(17)

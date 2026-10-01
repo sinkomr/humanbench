@@ -269,7 +269,7 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
 
     // Every part of the session was played, in the order of the plan (A15), each showing its own kind of screen.
     expect(driver.segments, 'the parts of the session, by their interstitials').toEqual([...SEGMENT_TITLES])
-    // Each part showed the kinds of screen it cannot do without (`parts.ts`: the Matrix & Series part serves series or matrices, whichever the random session id leads to).
+    // Each part showed the kinds of screen it cannot do without (`parts.ts`: the Matrix & Series part serves both a matrix and a series item, because the selector balances the two families).
     expect(partsPlayedProblems(driver.played), 'screens a part of the session did not show').toEqual([])
 
     // The reveal: the profile builds up, and the file is required before leaving.
