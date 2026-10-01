@@ -14,7 +14,8 @@ export interface TableAccess {
   readonly kind: string
   /**
    * Privileges the role holds on the table: a table-level grant or, for select/insert/update/
-   * references, a grant on at least one column. Lower case, in a fixed order.
+   * references, a grant on at least one column. Lower case, in a fixed order. `maintain` is
+   * PostgreSQL 17's (VACUUM, ANALYZE, LOCK TABLE, REINDEX...), which `grant all` includes.
    */
   readonly privileges: readonly string[]
   readonly rowSecurity: boolean
@@ -39,7 +40,12 @@ export interface Surface {
   /** Relations on which the role holds at least one privilege. */
   readonly tables: readonly TableAccess[]
   readonly sequences: readonly SequenceAccess[]
-  /** Functions and procedures the role may EXECUTE (extension members excluded). */
+  /**
+   * Functions and procedures the role may EXECUTE. Members of extensions are included: PostgREST
+   * serves every function in an exposed schema, so an extension installed into `public` (a plain
+   * `create extension` lands there, `public` being on `postgres`'s search_path) is a callable RPC
+   * surface. Install extensions `with schema extensions`.
+   */
   readonly functions: readonly FunctionAccess[]
 }
 
@@ -60,7 +66,8 @@ export async function exposedSurface(db: TestDb, role: ApiRole, schemas: readonl
               case when has_table_privilege($1, c.oid, 'DELETE') then 'delete' end,
               case when has_table_privilege($1, c.oid, 'TRUNCATE') then 'truncate' end,
               case when has_any_column_privilege($1, c.oid, 'REFERENCES') then 'references' end,
-              case when has_table_privilege($1, c.oid, 'TRIGGER') then 'trigger' end
+              case when has_table_privilege($1, c.oid, 'TRIGGER') then 'trigger' end,
+              case when has_table_privilege($1, c.oid, 'MAINTAIN') then 'maintain' end
             ], null) as privileges,
             c.relrowsecurity as rls, c.relforcerowsecurity as force_rls
        from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -85,7 +92,6 @@ export async function exposedSurface(db: TestDb, role: ApiRole, schemas: readonl
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = any($2) and p.prokind in ('f', 'p')
         and has_function_privilege($1, p.oid, 'EXECUTE')
-        and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
       order by 1, 2, 3`,
     [role, schemas],
   )

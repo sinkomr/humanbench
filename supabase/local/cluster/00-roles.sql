@@ -22,7 +22,13 @@ grant anon, authenticated, service_role to authenticator;
 -- roles and databases and bypasses RLS, but it cannot create untrusted extensions, read files or
 -- run COPY PROGRAM, so a migration that needs more fails here as it would there.
 create role postgres login createrole createdb bypassrls;
-grant anon, authenticated, service_role to postgres;
+-- WITH ADMIN OPTION: since PostgreSQL 16 CREATEROLE alone no longer lets a role alter roles it did
+-- not create, and the roles above were created by the superuser. Supabase documents
+-- `alter role anon|authenticated|authenticator set statement_timeout = ...` as the way to change
+-- the API timeouts, run as `postgres`, so it must work here (a `finish` RPC may need it, M2.2).
+-- `authenticator` gets the admin right only, not membership: that is all ALTER ROLE needs.
+grant anon, authenticated, service_role to postgres with admin option;
+grant authenticator to postgres with admin option, inherit false, set false;
 
 -- Per-request limits PostgREST applies from `ALTER ROLE ... SET` (the harness's request() does the
 -- same). A PL/pgSQL RPC that takes longer than 3 s as anon is cancelled on Supabase too (M2.2).

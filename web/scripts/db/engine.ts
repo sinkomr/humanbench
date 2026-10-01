@@ -74,14 +74,9 @@ export interface StartOptions {
   readonly reap?: boolean
 }
 
-/** `postgres://user:password@host:port/database`; the password is URL-safe base64. */
+/** `postgres://user:password@host:port/database`; user, password and database are percent-encoded. */
 export function connectionUrl(info: ClusterInfo, user: string, database = 'postgres'): string {
   return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(info.password)}@${info.host}:${info.port}/${encodeURIComponent(database)}`
-}
-
-/** Hides the password of a connection URL, for logs. */
-export function redactUrl(url: string): string {
-  return url.replace(/^(postgres(?:ql)?:\/\/[^:/@]+:)[^@]*@/, '$1***@')
 }
 
 /** The npm package that holds the Postgres binaries for this machine (`@embedded-postgres/<name>`). */

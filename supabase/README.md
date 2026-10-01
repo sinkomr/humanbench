@@ -23,7 +23,7 @@ From `web/`:
 npm run test:db
 ```
 
-runs every `*.db.test.ts` (about 6 s: one cluster for the run, one cloned database per test file).
+runs every `*.db.test.ts` (about 10 s: one cluster for the run, one cloned database per test file).
 `npm test` never starts a database; its `scripts/db/*.test.ts` files check the wiring and the pure
 parts. CI runs both (the `db` job).
 
@@ -76,7 +76,9 @@ it('anon can call a whitelisted RPC, and only those', async () => {
 - `db.owner` is `postgres` (the migration role), `db.sudo` the superuser: for arranging data and
   inspecting, never for the behaviour under test.
 - `openTestDb({ migrationsDir })` builds a template from another directory (used by the fixtures).
-- `exposedSurface(db, role)` lists what a role can touch, from the catalog (`has_*_privilege`).
+- `exposedSurface(db, role)` lists what a role can touch in `public` (or the schemas you pass), from
+  the catalog (`has_*_privilege`): tables with their privileges (column grants and PostgreSQL 17's
+  `maintain` included), sequences, and every function it may EXECUTE, extension members too.
 
 ## ADR M2.0: the local Postgres engine
 
@@ -128,6 +130,10 @@ grid and the correlated MAP, M2.2); `pgcrypto` (HMAC-SHA256 for the signed saves
   directory holds a marker with its owner's pid; `reapStaleClusters()` (run by every start and by
   `npm run db:reap`) stops postmasters whose owner is dead and removes their directories, and only
   `hb-pg-*` directories with a marker. Tested with a real `kill -9` (`cli.db.test.ts`).
+- The binaries are about 130 MB per platform in `node_modules`, and `npm test` needs them too
+  (`engine.test.ts` resolves the package and checks the executables). `npm ci` takes only the
+  machine's own, from `optionalDependencies`; `package-lock.json` pins all four with integrity
+  hashes.
 - Verified on macOS (arm64). Linux x64 is covered by the CI `db` job, not by a local run.
 
 ## What the shim mirrors
@@ -136,8 +142,8 @@ Everything below is written from Supabase's documented defaults, not exported fr
 
 | Piece | Local behaviour |
 |---|---|
-| Roles | `anon`, `authenticated` (NOLOGIN, NOINHERIT), `service_role` (also BYPASSRLS), `authenticator` (LOGIN, NOINHERIT, member of the three), `postgres` (not a superuser: CREATEROLE, CREATEDB, BYPASSRLS; member of the three), `supabase_admin` (the superuser) |
-| Migrations | Run as `postgres`, one file per implicit transaction, in file-name order, as the Supabase CLI does. File names must be `<14 digits>_<snake_case>.sql`. |
+| Roles | `anon`, `authenticated` (NOLOGIN, NOINHERIT), `service_role` (also BYPASSRLS), `authenticator` (LOGIN, NOINHERIT, member of the three), `postgres` (not a superuser: CREATEROLE, CREATEDB, BYPASSRLS; member of the three with ADMIN OPTION, and ADMIN OPTION on `authenticator`, so `alter role anon set statement_timeout = ...` works as Supabase documents it), `supabase_admin` (the superuser) |
+| Migrations | Run as `postgres`, one file per implicit transaction, in file-name order, as the Supabase CLI does. File names must be `<14 digits>_<snake_case>.sql`. Test databases are clones of the migrated template and give `postgres` the same CREATE on the database, so a test can create a schema or a trusted extension. |
 | Per-request settings | `statement_timeout` anon 3 s, authenticated 8 s, authenticator 8 s; `search_path = "$user", public, extensions`. `request()` applies them per request, as PostgREST does. |
 | `extensions` schema | Owned by `postgres`; `pgcrypto` installed there, so migrations call `extensions.hmac(...)` |
 | Default grants in `public` | Everything `postgres` creates is granted to anon, authenticated and service_role until the migration revokes it, and functions keep PostgreSQL's EXECUTE for PUBLIC. A forgetful migration leaks here as it would there (`20-privileges.sql`, tested with a leaky fixture). |
@@ -154,7 +160,8 @@ Supabase's event triggers; the platform's CPU, memory and network (the p95 < 300
 against the live project); collation (`C` here); and the exact PostgreSQL minor version.
 
 **Verify against the live project at M2.6** and fix `supabase/local/` if they differ: the role
-attributes and memberships; the per-role timeouts and search_path; the default privileges in
+attributes and memberships (in particular `postgres`'s ADMIN OPTION on the API roles and on
+`authenticator`); the per-role timeouts and search_path; the default privileges in
 `public`; who owns `public` and `extensions`; which roles may use the `vault` schema; the minor version.
 
 ## Pitfalls the harness found (for M2.1 and M2.3)
@@ -163,7 +170,8 @@ Each is covered by a test in `web/scripts/db/*.db.test.ts`.
 
 1. A table, sequence or function created in `public` is granted to the API roles by default. Enable
    RLS, `revoke all … from anon, authenticated`, and for each function
-   `revoke execute … from public, anon, authenticated` before granting the whitelist.
+   `revoke execute … from public, anon, authenticated` before granting the whitelist. Revoking from
+   `public` alone is not enough: anon holds its own default grant, and the function stays callable.
 2. `pgcrypto` lives in `extensions`. Under `search_path = ''`, `hmac(...)` is "does not exist";
    write `extensions.hmac(...)`.
 3. Creating a role does not make the creator a member of it. To give a function to a restricted
@@ -173,16 +181,25 @@ Each is covered by a test in `web/scripts/db/*.db.test.ts`.
    each separately. See the "M2.3 pattern" test in `shim.db.test.ts`.
 4. A `GRANT` or `REVOKE` by a role without the right only warns and changes nothing (the harness
    fails the migration).
-5. `SET ROLE` is checked against the session user, and `authenticator` belongs to all three API
-   roles, so only `SECURITY DEFINER` code (never the caller) can move between them. A caller cannot
-   reach `postgres` or `supabase_admin`.
+5. `SET ROLE` is checked against the session user, `authenticator`, which belongs to all three API
+   roles. So SECURITY INVOKER code run as anon or authenticated **can** `set local role service_role`
+   (BYPASSRLS): a function that runs SQL built from its arguments is not confined to the request's
+   role, and M2.1 must not write one. SECURITY DEFINER code cannot use `SET ROLE` at all (42501). A
+   caller cannot reach `postgres` or `supabase_admin`.
 6. A PL/pgSQL RPC that runs longer than 3 s as `anon` is cancelled (`57014`), including the
-   `finish` correlated-MAP port in M2.2.
+   `finish` correlated-MAP port in M2.2. The role's limit can be raised with `alter role anon set
+   statement_timeout = '…'` in a migration (the shim lets `postgres` do that, as Supabase documents).
+7. `create extension` with no schema clause installs into `public`, because `public` precedes
+   `extensions` on `postgres`'s search_path. Every function of the extension is then an RPC anyone
+   with the anon key can call (pg_trgm's `set_limit` changes session state). Write
+   `create extension … with schema extensions`; `exposedSurface` lists extension members so a test
+   notices.
 
 ## Secrets
 
 None. Every password is random per run and dies with the cluster; the Vault shim's key is a public
 constant; the Vault values in tests are fake strings. `web/scripts/db/wiring.test.ts` fails on a JWT,
-an API-key shape, a non-local database URL or a hosted-Supabase host anywhere under this directory
-or `web/scripts/db/`. Answer keys and `item_keys` data are never committed to this repo
+an API-key shape, a non-local database URL or a hosted-Supabase host in any file under this directory
+or `web/scripts/db/`, test files included (only `wiring.test.ts` itself is skipped: it holds the
+patterns). Answer keys and `item_keys` data are never committed to this repo
 (CLAUDE.md); the fixtures hold no keys.

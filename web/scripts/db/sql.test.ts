@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { binaryPackage, connectionUrl, redactUrl } from './engine'
+import { binaryPackage, connectionUrl } from './engine'
 import {
   MIGRATION_NAME,
   MIGRATIONS_DIR,
@@ -198,17 +198,17 @@ describe('connection URLs', () => {
     expect(new URL(connectionUrl(info, 'supabase_admin')).password).toBe('p%2Bw%2Fd%3D')
   })
 
-  it('redacts the password for logs', () => {
-    expect(redactUrl(connectionUrl(info, 'postgres'))).toBe('postgres://postgres:***@127.0.0.1:54321/postgres')
-    expect(redactUrl('not a url')).toBe('not a url')
-  })
-
-  it('property: a redacted URL never contains the password', () => {
+  it('property: the URL parses back to the user, password and database it was built from', () => {
+    // No dots: a `..` database name would be path-normalised by the URL parser, which no real name needs.
+    const word = fc.stringMatching(/^[A-Za-z0-9_+/=:@ %#?&-]{1,24}$/)
     fc.assert(
-      fc.property(fc.stringMatching(/^[A-Za-z0-9_-]{8,40}$/), (password) => {
-        const url = connectionUrl({ ...info, password }, 'authenticator', 'db')
-        expect(redactUrl(url)).not.toContain(password)
-        expect(redactUrl(url)).toContain('authenticator:***@')
+      fc.property(word, word, word, (user, password, database) => {
+        const url = new URL(connectionUrl({ ...info, password }, user, database))
+        expect(url.protocol).toBe('postgres:')
+        expect(`${url.hostname}:${url.port}`).toBe('127.0.0.1:54321')
+        expect(decodeURIComponent(url.username)).toBe(user)
+        expect(decodeURIComponent(url.password)).toBe(password)
+        expect(decodeURIComponent(url.pathname.slice(1))).toBe(database)
       }),
     )
   })

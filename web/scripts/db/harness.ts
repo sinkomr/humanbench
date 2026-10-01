@@ -16,7 +16,7 @@
 
 import { randomBytes } from 'node:crypto'
 import pg from 'pg'
-import { SUPERUSER, type ClusterInfo } from './engine'
+import { SUPERUSER, connectionUrl, type ClusterInfo } from './engine'
 import {
   MIGRATIONS_DIR,
   SHIM_CLUSTER_DIR,
@@ -228,6 +228,10 @@ export async function createTestDb(info: ClusterInfo, options: { readonly migrat
     await admin.query('select pg_advisory_lock($1)', [LOCK_CLONE])
     try {
       await admin.query(`create database ${quoteIdent(name)} template ${quoteIdent(template)}`)
+      // CREATE DATABASE ... TEMPLATE copies the objects but not the database's own privileges, so
+      // repeat the grant of supabase/local/database/20-privileges.sql: `postgres` can create
+      // schemas and trusted extensions here as it could in the template its migrations ran in.
+      await admin.query(`grant all on database ${quoteIdent(name)} to postgres`)
     } finally {
       await admin.query('select pg_advisory_unlock($1)', [LOCK_CLONE]).catch(() => undefined)
     }
@@ -245,8 +249,7 @@ class Db implements TestDb {
   ) {}
 
   url(role: LoginRole): string {
-    const { host, port, password } = this.cluster
-    return `postgres://${role}:${encodeURIComponent(password)}@${host}:${port}/${this.name}`
+    return connectionUrl(this.cluster, role, this.name)
   }
 
   private pool(role: LoginRole, max: number): pg.Pool {

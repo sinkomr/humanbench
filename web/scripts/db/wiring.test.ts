@@ -21,12 +21,18 @@ const pkg = JSON.parse(read('web/package.json')) as {
   optionalDependencies: Record<string, string>
 }
 
-/** Every file under `dir` (repo-relative), except test files, which name what they forbid. */
+/** This file holds the forbidden patterns as regular expressions, so no scan can include it. */
+const SELF = 'web/scripts/db/wiring.test.ts'
+
+/**
+ * Every file under `dir` (repo-relative), test files included: the DB tests of M2.1-M2.4 live in
+ * web/scripts/db and are where a pasted key or a real database URL would most likely end up.
+ */
 function filesUnder(dir: string): string[] {
   const out: string[] = []
   for (const name of readdirSync(join(REPO, dir), { recursive: true, encoding: 'utf8' })) {
     const path = `${dir}/${name}`
-    if (statSync(join(REPO, path)).isFile() && !/\.test\.ts$/.test(path)) out.push(path)
+    if (statSync(join(REPO, path)).isFile() && path !== SELF) out.push(path)
   }
   return out.sort()
 }
@@ -109,6 +115,9 @@ describe('secrets and cloud (CLAUDE.md, A6)', () => {
   it('scans the shim, the migrations, the fixtures and the harness', () => {
     expect(scanned).toContain('supabase/local/database/40-vault.sql')
     expect(scanned).toContain('web/scripts/db/harness.ts')
+    // Test files too: the DB tests of the later M2 tasks are written there.
+    for (const t of ['shim.db.test.ts', 'harness.db.test.ts', 'cli.db.test.ts', 'sql.test.ts', 'engine.test.ts']) expect(scanned).toContain(`web/scripts/db/${t}`)
+    expect(scanned).not.toContain(SELF)
     expect(scanned.length).toBeGreaterThan(10)
   })
 

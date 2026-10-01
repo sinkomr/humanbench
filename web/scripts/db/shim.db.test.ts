@@ -8,11 +8,12 @@ import { createHmac, randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
 import { CLUSTER_DIR_PREFIX, PG_MAJOR } from './engine'
 import { ANON, AUTHENTICATED, SERVICE_ROLE, type TestDb } from './harness'
+import { quoteIdent } from './sql'
 import { exposedSurface, names } from './surface'
-import { PERMISSION_DENIED, UNDEFINED_FUNCTION, openTestDb, rejectedWith } from './vitest'
+import { PERMISSION_DENIED, QUERY_CANCELED, UNDEFINED_FUNCTION, openTestDb, rejectedWith } from './vitest'
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const rand = (): string => randomBytes(4).toString('hex')
@@ -103,14 +104,93 @@ describe('roles', () => {
   })
 
   it('keeps PostgREST\'s login role from becoming the migration role or the superuser', async () => {
-    for (const role of ['postgres', 'supabase_admin']) {
-      expect(await rejectedWith(db.request(AUTHENTICATED, (c) => c.query(`set local role ${role}`))), role).toBe(PERMISSION_DENIED)
+    for (const ctx of [ANON, AUTHENTICATED, SERVICE_ROLE]) {
+      for (const role of ['postgres', 'supabase_admin']) {
+        expect(await rejectedWith(db.request(ctx, (c) => c.query(`set local role ${role}`))), `${ctx.role} -> ${role}`).toBe(PERMISSION_DENIED)
+      }
     }
   })
 
-  it('does not let an API role create objects in `public`, or read the Vault schema', async () => {
+  it('lets SECURITY INVOKER code move to another API role with SET ROLE, but not SECURITY DEFINER code', async () => {
+    // SET ROLE is checked against the session user, `authenticator`, which is a member of all three
+    // API roles. So a function that runs SQL built from its arguments is NOT confined to the role
+    // of the request: as anon it can become service_role (BYPASSRLS). SECURITY DEFINER code is not
+    // allowed to SET ROLE at all. M2.1 must not build SQL from RPC arguments.
+    const body = `begin set local role service_role; return current_user::text; end`
+    await db.owner.query(`create function public.t_become_invoker() returns text language plpgsql set search_path = '' as $$ ${body} $$`)
+    await db.owner.query(`create function public.t_become_definer() returns text language plpgsql security definer set search_path = '' as $$ ${body} $$`)
+    for (const ctx of [ANON, AUTHENTICATED]) {
+      expect(await db.rpc(ctx, 't_become_invoker'), `${ctx.role} invoker`).toBe('service_role')
+      expect(await rejectedWith(db.rpc(ctx, 't_become_definer')), `${ctx.role} definer`).toBe(PERMISSION_DENIED)
+    }
+    const direct = await db.request(ANON, (c) => c.query<{ u: string }>(`set local role service_role`).then(() => c.query<{ u: string }>(`select current_user as u`)))
+    expect(direct.rows).toEqual([{ u: 'service_role' }])
+  })
+
+  it('lets `postgres` create schemas and trusted extensions in a test database, as in the template its migrations ran in', async () => {
+    // CREATE DATABASE ... TEMPLATE does not copy the database's privileges; the harness repeats the grant.
+    expect((await db.owner.query<{ ok: boolean }>(`select has_database_privilege('postgres', current_database(), 'CREATE') as ok`)).rows[0]?.ok).toBe(true)
+    await db.owner.query(`create schema t_scratch`)
+    await db.owner.query(`create extension pg_trgm with schema extensions`)
+    const { rows } = await db.owner.query<{ n: string }>(`select e.extnamespace::regnamespace::text as n from pg_extension e where e.extname = 'pg_trgm'`)
+    expect(rows).toEqual([{ n: 'extensions' }])
+  })
+
+  it('does not let an API role create objects in `public`', async () => {
     expect(await rejectedWith(db.query(ANON, `create table public.planted (id int)`))).toBe(PERMISSION_DENIED)
     expect(await rejectedWith(db.query(AUTHENTICATED, `create function public.planted() returns int language sql as 'select 1'`))).toBe(PERMISSION_DENIED)
+  })
+})
+
+describe('role settings', () => {
+  let db: TestDb
+  beforeAll(async () => {
+    db = await openTestDb()
+  })
+  afterAll(async () => {
+    await db.close()
+  })
+
+  const timeouts = async (): Promise<Record<string, string>> => {
+    const { rows } = await db.sudo.query<{ role: string; setting: string }>(
+      `select r.rolname as role, split_part(s, '=', 2) as setting
+         from pg_db_role_setting d join pg_roles r on r.oid = d.setrole cross join lateral unnest(d.setconfig) s
+        where d.setdatabase = 0 and s like 'statement\_timeout=%'`,
+    )
+    return Object.fromEntries(rows.map((r) => [r.role, r.setting]))
+  }
+
+  it('lets the migration role change the API roles\' timeouts, which Supabase documents as the way to raise them', async () => {
+    expect(await timeouts()).toMatchObject({ anon: '3s', authenticated: '8s', authenticator: '8s' })
+    // ALTER ROLE ... SET is cluster-wide and transactional: roll it back so no other test file sees it.
+    const client = await db.owner.connect()
+    try {
+      await client.query('begin')
+      for (const [role, value] of [['anon', '5s'], ['authenticated', '15s'], ['service_role', '30s'], ['authenticator', '20s']]) {
+        await client.query(`alter role ${role} set statement_timeout = '${value}'`)
+      }
+      const inside = await client.query<{ role: string; setting: string }>(
+        `select r.rolname as role, split_part(s, '=', 2) as setting
+           from pg_db_role_setting d join pg_roles r on r.oid = d.setrole cross join lateral unnest(d.setconfig) s
+          where d.setdatabase = 0 and s like 'statement\_timeout=%' order by 1`,
+      )
+      expect(Object.fromEntries(inside.rows.map((r) => [r.role, r.setting]))).toEqual({ anon: '5s', authenticated: '15s', authenticator: '20s', service_role: '30s' })
+    } finally {
+      await client.query('rollback').catch(() => undefined)
+      client.release()
+    }
+    expect(await timeouts()).toMatchObject({ anon: '3s', authenticated: '8s', authenticator: '8s' })
+  })
+
+  it('applies a changed timeout to the next request of that role (the lever for a slow RPC, M2.2)', async () => {
+    // `IN DATABASE` keeps the change to this test database: it is dropped with it.
+    const alter = (value: string): Promise<unknown> => db.owner.query(`alter role anon in database ${quoteIdent(db.name)} set statement_timeout = '${value}'`)
+    const sleep = (): Promise<unknown> => db.query(ANON, `select pg_sleep(0.6)`)
+    await sleep() // the shim's 3 s allows it
+    await alter('300ms')
+    expect(await rejectedWith(sleep())).toBe(QUERY_CANCELED)
+    await alter('5s')
+    await sleep()
   })
 })
 
@@ -134,6 +214,13 @@ describe('extensions and auth helpers', () => {
     expect(rows[0]?.mac).toBe(createHmac('sha256', key).update(msg).digest('hex'))
     const bytes = await db.owner.query<{ n: number }>(`select length(extensions.gen_random_bytes(16)) as n`)
     expect(bytes.rows[0]?.n).toBe(16)
+  })
+
+  it('lets every API role call pgcrypto unqualified: `extensions` is on their search_path and they may use it', async () => {
+    for (const ctx of [ANON, AUTHENTICATED, SERVICE_ROLE]) {
+      const { rows } = await db.query(ctx, `select length(gen_random_bytes(4)) as n`)
+      expect(rows, ctx.role).toEqual([{ n: 4 }])
+    }
   })
 
   it('fails a function that calls pgcrypto unqualified under search_path = \'\' (it would on Supabase)', async () => {
@@ -266,7 +353,7 @@ describe('default grants: a migration that forgets to lock down leaks, as on Sup
     await leaky.query(ANON, `insert into public.leaky values (2, 'planted by anon')`)
     const surface = await exposedSurface(leaky, 'anon')
     expect(names(surface.tables)).toEqual(['public.leaky'])
-    expect(surface.tables[0]?.privileges).toEqual(['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger'])
+    expect(surface.tables[0]?.privileges).toEqual(['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger', 'maintain'])
     expect(surface.tables[0]?.rowSecurity).toBe(false)
   })
 
@@ -299,5 +386,111 @@ describe('default grants: a migration that forgets to lock down leaks, as on Sup
     expect(await rejectedWith(locked.query(AUTHENTICATED, `select public.locked_count()`))).toBe(PERMISSION_DENIED)
     // service_role keeps its default grants (and bypasses RLS): the secret key stays server-side (R-11.1).
     expect(names((await exposedSurface(locked, 'service_role')).tables)).toEqual(['public.audit', 'public.locked'])
+  })
+})
+
+describe('exposedSurface: what an API role can reach, read from the catalog', () => {
+  let db: TestDb
+  beforeEach(async () => {
+    db = await openTestDb()
+  })
+  afterEach(async () => {
+    await db.close()
+  })
+
+  const tablesOf = async (role: 'anon' | 'authenticated' | 'service_role') => (await exposedSurface(db, role)).tables
+
+  it('is empty in a database with no migrations: the shim itself exposes nothing in `public`', async () => {
+    for (const role of ['anon', 'authenticated', 'service_role'] as const) {
+      expect(await exposedSurface(db, role), role).toEqual({ tables: [], sequences: [], functions: [] })
+    }
+  })
+
+  it('sees a privilege held on one column only', async () => {
+    await db.owner.query(`create table public.t_cols (a int, b int)`)
+    await db.owner.query(`revoke all on public.t_cols from anon`)
+    expect(await tablesOf('anon')).toEqual([])
+    await db.owner.query(`grant select (a), insert (b), update (b), references (a) on public.t_cols to anon`)
+    expect((await tablesOf('anon')).map((t) => [t.name, t.privileges])).toEqual([['t_cols', ['select', 'insert', 'update', 'references']]])
+    expect((await db.query(ANON, `select a from public.t_cols`)).rows).toEqual([])
+    expect(await rejectedWith(db.query(ANON, `select b from public.t_cols`))).toBe(PERMISSION_DENIED)
+  })
+
+  it('sees MAINTAIN, which `grant all` includes since PostgreSQL 17 and which works on a table the role cannot read', async () => {
+    await db.owner.query(`create table public.t_maint (id int)`)
+    await db.owner.query(`revoke select, insert, update, delete, truncate, references, trigger on public.t_maint from anon`)
+    expect(await rejectedWith(db.query(ANON, `select * from public.t_maint`))).toBe(PERMISSION_DENIED)
+    await db.query(ANON, `analyze public.t_maint`)
+    await db.query(ANON, `lock table public.t_maint in access exclusive mode`)
+    expect((await tablesOf('anon')).map((t) => [t.name, t.privileges])).toEqual([['t_maint', ['maintain']]])
+    await db.owner.query(`revoke maintain on public.t_maint from anon`)
+    expect(await tablesOf('anon')).toEqual([])
+    // (ANALYZE would only warn and skip the table; LOCK TABLE fails.)
+    expect(await rejectedWith(db.query(ANON, `lock table public.t_maint in access exclusive mode`))).toBe(PERMISSION_DENIED)
+  })
+
+  it('lists the sequences the default grants hand out, down to the single privilege', async () => {
+    await db.owner.query(`create sequence public.t_seq`)
+    const seqs = async () => (await exposedSurface(db, 'anon')).sequences
+    expect(await seqs()).toEqual([{ schema: 'public', name: 't_seq', privileges: ['usage', 'select', 'update'] }])
+    expect((await db.query(ANON, `select nextval('public.t_seq')::int as n`)).rows).toEqual([{ n: 1 }])
+    await db.owner.query(`revoke all on sequence public.t_seq from anon`)
+    await db.owner.query(`grant usage on sequence public.t_seq to anon`)
+    expect(await seqs()).toEqual([{ schema: 'public', name: 't_seq', privileges: ['usage'] }])
+    await db.owner.query(`revoke all on sequence public.t_seq from anon`)
+    expect(await seqs()).toEqual([])
+    expect(await rejectedWith(db.query(ANON, `select nextval('public.t_seq')`))).toBe(PERMISSION_DENIED)
+  })
+
+  it('leaves a function callable by anon after `revoke execute ... from public` alone: the default grant to anon is separate', async () => {
+    await db.owner.query(`create function public.t_half() returns int language sql as 'select 1'`)
+    await db.owner.query(`revoke execute on function public.t_half() from public`)
+    expect(await db.rpc(ANON, 't_half')).toBe(1)
+    expect(names((await exposedSurface(db, 'anon')).functions)).toEqual(['public.t_half'])
+    await db.owner.query(`revoke execute on function public.t_half() from anon, authenticated`)
+    expect(await rejectedWith(db.rpc(ANON, 't_half'))).toBe(PERMISSION_DENIED)
+    expect((await exposedSurface(db, 'anon')).functions).toEqual([])
+    expect(names((await exposedSurface(db, 'service_role')).functions)).toEqual(['public.t_half'])
+  })
+
+  it('grants what the superuser creates in `public` to the API roles too (the second default-privileges block)', async () => {
+    await db.sudo.query(`
+      create table public.t_su (id int);
+      create sequence public.t_su_seq;
+      create function public.t_su_fn() returns int language sql as 'select 1';
+      revoke execute on function public.t_su_fn() from public;`)
+    const s = await exposedSurface(db, 'authenticated')
+    expect(names(s.tables)).toEqual(['public.t_su'])
+    expect(names(s.sequences)).toEqual(['public.t_su_seq'])
+    expect(names(s.functions)).toEqual(['public.t_su_fn'])
+  })
+
+  it('lists extension members only for the schemas asked for: pgcrypto sits in `extensions`, which PostgREST does not serve', async () => {
+    expect((await exposedSurface(db, 'anon')).functions).toEqual([])
+    const asked = names((await exposedSurface(db, 'anon', ['extensions'])).functions)
+    expect(asked).toEqual(expect.arrayContaining(['extensions.hmac', 'extensions.digest', 'extensions.gen_random_bytes']))
+  })
+})
+
+describe('exposedSurface: an extension installed into `public`', () => {
+  let db: TestDb
+  beforeAll(async () => {
+    db = await openTestDb({ migrationsDir: `${FIXTURES}migrations-extension-public` })
+  })
+  afterAll(async () => {
+    await db.close()
+  })
+
+  it('puts a plain `create extension` into `public`, since `public` precedes `extensions` on postgres\'s search_path', async () => {
+    const { rows } = await db.owner.query<{ n: string }>(`select e.extnamespace::regnamespace::text as n from pg_extension e where e.extname = 'pg_trgm'`)
+    expect(rows).toEqual([{ n: 'public' }])
+  })
+
+  it('lists its functions, which anon can EXECUTE and PostgREST would serve as RPCs', async () => {
+    const anon = names((await exposedSurface(db, 'anon')).functions)
+    expect(anon).toEqual(expect.arrayContaining(['public.similarity', 'public.show_trgm', 'public.set_limit', 'public.show_limit']))
+    // set_limit changes a session-level setting: a caller-reachable side effect, not just a pure function.
+    expect(await db.rpc(ANON, 'show_limit')).toEqual(expect.any(Number))
+    expect(names((await exposedSurface(db, 'authenticated')).functions)).toEqual(anon)
   })
 })
