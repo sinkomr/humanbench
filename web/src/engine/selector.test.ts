@@ -901,3 +901,45 @@ describe('block scheduler (A15)', () => {
     expect(() => planSession({ sessionSeed: 'x', weights: { RT: -1 } })).toThrow(RangeError)
   })
 })
+
+describe('M1.14 family balance on MAT (A15 "Matrix & Series")', () => {
+  /** One simulated MAT segment: 12 items at a fixed posterior, the person answering by chance of their own θ. */
+  function matSegment(seed: string, theta: number): string[] {
+    const administered: AdministeredItem[] = []
+    const post = { mean: theta, sd: 1 }
+    for (let i = 0; i < 12; i++) {
+      const st = state({ sessionSeed: seed, posterior: posteriorWith({ MAT: post }), administered })
+      const sel = selectNext(st, selectionRng(seed, i), { axes: ['MAT'] })
+      if (sel.kind !== 'item') throw new Error(`no item at ${i}: ${sel.reason}`)
+      administered.push(sel.item)
+    }
+    return administered.map((a) => a.family)
+  }
+
+  it('serves matrices in realistic proportion alongside series, at every ability level', () => {
+    // Before the fix (pure info/second) matrices were ~10 % of MAT items: series are 25-40 % cheaper at the same a = 1.
+    // With content balancing the families alternate, so the expected share is ~50 %. Thresholds: pooled share in
+    // [0.40, 0.60] (alternation allows ±1 item per 12) and at least 4 of 12 in every single session, which is
+    // far outside what the unbalanced selector produced (0-2).
+    let matrices = 0
+    let total = 0
+    for (const theta of [-1.5, 0, 1.5]) {
+      for (let s = 0; s < 20; s++) {
+        const fams = matSegment(`bal-${theta}-${s}`, theta)
+        const m = fams.filter((f) => f === 'matrices').length
+        expect(m, `session ${s} at θ=${theta}: ${fams.join(',')}`).toBeGreaterThanOrEqual(4)
+        expect(fams.length - m).toBeGreaterThanOrEqual(4)
+        matrices += m
+        total += fams.length
+      }
+    }
+    expect(matrices / total).toBeGreaterThanOrEqual(0.4)
+    expect(matrices / total).toBeLessThanOrEqual(0.6)
+  })
+
+  it('a family with no candidates does not block the other', () => {
+    const only = Object.values(FAMILIES).filter((f) => f.axis === 'MAT' && f.name !== 'matrices')
+    const sel = selectNext(state({ sessionSeed: 'solo' }), selectionRng('solo', 0), { axes: ['MAT'], families: only })
+    expect(sel.kind).toBe('item')
+  })
+})

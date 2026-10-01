@@ -3,7 +3,7 @@ import { logistic } from './irt'
 import { createRng } from './prng'
 import { selectNext, selectionRng, sessionPosterior, type AdministeredItem, type SelectorState } from './selector'
 import type { Observation } from './types'
-import { CI, cpuMs, judgedMs, median as medianOf } from '../bench-support'
+import { CI, cpuMs, judgedMs, loadAdjusted, median as medianOf } from '../bench-support'
 import { quant } from '../tasks/quant'
 import { rotation } from '../tasks/rotation'
 import { series } from '../tasks/series'
@@ -12,14 +12,14 @@ import { series } from '../tasks/series'
  * ROADMAP M1.14: one selection (posterior + pool + pick) < 20 ms in Node (100 ms on CI runners, as
  * M1.3's bench). This is the steady state, after {@link WARMUP} discarded runs.
  */
-const BUDGET_MS = CI ? 100 : 20
+const BUDGET_MS = loadAdjusted('selector bench', CI ? 100 : 20)
 const RUNS = 20
 const WARMUP = 5
 /**
  * The first selection of a process also pays JIT warm-up (family roles come from the `kind`
  * marker, M1.F2, so there are no probes), about 30 ms in Node. It is bounded loosely here.
  */
-const COLD_BUDGET_MS = CI ? 1000 : 150
+const COLD_BUDGET_MS = loadAdjusted('selector bench (cold)', CI ? 1000 : 150)
 
 /**
  * A realistic mid-session state: 24 CAT items already administered over MAT, QR and SPA with

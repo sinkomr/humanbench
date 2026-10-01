@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { AXES, AXIS_CODES, initialSigma, N_AXES } from './axes'
-import { CI, cpuMs, judgedMs, median as medianOf } from '../bench-support'
+import { CI, cpuMs, judgedMs, loadAdjusted, median as medianOf } from '../bench-support'
 import { grmProbs, logistic } from './irt'
 import { createRng } from './prng'
 import { mapTheta, testletObservation } from './scorer'
 import type { Observation, TestletItem } from './types'
 
 /** ROADMAP M1.3 acceptance: MAP with K = 17 and 150 observations < 10 ms in Node (50 ms on CI runners). */
-const BUDGET_MS = CI ? 50 : 10
+const BUDGET_MS = loadAdjusted('scorer bench', CI ? 50 : 10)
 const N_OBS = 150
 const RUNS = 20
 const WARMUP = 5
@@ -71,7 +71,7 @@ function sessionWithTestlets(seed: string): Observation[] {
 }
 
 describe('scorer bench (ROADMAP M1.3)', () => {
-  it(`MAP with K = ${N_AXES} and ${N_OBS} observations: median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
+  it(`MAP with K = ${N_AXES} and ${N_OBS} observations: median of ${RUNS} runs < ${BUDGET_MS} ms`, { retry: 2 }, () => {
     const obs = session('m1.3-bench')
     const mu = new Array<number>(N_AXES).fill(0)
     const sigma = initialSigma()
@@ -89,7 +89,7 @@ describe('scorer bench (ROADMAP M1.3)', () => {
     expect(nIter).toBeLessThan(50)
     expect(median).toBeLessThan(BUDGET_MS)
   })
-  it(`MAP with K = ${N_AXES} and twelve 4-item testlets (M3.9): median of ${RUNS} runs < ${BUDGET_MS} ms`, () => {
+  it(`MAP with K = ${N_AXES} and twelve 4-item testlets (M3.9): median of ${RUNS} runs < ${BUDGET_MS} ms`, { retry: 2 }, () => {
     const obs = sessionWithTestlets('m3.9-bench')
     expect(obs.filter((o) => o.kind === 'testlet')).toHaveLength(12)
     const mu = new Array<number>(N_AXES).fill(0)

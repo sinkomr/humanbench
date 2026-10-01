@@ -249,6 +249,25 @@ export function criterion(item: Pick<AnyItem, 'params' | 'expected_time_s'>, pos
   return (weight * itemInformation(item.params, post.mean) * post.sd * post.sd) / t
 }
 
+/**
+ * Content balancing across the CAT families of one axis (MAT: matrices and series, A15 "Matrix &
+ * Series"). The §7.4 criterion alone ranks by information per second; the two MAT families have the
+ * same 2PL discrimination (a = 1) but series are 25-40 % cheaper (E[T] 23-44 s vs 30-60 s), so
+ * series filled the randomesque top-5 almost every time and matrices were all but never served,
+ * leaving the axis measured by one family (construct under-representation). Standard CAT content
+ * balancing: per axis, only the candidates of the family(ies) least served so far this session
+ * compete, so the families alternate while info/second still picks the item within a family. A
+ * family with no candidates (exhausted, over time) does not block the others.
+ */
+function balanceFamilies(ranked: readonly Candidate[], administered: readonly AdministeredItem[]): Candidate[] {
+  const served = new Map<string, number>()
+  for (const a of administered) served.set(`${a.axis}/${a.family}`, (served.get(`${a.axis}/${a.family}`) ?? 0) + 1)
+  const count = (c: Candidate): number => served.get(`${c.axis}/${c.item.family}`) ?? 0
+  const least = new Map<AxisCode, number>()
+  for (const c of ranked) least.set(c.axis, Math.min(least.get(c.axis) ?? Infinity, count(c)))
+  return ranked.filter((c) => count(c) <= least.get(c.axis)!)
+}
+
 function checkPosterior(name: string, p: AxisPosterior | undefined): asserts p is AxisPosterior {
   if (typeof p !== 'object' || p === null) throw new RangeError(`${name} is missing`)
   finite(`${name}.mean`, p.mean)
@@ -477,6 +496,7 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
     let ranked = [...best.values()]
     const under = eligible.filter((k) => (counts.get(k) ?? 0) < floor && ranked.some((c) => c.axis === k))
     if (under.length > 0) ranked = ranked.filter((c) => under.includes(c.axis))
+    ranked = balanceFamilies(ranked, state.administered)
     return { ranked: ranked.sort(byRank), under }
   }
 
