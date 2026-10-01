@@ -3,7 +3,8 @@
  * §14.6 ex. 8–9). The TS mirror of the bank's `hb.fermi.scoring` and `hb.fermi.truth`, held to
  * `golden/fermi_scoring_v1.json` (A17, `scoring.test.ts`, tolerance 1e-9). From M2 on the server is
  * authoritative (A1) and this is display and offline scoring; no finite Fermi item or truth value is
- * in this repo, so the only truths it sees are the synthetic demo item's (`demo.ts`).
+ * in this repo, so the only truths it sees are the synthetic demo item's (`demo.ts`) and the golden
+ * file's synthetic ones.
  *
  * A Fermi answer is a best guess, a unit and an 80% interval ({@link FermiResponse}). It is scored
  * against the item's truth (a value, a unit and its uncertainty in dex), after converting the answer to
@@ -15,18 +16,21 @@
  * - **truth uncertainty**: a truth known to ±u dex is full weight up to 0.15 dex, down-weighted above
  *   it by (0.15 / u)² up to 0.3 dex (the item's observation sigma is multiplied by u / 0.15), and a
  *   truth above 0.3 dex is rejected: it is no item (bank record rule, DESIGN §4.2). {@link fermiSe} is
- *   that scaling written as the block's own sampling error, so the Gaussian block pipeline
- *   (`gaussianObservationSigma`) scores it with no special case;
+ *   that scaling written as the block's own sampling error, which `gaussianObservationSigma` turns
+ *   into the same sigma. The item's params row does not carry u (the bank keeps it in the private
+ *   key), so whoever scores a real item must pass u in: on the server (M2) from `item_keys`;
+ *   {@link fermiObservation} takes it as an argument;
  * - **the interval** [low, high] is the answer's 80% interval. It *hits* when the truth is inside, ends
  *   included ({@link HIT_TOL_DEX} absorbs rounding at an end). Its **interval score** is the
  *   Gneiting–Raftery score of a central 80% interval in dex, width + 10·(how far the truth lies
  *   outside): a proper score, minimised by stating one's true 10% and 90% quantiles, which a hit rate
  *   alone is not (a very wide interval always hits);
  * - **across a session** {@link summarise} gives the weighted mean error, the hit rate with its
- *   calibration-in-the-large (hit rate − 0.8), the mean interval score and the Brier score of the 80%
- *   statements, (0.8 − hit)². The embedded calibration axis keeps taking its Brier score from the
- *   confidence ratings of tier-a answers (`calibration.ts`); whether interval hits also enter θ_CAL is
- *   decided with the M4.8 calibration.
+ *   calibration-in-the-large (0.8 − hit rate: the stated confidence less the accuracy, DESIGN §7.1,
+ *   the sign of `calibration.ts`; positive means intervals too narrow), the mean interval score and
+ *   the Brier score of the 80% statements, (0.8 − hit)². The embedded calibration axis keeps taking
+ *   its Brier score from the confidence ratings of tier-a answers (`calibration.ts`); whether interval
+ *   hits also enter θ_CAL is decided with the M4.8 calibration.
  */
 
 import type { Observation } from '../../engine/types'
@@ -234,7 +238,11 @@ export interface FermiSummary {
   readonly median_abs_error_dex: number
   /** Weighted share of 80% intervals that contained the truth. */
   readonly hit_rate: number
-  /** hit_rate − 0.8: negative means intervals too narrow (more sure than right). */
+  /**
+   * 0.8 − hit_rate, calibration-in-the-large of the 80% statements (DESIGN §7.1, mean confidence −
+   * accuracy; the sign of `CalibrationSummary.in_the_large`): positive means intervals too narrow
+   * (more sure than right).
+   */
   readonly in_the_large: number
   readonly mean_interval_score_dex: number
   /** Weighted mean of (0.8 − hit)²: the Brier score of the 80% statements (§14.6 ex. 9). */
@@ -258,7 +266,7 @@ export function summarise(scores: readonly FermiScore[]): FermiSummary | null {
     mean_abs_error_dex: mean(scores.map((s) => s.abs_error_dex)),
     median_abs_error_dex: median,
     hit_rate: rate,
-    in_the_large: rate - INTERVAL_COVERAGE,
+    in_the_large: INTERVAL_COVERAGE - rate,
     mean_interval_score_dex: mean(scores.map((s) => s.interval_score_dex)),
     interval_brier: mean(hits.map((h) => (INTERVAL_COVERAGE - h) ** 2)),
   }

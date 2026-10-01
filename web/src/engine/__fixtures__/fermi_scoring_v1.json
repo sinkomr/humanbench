@@ -154,30 +154,30 @@
     },
     {
       "id": "hand_point_interval",
-      "truth": {"true_value": "384400", "unit": "km", "true_value_uncertainty_log10": 0.0},
-      "response": {"value": 384400, "unit": "km", "low": 384400, "high": 384400},
+      "truth": {"true_value": "271650", "unit": "km", "true_value_uncertainty_log10": 0.0},
+      "response": {"value": 271650, "unit": "km", "low": 271650, "high": 271650},
       "delta": 0.0,
-      "score": {"error_dex": 8.881784197001252e-16, "abs_error_dex": 8.881784197001252e-16, "x": -8.881784197001252e-16, "factor": 1.000000000000002, "weight": 1.0, "low_error_dex": 8.881784197001252e-16, "high_error_dex": 8.881784197001252e-16, "width_dex": 0.0, "hit": true, "interval_score_dex": 8.881784197001252e-15},
+      "score": {"error_dex": 0.0, "abs_error_dex": 0.0, "x": 0.0, "factor": 1.0, "weight": 1.0, "low_error_dex": 0.0, "high_error_dex": 0.0, "width_dex": 0.0, "hit": true, "interval_score_dex": 0.0},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -8.881784197001252e-16}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": 0.0}
     },
     {
       "id": "hand_miss_above",
-      "truth": {"true_value": "8.16e9", "unit": "count", "true_value_uncertainty_log10": 0.01},
+      "truth": {"true_value": "1.83e10", "unit": "count", "true_value_uncertainty_log10": 0.01},
       "response": {"value": 5, "unit": "billion", "low": 3, "high": 6},
       "delta": 0.0,
-      "score": {"error_dex": -0.21272015441784298, "abs_error_dex": 0.21272015441784298, "x": -0.21272015441784298, "factor": 1.6320000000000023, "weight": 1.0, "low_error_dex": -0.4345689040341991, "high_error_dex": -0.13353890837021787, "width_dex": 0.30102999566398125, "hit": false, "interval_score_dex": 1.63641907936616},
+      "score": {"error_dex": -0.563481085394411, "abs_error_dex": 0.563481085394411, "x": -0.563481085394411, "factor": 3.660000000000003, "weight": 1.0, "low_error_dex": -0.7853298350107671, "high_error_dex": -0.4842998393467859, "width_dex": 0.30102999566398125, "hit": false, "interval_score_dex": 5.14402838913184},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.21272015441784298}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.563481085394411}
     },
     {
       "id": "hand_miss_below",
-      "truth": {"true_value": "8848.86", "unit": "m", "true_value_uncertainty_log10": 0.0},
+      "truth": {"true_value": "4163.5", "unit": "m", "true_value_uncertainty_log10": 0.0},
       "response": {"value": 20, "unit": "km", "low": 15, "high": 30},
       "delta": -0.5,
-      "score": {"error_dex": 0.35414267158758284, "abs_error_dex": 0.35414267158758284, "x": -0.35414267158758284, "factor": 2.2601781472415663, "weight": 1.0, "low_error_dex": 0.22920393497928293, "high_error_dex": 0.5302339306432642, "width_dex": 0.30102999566398125, "hit": false, "interval_score_dex": 2.5930693454568106},
+      "score": {"error_dex": 0.6815714266696649, "abs_error_dex": 0.6815714266696649, "x": -0.6815714266696649, "factor": 4.80365077458869, "weight": 1.0, "low_error_dex": 0.556632690061365, "high_error_dex": 0.8576626857253462, "width_dex": 0.30102999566398125, "hit": false, "interval_score_dex": 5.867356896277631},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.4, "sigma": 0.35, "x": -0.35414267158758284}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.4, "sigma": 0.35, "x": -0.6815714266696649}
     },
     {
       "id": "hand_down_weighted_0_2",
@@ -190,12 +190,12 @@
     },
     {
       "id": "hand_weight_edge_0_15",
-      "truth": {"true_value": "3.8e13", "unit": "count", "true_value_uncertainty_log10": 0.15},
+      "truth": {"true_value": "2.9e13", "unit": "count", "true_value_uncertainty_log10": 0.15},
       "response": {"value": 10, "unit": "trillion", "low": 5, "high": 100},
       "delta": 0.0,
-      "score": {"error_dex": -0.5797835966168101, "abs_error_dex": 0.5797835966168101, "x": -0.5797835966168101, "factor": 3.8, "weight": 1.0, "low_error_dex": -0.8808135922807914, "high_error_dex": 0.4202164033831899, "width_dex": 1.3010299956639813, "hit": true, "interval_score_dex": 1.3010299956639813},
+      "score": {"error_dex": -0.46239799789895564, "abs_error_dex": 0.46239799789895564, "x": -0.46239799789895564, "factor": 2.899999999999997, "weight": 1.0, "low_error_dex": -0.7634279935629369, "high_error_dex": 0.5376020021010444, "width_dex": 1.3010299956639813, "hit": true, "interval_score_dex": 1.3010299956639813},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.5797835966168101}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.46239799789895564}
     },
     {
       "id": "hand_weight_edge_0_3",
@@ -208,66 +208,66 @@
     },
     {
       "id": "hand_ocean_fraction",
-      "truth": {"true_value": "0.71", "unit": "frac", "true_value_uncertainty_log10": 0.01},
+      "truth": {"true_value": "0.58", "unit": "frac", "true_value_uncertainty_log10": 0.01},
       "response": {"value": 60, "unit": "pct", "low": 40, "high": 80},
       "delta": 0.0,
-      "score": {"error_dex": -0.07310709833543164, "abs_error_dex": 0.07310709833543164, "x": -0.07310709833543164, "factor": 1.1833333333333333, "weight": 1.0, "low_error_dex": -0.24919835739111298, "high_error_dex": 0.05183163827286827, "width_dex": 0.30102999566398125, "hit": true, "interval_score_dex": 0.30102999566398125},
+      "score": {"error_dex": 0.014723256820706382, "abs_error_dex": 0.014723256820706382, "x": -0.014723256820706382, "factor": 1.0344827586206897, "weight": 1.0, "low_error_dex": -0.16136800223497497, "high_error_dex": 0.1396619934290063, "width_dex": 0.30102999566398125, "hit": true, "interval_score_dex": 0.30102999566398125},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.07310709833543164}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.014723256820706382}
     },
     {
       "id": "hand_money",
-      "truth": {"true_value": "1.6e12", "unit": "usd", "true_value_uncertainty_log10": 0.05},
+      "truth": {"true_value": "1.37e12", "unit": "usd", "true_value_uncertainty_log10": 0.05},
       "response": {"value": 2, "unit": "tusd", "low": 1, "high": 5},
       "delta": 0.0,
-      "score": {"error_dex": 0.09691001300805624, "abs_error_dex": 0.09691001300805624, "x": -0.09691001300805624, "factor": 1.2499999999999996, "weight": 1.0, "low_error_dex": -0.20411998265592501, "high_error_dex": 0.49485002168009373, "width_dex": 0.6989700043360187, "hit": true, "interval_score_dex": 0.6989700043360187},
+      "score": {"error_dex": 0.16430942850757368, "abs_error_dex": 0.16430942850757368, "x": -0.16430942850757368, "factor": 1.4598540145985377, "weight": 1.0, "low_error_dex": -0.13672056715640757, "high_error_dex": 0.5622494371796112, "width_dex": 0.6989700043360187, "hit": true, "interval_score_dex": 0.6989700043360187},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.09691001300805624}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.16430942850757368}
     },
     {
       "id": "hand_speed",
-      "truth": {"true_value": "299792458", "unit": "m/s", "true_value_uncertainty_log10": 0.0},
+      "truth": {"true_value": "264000000", "unit": "m/s", "true_value_uncertainty_log10": 0.0},
       "response": {"value": 1100000000.0, "unit": "km/h", "low": 500000000.0, "high": 2000000000.0},
       "delta": 0.0,
-      "score": {"error_dex": 0.008269481463010209, "abs_error_dex": 0.008269481463010209, "x": -0.008269481463010209, "factor": 1.0192236242165758, "weight": 1.0, "low_error_dex": -0.3341531993591964, "high_error_dex": 0.2679067919687661, "width_dex": 0.6020599913279625, "hit": true, "interval_score_dex": 0.6020599913279625},
+      "score": {"error_dex": 0.06348625752110593, "abs_error_dex": 0.06348625752110593, "x": -0.06348625752110593, "factor": 1.1574074074074052, "weight": 1.0, "low_error_dex": -0.2789364233011007, "high_error_dex": 0.3231235680268618, "width_dex": 0.6020599913279625, "hit": true, "interval_score_dex": 0.6020599913279625},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.008269481463010209}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.06348625752110593}
     },
     {
       "id": "hand_area",
-      "truth": {"true_value": "1.65e8", "unit": "km2", "true_value_uncertainty_log10": 0.02},
+      "truth": {"true_value": "1.93e8", "unit": "km2", "true_value_uncertainty_log10": 0.02},
       "response": {"value": 50000000.0, "unit": "mi2", "low": 20000000.0, "high": 90000000.0},
       "delta": 0.0,
-      "score": {"error_dex": -0.10521616947513834, "abs_error_dex": 0.10521616947513834, "x": -0.10521616947513834, "factor": 1.2741371231900747, "weight": 1.0, "low_error_dex": -0.5031561781471758, "high_error_dex": 0.1500563356281681, "width_dex": 0.653212513775344, "hit": true, "interval_score_dex": 0.653212513775344},
+      "score": {"error_dex": -0.17328953426900462, "abs_error_dex": 0.17328953426900462, "x": -0.17328953426900462, "factor": 1.4903543319738408, "weight": 1.0, "low_error_dex": -0.5712295429410421, "high_error_dex": 0.08198297083430184, "width_dex": 0.653212513775344, "hit": true, "interval_score_dex": 0.653212513775344},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.10521616947513834}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.17328953426900462}
     },
     {
       "id": "hand_mass",
-      "truth": {"true_value": "5.97e24", "unit": "kg", "true_value_uncertainty_log10": 0.0},
+      "truth": {"true_value": "3.18e24", "unit": "kg", "true_value_uncertainty_log10": 0.0},
       "response": {"value": 1e+25, "unit": "lb", "low": 1e+24, "high": 1e+26},
       "delta": 0.0,
-      "score": {"error_dex": -0.11930859056807819, "abs_error_dex": 0.11930859056807819, "x": -0.11930859056807819, "factor": 1.316159705243717, "weight": 1.0, "low_error_dex": -1.1193085905680782, "high_error_dex": 0.8806914094319218, "width_dex": 2.0, "hit": true, "interval_score_dex": 2.0},
+      "score": {"error_dex": 0.15423862057685866, "abs_error_dex": 0.15423862057685866, "x": -0.15423862057685866, "factor": 1.4263911006289347, "weight": 1.0, "low_error_dex": -0.8457613794231413, "high_error_dex": 1.1542386205768587, "width_dex": 2.0, "hit": true, "interval_score_dex": 2.0},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.11930859056807819}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.15423862057685866}
     },
     {
       "id": "hand_volume",
-      "truth": {"true_value": "1.335e9", "unit": "km3", "true_value_uncertainty_log10": 0.02},
+      "truth": {"true_value": "7.9e8", "unit": "km3", "true_value_uncertainty_log10": 0.02},
       "response": {"value": 1e+18, "unit": "L", "low": 1e+17, "high": 1e+19},
       "delta": 0.0,
-      "score": {"error_dex": -3.1254812657005946, "abs_error_dex": 3.1254812657005946, "x": -3.1254812657005946, "factor": 1335.0000000000018, "weight": 1.0, "low_error_dex": -4.125481265700595, "high_error_dex": -2.1254812657005946, "width_dex": 2.0, "hit": false, "interval_score_dex": 23.254812657005946},
+      "score": {"error_dex": -2.897627091290442, "abs_error_dex": 2.897627091290442, "x": -2.897627091290442, "factor": 790.0000000000007, "weight": 1.0, "low_error_dex": -3.897627091290442, "high_error_dex": -1.8976270912904418, "width_dex": 2.0, "hit": false, "interval_score_dex": 20.97627091290442},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -3.1254812657005946}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -2.897627091290442}
     },
     {
       "id": "hand_energy",
-      "truth": {"true_value": "4.1e20", "unit": "J", "true_value_uncertainty_log10": 0.1},
+      "truth": {"true_value": "5.2e20", "unit": "J", "true_value_uncertainty_log10": 0.1},
       "response": {"value": 100000000000000.0, "unit": "kWh", "low": 10000000000000.0, "high": 1000000000000000.0},
       "delta": 0.0,
-      "score": {"error_dex": -0.05648135595244952, "abs_error_dex": 0.05648135595244952, "x": -0.05648135595244952, "factor": 1.1388888888888922, "weight": 1.0, "low_error_dex": -1.0564813559524495, "high_error_dex": 0.9435186440475505, "width_dex": 2.0, "hit": true, "interval_score_dex": 2.0},
+      "score": {"error_dex": -0.15970084286751174, "abs_error_dex": 0.15970084286751174, "x": -0.15970084286751174, "factor": 1.444444444444444, "weight": 1.0, "low_error_dex": -1.1597008428675117, "high_error_dex": 0.8402991571324883, "width_dex": 2.0, "hit": true, "interval_score_dex": 2.0},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.05648135595244952}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -0.15970084286751174}
     },
     {
       "id": "hand_power",
@@ -280,12 +280,12 @@
     },
     {
       "id": "hand_data",
-      "truth": {"true_value": "1.2e21", "unit": "B", "true_value_uncertainty_log10": 0.1},
+      "truth": {"true_value": "2.9e21", "unit": "B", "true_value_uncertainty_log10": 0.1},
       "response": {"value": 1, "unit": "PB", "low": 1, "high": 1000000.0},
       "delta": 0.0,
-      "score": {"error_dex": -6.079181246047625, "abs_error_dex": 6.079181246047625, "x": -6.079181246047625, "factor": 1200000.0000000007, "weight": 1.0, "low_error_dex": -6.079181246047625, "high_error_dex": -0.07918124604762511, "width_dex": 6.0, "hit": false, "interval_score_dex": 6.791812460476251},
+      "score": {"error_dex": -6.462397997898957, "abs_error_dex": 6.462397997898957, "x": -6.462397997898957, "factor": 2900000.000000009, "weight": 1.0, "low_error_dex": -6.462397997898957, "high_error_dex": -0.4623979978989574, "width_dex": 6.0, "hit": false, "interval_score_dex": 10.623979978989574},
       "se": 0.0,
-      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -6.079181246047625}
+      "observation": {"kind": "gaussian", "axis": "FER", "lam": 0.2, "d": -0.5, "sigma": 0.35, "x": -6.462397997898957}
     },
     {
       "id": "hand_tiny",
@@ -1176,27 +1176,27 @@
     {
       "id": "single",
       "cases": ["hand_year_seconds"],
-      "summary": {"n": 1, "total_weight": 1.0, "mean_abs_error_dex": 0.02198271236556515, "median_abs_error_dex": 0.02198271236556515, "hit_rate": 1.0, "in_the_large": 0.19999999999999996, "mean_interval_score_dex": 0.3979400086720375, "interval_brier": 0.03999999999999998}
+      "summary": {"n": 1, "total_weight": 1.0, "mean_abs_error_dex": 0.02198271236556515, "median_abs_error_dex": 0.02198271236556515, "hit_rate": 1.0, "in_the_large": -0.19999999999999996, "mean_interval_score_dex": 0.3979400086720375, "interval_brier": 0.03999999999999998}
     },
     {
       "id": "hits_and_misses",
       "cases": ["hand_year_seconds", "hand_miss_above", "hand_miss_below", "hand_exact_boundary_low", "hand_exact_boundary_high"],
-      "summary": {"n": 5, "total_weight": 5.0, "mean_abs_error_dex": 0.17797510680699444, "median_abs_error_dex": 0.17609125905568135, "hit_rate": 0.6, "in_the_large": -0.20000000000000007, "mean_interval_score_dex": 1.045897684964594, "interval_brier": 0.28}
+      "summary": {"n": 5, "total_weight": 5.0, "mean_abs_error_dex": 0.3136130440187245, "median_abs_error_dex": 0.17609125905568135, "hit_rate": 0.6, "in_the_large": 0.20000000000000007, "mean_interval_score_dex": 2.402277057081894, "interval_brier": 0.28}
     },
     {
       "id": "weighted",
       "cases": ["hand_down_weighted_0_2", "hand_weight_edge_0_15", "hand_weight_edge_0_3", "hand_year_seconds"],
-      "summary": {"n": 4, "total_weight": 2.8125, "mean_abs_error_dex": 0.4697403521509115, "median_abs_error_dex": 0.5909217939723863, "hit_rate": 0.9111111111111111, "in_the_large": 0.11111111111111105, "mean_interval_score_dex": 1.9138862449341678, "interval_brier": 0.09333333333333332}
+      "summary": {"n": 4, "total_weight": 2.8125, "mean_abs_error_dex": 0.4280032503845632, "median_abs_error_dex": 0.5322289946134591, "hit_rate": 0.9111111111111111, "in_the_large": -0.11111111111111105, "mean_interval_score_dex": 1.9138862449341678, "interval_brier": 0.09333333333333332}
     },
     {
       "id": "even_count",
       "cases": ["hand_speed", "hand_area", "hand_mass", "hand_volume"],
-      "summary": {"n": 4, "total_weight": 4.0, "mean_abs_error_dex": 0.8395688768017053, "median_abs_error_dex": 0.11226238002160827, "hit_rate": 0.75, "in_the_large": -0.050000000000000044, "mean_interval_score_dex": 6.627521290527313, "interval_brier": 0.19}
+      "summary": {"n": 4, "total_weight": 4.0, "mean_abs_error_dex": 0.8221603759143528, "median_abs_error_dex": 0.16376407742293164, "hit_rate": 0.75, "in_the_large": 0.050000000000000044, "mean_interval_score_dex": 6.057885854501931, "interval_brier": 0.19}
     },
     {
       "id": "random_first_twenty",
       "cases": ["random_000", "random_001", "random_002", "random_003", "random_004", "random_005", "random_006", "random_007", "random_008", "random_009", "random_010", "random_011", "random_012", "random_013", "random_014", "random_015", "random_016", "random_017", "random_018", "random_019"],
-      "summary": {"n": 20, "total_weight": 14.736623252537065, "mean_abs_error_dex": 0.625464446596043, "median_abs_error_dex": 0.550108676708043, "hit_rate": 0.5131772639093584, "in_the_large": -0.2868227360906417, "mean_interval_score_dex": 3.4923440171882927, "interval_brier": 0.33209364165438504}
+      "summary": {"n": 20, "total_weight": 14.736623252537065, "mean_abs_error_dex": 0.625464446596043, "median_abs_error_dex": 0.550108676708043, "hit_rate": 0.5131772639093584, "in_the_large": 0.2868227360906417, "mean_interval_score_dex": 3.4923440171882927, "interval_brier": 0.33209364165438504}
     }
   ],
   "brier": [

@@ -6,10 +6,11 @@
  * slip that would change an answer by orders of magnitude without a visible sign, and the entry says
  * so instead of guessing.
  *
- * Commas are thousands separators only (`31,557,600`): a decimal comma (`2,5`) is refused, because
- * reading it as 25 would be wrong by a factor of ten. A minus sign, zero and anything outside
- * [1e-30, 1e30] are refused (a size or a count is positive). {@link formatMagnitude} writes a number
- * back for the "reads as" preview, in the same two forms.
+ * Commas are thousands separators only (`31,557,600`): a decimal comma (`2,5`, `0,125`) is refused,
+ * because reading it as 25 (or 125) would be wrong by a factor of ten (or a thousand). A first group
+ * of thousands never starts with zero, so a comma after a leading `0` is always a decimal comma. A
+ * minus sign, zero and anything outside [1e-30, 1e30] are refused (a size or a count is positive).
+ * {@link formatMagnitude} writes a number back for the "reads as" preview, in the same two forms.
  */
 
 import { MAGNITUDE_MAX, MAGNITUDE_MIN } from './scoring'
@@ -27,8 +28,11 @@ const fail = (problem: MagnitudeProblem): MagnitudeResult => ({ ok: false, probl
 /** Space-like characters people group digits with: space, NBSP, narrow NBSP, thin space. */
 const GROUP_SPACE = /[    ]/g
 
-/** `31,557,600` / `3 200 000` shaped groups of exactly three digits after the first. */
-const GROUPED = /^\d{1,3}(?:[,    ]\d{3})+(?:\.\d+)?$/
+/**
+ * `31,557,600` / `3 200 000` shaped groups of exactly three digits after the first. The first group
+ * starts with 1 to 9: `0,125` is a decimal comma (0.125), never 125, and is refused with the rest.
+ */
+const GROUPED = /^[1-9]\d{0,2}(?:[,    ]\d{3})+(?:\.\d+)?$/
 const PLAIN = /^(?:\d+\.?\d*|\.\d+)$/
 const POWER = /^(?:(.*?)\s*(?:[×x*·⋅]|\*\*)\s*)?10\s*\^\s*([+-]?\d{1,4})$/i
 const SCI = /^(\d+\.?\d*|\.\d+)[eE]([+-]?\d{1,4})$/

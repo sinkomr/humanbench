@@ -15,7 +15,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/engine/`: scoring (MAP/Laplace, EAP, the §7.8 retest model for multi-session saves), timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/session/`: the session flow (consent and 18+ gate, honour code, device check, practice, the A15 blocks and items with their clock, break, hard stop and confidence slider, results and save)
-  - `web/src/tasks/`: task families; `tasks/fermi/` (M5.1) is the Fermi scoring library (units, log error, 80% interval, truth weight, Brier summary; a TS mirror of the bank's `hb.fermi`, held to `golden/fermi_scoring_v1.json`), the magnitude reader and the entry's check. It holds no Fermi item or truth value: the only truths are the synthetic demo question's (`demo.ts`)
+  - `web/src/tasks/`: task families; `tasks/fermi/` (M5.1) is the Fermi scoring library (units, log error, 80% interval, truth weight, Brier summary; a TS mirror of the bank's `hb.fermi`, held to `golden/fermi_scoring_v1.json`), the magnitude reader and the entry's check. It holds no Fermi item or truth value: the only truths are the synthetic demo question's (`demo.ts`) and the golden file's synthetic ones
   - `web/src/render/`: the item and block renderers (what the taker sees), by family; `render/fermi/` is the magnitude + unit entry with an 80% range (demo at `#/dev/fermi`, dev builds only; it is wired into the session when the server serves Fermi items, M2)
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)

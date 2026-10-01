@@ -59,6 +59,14 @@ describe('parseMagnitude reads the ways people write a number', () => {
     ['2,5', 'decimal_comma'],
     ['1,5000', 'decimal_comma'],
     ['12,34', 'decimal_comma'],
+    ['0,125', 'decimal_comma'],
+    ['0,500', 'decimal_comma'],
+    ['00,500', 'decimal_comma'],
+    ['0,001', 'decimal_comma'],
+    ['0,000', 'decimal_comma'],
+    ['0,125,000', 'decimal_comma'],
+    ['0,5', 'decimal_comma'],
+    ['0 125', 'unreadable'],
     ['5 km', 'has_unit'],
     ['3 million', 'has_unit'],
     ['1e3 km', 'has_unit'],
@@ -89,6 +97,38 @@ describe('parseMagnitude reads the ways people write a number', () => {
       fc.property(fc.integer({ min: 1, max: 999 }), fc.integer({ min: 1, max: 99 }), (a, b) => {
         expect(parseMagnitude(`${a},${b}`).ok).toBe(false)
       }),
+    )
+  })
+
+  it('reads a comma before exactly three digits as thousands only after a first group of 1 to 999', () => {
+    // 0,125 is 0.125 written with a decimal comma, which is refused; 5,125 is five thousand one hundred
+    // and twenty-five. Every three-digit tail after every first group is one or the other.
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 999 }), fc.integer({ min: 0, max: 999 }), (a, b) => {
+        const text = `${a},${String(b).padStart(3, '0')}`
+        const r = parseMagnitude(text)
+        if (a === 0) {
+          expect(r).toEqual({ ok: false, problem: 'decimal_comma' })
+        } else {
+          expect(r).toEqual({ ok: true, value: a * 1000 + b })
+        }
+      }),
+      { numRuns: 500 },
+    )
+  })
+
+  it('refuses a leading-zero group of any length, with a comma or a space, as a number of another size', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^0{1,3}$/),
+        fc.integer({ min: 0, max: 999 }),
+        fc.constantFrom(',', ' ', '\u00a0', '\u202f'),
+        (zeros, b, sep) => {
+          const r = parseMagnitude(`${zeros}${sep}${String(b).padStart(3, '0')}`)
+          if (sep === ',') expect(r).toEqual({ ok: false, problem: 'decimal_comma' })
+          else expect(r.ok).toBe(false)
+        },
+      ),
     )
   })
 

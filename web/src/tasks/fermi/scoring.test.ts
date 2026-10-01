@@ -287,10 +287,23 @@ describe('summarise', () => {
     const s = summarise([hit, hit, hit, miss]) as NonNullable<ReturnType<typeof summarise>>
     expect(s.n).toBe(4)
     expect(s.hit_rate).toBeCloseTo(0.75, 12)
-    expect(s.in_the_large).toBeCloseTo(-0.05, 12)
+    expect(s.in_the_large).toBeCloseTo(0.05, 12) // 0.8 − 0.75: a little more sure than right
     expect(s.interval_brier).toBeCloseTo((3 * 0.04 + 0.64) / 4, 12)
     expect(s.median_abs_error_dex).toBeCloseTo(hit.abs_error_dex, 12)
     expect(s.mean_abs_error_dex).toBeCloseTo((3 * hit.abs_error_dex + miss.abs_error_dex) / 4, 12)
+  })
+
+  it('has the sign and size of the calibration summary of the same 80% statements (DESIGN §7.1)', () => {
+    fc.assert(
+      fc.property(fc.array(fc.boolean(), { minLength: 1, maxLength: 40 }), (hits) => {
+        const s = summarise(hits.map((h) => (h ? hit : miss))) as NonNullable<ReturnType<typeof summarise>>
+        const c = calibrationSummary(hits.map((h) => ({ pct: 80, correct: h ? 1 : 0 }))) as NonNullable<ReturnType<typeof calibrationSummary>>
+        expect(s.in_the_large).toBeCloseTo(c.in_the_large, 12)
+        expect(s.hit_rate).toBeCloseTo(c.accuracy, 12)
+        // intervals too narrow (hit less often than 80%) read positive, as overconfidence does there
+        expect(s.in_the_large > 1e-9).toBe(s.hit_rate < 0.8 - 1e-9)
+      }),
+    )
   })
 
   it('weights by the truth uncertainty', () => {
