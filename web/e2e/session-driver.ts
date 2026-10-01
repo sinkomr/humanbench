@@ -17,6 +17,7 @@
  */
 
 import { expect, type Locator, type Page } from '@playwright/test'
+import { FINISHED_REASON } from '../src/session/copy'
 import { button, h1 } from './flow'
 
 /** What is on screen, as far as the driver needs to know. */
@@ -33,6 +34,22 @@ const SCREEN = `(() => {
   if (text === 'Time for a break?') return 'break'
   return 'other'
 })()`
+
+/**
+ * Real milliseconds the driver lets a reaction target stay on before it answers (see `playRt`). Keys are
+ * delivered about 5 to 15 ms after the wait ends and a tap about 15 to 30 ms after, so with the 20 times
+ * faster clock of `?fast=1` both land in the middle of the valid windows (7.5 to 75 ms simple, 10 to 100 ms
+ * four positions).
+ */
+const RT_HOLD_KEY_MS = 20
+const RT_HOLD_TOUCH_MS = 12
+
+/**
+ * The longest one action may wait for its element. The session moves on by itself (items and blocks end, and
+ * the whole session at its time limit), and Playwright looks the element up again while it waits, so an
+ * element that has gone is not coming back: without a limit the step would hang until the test times out.
+ */
+const ACTION_MS = 20_000
 
 export interface DriverOptions {
   /** A finger on a phone: taps, and the on-screen keypads. Otherwise a mouse and the keyboard. */
@@ -55,14 +72,14 @@ export class SessionDriver {
 
   /** Tap (a finger) or click (a mouse). */
   async press(target: Locator): Promise<void> {
-    if (this.opts.touch) await target.tap()
-    else await target.click()
+    if (this.opts.touch) await target.tap({ timeout: ACTION_MS })
+    else await target.click({ timeout: ACTION_MS })
   }
 
   /** Tick a checkbox or choose a radio button, and see that it took. */
   async tick(box: Locator): Promise<void> {
-    if (this.opts.touch) await box.tap()
-    else await box.check()
+    if (this.opts.touch) await box.tap({ timeout: ACTION_MS })
+    else await box.check({ timeout: ACTION_MS })
     await expect(box).toBeChecked()
   }
 
@@ -130,12 +147,24 @@ export class SessionDriver {
 
   // ------------------------------------------------------------------ the session
 
-  /** Play every part of the session until the results come up (or `limitMs` is used up). */
+  /**
+   * Play every part of the session until the results come up (or `limitMs` is used up). Under `?fast=1` the
+   * session's own limit (57 minutes of active time) is three minutes of real time, so a machine that is too slow
+   * for the driver ends the session early; that is said plainly instead of as a missing element.
+   */
   async playToResults(limitMs = 6 * 60_000): Promise<void> {
     const t0 = Date.now()
-    for (let steps = 0; await this.step(); steps++) {
+    let more = true
+    for (let steps = 0; more; steps++) {
       expect(steps, 'the session did not finish').toBeLessThan(3000)
       expect(Date.now() - t0, 'the session took too long').toBeLessThan(limitMs)
+      try {
+        more = await this.step()
+      } catch (error) {
+        const stopped = await this.page.getByText(FINISHED_REASON.hard_stop).count().catch(() => 0)
+        if (stopped > 0) throw new Error(`The session reached its time limit before every part was played (${Math.round((Date.now() - t0) / 1000)} s of real time; the limit is about 170 s under ?fast=1): the machine is too slow for this test.`, { cause: error })
+        throw error
+      }
     }
     await expect(h1(this.page)).toHaveText('Session complete')
   }
@@ -207,7 +236,7 @@ export class SessionDriver {
   private async answerEntry(): Promise<void> {
     const { page } = this
     const box = page.locator('form.entry input[type=text]')
-    await box.fill((await box.evaluate((el) => el.classList.contains('letter'))) ? 'A' : '1')
+    await box.fill((await box.evaluate((el) => el.classList.contains('letter'))) ? 'A' : '1', { timeout: ACTION_MS })
     await this.press(page.locator('form.entry').getByRole('button', { name: 'Submit', exact: true }))
     await expect(page.getByRole('slider')).toBeVisible()
     this.answered++
@@ -217,7 +246,7 @@ export class SessionDriver {
   private async rateConfidence(): Promise<void> {
     const { page } = this
     const slider = page.getByRole('slider')
-    await slider.fill(String(55 + ((this.answered * 9) % 40)))
+    await slider.fill(String(55 + ((this.answered * 9) % 40)), { timeout: ACTION_MS })
     await this.press(button(page, 'Continue'))
     await expect(slider).toHaveCount(0)
   }
@@ -252,11 +281,18 @@ export class SessionDriver {
   /**
    * Reaction time, simple or four positions: wait for each target (the box that lights up), then press
    * its key or tap it. A target that is gone by the time the press arrives is a miss, as for any taker.
+   *
+   * Under `?fast=1` the block's clock runs 20 times faster, so a person's 200 to 600 ms is 10 to 30 ms of
+   * real time, and the valid window of a simple trial (150 to 1500 ms) is 7.5 to 75 ms of it. A press in
+   * the frame the target appears is faster than any person (a trial that is "too fast" is not scored), so
+   * the driver waits `RT_HOLD_KEY_MS` / `RT_HOLD_TOUCH_MS` of real time after it sees the target; the
+   * press then lands well inside the window of either task, and the counted trials score.
    */
   private async playRt(): Promise<void> {
     const { page } = this
     const rt = page.locator('section.hb-render.rt')
     const id = await this.blockId('rt')
+    const hold = this.opts.touch ? RT_HOLD_TOUCH_MS : RT_HOLD_KEY_MS
     await this.press(rt.getByRole('button', { name: 'Start practice' }))
     for (const stage of ['practice', 'counted']) {
       // After the practice trials the block waits for a button; after the counted ones it says it is complete.
@@ -270,7 +306,10 @@ export class SessionDriver {
               if ([...root.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Start')) return 'ready'
               const pads = [...root.querySelectorAll('.pad')]
               const on = pads.findIndex((p) => p.classList.contains('on'))
-              return on < 0 ? '' : 'pad:' + on + ':' + pads.length
+              if (on < 0) { window.__hbSeenOn = 0; return '' }
+              const now = performance.now()
+              if (!window.__hbSeenOn) window.__hbSeenOn = now
+              return now - window.__hbSeenOn >= ${hold} ? 'pad:' + on + ':' + pads.length : ''
             })()`,
             undefined,
             { polling: 'raf', timeout: 8000 },
@@ -296,7 +335,7 @@ export class SessionDriver {
       return
     }
     const keypad = root.getByRole('group', { name: 'Digit keypad' })
-    for (const d of keys) await keypad.getByRole('button', { name: d, exact: true }).tap()
+    for (const d of keys) await keypad.getByRole('button', { name: d, exact: true }).tap({ timeout: ACTION_MS })
   }
 
   /** Digit span: enter the digits asked for (the block ends after two misses at a length), then Done. */

@@ -18,8 +18,9 @@
  *   added to it (R-8.1): the earlier session, the identifier and the notes settings come back unchanged,
  *   and the same session reached twice (the autosave and the file) is still one session.
  * - **Copy code and share**: the code the app hands to the clipboard decodes (in Node, a different
- *   gzip) to the file; where the clipboard refuses it the app shows it for copying by hand; the share
- *   sheet gets a file (and, on a platform that only shares text, a `.txt` copy) that loads again.
+ *   gzip) to the same save as the file; only the stamp of when each export was made (`created_utc`, to
+ *   the second) may differ. Where the clipboard refuses, the app shows the code for copying by hand;
+ *   the share sheet gets a file (and, on a platform that only shares text, a `.txt` copy) that loads again.
  * - **Notes**: the settings that travelled in the save are the ones the notes builder shows on the other
  *   device, whether it found them in the session's autosave or was given the file.
  *
@@ -33,12 +34,13 @@
 
 import { readFileSync } from 'node:fs'
 import { expect, test, type Browser, type Download, type Page } from '@playwright/test'
+import { PREFS_AUTOSAVE_ID } from '../src/brief-store/persist'
 import { COPY } from '../src/brief/copy'
 import { SAVE_SHARE, SAVE_SHARED } from '../src/reveal/copy'
 import { autosaveKey } from '../src/save/autosave'
 import { jcs } from '../src/save/jcs'
 import { parseSaveText } from '../src/save/parse'
-import type { SaveFileV1 } from '../src/save/types'
+import type { BriefPrefsV1, SaveFileV1 } from '../src/save/types'
 import { validateSave } from '../src/save/validate'
 import { FINISHED_COPIED, FINISHED_COPY_FAILED, READY_LOAD_BUTTON, READY_LOAD_CODE, READY_LOAD_FILE } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
@@ -47,7 +49,7 @@ import { SEGMENT_TITLES } from './routes'
 import { SessionDriver } from './session-driver'
 
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
-const PREFS_KEY = 'hb:save:v1:prefs'
+const PREFS_KEY = autosaveKey(PREFS_AUTOSAVE_ID)
 
 // -------------------------------------------------------------------------- what the page does with the browser
 
@@ -115,7 +117,7 @@ async function downloadSave(page: Page, driver: SessionDriver): Promise<Saved> {
   expect(name).toMatch(FILE_NAME)
   const checked = validateSave(JSON.parse(text))
   expect(checked.ok, checked.ok ? '' : checked.errors.join('; ')).toBe(true)
-  // The text is the canonical form (RFC 8785): the same bytes for the same save on any device.
+  // The text is the canonical form (RFC 8785): one way to write a save, on any device.
   expect(jcs(JSON.parse(text))).toBe(text)
   return { name, text, file: JSON.parse(text) as SaveFileV1 }
 }
@@ -131,6 +133,8 @@ async function keepNotesSettings(page: Page): Promise<SaveFileV1> {
   await page.getByRole('button', { name: /Programming/ }).first().click()
   await page.getByRole('button', { name: /Statistics/ }).first().click()
   await page.getByRole('group', { name: 'Programming' }).getByLabel('I know this well').check()
+  // A note on how well the Programming notes fit is kept as a topic, a verdict and a month (the fit log).
+  await page.getByRole('group', { name: 'Programming' }).getByTestId('fit-too_basic').click()
   // Words typed on the page are not settings: they must not reach the save.
   await page.getByLabel(/Hobbies or subjects/).fill('chess, cooking')
   await page.locator('#custom-0').fill('Use metric units')
@@ -144,6 +148,7 @@ async function keepNotesSettings(page: Page): Promise<SaveFileV1> {
   const kept = JSON.parse((await page.evaluate<string | null>(`localStorage.getItem(${JSON.stringify(PREFS_KEY)})`))!) as SaveFileV1
   expect(kept.sessions).toEqual([])
   expect(kept.brief_prefs?.contexts[0]).toMatchObject({ preset: 'coding', topics: { 'other/programming': 'skip', 'other/statistics': 'ask_first' } })
+  expect(kept.brief_prefs?.fit_log).toMatchObject([{ topic: 'other/programming', verdict: 'too_basic' }])
   expect(JSON.stringify(kept)).not.toMatch(/chess|cooking|metric/)
   // They are still there when the page is opened again (and the typed words are not).
   await page.reload()
@@ -151,11 +156,32 @@ async function keepNotesSettings(page: Page): Promise<SaveFileV1> {
   return kept
 }
 
-/** The settings the notes builder shows: the coding notes, with the two topics set as they were kept. */
-async function expectNotesSettings(page: Page): Promise<void> {
+/**
+ * The settings the notes builder shows: the coding notes, with the two topics set as they were kept (Programming
+ * "I know this well", Statistics "Not sure"; or, after an edit, as `programming` says), and none of the typed words.
+ */
+async function expectNotesSettings(page: Page, programming: RegExp | string = 'I know this well'): Promise<void> {
   await expect(page.getByRole('radio', { name: /Coding and data/ })).toBeChecked()
-  await expect(page.getByRole('group', { name: 'Programming' }).getByLabel('I know this well')).toBeChecked()
+  await expect(page.getByRole('group', { name: 'Programming' }).getByLabel(programming)).toBeChecked()
+  await expect(page.getByRole('group', { name: 'Statistics' }).getByLabel('Not sure')).toBeChecked()
   await expect(page.getByLabel(/Hobbies or subjects/)).toHaveValue('')
+}
+
+/** The settings of a save without the two fields a new write changes: each set's revision and the month of the latest change. */
+function settingsOf(prefs: BriefPrefsV1 | undefined): unknown {
+  if (prefs === undefined) return undefined
+  return { ...prefs, notes_as_of: undefined, contexts: prefs.contexts.map((c) => ({ ...c, rev: undefined })) }
+}
+
+/** Give the notes builder a save file (as the person would, renamed `.txt` as iOS does) and wait for it to say so. */
+async function loadIntoBuilder(page: Page, isMobile: boolean, file: Pick<Saved, 'name' | 'text'>): Promise<void> {
+  await page.goto('./notes.html')
+  await expect(page.getByRole('heading', { level: 1, name: 'Notes for your AI' })).toBeVisible()
+  await expect(page.locator('input[name=preset][value=general]')).toBeChecked()
+  await page.getByTestId('load-file').setInputFiles({ name: file.name.replace(/\.json$/, '.txt'), mimeType: 'text/plain', buffer: Buffer.from(file.text) })
+  if (isMobile) await page.getByRole('button', { name: COPY.loadButton }).tap()
+  else await page.getByRole('button', { name: COPY.loadButton }).click()
+  await expect(page.getByTestId('load-status')).toHaveText(COPY.loadDone)
 }
 
 /** The next session is added to the save it started from (R-8.1): nothing of the earlier one is lost or changed. */
@@ -277,9 +303,14 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
     for (const kind of ['rt_simple', 'rt_choice4', 'rotation', 'span_fwd', 'span_bwd', 'corsi', 'quant', 'coding', 'reading']) expect(instruments, kind).toContain(kind)
     expect([...instruments].some((k) => k === 'series' || k === 'matrices')).toBe(true)
     // The reaction tasks record how they were answered (norms are kept per input, §11.6): keys on desktop, touches on the phone.
+    // The driver answers at a person's pace, so the counted trials are valid and each block is scored (a block with
+    // fewer than `min_valid` valid trials yields no estimate). On the phone the keys do nothing, so valid trials
+    // prove the taps landed; the input type alone would not (it falls back to the primary pointer, 'touch').
     for (const id of ['rt_simple', 'rt_choice4']) {
       const rt = session.responses.find((r) => r[0].split(':')[1] === id)
-      expect((rt?.[6] as { input_type?: string } | undefined)?.input_type, id).toBe(touch ? 'touch' : 'keyboard')
+      const meta = rt?.[6] as { input_type?: string; n_valid?: number; min_valid?: number; n_trials?: number } | undefined
+      expect(meta?.input_type, id).toBe(touch ? 'touch' : 'keyboard')
+      expect(meta?.n_valid ?? 0, `${id}: valid trials of ${meta?.n_trials}`).toBeGreaterThanOrEqual(meta?.min_valid ?? Infinity)
     }
     expect(session.responses.length).toBeGreaterThan(60)
     expect(file.seen_items.length).toBeGreaterThan(60)
@@ -308,7 +339,10 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
     expect(code).toMatch(/^H4sI[A-Za-z0-9_-]+$/)
     const decoded = await parseSaveText(code)
     expect(decoded.ok && decoded.format === 'code').toBe(true)
-    expect(decoded.ok && decoded.save).toEqual(file)
+    // The same save. Each export is stamped with the moment it was made (`created_utc`, to the second), so
+    // the file from a minute ago and the code from now differ in that stamp, and in nothing else.
+    expect(decoded.ok && { ...decoded.save, created_utc: file.created_utc }).toEqual(file)
+    expect(decoded.ok && decoded.save.created_utc).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
 
     // The settings are still the builder's after the session: the autosave that held only them was dropped
     // because the session's autosave holds them too.
@@ -501,18 +535,74 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
     expect(await localKeys(page)).toEqual(stored)
   })
 
-  test('the notes builder reads the settings from the session’s save file when it is given the file', async ({ page, isMobile }) => {
-    await page.goto('./notes.html')
-    await expect(page.getByRole('heading', { level: 1, name: 'Notes for your AI' })).toBeVisible()
-    await expect(page.locator('input[name=preset][value=general]')).toBeChecked()
-    await page.getByTestId('load-file').setInputFiles({ name: saved.name.replace(/\.json$/, '.txt'), mimeType: 'text/plain', buffer: Buffer.from(saved.text) })
-    if (isMobile === true) await page.getByRole('button', { name: COPY.loadButton }).tap()
-    else await page.getByRole('button', { name: COPY.loadButton }).click()
-    await expect(page.getByTestId('load-status')).toHaveText(COPY.loadDone)
+  test('the notes builder reads the settings from the session’s save file when it is given the file, and keeps them as they were', async ({ page, isMobile }) => {
+    await loadIntoBuilder(page, isMobile === true, saved)
     await expectNotesSettings(page)
     // Loading is not keeping: nothing is written until the person asks.
     expect(await localKeys(page)).toEqual([])
     // The test answers in the file are left alone: the page shows no profile and says nothing of them.
     expect(await page.content()).not.toContain(saved.file.sessions[0]!.session_id)
+    // Asked to keep them, the page writes all that the file held: the sets, the notes copied and the fit log.
+    await page.getByLabel(COPY.keepAdult).check()
+    await page.getByRole('button', { name: COPY.keepButton }).click()
+    await expect(page.getByTestId('keep-status')).toHaveText(COPY.keepNow)
+    await expect.poll(async () => (await page.evaluate<string | null>(`localStorage.getItem(${JSON.stringify(PREFS_KEY)})`)) ?? '', { timeout: 10_000 }).not.toBe('')
+    const rewritten = JSON.parse((await page.evaluate<string>(`localStorage.getItem(${JSON.stringify(PREFS_KEY)})`))) as SaveFileV1
+    expect(rewritten.sessions).toEqual([])
+    expect(settingsOf(rewritten.brief_prefs)).toEqual(settingsOf(saved.file.brief_prefs))
+    expect(rewritten.brief_prefs?.fit_log).toHaveLength(1)
+    expect(rewritten.brief_prefs?.contexts[0]).toHaveProperty('copied')
+  })
+
+  test('a change made in the notes builder after a session is in the next session’s save, and in the file that save is downloaded as', async ({ page, browser, isMobile }) => {
+    test.setTimeout(4 * 60_000)
+    const touch = isMobile === true
+    const driver = new SessionDriver(page, { touch })
+    const rev = saved.file.brief_prefs!.contexts[0]!.rev
+    // A device that holds the first save (and so its settings) and has played a short session of its own.
+    await driver.toReady()
+    await chooseFile(page, driver, { name: saved.name, mimeType: 'application/json', buffer: Buffer.from(saved.text) })
+    await driver.begin()
+    await driver.answerOne()
+    await driver.finishEarly()
+    await driver.resultsReady()
+
+    // The person opens the notes builder, which shows the settings as kept (the session holds them), and moves
+    // Programming to "New to me". The kept copy changes with it, with no question asked again (18+ was answered).
+    await page.goto('./notes.html')
+    await expect(page.getByRole('heading', { level: 1, name: 'Notes for your AI' })).toBeVisible()
+    await expectNotesSettings(page)
+    await expect(page.getByTestId('keep-state')).toHaveText(COPY.keepDone)
+    await page.getByRole('group', { name: 'Programming' }).getByLabel(/New to me/).check()
+    await expect.poll(async () => (await page.evaluate<string | null>(`localStorage.getItem(${JSON.stringify(PREFS_KEY)})`)) ?? '', { timeout: 10_000 }).toContain('"build"')
+
+    // The next session starts from the edited settings, not the ones the earlier session held.
+    await driver.toReady()
+    await driver.begin()
+    await driver.answerOne()
+    await driver.finishEarly()
+    await driver.resultsReady()
+    const next = await downloadSave(page, driver)
+    expect(next.file.sessions).toHaveLength(3)
+    expect(next.file.anon_id).toBe(saved.file.anon_id)
+    const edited = next.file.brief_prefs!.contexts[0]!
+    expect(edited).toMatchObject({ preset: 'coding', topics: { 'other/programming': 'build', 'other/statistics': 'ask_first' } })
+    expect(edited.rev, 'the edit is a newer revision of the set').toBeGreaterThan(rev)
+    expect(next.file.brief_prefs!.fit_log, 'the fit log is carried along').toEqual(saved.file.brief_prefs!.fit_log)
+    expect(next.text).not.toMatch(/chess|cooking|metric/)
+
+    // The builder still shows the edit once the sessions are over.
+    await page.goto('./notes.html')
+    await expect(page.getByRole('heading', { level: 1, name: 'Notes for your AI' })).toBeVisible()
+    await expectNotesSettings(page, /New to me/)
+
+    // And the file carries it to a device that has nothing.
+    const other = await anotherDevice(browser)
+    try {
+      await loadIntoBuilder(other.page, touch, next)
+      await expectNotesSettings(other.page, /New to me/)
+    } finally {
+      await other.close()
+    }
   })
 })
