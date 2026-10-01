@@ -119,6 +119,8 @@ describe('roles', () => {
     const body = `begin set local role service_role; return current_user::text; end`
     await db.owner.query(`create function public.t_become_invoker() returns text language plpgsql set search_path = '' as $$ ${body} $$`)
     await db.owner.query(`create function public.t_become_definer() returns text language plpgsql security definer set search_path = '' as $$ ${body} $$`)
+    // (granted by name: the M2.1 migrations take PUBLIC's EXECUTE away from new functions, so a test no longer relies on it)
+    await db.owner.query(`grant execute on function public.t_become_invoker(), public.t_become_definer() to anon, authenticated`)
     for (const ctx of [ANON, AUTHENTICATED]) {
       expect(await db.rpc(ctx, 't_become_invoker'), `${ctx.role} invoker`).toBe('service_role')
       expect(await rejectedWith(db.rpc(ctx, 't_become_definer')), `${ctx.role} definer`).toBe(PERMISSION_DENIED)

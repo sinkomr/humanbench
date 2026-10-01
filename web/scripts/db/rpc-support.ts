@@ -29,6 +29,8 @@ export interface Started {
   session_id: string
   token: string
   anon_id: string
+  /** True when the save sent with start_session proved its anon_id and the session continues it. */
+  anon_id_adopted: boolean
   bank_version: string | null
   param_version: string | null
   limits: { max_items: number }

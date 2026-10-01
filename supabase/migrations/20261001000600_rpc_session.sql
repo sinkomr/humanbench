@@ -1,6 +1,6 @@
 -- M2.1 (ROADMAP M2.1; DESIGN §11.2, §13, R-11.1, R-12.1; ROADMAP A16, AI.26): the session RPCs.
 --
---   start_session(p_device, p_save)  -> {session_id, token, anon_id, ...}   the token is shown once
+--   start_session(p_device, p_save)  -> {session_id, token, anon_id, anon_id_adopted, ...}   the token is shown once
 --   next_item(p_token)               -> {seq, item} | {done, reason}         the pending item, or a new one
 --   submit(p_token, p_item_id, ...)  -> {ack, seq, next}                     scores in SQL, no verdict returned
 --   finish(p_token, p_flags)         -> {session, calibration_eligible, ...} the session as a save-v1 session
@@ -8,6 +8,12 @@
 -- All are SECURITY DEFINER, owned by hb_definer, with search_path = '' and EXECUTE for anon and
 -- authenticated only. Each rejects a payload that holds a brief_prefs key anywhere (AI.26). No
 -- response carries a key, a tolerance, a rationale, a parameter or a verdict on an answer.
+--
+-- The anon_id: a label, not a credential (it is in the person's file and may be seen by others). The
+-- server continues the anon_id of a save only when the save proves it, i.e. holds a session this server
+-- issued to that anon_id (hb.save_proves_anon). Otherwise it issues a fresh one and says so
+-- (anon_id_adopted: false), and the client re-keys its file. Never adopting an unproven id is what keeps
+-- a stranger who knows someone's anon_id from getting sessions, a mirror or a deletion under it.
 --
 -- Limits (DESIGN §11.2): 5 start_session calls a day per hashed(IP + daily salt); 200 items a
 -- session; an average of at least 2 s per answered item (checked from the server's own clock, after
@@ -23,6 +29,8 @@ set search_path = ''
 as $$
 declare
   v_anon text;
+  v_claimed text;
+  v_adopted boolean := false;
   v_seen_items jsonb := '[]'::jsonb;
   v_seen_families jsonb := '[]'::jsonb;
   v_session_id text;
@@ -36,7 +44,7 @@ begin
   end if;
 
   if p_save is not null then
-    v_anon := hb.check_save(p_save);
+    v_claimed := hb.check_save(p_save);
     v_seen_items := hb.check_id_list(p_save -> 'seen_items', 'seen_items');
     v_seen_families := hb.check_id_list(p_save -> 'seen_families', 'seen_families');
   end if;
@@ -45,7 +53,13 @@ begin
   perform hb.purge_expired();
   perform hb.rate_hit('start_session', hb.ip_key('start_session'), hb.cfg_int('rate.sessions_per_day', 5));
 
-  v_anon := coalesce(v_anon, 'hb_' || hb.rand_b62(16));
+  -- The seen lists only keep items away from this session, so they need no proof; the anon_id does.
+  if v_claimed is not null and hb.save_proves_anon(p_save, v_claimed) then
+    v_anon := v_claimed;
+    v_adopted := true;
+  else
+    v_anon := 'hb_' || hb.rand_b62(16);
+  end if;
   v_session_id := 's_' || hb.rand_b62(16);
   v_token := hb.new_token();
   insert into public.sessions (session_id, anon_id, token_hash, bank_version, param_version, device, state)
@@ -56,6 +70,7 @@ begin
     'session_id', v_session_id,
     'token', v_token,
     'anon_id', v_anon,
+    'anon_id_adopted', v_adopted,
     'bank_version', v_bank,
     'param_version', v_params,
     'limits', pg_catalog.jsonb_build_object('max_items', hb.cfg_int('session.max_items', 200)));

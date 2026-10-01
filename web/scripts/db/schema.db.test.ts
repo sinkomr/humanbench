@@ -59,6 +59,18 @@ const TABLES = [
   'survey',
 ]
 
+/** Functions of public and hb that PUBLIC may execute (a NULL proacl is PostgreSQL's default: PUBLIC may). */
+async function publicExecutableFunctions(): Promise<string[]> {
+  const { rows } = await db.owner.query<{ name: string }>(
+    `select n.nspname || '.' || p.proname as name
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('public', 'hb')
+        and coalesce(exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'), true)
+      order by 1`,
+  )
+  return rows.map((r) => r.name)
+}
+
 describe('tables', () => {
   it('has the DESIGN §12 tables and the mirror, rate, survey and exposure-log tables, nothing else', async () => {
     const { rows } = await db.owner.query<{ relname: string }>(
@@ -173,12 +185,7 @@ describe('functions', () => {
   })
 
   it('revokes EXECUTE from PUBLIC on every function (a new function is not callable by default)', async () => {
-    const { rows } = await db.owner.query<{ name: string; public_exec: boolean }>(
-      `select n.nspname || '.' || p.proname as name,
-              coalesce(exists (select 1 from aclexplode(p.proacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE'), true) as public_exec
-         from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'hb')`,
-    )
-    for (const f of rows) expect(f.public_exec, f.name).toBe(false)
+    expect(await publicExecutableFunctions()).toEqual([])
   })
 
   it('does not let an API role call a helper, or reach the hb schema', async () => {
@@ -190,21 +197,35 @@ describe('functions', () => {
     expect(await rejectedWith(db.query(SERVICE_ROLE, `select hb.cfg('rate.sessions_per_day')`))).toBe(PERMISSION_DENIED)
   })
 
-  it('leaves a function that a later migration forgets to lock down callable only by its owner', async () => {
-    // as `postgres` creates it, in public: the migration role's default privileges grant no API role.
+  it('leaves a function that a later migration creates as postgres, forgetting hb_definer, callable by no API role (fail closed)', async () => {
+    // as `postgres` creates it, in public: the migration role's default privileges grant no API role and not PUBLIC either.
     await db.owner.query(`create table public.t_later (x int)`)
     await db.owner.query(`create function public.t_later_fn() returns int language sql as $$ select 1 $$`)
     try {
       const anonTables = (await exposedSurface(db, 'anon')).tables.map((t) => t.name)
       expect(anonTables).not.toContain('t_later')
       expect(await rejectedWith(db.query(ANON, `select * from public.t_later`))).toBe(PERMISSION_DENIED)
-      // (PostgreSQL still grants EXECUTE on a new function to PUBLIC: that is why the convention is
-      // to create functions as hb_definer, whose default privileges revoke it. The catalog test above
-      // fails for any function that is not.)
+      for (const role of ['anon', 'authenticated', 'service_role'] as const) {
+        const { rows } = await db.owner.query<{ can: boolean }>(`select has_function_privilege($1, 'public.t_later_fn()', 'execute') as can`, [role])
+        expect(rows[0]!.can, role).toBe(false)
+      }
+      expect(await rejectedWith(db.query(ANON, `select public.t_later_fn()`))).toBe(PERMISSION_DENIED)
+      expect(await publicExecutableFunctions()).not.toContain('public.t_later_fn')
     } finally {
       await db.owner.query(`drop function public.t_later_fn()`)
       await db.owner.query(`drop table public.t_later`)
     }
+  })
+
+  it('has a catalog check that would see a function left executable by PUBLIC (the check itself is tested)', async () => {
+    await db.owner.query(`create function public.t_open_fn() returns int language sql as $$ select 1 $$`)
+    try {
+      await db.owner.query(`grant execute on function public.t_open_fn() to public`)
+      expect(await publicExecutableFunctions()).toEqual(['public.t_open_fn'])
+    } finally {
+      await db.owner.query(`drop function public.t_open_fn()`)
+    }
+    expect(await publicExecutableFunctions()).toEqual([])
   })
 })
 

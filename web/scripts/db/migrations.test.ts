@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../../src/engine/axes'
 import { RHO_MAX_PRIOR } from '../../src/engine/retest'
+import { BANNED_TERMS } from '../language-lint'
 import { MIGRATIONS_DIR, readMigrations, type SqlFile } from './sql'
 
 const migrations: SqlFile[] = readMigrations(MIGRATIONS_DIR)
@@ -164,6 +165,20 @@ describe('migrations: what mirrors the app', () => {
     expect(new Set(words).size).toBe(1024)
     expect(new Set(words.map((w) => w.slice(0, 4))).size).toBe(1024)
     expect([...words].sort()).toEqual(words)
+  })
+
+  it('has no recovery word, and no text a person could be shown, in the non-diagnostic vocabulary (A13, R-5.6.1)', () => {
+    const banned = BANNED_TERMS.map((t) => [t.id, new RegExp(`(?<!\\p{L})(?:${t.pattern})(?!\\p{L})`, 'iu')] as const)
+    const hits = (text: string): string[] => banned.filter(([, re]) => re.test(text)).map(([id]) => id)
+    const words = [...migrations.find((m) => m.name.endsWith('_recovery_words.sql'))!.sql.matchAll(/\(\d+, '([a-z]+)'\)/g)].map((x) => x[1]!)
+    expect(words.length).toBe(1024)
+    expect(words.flatMap((w) => hits(w).map((id) => `${w}: ${id}`))).toEqual([])
+    // every string literal outside comments: error details, setting descriptions, JSON keys
+    const literals = [...code(all).matchAll(/'((?:[^']|'')*)'/g)].map((x) => x[1]!.replace(/''/g, "'"))
+    expect(literals.length).toBeGreaterThan(200)
+    expect(literals.flatMap((l) => hits(l).map((id) => `${l.slice(0, 60)}: ${id}`))).toEqual([])
+    // and the check sees what it is for
+    expect(hits('clinic')).toContain('clinical')
   })
 
   it('keeps the limits of DESIGN §11.2 as settings', () => {

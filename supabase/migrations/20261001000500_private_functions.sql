@@ -8,7 +8,7 @@
 --   hb.is_eligible(text)         M2.2: server-side lz* and too-fast evidence (here: the §13 flag
 --                                count over what the client reported, plus the server's time check)
 --   hb.session_owned(jsonb,text) M2.3: the per-session HMAC (here: the server issued that
---                                session_id to that anon_id)
+--                                session_id to that anon_id; hb.save_proves_anon builds on it)
 --
 -- Errors are RAISEd with a PostgREST status as the SQLSTATE (PT400, PT401, ...): the message is a
 -- short code (`rate_limited`, `invalid_session`, ...), the detail says why in words. Failures that
@@ -141,8 +141,11 @@ as $$ select (pg_catalog.now() at time zone 'utc')::date $$;
 
 -- The client address as the API gateway reports it (headers PostgREST puts in request.headers).
 -- Which header and which entry is the client is a setting, to be verified on the hosted project
--- (supabase/README.md, M2.6). 'unknown' when the header is absent: one shared bucket, which fails
--- closed.
+-- (supabase/README.md, M2.6). The default is the LAST entry: a proxy appends the address it saw to
+-- x-forwarded-for, so the first entries are whatever the client wrote and a script could pick a new
+-- bucket on every call, while the last one cannot be forged. If the gateway sits behind a CDN that
+-- adds its own entry, M2.6 sets rate.ip_hop to the entry the CDN appended for the client. 'unknown'
+-- when the header is absent: one shared bucket, which fails closed.
 create function hb.client_ip()
 returns text
 language plpgsql stable
@@ -166,11 +169,12 @@ begin
   end if;
   v_parts := pg_catalog.regexp_split_to_array(pg_catalog.btrim(v_raw), '\s*,\s*');
   v_n := pg_catalog.array_length(v_parts, 1);
-  v_hop := hb.cfg_int('rate.ip_hop', 1);
+  v_hop := hb.cfg_int('rate.ip_hop', -1);
   if v_hop > 0 then
     return v_parts[least(v_hop, v_n)];
   end if;
-  return v_parts[greatest(v_n + v_hop + 1, 1)];
+  -- 0 and below count from the right: -1 (and 0) is the last entry, -2 the one before it, ...
+  return v_parts[greatest(v_n + least(v_hop, -1) + 1, 1)];
 end
 $$;
 
@@ -689,6 +693,13 @@ $$;
 -- The session as a save-v1 session object (schema/save-v1.json "session", DESIGN §8), built from the
 -- rows the server holds: responses as [item_id, pretest, response, correct, rt_ms, confidence].
 -- No sig yet: the per-session HMAC is M2.3.
+--
+-- `correct` is null unless app_config finish.include_correct is true (default false). With it on,
+-- one finished session tells a script which of its answers were right, 200 items at a time, and a
+-- few sessions with different answers pin down a key: that is the leak of R-11.1 and DESIGN §10
+-- ("no correctness feedback on finite-bank items"). DESIGN §8 also wants the correctness in the
+-- signed save, for offline re-scoring: the two conflict, the default follows R-11.1, and the person
+-- gets their scores from rescore() instead. The decision is the owner's; see supabase/README.md.
 create function hb.session_object(p_session_id text)
 returns jsonb
 language sql stable
@@ -702,7 +713,8 @@ as $$
     'flags', s.flags,
     'responses', coalesce((
       select pg_catalog.jsonb_agg(
-               pg_catalog.jsonb_build_array(r.item_id, case when r.pretest then 1 else 0 end, r.response, r.correct, r.rt_ms, r.confidence)
+               pg_catalog.jsonb_build_array(r.item_id, case when r.pretest then 1 else 0 end, r.response,
+                                case when hb.cfg('finish.include_correct') = 'true'::jsonb then r.correct end, r.rt_ms, r.confidence)
                order by r.seq)
         from public.responses r where r.session_id = s.session_id), '[]'::jsonb))
     from public.sessions s where s.session_id = p_session_id
@@ -801,18 +813,38 @@ set search_path = ''
 as $$ select 1::double precision $$;
 
 -- ------------------------------------------------------------------------------- ownership proof
--- Does this save session belong to this anon_id? M2.1: the server issued that session_id to that
--- anon_id (96 random bits, held only by the person's own save). M2.3 replaces this with the
--- per-session HMAC (ROADMAP A16): until then it is only as strong as keeping the save private.
+-- Does this save session belong to this anon_id? M2.1: the server issued that session_id to exactly
+-- that anon_id (95 random bits, which only the person's save holds); whoever holds the session can
+-- act for its anon_id, so a save is a credential and is to be kept private. The anon_id that counts
+-- is the one the CALLER names (p_anon_id), checked against the server's row: a `sig.anon_id` inside
+-- the save is the caller's own claim and may only repeat it, never replace it (a stranger's own
+-- session with sig.anon_id = someone else's id must prove nothing).
+-- M2.3 replaces this with the per-session HMAC over (session, anon_id) (ROADMAP A16), same signature.
 create function hb.session_owned(p_session jsonb, p_anon_id text)
 returns boolean
 language sql stable
 set search_path = ''
 as $$
-  select exists (
+  select p_anon_id is not null and exists (
     select 1 from public.sessions s
      where s.session_id = p_session ->> 'session_id'
-       and s.anon_id = coalesce(p_session #>> '{sig,anon_id}', p_anon_id))
+       and s.anon_id = p_anon_id
+       and coalesce(p_session #>> '{sig,anon_id}', p_anon_id) = p_anon_id)
+$$;
+
+-- Does this save hold a session the server issued to p_anon_id? The one proof of an anon_id there is
+-- before the HMAC: start_session adopts the anon_id of a save only on it, and delete_my_data deletes
+-- on it. Merged saves are fine: it asks only about the one id named, whatever else the file holds.
+create function hb.save_proves_anon(p_save jsonb, p_anon_id text)
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select p_anon_id is not null
+     and pg_catalog.jsonb_typeof(p_save -> 'sessions') = 'array'
+     and exists (
+       select 1 from pg_catalog.jsonb_array_elements(p_save -> 'sessions') e
+        where pg_catalog.jsonb_typeof(e) = 'object' and hb.session_owned(e, p_anon_id))
 $$;
 
 reset role;

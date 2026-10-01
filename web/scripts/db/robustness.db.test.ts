@@ -232,3 +232,31 @@ describe('requests at once', () => {
     expect((await db.owner.query(`select count(*)::int as n from public.mirror where anon_id = $1`, [st.anon_id])).rows[0].n).toBe(1)
   })
 })
+
+describe('U+0000 in a save', () => {
+  // I-JSON (and the app's save validator) allows a NUL escape in a string, a typed answer for example; PostgreSQL's jsonb does not.
+  // The refusal comes from the database before an RPC runs, so it is not a PT code. A client must not send such a save: the
+  // upload payload (toUploadPayload, M2.7) refuses it, or drops the character, before any call.
+  it('is refused by PostgreSQL itself (22P05) in every RPC that takes a save, and stores nothing', async () => {
+    const ip = freshIp()
+    const st = await startSession(db, ip)
+    const bad = emptySave(st.anon_id, { sessions: [{ session_id: st.session_id, responses: [['i:x', 0, 'a\u0000b', null, 1, null]] }] })
+    const calls: Array<[string, Record<string, unknown>]> = [
+      ['mirror_put', { p_token: st.token, p_save: bad }],
+      ['start_session', { p_device: DEVICE, p_save: bad }],
+      ['rescore', { p_save: bad }],
+      ['delete_my_data', { p_anon_id: st.anon_id, p_save: bad }],
+      ['submit', { p_token: st.token, p_item_id: 'i:x', p_response: 'a\u0000b', p_rt_ms: 5 }],
+    ]
+    for (const [fn, args] of calls) expect(await settle(db.rpc(from(ip), fn, args)), fn).toBe('22P05')
+    expect((await db.owner.query(`select count(*)::int as n from public.mirror where anon_id = $1`, [st.anon_id])).rows[0].n).toBe(0)
+    expect((await db.owner.query(`select count(*)::int as n from public.sessions where anon_id = $1`, [st.anon_id])).rows[0].n).toBe(1)
+  })
+
+  it('is no problem once the character is gone: the same save with the escape removed is stored', async () => {
+    const ip = freshIp()
+    const st = await startSession(db, ip)
+    const ok = emptySave(st.anon_id, { sessions: [{ session_id: st.session_id, responses: [['i:x', 0, 'ab', null, 1, null]] }] })
+    await expect(db.rpc(from(ip), 'mirror_put', { p_token: st.token, p_save: ok })).resolves.toMatchObject({ stored: true })
+  })
+})

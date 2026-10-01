@@ -204,7 +204,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 
 | Migration | Holds |
 |---|---|
-| `…100_foundation` | the role `hb_definer`, schema `hb`, default privileges revoked, the JSON helpers the CHECK constraints use |
+| `…100_foundation` | the role `hb_definer`, schema `hb`, default privileges revoked (for the API roles and for PUBLIC), the JSON helpers the CHECK constraints use |
 | `…200_bank_tables` | `app_config`, `item_families`, `items`, `item_keys`, `item_parameters`, `calibration_runs` (DESIGN §12) |
 | `…300_session_tables` | `sessions`, `responses`, `flags` (§12) and `exposure_log`, `item_exposure`, `rate_limits`, `rate_salts`, `survey`, `mirror`, `recovery_words` |
 | `…400_recovery_words` | the 1,024 words of the recovery phrase |
@@ -218,7 +218,10 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 
 - Every table has RLS enabled, **no policy** for `anon`, `authenticated` or PUBLIC and **no grant** to them. A
   plain `select` from any table is `42501` permission denied. The default privileges that Supabase gives
-  `postgres`-created objects are revoked in the first migration.
+  `postgres`-created objects are revoked in the first migration, and so is PostgreSQL's own EXECUTE for PUBLIC on a
+  new function: a function a later migration creates outside `set local role hb_definer` is callable by nobody
+  (tested), not by everybody. That default is global (no `IN SCHEMA`: a per-schema revoke cannot take PUBLIC's
+  EXECUTE away), so a migration that installs an extension grants the functions it needs.
 - Every function is owned by **`hb_definer`**: `nologin`, not a superuser, no `BYPASSRLS`, owns no table. It reads
   and writes through select/insert/update grants and policies written for it (the bank tables are select-only:
   the RPCs never write a key, a parameter or an item). `item_keys` is read by `public.submit` (through
@@ -263,16 +266,35 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 
 | RPC | Does | Returns |
 |---|---|---|
-| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the `anon_id` and the seen lists of a save, counts one of the 5 a day for the client | `{session_id, token, anon_id, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once |
+| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the seen lists of a save and, **only if the save proves it**, its `anon_id` (see Identity and proofs); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
 | `next_item(p_token)` | the pending item (a reload gets the same one), else a new one; excludes items, sibling groups and families already served or in the save; only `live`, non-practice items | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'no_items'}` |
 | `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next)` | scores in SQL against the key; stores the answer; repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
-| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3 |
+| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples carry **`correct: null`** unless `finish.include_correct` is on (see Decision for the owner) |
 | `report_problem(p_token, p_kind, p_item_id, p_detail)` | the five item categories (the item must be one this session was served), or `notes_requested` (no item, no text; never counts toward quarantine) | `{recorded}` |
 | `submit_survey(p_token, p_age_band, p_english_first)` | the voluntary two answers | `{recorded}` |
 | `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; see below | `{retest_version, param_version, sessions, eap, facets, skipped}` |
 | `mirror_put(p_token, p_save, p_phrase)` | stores the save for the session's `anon_id`; the first put returns a 12-word recovery phrase, once, and later puts must present it | `{stored, anon_id, size_bytes, recovery_phrase?}` or `{stored: false, error: 'wrong_phrase'}` |
 | `mirror_get(p_anon_id, p_phrase)` | restore on a new device | `{found, save?, updated_utc?}`; a wrong phrase and an unknown id look the same |
-| `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session issued to it | `{deleted, sessions?, mirror?}` |
+| `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session the server issued to that `anon_id`; a wrong proof counts against the address | `{deleted, sessions?, mirror?}` |
+
+**Identity and proofs.** An `anon_id` is a label, not a credential: it is in the person's file, and a file name or a
+screenshot may show it. Nothing is done for an `anon_id` on its name alone.
+
+- The server issues `anon_id`s. `start_session` continues the one in a save only when the save lists a session this
+  server issued to **that** `anon_id` (`hb.save_proves_anon`). Otherwise the session gets a new `anon_id`
+  (`anon_id_adopted: false`): an offline file, a made-up id, somebody else's id. The seen lists of such a save still
+  count; they only keep items away from the new session. An offline-MVP user therefore gets a new `anon_id` at the
+  first server session, and the client re-keys the file (M2.7); the offline sessions stay unverified (A16).
+- `mirror_put` accepts only a save whose `anon_id` is the one of the session's token, so nobody can create, or squat
+  on, the mirror of an `anon_id` they hold no session for.
+- `delete_my_data` is proved by the recovery phrase or by a save with a session issued to the `anon_id` named in the
+  call. The `anon_id` written inside the file does not matter (a merged file proves each id its sessions belong to),
+  and a `sig.anon_id` on a session may only repeat the id being proved: it never substitutes for it (tested with a
+  stranger's own session carrying the victim's id).
+- What the proof is worth today: the session ids are 95 random bits and only the person's save (and the server) holds
+  them, so **a save file is a credential**: whoever holds one can delete, rescore and continue it. M2.3's per-session
+  HMAC proves the server issued a session to an `anon_id`; it is not a stronger secret than holding the file. Keep
+  saves private.
 
 **`rescore`** (Phase AI amendment, ROADMAP A21/AI.8). For each session of the save that the server issued to its
 `anon_id` and finished, it reads the responses from the database and returns, per axis, the own-axis,
@@ -292,7 +314,14 @@ invalid_session` (malformed, unknown or expired token: one answer for all three)
 item_not_served`; `409 session_finished`; `413` too large; `429 rate_limited` / `too_fast`; `507 mirror_full`.
 A wrong recovery phrase is **returned** (`found: false`, `deleted: false`, `stored: false`), not raised, because
 a raise would roll back the failure count that limits guessing (60 a day per client address; there is no lockout per
-`anon_id`, which would let anyone who knows an id block its owner).
+`anon_id`, which would let anyone who knows an id block its owner). A wrong save proof in `delete_my_data` is counted
+the same way, in the same counter.
+
+**A save with U+0000 in a string cannot be sent.** I-JSON, and the app's save validator, allow a `\u0000` escape inside a
+string (a typed answer, say); PostgreSQL's `jsonb` does not. The database refuses such a parameter itself (`22P05`,
+not a `PT` code, PostgREST answers 400) before any RPC runs, for `mirror_put`, `start_session`, `rescore`,
+`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The client's upload payload
+(`toUploadPayload`, M2.7) has to refuse such a save, or drop the character, before the call.
 
 ### Settings (`public.app_config`)
 
@@ -300,8 +329,29 @@ The limits and priors are rows, not constants: `rate.*` (5 sessions a day, 30 mi
 `session.*` (200 items, 2000 ms average, 10 answers before it is checked, token lifetimes), `payload.*`,
 `save.*`, `mirror.*`, `rescore.*`, `retest.tau` and `retest.rho_max` (equal to `RHO_MAX_PRIOR` in
 `engine/retest.ts`, checked by a test), and `bank_version` / `param_version` once the bank pipeline writes them. The rate
-limits use `x-forwarded-for` (`rate.ip_header`, first entry: `rate.ip_hop` = 1); a request without it shares one bucket
-and fails closed.
+limits use `x-forwarded-for` (`rate.ip_header`) and its **last** entry (`rate.ip_hop` = -1): a proxy appends the address it saw,
+so the entries before it are whatever the caller wrote, and a script that varies the first entry would get a new bucket on
+every call (the limits of 5 sessions a day, 60 wrong proofs, the deletes and mirror puts, and the global `mirror.max_rows`
+would mean nothing). A request without the header shares one bucket and fails closed. M2.6 sets the hop to the entry the
+platform's outermost proxy appended for the client (`-2` if a CDN adds its own address after it).
+
+`finish.include_correct` is `false` (see below).
+
+### Decision for the owner: the verdict on each answer (R-11.1 against DESIGN §8)
+
+Two lines of the design collide. DESIGN §8 says the response tuple of a saved session holds `correct`, "filled from the
+server's scoring RPC ... so that offline re-scoring works". R-11.1 and DESIGN §10 say keys stay on the server and there
+is "no correctness feedback on finite-bank items (key leakage)". A `finish` reply that carries `correct` for every
+answer is that feedback in bulk: a script answers every item with option k, finishes, reads which answers were right,
+and a few sessions pin down the key of each item, 200 items a session. Only the address limit (5 sessions a day per
+client) slows it.
+
+Until the owner decides, **`finish.include_correct` is `false`**: the tuple has `correct: null` (the schema allows it),
+the rows keep their verdicts for the server, and a person gets their scores from `rescore`, which re-scores from the
+database's rows (A16: calibration uses DB rows, never uploads) and returns the per-axis and per-facet EAPs. Setting the
+row `finish.include_correct` to `true` gives the §8 file back, with the leak; nothing else changes. What stays either
+way: a score is an aggregate of the verdicts, so `rescore` on a very short session says something about its items; the
+bound on that is the number of sessions an address may start, and a minimum size for a session to count (M2.2).
 
 ### What the next tasks fill in
 
@@ -310,8 +360,8 @@ and fails closed.
   reply), and the server-side evidence in `hb.is_eligible` (today: the §13 flag count over what the client reported,
   plus the server's time check). `hb.score_response` returns nulls for items without a key row (blocks).
 - **M2.3** adds the per-session HMAC: `finish` signs the session, `rescore` and `delete_my_data` verify it
-  (`hb.session_owned` is today "the server issued that `session_id` to that `anon_id`", 95 random bits that only the
-  person's save holds), editing preferences never changes it.
+  (`hb.session_owned` is today "the server issued that `session_id` to that `anon_id` named in the call"; M2.3 replaces
+  it, same signature, and `hb.save_proves_anon` and `start_session` follow), editing preferences never changes it.
 - **M2.4** repeats the acceptance as its own tests (this task already tests that `anon` reaches no table and only the
   ten RPCs, a 25-item session reply holds no key, the brief_prefs rejection, the limits).
 - **M2.5** connects the bank (`hb load push` writes the four bank tables as `service_role`; the column names are
@@ -325,9 +375,10 @@ and fails closed.
 In addition to the list above: that `postgres` may `create role`, `grant hb_definer to postgres`, `create schema … authorization
 hb_definer` and set default privileges for `hb_definer`; that `extensions` lets `hb_definer` use pgcrypto; that
 **only `public` is an exposed schema** (Settings, API), so `hb` and the tables' helpers are unreachable; which request
-header carries the client address and which entry of it (`rate.ip_header`, `rate.ip_hop`; if the gateway appends to a
-client-supplied `x-forwarded-for`, the first entry can be forged by a script, and the header the CDN sets itself, or the
-last entry, is the right one); that PostgREST maps `PT4xx`
+header carries the client address and which entry of it (`rate.ip_header`, `rate.ip_hop`; the default, -1, is the last
+entry, which a script cannot forge; if a CDN sits in front and appends its own address, the right entry is -2, or the header
+the CDN sets itself; the first entry is right only if the gateway overwrites the header). A wrong choice shows at once as
+one shared bucket for many people, not as an open door; that PostgREST maps `PT4xx`
 SQLSTATEs to those HTTP statuses; that signing up is disabled (the RPCs also work for `authenticated`, so a signed-up
 user would have the same reach as `anon`, no more); the anon and authenticated statement timeouts (3 s / 8 s; the
 `rescore` of 40 sessions of 100 answers takes about 0.3 s here).

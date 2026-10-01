@@ -7,8 +7,10 @@
 --    by definer functions "owned by a restricted role"). The migration role (`postgres`) only
 --    creates functions through `set local role hb_definer`.
 -- 2. Schema `hb`: private helpers. Not exposed over the API; nobody but hb_definer can use it.
--- 3. Default privileges: nothing `postgres` creates in `public` reaches anon, authenticated or
---    service_role unless a migration grants it (the Supabase default grants everything).
+-- 3. Default privileges: nothing `postgres` creates reaches anon, authenticated, service_role or
+--    PUBLIC unless a migration grants it (the Supabase default grants everything in `public`, and
+--    PostgreSQL itself lets PUBLIC execute any new function). A function created by mistake outside
+--    `set local role hb_definer` is therefore callable by nobody, not by everybody.
 -- 4. Pure JSON helpers the table CHECK constraints use (a payload carries no key-bearing field;
 --    no stored client JSON carries a `brief_prefs` key, AI.26).
 --
@@ -46,6 +48,11 @@ alter default privileges for role postgres in schema public revoke all on tables
 alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated, service_role;
 alter default privileges for role postgres in schema public revoke all on functions from anon, authenticated, service_role;
 alter default privileges for role hb_definer revoke execute on functions from public;
+-- Without IN SCHEMA on purpose: a per-schema entry is added to the global default and cannot take
+-- PUBLIC's EXECUTE away. It applies to whatever `postgres` creates from here on, in any schema: a
+-- later migration that installs an extension grants the functions it needs to the roles that need
+-- them (fail closed; the roles of the platform's own tooling have their own defaults).
+alter default privileges for role postgres revoke execute on functions from public;
 
 set local role hb_definer;
 

@@ -38,10 +38,17 @@ interface Taken {
   ip: string
 }
 
+/** The sessions the server has issued to each anon_id: what the person's save would list as proof of the id. */
+const issued = new Map<string, string[]>()
+
 /** One finished session of `anonId`, with `n` answers drawn from a person at theta (per axis). */
 async function takeSession(anonId: string | undefined, n: number, theta: Partial<Record<AxisCode, number>>, rng: Rng, itemFlags?: (seq: number) => Record<string, unknown> | undefined): Promise<Taken> {
   const ip = freshIp()
-  const s: Started = await startSession(db, ip, anonId === undefined ? undefined : emptySave(anonId))
+  // a returning person sends their save, whose sessions prove the anon_id (an unproven id would be replaced by a new one)
+  const save = anonId === undefined ? undefined : emptySave(anonId, { sessions: (issued.get(anonId) ?? []).map((session_id) => ({ session_id })) })
+  const s: Started = await startSession(db, ip, save)
+  if (anonId !== undefined && s.anon_id !== anonId) throw new Error(`the save did not carry the anon_id ${anonId} over`)
+  issued.set(s.anon_id, [...(issued.get(s.anon_id) ?? []), s.session_id])
   await playSession(db, s, bank, {
     ip,
     n,

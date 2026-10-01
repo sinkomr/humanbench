@@ -83,13 +83,44 @@ describe('start_session', () => {
     expect(new Set([a.session_id, b.session_id, a.token, b.token, a.anon_id, b.anon_id]).size).toBe(6)
   })
 
-  it('continues the anon_id of a save and remembers the items it has seen', async () => {
+  it('remembers the items a save has seen, whoever sends it, but continues its anon_id only when the save proves it', async () => {
     const some = [...bank.keys()].slice(0, 3)
-    const s = await startSession(db, freshIp(), emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_items: some, seen_families: ['f:tst:000000000000'] }))
-    expect(s.anon_id).toBe('hb_7Q3m9Kx2Vw5rT8pL')
-    const row = await sessionRow(s.session_id)
-    expect(row.anon_id).toBe('hb_7Q3m9Kx2Vw5rT8pL')
+    // a save whose anon_id the server never issued (an offline file, a made-up id): the seen lists count, the id is replaced
+    const stranger = await startSession(db, freshIp(), emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_items: some, seen_families: ['f:tst:000000000000'] }))
+    expect(stranger.anon_id).toMatch(ANON_ID_RE)
+    expect(stranger.anon_id).not.toBe('hb_7Q3m9Kx2Vw5rT8pL')
+    expect(stranger.anon_id_adopted).toBe(false)
+    const row = await sessionRow(stranger.session_id)
+    expect(row.anon_id).toBe(stranger.anon_id)
     expect(row.state).toEqual({ v: 1, seen_items: some, seen_families: ['f:tst:000000000000'] })
+    // a save that lists a session this server issued to its anon_id: the same person, the id continues
+    const first = await startSession(db, freshIp())
+    expect(first.anon_id_adopted).toBe(false)
+    const again = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [{ session_id: first.session_id }], seen_items: some }))
+    expect(again.anon_id).toBe(first.anon_id)
+    expect(again.anon_id_adopted).toBe(true)
+    expect((await sessionRow(again.session_id)).anon_id).toBe(first.anon_id)
+  })
+
+  it('never gives a session to an anon_id on its name alone: not on an unproven save, a made-up session, a session of someone else, or a sig.anon_id', async () => {
+    const victim = await startSession(db, freshIp())
+    const other = await startSession(db, freshIp())
+    const claims: Array<[string, Record<string, unknown>]> = [
+      ['no session listed', emptySave(victim.anon_id)],
+      ['a session id that was never issued', emptySave(victim.anon_id, { sessions: [{ session_id: 's_neverissuedxxxxx' }] })],
+      ['a session issued to somebody else', emptySave(victim.anon_id, { sessions: [{ session_id: other.session_id }] })],
+      ['somebody else\'s session with its own honest sig, in a file that names the victim', emptySave(victim.anon_id, { sessions: [{ session_id: other.session_id, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: other.anon_id } }] })],
+      ['somebody else\'s session with a sig that names the victim', emptySave(victim.anon_id, { sessions: [{ session_id: other.session_id, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: victim.anon_id } }] })],
+      ['the victim\'s session with a sig that names somebody else', emptySave(victim.anon_id, { sessions: [{ session_id: victim.session_id, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: other.anon_id } }] })],
+      ['a session that is not an object', emptySave(victim.anon_id, { sessions: [victim.session_id, null, 7] })],
+    ]
+    for (const [what, save] of claims) {
+      const s = await startSession(db, freshIp(), save)
+      expect(s.anon_id, what).not.toBe(victim.anon_id)
+      expect(s.anon_id_adopted, what).toBe(false)
+    }
+    const rows = await db.owner.query<{ n: number }>(`select count(*)::int as n from public.sessions where anon_id = $1`, [victim.anon_id])
+    expect(rows.rows[0]!.n).toBe(1)
   })
 
   it.each([
@@ -163,16 +194,38 @@ describe('start_session', () => {
     for (const r of rows) expect(r.key_hash).toMatch(/^[0-9a-f]{64}$/)
   })
 
-  it('takes the first entry of x-forwarded-for as the client, and the last when the setting says so', async () => {
+  it('takes the last entry of x-forwarded-for as the client: the ones before it are the caller\'s own words', async () => {
+    const real = `192.0.2.${++ipCounter}`
+    // a script that writes a different first entry on every call is still one client: the gateway's entry is the last
+    for (let i = 0; i < 5; i++) await startSession(db, `10.9.${i}.1, ${real}`)
+    expect(await failure(startSession(db, `10.9.99.1, ${real}`))).toMatchObject({ code: 'PT429' })
+    // a different client behind the same chain of proxies is another bucket, and a single-entry header is that entry
+    await expect(startSession(db, `10.9.0.1, 192.0.2.${++ipCounter}`)).resolves.toBeDefined()
+    await expect(startSession(db, `192.0.2.${++ipCounter}`)).resolves.toBeDefined()
+  })
+
+  it('counts from the left or from further right when rate.ip_hop says so', async () => {
     const a = `192.0.2.${++ipCounter}`
-    for (let i = 0; i < 5; i++) await startSession(db, `${a}, 10.0.0.${i}`)
-    // same client, different proxies behind it: the 6th is refused
-    expect(await failure(startSession(db, `${a}, 10.9.9.9`))).toMatchObject({ code: 'PT429' })
-    await db.owner.query(`update public.app_config set value = '-1' where key = 'rate.ip_hop'`)
+    const set = (hop: string): Promise<unknown> => db.owner.query(`update public.app_config set value = $1::jsonb where key = 'rate.ip_hop'`, [hop])
     try {
-      await expect(startSession(db, `${a}, 10.9.9.9`)).resolves.toBeDefined()
+      // 1 = the first entry (a gateway that overwrites the header): five calls fill the bucket of `a`, wherever the proxies are
+      await set('1')
+      for (let i = 0; i < 5; i++) await startSession(db, `${a}, 10.0.0.${i}`)
+      expect(await failure(startSession(db, `${a}, 10.9.9.9`))).toMatchObject({ code: 'PT429' })
+      // -2 = the entry before the last (a CDN appends its own address after the client's)
+      await set('-2')
+      const b = `192.0.2.${++ipCounter}`
+      for (let i = 0; i < 5; i++) await startSession(db, `10.7.${i}.1, ${b}, 10.8.0.${i}`)
+      expect(await failure(startSession(db, `10.7.99.1, ${b}, 10.8.9.9`))).toMatchObject({ code: 'PT429' })
+      // 0 is read as the last entry, a position beyond the start as the first
+      await set('0')
+      const c = `192.0.2.${++ipCounter}`
+      for (let i = 0; i < 5; i++) await startSession(db, `10.7.${i}.1, ${c}`)
+      expect(await failure(startSession(db, `10.7.99.1, ${c}`))).toMatchObject({ code: 'PT429' })
+      await set('-9')
+      await expect(startSession(db, `192.0.2.${++ipCounter}`)).resolves.toBeDefined()
     } finally {
-      await db.owner.query(`update public.app_config set value = '1' where key = 'rate.ip_hop'`)
+      await set('-1')
     }
   })
 
@@ -334,7 +387,8 @@ describe('what a client can learn (R-11.1)', () => {
     const keyed = /"(key|keys|ans|answer|answers|solution|solutions|rationale|tolerance|option_weights|a|b|c|se_b|status|verification|provenance|server_tags)"\s*:/i
     for (const r of replies) expect(JSON.stringify(r)).not.toMatch(keyed)
     // and nothing in a served item or an acknowledgement says whether an answer was right
-    for (const r of replies.slice(1, -1)) expect(JSON.stringify(r)).not.toMatch(/correct|right|wrong|score|verdict/i)
+    // (the finish reply too: it carries the person's own answers, but no verdict on them unless the owner turned that on)
+    for (const r of replies.slice(1)) expect(JSON.stringify(r)).not.toMatch(/correct|right|wrong|score|verdict/i)
   })
 })
 
@@ -507,10 +561,10 @@ describe('finish', () => {
     expect(out.session.device).toEqual(DEVICE)
     const responses = out.session.responses as unknown[][]
     expect(responses.length).toBe(6)
-    for (const [i, t] of responses.entries()) {
+    for (const t of responses) {
       expect(t.length).toBe(6)
       expect(t[1]).toBe(0)
-      expect(t[3]).toBe((i + 1) % 2 === 0 ? 1 : 0)
+      expect(t[3], 'no verdict on an answer by default').toBeNull()
       expect(t[4]).toBe(5000)
       expect(t[5]).toBeNull()
     }
@@ -519,6 +573,42 @@ describe('finish', () => {
     const doc = asSave(out.session, out.anon_id)
     expect(validateSchema(doc), JSON.stringify(validateSchema.errors)).toBe(true)
     expect(validateSave(doc).ok).toBe(true)
+  })
+
+  it('does not let a script read a key off a finished session: right answers and wrong answers come back alike', async () => {
+    const run = async (pick: (it: FixtureItem) => number): Promise<unknown[][]> => {
+      const ip = freshIp()
+      const s = await startSession(db, ip)
+      let n = await rpc<Next>(ip, 'next_item', { p_token: s.token })
+      for (let i = 0; i < 8 && isServed(n); i++) {
+        await ageExposures(db, s.session_id, 20)
+        n = (await rpc<{ next: Next }>(ip, 'submit', { p_token: s.token, p_item_id: n.item.item_id, p_response: pick(bank.get(n.item.item_id)!), p_rt_ms: 4000 })).next
+      }
+      return (await rpc<{ session: { responses: unknown[][] } }>(ip, 'finish', { p_token: s.token })).session.responses
+    }
+    const right = await run((it) => it.key.index as number)
+    const wrong = await run((it) => ((it.key.index as number) + 1) % it.nOptions)
+    expect(right.length).toBe(8)
+    expect(wrong.length).toBe(8)
+    for (const t of [...right, ...wrong]) expect(t[3]).toBeNull()
+    // the server keeps its verdicts for itself (rescore, calibration)
+    expect((await db.owner.query<{ n: number }>(`select count(*)::int as n from public.responses where correct = 1`)).rows[0]!.n).toBeGreaterThan(0)
+  })
+
+  it('puts the verdict of each answer into the session only when finish.include_correct is on (DESIGN §8 against R-11.1: the owner decides)', async () => {
+    const ip = freshIp()
+    const s = await startSession(db, ip)
+    await playSession(db, s, bank, { ip, n: 6, decide: (_it, seq) => seq % 2 === 0 })
+    await db.owner.query(`update public.app_config set value = 'true' where key = 'finish.include_correct'`)
+    try {
+      const out = await rpc<{ session: { responses: unknown[][] } }>(ip, 'finish', { p_token: s.token })
+      for (const [i, t] of out.session.responses.entries()) expect(t[3]).toBe((i + 1) % 2 === 0 ? 1 : 0)
+      expect(validateSchema(asSave(out.session, s.anon_id)), JSON.stringify(validateSchema.errors)).toBe(true)
+    } finally {
+      await db.owner.query(`update public.app_config set value = 'false' where key = 'finish.include_correct'`)
+    }
+    const again = await rpc<{ session: { responses: unknown[][] } }>(ip, 'finish', { p_token: s.token })
+    for (const t of again.session.responses) expect(t[3]).toBeNull()
   })
 
   it('is idempotent: a second finish returns the same session and changes nothing', async () => {

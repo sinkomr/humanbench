@@ -6,8 +6,11 @@
 -- auto-completed and one wrong tail letter is still unambiguous). The list is original to this
 -- project (hand-picked common nouns, adjectives and verbs); it is not a standard wordlist and
 -- holds no secret: the phrase's strength is the 120 random bits, not the list. Sorted, idx = position.
--- A test checks every property above. Changing a word changes what an old phrase means, so the list
--- is append-never: a new list is a new migration with a new table or a version column.
+-- Phrases are shown to the person, so no word may match the A13 non-diagnostic vocabulary
+-- (web/scripts/language-lint.ts; "clinic" was replaced by "clip" for that, before any deployment).
+-- A test checks every property above. Changing a word changes what an old phrase means, so once the
+-- list is deployed it is append-never: a new list is a new migration with a new table or a version
+-- column.
 
 insert into public.recovery_words (idx, word) values
   (0, 'acorn'),
@@ -166,7 +169,7 @@ insert into public.recovery_words (idx, word) values
   (153, 'clever'),
   (154, 'cliff'),
   (155, 'climb'),
-  (156, 'clinic'),
+  (156, 'clip'),
   (157, 'cloak'),
   (158, 'clock'),
   (159, 'closet'),

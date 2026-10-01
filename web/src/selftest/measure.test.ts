@@ -106,7 +106,8 @@ describe('statistics', () => {
         expect(s.n).toBe(xs.length)
         expect(s.p50).toBeLessThanOrEqual(s.p95)
         expect(s.p95).toBeLessThanOrEqual(s.max)
-        expect(s.max).toBe(Math.max(...xs))
+        // === and not toBe (Object.is): for the samples [0, -0] the max is -0 here and +0 from Math.max, the same number
+        expect(s.max === Math.max(...xs)).toBe(true)
         expect(s.p50).toBeGreaterThanOrEqual(Math.min(...xs))
       }),
     )

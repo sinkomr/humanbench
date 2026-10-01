@@ -101,6 +101,19 @@ describe('mirror_put', () => {
     expect(await failure(rpc(ip, 'mirror_put', { p_token: 'hbt_AAAAAAAAAAAAAAAAAAAAAA', p_save: emptySave(s.anon_id) }))).toMatchObject({ code: 'PT401' })
   })
 
+  it('cannot be squatted: a stranger who knows an anon_id gets neither a session nor a mirror under it', async () => {
+    const victim = await person()
+    // the stranger names the victim's anon_id in a save; the server answers with an anon_id of its own
+    const stranger = await startSession(db, freshIp(), emptySave(victim.s.anon_id))
+    expect(stranger.anon_id).not.toBe(victim.s.anon_id)
+    expect(await failure(rpc(freshIp(), 'mirror_put', { p_token: stranger.token, p_save: emptySave(victim.s.anon_id) }))).toMatchObject({ code: 'PT403', message: 'anon_id_mismatch' })
+    expect((await db.owner.query(`select count(*)::int as n from public.mirror where anon_id = $1`, [victim.s.anon_id])).rows[0].n).toBe(0)
+    // the owner is not locked out of their own mirror
+    const put = await rpc<Put>(victim.ip, 'mirror_put', { p_token: victim.s.token, p_save: victim.save })
+    expect(put).toMatchObject({ stored: true, anon_id: victim.s.anon_id })
+    expect(put.recovery_phrase).toBeTruthy()
+  })
+
   it('refuses a save over mirror.max_bytes, and new mirrors once mirror.max_rows is reached', async () => {
     const { ip, s, save } = await person({ seen_items: Array.from({ length: 200 }, (_, i) => `i:tst:g1:${String(i).padStart(5, '0')}`) })
     await db.owner.query(`update public.app_config set value = '2000' where key = 'mirror.max_bytes'`)
@@ -288,6 +301,61 @@ describe('delete_my_data', () => {
     }
     expect((await counts(a.s.anon_id)).sessions).toBe(1)
     expect((await counts(b.s.anon_id)).sessions).toBe(1)
+  })
+
+  it('does not delete for a stranger who knows only the anon_id: not by minting a session under it, nor with a sig that names it', async () => {
+    const victim = await populated()
+    const before = await counts(victim.s.anon_id)
+    // (a) the stranger asks for a session under the victim's anon_id and offers that session as the proof
+    const minted = await startSession(db, freshIp(), emptySave(victim.s.anon_id))
+    const viaMinted = emptySave(victim.s.anon_id, { sessions: [{ session_id: minted.session_id }] })
+    // (b) the stranger's own session, with the honest sig of their own id, in a file that names the victim and is sent for the
+    // victim's id: the session is real and its sig matches the server's row, but it is not the victim's
+    const mine = await startSession(db, freshIp())
+    const viaSig = emptySave(victim.s.anon_id, { sessions: [{ session_id: mine.session_id, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: mine.anon_id } }] })
+    // (b2) the same, with a sig that claims the victim's id
+    const viaFalseSig = emptySave(victim.s.anon_id, { sessions: [{ session_id: mine.session_id, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: victim.s.anon_id } }] })
+    // (c) the same without the sig, in a file of the stranger's own id sent for the victim's
+    const viaOwn = emptySave(mine.anon_id, { sessions: [{ session_id: mine.session_id }] })
+    const ip = freshIp()
+    for (const [what, save] of [['a minted session', viaMinted], ['their own sig.anon_id', viaSig], ['a sig.anon_id that names the victim', viaFalseSig], ['a file of their own', viaOwn]] as const) {
+      expect(await rpc(ip, 'delete_my_data', { p_anon_id: victim.s.anon_id, p_save: save }), what).toEqual({ deleted: false })
+    }
+    expect(await counts(victim.s.anon_id)).toEqual(before)
+    expect((await counts(mine.anon_id)).sessions).toBe(1)
+    // the victim's own save still works
+    expect(await rpc(freshIp(), 'delete_my_data', { p_anon_id: victim.s.anon_id, p_save: victim.save })).toEqual({ deleted: true, sessions: 1, mirror: true })
+  })
+
+  it('proves each id its sessions were issued to, whatever anon_id the file itself carries (a merged file)', async () => {
+    const a = await populated()
+    const b = await populated()
+    const merged = emptySave(a.s.anon_id, { sessions: [...(a.save.sessions as unknown[]), ...(b.save.sessions as unknown[])] })
+    const ip = freshIp()
+    expect(await rpc(ip, 'delete_my_data', { p_anon_id: b.s.anon_id, p_save: merged })).toEqual({ deleted: true, sessions: 1, mirror: true })
+    expect((await counts(b.s.anon_id)).sessions).toBe(0)
+    expect((await counts(a.s.anon_id)).sessions).toBe(1)
+    // and for an id none of its sessions was issued to, nothing
+    const c = await populated()
+    expect(await rpc(ip, 'delete_my_data', { p_anon_id: c.s.anon_id, p_save: merged })).toEqual({ deleted: false })
+    expect((await counts(c.s.anon_id)).sessions).toBe(1)
+  })
+
+  it('counts a wrong save as a failed proof against the address, and refuses the address once its failures are used up', async () => {
+    const victim = await populated()
+    const guesser = freshIp()
+    await db.owner.query(`update public.app_config set value = '3' where key = 'rate.phrase_failures_per_ip_day'`)
+    try {
+      const wrong = emptySave(victim.s.anon_id, { sessions: [{ session_id: 's_guessedguessedxx' }] })
+      for (let i = 0; i < 3; i++) expect(await rpc(guesser, 'delete_my_data', { p_anon_id: victim.s.anon_id, p_save: wrong })).toEqual({ deleted: false })
+      expect(await failure(rpc(guesser, 'delete_my_data', { p_anon_id: victim.s.anon_id, p_save: victim.save }))).toMatchObject({ code: 'PT429', message: 'rate_limited' })
+      // the count is the one of the recovery phrase: the address cannot try phrases either
+      expect(await failure(rpc(guesser, 'mirror_get', { p_anon_id: victim.s.anon_id, p_phrase: victim.phrase }))).toMatchObject({ code: 'PT429' })
+      // another address, and the owner, are not affected
+      expect(await rpc(freshIp(), 'delete_my_data', { p_anon_id: victim.s.anon_id, p_save: victim.save })).toEqual({ deleted: true, sessions: 1, mirror: true })
+    } finally {
+      await db.owner.query(`update public.app_config set value = '60' where key = 'rate.phrase_failures_per_ip_day'`)
+    }
   })
 
   it('needs a proof, a well-formed anon_id, and is rate limited', async () => {

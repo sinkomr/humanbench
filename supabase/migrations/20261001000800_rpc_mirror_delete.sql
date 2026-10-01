@@ -89,9 +89,12 @@ end
 $$;
 
 -- Deletes the sessions (and with them responses, exposure log, reports, survey) and the mirror of one
--- anon_id. Proof, either of: the recovery phrase of its mirror; or a save file for that anon_id that
--- lists a session the server issued to it (hb.session_owned: M2.1 trusts the unguessable session_id,
--- M2.3 will require the session's MAC). Nothing about the proof is revealed on failure.
+-- anon_id. Proof, either of: the recovery phrase of its mirror; or a save file that lists a session the
+-- server issued to that anon_id (hb.save_proves_anon: M2.1 trusts the unguessable session_id, M2.3 will
+-- require the session's MAC). The anon_id inside the file does not matter, only the sessions: a merged
+-- file proves each of the ids its sessions were issued to. Nothing about the proof is revealed on
+-- failure, and each failure counts against the address, which is refused once it has used up its
+-- failures (the same counter as the phrase).
 create function public.delete_my_data(p_anon_id text, p_phrase text default null, p_save jsonb default null)
 returns jsonb
 language plpgsql security definer
@@ -99,6 +102,7 @@ set search_path = ''
 as $$
 declare
   v_row public.mirror;
+  v_ip text := hb.ip_key('phrase_fail');
   v_proved boolean := false;
   v_sessions int := 0;
   v_mirror int := 0;
@@ -120,11 +124,12 @@ begin
     v_proved := hb.phrase_ok(p_phrase, v_row.phrase_hash);
   end if;
   if not v_proved and p_save is not null then
-    v_proved := (p_save ->> 'anon_id') = p_anon_id
-      and exists (select 1 from pg_catalog.jsonb_array_elements(p_save -> 'sessions') e
-                   where pg_catalog.jsonb_typeof(e) = 'object' and hb.session_owned(e, p_anon_id));
+    if hb.rate_count('phrase_fail_ip', v_ip) >= hb.cfg_int('rate.phrase_failures_per_ip_day', 60) then
+      perform hb.fail(429, 'rate_limited', 'too many wrong proofs today');
+    end if;
+    v_proved := hb.save_proves_anon(p_save, p_anon_id);
     if not v_proved then
-      perform hb.rate_bump('phrase_fail_ip', hb.ip_key('phrase_fail'));
+      perform hb.rate_bump('phrase_fail_ip', v_ip);
     end if;
   end if;
   if not v_proved then
