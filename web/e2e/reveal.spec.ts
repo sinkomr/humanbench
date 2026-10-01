@@ -7,7 +7,8 @@
  * and the results footer. The results are those of a simulated earlier session loaded on the ready
  * screen (`scripts/e2e-save.ts`), so the page shows a rich profile without a 25-minute session.
  * Every state is checked with axe (0 serious or critical, WCAG 2.2 AA), the language lint, and
- * reflow at 320 px. WebKit and iPhone 13 run the same specs (download events are desktop-only).
+ * reflow at 320 px. WebKit and iPhone 13 run the same specs (the iPhone emulation reports downloads
+ * of the save like the desktop engines do; the whole round trip is `session-save.spec.ts`, M1.22).
  */
 
 import { readFileSync } from 'node:fs'
@@ -134,7 +135,7 @@ test.describe('the flow: peaks → drill-down → save → the rest (§10)', () 
 })
 
 test.describe('the required save (§10)', () => {
-  test('the tab is guarded until the file is downloaded, and the cards wait for it', async ({ page, isMobile }) => {
+  test('the tab is guarded until the file is downloaded, and the cards wait for it', async ({ page }) => {
     await still(page)
     await toResults(page)
     expect(await unloadIsGuarded(page)).toBe(true)
@@ -146,14 +147,10 @@ test.describe('the required save (§10)', () => {
     // A focus session leaves the results, so its form waits for the file too.
     await expect(section(page, 'retest').locator('[data-focus-locked]')).toHaveText('Save your file above first. Then you can start a focus session.')
     await expect(section(page, 'retest').locator('[data-focus-form]')).toHaveCount(0)
-    if (!isMobile) {
-      const download = page.waitForEvent('download')
-      await button(page, 'Download save file').click()
-      const file = await download
-      expect(file.suggestedFilename()).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
-    } else {
-      await button(page, 'Download save file').click()
-    }
+    const download = page.waitForEvent('download')
+    await button(page, 'Download save file').click()
+    const file = await download
+    expect(file.suggestedFilename()).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
     await expect(section(page, 'save')).toContainText('You can leave this page safely')
     expect(await unloadIsGuarded(page)).toBe(false)
     await expect(section(page, 'after-save')).toBeVisible()
@@ -168,8 +165,7 @@ test.describe('the required save (§10)', () => {
     await expectNoSeriousAxe(page)
   })
 
-  test('the downloaded file lists the worked examples’ families, so a later session leaves them out (§7.7)', async ({ page, isMobile }) => {
-    test.skip(isMobile, 'a download event cannot be observed on the iOS emulation (M1.22 covers the WebKit save)')
+  test('the downloaded file lists the worked examples’ families, so a later session leaves them out (§7.7)', async ({ page }) => {
     await still(page)
     const sim = await toResults(page)
     const shown = await section(page, 'worked').locator('article[data-worked]').evaluateAll((els) => els.map((e) => e.getAttribute('data-family')))

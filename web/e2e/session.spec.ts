@@ -443,7 +443,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await expect(h1(page)).toHaveText('Up next: Spatial')
   })
 
-  test('finish early asks first, ends with what there is, and shows the profile with a save file to download', async ({ page, isMobile }) => {
+  test('finish early asks first, ends with what there is, and shows the profile with a save file to download', async ({ page }) => {
     await toFirstItem(page)
     await answerItem(page, 60)
     await nextScreen(page)
@@ -460,12 +460,10 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await expect(page.getByRole('table', { name: /Estimates by skill/ })).toBeVisible()
     await expectNoSeriousAxe(page)
     await languageClean(page)
-    if (!isMobile) {
-      const download = page.waitForEvent('download')
-      await button(page, 'Download save file').click()
-      const file = await download
-      expect(file.suggestedFilename()).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
-    }
+    const download = page.waitForEvent('download')
+    await button(page, 'Download save file').click()
+    const file = await download
+    expect(file.suggestedFilename()).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
   })
 
   test('a save from one session is loaded by content on the ready screen and the next session is added to it (R-8.1, M1.17 wiring)', async ({ page }) => {

@@ -173,6 +173,39 @@ Four things stand behind "axe finds nothing serious on any route":
   fixed in px, and that every animation or transition is switched off for `prefers-reduced-motion` for its own
   selector (or `*`), not just somewhere in its file.
 
+#### A whole session and its save (ROADMAP M1.22)
+
+`web/e2e/session-save.spec.ts` (`npm run e2e:save`) is M1 acceptance 4 ("iOS Safari emulation downloads and
+uploads a save") and the AI.7 acceptance "the WebKit save round trip covers the preferences". It runs in
+Chromium, desktop WebKit and the iPhone 13 emulation, one serial group per browser:
+
+- **The session.** The notes builder keeps its settings on the device, then the `?fast=1` session is played from
+  the start page through all six parts to the build-up, the required save and the cards that follow it.
+  `web/e2e/session-driver.ts` plays it the way most people do: a mouse and the number and reaction keys on
+  desktop, a finger and the on-screen keypads and boards on the phone (Playwright's `tap()` sends touch events,
+  so the renderers see `pointerType: 'touch'`; the saved reaction blocks say `touch`). Answers are not chosen to
+  score well; the test checks that every part ran in order and that the file holds every instrument.
+- **Download.** The file the browser receives has the `humanbench-<id>-<date>.hbsave.json` name, validates against
+  the schema, is the RFC 8785 canonical text, holds the session and the `brief_prefs` the builder kept, and has
+  no `sig`. The device keeps the same session as its autosave, and drops the autosave that held only the
+  settings, since the session's holds them too.
+- **Upload.** On a device that has nothing, the save loads by its content however it arrives: named as
+  downloaded, renamed `.txt` the way iOS does, with no extension or type, with a byte-order mark, as pasted file
+  text, as a pasted copy code, and as a code wrapped inside a message. The next session is added to it (R-8.1):
+  the earlier session, the identifier and the notes settings come back unchanged, and the same session reached
+  twice (the autosave and the file) is still one. Files that are not saves, and a code cut short, are refused
+  with a message.
+- **Copy code and share.** The code the app hands to the clipboard is decoded in Node (a different gzip) and equals
+  the file. Where the clipboard refuses, the code is shown for copying by hand and that code loads. The share
+  sheet is given the file, and on a platform that only shares text the same content as `.txt`; both load again.
+- **Notes.** The settings that travelled in the save are the ones the notes builder shows on the other device,
+  whether it finds them in the session's autosave or is given the file.
+
+The engines cannot read the system clipboard (WebKit has no clipboard permission in Playwright) or open the
+share sheet or the Files picker, so the spec replaces those two with recorders in the page. They see exactly
+what the app hands over, and say yes; Chromium also reads the real clipboard. Downloads are real events in all
+three projects (the iPhone emulation reports them like the desktop engines do), and the files are read from them.
+
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
 
 ### Session flow

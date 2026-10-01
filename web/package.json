@@ -18,6 +18,7 @@
     "lint:language": "tsx scripts/lint-language.ts",
     "e2e": "playwright test",
     "e2e:a11y": "playwright test e2e/a11y.spec.ts e2e/keyboard-session.spec.ts",
+    "e2e:save": "playwright test e2e/session-save.spec.ts",
     "e2e:install": "playwright install --with-deps chromium webkit",
     "sync:golden": "sh scripts/sync-golden.sh",
     "sync:topics": "sh scripts/sync-topics.sh",
