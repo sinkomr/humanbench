@@ -30,6 +30,12 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
+- **In flight: wf6** (`wf_5553b30f-aef`, started 2026-09-30 22:50; the 12-hour window ends at 10:47 on 2026-10-01). Resume ticks run at :52. Its chains:
+  - `a11y`: M1.21, then M1.22.
+  - `m2`: M2.0 → M2.1 → M2.2 → M2.3/M2.4 → M2.5 → M2.7, all **local only** with a bundled Postgres and no cloud.
+  - `fermi`: M5.1.
+- **If interrupted:** check `git branch --list 'wf6/*'`. Merge the green task commits into `dev`, then run all gates.
+
 - **wf5 done** (2026-09-30 08:10; 51 agents; all 6 chains are green, merged, audited and repaired, then pushed).
   - Tasks: AI.1–AI.7 and AI.6b, M1.15, M1.R, M1.18, M1.4b (option 1), M3.3, M3.4, M3.6, M3.7, M3.9, M4.6 (Opus beat Sonnet 8.5 to 5.5), and M4.7–M4.9.
   - Gates: pub 3,398 unit tests plus 529 e2e; bank 4,247 tests.
@@ -50,6 +56,9 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 - [ ] **Local Postgres** (M2.0): optionally `brew install postgresql@17`. Otherwise Claude uses a pip- or npm-bundled Postgres.
 - [ ] **Supabase project** (M2.6): a free project, the region (us-east or eu-central), secrets, a Vault HMAC key, an age keypair for backups, and CAPTCHA keys.
 - [ ] **Privacy notice**: the controller's name and contact, and sign-off on 24-month retention and consent as the legal basis, before any data-collecting deploy (M2).
+- [ ] **Reading and vocabulary topic tags:** must RC/VOC items carry topic tags? Decide before M3.5 (an AI.2 follow-up).
+- [ ] **Privacy page placeholders:** the page has TODO placeholders for the controller name and contact (M1.15).
+- [ ] **Phase AI (your tasks):** AI.13, about 200 labels plus a think-aloud with about 10 people; AI.12c, a surface smoke test on each assistant; and the open questions in proposal §11 (bank `docs/proposals/ai-notes-v2.md`).
 - [ ] **Brand**: keep "HumanBench", or use "HumanBench: Jagged" / "Jagged Mind" (§2.6)? Also the custom subdomain, the trademark check, and optionally the ICAR permission email and STEU-B permission email.
 - [ ] Later: SJT expert ratings (M6.2), the RAT corpus license and Ocsai opt-in (M6), and the F9 anchor corpus of released test items.
 
