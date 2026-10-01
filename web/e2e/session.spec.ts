@@ -15,6 +15,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER } from '../src/copy'
 import { expectNoSeriousAxe } from './axe'
+import { useWideFont } from './wide-font'
 
 const h1 = (page: Page): Locator => page.getByRole('heading', { level: 1 })
 const button = (page: Page, name: string | RegExp): Locator => page.getByRole('button', { name, exact: typeof name === 'string' })
@@ -442,7 +443,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await expect(h1(page)).toHaveText('Up next: Spatial')
   })
 
-  test('finish early asks first, ends with what there is, and shows the profile with a save file to download', async ({ page, isMobile }) => {
+  test('finish early asks first, ends with what there is, and shows the profile with a save file to download', async ({ page }) => {
     await toFirstItem(page)
     await answerItem(page, 60)
     await nextScreen(page)
@@ -459,12 +460,10 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await expect(page.getByRole('table', { name: /Estimates by skill/ })).toBeVisible()
     await expectNoSeriousAxe(page)
     await languageClean(page)
-    if (!isMobile) {
-      const download = page.waitForEvent('download')
-      await button(page, 'Download save file').click()
-      const file = await download
-      expect(file.suggestedFilename()).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
-    }
+    const download = page.waitForEvent('download')
+    await button(page, 'Download save file').click()
+    const file = await download
+    expect(file.suggestedFilename()).toMatch(/^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/)
   })
 
   test('a save from one session is loaded by content on the ready screen and the next session is added to it (R-8.1, M1.17 wiring)', async ({ page }) => {
@@ -745,24 +744,9 @@ test.describe('the ?fast=1 dev flag (M1.15)', () => {
 
 // ------------------------------------------------------------------------------- reflow
 
-const WIDE_FONT_CSS = `
-  html, html * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; hyphens: manual !important; -webkit-hyphens: manual !important; }
-  html *:not(svg):not(svg *) { letter-spacing: 0.06em !important; }
-`
-
 test.describe('reflow at 320 CSS px with a wide font (WCAG 1.4.10)', () => {
   test('every screen of the flow fits without sideways scrolling', async ({ page }) => {
-    await page.addInitScript(`(() => {
-      const add = () => {
-        if (document.getElementById('hb-wide-font') || !document.head) return
-        const s = document.createElement('style')
-        s.id = 'hb-wide-font'
-        s.textContent = ${JSON.stringify(WIDE_FONT_CSS)}
-        document.head.appendChild(s)
-      }
-      add()
-      document.addEventListener('readystatechange', add)
-    })()`)
+    await useWideFont(page)
     await page.setViewportSize({ width: 320, height: 700 })
     await page.goto('./')
     await overflow(page, 'welcome')

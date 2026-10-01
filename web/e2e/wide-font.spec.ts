@@ -1,38 +1,11 @@
 /**
- * Reflow under wide fonts (WCAG 1.4.10; ROADMAP M1.16, M1.A). The Linux CI runners render the
- * system-ui stack in a font wider than macOS's (DejaVu Sans), which overflowed the blob demo at
- * 320 px while local runs passed. Here every page font is forced to a wide face (Verdana, else
- * DejaVu Sans) with extra letter spacing, so a layout that only fits narrow fonts fails on any
- * machine. The layout must absorb font metrics (wrapping, min-width: 0), not rely on them.
+ * Reflow under wide fonts (WCAG 1.4.10; ROADMAP M1.16, M1.A) on the blob demo route. The font
+ * simulation itself is `wide-font.ts` (shared with the M1.21 route sweep, `a11y.spec.ts`): a layout
+ * that only fits narrow fonts must fail on any machine, the Linux CI runners included.
  */
 
 import { expect, test, type Page } from '@playwright/test'
-
-/**
- * Wider than either platform's default: a wide face, plus 0.06 em between letters outside SVG, and
- * no automatic hyphenation (Chromium on Linux has no hyphenation dictionaries).
- */
-const WIDE_FONT_CSS = `
-  html, html * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; hyphens: manual !important; -webkit-hyphens: manual !important; }
-  html *:not(svg):not(svg *) { letter-spacing: 0.06em !important; }
-`
-
-/** Injected before any page script runs, so the charts measure their text in the wide font. */
-async function useWideFont(page: Page): Promise<void> {
-  // The document is still empty when init scripts run; readyState turns 'interactive' before the
-  // deferred (module) app script runs.
-  await page.addInitScript(`(() => {
-    const add = () => {
-      if (document.getElementById('hb-wide-font') || !document.head) return
-      const s = document.createElement('style')
-      s.id = 'hb-wide-font'
-      s.textContent = ${JSON.stringify(WIDE_FONT_CSS)}
-      document.head.appendChild(s)
-    }
-    add()
-    document.addEventListener('readystatechange', add)
-  })()`)
-}
+import { expectWideFont, useWideFont } from './wide-font'
 
 /**
  * Horizontal overflow of the page in CSS px (0 = no sideways scrolling), and on overflow the
@@ -59,7 +32,7 @@ test.describe('wide fonts: the blob demo route reflows at 320 CSS px (WCAG 1.4.1
       await page.setViewportSize({ width, height: 900 })
       await page.goto('./#/dev/blob?profile=full')
       await expect(page.locator('svg.hb-blob').first()).toBeVisible()
-      await expect.poll(() => page.evaluate<string>('getComputedStyle(document.body).fontFamily')).toContain('Verdana')
+      await expectWideFont(page)
       await overflow(page, 'blob view')
       for (const c of ['Knowledge', 'Quantitative']) {
         await page.getByRole('button', { name: c, exact: true }).click()

@@ -5,8 +5,9 @@
  * picture that follows the skill toggles, the SVG downloads at exactly that size and the PNG at
  * 2400 × 1260 with the blob really drawn in it, nothing leaves the page, and the panel passes axe,
  * the language lint and 320 px reflow. Chromium, WebKit and the iPhone 13 emulation run the same
- * specs; a download event cannot be observed on the iOS emulation, so there the PNG is checked by
- * the status the page reports after it has drawn and encoded it (`Image saved: 2400 × 1260 px.`).
+ * specs, downloads included (the iPhone emulation reports a download like the desktop engines; the
+ * status the page reports after it has drawn and encoded the PNG, `Image saved: 2400 × 1260 px.`, is
+ * checked in every browser as well).
  * The simulated person (`scripts/e2e-save.ts`) has no Emotion Reading (it is not measured in M1):
  * that rule is covered by the unit and DOM tests (`viz/card.test.ts`, `ShareCard.dom.test.ts`).
  */
@@ -120,8 +121,7 @@ test.describe('the exports', () => {
     await expect(panel(page).locator('[data-message]')).toHaveText('Image saved: 2400 × 1260 px.')
   })
 
-  test('the downloaded PNG is 2400 × 1260 with the blob drawn in it on a white card', async ({ page, isMobile }) => {
-    test.skip(isMobile, 'a download event cannot be observed on the iOS emulation; the status above covers its pipeline')
+  test('the downloaded PNG is 2400 × 1260 with the blob drawn in it on a white card', async ({ page }) => {
     await toCard(page)
     await expect(button(page, 'Download image (PNG)')).toBeEnabled()
     const download = page.waitForEvent('download')
@@ -149,8 +149,7 @@ test.describe('the exports', () => {
     expect(px.blue).toBeGreaterThan(400)
   })
 
-  test('the downloaded SVG is the previewed card, 1200 × 630, and has no scripts, links or images', async ({ page, isMobile }, testInfo) => {
-    test.skip(isMobile, 'a download event cannot be observed on the iOS emulation')
+  test('the downloaded SVG is the previewed card, 1200 × 630, and has no scripts, links or images', async ({ page }, testInfo) => {
     await toCard(page)
     const shown = await previewSvg(page)
     const download = page.waitForEvent('download')
@@ -165,7 +164,11 @@ test.describe('the exports', () => {
     const saved = testInfo.outputPath(file.suggestedFilename())
     await file.saveAs(saved)
     await page.goto(`file://${saved}`)
-    expect(await page.evaluate(() => [document.documentElement.localName, document.documentElement.getBoundingClientRect().width, document.documentElement.getBoundingClientRect().height])).toEqual(['svg', 1200, 630])
+    // The size is 1200 × 630 CSS px; at a device pixel ratio of 3 (the phone) the engine reports it to within a rounding error.
+    const [tag, width, height] = await page.evaluate(() => [document.documentElement.localName, document.documentElement.getBoundingClientRect().width, document.documentElement.getBoundingClientRect().height] as const)
+    expect(tag).toBe('svg')
+    expect(width).toBeCloseTo(1200, 2)
+    expect(height).toBeCloseTo(630, 2)
   })
 
   test('the SVG button reports its save (every browser)', async ({ page }) => {

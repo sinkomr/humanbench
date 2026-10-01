@@ -86,6 +86,8 @@ button.primary {
 
 input[type='text'] {
   width: 100%;
+  /* A text box has a width of its own (about 20 characters), which at a large text size is wider than a phone. */
+  min-width: 0;
 }
 
 textarea {
@@ -168,7 +170,9 @@ legend {
   font-size: 0.8rem;
   line-height: 1.5;
   color: var(--text-strong);
-  white-space: nowrap;
+  /* Short, so it stays on one line unless the text is very large or the screen very narrow. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .row {

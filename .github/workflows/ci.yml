@@ -37,14 +37,17 @@ jobs:
   e2e:
     # Playwright + axe-core (ROADMAP M1.A): builds the app, serves it with `vite preview` under
     # /humanbench/, and runs e2e/ in Chromium, WebKit and iPhone 13 (WebKit) emulation.
-    # One job per Playwright project: ~530 tests on 2 workers outgrew a single 20-min job.
-    name: web e2e (Playwright + axe, ${{ matrix.project }})
+    # One job per Playwright project and half of its tests: ~530 tests on 2 workers outgrew a single 20-min
+    # job, and the accessibility sweep of M1.21 (a11y.spec.ts, ~400 tests per project, WebKit the slowest)
+    # brings each project back to that size. `--shard` splits the tests of a project in two equal halves.
+    name: web e2e (Playwright + axe, ${{ matrix.project }} ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         project: [chromium, webkit, iphone]
+        shard: [1, 2]
     defaults:
       run:
         working-directory: web
@@ -82,12 +85,12 @@ jobs:
           BROWSER=${{ matrix.project == 'chromium' && 'chromium' || 'webkit' }}
           npx playwright install-deps "$BROWSER" || npx playwright install-deps "$BROWSER"
 
-      - run: npm run e2e -- --project=${{ matrix.project }}
+      - run: npm run e2e -- --project=${{ matrix.project }} --shard=${{ matrix.shard }}/2
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report-${{ matrix.project }}
+          name: playwright-report-${{ matrix.project }}-${{ matrix.shard }}
           path: |
             web/playwright-report/
             web/test-results/

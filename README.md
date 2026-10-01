@@ -23,7 +23,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/viz/`: blob and bar views, the share card and its export
   - `web/src/reveal/`: the results and reveal flow (build-up, distinctive peaks, required save, worked examples, retest advice, norms and pace)
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`; its optional `brief_prefs` holds the notes settings, `web/src/save/brief-prefs.ts`); `schema/brief-v1.json` is the JSON form of the notes (mirrored by `web/src/brief/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
-- `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
+- `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`); `routes.ts` lists every route for the accessibility pass (M1.21)
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
 
 ## Development
@@ -133,7 +133,83 @@ npx playwright show-report
 ```
 
 The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `main` and `dev` and on
-pull requests, with the browsers cached, and uploads the report as an artifact.
+pull requests, with the browsers cached, and uploads the report as an artifact. Each Playwright project runs
+in two halves (`--shard=1/2`, `--shard=2/2`), six jobs in all, so that the accessibility sweep keeps each job
+well inside its time limit; locally `npm run e2e -- --project=webkit --shard=1/2` runs one half.
+
+#### The accessibility pass (ROADMAP M1.21)
+
+Four things stand behind "axe finds nothing serious on any route":
+
+- **The route list** (`web/e2e/routes.ts`): the three pages, `#/privacy`, the dev routes, every screen of the
+  session flow (gate, honour code, device check, ready, practice, each part of the session, the confirmation
+  questions, the break, the end, the Spatial item in a browser without WebGL), the results and the share card in
+  their states, the notes builder (as it opens, filled in, with a fit note, the 18+ error, the kept settings, a
+  returning person's notice, and with a checked paste) and the RT self-test. `web/scripts/a11y-routes.test.ts`
+  fails when a page, a hash route, a session part, a renderer or a screen component has no entry, so a new
+  screen cannot skip the pass. To add one, give it an entry that opens the state, and name each file it shows
+  (a folder is not a claim); the states a component alone does not show are pinned in that test.
+- **The sweep** (`web/e2e/a11y.spec.ts`, `npm run e2e:a11y`): each route is opened on a fresh page set in a
+  wide font (`web/e2e/wide-font.ts`: Verdana or DejaVu Sans, with extra letter spacing, so a layout that fits
+  only a narrow font fails on every machine, the Linux CI runners included) and checked for 0 serious or
+  critical axe issues in light and dark, nothing animating under `prefers-reduced-motion`, no sideways scroll
+  and no clipped text at 320 px, at 200% browser zoom (640 × 400) and with the text alone at 200%, and, on
+  desktop engines, a Tab round of the page that reaches every control, never gets stuck, and shows focus. Under
+  `prefers-reduced-motion` it also fails on any animation or transition that started while the page loaded,
+  however short (it listens for the events, not only for what is running at one moment).
+- **A whole session by keyboard** (`web/e2e/keyboard-session.spec.ts`): the `?fast=1` session from the start
+  page to the save, the share card and back, with Tab, Enter, Space, the arrow keys and typed text only. A guard
+  in the page counts real pointer events and the test fails on any; it also fails on a screen that leaves
+  nothing in focus or hides where focus is (a heading or container that a screen moves focus to is the only
+  thing allowed without a ring), and unless all six parts of the session were played in order, each showing its
+  own kind of screen. The reaction targets are read from the live region the page announces, as a
+  screen-reader user would.
+- **The colours** (`web/scripts/contrast.test.ts`, in `npm test`): every colour token of the stylesheets, in
+  light and dark, is in a text pair (4.5:1) or a control pair (3:1), or is listed as decorative with a reason,
+  wherever it is declared (a colour token in a rule the test does not list fails, and so does one written as a
+  name, `oklch()` or with an alpha, whose contrast cannot be computed); a hard-coded colour (hex, `rgb()`,
+  `hsl()`, a name) must be reviewed in the same file; no colour is set inline in markup or script.
+  `web/scripts/a11y-static.test.ts` checks the page shells (language, title, zoom allowed), that no text size is
+  fixed in px, and that every animation or transition is switched off for `prefers-reduced-motion` for its own
+  selector (or `*`), not just somewhere in its file.
+
+#### A whole session and its save (ROADMAP M1.22)
+
+`web/e2e/session-save.spec.ts` (`npm run e2e:save`) is M1 acceptance 4 ("iOS Safari emulation downloads and
+uploads a save") and the AI.7 acceptance "the WebKit save round trip covers the preferences". It runs in
+Chromium, desktop WebKit and the iPhone 13 emulation, one serial group per browser:
+
+- **The session.** The notes builder keeps its settings on the device, then the `?fast=1` session is played from
+  the start page through all six parts to the build-up, the required save and the cards that follow it.
+  `web/e2e/session-driver.ts` plays it the way most people do: a mouse and the number and reaction keys on
+  desktop, a finger and the on-screen keypads and boards on the phone (Playwright's `tap()` sends touch events,
+  so the renderers see `pointerType: 'touch'`; the saved reaction blocks say `touch`). Answers are not chosen to
+  score well, except that the driver answers the reaction targets at a person's pace (the `?fast=1` clock is 20
+  times faster, so it waits a few real milliseconds), which makes the counted trials valid and each reaction
+  block scored. The test checks that every part ran in order, that the file holds every instrument and that
+  both reaction blocks have at least their minimum of valid trials.
+- **Download.** The file the browser receives has the `humanbench-<id>-<date>.hbsave.json` name, validates against
+  the schema, is the RFC 8785 canonical text, holds the session and the `brief_prefs` the builder kept, and has
+  no `sig`. The device keeps the same session as its autosave, and drops the autosave that held only the
+  settings, since the session's holds them too.
+- **Upload.** On a device that has nothing, the save loads by its content however it arrives: named as
+  downloaded, renamed `.txt` the way iOS does, with no extension or type, with a byte-order mark, as pasted file
+  text, as a pasted copy code, and as a code wrapped inside a message. The next session is added to it (R-8.1):
+  the earlier session, the identifier and the notes settings come back unchanged, and the same session reached
+  twice (the autosave and the file) is still one. Files that are not saves, and a code cut short, are refused
+  with a message.
+- **Copy code and share.** The code the app hands to the clipboard is decoded in Node (a different gzip) and is the
+  same save as the file; only the stamp of when each export was made (`created_utc`, to the second) may differ. Where the clipboard refuses, the code is shown for copying by hand and that code loads. The share
+  sheet is given the file, and on a platform that only shares text the same content as `.txt`; both load again.
+- **Notes.** The settings (the sets, the notes copied and the fit log) that travelled in the save are the ones the
+  notes builder shows on the other device, whether it finds them in the session's autosave or is given the file,
+  and keeping them writes them back as they were. A change made in the builder after a session is in the next
+  session's save and in the file that save is downloaded as.
+
+The engines cannot read the system clipboard (WebKit has no clipboard permission in Playwright) or open the
+share sheet or the Files picker, so the spec replaces those two with recorders in the page. They see exactly
+what the app hands over, and say yes; Chromium also reads the real clipboard. Downloads are real events in all
+three projects (the iPhone emulation reports them like the desktop engines do), and the files are read from them.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
 

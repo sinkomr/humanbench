@@ -39,7 +39,8 @@
     --r-focus: #fbbf24;
     --r-lit: #ffd84d;
     --r-lit-ring: #ffffff;
-    --r-block: #8e9bea;
+    /* A lit Corsi block (--r-lit) reads as lit by its fill too, not only its ring: >= 3:1 between them and against the board. */
+    --r-block: #6270c8;
     --r-note: #fdba74;
   }
 }

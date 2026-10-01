@@ -13,8 +13,11 @@ import { expect, type Page } from '@playwright/test'
 /** axe rule tags checked: WCAG 2.0/2.1/2.2, levels A and AA. */
 export const WCAG_AA_TAGS: readonly string[] = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 
-/** Impacts that fail a test; "minor" and "moderate" are reported by M1.21's pass, not here. */
+/** Impacts that fail a test through {@link expectNoSeriousAxe}; "minor" and "moderate" are checked by M1.21's route sweep (`a11y.spec.ts`), through {@link nonBlockingAxeViolations}. */
 export const BLOCKING_IMPACTS: readonly string[] = ['serious', 'critical']
+
+/** The tags of the wider scan: the WCAG A/AA rules and axe's best-practice rules (landmarks, headings, regions). */
+export const REPORT_TAGS: readonly string[] = [...WCAG_AA_TAGS, 'best-practice']
 
 export type AxeViolation = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'][number]
 
@@ -45,6 +48,20 @@ export async function seriousAxeViolations(page: Page, scope: AxeScope = {}): Pr
   for (const s of scope.exclude ?? []) builder = builder.exclude(s)
   const { violations } = await builder.analyze()
   return violations.filter((v) => v.impact != null && BLOCKING_IMPACTS.includes(v.impact))
+}
+
+/**
+ * Findings of the wider scan (WCAG A/AA and best-practice rules) that are not serious or critical: the moderate
+ * and minor ones. M1.21 keeps these at none too; they are the landmarks, headings and regions a screen-reader
+ * user moves by.
+ */
+export async function nonBlockingAxeViolations(page: Page, scope: AxeScope = {}): Promise<AxeViolation[]> {
+  await settleTransitions(page)
+  let builder = new AxeBuilder({ page }).withTags([...REPORT_TAGS])
+  for (const s of scope.include ?? []) builder = builder.include(s)
+  for (const s of scope.exclude ?? []) builder = builder.exclude(s)
+  const { violations } = await builder.analyze()
+  return violations.filter((v) => v.impact == null || !BLOCKING_IMPACTS.includes(v.impact))
 }
 
 /** One readable line per violation, then one per offending node. */
