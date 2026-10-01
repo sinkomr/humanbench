@@ -30,11 +30,13 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: wf6** (`wf_5553b30f-aef`, started 2026-09-30 22:50; the 12-hour window ends at 10:47 on 2026-10-01). Resume ticks run at :52. Its chains:
-  - `a11y`: M1.21, then M1.22.
-  - `m2`: M2.0 → M2.1 → M2.2 → M2.3/M2.4 → M2.5 → M2.7, all **local only** with a bundled Postgres and no cloud.
-  - `fermi`: M5.1.
-- **If interrupted:** check `git branch --list 'wf6/*'`. Merge the green task commits into `dev`, then run all gates.
+- **wf6 done** (2026-10-01 07:10). Merged and pushed: M1.21, M1.22 and M5.1 (partial: server-side Brier waits on M2), plus the audit repairs. Gates: pub 3,784 unit tests plus 1,802 e2e; bank green.
+- **wf6/m2 is unmerged** (M2.0 and M2.1 are on branch `wf6/m2`; the worktrees are kept). Embedded Postgres fails in `initdb` with `shmget: Cannot allocate memory`; the Claude Bash sandbox probably blocks SysV shared memory. **Before merging:**
+  1. Run `npm run test:db` in `~/code/wt/m2/humanbench/web` from a normal terminal.
+  2. Fix `rescore()` so it doesn't leak per-item verdicts at small n. This is a blocker; the plan is to do it in M2.2.
+  3. Use the caller's `anon_id` in `rescore`.
+  4. Pin a non-beta `@embedded-postgres`.
+- **Known flakes:** under heavy machine load the timing tests fail (scorer.bench, selector.bench and one test in Reveal.dom). The keyboard-only session e2e assumes a matrices item appears. The selector rarely serves the matrices family, so in practice MAT is measured by series alone; this is worth a look.
 
 - **wf5 done** (2026-09-30 08:10; 51 agents; all 6 chains are green, merged, audited and repaired, then pushed).
   - Tasks: AI.1–AI.7 and AI.6b, M1.15, M1.R, M1.18, M1.4b (option 1), M3.3, M3.4, M3.6, M3.7, M3.9, M4.6 (Opus beat Sonnet 8.5 to 5.5), and M4.7–M4.9.
@@ -59,6 +61,10 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 - [ ] **Reading and vocabulary topic tags:** must RC/VOC items carry topic tags? Decide before M3.5 (an AI.2 follow-up).
 - [ ] **Privacy page placeholders:** the page has TODO placeholders for the controller name and contact (M1.15).
 - [ ] **Phase AI (your tasks):** AI.13, about 200 labels plus a think-aloud with about 10 people; AI.12c, a surface smoke test on each assistant; and the open questions in proposal §11 (bank `docs/proposals/ai-notes-v2.md`).
+- [ ] **Run the DB tests outside the sandbox:** `cd ~/code/wt/m2/humanbench/web` then `npm run test:db`. If it fails there too, reboot and retry.
+- [ ] **M2 decisions:**
+  - `finish.include_correct`: should saves carry per-item correctness? The default is no (R-11.1).
+  - The brief-prefs merge rule when loading a save on the ready screen (AI.7).
 - [ ] **Brand**: keep "HumanBench", or use "HumanBench: Jagged" / "Jagged Mind" (§2.6)? Also the custom subdomain, the trademark check, and optionally the ICAR permission email and STEU-B permission email.
 - [ ] Later: SJT expert ratings (M6.2), the RAT corpus license and Ocsai opt-in (M6), and the F9 anchor corpus of released test items.
 
