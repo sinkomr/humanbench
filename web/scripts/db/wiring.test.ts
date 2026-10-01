@@ -141,9 +141,16 @@ describe('secrets and cloud (CLAUDE.md, A6)', () => {
     }
   })
 
-  it('puts no data into item_keys: the shim and fixtures hold no answer keys (CLAUDE.md)', () => {
+  it('puts no data into item_keys: the shim and fixtures do not name it, the migrations only define and read it (CLAUDE.md)', () => {
     for (const f of scanned.filter((p) => p.endsWith('.sql'))) {
-      expect(readFileSync(join(REPO, f), 'utf8'), f).not.toMatch(/item_keys/i)
+      const text = readFileSync(join(REPO, f), 'utf8')
+      if (f.startsWith('supabase/migrations/')) {
+        // M2.1 creates the table (DESIGN §12) and its RPCs read it; nothing may write a row. migrations.test.ts
+        // repeats this with the full statement list.
+        expect(text, f).not.toMatch(/\b(insert\s+into|update|delete\s+from|copy|truncate(?:\s+table)?)\s+(?:only\s+)?(?:public\.)?item_keys\b/i)
+      } else {
+        expect(text, f).not.toMatch(/item_keys/i)
+      }
     }
   })
 

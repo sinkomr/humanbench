@@ -8,7 +8,7 @@ directory is ever applied to a hosted project by the tooling; deploying is M2.6,
 
 ```
 supabase/
-  migrations/             <YYYYMMDDHHMMSS>_<snake_case>.sql, from M2.1; the only files that are deployed
+  migrations/             <YYYYMMDDHHMMSS>_<snake_case>.sql; the only files that are deployed (M2.1: the schema and the RPCs)
   local/                  the stand-in for what a Supabase project provides; local only, never deployed
     cluster/00-roles.sql    roles, role settings (once per cluster)
     database/10-…40-….sql   extensions, default grants, auth helpers, Vault shim (per database)
@@ -23,7 +23,7 @@ From `web/`:
 npm run test:db
 ```
 
-runs every `*.db.test.ts` (about 10 s: one cluster for the run, one cloned database per test file).
+runs every `*.db.test.ts` (about 15 s: one cluster for the run, one cloned database per test file).
 `npm test` never starts a database; its `scripts/db/*.test.ts` files check the wiring and the pure
 parts. CI runs both (the `db` job).
 
@@ -194,6 +194,143 @@ Each is covered by a test in `web/scripts/db/*.db.test.ts`.
    with the anon key can call (pg_trgm's `set_limit` changes session state). Write
    `create extension … with schema extensions`; `exposedSurface` lists extension members so a test
    notices.
+
+## M2.1: the schema and the RPCs
+
+ROADMAP M2.1, DESIGN §8, §11.2, §12, §13, R-11.1, R-12.1; ADRs A11, A16, A18; Phase AI (AI.2, AI.26).
+Written and tested here only (A6); nothing is applied to a project until M2.6.
+
+### The files
+
+| Migration | Holds |
+|---|---|
+| `…100_foundation` | the role `hb_definer`, schema `hb`, default privileges revoked, the JSON helpers the CHECK constraints use |
+| `…200_bank_tables` | `app_config`, `item_families`, `items`, `item_keys`, `item_parameters`, `calibration_runs` (DESIGN §12) |
+| `…300_session_tables` | `sessions`, `responses`, `flags` (§12) and `exposure_log`, `item_exposure`, `rate_limits`, `rate_salts`, `survey`, `mirror`, `recovery_words` |
+| `…400_recovery_words` | the 1,024 words of the recovery phrase |
+| `…500_private_functions` | the helpers in `hb` (settings, errors, randomness, rate limits, validation, scoring, selection, the session object) |
+| `…600_rpc_session` | `start_session`, `next_item`, `submit`, `finish` |
+| `…700_rpc_report_survey` | `report_problem`, `submit_survey` |
+| `…800_rpc_mirror_delete` | `mirror_put`, `mirror_get`, `delete_my_data` |
+| `…900_rpc_rescore` | `rescore` |
+
+### Who can do what (R-11.1, R-12.1)
+
+- Every table has RLS enabled, **no policy** for `anon`, `authenticated` or PUBLIC and **no grant** to them. A
+  plain `select` from any table is `42501` permission denied. The default privileges that Supabase gives
+  `postgres`-created objects are revoked in the first migration.
+- Every function is owned by **`hb_definer`**: `nologin`, not a superuser, no `BYPASSRLS`, owns no table. It reads
+  and writes through select/insert/update grants and policies written for it (the bank tables are select-only:
+  the RPCs never write a key, a parameter or an item). `item_keys` is read by `public.submit` (through
+  `hb.score_response`) and by nothing else.
+- Functions in `public` are the RPCs: `SECURITY DEFINER`, `search_path = ''`, EXECUTE for `anon` and
+  `authenticated` only. Helpers live in schema `hb`, which no API role can use; EXECUTE is revoked from PUBLIC on every
+  function by default (`alter default privileges for role hb_definer`). The one exception is `hb.no_key_fields`,
+  which `service_role` needs because `items.payload`'s CHECK constraint runs as the writer.
+- `service_role` (the bank pipeline, M2.5) can write the bank tables, the calibration log and `flags`, and read
+  sessions, responses, exposures and surveys. It cannot touch `mirror`, the rate tables or any RPC.
+
+**Writing a migration** (a test checks all of it from the SQL text, `migrations.test.ts`, and from the catalog,
+`schema.db.test.ts`): create tables as `postgres` with RLS enabled and explicit grants; create functions between
+`grant create on schema public to hb_definer; set local role hb_definer;` and `reset role; revoke create on schema
+public from hb_definer;`, each with `set search_path = ''`; qualify everything (pgcrypto is `extensions.`); grant EXECUTE
+of an RPC to `anon, authenticated` by name; replace a function with `create or replace` (the migration role is a
+member of `hb_definer`, so it may).
+
+### Tables
+
+| Table | Holds | Notes |
+|---|---|---|
+| `item_families`, `items`, `item_keys`, `item_parameters` | the bank (DESIGN §12) | `items.payload` is only `stem`, `media`, `options`, with no key-like field name anywhere inside (CHECK). `sibling_group` defaults to `family_id` (trigger). `item_parameters.a/b/c/se_b` are `double precision`, not `real`, so the bank's values are stored without rounding. Plus the AI.2 columns `topic`, `curriculum_level`, `notation`, `ladder_probe`, `practice_only` and `items.server_tags` |
+| `sessions` | one row per session | the token is stored as its SHA-256 only; `device`, `flags`, `state` carry a CHECK that no object inside has a `brief_prefs` key |
+| `exposure_log`, `item_exposure` | every item served, in order; a counter per item | a row in the log without a response is the pending item; the counters feed the 0.25 exposure cap (M2.2) |
+| `responses` | answers (§12) | `correct` and `score` are filled by the server |
+| `flags` | reports and the nightly job's findings | `kind` of a user report is one of five item categories or `notes_requested`, which has no item and no text (CHECK) |
+| `rate_limits`, `rate_salts` | counts per `hash(client address, kind, daily salt)` | no address is stored; both purged after 48 h |
+| `survey` | the optional two answers | keyed by `session_id` only, no `anon_id` |
+| `mirror` | the optional server backup | the blob has a CHECK against `brief_prefs`; only SHA-256 of the recovery phrase is stored |
+| `recovery_words`, `app_config`, `calibration_runs` | reference data, settings, the calibration log | |
+
+There is **no table, column or function for the notes** (AI.26: a schema grep finds none). The notes
+settings, `brief_prefs`, never reach the server: the client removes them before every upload
+(`toUploadPayload`, M2.7), every RPC that takes JSON rejects a payload with that key anywhere in it, in any
+letter case, with `400 brief_prefs_not_accepted`, and the tables above refuse it by CHECK. The mirror therefore holds
+the save as the client stripped it; the server rejects instead of silently editing a person's backup.
+
+### The RPCs
+
+All are called as `anon` (the public key) through PostgREST; arguments are named `p_…`.
+
+| RPC | Does | Returns |
+|---|---|---|
+| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the `anon_id` and the seen lists of a save, counts one of the 5 a day for the client | `{session_id, token, anon_id, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once |
+| `next_item(p_token)` | the pending item (a reload gets the same one), else a new one; excludes items, sibling groups and families already served or in the save; only `live`, non-practice items | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'no_items'}` |
+| `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next)` | scores in SQL against the key; stores the answer; repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
+| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3 |
+| `report_problem(p_token, p_kind, p_item_id, p_detail)` | the five item categories (the item must be one this session was served), or `notes_requested` (no item, no text; never counts toward quarantine) | `{recorded}` |
+| `submit_survey(p_token, p_age_band, p_english_first)` | the voluntary two answers | `{recorded}` |
+| `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; see below | `{retest_version, param_version, sessions, eap, facets, skipped}` |
+| `mirror_put(p_token, p_save, p_phrase)` | stores the save for the session's `anon_id`; the first put returns a 12-word recovery phrase, once, and later puts must present it | `{stored, anon_id, size_bytes, recovery_phrase?}` or `{stored: false, error: 'wrong_phrase'}` |
+| `mirror_get(p_anon_id, p_phrase)` | restore on a new device | `{found, save?, updated_utc?}`; a wrong phrase and an unknown id look the same |
+| `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session issued to it | `{deleted, sessions?, mirror?}` |
+
+**`rescore`** (Phase AI amendment, ROADMAP A21/AI.8). For each session of the save that the server issued to its
+`anon_id` and finished, it reads the responses from the database and returns, per axis, the own-axis,
+practice-adjusted EAP `{mean, sd, n}` (61 equal-weight grid points on [-4, 4], prior N(0, 1); *not* the correlated MAP)
+and, per facet, the EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only
+calibration-eligible sessions are scored; an ineligible session still counts as a test of the axis (practice,
+`ordinals`, `rho`). Pretest responses and responses on quarantined items (DESIGN §4.5) are left out; block
+observations (RT, span, coding, reading) are not scored on the server before M2.2 and are counted under
+`skipped.block`. `rescore` is held to the app's engine: `rescore.db.test.ts` compares it with
+`rescoreRetest` and `eapAxis` to 1e-9 over generated sessions (practice, ineligible sessions, quarantine, order).
+
+### Errors
+
+Errors carry a PostgREST status as the SQLSTATE (`PT400`, `PT401`, …); the message is a short code and the detail says
+why. `400` invalid input (`invalid_device`, `invalid_save`, `invalid_flags`, `brief_prefs_not_accepted`, …); `401
+invalid_session` (malformed, unknown or expired token: one answer for all three); `403 anon_id_mismatch`; `404
+item_not_served`; `409 session_finished`; `413` too large; `429 rate_limited` / `too_fast`; `507 mirror_full`.
+A wrong recovery phrase is **returned** (`found: false`, `deleted: false`, `stored: false`), not raised, because
+a raise would roll back the failure count that limits guessing (60 a day per client address; there is no lockout per
+`anon_id`, which would let anyone who knows an id block its owner).
+
+### Settings (`public.app_config`)
+
+The limits and priors are rows, not constants: `rate.*` (5 sessions a day, 30 mirror puts, 200 rescores, …),
+`session.*` (200 items, 2000 ms average, 10 answers before it is checked, token lifetimes), `payload.*`,
+`save.*`, `mirror.*`, `rescore.*`, `retest.tau` and `retest.rho_max` (equal to `RHO_MAX_PRIOR` in
+`engine/retest.ts`, checked by a test), and `bank_version` / `param_version` once the bank pipeline writes them. The rate
+limits use `x-forwarded-for` (`rate.ip_header`, first entry: `rate.ip_hop` = 1); a request without it shares one bucket
+and fails closed.
+
+### What the next tasks fill in
+
+- **M2.2** replaces `hb.pick_item` (information per second, axis weights, the 0.25 cap using `item_exposure`, pretest
+  slots), adds the per-session EAP grid to `sessions.state`, the correlated MAP at `finish` (`posterior` joins the
+  reply), and the server-side evidence in `hb.is_eligible` (today: the §13 flag count over what the client reported,
+  plus the server's time check). `hb.score_response` returns nulls for items without a key row (blocks).
+- **M2.3** adds the per-session HMAC: `finish` signs the session, `rescore` and `delete_my_data` verify it
+  (`hb.session_owned` is today "the server issued that `session_id` to that `anon_id`", 95 random bits that only the
+  person's save holds), editing preferences never changes it.
+- **M2.4** repeats the acceptance as its own tests (this task already tests that `anon` reaches no table and only the
+  ten RPCs, a 25-item session reply holds no key, the brief_prefs rejection, the limits).
+- **M2.5** connects the bank (`hb load push` writes the four bank tables as `service_role`; the column names are
+  checked against `hb.load.push.COLUMNS` when the bank repo is next door) and the nightly job (`hb.purge_expired()` is
+  also run by `start_session`). A restore must go into a project that already has the migrations applied (data only):
+  `hb_definer` is a cluster-level role and a single-database dump does not carry it.
+- **M2.7** is the front end: `toUploadPayload()`, the mirror and deletion UI, the report button.
+
+### To verify against the live project (M2.6)
+
+In addition to the list above: that `postgres` may `create role`, `grant hb_definer to postgres`, `create schema … authorization
+hb_definer` and set default privileges for `hb_definer`; that `extensions` lets `hb_definer` use pgcrypto; that
+**only `public` is an exposed schema** (Settings, API), so `hb` and the tables' helpers are unreachable; which request
+header carries the client address and which entry of it (`rate.ip_header`, `rate.ip_hop`; if the gateway appends to a
+client-supplied `x-forwarded-for`, the first entry can be forged by a script, and the header the CDN sets itself, or the
+last entry, is the right one); that PostgREST maps `PT4xx`
+SQLSTATEs to those HTTP statuses; that signing up is disabled (the RPCs also work for `authenticated`, so a signed-up
+user would have the same reach as `anon`, no more); the anon and authenticated statement timeouts (3 s / 8 s; the
+`rescore` of 40 sessions of 100 answers takes about 0.3 s here).
 
 ## Secrets
 

@@ -392,7 +392,8 @@ describe('default grants: a migration that forgets to lock down leaks, as on Sup
 describe('exposedSurface: what an API role can reach, read from the catalog', () => {
   let db: TestDb
   beforeEach(async () => {
-    db = await openTestDb()
+    // The shim alone: supabase/migrations is no longer empty (M2.1), and these tests are about the shim.
+    db = await openTestDb({ migrationsDir: `${FIXTURES}migrations-empty` })
   })
   afterEach(async () => {
     await db.close()

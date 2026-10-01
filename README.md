@@ -24,7 +24,7 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/reveal/`: the results and reveal flow (build-up, distinctive peaks, required save, worked examples, retest advice, norms and pace)
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`; its optional `brief_prefs` holds the notes settings, `web/src/save/brief-prefs.ts`); `schema/brief-v1.json` is the JSON form of the notes (mirrored by `web/src/brief/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`)
-- `supabase/`: the backend's SQL (M2): `migrations/` (from M2.1) and `local/`, the stand-in for what a Supabase project provides; [supabase/README.md](supabase/README.md) has the engine decision and what the stand-in mirrors
+- `supabase/`: the backend's SQL (M2): `migrations/` (M2.1: the schema and the RPCs) and `local/`, the stand-in for what a Supabase project provides; [supabase/README.md](supabase/README.md) has the engine decision and what the stand-in mirrors
 - `web/scripts/db/`: the local Postgres test harness (M2.0): a throw-away PostgreSQL 17, one database per test file, `request()` and `rpc()` that act like PostgREST
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
 
@@ -74,7 +74,7 @@ The backend's SQL is developed and tested on a throw-away PostgreSQL 17 that `np
 npm run test:db
 ```
 
-runs the tests that need a database (`web/scripts/db/*.db.test.ts`; about 6 s). `npm test` never
+runs the tests that need a database (`web/scripts/db/*.db.test.ts`; about 15 s): the harness itself and, since M2.1, the schema and the RPCs. `npm test` never
 starts one. To connect another client (for example the bank's Python) to a database with the same
 setup, run `npm run db:up`: it prints connection URLs and runs until Ctrl-C. If a run is killed and
 leaves a server behind, `npm run db:reap` removes it. The engine choice, what the stand-in for
