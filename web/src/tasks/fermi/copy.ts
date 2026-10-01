@@ -24,6 +24,12 @@ export const ENTRY_COPY = Object.freeze({
   readsAs: 'Reads as',
 })
 
+/** A power of ten the way the entry teaches it (`1 × 10^-30`), not as JavaScript writes it (`1e-30`). */
+function tenToThe(power: number): string {
+  const [mantissa, exponent] = power.toExponential(0).split('e') as [string, string]
+  return `${mantissa} × 10^${Number(exponent)}`
+}
+
 /** A neutral note for a text that is not a magnitude. */
 export const MAGNITUDE_NOTES: Readonly<Record<MagnitudeProblem, string>> = Object.freeze({
   empty: 'Type a number.',
@@ -32,7 +38,7 @@ export const MAGNITUDE_NOTES: Readonly<Record<MagnitudeProblem, string>> = Objec
   unreadable: 'That could not be read as a number. Try 3200000, 3.2e6 or 3.2 × 10^6.',
   decimal_comma: 'Use a point for decimals, for example 2.5. A comma only groups thousands, as in 31,557,600.',
   has_unit: 'Type just the number here, and choose the unit in the unit box.',
-  range: `Use a number between ${MAGNITUDE_MIN.toExponential(0)} and ${MAGNITUDE_MAX.toExponential(0)}.`,
+  range: `Use a number between ${tenToThe(MAGNITUDE_MIN)} and ${tenToThe(MAGNITUDE_MAX)}.`,
 })
 
 /** Notes about the unit and the range as a whole. */

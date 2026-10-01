@@ -94,8 +94,10 @@ npm run test:slow
 The Playwright suite in `web/e2e/` (ROADMAP M1.A) builds the app, serves the production build with
 `vite preview` under `/humanbench/`, and runs every `*.spec.ts` in three browsers: desktop Chromium,
 desktop WebKit, and an emulated iPhone 13 (WebKit). Each UI page must have no serious or critical
-axe-core violations of WCAG 2.0, 2.1 or 2.2 at levels A and AA (DESIGN §13): call
-`expectNoSeriousAxe(page)` from `web/e2e/axe.ts` once the page has rendered.
+axe-core violations of WCAG 2.0, 2.1 or 2.2 at levels A and AA, nor of axe's best-practice rules (DESIGN §13;
+several of those, such as a positive `tabindex`, are rated serious): call `expectNoSeriousAxe(page)` from
+`web/e2e/axe.ts` once the page has rendered. `web/scripts/axe-tags.test.ts` fails if the installed axe-core has a
+rule that the scan's tags leave out and that is not a level AAA or retired rule.
 
 Download the browsers once (on Linux this also installs their system libraries):
 
@@ -145,10 +147,15 @@ Four things stand behind "axe finds nothing serious on any route":
   session flow (gate, honour code, device check, ready, practice, each part of the session, the confirmation
   questions, the break, the end, the Spatial item in a browser without WebGL), the results and the share card in
   their states, the notes builder (as it opens, filled in, with a fit note, the 18+ error, the kept settings, a
-  returning person's notice, and with a checked paste) and the RT self-test. `web/scripts/a11y-routes.test.ts`
-  fails when a page, a hash route, a session part, a renderer or a screen component has no entry, so a new
-  screen cannot skip the pass. To add one, give it an entry that opens the state, and name each file it shows
-  (a folder is not a claim); the states a component alone does not show are pinned in that test.
+  returning person's notice, and with a checked paste) and the RT self-test. The blocks that sit late in a
+  session (Corsi after two digit-span blocks, the coding grid, the reading passage and its questions) are reached
+  inside the session, on `?fast=1`. `web/scripts/a11y-routes.test.ts` fails when a page, a hash route, a session
+  part, a renderer or a screen component has no entry, so a new screen cannot skip the pass. To add one, give it
+  an entry that opens the state, and name each file it shows (a folder is not a claim). A claim of a renderer is
+  checked against the page (`RENDERER_ROOTS`, `openRoute`): the session serves its items at random, so a route that
+  plays into the Matrix & Series part claims no renderer, and the series and matrix renderers have review-page
+  routes that draw them by family. A route that shows another state of a screen that other routes also cover is
+  listed by name in that test, so none can be deleted unseen.
 - **The sweep** (`web/e2e/a11y.spec.ts`, `npm run e2e:a11y`): each route is opened on a fresh page set in a
   wide font (`web/e2e/wide-font.ts`: Verdana or DejaVu Sans, with extra letter spacing, so a layout that fits
   only a narrow font fails on every machine, the Linux CI runners included) and checked for 0 serious or
@@ -161,9 +168,10 @@ Four things stand behind "axe finds nothing serious on any route":
   page to the save, the share card and back, with Tab, Enter, Space, the arrow keys and typed text only. A guard
   in the page counts real pointer events and the test fails on any; it also fails on a screen that leaves
   nothing in focus or hides where focus is (a heading or container that a screen moves focus to is the only
-  thing allowed without a ring), and unless all six parts of the session were played in order, each showing its
-  own kind of screen. The reaction targets are read from the live region the page announces, as a
-  screen-reader user would.
+  thing allowed without a ring), and unless all six parts of the session were played in order, each showing the
+  kinds of screen it cannot do without (`web/e2e/parts.ts`; the Matrix & Series part serves series, or matrices,
+  whichever the random session id leads to). The reaction targets are read from the live region the page
+  announces, as a screen-reader user would.
 - **The colours** (`web/scripts/contrast.test.ts`, in `npm test`): every colour token of the stylesheets, in
   light and dark, is in a text pair (4.5:1) or a control pair (3:1), or is listed as decorative with a reason,
   wherever it is declared (a colour token in a rule the test does not list fails, and so does one written as a

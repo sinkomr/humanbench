@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { AXES, AXIS_CODES, initialSigma, N_AXES } from './axes'
+import { CI, cpuMs, judgedMs, median as medianOf } from '../bench-support'
 import { grmProbs, logistic } from './irt'
 import { createRng } from './prng'
 import { mapTheta, testletObservation } from './scorer'
 import type { Observation, TestletItem } from './types'
 
-/** The CI flag, read without Node typings (the app tsconfig has none); '', '0' and 'false' are unset. */
-const CI_ENV = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI
-const CI = CI_ENV !== undefined && !['', '0', 'false'].includes(CI_ENV.trim().toLowerCase())
 /** ROADMAP M1.3 acceptance: MAP with K = 17 and 150 observations < 10 ms in Node (50 ms on CI runners). */
 const BUDGET_MS = CI ? 50 : 10
 const N_OBS = 150
@@ -80,13 +78,13 @@ describe('scorer bench (ROADMAP M1.3)', () => {
     for (let i = 0; i < WARMUP; i++) mapTheta(obs, mu, sigma)
     const times: number[] = []
     let nIter = 0
+    const c0 = cpuMs()
     for (let i = 0; i < RUNS; i++) {
       const t0 = performance.now()
       nIter = mapTheta(obs, mu, sigma).nIter
       times.push(performance.now() - t0)
     }
-    times.sort((x, y) => x - y)
-    const median = (times[RUNS / 2 - 1]! + times[RUNS / 2]!) / 2
+    const median = judgedMs(medianOf(times), c0, cpuMs(), RUNS)
     if (CI) console.info(`scorer bench: median ${median.toFixed(3)} ms over ${RUNS} runs (${nIter} iterations)`)
     expect(nIter).toBeLessThan(50)
     expect(median).toBeLessThan(BUDGET_MS)
@@ -99,13 +97,13 @@ describe('scorer bench (ROADMAP M1.3)', () => {
     for (let i = 0; i < WARMUP; i++) mapTheta(obs, mu, sigma)
     const times: number[] = []
     let nIter = 0
+    const c0 = cpuMs()
     for (let i = 0; i < RUNS; i++) {
       const t0 = performance.now()
       nIter = mapTheta(obs, mu, sigma).nIter
       times.push(performance.now() - t0)
     }
-    times.sort((x, y) => x - y)
-    const median = (times[RUNS / 2 - 1]! + times[RUNS / 2]!) / 2
+    const median = judgedMs(medianOf(times), c0, cpuMs(), RUNS)
     if (CI) console.info(`scorer bench (testlets): median ${median.toFixed(3)} ms over ${RUNS} runs (${nIter} iterations)`)
     expect(nIter).toBeLessThan(50)
     expect(median).toBeLessThan(BUDGET_MS)

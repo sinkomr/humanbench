@@ -3,7 +3,8 @@
  * tsconfig has no DOM lib, so the page code is passed as strings (as `axe.ts` and `wide-font.ts` do).
  *
  * - {@link expectNoSidewaysScroll}: the page never scrolls sideways, and on failure names the
- *   elements that stick out furthest.
+ *   elements that stick out furthest. With a `scope` it judges the part of the page inside that selector (a
+ *   renderer on a desktop tool's page).
  * - {@link expectNoClippedText}: nothing hides its own text (an `overflow: hidden` box whose content
  *   is larger than the box), which is what a fixed height or an ellipsis does when text grows.
  * - {@link ZOOM_200_VIEWPORT}: a 1280 × 800 window at 200% browser zoom is 640 × 400 CSS px.
@@ -27,13 +28,23 @@ export interface SidewaysOverflow {
   readonly culprits: readonly string[]
 }
 
-/** Sideways overflow of the page now. */
-export async function sidewaysOverflow(page: Page): Promise<SidewaysOverflow> {
+/**
+ * Sideways overflow of the page now. With `scope` (a CSS selector), only what is inside the first element it matches is
+ * judged: nothing in it may reach past the window's right edge, however wide the page around it is. (The box that
+ * holds a renderer on a desktop tool's page is narrower than the one a session gives it, so the judge is the window.)
+ */
+export async function sidewaysOverflow(page: Page, scope?: string): Promise<SidewaysOverflow> {
   return page.evaluate<SidewaysOverflow>(`(() => {
-    const px = document.documentElement.scrollWidth - window.innerWidth
-    const culprits = px <= 0 ? [] : [...document.querySelectorAll('body *')]
+    const scope = ${JSON.stringify(scope ?? null)}
+    const root = scope === null ? document.body : document.querySelector(scope)
+    if (!root) return { px: 1, culprits: ['no element matches ' + scope] }
+    const inside = scope === null ? [...root.querySelectorAll('*')] : [root, ...root.querySelectorAll('*')]
+    const reach = inside
+      .filter((el) => !el.closest('.visually-hidden, .hb-sr-only'))
       .map((el) => ({ el, right: el.getBoundingClientRect().right }))
-      .filter((x) => x.right > window.innerWidth + 0.5 && !x.el.closest('.visually-hidden, .hb-sr-only'))
+    const px = scope === null ? document.documentElement.scrollWidth - window.innerWidth : Math.ceil(Math.max(0, ...reach.map((x) => x.right)) - window.innerWidth)
+    const culprits = px <= 0 ? [] : reach
+      .filter((x) => x.right > window.innerWidth + 0.5)
       .sort((a, b) => b.right - a.right)
       .slice(0, 6)
       .map((x) => x.el.tagName.toLowerCase() + '.' + [...x.el.classList].join('.') + ' "' + (x.el.textContent || '').trim().slice(0, 30) + '" right=' + x.right.toFixed(1))
@@ -41,20 +52,23 @@ export async function sidewaysOverflow(page: Page): Promise<SidewaysOverflow> {
   })()`)
 }
 
-/** Fails if the page scrolls sideways. */
-export async function expectNoSidewaysScroll(page: Page, where: string): Promise<void> {
-  const r = await sidewaysOverflow(page)
-  expect(r.px, `${where}: page scrolls sideways by ${r.px}px: ${r.culprits.join(' | ')}`).toBeLessThanOrEqual(0)
+/** Fails if the page (or, with `scope`, the part of it inside that selector) scrolls sideways. */
+export async function expectNoSidewaysScroll(page: Page, where: string, scope?: string): Promise<void> {
+  const r = await sidewaysOverflow(page, scope)
+  expect(r.px, `${where}: ${scope === undefined ? 'page' : scope} scrolls sideways by ${r.px}px: ${r.culprits.join(' | ')}`).toBeLessThanOrEqual(0)
 }
 
 /**
  * Elements that clip their own content: they hide overflow and their content is larger than they
  * are. Visually hidden text (1 px boxes) and SVG internals are not counted.
  */
-export async function clippedText(page: Page): Promise<string[]> {
+export async function clippedText(page: Page, scope?: string): Promise<string[]> {
   return page.evaluate<string[]>(`(() => {
+    const scope = ${JSON.stringify(scope ?? null)}
+    const root = scope === null ? document.body : document.querySelector(scope)
+    if (!root) return ['no element matches ' + scope]
     const out = []
-    for (const el of document.querySelectorAll('body *')) {
+    for (const el of scope === null ? root.querySelectorAll('*') : [root, ...root.querySelectorAll('*')]) {
       if (el.closest('svg')) continue
       const cs = getComputedStyle(el)
       if (cs.display === 'none' || cs.visibility === 'hidden') continue
@@ -72,9 +86,9 @@ export async function clippedText(page: Page): Promise<string[]> {
   })()`)
 }
 
-/** Fails if anything hides its own text. */
-export async function expectNoClippedText(page: Page, where: string): Promise<void> {
-  expect(await clippedText(page), `${where}: text is clipped`).toEqual([])
+/** Fails if anything hides its own text (with `scope`, only inside that selector). */
+export async function expectNoClippedText(page: Page, where: string, scope?: string): Promise<void> {
+  expect(await clippedText(page, scope), `${where}: text is clipped`).toEqual([])
 }
 
 /** Id of the style that {@link useTextZoom} injects. */

@@ -7,7 +7,10 @@
  * - every HTML page (`web/*.html`, build and dev-only) and every hash route (`#/privacy`, `#/dev/*`);
  * - every block and item renderer, which with the segment titles (A15) covers every part of the session;
  * - every screen component of the session flow, the results and the other pages;
- * - the claims in `covers` are true (the file exists), so a rename cannot leave a stale entry.
+ * - the claims in `covers` are true (the file exists), so a rename cannot leave a stale entry, and a claim of a
+ *   renderer is a claim about the page: `RENDERER_ROOTS` names what each renderer draws and the sweep checks it
+ *   (`openRoute`);
+ * - no route can be dropped unseen: each is either the only one to cover something, or pinned by name as a state.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -19,7 +22,7 @@ import { A15_SEGMENTS } from '../src/engine/selector'
 import { ENTRY_RENDERERS } from '../src/render/entry'
 import { SEGMENT_INFO } from '../src/session/segments'
 import { DEV_ONLY_PAGES, PAGES } from '../vite.config'
-import { DEV_SERVER_ROUTES, PREVIEW_ROUTES, ROUTES, SEGMENT_TITLES } from '../e2e/routes'
+import { DEV_SERVER_ROUTES, PREVIEW_ROUTES, RENDERER_ROOTS, ROUTES, SEGMENT_TITLES } from '../e2e/routes'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const SRC = join(WEB, 'src')
@@ -106,39 +109,93 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
     expect(missing, 'screen components with no route in e2e/routes.ts (add the route, or list the part with where it appears)').toEqual([])
   })
 
+  /**
+   * Routes that show a state of a screen or renderer that other routes also cover: an error, a notice, a second look, a
+   * block at another moment. The completeness checks above are per component and do not notice these go; dropping one is a
+   * decision, so it is made here, where it can be seen, and not by deleting a route.
+   */
+  const STATES = [
+    // the start of the flow
+    'gate',
+    'gate-error',
+    'gate-under-18',
+    'ready',
+    'ready-returning',
+    'practice',
+    'practice-feedback',
+    // the running session
+    'rt-intro',
+    'rt-trial',
+    'confirm-skip',
+    'confirm-finish',
+    'item-spatial-no-webgl',
+    'memory-intro',
+    'coding-intro',
+    'coding-running',
+    'reading-passage',
+    'reading-questions',
+    'break-offer',
+    'on-break',
+    'finished-nothing',
+    // the results
+    'results-building',
+    'results-drilldown',
+    'results-bars',
+    'results-open',
+    'results-leave',
+    'results-saved',
+    'share-card-dark',
+    'share-card-too-few',
+    // the notes builder
+    'notes-filled',
+    'notes-fit',
+    'notes-keep-error',
+    'notes-kept',
+    'notes-returning',
+    'notes-checker',
+    // the self-test
+    'rt-selftest-keys',
+    'rt-selftest-results',
+    // the development pages
+    'dev-blob',
+    'dev-blob-m1',
+    'dev-reveal-ai',
+    'dev-reveal-ai-share',
+    'dev-fermi',
+    'dev-fermi-notes',
+    'dev-fermi-feedback',
+  ]
+
   it('keeps the routes for the states of a screen that its component alone does not show (an error, a notice, a second look)', () => {
-    // The completeness checks above are per component. These are the states that need their own route: dropping
-    // one is a decision, so it is made here, where it can be seen, and not by deleting a route.
-    const STATES = [
-      'gate-error',
-      'gate-under-18',
-      'ready-returning',
-      'practice-feedback',
-      'confirm-skip',
-      'confirm-finish',
-      'item-spatial-no-webgl',
-      'break-offer',
-      'on-break',
-      'finished-nothing',
-      'results-building',
-      'results-drilldown',
-      'results-bars',
-      'results-open',
-      'results-leave',
-      'results-saved',
-      'share-card-dark',
-      'share-card-too-few',
-      'notes-filled',
-      'notes-fit',
-      'notes-keep-error',
-      'notes-kept',
-      'notes-returning',
-      'notes-checker',
-      'rt-selftest-keys',
-      'rt-selftest-results',
-    ]
     const ids = new Set(ROUTES.map((r) => r.id))
     expect(STATES.filter((id) => !ids.has(id))).toEqual([])
+    expect(new Set(STATES).size, 'a state is listed once').toBe(STATES.length)
+  })
+
+  it('lets no route go unseen: each is the only one to cover something, or is listed as a state above', () => {
+    // A route that nothing else could replace fails the completeness checks when it is deleted. One that shares every
+    // claim with another route (a second state of the same screen) would pass them, so it must be named as a state.
+    const unpinned = ROUTES.filter((r) => !STATES.includes(r.id) && r.covers.every((c) => ROUTES.some((o) => o !== r && o.covers.includes(c)))).map((r) => r.id)
+    expect(unpinned, 'routes that share every claim with another and are not listed in STATES (list them, or give them a claim of their own)').toEqual([])
+  })
+
+  it('names what every renderer draws, so that a claim of one is checked against the page', () => {
+    const renderers = svelteFiles(join(SRC, 'render')).filter((f) => /Renderer\.svelte$/.test(f))
+    expect(renderers.length).toBeGreaterThan(0)
+    for (const f of renderers) expect(RENDERER_ROOTS[f], `${f} has no entry in RENDERER_ROOTS (e2e/routes.ts)`).toBeDefined()
+    for (const [file, selector] of Object.entries(RENDERER_ROOTS)) {
+      const source = readFileSync(join(SRC, file), 'utf8')
+      // `section.hb-render.coding` -> the classes `hb-render` and `coding`, written in the component's own markup.
+      const classes = selector.split('.').slice(1)
+      expect(classes.length, selector).toBeGreaterThan(0)
+      for (const c of classes) expect(source, `${file} does not draw ${selector}`).toMatch(new RegExp(`class="[^"]*\\b${c}\\b`))
+    }
+  })
+
+  it('claims no renderer on a route that can only draw it by chance (the session serves its items at random)', () => {
+    for (const r of ROUTES.filter((x) => x.group === 'session' && x.covers.some((c) => c.startsWith('session/Stage')))) {
+      expect(r.covers.filter((c) => RENDERER_ROOTS[c] !== undefined), `${r.id} plays whichever item comes first`).toEqual([])
+    }
   })
 
   it('every claim in `covers` is true: the file, page or hash route exists (a directory is not a claim)', () => {

@@ -1,7 +1,9 @@
 /**
  * axe-core helpers for the e2e suite (ROADMAP M1.A: every UI task from M1.13 on must reach 0 serious
  * or critical axe issues on its routes; M1.21 extends this to every route). DESIGN §13 asks for
- * WCAG 2.2 AA, so the rule set is WCAG 2.0, 2.1 and 2.2 at levels A and AA.
+ * WCAG 2.2 AA, so the rule set is WCAG 2.0, 2.1 and 2.2 at levels A and AA, and axe's best-practice
+ * rules next to them: several of those are rated serious (`tabindex` above 0, `label-title-only`,
+ * `aria-dialog-name`, `accesskeys`), and a serious finding fails whichever rule set it came from.
  *
  * Use {@link expectNoSeriousAxe} after the page has rendered what it should, e.g.
  * `await expect(page.getByRole('heading', { level: 1 })).toBeVisible()` first.
@@ -10,13 +12,17 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page } from '@playwright/test'
 
-/** axe rule tags checked: WCAG 2.0/2.1/2.2, levels A and AA. */
+/** axe rule tags of the WCAG 2.0/2.1/2.2 A and AA success criteria. */
 export const WCAG_AA_TAGS: readonly string[] = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']
 
 /** Impacts that fail a test through {@link expectNoSeriousAxe}; "minor" and "moderate" are checked by M1.21's route sweep (`a11y.spec.ts`), through {@link nonBlockingAxeViolations}. */
 export const BLOCKING_IMPACTS: readonly string[] = ['serious', 'critical']
 
-/** The tags of the wider scan: the WCAG A/AA rules and axe's best-practice rules (landmarks, headings, regions). */
+/**
+ * The tags every scan uses: the WCAG A/AA rules and axe's best-practice rules (landmarks, headings, regions, but also
+ * serious ones such as `tabindex`). The blocking and the non-blocking helpers share this one rule set and split its findings
+ * by impact, so a finding is never missed by both. `scripts/axe-tags.test.ts` lists the rules these tags leave out.
+ */
 export const REPORT_TAGS: readonly string[] = [...WCAG_AA_TAGS, 'best-practice']
 
 export type AxeViolation = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'][number]
@@ -40,28 +46,29 @@ export async function settleTransitions(page: Page, timeout = 3000): Promise<voi
   await page.waitForFunction(idle, undefined, { timeout }).catch(() => undefined)
 }
 
-/** The serious and critical WCAG A/AA violations on the page as it is now. */
-export async function seriousAxeViolations(page: Page, scope: AxeScope = {}): Promise<AxeViolation[]> {
-  await settleTransitions(page)
-  let builder = new AxeBuilder({ page }).withTags([...WCAG_AA_TAGS])
-  for (const s of scope.include ?? []) builder = builder.include(s)
-  for (const s of scope.exclude ?? []) builder = builder.exclude(s)
-  const { violations } = await builder.analyze()
-  return violations.filter((v) => v.impact != null && BLOCKING_IMPACTS.includes(v.impact))
-}
-
-/**
- * Findings of the wider scan (WCAG A/AA and best-practice rules) that are not serious or critical: the moderate
- * and minor ones. M1.21 keeps these at none too; they are the landmarks, headings and regions a screen-reader
- * user moves by.
- */
-export async function nonBlockingAxeViolations(page: Page, scope: AxeScope = {}): Promise<AxeViolation[]> {
+/** Every violation of the {@link REPORT_TAGS} rules on the page as it is now. */
+async function scan(page: Page, scope: AxeScope): Promise<AxeViolation[]> {
   await settleTransitions(page)
   let builder = new AxeBuilder({ page }).withTags([...REPORT_TAGS])
   for (const s of scope.include ?? []) builder = builder.include(s)
   for (const s of scope.exclude ?? []) builder = builder.exclude(s)
   const { violations } = await builder.analyze()
-  return violations.filter((v) => v.impact == null || !BLOCKING_IMPACTS.includes(v.impact))
+  return violations
+}
+
+const isBlocking = (v: AxeViolation): boolean => v.impact != null && BLOCKING_IMPACTS.includes(v.impact)
+
+/** The serious and critical violations of the WCAG A/AA and best-practice rules on the page as it is now. */
+export async function seriousAxeViolations(page: Page, scope: AxeScope = {}): Promise<AxeViolation[]> {
+  return (await scan(page, scope)).filter(isBlocking)
+}
+
+/**
+ * The findings of the same scan that are not serious or critical: the moderate and minor ones. M1.21 keeps these at
+ * none too; they are the landmarks, headings and regions a screen-reader user moves by.
+ */
+export async function nonBlockingAxeViolations(page: Page, scope: AxeScope = {}): Promise<AxeViolation[]> {
+  return (await scan(page, scope)).filter((v) => !isBlocking(v))
 }
 
 /** One readable line per violation, then one per offending node. */
@@ -70,7 +77,7 @@ export function formatViolation(v: AxeViolation): string {
   return [`${v.impact ?? '?'} ${v.id}: ${v.help} (${v.helpUrl})`, ...nodes].join('\n')
 }
 
-/** Fails the test, listing each one, if the page has any serious or critical WCAG A/AA violation. */
+/** Fails the test, listing each one, if the page has any serious or critical violation (WCAG A/AA or best practice). */
 export async function expectNoSeriousAxe(page: Page, scope: AxeScope = {}): Promise<void> {
   const serious = await seriousAxeViolations(page, scope)
   expect(serious.map(formatViolation), `serious/critical axe violations on ${page.url()}`).toEqual([])

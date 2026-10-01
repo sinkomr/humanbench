@@ -26,6 +26,11 @@ import { buildResults, scoredSessions } from './results'
 import { NOTES_BUILDER_HREF, TALK_ANCHOR_ID, TALK_PREAMBLE_MAX_CHARS } from './slots'
 import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
+/** Frame time of the fake display in the tests that run a whole build-up: 10 Hz (see 'finishes by itself' below). */
+const SLOW_FRAME_MS = 100
+/** Their budget when the machine is busy: 2 s alone, 18 s at a load average of 35, and the default is 30 s. */
+const BUSY_MACHINE_MS = 120_000
+
 let cleanup: (() => void) | undefined
 afterEach(() => {
   cleanup?.()
@@ -202,7 +207,9 @@ describe('the build-up, axis by axis', () => {
   })
 
   it('finishes by itself after about 400 ms per measured skill, then offers a replay', () => {
-    const display = fakeDisplay()
+    // A 10 Hz display: the build-up is timed by the frame timestamps, not by counting frames, and every frame redraws the
+    // blob in jsdom. At 60 Hz this test drew 880 of them and took 9 s alone, which a busy machine stretched past the limit.
+    const display = fakeDisplay(SLOW_FRAME_MS)
     const m = mountFinished(bot('s_REVEALDOM0000010'), { motion: 'full', timing: display })
     const n = Number(m.c.querySelector('svg.hb-blob')!.getAttribute('data-spokes'))
     expect(n).toBe(17)
@@ -217,10 +224,10 @@ describe('the build-up, axis by axis', () => {
     expect(section(m.c, 'save')).not.toBeNull()
     display.advance(buildMs)
     expect(m.c.querySelector('.reveal')!.getAttribute('data-building')).toBe('false')
-  })
+  }, BUSY_MACHINE_MS)
 
   it('keeps keyboard focus on the button that stands in for the one just pressed (Skip ↔ Replay)', async () => {
-    const display = fakeDisplay()
+    const display = fakeDisplay(SLOW_FRAME_MS)
     const m = mountFinished(bot('s_REVEALDOM0000046'), { motion: 'full', timing: display })
     const skip = buttonByText(m.c, 'Skip animation')
     skip.focus()
@@ -236,7 +243,7 @@ describe('the build-up, axis by axis', () => {
     display.advance(20 * REVEAL_AXIS_MS + 500)
     expect(m.c.querySelector('.reveal')!.getAttribute('data-building')).toBe('false')
     expect(document.activeElement).toBe(other)
-  })
+  }, BUSY_MACHINE_MS)
 
   it('with reduced motion (or no matchMedia) there is no animation at all: the profile is complete at once, and no replay', () => {
     const m = mountFinished(bot('s_REVEALDOM0000011'), { motion: 'reduce' })

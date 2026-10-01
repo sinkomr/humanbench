@@ -9,15 +9,20 @@
  * Each entry opens its state on a fresh page and returns once it has rendered and settled. Entries
  * only navigate; they assert nothing about accessibility (the sweep does), only that the state they
  * were asked for is on screen, so a refactor that moves a screen fails here, loudly, and not as a
- * silent skip.
+ * silent skip. {@link openRoute} also checks that a route draws every renderer it claims in `covers`.
+ *
+ * The session picks its items at random (the seed is the session id), so a route that plays into the
+ * session claims only what every session draws there. A renderer an item part reaches only by chance
+ * has a route of its own that draws it by family (the review page, `family=...`).
  */
 
-import { expect, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { COPY as NOTES_COPY } from '../src/brief/copy'
 import { ENTRY_COPY as FERMI_COPY, MAGNITUDE_NOTES } from '../src/tasks/fermi/copy'
 import { demoFermiItem } from '../src/tasks/fermi/demo'
 import { REVIEW_URL, visualGalleryUrl } from './dev-server'
 import { agreeGate, answerItem, button, h1, loadSave, simulatedSave, toReady, toResults } from './flow'
+import { SessionDriver, type Screen } from './session-driver'
 
 export type RouteGroup = 'start' | 'session' | 'results' | 'notes' | 'selftest' | 'dev'
 
@@ -38,8 +43,49 @@ export interface Route {
   readonly motion?: 'allow'
   /** The route needs the Vite dev server (dev-only pages). */
   readonly devServer?: boolean
+  /**
+   * A dev-only route is not asked to fit a phone with the text at 200% (the tools are for a desktop), unless it
+   * shows a renderer that a person meets on a phone and says so here. The renderers it claims in `covers` are then
+   * judged by themselves ({@link phoneScopes}), not the desktop tool's page around them.
+   */
+  readonly phone?: true
   /** The `src/` entry points and screens this route stands for (read by `scripts/a11y-routes.test.ts`). */
   readonly covers: readonly string[]
+}
+
+/**
+ * The element each renderer draws, by the `src/` file a route names in `covers`. A route that claims one of these
+ * must show it ({@link openRoute}), so a claim is a fact about the page and not a note. `scripts/a11y-routes.test.ts`
+ * requires an entry for every renderer file and checks that the class names are in the file.
+ */
+export const RENDERER_ROOTS: Readonly<Record<string, string>> = {
+  'render/coding/CodingRenderer.svelte': 'section.hb-render.coding',
+  'render/fermi/FermiRenderer.svelte': 'section.hb-render.fermi',
+  'render/matrices/MatrixRenderer.svelte': 'div.matrix',
+  'render/quant/QuantRenderer.svelte': 'section.hb-render.quant',
+  'render/reading/ReadingRenderer.svelte': 'section.hb-render.reading',
+  'render/rotation/RotationRenderer.svelte': 'div.rotation',
+  'render/rt/RtRenderer.svelte': 'section.hb-render.rt',
+  'render/series/SeriesRenderer.svelte': 'section.hb-render.series',
+  'render/span/CorsiRenderer.svelte': 'section.hb-render.corsi',
+  'render/span/DigitSpanRenderer.svelte': 'section.hb-render.span',
+  // The two parts that draw a multiple-choice item and a typed one.
+  'render/choice/OptionGroup.svelte': 'form.choice',
+  'render/common/NumericEntry.svelte': 'form.entry',
+}
+
+/** The elements of the renderers a route claims: what a phone check judges on a desktop tool's page. */
+export function phoneScopes(route: Route): string[] {
+  return route.covers.flatMap((c) => RENDERER_ROOTS[c] ?? [])
+}
+
+/** Opens a route's state and checks that every renderer it claims is on screen (`claimTimeout`: how long to wait for each). */
+export async function openRoute(page: Page, route: Route, claimTimeout = 10_000): Promise<void> {
+  await route.open(page)
+  for (const claim of route.covers) {
+    const root = RENDERER_ROOTS[claim]
+    if (root !== undefined) await expect(page.locator(root).first(), `${route.id} claims ${claim}, which draws ${root}`).toBeVisible({ timeout: claimTimeout })
+  }
 }
 
 // ----------------------------------------------------------------------------------- helpers
@@ -91,6 +137,27 @@ export async function intoSegment(page: Page, index: number): Promise<void> {
   await toInterstitial(page, index)
   await button(page, 'Start').click()
   await expect(h1(page)).toHaveText(SEGMENT_TITLES[index]!)
+}
+
+/**
+ * Into the session on `?fast=1` (block clocks run 20 times faster: Corsi is up in about 5 s and the reading block in about
+ * 9 s, where real time would take minutes), past the interstitial of segment `index`, and on until a screen of kind `until`
+ * is up. The parts before are skipped; the blocks of the part before `until` (the digit span blocks before Corsi, the coding
+ * block before reading) are played the way a taker does (`SessionDriver`). The session's own limit is 57 minutes of that
+ * clock, 171 s of real time: far more than a test needs.
+ */
+async function playInto(page: Page, index: number, until: Screen): Promise<void> {
+  const driver = new SessionDriver(page, { touch: test.info().project.use.isMobile === true })
+  await driver.toReady('./?fast=1')
+  await driver.begin()
+  for (let i = 0; i < index; i++) {
+    await expect(h1(page)).toHaveText(`Up next: ${SEGMENT_TITLES[i]}`)
+    await driver.skipPart()
+  }
+  await expect(h1(page)).toHaveText(`Up next: ${SEGMENT_TITLES[index]}`)
+  await driver.press(button(page, 'Start'))
+  for (let step = 0; step < 40 && (await driver.screen()) !== until; step++) await driver.step()
+  expect(await driver.screen(), `played on in ${SEGMENT_TITLES[index]} and never reached a ${until} screen`).toBe(until)
 }
 
 /** A power item (choice or typed entry) is on screen. */
@@ -316,10 +383,12 @@ export const ROUTES: readonly Route[] = [
     },
   },
   {
+    // Whichever item the part serves first: a series (typed) almost always, a matrix (multiple choice) rarely. The renderers
+    // are drawn by family on the review page (`dev-review`, `dev-review-matrices`), so this claims only the screen they sit in.
     id: 'item-matrix-series',
     group: 'session',
     state: 'a matrix or series item (multiple choice or typed entry)',
-    covers: ['render/matrices/MatrixRenderer.svelte', 'render/series/SeriesRenderer.svelte', 'render/common/NumericEntry.svelte', 'render/choice/OptionGroup.svelte'],
+    covers: ['session/Stage.svelte'],
     open: async (page) => {
       await intoSegment(page, 1)
       await itemOnScreen(page)
@@ -363,7 +432,7 @@ export const ROUTES: readonly Route[] = [
     id: 'item-spatial',
     group: 'session',
     state: 'a spatial item (the figures, or the skip offer in a browser without WebGL)',
-    covers: ['render/rotation/RotationRenderer.svelte', 'render/rotation/three-view.ts'],
+    covers: ['render/rotation/RotationRenderer.svelte', 'render/rotation/three-view.ts', 'render/choice/OptionGroup.svelte'],
     open: async (page) => {
       await intoSegment(page, 2)
       await expect(page.locator('form.choice').or(page.locator('.unavailable'))).toBeVisible({ timeout: 30_000 })
@@ -405,10 +474,22 @@ export const ROUTES: readonly Route[] = [
     },
   },
   {
+    // Reached in the session after the two digit-span blocks (played on `?fast=1`, see `playInto`).
+    id: 'memory-corsi',
+    group: 'session',
+    state: 'working-memory block: the Corsi board, ready for the taker to repeat the sequence',
+    covers: ['render/span/CorsiRenderer.svelte'],
+    open: async (page) => {
+      await playInto(page, 3, 'corsi')
+      await button(page, 'Start').click()
+      await expect(page.getByText(/^Selected 0 of \d+\./)).toBeVisible({ timeout: 15_000 })
+    },
+  },
+  {
     id: 'quant-item',
     group: 'session',
     state: 'a quantitative item (typed entry)',
-    covers: ['render/quant/QuantRenderer.svelte'],
+    covers: ['render/quant/QuantRenderer.svelte', 'render/common/NumericEntry.svelte'],
     open: async (page) => {
       await intoSegment(page, 4)
       await expect(page.locator('form.entry')).toBeVisible()
@@ -422,6 +503,43 @@ export const ROUTES: readonly Route[] = [
     open: async (page) => {
       await intoSegment(page, 5)
       await expect(button(page, 'Start')).toBeVisible()
+    },
+  },
+  {
+    // Real time: the 90-second window starts at the press and outlasts every check of the sweep.
+    id: 'coding-running',
+    group: 'session',
+    state: 'processing speed block: the coding grid while the 90 seconds run',
+    covers: ['render/coding/CodingRenderer.svelte'],
+    open: async (page) => {
+      await intoSegment(page, 5)
+      await button(page, 'Start').click()
+      await expect(page.getByRole('timer')).toBeVisible()
+    },
+  },
+  {
+    // Reached in the session after the coding block (its window runs out on `?fast=1`, see `playInto`).
+    id: 'reading-passage',
+    group: 'session',
+    state: 'reading block: the passage on screen',
+    covers: ['render/reading/ReadingRenderer.svelte'],
+    open: async (page) => {
+      await playInto(page, 5, 'reading')
+      await button(page, 'Show the passage').click()
+      await expect(button(page, 'Done reading')).toBeVisible()
+    },
+  },
+  {
+    id: 'reading-questions',
+    group: 'session',
+    state: 'reading block: the questions about the passage',
+    covers: ['render/reading/ReadingRenderer.svelte'],
+    open: async (page) => {
+      await playInto(page, 5, 'reading')
+      await button(page, 'Show the passage').click()
+      await expect(button(page, 'Done reading')).toBeEnabled()
+      await button(page, 'Done reading').click()
+      await expect(page.locator('section.hb-render.reading fieldset.question').first()).toBeVisible()
     },
   },
   {
@@ -822,67 +940,27 @@ export const ROUTES: readonly Route[] = [
   {
     id: 'dev-review',
     group: 'dev',
+    phone: true,
     state: 'review.html: the G7 review page (dev server)',
     devServer: true,
-    covers: ['review.html', 'review/Review.svelte', 'review/InstanceCard.svelte'],
+    covers: ['review.html', 'review/Review.svelte', 'review/InstanceCard.svelte', 'render/series/SeriesRenderer.svelte', 'render/common/NumericEntry.svelte'],
     open: async (page) => {
       await page.goto(`${REVIEW_URL}?family=series&page=1&per=1`)
       await expect(page.getByRole('heading', { level: 2, name: /^series\b/ })).toBeVisible({ timeout: 30_000 })
     },
   },
   {
-    // The block renderers that sit late in a session (Corsi after two digit-span blocks, reading after coding)
-    // are reached here at once; the keyboard-only session (keyboard-session.spec.ts) goes through them in order.
-    id: 'dev-review-corsi',
+    // A matrix item is almost never the one the session serves, so the renderer is drawn here by family. A person meets it
+    // on a phone: the phone check judges the renderer itself, not the desktop review page around it (`phone`).
+    id: 'dev-review-matrices',
     group: 'dev',
-    state: 'review.html: the Corsi board, ready for the taker to repeat the sequence (dev server)',
+    phone: true,
+    state: 'review.html: a matrix item with its options (dev server)',
     devServer: true,
-    covers: ['render/span/CorsiRenderer.svelte'],
+    covers: ['render/matrices/MatrixRenderer.svelte', 'render/choice/OptionGroup.svelte'],
     open: async (page) => {
-      await page.goto(`${REVIEW_URL}?family=corsi&page=1&per=1`)
-      await expect(page.getByRole('heading', { level: 2, name: /^corsi\b/ })).toBeVisible({ timeout: 30_000 })
-      await page.getByRole('button', { name: 'Start' }).first().click()
-      await expect(page.getByText('Selected 0 of 3.')).toBeVisible({ timeout: 15_000 })
-    },
-  },
-  {
-    id: 'dev-review-reading',
-    group: 'dev',
-    state: 'review.html: the reading block with its passage on screen (dev server)',
-    devServer: true,
-    covers: ['render/reading/ReadingRenderer.svelte'],
-    open: async (page) => {
-      await page.goto(`${REVIEW_URL}?family=reading&page=1&per=1`)
-      await expect(page.getByRole('heading', { level: 2, name: /^reading\b/ })).toBeVisible({ timeout: 30_000 })
-      await page.getByRole('button', { name: 'Show the passage' }).first().click()
-      await expect(page.getByRole('button', { name: 'Done reading' }).first()).toBeVisible()
-    },
-  },
-  {
-    id: 'dev-review-reading-questions',
-    group: 'dev',
-    state: 'review.html: the reading block at its questions (dev server)',
-    devServer: true,
-    covers: ['render/reading/ReadingRenderer.svelte'],
-    open: async (page) => {
-      await page.goto(`${REVIEW_URL}?family=reading&page=1&per=1`)
-      await expect(page.getByRole('heading', { level: 2, name: /^reading\b/ })).toBeVisible({ timeout: 30_000 })
-      await page.getByRole('button', { name: 'Show the passage' }).first().click()
-      await page.getByRole('button', { name: 'Done reading' }).first().click()
-      await expect(page.getByRole('group').filter({ hasText: /^1\./ }).first()).toBeVisible()
-    },
-  },
-  {
-    id: 'dev-review-coding',
-    group: 'dev',
-    state: 'review.html: the coding block running (dev server)',
-    devServer: true,
-    covers: ['render/coding/CodingRenderer.svelte'],
-    open: async (page) => {
-      await page.goto(`${REVIEW_URL}?family=coding&page=1&per=1`)
-      await expect(page.getByRole('heading', { level: 2, name: /^coding\b/ })).toBeVisible({ timeout: 30_000 })
-      await page.getByRole('button', { name: 'Start' }).first().click()
-      await expect(page.getByRole('timer')).toBeVisible()
+      await page.goto(`${REVIEW_URL}?family=matrices&page=1&per=1`)
+      await expect(page.getByRole('heading', { level: 2, name: /^matrices\b/ })).toBeVisible({ timeout: 30_000 })
     },
   },
 ]

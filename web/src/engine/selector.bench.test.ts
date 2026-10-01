@@ -3,13 +3,11 @@ import { logistic } from './irt'
 import { createRng } from './prng'
 import { selectNext, selectionRng, sessionPosterior, type AdministeredItem, type SelectorState } from './selector'
 import type { Observation } from './types'
+import { CI, cpuMs, judgedMs, median as medianOf } from '../bench-support'
 import { quant } from '../tasks/quant'
 import { rotation } from '../tasks/rotation'
 import { series } from '../tasks/series'
 
-/** The CI flag, read without Node typings (the app tsconfig has none); '', '0' and 'false' are unset. */
-const CI_ENV = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.CI
-const CI = CI_ENV !== undefined && !['', '0', 'false'].includes(CI_ENV.trim().toLowerCase())
 /**
  * ROADMAP M1.14: one selection (posterior + pool + pick) < 20 ms in Node (100 ms on CI runners, as
  * M1.3's bench). This is the steady state, after {@link WARMUP} discarded runs.
@@ -22,14 +20,6 @@ const WARMUP = 5
  * marker, M1.F2, so there are no probes), about 30 ms in Node. It is bounded loosely here.
  */
 const COLD_BUDGET_MS = CI ? 1000 : 150
-
-type CpuUsage = { user: number; system: number }
-/** This process's CPU time in ms, or null where `process.cpuUsage` is missing (no Node typings in the app tsconfig). */
-function cpuMs(): number | null {
-  const p = (globalThis as { process?: { cpuUsage?: () => CpuUsage } }).process
-  const u = p?.cpuUsage?.()
-  return u === undefined ? null : (u.user + u.system) / 1000
-}
 
 /**
  * A realistic mid-session state: 24 CAT items already administered over MAT, QR and SPA with
@@ -75,7 +65,7 @@ describe('selector bench (ROADMAP M1.14)', () => {
     // Wall time counts the time this process waited for a core: on a machine running other suites (a load
     // of 100+ was seen with several worktrees) one cold selection took 185–219 ms of wall time. The CPU time it
     // used is not inflated by that, and a real regression raises both, so the smaller of the two is judged.
-    const ms = c0 === null || c1 === null ? wallMs : Math.min(wallMs, c1 - c0)
+    const ms = judgedMs(wallMs, c0, c1, 1)
     if (CI) console.info(`selector bench: cold first selection ${ms.toFixed(1)} ms`)
     expect(sel.kind).toBe('item')
     expect(ms).toBeLessThan(COLD_BUDGET_MS)
@@ -89,14 +79,16 @@ describe('selector bench (ROADMAP M1.14)', () => {
     for (let i = 0; i < WARMUP; i++) once()
     const times: number[] = []
     let poolSize = 0
+    const c0 = cpuMs()
     for (let i = 0; i < RUNS; i++) {
       const t0 = performance.now()
       const sel = once()
       times.push(performance.now() - t0)
       if (sel.kind === 'item') poolSize = sel.poolSize
     }
-    times.sort((x, y) => x - y)
-    const median = (times[RUNS / 2 - 1]! + times[RUNS / 2]!) / 2
+    const c1 = cpuMs()
+    // 43 ms against the 20 ms budget was seen at a load of about 100, and it passes alone (bench-support.ts).
+    const median = judgedMs(medianOf(times), c0, c1, RUNS)
     if (CI) console.info(`selector bench: median ${median.toFixed(3)} ms over ${RUNS} runs (pool ${poolSize})`)
     expect(poolSize).toBeGreaterThanOrEqual(20) // a realistic pool, not a trivially small one
     expect(median).toBeLessThan(BUDGET_MS)

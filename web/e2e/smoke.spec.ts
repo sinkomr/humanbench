@@ -8,7 +8,7 @@
 import { expect, test } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER, HEADING } from '../src/copy'
-import { expectNoSeriousAxe, seriousAxeViolations } from './axe'
+import { expectNoSeriousAxe, nonBlockingAxeViolations, seriousAxeViolations } from './axe'
 
 test.describe('start page', () => {
   test('loads under /humanbench/ with every asset and no errors', async ({ page }) => {
@@ -75,5 +75,23 @@ test.describe('axe helper', () => {
     const ids = (await seriousAxeViolations(page)).map((v) => v.id).sort()
     expect(ids).toEqual(['autocomplete-valid', 'color-contrast', 'image-alt', 'target-size'])
     await expect(expectNoSeriousAxe(page)).rejects.toThrow(/image-alt/)
+  })
+
+  test('reports and fails on the serious best-practice rules too, which carry no WCAG tag', async ({ page }) => {
+    await page.setContent(
+      '<!doctype html><html lang="en"><head><title>bad</title></head><body><main>' +
+        // tabindex (serious): a positive tabindex breaks the natural focus order.
+        '<button type="button" tabindex="3">Press</button>' +
+        // label-title-only (serious): a field named only by its title.
+        '<input type="text" title="Your name">' +
+        // aria-dialog-name (serious): a dialog nobody can name.
+        '<div role="dialog"><p>Hello</p></div>' +
+        '</main></body></html>',
+    )
+    const ids = (await seriousAxeViolations(page)).map((v) => v.id).sort()
+    expect(ids).toEqual(['aria-dialog-name', 'label-title-only', 'tabindex'])
+    await expect(expectNoSeriousAxe(page)).rejects.toThrow(/tabindex/)
+    // They are not also reported as the lesser kind.
+    expect((await nonBlockingAxeViolations(page)).map((v) => v.id)).not.toEqual(expect.arrayContaining(['tabindex']))
   })
 })

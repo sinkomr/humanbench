@@ -21,6 +21,7 @@
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { focusInfo, focusIsOnPlainTarget, press, tabTo } from './keyboard'
+import { partsPlayedProblems } from './parts'
 import { SEGMENT_TITLES } from './routes'
 import { useWideFont } from './wide-font'
 
@@ -431,13 +432,8 @@ test.describe('a whole session by keyboard alone (?fast=1)', () => {
     }
     // Every part of the session was played, in the order of the plan (A15), and each one showed its own kind of screen.
     expect(taker.segments, 'the parts of the session, by their interstitials').toEqual([...SEGMENT_TITLES])
-    const played = (title: string): string[] => [...(taker.played.get(title) ?? [])]
-    expect(played('Reaction time'), 'Reaction time').toEqual(expect.arrayContaining(['rt']))
-    expect(played('Matrix & Series'), 'Matrix & Series').toEqual(expect.arrayContaining(['choice', 'confidence']))
-    expect(played('Spatial'), 'Spatial').toEqual(expect.arrayContaining(['choice', 'confidence']))
-    expect(played('Working Memory'), 'Working Memory').toEqual(expect.arrayContaining(['span', 'corsi']))
-    expect(played('Quantitative Reasoning'), 'Quantitative Reasoning').toEqual(expect.arrayContaining(['entry', 'confidence']))
-    expect(played('Processing & Reading Speed'), 'Processing & Reading Speed').toEqual(expect.arrayContaining(['coding', 'reading']))
+    // Each part showed the kinds of screen it cannot do without (`parts.ts`: the Matrix & Series part serves series or matrices, whichever the random session id leads to).
+    expect(partsPlayedProblems(taker.played), 'screens a part of the session did not show').toEqual([])
 
     // The results.
     debug('results')

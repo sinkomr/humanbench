@@ -45,6 +45,7 @@ import { validateSave } from '../src/save/validate'
 import { FINISHED_COPIED, FINISHED_COPY_FAILED, READY_LOAD_BUTTON, READY_LOAD_CODE, READY_LOAD_FILE } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { button, h1, languageClean, unloadIsGuarded } from './flow'
+import { partsPlayedProblems } from './parts'
 import { SEGMENT_TITLES } from './routes'
 import { SessionDriver } from './session-driver'
 
@@ -268,13 +269,8 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
 
     // Every part of the session was played, in the order of the plan (A15), each showing its own kind of screen.
     expect(driver.segments, 'the parts of the session, by their interstitials').toEqual([...SEGMENT_TITLES])
-    const played = (title: string): string[] => [...(driver.played.get(title) ?? [])]
-    expect(played('Reaction time')).toEqual(expect.arrayContaining(['rt']))
-    expect(played('Matrix & Series')).toEqual(expect.arrayContaining(['entry', 'confidence']))
-    expect(played('Spatial')).toEqual(expect.arrayContaining(['choice', 'confidence']))
-    expect(played('Working Memory')).toEqual(expect.arrayContaining(['span', 'corsi']))
-    expect(played('Quantitative Reasoning')).toEqual(expect.arrayContaining(['entry', 'confidence']))
-    expect(played('Processing & Reading Speed')).toEqual(expect.arrayContaining(['coding', 'reading']))
+    // Each part showed the kinds of screen it cannot do without (`parts.ts`: the Matrix & Series part serves series or matrices, whichever the random session id leads to).
+    expect(partsPlayedProblems(driver.played), 'screens a part of the session did not show').toEqual([])
 
     // The reveal: the profile builds up, and the file is required before leaving.
     await driver.resultsReady()
