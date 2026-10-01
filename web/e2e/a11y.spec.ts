@@ -8,8 +8,9 @@
  *
  * - axe: 0 serious or critical WCAG 2.0/2.1/2.2 A/AA issues, in light and in dark, and no moderate or minor
  *   one either (axe's best-practice rules: landmarks, headings, regions);
- * - `prefers-reduced-motion: reduce`: nothing is animating or transitioning (a state that exists
- *   to show motion is opened with motion allowed instead, and its reduced twin is in `reveal.spec.ts`);
+ * - `prefers-reduced-motion: reduce`: nothing is animating or transitioning, and nothing started
+ *   to since the page began to load, however short (events, not a look at one moment; a state that
+ *   exists to show motion is opened with motion allowed instead, and its reduced twin is in `reveal.spec.ts`);
  * - reflow at 320 CSS px (WCAG 1.4.10), at 200% browser zoom (a 1280 px window at 200% is 640 × 400),
  *   with the text alone at 200% (WCAG 1.4.4; in a desktop window, and on a phone for the pages a person
  *   meets) and with a reader's text spacing (WCAG 1.4.12): no sideways scroll, no text clipped by its box,
@@ -36,13 +37,61 @@ async function runningAnimations(page: Page): Promise<string[]> {
     .map((a) => (a.effect && a.effect.target ? a.effect.target.tagName.toLowerCase() : '?') + ' ' + (a.animationName || a.transitionProperty || a.id || 'animation'))`)
 }
 
+/**
+ * Records every CSS animation and transition that starts (`animationstart`, `transitionrun`), from before the page's own
+ * scripts run: one that began and ended before the check is not seen by `document.getAnimations()`, an event is.
+ */
+const RECORD_MOTION = `(() => {
+  window.__hbMotion = []
+  for (const type of ['animationstart', 'transitionrun']) {
+    addEventListener(type, (e) => {
+      const t = e.target && e.target.tagName ? e.target.tagName.toLowerCase() + '.' + [...e.target.classList].join('.') : '?'
+      window.__hbMotion.push(type + ' ' + t + ' ' + (e.animationName || e.propertyName || ''))
+    }, true)
+  }
+})()`
+
+/** Animations and transitions that have started since the page began. */
+async function startedMotion(page: Page): Promise<string[]> {
+  return page.evaluate<string[]>('window.__hbMotion || []')
+}
+
 /** A fresh page for a route: wide font, the route's motion setting, any set-up it asks for. */
 async function setUp(page: Page, route: Route, viewport?: { width: number; height: number }): Promise<void> {
   await useWideFont(page)
+  await page.addInitScript(RECORD_MOTION)
   await page.emulateMedia({ reducedMotion: route.motion === 'allow' ? 'no-preference' : 'reduce', colorScheme: 'light' })
   if (viewport !== undefined) await page.setViewportSize(viewport)
   await route.prepare?.(page)
 }
+
+test.describe('the reduced-motion check is not vacuous', () => {
+  const PAGE = (rules: string): string => `(() => {
+    const s = document.createElement('style')
+    s.textContent = '@keyframes k { to { opacity: 0.5 } } .a { animation: k 2s } .b { transition: opacity 1s } ' + ${JSON.stringify(rules)}
+    document.head.append(s)
+    document.body.innerHTML = '<div class="a">x</div><div class="b">y</div>'
+    document.body.offsetWidth
+    document.querySelector('.b').style.opacity = '0.4'
+  })()`
+
+  test('sees an animation and a transition that start, even if they end at once', async ({ page }) => {
+    await page.goto('about:blank')
+    await page.evaluate(RECORD_MOTION)
+    await page.evaluate(PAGE('.a { animation-duration: 1ms } .b { transition-duration: 1ms }'))
+    await expect.poll(() => startedMotion(page)).toEqual(expect.arrayContaining([expect.stringMatching(/^animationstart div\.a k$/), expect.stringMatching(/^transitionrun div\.b opacity$/)]))
+  })
+
+  test('sees nothing when a reduce rule switches the motion off', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('about:blank')
+    await page.evaluate(RECORD_MOTION)
+    await page.evaluate(PAGE('@media (prefers-reduced-motion: reduce) { .a { animation: none } .b { transition: none } }'))
+    await page.waitForTimeout(300)
+    expect(await startedMotion(page)).toEqual([])
+    expect(await runningAnimations(page)).toEqual([])
+  })
+})
 
 test.describe('every route: axe, reduced motion', () => {
   for (const route of ROUTES) {
@@ -65,6 +114,7 @@ test.describe('every route: axe, reduced motion', () => {
         await route.open(page)
         expect(await page.evaluate<boolean>(`matchMedia('(prefers-reduced-motion: reduce)').matches`)).toBe(true)
         expect(await runningAnimations(page), `${route.state}: animations running`).toEqual([])
+        expect(await startedMotion(page), `${route.state}: animations or transitions started`).toEqual([])
       })
     }
   }

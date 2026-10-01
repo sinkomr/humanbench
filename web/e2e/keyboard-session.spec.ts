@@ -20,7 +20,8 @@
  */
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { focusInfo, press, tabTo } from './keyboard'
+import { focusInfo, focusIsOnPlainTarget, press, tabTo } from './keyboard'
+import { SEGMENT_TITLES } from './routes'
 import { useWideFont } from './wide-font'
 
 /** A control by role and exact name. */
@@ -65,6 +66,10 @@ class Taker {
   readonly noIndicator: string[] = []
   /** The kinds of screen visited, in order (no repeats in a row). */
   readonly visited: string[] = []
+  /** The parts of the session, by the title of the interstitial that announced each, in the order they came. */
+  readonly segments: string[] = []
+  /** The kinds of screen played in each part, by the part's title. */
+  readonly played = new Map<string, Set<string>>()
 
   constructor(
     readonly page: Page,
@@ -82,21 +87,27 @@ class Taker {
 
   /** Focus is on the page and shows where it is. Recorded, and reported at the end, with the screen it was on. */
   async checkFocus(where: string): Promise<void> {
-    const info = await focusInfo(this.page)
-    if (info.none) this.lostFocus.push(where)
-    else if (!info.indicator) {
-      // A heading that takes focus when a screen opens (tabindex -1) is the one place without a ring (app.css, session.css).
-      const programmatic = await this.page.evaluate<boolean>(`(() => { const e = document.activeElement; return e.tagName === 'H1' || e.getAttribute('tabindex') === '-1' })()`)
-      if (!programmatic) this.noIndicator.push(`${where}: ${info.what}`)
+    let info = await focusInfo(this.page)
+    // A screen moves focus a frame after it is drawn: give it a moment before calling it lost.
+    for (let wait = 0; wait < 10 && info.none; wait++) {
+      await this.page.waitForTimeout(50)
+      info = await focusInfo(this.page)
     }
+    if (info.none) this.lostFocus.push(where)
+    // A heading or container a screen moved focus to (tabindex -1) is the one place without a ring; a control is not exempt.
+    else if (!info.indicator && !(await focusIsOnPlainTarget(this.page))) this.noIndicator.push(`${where}: ${info.what}`)
   }
 
   async screen(): Promise<Kind> {
     return this.page.evaluate<Kind>(SCREEN)
   }
 
+  /** The part of the session on screen now (the last interstitial's title), or '' before the first. */
+  private segment = ''
+
   private note(kind: string): void {
     if (this.visited[this.visited.length - 1] !== kind) this.visited.push(kind)
+    if (this.segment !== '') this.played.get(this.segment)?.add(kind)
   }
 
   // ------------------------------------------------------------------ the start
@@ -135,12 +146,18 @@ class Taker {
     const kind = await this.screen()
     debug('screen', kind, (await heading(page).textContent().catch(() => '')) ?? '')
     const where = `${kind} (${((await heading(page).textContent()) ?? '').trim()})`
+    if (kind === 'interstitial') {
+      this.segment = ((await heading(page).textContent()) ?? '').replace(/^Up next:\s*/, '').trim()
+      this.segments.push(this.segment)
+      this.played.set(this.segment, new Set())
+    }
     this.note(kind)
+    // Every screen of the session, on arrival: focus is on the page and shows where it is (the results are checked below).
+    if (kind !== 'finished' && kind !== 'other') await this.checkFocus(where)
     switch (kind) {
       case 'finished':
         return false
       case 'interstitial':
-        await this.checkFocus(where)
         await this.activate(control(page, 'button', 'Start'))
         break
       case 'break':
@@ -374,6 +391,15 @@ test.describe('the keyboard-only guards are not vacuous', () => {
     expect(await page.evaluate<number>('window.__hbPointer'), 'a real click is counted').toBeGreaterThan(0)
   })
 
+  test('a heading or container that a screen moved focus to needs no ring, a control with tabindex -1 does', async ({ page, isMobile }) => {
+    test.skip(isMobile === true, 'a touch phone has no Tab key')
+    await page.setContent('<h1 tabindex="-1">Title</h1><div tabindex="-1" id="box">Box</div><button tabindex="-1">Press</button><input tabindex="-1" aria-label="Field"><div role="slider" tabindex="-1" aria-label="Level" aria-valuenow="1"></div><button>Plain</button>')
+    for (const [selector, plain] of [['h1', true], ['#box', true], ['button[tabindex]', false], ['input', false], ['[role=slider]', false], ['button:not([tabindex])', false]] as const) {
+      await page.locator(selector).focus()
+      expect(await focusIsOnPlainTarget(page), selector).toBe(plain)
+    }
+  })
+
   test('the focus check notices a control whose focus indicator is hidden', async ({ page, browserName, isMobile }) => {
     test.skip(isMobile === true, 'a touch phone has no Tab key')
     await page.goto('./')
@@ -403,8 +429,15 @@ test.describe('a whole session by keyboard alone (?fast=1)', () => {
       expect(steps, 'the session did not finish').toBeLessThan(3000)
       expect(Date.now() - t0, 'the session took too long').toBeLessThan(6 * 60_000)
     }
-    // Every part of the session was played.
-    expect(taker.visited).toEqual(expect.arrayContaining(['interstitial', 'rt', 'choice', 'confidence', 'span', 'corsi', 'coding', 'reading']))
+    // Every part of the session was played, in the order of the plan (A15), and each one showed its own kind of screen.
+    expect(taker.segments, 'the parts of the session, by their interstitials').toEqual([...SEGMENT_TITLES])
+    const played = (title: string): string[] => [...(taker.played.get(title) ?? [])]
+    expect(played('Reaction time'), 'Reaction time').toEqual(expect.arrayContaining(['rt']))
+    expect(played('Matrix & Series'), 'Matrix & Series').toEqual(expect.arrayContaining(['choice', 'confidence']))
+    expect(played('Spatial'), 'Spatial').toEqual(expect.arrayContaining(['choice', 'confidence']))
+    expect(played('Working Memory'), 'Working Memory').toEqual(expect.arrayContaining(['span', 'corsi']))
+    expect(played('Quantitative Reasoning'), 'Quantitative Reasoning').toEqual(expect.arrayContaining(['entry', 'confidence']))
+    expect(played('Processing & Reading Speed'), 'Processing & Reading Speed').toEqual(expect.arrayContaining(['coding', 'reading']))
 
     // The results.
     debug('results')

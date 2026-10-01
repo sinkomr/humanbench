@@ -77,5 +77,9 @@ describe('Playwright config (M1.A)', () => {
     for (const step of ['npm ci', 'npm run e2e:install', 'npx playwright install-deps "$BROWSER"', 'npm run e2e', 'actions/cache@', '~/.cache/ms-playwright']) {
       expect(job).toContain(step)
     }
+    // Each project runs in two halves (the sweep of M1.21 doubled the tests of a project), and each half keeps its own report.
+    expect(job).toContain('shard: [1, 2]')
+    expect(job).toContain('--project=${{ matrix.project }} --shard=${{ matrix.shard }}/2')
+    expect(job).toContain('name: playwright-report-${{ matrix.project }}-${{ matrix.shard }}')
   })
 })

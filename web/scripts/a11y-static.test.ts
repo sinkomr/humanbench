@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEV_ONLY_PAGES } from '../vite.config'
 import { parseBlocks, styledFiles, styleText, WEB, type Block } from './css-tokens'
+import { switchesOffAny, uncoveredMotion, unprotectedMotion } from './motion'
 
 const pages = readdirSync(WEB).filter((f) => f.endsWith('.html')).sort()
 
@@ -60,71 +61,50 @@ describe('text sizes follow the reader (WCAG 1.4.4)', () => {
 })
 
 describe('nothing moves unless the reader allows it (WCAG 2.2.2, 2.3.3; prefers-reduced-motion)', () => {
-  type Kind = 'animation' | 'transition' | 'scroll'
-
-  /** Motion declarations outside `@media (prefers-reduced-motion: no-preference)`, with the kind of each. */
-  function unprotectedMotion(blocks: Block[], protectedBy = false): { readonly kind: Kind; readonly text: string }[] {
-    const out: { kind: Kind; text: string }[] = []
-    for (const b of blocks) {
-      const here = protectedBy || /prefers-reduced-motion:\s*no-preference/.test(b.prelude)
-      const reducing = /prefers-reduced-motion:\s*reduce/.test(b.prelude)
-      if (!here && !reducing) {
-        for (const [prop, value] of b.decls) {
-          let kind: Kind | null = null
-          if (/^(animation|animation-name)$/.test(prop) && !/^none\b/.test(value)) kind = 'animation'
-          else if (/^(transition|transition-property)$/.test(prop) && !/^(none|0s)\b/.test(value)) kind = 'transition'
-          else if (prop === 'scroll-behavior' && /smooth/.test(value)) kind = 'scroll'
-          if (kind !== null) out.push({ kind, text: `${b.prelude} { ${prop}: ${value} }` })
-        }
-      }
-      if (!reducing) out.push(...unprotectedMotion(b.children, here))
-    }
-    return out
-  }
-
-  /** The kinds of motion a file's `prefers-reduced-motion: reduce` blocks switch off. */
-  function switchedOff(blocks: Block[]): Set<Kind> {
-    const off = new Set<Kind>()
-    const visit = (bs: Block[], inReduce: boolean): void => {
-      for (const b of bs) {
-        const reduce = inReduce || /prefers-reduced-motion:\s*reduce/.test(b.prelude)
-        if (reduce) {
-          for (const [prop, value] of b.decls) {
-            if (/^animation(-name)?$/.test(prop) && /^none\b/.test(value)) off.add('animation')
-            if (/^transition(-property)?$/.test(prop) && /^(none|0s)\b/.test(value)) off.add('transition')
-            if (prop === 'scroll-behavior' && /^auto\b/.test(value)) off.add('scroll')
-          }
-        }
-        visit(b.children, reduce)
-      }
-    }
-    visit(blocks, false)
-    return off
-  }
-
-  it('every animation, transition or smooth scroll is under no-preference, or its file switches motion off for reduce', () => {
+  it('every animation, transition or smooth scroll is under no-preference, or a reduce rule switches off that very selector (or *)', () => {
     const bad: string[] = []
     let withMotion = 0
     for (const file of styledFiles()) {
       const blocks = parseBlocks(styleText(join(WEB, file)))
-      const moving = unprotectedMotion(blocks)
-      if (moving.length === 0) continue
-      withMotion++
-      const off = switchedOff(blocks)
-      const left = moving.filter((m) => !off.has(m.kind))
-      if (left.length > 0) bad.push(`${file}: ${left.map((m) => m.text).join('; ')} (no reduced-motion rule for it)`)
+      if (unprotectedMotion(blocks).length > 0) withMotion++
+      const left = uncoveredMotion(blocks)
+      if (left.length > 0) bad.push(`${file}: ${left.map((m) => m.text).join('; ')} (no prefers-reduced-motion: reduce rule for this selector)`)
     }
     expect(bad).toEqual([])
     // The scan sees the motion the app has (the blob build-in); if it ever finds none, the scan is broken.
     expect(withMotion).toBeGreaterThan(0)
   })
 
-  it('keyframes exist only in files that also switch motion off for reduce', () => {
+  it('keyframes exist only in files that also switch animation off for reduce', () => {
     for (const file of styledFiles()) {
       const blocks = parseBlocks(styleText(join(WEB, file)))
       const hasKeyframes = blocks.some((b) => b.prelude.startsWith('@keyframes'))
-      if (hasKeyframes) expect(switchedOff(blocks).has('animation'), file).toBe(true)
+      if (hasKeyframes) expect(switchesOffAny(blocks, 'animation'), file).toBe(true)
     }
+  })
+
+  describe('the scan itself', () => {
+    const uncovered = (css: string): string[] => uncoveredMotion(parseBlocks(css)).map((m) => m.text)
+    const reduce = (rules: string): string => `@media (prefers-reduced-motion: reduce) { ${rules} }`
+
+    it('passes motion that is switched off for its own selector, or for *, or only runs under no-preference', () => {
+      expect(uncovered(`.a { animation: grow 1s } ${reduce('.a { animation: none }')}`)).toEqual([])
+      expect(uncovered(`.a, .b { transition: color 1s } ${reduce('.b, .a { transition: none !important }')}`)).toEqual([])
+      expect(uncovered(`html { scroll-behavior: smooth } ${reduce('* { scroll-behavior: auto }')}`)).toEqual([])
+      expect(uncovered(`@media (prefers-reduced-motion: no-preference) { .a { animation: grow 1s; transition: color 1s } }`)).toEqual([])
+      expect(uncovered(`@media (max-width: 40rem) { .a { animation: grow 1s } } ${reduce('.a { animation: none }')}`)).toEqual([])
+    })
+
+    it('fails a rule that another selector\'s reset does not stop (the reduce rule of a file is not a blanket)', () => {
+      expect(uncovered(`.a { animation: grow 1s } figure { animation: grow 900ms ease-out } ${reduce('.a { animation: none }')}`)).toEqual(['figure { animation: grow 900ms ease-out }'])
+      expect(uncovered(`.a, .b { transition: color 1s } ${reduce('.a { transition: none }')}`)).toEqual(['.a, .b { transition: color 1s }'])
+    })
+
+    it('fails a kind of motion the file never switches off, and a reset of the wrong kind', () => {
+      expect(uncovered('.a { transition: color 1s }')).toEqual(['.a { transition: color 1s }'])
+      expect(uncovered(`.a { transition: color 1s } ${reduce('.a { animation: none }')}`)).toEqual(['.a { transition: color 1s }'])
+      expect(uncovered(`html { scroll-behavior: smooth } ${reduce('.a { scroll-behavior: auto }')}`)).toEqual(['html { scroll-behavior: smooth }'])
+    })
   })
 
   it('script-driven motion (the reveal build-up, the self-test) asks matchMedia first', () => {

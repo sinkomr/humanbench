@@ -13,6 +13,7 @@
  */
 
 import { expect, type Page } from '@playwright/test'
+import { COPY as NOTES_COPY } from '../src/brief/copy'
 import { REVIEW_URL, visualGalleryUrl } from './dev-server'
 import { agreeGate, answerItem, button, h1, loadSave, simulatedSave, toReady, toResults } from './flow'
 
@@ -114,6 +115,35 @@ async function toConfidence(page: Page): Promise<void> {
     }
   }
   await expect(slider).toBeVisible()
+}
+
+/** Init script: a browser without WebGL (the renderer for the Spatial items says so and offers the skip). */
+const NO_WEBGL = (): void => {
+  const orig = HTMLCanvasElement.prototype.getContext
+  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+    if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') return null
+    return (orig as (...a: unknown[]) => unknown).call(this, type, ...rest) as never
+  } as typeof orig
+}
+
+/** Where the notes builder keeps the settings of a person who asked for it (`brief-store`). */
+const NOTES_KEY = 'hb:save:v1:prefs'
+
+/** The notes builder with a coding context and one topic, 18+ ticked and "keep my settings" pressed. */
+async function notesKept(page: Page): Promise<void> {
+  await page.goto('./notes.html')
+  await expect(page.locator('#notes-text')).toContainText('How I like explanations')
+  await page.getByRole('radio', { name: /Coding and data/ }).check()
+  await page.getByRole('button', { name: /Programming/ }).first().click()
+  await page.getByRole('group', { name: 'Programming' }).getByLabel('I know this well').check()
+  await page.getByLabel('I am 18 or older').check()
+  await page.getByRole('button', { name: NOTES_COPY.keepButton }).click()
+  await expect(page.getByTestId('keep-status')).toHaveText(NOTES_COPY.keepNow)
+}
+
+/** Writes land a moment after a change: wait until the kept save holds `needle`. */
+async function notesStored(page: Page, needle: string): Promise<void> {
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key) ?? '', NOTES_KEY), { timeout: 10_000 }).toContain(needle)
 }
 
 /** The results of the simulated person, with the build-up finished (reduced motion). */
@@ -329,6 +359,20 @@ export const ROUTES: readonly Route[] = [
     },
   },
   {
+    id: 'item-spatial-no-webgl',
+    group: 'session',
+    state: 'a spatial item in a browser without WebGL: the notice, the text alternatives and the skip offer',
+    covers: ['render/rotation/RotationRenderer.svelte'],
+    prepare: async (page) => {
+      await page.addInitScript(NO_WEBGL)
+    },
+    open: async (page) => {
+      await intoSegment(page, 2)
+      await expect(page.locator('.unavailable')).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' })).toBeVisible()
+    },
+  },
+  {
     id: 'memory-intro',
     group: 'session',
     state: 'working-memory block: digit span instructions',
@@ -481,7 +525,7 @@ export const ROUTES: readonly Route[] = [
     id: 'results-saved',
     group: 'results',
     state: 'results after the save: share card, notes card, results-talk helper, focus sessions',
-    covers: ['reveal/AfterSave.svelte', 'reveal/ShareCard.svelte', 'reveal/FocusPicker.svelte'],
+    covers: ['reveal/AfterSave.svelte', 'reveal/ShareCard.svelte', 'reveal/FocusPicker.svelte', 'brief/ui/RevealCard.svelte', 'brief/ui/ResultsTalk.svelte'],
     open: async (page) => {
       await resultsSaved(page)
       await expect(page.locator('[data-slot="working-with-ai"]')).toBeVisible()
@@ -526,7 +570,18 @@ export const ROUTES: readonly Route[] = [
     id: 'notes-filled',
     group: 'notes',
     state: 'notes builder with a context, topics, choices, typed text and drawers open',
-    covers: ['brief/NotesBuilder.svelte', 'brief/ui'],
+    covers: [
+      'brief/NotesBuilder.svelte',
+      'brief/ui/About.svelte',
+      'brief/ui/Checker.svelte',
+      'brief/ui/ExtrasPicker.svelte',
+      'brief/ui/FitLog.svelte',
+      'brief/ui/Paste.svelte',
+      'brief/ui/Preview.svelte',
+      'brief/ui/SaveSettings.svelte',
+      'brief/ui/TopicPicker.svelte',
+      'brief/ui/WherePicker.svelte',
+    ],
     open: async (page) => {
       await page.goto('./notes.html')
       await expect(page.locator('#notes-text')).toContainText('How I like explanations')
@@ -548,7 +603,7 @@ export const ROUTES: readonly Route[] = [
     id: 'notes-checker',
     group: 'notes',
     state: 'notes builder with a checked paste (warning, foreign line, reasons)',
-    covers: ['brief/ui', 'brief/check.ts'],
+    covers: ['brief/ui/Checker.svelte', 'brief/check.ts'],
     open: async (page) => {
       await page.goto('./notes.html')
       await expect(page.locator('#notes-text')).toContainText('How I like explanations')
@@ -557,6 +612,68 @@ export const ROUTES: readonly Route[] = [
       await page.getByRole('button', { name: 'Check these notes' }).click()
       await expect(page.getByTestId('check-summary')).toBeVisible()
       await page.getByText('Changes to the lines').click()
+    },
+  },
+
+  {
+    id: 'notes-fit',
+    group: 'notes',
+    state: 'notes builder with a topic rated "too basic" twice: the fit note offers a new setting',
+    covers: ['brief/ui/FitLog.svelte', 'brief/ui/TopicPicker.svelte'],
+    open: async (page) => {
+      await page.goto('./notes.html')
+      await expect(page.locator('#notes-text')).toContainText('How I like explanations')
+      await page.getByRole('button', { name: /Statistics/ }).first().click()
+      const tooBasic = page.getByRole('group', { name: 'Statistics' }).getByRole('button', { name: 'Too basic' })
+      await tooBasic.click()
+      await tooBasic.click()
+      await expect(page.getByTestId('fit-suggestion')).toBeVisible()
+    },
+  },
+  {
+    id: 'notes-keep-error',
+    group: 'notes',
+    state: 'notes builder: "keep my settings" pressed without the 18+ tick (the error is announced)',
+    covers: ['brief/ui/SaveSettings.svelte'],
+    open: async (page) => {
+      await page.goto('./notes.html')
+      await expect(page.locator('#notes-text')).toContainText('How I like explanations')
+      await page.getByRole('button', { name: NOTES_COPY.keepButton }).click()
+      await expect(page.getByTestId('adult-error')).toBeVisible()
+    },
+  },
+  {
+    id: 'notes-kept',
+    group: 'notes',
+    state: 'notes builder after a reload with the settings kept (the kept state, the saved-file button, the load form)',
+    covers: ['brief/ui/SaveSettings.svelte'],
+    open: async (page) => {
+      await notesKept(page)
+      await notesStored(page, 'brief_prefs')
+      await page.reload()
+      await expect(page.getByTestId('keep-state')).toHaveText(NOTES_COPY.keepDone)
+      await expect(page.getByRole('radio', { name: /Coding and data/ })).toBeChecked()
+    },
+  },
+  {
+    id: 'notes-returning',
+    group: 'notes',
+    state: 'notes builder of a returning person: "About notes you made earlier" (notes copied long ago are out of date)',
+    covers: ['brief/ui/Returning.svelte'],
+    open: async (page) => {
+      await notesKept(page)
+      await page.getByRole('button', { name: 'Copy the notes' }).click()
+      await expect(page.getByTestId('status')).toHaveText(NOTES_COPY.copied)
+      await notesStored(page, '"copied"')
+      // The notes were copied in January 2025: the review-by month has long passed.
+      await page.evaluate((key) => {
+        const save = JSON.parse(localStorage.getItem(key) ?? '{}') as { brief_prefs?: { contexts?: { copied?: { month: string } }[] } }
+        for (const c of save.brief_prefs?.contexts ?? []) if (c.copied) c.copied.month = '2025-01'
+        localStorage.setItem(key, JSON.stringify(save))
+      }, NOTES_KEY)
+      await page.reload()
+      await expect(page.getByTestId('returning')).toBeVisible()
+      await expect(page.getByTestId('returning-message').first()).toContainText('2025-01')
     },
   },
 
@@ -625,7 +742,7 @@ export const ROUTES: readonly Route[] = [
     id: 'dev-reveal-ai',
     group: 'dev',
     state: '#/dev/reveal-ai: the notes card after the save',
-    covers: ['#/dev/reveal-ai', 'dev/RevealAiDemo.svelte'],
+    covers: ['#/dev/reveal-ai', 'dev/RevealAiDemo.svelte', 'brief/ui/RevealCard.svelte', 'brief/ui/ResultsTalk.svelte'],
     open: async (page) => {
       await page.goto('./#/dev/reveal-ai?saved=1')
       await expect(page.getByTestId('reveal-card')).toBeVisible()

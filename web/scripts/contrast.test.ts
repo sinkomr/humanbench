@@ -6,9 +6,13 @@
  *
  * - Every colour custom property of the app's stylesheets is in a pair below (foreground, the
  *   background it is drawn on, the ratio it must reach) or is listed as decorative with the reason.
- *   A new token with neither fails the test.
- * - Every hex colour written straight into a declaration is listed (`LITERALS`) with the pairs it
- *   takes part in. A new one fails the test until its contrast is reviewed.
+ *   A new token with neither fails the test, wherever it is declared: a rule no sheet below stands
+ *   for fails as well, and so does a colour that cannot be read (a name, `oklch()`, a translucent one).
+ * - Every colour written straight into a declaration (hex, `rgb()`, `hsl()`, any colour function, a
+ *   name in a property that takes a colour) is listed (`LITERALS`) with the pairs it takes part in.
+ *   A new one fails the test until its contrast is reviewed.
+ * - No colour is set inline (a `style` attribute, `style:` directive, `el.style.x = ...`), where neither
+ *   this test nor the dark scheme would see it.
  * - The blob palette (`src/viz/palette.ts`, also drawn into the share card) has its own ratios in
  *   `src/viz/palette.test.ts`; here its backgrounds are tied to the page's.
  *
@@ -18,7 +22,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { contrastRatio, MIN_MARK_CONTRAST, MIN_TEXT_CONTRAST, THEMES } from '../src/viz/palette'
-import { hex6, literalColours, parseBlocks, resolveColour, scopesOf, styledFiles, styleText, themeOf, WEB, type Literal, type Scheme, type ScopeTokens } from './css-tokens'
+import { allColourTokens, colourWords, hex6, inlineColours, literalColours, parseBlocks, resolveColour, scopesOf, scriptedFiles, styledFiles, styleText, themeOf, WEB, type Literal, type Scheme, type ScopeTokens } from './css-tokens'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SCHEMES: readonly Scheme[] = ['light', 'dark']
@@ -174,10 +179,20 @@ describe('colour tokens: contrast of every text and control colour, light and da
 
     it(`${sheet.file} ${sheet.selector}: every colour token is read for contrast or listed as decorative`, () => {
       const scope = scopesOf(sheet.file).find((s) => s.selector === sheet.selector) as ScopeTokens
-      const declared = new Set([...Object.keys(scope.light), ...Object.keys(scope.dark)].filter((n) => resolveColour(themeOf(scope, 'light')[n] ?? '', themeOf(scope, 'light')) !== null))
+      // A token is a colour when it writes one (hex, rgb(), a name, oklch(), ...) or is another colour token seen through var().
+      const light = themeOf(scope, 'light')
+      const dark = themeOf(scope, 'dark')
+      const isColour = (n: string): boolean => [light, dark].some((env) => colourWords(env[n] ?? '', true).length > 0 || resolveColour(env[n] ?? '', env) !== null)
+      const declared = new Set([...Object.keys(scope.light), ...Object.keys(scope.dark)].filter(isColour))
       const used = new Set([...sheet.pairs.flatMap((p) => [p.fg, p.bg]), ...Object.keys(sheet.decorative)])
       const own = [...declared].filter((n) => !used.has(n))
       expect(own, 'colour tokens nobody checked: add them to a pair, or to `decorative` with the reason').toEqual([])
+      // Every colour token can be read, so its contrast can be computed: hex, an opaque rgb() or hsl(), or var() of one.
+      const unreadable = SCHEMES.flatMap((scheme) => {
+        const env = envOf(sheet, scheme)
+        return [...declared].filter((n) => env[n] !== undefined && resolveColour(env[n]!, env) === null).map((n) => `${n}: ${env[n]} (${scheme})`)
+      })
+      expect(unreadable, 'colour tokens written as a name, oklch(), color-mix() or with an alpha: write them as #rrggbb').toEqual([])
       // And a pair names only tokens that exist (its own, or those of the sheet it sits on).
       const env = envOf(sheet, 'light')
       const unknown = [...used].filter((n) => env[n] === undefined)
@@ -191,6 +206,25 @@ describe('colour tokens: contrast of every text and control colour, light and da
       expect(Object.keys(scope.dark).filter((n) => scope.light[n] === undefined)).toEqual([])
     })
   }
+})
+
+describe('no colour token is declared where the sheets above do not read it', () => {
+  const DARK = '@media (prefers-color-scheme: dark)'
+  const tokens = allColourTokens()
+
+  it('sees the tokens of the app (a scan that finds none is broken)', () => {
+    expect(tokens.length).toBeGreaterThan(40)
+    expect(new Set(tokens.map((t) => t.file)).size).toBeGreaterThanOrEqual(SHEETS.length)
+  })
+
+  it('every colour token of src/ sits in a rule that a sheet above stands for, at the top level or under prefers-color-scheme: dark', () => {
+    const known = new Set(SHEETS.map((s) => `${s.file} ${s.selector}`))
+    const stray = tokens.filter((t) => !known.has(`${t.file} ${t.selector}`) || (t.media !== '' && t.media !== DARK))
+    expect(
+      stray.map((t) => `${t.file}: ${t.media === '' ? '' : `${t.media} `}${t.selector} { ${t.name}: ${t.value} }`),
+      'colour tokens no contrast pair reads: add the rule to SHEETS with its pairs (or the token to `decorative` with the reason)',
+    ).toEqual([])
+  })
 })
 
 describe('colours written straight into declarations are reviewed', () => {
@@ -285,5 +319,16 @@ describe('a dark-scheme rule is not undone by a later rule', () => {
       }
     }
     expect(shadowed).toEqual([])
+  })
+})
+
+describe('no colour is set inline, where neither this test nor the dark scheme would see it', () => {
+  it('no style attribute, style: directive, literal fill / stroke attribute or element.style assignment of src/ holds a colour', () => {
+    const found: Record<string, string[]> = {}
+    for (const file of scriptedFiles()) {
+      const hits = inlineColours(readFileSync(join(WEB, file), 'utf8'), file.endsWith('.svelte'))
+      if (hits.length > 0) found[file] = hits
+    }
+    expect(found, 'a colour belongs in a token of a stylesheet (and in the dark scheme), not in markup or script').toEqual({})
   })
 })

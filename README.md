@@ -133,7 +133,9 @@ npx playwright show-report
 ```
 
 The `e2e` job in `.github/workflows/ci.yml` runs the same suite on pushes to `main` and `dev` and on
-pull requests, with the browsers cached, and uploads the report as an artifact.
+pull requests, with the browsers cached, and uploads the report as an artifact. Each Playwright project runs
+in two halves (`--shard=1/2`, `--shard=2/2`), six jobs in all, so that the accessibility sweep keeps each job
+well inside its time limit; locally `npm run e2e -- --project=webkit --shard=1/2` runs one half.
 
 #### The accessibility pass (ROADMAP M1.21)
 
@@ -141,26 +143,35 @@ Four things stand behind "axe finds nothing serious on any route":
 
 - **The route list** (`web/e2e/routes.ts`): the three pages, `#/privacy`, the dev routes, every screen of the
   session flow (gate, honour code, device check, ready, practice, each part of the session, the confirmation
-  questions, the break, the end), the results and the share card in their states, the notes builder (as it
-  opens, filled in, and with a checked paste) and the RT self-test. `web/scripts/a11y-routes.test.ts` fails
-  when a page, a hash route, a session part, a renderer or a screen component has no entry, so a new screen
-  cannot skip the pass. To add one, give it an entry that opens the state, and say which files it shows.
+  questions, the break, the end, the Spatial item in a browser without WebGL), the results and the share card in
+  their states, the notes builder (as it opens, filled in, with a fit note, the 18+ error, the kept settings, a
+  returning person's notice, and with a checked paste) and the RT self-test. `web/scripts/a11y-routes.test.ts`
+  fails when a page, a hash route, a session part, a renderer or a screen component has no entry, so a new
+  screen cannot skip the pass. To add one, give it an entry that opens the state, and name each file it shows
+  (a folder is not a claim); the states a component alone does not show are pinned in that test.
 - **The sweep** (`web/e2e/a11y.spec.ts`, `npm run e2e:a11y`): each route is opened on a fresh page set in a
   wide font (`web/e2e/wide-font.ts`: Verdana or DejaVu Sans, with extra letter spacing, so a layout that fits
   only a narrow font fails on every machine, the Linux CI runners included) and checked for 0 serious or
   critical axe issues in light and dark, nothing animating under `prefers-reduced-motion`, no sideways scroll
   and no clipped text at 320 px, at 200% browser zoom (640 × 400) and with the text alone at 200%, and, on
-  desktop engines, a Tab round of the page that reaches every control, never gets stuck, and shows focus.
+  desktop engines, a Tab round of the page that reaches every control, never gets stuck, and shows focus. Under
+  `prefers-reduced-motion` it also fails on any animation or transition that started while the page loaded,
+  however short (it listens for the events, not only for what is running at one moment).
 - **A whole session by keyboard** (`web/e2e/keyboard-session.spec.ts`): the `?fast=1` session from the start
   page to the save, the share card and back, with Tab, Enter, Space, the arrow keys and typed text only. A guard
   in the page counts real pointer events and the test fails on any; it also fails on a screen that leaves
-  nothing in focus or hides where focus is. The reaction targets are read from the live region the page
-  announces, as a screen-reader user would.
+  nothing in focus or hides where focus is (a heading or container that a screen moves focus to is the only
+  thing allowed without a ring), and unless all six parts of the session were played in order, each showing its
+  own kind of screen. The reaction targets are read from the live region the page announces, as a
+  screen-reader user would.
 - **The colours** (`web/scripts/contrast.test.ts`, in `npm test`): every colour token of the stylesheets, in
-  light and dark, is in a text pair (4.5:1) or a control pair (3:1), or is listed as decorative with a reason;
-  a hard-coded colour must be reviewed in the same file. `web/scripts/a11y-static.test.ts` checks the page
-  shells (language, title, zoom allowed), that no text size is fixed in px, and that every animation or
-  transition is switched off for `prefers-reduced-motion`.
+  light and dark, is in a text pair (4.5:1) or a control pair (3:1), or is listed as decorative with a reason,
+  wherever it is declared (a colour token in a rule the test does not list fails, and so does one written as a
+  name, `oklch()` or with an alpha, whose contrast cannot be computed); a hard-coded colour (hex, `rgb()`,
+  `hsl()`, a name) must be reviewed in the same file; no colour is set inline in markup or script.
+  `web/scripts/a11y-static.test.ts` checks the page shells (language, title, zoom allowed), that no text size is
+  fixed in px, and that every animation or transition is switched off for `prefers-reduced-motion` for its own
+  selector (or `*`), not just somewhere in its file.
 
 Test files live next to the code in `web/src/` (and `web/scripts/` for the Node scripts). A file named `*.dom.test.ts` or `*.svelte.test.ts` runs in jsdom (use it for components and runes); every other `*.test.ts` runs in Node. `npm run check` fails on Svelte accessibility warnings as well as type errors.
 

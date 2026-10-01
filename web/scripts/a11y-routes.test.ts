@@ -26,9 +26,12 @@ const SRC = join(WEB, 'src')
 
 const covers = ROUTES.flatMap((r) => r.covers)
 
-/** `covers` names a file under src/ (or a directory of them), an HTML page of web/, or a hash route. */
+/**
+ * `covers` names a file under src/, an HTML page of web/, or a hash route; each by its exact name. A directory
+ * is not a claim: a component added to a folder that some route draws would otherwise count as drawn.
+ */
 function isCovered(target: string): boolean {
-  return covers.some((c) => c === target || (!c.includes('.') && !c.startsWith('#') && target.startsWith(`${c}/`)))
+  return covers.includes(target)
 }
 
 function svelteFiles(dir: string): string[] {
@@ -97,19 +100,53 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
       'session/Stage.svelte': 'hosts the renderers',
       'render/coding/Glyph.svelte': 'a symbol inside the coding renderer',
       'render/matrices/MatrixCellSvg.svelte': 'a cell inside the matrix renderer',
-      'brief/ui/About.svelte': 'inside the notes builder (brief/ui)',
     }
     const dirs = ['session', 'reveal', 'render', 'dev', 'selftest', 'review', 'viz', 'brief']
     const missing = dirs.flatMap((d) => svelteFiles(join(SRC, d)).map((f) => `${d}/${f.slice(d.length + 1)}`)).concat(['App.svelte']).filter((f) => !isCovered(f) && PARTS[f] === undefined)
     expect(missing, 'screen components with no route in e2e/routes.ts (add the route, or list the part with where it appears)').toEqual([])
   })
 
-  it('every claim in `covers` is true: the file, directory, page or hash route exists', () => {
+  it('keeps the routes for the states of a screen that its component alone does not show (an error, a notice, a second look)', () => {
+    // The completeness checks above are per component. These are the states that need their own route: dropping
+    // one is a decision, so it is made here, where it can be seen, and not by deleting a route.
+    const STATES = [
+      'gate-error',
+      'gate-under-18',
+      'ready-returning',
+      'practice-feedback',
+      'confirm-skip',
+      'confirm-finish',
+      'item-spatial-no-webgl',
+      'break-offer',
+      'on-break',
+      'finished-nothing',
+      'results-building',
+      'results-drilldown',
+      'results-bars',
+      'results-open',
+      'results-leave',
+      'results-saved',
+      'share-card-dark',
+      'share-card-too-few',
+      'notes-filled',
+      'notes-fit',
+      'notes-keep-error',
+      'notes-kept',
+      'notes-returning',
+      'notes-checker',
+      'rt-selftest-keys',
+      'rt-selftest-results',
+    ]
+    const ids = new Set(ROUTES.map((r) => r.id))
+    expect(STATES.filter((id) => !ids.has(id))).toEqual([])
+  })
+
+  it('every claim in `covers` is true: the file, page or hash route exists (a directory is not a claim)', () => {
     const hashes = new Set(['#/privacy', ...Object.keys(DEV_ROUTES).map((name) => `#/dev/${name}`)])
     const wrong: string[] = []
     for (const r of ROUTES) {
       for (const c of r.covers) {
-        const ok = c.startsWith('#') ? hashes.has(c) : c.endsWith('.html') ? existsSync(join(WEB, c)) : existsSync(join(SRC, c))
+        const ok = c.startsWith('#') ? hashes.has(c) : c.endsWith('.html') ? existsSync(join(WEB, c)) : existsSync(join(SRC, c)) && statSync(join(SRC, c)).isFile()
         if (!ok) wrong.push(`${r.id}: ${c}`)
       }
     }

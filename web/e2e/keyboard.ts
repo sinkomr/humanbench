@@ -96,6 +96,20 @@ export async function focusInfo(page: Page): Promise<FocusInfo> {
   })()`)
 }
 
+/**
+ * Focus sits on a heading or a container that a screen moved it to (`tabindex="-1"`, nothing a person operates): the one
+ * place a ring is not asked for, because it only marks where the reader is. A control with `tabindex="-1"` (a button, a
+ * field, a link, a summary, or an element with the role of one) is not exempt: it takes input, so it shows where focus is.
+ */
+export async function focusIsOnPlainTarget(page: Page): Promise<boolean> {
+  return page.evaluate<boolean>(`(() => {
+    const e = document.activeElement
+    if (!e || e === document.body || e === document.documentElement) return false
+    if (e.getAttribute('tabindex') !== '-1') return false
+    return !e.matches('a[href], button, input, select, textarea, summary, [contenteditable], [role=button], [role=link], [role=checkbox], [role=radio], [role=switch], [role=slider], [role=spinbutton], [role=tab], [role=menuitem], [role=textbox], [role=option]')
+  })()`)
+}
+
 /** Press Tab until `target` has focus; returns how many presses it took. Throws, naming the stops, if it never does. */
 export async function tabTo(page: Page, target: Locator, browserName: string, max = 80): Promise<number> {
   // A target that is not on the page must not stall the run until the test times out: a short wait, then keep pressing Tab.
