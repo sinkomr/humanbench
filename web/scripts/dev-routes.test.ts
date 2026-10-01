@@ -65,7 +65,7 @@ async function builtSessionTimeScale(devRoutes: boolean): Promise<(search: strin
  * "production builds ignore it"): `sessionTimeScale` folds to 1 where `__HB_DEV_ROUTES__` is false,
  * and the banner text goes with it.
  */
-const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)', 'Fast mode (development only)']
+const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)', 'Fast mode (development only)', 'Estimation entry demo (development only)', 'demo:fermi:']
 
 describe('dev-only routes (M1.16)', () => {
   it('are on in dev and tests, off in production unless VITE_HB_DEV_ROUTES=1', () => {
@@ -79,7 +79,7 @@ describe('dev-only routes (M1.16)', () => {
   it('a plain production build ships no dev route, demo page or synthetic profile', async () => {
     const { files, text } = await appBuild(undefined)
     expect(text).toContain('HumanBench')
-    expect(files.filter((f) => /BlobDemo|RevealAiDemo|routes|synthetic/i.test(f))).toEqual([])
+    expect(files.filter((f) => /BlobDemo|RevealAiDemo|FermiDemo|routes|synthetic/i.test(f))).toEqual([])
     for (const m of DEV_MARKERS) expect(text, m).not.toContain(m)
   }, 60_000)
 
@@ -104,6 +104,7 @@ describe('dev-only routes (M1.16)', () => {
     const { files, text } = await appBuild('1')
     expect(files.some((f) => /BlobDemo/.test(f))).toBe(true)
     expect(files.some((f) => /RevealAiDemo/.test(f))).toBe(true)
+    expect(files.some((f) => /FermiDemo/.test(f))).toBe(true)
     for (const m of DEV_MARKERS) expect(text, m).toContain(m)
   }, 60_000)
 
