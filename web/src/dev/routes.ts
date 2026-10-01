@@ -15,6 +15,7 @@ export interface DevRouteProps {
 export const DEV_ROUTES: Readonly<Record<string, () => Promise<{ default: Component<DevRouteProps> }>>> = Object.freeze({
   blob: () => import('./BlobDemo.svelte'),
   'reveal-ai': () => import('./RevealAiDemo.svelte'),
+  fermi: () => import('./FermiDemo.svelte'),
 })
 
 /** `#/dev/blob?profile=full` → { name: 'blob', params }, or null for any other hash. */
