@@ -270,10 +270,21 @@
     .badge.unsure {
       color: #fbbf24;
     }
+
+    .card.failed {
+      border-color: #ff9b91;
+    }
   }
 
   .error {
     color: #b42318;
+  }
+
+  /* After the base rule: the same specificity, so the later one wins in the dark scheme. */
+  @media (prefers-color-scheme: dark) {
+    .error {
+      color: #ff9b91;
+    }
   }
 
   .verdict {

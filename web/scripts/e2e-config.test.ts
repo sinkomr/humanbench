@@ -67,6 +67,8 @@ describe('Playwright config (M1.A)', () => {
   it('has the npm scripts, and a CI job that installs browsers and runs the suite', () => {
     const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string>; devDependencies: Record<string, string> }
     expect(pkg.scripts.e2e).toBe('playwright test')
+    // The accessibility pass on its own (M1.21): the route sweep and the keyboard-only session.
+    expect(pkg.scripts['e2e:a11y']).toBe('playwright test e2e/a11y.spec.ts e2e/keyboard-session.spec.ts')
     expect(pkg.scripts['e2e:install']).toBe('playwright install --with-deps chromium webkit')
     expect(Object.keys(pkg.devDependencies)).toEqual(expect.arrayContaining(['@playwright/test', '@axe-core/playwright']))
     const ci = read('../.github/workflows/ci.yml')

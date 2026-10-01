@@ -15,6 +15,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { RESOURCE_LINE } from '../src/copy'
 import { PREAMBLE as TALK_PREAMBLE, RESULTS_TALK, REVEAL_CARD } from '../src/brief/results-talk'
 import { expectNoSeriousAxe } from './axe'
+import { useWideFont } from './wide-font'
 import { answerItem, button, h1, languageClean, loadSave, openDetails, overflow, scheme, simulatedSave, toReady, toResults, unloadIsGuarded } from './flow'
 
 const status = (page: Page) => page.locator('.reveal [role="status"]')
@@ -432,17 +433,7 @@ test.describe('the whole results page', () => {
 
 test.describe('reflow at 320 CSS px with a wide font (WCAG 1.4.10)', () => {
   test('the results, the save panel, the cards and the worked examples fit without sideways scrolling', async ({ page }) => {
-    await page.addInitScript(`(() => {
-      const add = () => {
-        if (document.getElementById('hb-wide-font') || !document.head) return
-        const s = document.createElement('style')
-        s.id = 'hb-wide-font'
-        s.textContent = ${JSON.stringify("html, html * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; hyphens: manual !important; -webkit-hyphens: manual !important; } html *:not(svg):not(svg *) { letter-spacing: 0.06em !important; }")}
-        document.head.appendChild(s)
-      }
-      add()
-      document.addEventListener('readystatechange', add)
-    })()`)
+    await useWideFont(page)
     await page.setViewportSize({ width: 320, height: 700 })
     await still(page)
     await toResults(page)

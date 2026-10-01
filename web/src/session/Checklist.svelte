@@ -85,11 +85,18 @@
     gap: 0.5rem;
   }
 
+  /* The status drops under the name when the row is too narrow for both (a phone, large text), instead of running off the page. */
   li {
-    display: grid;
-    grid-template-columns: 1.25rem minmax(0, 1fr) auto;
-    gap: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
     align-items: baseline;
+  }
+
+  .name {
+    flex: 1 1 7rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   li[data-status='current'] .name {
@@ -97,6 +104,8 @@
   }
 
   .mark {
+    flex: none;
+    width: 1.25rem;
     text-align: center;
   }
 
@@ -108,6 +117,7 @@
   }
 
   .status {
+    flex: none;
     font-size: 0.9375rem;
     color: var(--r-muted);
     white-space: nowrap;

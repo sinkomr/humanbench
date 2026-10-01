@@ -15,6 +15,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER } from '../src/copy'
 import { expectNoSeriousAxe } from './axe'
+import { useWideFont } from './wide-font'
 
 const h1 = (page: Page): Locator => page.getByRole('heading', { level: 1 })
 const button = (page: Page, name: string | RegExp): Locator => page.getByRole('button', { name, exact: typeof name === 'string' })
@@ -745,24 +746,9 @@ test.describe('the ?fast=1 dev flag (M1.15)', () => {
 
 // ------------------------------------------------------------------------------- reflow
 
-const WIDE_FONT_CSS = `
-  html, html * { font-family: Verdana, 'DejaVu Sans', sans-serif !important; hyphens: manual !important; -webkit-hyphens: manual !important; }
-  html *:not(svg):not(svg *) { letter-spacing: 0.06em !important; }
-`
-
 test.describe('reflow at 320 CSS px with a wide font (WCAG 1.4.10)', () => {
   test('every screen of the flow fits without sideways scrolling', async ({ page }) => {
-    await page.addInitScript(`(() => {
-      const add = () => {
-        if (document.getElementById('hb-wide-font') || !document.head) return
-        const s = document.createElement('style')
-        s.id = 'hb-wide-font'
-        s.textContent = ${JSON.stringify(WIDE_FONT_CSS)}
-        document.head.appendChild(s)
-      }
-      add()
-      document.addEventListener('readystatechange', add)
-    })()`)
+    await useWideFont(page)
     await page.setViewportSize({ width: 320, height: 700 })
     await page.goto('./')
     await overflow(page, 'welcome')
