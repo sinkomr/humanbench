@@ -906,7 +906,7 @@ DESIGN's mitigation, "export to Parquet, then compact to one JSONB array per ses
 
 | Object | What it is |
 |---|---|
-| `public.response_archive` | one row per archived session: the array (format 1: twelve positions per item served, the layout is in the migration), its SHA-256, the reference of the Parquet export. `ON DELETE CASCADE` from `sessions`, so `delete_my_data` deletes it. RLS on, no grant to `anon` or `authenticated`; `service_role` may read it |
+| `public.response_archive` | one row per archived session: the array (format 1: twelve positions per item served, the layout is in the migration), its SHA-256, the reference of the Parquet export. `ON DELETE CASCADE` from `sessions`, so `delete_my_data` deletes it. RLS on, no grant to `anon` or `authenticated`; `service_role` may `SELECT` the table (it cannot call `hb.responses_of`: like every API role it has no `USAGE` on `hb`; the nightly job connects as `postgres` and does) |
 | `hb.archive_items(sid)`, `hb.archive_sha(items)` | the array of a live session, and its digest |
 | `hb.archive_session(sid, sha, ref)` | the compaction of one session, run by the migration role. It locks the session row; refuses a session whose token can still be used (`too_recent`), whose rows have changed since the export (`changed`), that is already archived, or whose response disagrees with its exposure row (`inconsistent`); otherwise it inserts the archive row and deletes the exposure rows (the responses follow by the foreign key). It returns a status, never raises for these |
 | `hb.responses_of(sid)` | the session's answers as `responses` rows, live or archived (a JSON `null` answer and a missing one stay different; timestamps come back to the microsecond) |
@@ -916,22 +916,41 @@ DESIGN's mitigation, "export to Parquet, then compact to one JSONB array per ses
 checks the text), and `archive.db.test.ts` compares `rescore`'s reply and every eligibility before and after compacting
 none, some and all of a person's sessions. The functions of an active session read the live tables: a session is archived
 only after its token has expired. Compaction frees pages for reuse; `pg_database_size`, which Supabase counts, falls only
-after `VACUUM FULL` (measured: 120 sessions of 150 items, 16.8 MB to 10.2 MB, the 8.8 MB base being the schema), which the
-nightly job runs only when the size is already in the warn zone.
+after `VACUUM FULL` (measured: 120 sessions of 150 items, 16.8 MB to 10.2 MB, the 8.8 MB base being the schema). `VACUUM FULL`
+takes an `ACCESS EXCLUSIVE` lock on each table in turn, which `submit` and `next_item` (they write `responses` and
+`exposure_log`) wait behind, and it writes a second copy of the table before it drops the first. So the nightly job runs it
+only when the size is in the warn zone **and** that night's archive freed something (or an earlier attempt was put off), only
+if the largest table's copy fits under the plan's limit, and it gives each table's lock five seconds, leaving a busy table for
+the next night (`hb db nightly`, `docs/ops/backup-restore.md` in the bank). A database that stays above 300 MB with nothing
+left to archive is not rewritten every night.
 
 ### The nightly job, the backup, the size check
 
 `hb db nightly` (daily, `calibrate.yml`): `hb.purge_expired()` (the 48-hour purge, and activity that keeps a free project from
 pausing), the calibration of M4.10 when it exists, archive and compaction of sessions older than 30 days, a vacuum, the size
 check (fail from 400 MB, F11; warn from 300 MB), and a heartbeat row in `app_config` (`job.nightly_last_ok`, the database's
-clock) that the weekly backup reads: "cron missed for 6 days" fails the weekly job, which emails the owner. `hb db backup`
+clock) that the daily `heartbeat.yml` reads (and the weekly backup again): "cron missed for 6 days" fails that job, which
+emails the owner at most a day late. `hb db backup`
 (weekly, `backup.yml`) writes an age-encrypted logical backup of every table in `public` but `rate_limits` and `rate_salts`
 (hashes of addresses and the salts that make them reversible; DESIGN §11.2 purges them after 48 hours, so a backup kept eight
 weeks must not hold them) and keeps the newest 8 releases. Both workflows end green while `SUPABASE_DB_URL` is unset.
 
 What a backup does not hold: the Vault (the save-signing keys of M2.3: keep them with your password manager), `auth` and
 `storage`. What a person deleted with `delete_my_data` stays in the encrypted backups for at most eight weeks, which the
-privacy notice (M2.6) has to say. A restore applies to a database that has the migrations; `hb db restore` refuses any
+privacy notice (M2.6) has to say.
+
+**The archive files are a second place the answers live, and `delete_my_data` does not reach them.** `hb db archive` writes
+each compacted session's answers (session id, item id, the answer as typed, correct or not, response time, confidence, the
+client flags, timestamps) to an age-encrypted Parquet file in a release of the private bank repository, and those files are the
+only raw copy once the session is compacted. `delete_my_data` deletes the rows of the database, including the compacted
+array (`ON DELETE CASCADE`); it cannot delete a file in a release, and no tool removes one person's rows from one. What
+limits them is encryption (only the owner's key opens them) and `hb db expire-archive`, which deletes archive releases older
+than a number of days (DESIGN §13 says 24 months; 730) and which nothing runs unless the owner turns it on
+(`hb db nightly --expire-archive-days 730`). The privacy notice (M2.6) must say that archived answers are kept until then, and
+the owner has to decide whether to turn the expiry on. Erasing one person from archive files before they expire needs the
+session ids of the person (they are gone from the database once `delete_my_data` ran) and is not built; see the bank's
+`docs/ops/backup-restore.md`, "Personal data in the archive". The sessions, responses and everything else in the database are
+not expired after 24 months either: that purge is not built. A restore applies to a database that has the migrations; `hb db restore` refuses any
 other schema and names the differences.
 
 To verify against the live project (M2.6), in addition to the lists above: that the connection string of the nightly job

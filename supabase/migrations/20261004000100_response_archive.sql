@@ -32,8 +32,11 @@
 --
 -- Access (R-12.1): like every table, RLS on and no grant or policy for anon or authenticated. The compaction runs
 -- as the migration role (`postgres`, the SUPABASE_DB_URL of the nightly job), the owner of the tables; the
--- functions are not SECURITY DEFINER and nobody else can call them. service_role may read the archive (the
--- calibration job reads old answers through hb.responses_of); hb_definer, for rescore.
+-- functions are not SECURITY DEFINER and nobody else can call them. The nightly job, and the calibration job it
+-- will run (M4.10), connect as that role and read old answers through hb.responses_of. service_role (an API key:
+-- the bank's `hb load push`) cannot: like every API role it has no USAGE on schema hb (tested), so it cannot call
+-- hb.responses_of. It may SELECT public.response_archive itself (it has BYPASSRLS), which is the raw arrays in an
+-- internal format; hb_definer may too, for rescore.
 --
 -- Format 1 of an element of `items` (one per item served, in serving order), 12 positions:
 --   0 seq   1 item_id   2 pretest (0/1)   3 served_us   4 response   5 correct   6 score   7 rt_ms
@@ -54,7 +57,7 @@ create table public.response_archive (
   archived_at timestamptz not null default now()
 );
 comment on table public.response_archive is
-  'Sessions whose exposure-log and response rows were compacted (hb db archive, M2.5; format 1 in the migration). Read through hb.responses_of(), never directly.';
+  'Sessions whose exposure-log and response rows were compacted (hb db archive, M2.5; format 1 in the migration). Read through hb.responses_of(); the array format is internal.';
 
 alter table public.response_archive enable row level security;
 revoke all on table public.response_archive from public, anon, authenticated, service_role;
