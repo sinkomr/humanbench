@@ -12,7 +12,7 @@
  */
 
 import { autosaveKeys, browserStorage, type StorageLike } from '../save/autosave'
-import { CONSENT_KEY, TERMS_VERSION } from './constants'
+import { CONSENT_KEY, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
 
 export interface Consent {
   readonly v: 1
@@ -20,24 +20,34 @@ export interface Consent {
   readonly adult: true
 }
 
-/** The stored consent for this terms version, or null (none, unreadable, another version). */
-export function readConsent(storage: StorageLike | null = browserStorage()): Consent | null {
+/** The stored consent for this terms version (default the static version's; the online version passes its own), or null (none, unreadable, another version). */
+export function readConsent(storage: StorageLike | null = browserStorage(), terms: string = TERMS_VERSION): Consent | null {
   if (storage === null) return null
   try {
     const text = storage.getItem(CONSENT_KEY)
     if (text === null) return null
     const c = JSON.parse(text) as Partial<Consent> | null
-    return c !== null && typeof c === 'object' && c.v === 1 && c.adult === true && c.terms === TERMS_VERSION ? { v: 1, terms: c.terms, adult: true } : null
+    return c !== null && typeof c === 'object' && c.v === 1 && c.adult === true && c.terms === terms ? { v: 1, terms: c.terms, adult: true } : null
   } catch {
     return null
   }
 }
 
+/**
+ * Whether the person has passed the 18+ gate on this device under ANY terms this app has had, the static
+ * notice's or the online one's (the notes page asks it, ROADMAP AI.5, M2.7): the age confirmation is the
+ * same under both, and a person who passed it for one is not asked again for the other there. A record for
+ * terms this build does not know is not honoured, as {@link readConsent} does not.
+ */
+export function readAdultConsent(storage: StorageLike | null = browserStorage()): Consent | null {
+  return readConsent(storage, TERMS_VERSION) ?? readConsent(storage, TERMS_VERSION_SERVER)
+}
+
 /** Keep the consent (call only after the person confirmed the gate). False when storage refused it. */
-export function recordConsent(storage: StorageLike | null = browserStorage()): boolean {
+export function recordConsent(storage: StorageLike | null = browserStorage(), terms: string = TERMS_VERSION): boolean {
   if (storage === null) return false
   try {
-    storage.setItem(CONSENT_KEY, JSON.stringify({ v: 1, terms: TERMS_VERSION, adult: true } satisfies Consent))
+    storage.setItem(CONSENT_KEY, JSON.stringify({ v: 1, terms, adult: true } satisfies Consent))
     return true
   } catch {
     return false

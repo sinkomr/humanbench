@@ -6,6 +6,7 @@
  * metadata and the device facts.
  */
 
+import { pageBackend, type Backend } from '../backend/backend'
 import type { RendererTiming } from '../render/common/props'
 import { browserStorage, type StorageLike } from '../save/autosave'
 import { wallClockMs } from '../save/clock'
@@ -29,6 +30,11 @@ export interface SessionEnv {
   /** Wall-clock epoch ms (save metadata only). */
   readonly wallClockMs: () => number
   readonly device: () => DeviceEnv
+  /**
+   * The server (ROADMAP M2.7), or null/absent for the static fallback, which is the default build:
+   * then the session runs, scores and saves entirely on the device, as in M1.
+   */
+  readonly backend?: Backend | null
 }
 
 export function browserSessionEnv(scale: number = sessionTimeScale()): SessionEnv {
@@ -42,5 +48,6 @@ export function browserSessionEnv(scale: number = sessionTimeScale()): SessionEn
     storage: () => browserStorage(),
     wallClockMs,
     device: browserDeviceEnv,
+    backend: pageBackend(),
   }
 }

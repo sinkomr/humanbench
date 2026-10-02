@@ -131,6 +131,9 @@ export const FINISH_CONFIRM_NO = 'Keep going'
 export const NOTICE_TIMEOUT = 'That question ran out of time. It counts as not answered correctly.'
 export const NOTICE_MALFORMED = 'That answer could not be read. Please check it and try again.'
 export const noticeSkipped = (name: string): string => `${name} skipped. It will show as not measured.`
+/** A served question of a kind this page cannot draw yet (ROADMAP M2.7): not the browser's fault, so it does not blame it. */
+export const noticeUnsupported = (name: string): string =>
+  `This kind of question cannot be shown in this version of the page yet. You can skip ${name}; it will show as not measured.`
 export const noticeUnavailable = (name: string): string =>
   `This question cannot be shown in your browser (for example, 3D graphics may be switched off). You can skip ${name}; it will show as not measured.`
 

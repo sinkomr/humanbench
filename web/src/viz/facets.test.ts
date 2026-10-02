@@ -5,6 +5,7 @@ import { eapAxis, scoreAll } from '../engine/scorer'
 import type { Observation } from '../engine/types'
 import { countText, notMeasuredText } from './copy'
 import { clusterFacets, FACET_MIN_ITEMS, facetLabel, unmeasuredReasons, type FacetObservation } from './facets'
+import { Z90 } from './geometry'
 import { axisEstimates } from './profile'
 import { syntheticProfile } from './synthetic'
 
@@ -100,5 +101,30 @@ describe('facet drill-down (§9.6, A12)', () => {
     expect(facetLabel('3d_rotation')).toBe('3d rotation')
     expect(facetLabel('percent')).toBe('Percent')
     expect(facetLabel('digits_forward')).toBe('Digits forward')
+  })
+})
+
+describe('facets that arrive computed (the server’s, M2.7)', () => {
+  const p = syntheticProfile('m1')!
+
+  it('shows a given facet estimate with its count, in place of a local one, on a measured axis', () => {
+    const rows = clusterFacets(p.input.score, [], 'Reasoning', { precomputed: { MAT: { series: { mean: 0.5, sd: 0.4, n: 6 } } } })
+    const row = rows.find((r) => r.id === 'MAT:series')!
+    expect(row).toMatchObject({ measured: true, theta: 0.5, sd: 0.4, nItems: 6, unit: 'item', axis: 'MAT' })
+    expect(row.lo90).toBeCloseTo(0.5 - Z90 * 0.4, 9)
+    // a local estimate of the same facet gives way to it
+    const obs = items('series', 8, () => 1)
+    const both = clusterFacets(p.input.score, obs, 'Reasoning', { precomputed: { MAT: { series: { mean: -1, sd: 0.3, n: 5 } } } })
+    expect(both.find((r) => r.id === 'MAT:series')).toMatchObject({ theta: -1, nItems: 5 })
+    // facets it does not give are as before
+    expect(both.find((r) => r.id === 'MAT:matrix')).toBeUndefined()
+  })
+
+  it('gives no number on an axis that is not measured, however the facet came', () => {
+    const rows = clusterFacets(p.input.score, [], 'Reasoning', {
+      precomputed: { MAT: { series: { mean: 0.5, sd: 0.4, n: 6 } } },
+      unmeasured: { MAT: 'skipped' },
+    })
+    expect(rows.find((r) => r.id === 'MAT:series')).toMatchObject({ measured: false, reason: 'skipped' })
   })
 })

@@ -81,6 +81,18 @@ export function devRoutesEnabled(mode: string, env: Record<string, string>): boo
   return mode !== 'production' || env.VITE_HB_DEV_ROUTES === '1'
 }
 
+/**
+ * Whether the build includes the server client (`src/backend/`, ROADMAP M2.7). A plain production
+ * build has no server: `VITE_HB_SUPABASE_URL` is unset, `__HB_BACKEND__` is false, and the dynamic
+ * import of supabase-js folds away, so the Pages build ships no trace of it (the static fallback is
+ * the default build). It is on in dev and tests, in a build that names a server, and in the
+ * Playwright build (`VITE_HB_DEV_ROUTES=1`), whose pages can be pointed at a fake server with
+ * `?hb_backend=` (`src/backend/config.ts`).
+ */
+export function backendCompiledIn(mode: string, env: Record<string, string>): boolean {
+  return mode !== 'production' || (env.VITE_HB_SUPABASE_URL ?? '') !== '' || env.VITE_HB_DEV_ROUTES === '1'
+}
+
 // The GitHub Pages project site lives at /humanbench/ (ROADMAP A3).
 // Override with VITE_BASE (shell env or .env*), e.g. VITE_BASE=/ for a custom domain.
 // The Pages workflow sets it from actions/configure-pages, so a custom domain works too.
@@ -92,7 +104,7 @@ export default defineConfig(({ mode }) => {
     plugins: [svelte(), schemaAssets(), surfacesStaleness()],
     // Dev-only routes (src/dev/, e.g. the M1.16 blob demo): on in dev and tests, and in a build
     // with VITE_HB_DEV_ROUTES=1 (the Playwright e2e build); a plain production build drops them.
-    define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)) },
+    define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)), __HB_BACKEND__: JSON.stringify(backendCompiledIn(mode, env)) },
     build: { rolldownOptions: { input: { ...PAGES } } },
     test: {
       // A safety net above vitest's 5 s default, so a busy machine (e.g. the bank's pytest running

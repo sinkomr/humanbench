@@ -64,6 +64,8 @@
     facetObservations?: readonly FacetObservation[]
     /** Known facets per axis, listed even without items. */
     facetCatalog?: FacetOptions['catalog']
+    /** Facet estimates that arrive computed (the server's, M2.7). */
+    facetPrecomputed?: FacetOptions['precomputed']
     /** Colour scheme; default follows prefers-color-scheme. */
     theme?: ThemeName
     /**
@@ -76,7 +78,7 @@
     between?: Snippet
   }
 
-  let { input, facetObservations = [], facetCatalog, theme, display, between }: Props = $props()
+  let { input, facetObservations = [], facetCatalog, facetPrecomputed, theme, display, between }: Props = $props()
 
   const uid = `hb-profile-${++instances}`
   /** Facet sub-blobs need at least 3 spokes and stay legible up to 24. */
@@ -112,7 +114,7 @@
   const clusters = $derived([...new Set(estimates.map((e) => e.cluster))])
   const unmeasured = $derived(unmeasuredReasons(estimates))
   const facets: FacetEstimate[] = $derived(
-    selected === null ? [] : clusterFacets(input.score, facetObservations, selected, { catalog: facetCatalog, unmeasured }),
+    selected === null ? [] : clusterFacets(input.score, facetObservations, selected, { catalog: facetCatalog, unmeasured, precomputed: facetPrecomputed }),
   )
   const facetModel: BlobModel | null = $derived(
     facets.length >= SUB_BLOB_MIN && facets.length <= SUB_BLOB_MAX

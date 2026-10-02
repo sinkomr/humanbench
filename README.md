@@ -177,6 +177,53 @@ constant `__HB_DEV_ROUTES__` is true (the dev server, the tests and the Playwrig
 production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds the
 flag's module both ways and runs it).
 
+### Online version (ROADMAP M2.7)
+
+The default build is the static version: no server, nothing sent, exactly the session above. A deploy
+that has a Supabase project (M2.6, which is the user's to create) turns the online version on at build
+time, with the project URL and its public anon key (RLS gives the key no table; it can only call the
+whitelisted RPCs):
+
+```zsh
+VITE_HB_SUPABASE_URL=https://example.supabase.co VITE_HB_SUPABASE_ANON_KEY=the-anon-key npm run build
+```
+
+Never give the front end a service-role key. `web/src/backend/` holds the client; the pieces:
+
+- `config.ts` chooses the server (`https`, or `http` for localhost only; a half-set pair falls back to static
+  with the reason). `?hb_backend=<url>&hb_key=<key>` points one page load at a server and `?hb_backend=off`
+  forces static, but only where `__HB_DEV_ROUTES__` is true (dev, tests, the Playwright build): a production
+  link cannot send a person's answers to another server.
+- `transport.ts` loads supabase-js on demand, after the 18+ gate, with no stored session. A plain
+  production build contains none of it (`web/scripts/backend-bundle.test.ts`); a build that names a server
+  loads it as a chunk of its own.
+- `api.ts` has one method per RPC (`start_session`, `next_item`, `submit`, `finish`, `report_problem`,
+  `submit_survey`, `verify_save`, `rescore`, `mirror_put`, `mirror_get`, `delete_my_data`), checks every
+  reply (`replies.ts`), repeats only the calls that are safe to repeat, and never sends the notes settings:
+  `toUploadPayload()` (`upload.ts`) removes `brief_prefs` from a save, a guard refuses any request that
+  holds the key anywhere, and the server rejects it too (AI.26). Calls that only need the sessions the
+  server issued send only those.
+- `session.ts` is the server session (the token is kept in memory only) and the seam `SessionRun` uses
+  (`RunConfig.cat`): the server picks every counted question of the Matrix & Series, Spatial and
+  Quantitative parts and scores the answer where the key is, so the page never learns a verdict (R-11.1).
+  The timed tasks (reaction time, memory, coding and reading) stay on the device as a session of their own;
+  the served part is saved under the server's session id, unsigned until `finish` returns the signed copy,
+  which replaces it (a merge keeps the signed copy, A16). The results show the server's own-axis scores
+  (`rescore`) for the axes it publishes (`reveal/results.ts`, `overlayServed`).
+- The screens: opening and closing the session (`Opening.svelte`, `Closing.svelte`, with "use this device
+  only" if the server cannot be reached), the wait for a question (`loading` phase of the run, with the
+  clock stopped), "Report a problem" with its six kinds (`ReportProblem.svelte`), what the server could
+  check about the sessions of a save (`SaveCheck.svelte`), the optional survey (`Survey.svelte`), the optional
+  server backup with its recovery phrase (`MirrorPanel.svelte`), and `#/data` for getting a backup back and
+  deleting what is stored (`DataPage.svelte`). `copy.ts` has the words, including the online privacy notice
+  (its controller, contact and retention are still `TODO(user)`).
+
+Tests: the unit tests use a fake transport; `scripts/db/backend.db.test.ts` runs the real client over HTTP
+against the local Postgres and the real functions (`npm run test:db`, with a stand-in for PostgREST in
+`scripts/db/postgrest-shim.ts`); `scripts/backend-contract.test.ts` holds the client to the migrations and
+to DESIGN; `web/e2e/server.spec.ts` drives the whole flow in three engines against a fake project
+(`web/e2e/fake-server.ts`) and checks that the default build names no server.
+
 ### Results and reveal
 
 The end of a session (ROADMAP M1.R, DESIGN §10) is `web/src/reveal/`, shown by

@@ -55,9 +55,23 @@ export function facetLabel(facet: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+/**
+ * A facet estimate computed elsewhere: the server's own-axis posterior for the facets of the parts it
+ * scores (M2.7, `rescore`; the page never holds those answers' verdicts, R-11.1), as mean, sd (SD
+ * units) and the number of answers behind it. The server shows a facet only from 5 answers of one
+ * session, the same bar as {@link FACET_MIN_ITEMS}.
+ */
+export interface PrecomputedFacet {
+  readonly mean: number
+  readonly sd: number
+  readonly n: number
+}
+
 export interface FacetOptions {
   /** Known facets per axis, listed even with no items (e.g. from the family registry). */
   readonly catalog?: Partial<Record<AxisCode, readonly string[]>>
+  /** Facet estimates that arrive computed (the server's, M2.7), per axis and facet; they replace a local estimate of the same facet. */
+  readonly precomputed?: Readonly<Partial<Record<AxisCode, Readonly<Record<string, PrecomputedFacet>>>>>
   /**
    * Axes that are not measured on the blob, with the reason (skipped, not offered, no data): their
    * facets get no number and show that reason ({@link unmeasuredReasons}).
@@ -84,7 +98,8 @@ export function clusterFacets(score: ProfileScore, observations: readonly FacetO
   for (const a of AXES) {
     if (a.cluster !== cluster) continue
     const mine = observations.filter((o) => o.obs.axis === a.code)
-    const facets = [...new Set([...(opts.catalog?.[a.code] ?? []), ...mine.map((o) => o.facet)])]
+    const pre = opts.precomputed?.[a.code] ?? {}
+    const facets = [...new Set([...(opts.catalog?.[a.code] ?? []), ...mine.map((o) => o.facet), ...Object.keys(pre)])]
     for (const facet of facets) {
       const tagged = mine.filter((o) => o.facet === facet)
       const obs = tagged.map((o) => o.obs)
@@ -103,6 +118,11 @@ export function clusterFacets(score: ProfileScore, observations: readonly FacetO
       const axisReason = unmeasured[a.code]
       if (axisReason !== undefined) {
         out.push({ ...base, measured: false, reason: axisReason, muted: false })
+        continue
+      }
+      const given = Object.hasOwn(pre, facet) ? pre[facet] : undefined
+      if (given !== undefined) {
+        out.push({ ...base, nItems: given.n, unit: 'item', ...measuredFields(given.mean, given.sd) })
         continue
       }
       if (obs.length < FACET_MIN_ITEMS) {

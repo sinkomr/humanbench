@@ -126,6 +126,7 @@
 }
 
 .hb-screen textarea,
+.hb-screen input[type='text'],
 .hb-screen input[type='file'] {
   box-sizing: border-box;
   width: 100%;

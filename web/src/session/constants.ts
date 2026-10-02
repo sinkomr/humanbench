@@ -17,6 +17,12 @@ export const HARD_STOP_S = 57 * 60
  */
 export const TERMS_VERSION = 'terms-2026-09-draft'
 
+/**
+ * The terms version of the online version (ROADMAP M2.7): its notice says that answers are sent to a
+ * server, so a consent given to the static notice does not cover it (and the other way round).
+ */
+export const TERMS_VERSION_SERVER = 'terms-2026-10-draft-server'
+
 /** localStorage key of the stored consent (written only after the 18+ gate is passed, §13). */
 export const CONSENT_KEY = 'hb:consent:v1'
 

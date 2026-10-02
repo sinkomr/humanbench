@@ -7,6 +7,7 @@
   The buttons hand over the CURRENT save (`makeSave`), which includes the worked examples' families.
 -->
 <script lang="ts">
+  import { ANTI_COERCION } from '../brief/reveal'
   import { copySaveCode, downloadSave, shareSave, type ShareOutcome } from '../save/io'
   import type { SaveFileV1 } from '../save/types'
   import { FINISHED_AUTOSAVE_UNAVAILABLE, FINISHED_COPIED, FINISHED_COPY, FINISHED_COPY_FAILED, FINISHED_DOWNLOAD, FINISHED_DOWNLOADED } from '../session/copy'
@@ -77,6 +78,7 @@
 <section class="hb-reveal-panel save" aria-labelledby="{uid}-h" data-section="save" data-saved={saved}>
   <h2 id="{uid}-h">{SAVE_PANEL_HEADING}</h2>
   <p>{SAVE_PANEL_REQUIRED}</p>
+  <p class="note" data-anti-coercion>{ANTI_COERCION}</p>
   {#if autosave !== 'ok'}
     <p class="error">{FINISHED_AUTOSAVE_UNAVAILABLE}</p>
   {/if}

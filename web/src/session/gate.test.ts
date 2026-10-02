@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AUTOSAVE_PREFIX } from '../save/autosave'
-import { CONSENT_KEY, TERMS_VERSION } from './constants'
-import { forgetLocalData, readConsent, recordConsent } from './gate'
+import { CONSENT_KEY, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
+import { forgetLocalData, readAdultConsent, readConsent, recordConsent } from './gate'
 import { SpyStorage } from './bot'
 
 describe('the consent record (DESIGN §13)', () => {
@@ -59,5 +59,21 @@ describe('the consent record (DESIGN §13)', () => {
     expect([...s.data.keys()]).toEqual(['other-app:key'])
     expect(forgetLocalData(s)).toEqual([])
     expect(forgetLocalData(null)).toEqual([])
+  })
+})
+
+describe('the 18+ confirmation under either notice (M2.7)', () => {
+  it('is known under the static terms and the online ones, and under no others', () => {
+    for (const terms of [TERMS_VERSION, TERMS_VERSION_SERVER]) {
+      const s = new SpyStorage()
+      recordConsent(s, terms)
+      expect(readAdultConsent(s)).toEqual({ v: 1, terms, adult: true })
+      expect(readConsent(s, terms === TERMS_VERSION ? TERMS_VERSION_SERVER : TERMS_VERSION)).toBeNull() // the session's own gate asks again for the other notice
+    }
+    const other = new SpyStorage()
+    other.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms: 'older-terms', adult: true }))
+    expect(readAdultConsent(other)).toBeNull()
+    expect(readAdultConsent(new SpyStorage())).toBeNull()
+    expect(readAdultConsent(null)).toBeNull()
   })
 })

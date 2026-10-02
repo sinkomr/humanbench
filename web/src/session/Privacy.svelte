@@ -7,15 +7,20 @@
 <script lang="ts">
   import { browserStorage, type StorageLike } from '../save/autosave'
   import Screen from './Screen.svelte'
-  import { PRIVACY_BACK, PRIVACY_FORGET, PRIVACY_FORGET_DONE, PRIVACY_FORGET_NONE, PRIVACY_HEADING, PRIVACY_SECTIONS } from './copy'
+  import { DATA_LINK } from '../backend/copy'
+  import { PRIVACY_BACK, PRIVACY_FORGET, PRIVACY_FORGET_DONE, PRIVACY_FORGET_NONE, PRIVACY_HEADING, PRIVACY_SECTIONS, type PrivacySection } from './copy'
   import { forgetLocalData } from './gate'
 
   interface Props {
     /** localStorage, or a fake; read only when the person presses the delete button. */
     readonly storage?: () => StorageLike | null
+    /** The sections; default the static version's. The online version passes its own (ROADMAP M2.7). */
+    readonly sections?: readonly PrivacySection[]
+    /** Link to the page where data on the server can be fetched or deleted (the online version). */
+    readonly dataLink?: boolean
   }
 
-  let { storage = browserStorage }: Props = $props()
+  let { storage = browserStorage, sections = PRIVACY_SECTIONS, dataLink = false }: Props = $props()
 
   let message = $state('')
 
@@ -25,7 +30,7 @@
 </script>
 
 <Screen title={PRIVACY_HEADING}>
-  {#each PRIVACY_SECTIONS as section (section.heading)}
+  {#each sections as section (section.heading)}
     <h2>{section.heading}</h2>
     {#each section.paragraphs as p (p)}
       <p>{p}</p>
@@ -35,5 +40,8 @@
     <button type="button" class="hb-btn" onclick={forget}>{PRIVACY_FORGET}</button>
   </div>
   <p role="status">{message}</p>
+  {#if dataLink}
+    <p><a class="hb-standalone-link" href="#/data">{DATA_LINK}</a></p>
+  {/if}
   <p><a class="hb-standalone-link" href="#/">{PRIVACY_BACK}</a></p>
 </Screen>

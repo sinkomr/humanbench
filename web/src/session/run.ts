@@ -37,6 +37,19 @@
  * - **Item cap** (§13): a power item that gets no answer within `time_limit_s` is recorded as not
  *   correct (a time-out).
  *
+ * ## Served parts (M2.7)
+ *
+ * With `RunConfig.cat` (a server session, `backend/session.ts`) the CAT parts are not selected
+ * here: the server picks every counted item (DESIGN §11.2) and scores the answer where the key
+ * is, so this machine never learns whether an answer was right (R-11.1) and the confidence slider
+ * is the only thing between an answer and the server. The run waits in the `loading` phase for each
+ * item (the clock is paused: waiting for the network is not working), keeps every answer in an
+ * outbox until the server has acknowledged it (a failed call leaves the phase `loading` with a
+ * `problem` and a way to try again), and records the answers it hands over in a session of its own,
+ * with the server's session id ({@link SessionRun.catSessionState}): the copy of it that `finish`
+ * returns, signed, replaces this unsigned one in the save (merge, R-8.1, A16). The timed tasks
+ * (blocks) stay on the device, are scored here as before, and make the session `sessionState()`.
+ *
  * ## Skipping and finishing
  *
  * Any axis can be skipped at any time (§13 "skip any axis"): w_k = 0, the rest of its segment goes,
@@ -54,8 +67,13 @@
  * a {@link PublicItem}: its spec and ids, never the key, the parameters or the difficulty.
  */
 
+import { BackendError, problemOf, type LoadProblem } from '../backend/errors'
+import type { ServedItem } from '../backend/items'
+import type { CatAnswer, CatSource, Release } from '../backend/session'
 import { AXIS_CODES, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
 import {
+  HIDDEN_MAX_S,
+  hiddenIntervals,
   integrityReport,
   type IntegrityReport,
   type IntegrityResponse,
@@ -99,6 +117,8 @@ export type RunPhase =
   | 'interstitial'
   /** A fixed block is running in its renderer. */
   | 'block'
+  /** The server is picking the next item (M2.7); the clock is paused. */
+  | 'loading'
   /** A CAT item is on screen, waiting for an answer. */
   | 'item'
   /** The item was answered; the confidence slider is showing. */
@@ -113,7 +133,9 @@ export type EndReason = 'complete' | 'finish_early' | 'hard_stop'
 
 export type SegmentStatus = 'upcoming' | 'current' | 'done' | 'skipped' | 'not_reached'
 
-export type NoticeKind = 'timeout' | 'skipped' | 'unavailable' | 'malformed'
+export type { LoadProblem }
+
+export type NoticeKind = 'timeout' | 'skipped' | 'unavailable' | 'unsupported' | 'malformed'
 
 /** A short message about what just happened; `seq` changes with every notice so a screen reader announces it again. */
 export interface Notice {
@@ -182,6 +204,12 @@ export interface RunView {
   readonly device: DeviceInfo
   /** A focus session (`RunConfig.focus`): only the chosen parts run. */
   readonly focus: boolean
+  /** The CAT parts are served by the server (`RunConfig.cat`). */
+  readonly served: boolean
+  /** In the `loading` phase: why it is stuck, or null while the request is under way. */
+  readonly problem: LoadProblem | null
+  /** The id of the served item on screen (the one a problem report names), or null. */
+  readonly reportable: string | null
 }
 
 export interface RunConfig {
@@ -220,6 +248,11 @@ export interface RunConfig {
   readonly stopSd?: number
   /** Called after every change with its kind. */
   readonly onChange?: (kind: ChangeKind) => void
+  /**
+   * M2.7: the server serves and scores the CAT parts (module comment, "Served parts"). Absent in the
+   * static version, whose behaviour is then exactly that of M1.
+   */
+  readonly cat?: CatSource
 }
 
 /** One fixed block's outcome, for tests and the results screen. */
@@ -263,11 +296,32 @@ interface Segment {
 }
 
 interface CurrentItem {
-  readonly item: AnyItem
+  /** The generated item (key and parameters) of the static version; null for an item the server served. */
+  readonly item: AnyItem | null
+  /** The server's item (M2.7); null in the static version. */
+  readonly served: ServedItem | null
   readonly startedMs: number
   onsetMs: number | null
   unavailable: boolean
-  pending: { response: JsonValue; correct: 0 | 1; endMs: number; rtMs: number } | null
+  /** `correct` is null for a served item: the server holds the key (R-11.1). */
+  pending: { response: JsonValue; correct: 0 | 1 | null; endMs: number; rtMs: number } | null
+}
+
+/** What the screens may know of the item on screen, whoever made it. */
+interface ItemFacts {
+  readonly item_id: string
+  readonly family: string
+  readonly axis: AxisCode
+  readonly item_type: string
+  readonly spec: object
+  readonly options_count: number | undefined
+  readonly time_limit_s: number | null | undefined
+}
+
+/** The answers of one served part that are on their way to the server. */
+interface Loading {
+  readonly segment: Segment
+  readonly axes: readonly AxisCode[]
 }
 
 interface CurrentBlock {
@@ -298,6 +352,16 @@ function familyOf(name: string): AnyFamily {
   return f
 }
 
+/**
+ * Whether `response` is an answer the renderer of a served item could have given: an option position
+ * for a multiple-choice item, text for a typed one (the checks `mcResponseIndex` and `entryResponse` make
+ * for a generated item, without the key). Anything else is not sent.
+ */
+export function servedResponseFits(item: ServedItem, response: unknown): boolean {
+  if (item.options_count !== undefined) return typeof response === 'number' && Number.isInteger(response) && response >= 0 && response < item.options_count
+  return typeof response === 'string' && response.length <= 256
+}
+
 /** Whole minutes for "About N min" (at least 1). */
 function minutesOf(seconds: number): number {
   return Math.max(1, Math.round(seconds / 60))
@@ -305,6 +369,9 @@ function minutesOf(seconds: number): number {
 
 /** A minimum on the interstitial's estimate of a first-session CAT segment: the 3-item floor takes about this long. */
 const FLOOR_SEGMENT_MIN_S = 120
+
+/** How many times a served part lets go of an item left pending by another part before it gives up (M2.7). */
+const MAX_FOREIGN_RELEASES = 3
 
 // -------------------------------------------------------------------------------- run
 
@@ -349,6 +416,18 @@ export class SessionRun {
   readonly #segmentEnds: { segment: SegmentId; reason: NoItemReason | 'skipped' }[] = []
   readonly #visibility: VisibilityEvent[] = []
   readonly #paste: PasteEvent[] = []
+  // Served parts (M2.7): see the module comment. All empty and unused without `cfg.cat`.
+  readonly #cat: CatSource | undefined
+  readonly #catResponses: ResponseTuple[] = []
+  readonly #catSeen: string[] = []
+  readonly #catAxes: AxisCode[] = []
+  readonly #outbox: CatAnswer[] = []
+  #loading: Loading | null = null
+  #problem: LoadProblem | null = null
+  #fetchSeq = 0
+  #flushing: Promise<void> | null = null
+  /** The windows of the served answers (onset, end) on the session timeline, for the integrity flags. */
+  readonly #catWindows: { onset: number; end: number }[] = []
   #report: { key: string; value: IntegrityReport } | null = null
   /** True while the constructor runs: no change event fires before the caller holds the run. */
   #booting = true
@@ -366,6 +445,7 @@ export class SessionRun {
     this.#seenBase = cfg.seenFamilies ?? []
     this.#device = cfg.device
     this.#rtInput = cfg.rtInput
+    this.#cat = cfg.cat
     for (const k of cfg.skipped ?? []) this.#markSkipped(k)
     if (cfg.focus !== undefined) for (const k of AXIS_CODES) if (!cfg.focus.includes(k) && !this.#skipped.has(k)) this.#weights[k] = 0
     const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: this.#targetS, seenFamilies: this.#seenBase })
@@ -414,19 +494,42 @@ export class SessionRun {
     return { id: s.id, title: info.title, cluster: info.cluster, axes: s.axes, kind: s.kind, minutes: minutesOf(seconds), status: s.status }
   }
 
+  /** What the screens may know of the item on screen, whoever made it. */
+  #facts(cur: CurrentItem): ItemFacts {
+    const i = cur.item
+    if (i !== null) {
+      return { item_id: i.item_id, family: i.family, axis: i.axis, item_type: i.item_type, spec: i.spec, options_count: i.options_count, time_limit_s: i.time_limit_s }
+    }
+    const sv = cur.served!
+    return { item_id: sv.item_id, family: sv.family, axis: this.#servedAxis(sv), item_type: sv.item_type, spec: sv.spec, options_count: sv.options_count, time_limit_s: sv.time_limit_s }
+  }
+
+  /**
+   * The axis a served item is on. The server does not say (it hands over only what a client may
+   * see): the family it names is a registered one for every item of the M1 pool, else it is the
+   * part's own axis (the three served parts have one each).
+   */
+  #servedAxis(sv: ServedItem): AxisCode {
+    const known = getFamily(sv.family)?.axis
+    if (known !== undefined) return known
+    const seg = this.#segments[this.#segIdx]
+    return seg?.axes.find((k) => !this.#skipped.has(k)) ?? seg?.axes[0] ?? 'MAT'
+  }
+
   view(): RunView {
     const seg = this.#segments[this.#segIdx]
     const cur = this.#current
+    const facts = cur === null ? null : this.#facts(cur)
     let confidence: RunView['confidence'] = null
-    if (this.#phase === 'confidence' && cur !== null) {
-      const k = cur.item.options_count
+    if (this.#phase === 'confidence' && facts !== null) {
+      const k = facts.options_count
       const floorPct = confidenceFloorPct(k)
       confidence = { floorPct, startPct: confidenceStartPct(floorPct), optionsCount: k ?? null }
     }
     let skippable: AxisCode | null = null
-    if (this.#phase === 'item' || this.#phase === 'confidence') skippable = cur?.item.axis ?? null
+    if (this.#phase === 'item' || this.#phase === 'confidence') skippable = facts?.axis ?? null
     else if (this.#phase === 'block') skippable = this.#currentBlock?.step.axis ?? null
-    else if (this.#phase === 'interstitial' && seg !== undefined) skippable = seg.axes.find((k) => !this.#skipped.has(k)) ?? null
+    else if ((this.#phase === 'interstitial' || this.#phase === 'loading') && seg !== undefined) skippable = seg.axes.find((k) => !this.#skipped.has(k)) ?? null
     return {
       phase: this.#phase,
       ended: this.#endReason,
@@ -434,16 +537,16 @@ export class SessionRun {
       segmentIndex: this.#segIdx,
       segment: seg === undefined ? null : this.#segmentView(seg),
       item:
-        cur === null
+        facts === null
           ? null
           : {
-              item_id: cur.item.item_id,
-              family: cur.item.family,
-              axis: cur.item.axis,
-              item_type: cur.item.item_type,
-              spec: cur.item.spec,
-              ...(cur.item.options_count === undefined ? {} : { options_count: cur.item.options_count }),
-              time_limit_s: cur.item.time_limit_s ?? DEFAULT_ITEM_LIMIT_S,
+              item_id: facts.item_id,
+              family: facts.family,
+              axis: facts.axis,
+              item_type: facts.item_type,
+              spec: facts.spec,
+              ...(facts.options_count === undefined ? {} : { options_count: facts.options_count }),
+              time_limit_s: facts.time_limit_s ?? DEFAULT_ITEM_LIMIT_S,
             },
       block:
         this.#currentBlock === null
@@ -462,12 +565,15 @@ export class SessionRun {
       targetS: this.#targetS,
       breakAtS: this.#breakAtS,
       hardStopS: this.#hardStopS,
-      counts: { items: this.#administered.length, blocks: this.#blockRecords.length },
+      counts: { items: this.#administered.length + this.#catAnswered(), blocks: this.#blockRecords.length },
       skipped: [...this.#skipped],
       skippable,
       rtInput: this.#rtInput,
       device: this.#device,
       focus: this.#cfg.focus !== undefined,
+      served: this.#cat !== undefined,
+      problem: this.#phase === 'loading' ? this.#problem : null,
+      reportable: cur?.served != null && (this.#phase === 'item' || this.#phase === 'confidence') ? cur.served.item_id : null,
     }
   }
 
@@ -518,7 +624,13 @@ export class SessionRun {
   #itemsOn(axis: AxisCode): number {
     let n = this.#priorCounts[axis] ?? 0
     for (const a of this.#administered) if (a.axis === axis) n++
+    for (const a of this.#catAxes) if (a === axis) n++
     return n
+  }
+
+  /** Served items answered so far (M2.7). */
+  #catAnswered(): number {
+    return this.#catAxes.length
   }
 
   /** Budget in seconds for the CAT segment at `idx` if it started now (see the module comment). */
@@ -598,6 +710,10 @@ export class SessionRun {
   }
 
   #presentItem(s: Segment): void {
+    if (this.#cat !== undefined) {
+      this.#presentServed(s)
+      return
+    }
     const axes = s.axes.filter((k) => !this.#skipped.has(k))
     if (axes.length === 0) {
       this.#endSegment('skipped')
@@ -621,9 +737,140 @@ export class SessionRun {
       this.#endSegment(sel.reason)
       return
     }
-    this.#current = { item: sel.item, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
+    this.#current = { item: sel.item, served: null, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
     this.#phase = 'item'
     this.#emit('phase')
+  }
+
+  // ----------------------------------------------------------------- served parts (M2.7)
+
+  #presentServed(s: Segment): void {
+    const axes = s.axes.filter((k) => !this.#skipped.has(k))
+    if (axes.length === 0) {
+      this.#endSegment('skipped')
+      return
+    }
+    // The part's time is a soft stop once the coverage floor is met (§7.4): the server holds the
+    // precision rule and the floor of its own, this is only the clock. The hard stop is the clock's.
+    if (this.#clock.elapsedS() - s.startedAtS >= s.budgetS && axes.every((k) => this.#itemsOn(k) >= COVERAGE_FLOOR)) {
+      this.#endSegment('time')
+      return
+    }
+    this.#loading = { segment: s, axes }
+    this.#request()
+  }
+
+  /** (Re)starts the wait for the next served item of the part that is loading. */
+  #request(): void {
+    const l = this.#loading
+    if (l === null) return
+    this.#problem = null
+    this.#current = null
+    // Waiting for the network is not working: the session clock stands still until the item is up.
+    this.#clock.pause()
+    this.#phase = 'loading'
+    this.#emit('phase')
+    void this.#load(l, ++this.#fetchSeq)
+  }
+
+  async #load(l: Loading, seq: number): Promise<void> {
+    const live = (): boolean => seq === this.#fetchSeq && this.#phase === 'loading'
+    try {
+      await this.#flushOutbox()
+      for (let attempt = 0; attempt < MAX_FOREIGN_RELEASES; attempt++) {
+        if (!live()) return
+        const r = await this.#cat!.next(l.axes)
+        if (!live()) return
+        if (r.kind === 'done') {
+          this.#settle()
+          this.#endSegment(r.reason === 'axes_done' ? 'axes_done' : 'exhausted')
+          return
+        }
+        // An item left pending by a part that was skipped while it was on its way: let it go, ask again.
+        const axis = getFamily(r.item.family)?.axis
+        if (axis !== undefined && !l.axes.includes(axis)) {
+          this.#outbox.push({ item: r.item, response: null, rtMs: 0, confidence: null, flags: {}, release: 'skipped' })
+          await this.#flushOutbox()
+          continue
+        }
+        this.#settle()
+        this.#showServed(r.item)
+        return
+      }
+      throw new BackendError('rejected', 'pending_item_of_another_part')
+    } catch (e) {
+      if (!live()) return
+      this.#problem = problemOf(e)
+      this.#emit('phase')
+    }
+  }
+
+  /** The wait is over (or abandoned): the clock runs again and no request is current. */
+  #settle(): void {
+    this.#loading = null
+    this.#fetchSeq++
+    this.#clock.resume()
+  }
+
+  #showServed(item: ServedItem): void {
+    const cur: CurrentItem = { item: null, served: item, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
+    this.#current = cur
+    if (!item.supported) {
+      // A renderer this build does not have: the item cannot be shown, so the skip of §13 is offered.
+      cur.unavailable = true
+      this.#notice = { kind: 'unsupported', seq: ++this.#noticeSeq, axis: this.#servedAxis(item) }
+    }
+    this.#phase = 'item'
+    this.#emit('phase')
+  }
+
+  /** Sends the answers the server has not acknowledged yet, one at a time and in order (single flight). */
+  #flushOutbox(): Promise<void> {
+    this.#flushing ??= this.#drain().finally(() => {
+      this.#flushing = null
+    })
+    return this.#flushing
+  }
+
+  async #drain(): Promise<void> {
+    for (;;) {
+      const next = this.#outbox[0]
+      if (next === undefined) return
+      await this.#cat!.answer(next)
+      if (this.#outbox[0] === next) this.#outbox.shift()
+    }
+  }
+
+  /**
+   * Hands every answer that is still on its way to the server over, and resolves when it has them all
+   * (the flow waits for it before closing the server session). Rejects with the server error.
+   */
+  flushAnswers(): Promise<void> {
+    return this.#cat === undefined ? Promise.resolve() : this.#flushOutbox()
+  }
+
+  /** Answers waiting to be sent. */
+  get unsentAnswers(): number {
+    return this.#outbox.length
+  }
+
+  /** After a failed call (the phase is `loading` and `view().problem` says why): ask the server again. */
+  retryLoad(): void {
+    if (this.#phase !== 'loading' || this.#problem === null || this.#problem === 'ended' || this.#loading === null) return
+    this.#request()
+  }
+
+  /** A served item that is on screen unanswered is let go when its part is skipped. */
+  #releaseCurrent(): void {
+    const cur = this.#current
+    if (cur?.served == null || cur.pending !== null || this.#phase === 'confidence') return
+    this.#outbox.push({ item: cur.served, response: null, rtMs: 0, confidence: null, flags: {}, release: cur.unavailable ? 'unavailable' : 'skipped' })
+    void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
+  }
+
+  /** Drops a request in flight (its answer, if it comes, is ignored). */
+  #abandonLoading(): void {
+    if (this.#loading !== null) this.#settle()
   }
 
   // ------------------------------------------------------------------------------ items
@@ -640,7 +887,7 @@ export class SessionRun {
     const cur = this.#current
     if (this.#limitsHit() || this.#phase !== 'item' || cur === null || cur.unavailable) return
     cur.unavailable = true
-    this.#notice = { kind: 'unavailable', seq: ++this.#noticeSeq, axis: cur.item.axis }
+    this.#notice = { kind: 'unavailable', seq: ++this.#noticeSeq, axis: this.#facts(cur).axis }
     this.#emit('phase')
   }
 
@@ -653,9 +900,22 @@ export class SessionRun {
     const cur = this.#current
     if (this.#limitsHit() || this.#phase !== 'item' || cur === null || cur.unavailable) return
     const endMs = this.#cfg.now()
+    if (cur.served !== null) {
+      // The server holds the key: nothing here can say whether the answer was right (R-11.1).
+      if (!servedResponseFits(cur.served, response)) {
+        this.#notice = { kind: 'malformed', seq: ++this.#noticeSeq }
+        this.#emit('phase')
+        return
+      }
+      cur.pending = { response: response as JsonValue, correct: null, endMs, rtMs: endMs - (cur.onsetMs ?? cur.startedMs) }
+      this.#notice = null
+      this.#phase = 'confidence'
+      this.#emit('phase')
+      return
+    }
     let correct: 0 | 1 | null
     try {
-      correct = (familyOf(cur.item.family).score(cur.item as never, response as never) as { correct: 0 | 1 | null }).correct
+      correct = (familyOf(cur.item!.family).score(cur.item as never, response as never) as { correct: 0 | 1 | null }).correct
     } catch (e) {
       if (!(e instanceof MalformedResponseError)) throw e
       this.#notice = { kind: 'malformed', seq: ++this.#noticeSeq }
@@ -673,17 +933,19 @@ export class SessionRun {
   confirmConfidence(pct: number): void {
     const cur = this.#current
     if (this.#limitsHit() || this.#phase !== 'confidence' || cur === null || cur.pending === null) return
-    if (!isConfidencePct(pct, confidenceFloorPct(cur.item.options_count))) return
-    this.#recordItem(cur, cur.pending.response, cur.pending.correct, cur.pending.rtMs, pct, cur.pending.endMs)
+    if (!isConfidencePct(pct, confidenceFloorPct(this.#facts(cur).options_count))) return
+    if (cur.served !== null) this.#recordServed(cur, cur.pending.response, cur.pending.rtMs, pct, cur.pending.endMs)
+    else this.#recordItem(cur, cur.pending.response, cur.pending.correct as 0 | 1, cur.pending.rtMs, pct, cur.pending.endMs)
     this.#current = null
     this.#emit('response')
     this.#boundary(() => this.#present())
   }
 
   #timeoutItem(cur: CurrentItem): void {
-    const limitMs = (cur.item.time_limit_s ?? DEFAULT_ITEM_LIMIT_S) * 1000
+    const limitMs = (this.#facts(cur).time_limit_s ?? DEFAULT_ITEM_LIMIT_S) * 1000
     const start = cur.onsetMs ?? cur.startedMs
-    this.#recordItem(cur, null, 0, limitMs, null, start + limitMs)
+    if (cur.served !== null) this.#recordServed(cur, null, limitMs, null, start + limitMs)
+    else this.#recordItem(cur, null, 0, limitMs, null, start + limitMs)
     this.#current = null
     this.#notice = { kind: 'timeout', seq: ++this.#noticeSeq }
     this.#emit('response')
@@ -692,7 +954,7 @@ export class SessionRun {
 
   /** Puts one counted CAT answer (or time-out) into the logs. */
   #recordItem(cur: CurrentItem, response: JsonValue, correct: 0 | 1, rtMs: number, confidencePct: number | null, endMs: number): void {
-    const { item } = cur
+    const item = cur.item!
     this.#responses.push([item.item_id, 0, response, correct, round1(rtMs), confidencePct])
     const o = itemObservation(item, correct)
     if (o !== null) this.#obs.push(o)
@@ -711,6 +973,38 @@ export class SessionRun {
       onset_ms: onset,
       end_ms: Math.max(onset, endMs),
     })
+  }
+
+  /**
+   * Puts one served answer (or time-out) into the log of the server's session and the outbox. The
+   * tuple's `correct` is null: the verdict is the server's and never comes back (R-11.1); the signed
+   * session that `finish` returns replaces this copy.
+   */
+  #recordServed(cur: CurrentItem, response: JsonValue | null, rtMs: number, confidencePct: number | null, endMs: number, release?: Release): void {
+    const s = cur.served!
+    const onset = cur.onsetMs ?? cur.startedMs
+    const end = Math.max(onset, endMs)
+    this.#catResponses.push([s.item_id, 0, response, null, round1(rtMs), confidencePct])
+    this.#catSeen.push(s.item_id)
+    this.#catAxes.push(this.#servedAxis(s))
+    this.#catWindows.push({ onset, end })
+    this.#outbox.push({ item: s, response, rtMs: Math.max(0, rtMs), confidence: confidencePct, flags: this.#servedFlags(s.item_id, onset, end), release })
+    void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
+  }
+
+  /** `paste` and `visibility_hidden` of one served answer (§13), the way `engine/integrity.ts` reads them. */
+  #servedFlags(itemId: string, onset: number, end: number): Record<string, number | boolean | null> {
+    const flags: Record<string, number | boolean | null> = {}
+    if (this.#hiddenMs(onset, end) / 1000 > HIDDEN_MAX_S) flags.visibility_hidden = true
+    if (this.#paste.some((e) => (e.item_id !== undefined ? e.item_id === itemId : e.t_ms >= onset && e.t_ms <= end))) flags.paste = true
+    return flags
+  }
+
+  /** Milliseconds the page was hidden inside [onset, end]. */
+  #hiddenMs(onset: number, end: number): number {
+    let hidden = 0
+    for (const [a, b] of hiddenIntervals(this.#visibility)) hidden += Math.max(0, Math.min(b, end) - Math.max(a, onset))
+    return hidden
   }
 
   // ------------------------------------------------------------------------------ blocks
@@ -795,11 +1089,13 @@ export class SessionRun {
     this.#markSkipped(target)
     this.#notice = { kind: 'skipped', seq: ++this.#noticeSeq, axis: target }
     const seg = this.#segments[this.#segIdx]
-    const onScreen = this.#phase === 'interstitial' || this.#phase === 'block' || this.#phase === 'item' || this.#phase === 'confidence'
+    const onScreen = this.#phase === 'interstitial' || this.#phase === 'block' || this.#phase === 'item' || this.#phase === 'confidence' || this.#phase === 'loading'
     const inSegment = seg !== undefined && onScreen && seg.axes.includes(target)
     if (inSegment) {
       // Whatever was on screen for the axis is dropped; an answer waiting for its confidence is kept.
       this.#flushPending()
+      this.#releaseCurrent()
+      this.#abandonLoading()
       this.#current = null
       this.#currentBlock = null
     }
@@ -823,11 +1119,14 @@ export class SessionRun {
   /** The answered item waiting for its confidence is kept, unrated; anything else in progress is dropped. */
   #flushPending(): void {
     const cur = this.#current
-    if (this.#phase === 'confidence' && cur?.pending) this.#recordItem(cur, cur.pending.response, cur.pending.correct, cur.pending.rtMs, null, cur.pending.endMs)
+    if (this.#phase !== 'confidence' || !cur?.pending) return
+    if (cur.served !== null) this.#recordServed(cur, cur.pending.response, cur.pending.rtMs, null, cur.pending.endMs)
+    else this.#recordItem(cur, cur.pending.response, cur.pending.correct as 0 | 1, cur.pending.rtMs, null, cur.pending.endMs)
   }
 
   #finish(reason: EndReason): void {
     if (this.#phase === 'finished') return
+    this.#abandonLoading()
     this.#flushPending()
     this.#current = null
     this.#currentBlock = null
@@ -877,7 +1176,7 @@ export class SessionRun {
     if (this.#limitsHit()) return
     const cur = this.#current
     if (this.#phase === 'item' && cur !== null && !cur.unavailable) {
-      const limitMs = (cur.item.time_limit_s ?? DEFAULT_ITEM_LIMIT_S) * 1000
+      const limitMs = (this.#facts(cur).time_limit_s ?? DEFAULT_ITEM_LIMIT_S) * 1000
       if (this.#cfg.now() - (cur.onsetMs ?? cur.startedMs) >= limitMs) this.#timeoutItem(cur)
     }
   }
@@ -907,12 +1206,48 @@ export class SessionRun {
   }
 
   #flags(): SessionFlags {
-    const flags: SessionFlags = { ...this.#integrityReport().save_flags }
+    // A served session has no item parameters here to run the six checks with (the server runs them
+    // on its own rows): the two it cannot see for itself are reported as counters, as §8 lists them.
+    const flags: SessionFlags = this.#cat === undefined ? { ...this.#integrityReport().save_flags } : this.#servedIntegrityFlags()
     for (const k of this.#skipped) flags[`skipped_${k.toLowerCase()}`] = true
     if (this.#breaks > 0) flags.breaks = this.#breaks
     if (this.#endReason === 'finish_early') flags.finished_early = true
     if (this.#endReason === 'hard_stop') flags.hard_stop = true
     return flags
+  }
+
+  #servedIntegrityFlags(): SessionFlags {
+    let hidden = 0
+    for (const w of this.#catWindows) hidden += this.#hiddenMs(w.onset, w.end)
+    return { visibility_hidden_s: Math.round(hidden / 100) / 10, paste_events: this.#paste.length }
+  }
+
+  /**
+   * The flags the server takes at `finish` (names and values as `hb.valid_flags` allows): the integrity
+   * counters and what the person chose (skipped parts, breaks, how it ended).
+   */
+  serverFlags(): SessionFlags {
+    return this.#flags()
+  }
+
+  /**
+   * The served part of the session (M2.7) as an unsigned session with the server's id: what the person
+   * answered, as far as it has been, for the autosave and for a save made when the server cannot be
+   * reached. It holds no verdicts (`correct` is null). Null in the static version and before the first
+   * served answer. The signed copy `finish` returns replaces it in the save.
+   */
+  catSessionState(): SessionState | null {
+    if (this.#cat === undefined || this.#catResponses.length === 0) return null
+    return {
+      sessionId: this.#cat.sessionId,
+      startedMs: this.#cfg.startedMs,
+      durationS: this.#clock.elapsedS(),
+      device: this.#device,
+      flags: this.#flags(),
+      responses: [...this.#catResponses],
+      seenItems: [...this.#catSeen],
+      seenFamilies: [],
+    }
   }
 
   /** The session as the save library takes it (`saveWithSession`, autosave after each change). */
@@ -935,6 +1270,7 @@ export class SessionRun {
     const observations = cal === null ? [...this.#obs] : [...this.#obs, cal]
     const itemsByAxis: Partial<Record<AxisCode, number>> = {}
     for (const a of this.#administered) itemsByAxis[a.axis] = (itemsByAxis[a.axis] ?? 0) + 1
+    for (const a of this.#catAxes) itemsByAxis[a] = (itemsByAxis[a] ?? 0) + 1
     return {
       reason: this.#endReason,
       durationS: this.#clock.elapsedS(),
