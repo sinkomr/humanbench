@@ -702,7 +702,19 @@ describe('rescore does not differ with which answers were right (R-11.1)', () =>
     withheld: got.withheld,
     skipped: got.skipped,
   })
+  /**
+   * The replies as text for the checks that no word of the eligibility verdict is in them, with the random session
+   * ids blanked: an id holds 16 random letters and digits, and one with "lz" in it once matched /lz/.
+   */
+  const verdictText = (x: unknown): string => JSON.stringify(x, (k, v: unknown) => (k === 'session_id' ? 's_' : v))
   const qr40 = items.filter((i) => i.axis === 'QR' && i.expectedTimeS! > 20)
+
+  it('checks every key and value of a reply for the verdict but the random session ids', () => {
+    expect(verdictText({ sessions: [{ session_id: 's_qQsqMxd8lzMqZaxn' }] })).not.toMatch(/lz/)
+    expect(verdictText({ sessions: [{ session_id: 's_x', lz: -2.1 }] })).toMatch(/lz/)
+    expect(verdictText({ skipped: { ineligible_session: 1 } })).toMatch(/eligib/)
+    expect(verdictText({ sessions: [{ note: 'person_fit' }] })).toMatch(/person_fit/)
+  })
 
   it('is the same for a right and a wrong answer in the probe that read a verdict out of it: one fast answer and one reported paste', async () => {
     for (const n of [3, 6]) {
@@ -723,7 +735,7 @@ describe('rescore does not differ with which answers were right (R-11.1)', () =>
       expect(gr.sessions[0]).toMatchObject({ known: true, n_scored: 0 })
       expect(gr.eap).toEqual({})
       expect(gr.skipped.not_counted).toBe(n)
-      expect(JSON.stringify([gr, gw])).not.toMatch(/eligib|person_fit|lz|fit_error/)
+      expect(verdictText([gr, gw])).not.toMatch(/eligib|person_fit|lz|fit_error/)
     }
   })
 
@@ -741,7 +753,7 @@ describe('rescore does not differ with which answers were right (R-11.1)', () =>
     expect(gm.sessions[0]!.n_scored).toBe(45)
     expect(Object.keys(gm.eap).sort()).toEqual(['KST', 'MAT', 'QR'])
     expect(gm.skipped.not_counted).toBeUndefined()
-    expect(JSON.stringify(gm)).not.toMatch(/eligib|person_fit|lz/)
+    expect(verdictText(gm)).not.toMatch(/eligib|person_fit|lz/)
   })
 
   it('drops a session for what the script chose, whatever the answers: two reported pastes, or two fast answers (right or wrong)', async () => {

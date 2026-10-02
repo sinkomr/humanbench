@@ -855,6 +855,23 @@ describe('a session whose answers the canonical form cannot hold', () => {
 })
 
 describe('what a file can make the server do', () => {
+  it('measures a session as a file holds it: a duration ending in a zero is written without it, so finish and verify count the same bytes', async () => {
+    const f = await finishedSession(db, 2)
+    // [how long the session took, the duration_s a client reads and writes back]
+    const cases: [string, number][] = [['12.340 seconds', 12.34], ['7.000 seconds', 7], ['0.100 seconds', 0.1], ['0.105 seconds', 0.105], ['3600.5 seconds', 3600.5]]
+    for (const [took, written] of cases) {
+      await db.sudo.query(`update public.sessions set started_at = finished_at - $2::interval where session_id = $1`, [f.sessionId, took])
+      // the driver parses the jsonb as a client does (JSON.parse); the client writes it back with JSON.stringify
+      const held = (await db.sudo.query<{ o: SessionObject }>(`select hb.session_object($1) as o`, [f.sessionId])).rows[0]!.o
+      expect(held.duration_s, took).toBe(written)
+      const n = (await db.sudo.query<{ server: number; file: number }>(
+        `select octet_length(hb.session_object($1)::text)::int as server, octet_length($2::jsonb::text)::int as file`,
+        [f.sessionId, JSON.stringify(held)],
+      )).rows[0]!
+      expect(n.server, took).toBe(n.file)
+    }
+  })
+
   it('signs a session exactly when verify would accept it: one byte over sig.max_session_bytes is returned unsigned and is malformed', async () => {
     const ctx = await openBankDb('size')
     try {

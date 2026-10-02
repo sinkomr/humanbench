@@ -856,6 +856,8 @@ of 200 answers is about 1,500 units, and the dearest shapes cost 1 to 4 µs a un
 - A **session** over `verify.max_work` units, over `sig.max_session_bytes` (256 KB; a real one is 10 to 60 KB), or nested beyond 24
   levels is `malformed` and costs no canonicalisation; `finish` does not sign it (the person's results are returned either way). Both
   limits are measured on the session as it is sent, sig included, so a session that was signed always verifies alone, at the limit to the unit.
+  The server writes `duration_s` without trailing zeros (12.34, not 12.340), as a client writes it back into the file, so `finish`
+  and `verify_save` measure the same bytes and the byte limit is one rule for both sides too.
 - So one call costs at most: the `brief_prefs` walk of `check_save` (about 1 s for a 2 MB file of tiny arrays, before the count
   but bounded by `save.max_bytes`), the estimate (0.1 s), and 100,000 units (0.4 s). The tests build files of 60,000 to 80,000 units
   from each of the dearest shapes (objects with a key, arrays in arrays, integers of 17 digits, 17-digit decimals filling six 250 KB

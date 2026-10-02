@@ -641,6 +641,11 @@ $$;
 -- correctness in the signed save, for offline re-scoring; the owner chose R-11.1. The rows keep their
 -- verdicts for the server, and the person gets their scores from rescore(), which withholds what would
 -- read out a single answer (supabase/README.md). There is deliberately no setting to turn this on.
+--
+-- `duration_s` has no trailing zeros (trim_scale): 12.340 is written 12.34, as a client writes the number back
+-- into the save. With the zero kept, the server's text of a session was a byte longer than the same session as a
+-- file holds it, so `finish` could leave unsigned a session that verify would accept at sig.max_session_bytes
+-- (hb.session_within_limits is one rule for both sides only if both sides measure the same text).
 create function hb.session_object(p_session_id text)
 returns jsonb
 language sql stable
@@ -649,7 +654,7 @@ as $$
   select pg_catalog.jsonb_build_object(
     'session_id', s.session_id,
     'started_utc', pg_catalog.to_char(s.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-    'duration_s', pg_catalog.round(extract(epoch from coalesce(s.finished_at, pg_catalog.now()) - s.started_at)::numeric, 3),
+    'duration_s', pg_catalog.trim_scale(pg_catalog.round(extract(epoch from coalesce(s.finished_at, pg_catalog.now()) - s.started_at)::numeric, 3)),
     'device', s.device,
     'flags', s.flags,
     'responses', coalesce((
