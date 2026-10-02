@@ -37,6 +37,8 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
   - `wf7/m35`: M3.5 authoring, 6 axes × 3 batches, each solved by the Sonnet/Opus/Fable panel.
 
   After the chains: merger, audit, repair.
+- **Also in flight: wf8** (`wf_7835017a-b06`). It authors Fermi items (3 batches, uncommitted in `wt/m35b`), then commits them on `wf8/m35b`. In parallel it builds M6.1 (appraisal vignettes, rule engine and the EMO UI) on `wf8/m61`. **wf8 has no merger:** merge its branches after wf7 lands.
+- **Work window:** the user allowed 16 h from 22:30 on 2026-10-01, so it ends at 14:30 on 2026-10-02. Ticks run at :37.
 - **If interrupted:** check `git branch --list 'wf7/*' 'wf6/*'`. The M3.5 batch files are uncommitted in `~/code/wt/m35/humanbench-bank/items/m35`. Commit the complete batches, then merge the green branches.
 
 - **wf6 done** (2026-10-01 07:10). Merged and pushed: M1.21, M1.22 and M5.1 (partial: server-side Brier waits on M2), plus the audit repairs. Gates: pub 3,784 unit tests plus 1,802 e2e; bank green.
