@@ -82,3 +82,20 @@ export async function expectNoSeriousAxe(page: Page, scope: AxeScope = {}): Prom
   const serious = await seriousAxeViolations(page, scope)
   expect(serious.map(formatViolation), `serious/critical axe violations on ${page.url()}`).toEqual([])
 }
+
+/** The axe rules about ARIA attributes. They report what a tool cannot decide as "incomplete", which the other helpers ignore. */
+export const ARIA_ATTRIBUTE_RULES: readonly string[] = ['aria-prohibited-attr', 'aria-allowed-attr', 'aria-valid-attr', 'aria-valid-attr-value', 'aria-allowed-role']
+
+/**
+ * Fails the test if axe's ARIA attribute rules report anything on the page, as a violation or as an "incomplete" finding
+ * (e.g. an `aria-label` on a paragraph, which ARIA 1.2 does not allow: axe leaves it "incomplete" with impact serious, and
+ * {@link expectNoSeriousAxe} reads only violations).
+ */
+export async function expectNoAriaAttributeIssues(page: Page, scope: AxeScope = {}): Promise<void> {
+  await settleTransitions(page)
+  let builder = new AxeBuilder({ page }).withRules([...ARIA_ATTRIBUTE_RULES])
+  for (const s of scope.include ?? []) builder = builder.include(s)
+  for (const s of scope.exclude ?? []) builder = builder.exclude(s)
+  const { violations, incomplete } = await builder.analyze()
+  expect([...violations, ...incomplete].map(formatViolation), `ARIA attribute findings on ${page.url()}`).toEqual([])
+}

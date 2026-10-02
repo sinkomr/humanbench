@@ -19,7 +19,7 @@ import { EMO_AXIS_NAME, EMO_TOOLTIP } from '../src/copy'
 import { CONFIRM_LABEL } from '../src/render/choice/keys'
 import { ENTRY_COPY } from '../src/tasks/emotion/copy'
 import { demoEmotionItem } from '../src/tasks/emotion/demo'
-import { expectNoSeriousAxe } from './axe'
+import { expectNoAriaAttributeIssues, expectNoSeriousAxe } from './axe'
 
 const SEED = 1
 const ITEM = demoEmotionItem(SEED)
@@ -165,9 +165,12 @@ test.describe('accessibility, keyboard, storage and language', () => {
       await page.emulateMedia({ colorScheme })
       await open(page)
       await expectNoSeriousAxe(page)
+      // axe leaves a name on a paragraph "incomplete" (impact serious), which expectNoSeriousAxe does not read
+      await expectNoAriaAttributeIssues(page)
       await tipButton(page).click()
       await expect(tipText(page)).toBeVisible()
       await expectNoSeriousAxe(page)
+      await expectNoAriaAttributeIssues(page)
       await page.keyboard.press('Escape')
       await option(page, 1).check()
       await expectNoSeriousAxe(page)

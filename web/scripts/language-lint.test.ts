@@ -220,8 +220,9 @@ describe('allowed texts (A13: the R-5.6.5 constant, the R-5.6.2 tooltip; "clinic
 
   it('settles the R-5.6.2 conflict (M6.1): DESIGN\'s tooltip is the allowed text, word for word, and passes the lint', () => {
     // DESIGN R-5.6.2 fixes the Emotion Reading tooltip word for word, and it says "diagnostic" and
-    // "clinical". A13 as amended by M6.1 allow-lists exactly that sentence (a third text beside
-    // RESOURCE_LINE and DISCLAIMER), pinned to DESIGN here and in src/copy.test.ts.
+    // "clinical". The lint allow-lists exactly that sentence (a third text beside RESOURCE_LINE and
+    // DISCLAIMER) on R-5.6.2's authority, pinned to DESIGN here and in src/copy.test.ts. ROADMAP A13
+    // does not list it yet (an open ADR follow-up for the owner).
     const design = readFileSync(join(REPO_ROOT, 'docs', 'DESIGN.md'), 'utf8')
     const tooltip = /^- R-5\.6\.2:.*?tooltip: "([^"\n]+)"/m.exec(design)?.[1]
     expect(tooltip).toMatch(/^Measures agreement with /)

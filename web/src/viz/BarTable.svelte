@@ -25,9 +25,11 @@
     groupHeader: string
     /** Visually hidden but still read by screen readers (blob view). */
     hidden?: boolean
+    /** Row id → id of the element that explains that skill (R-5.6.2: Emotion Reading's tooltip), set as the row header's `aria-describedby`. */
+    describedBy?: Readonly<Record<string, string>>
   }
 
-  let { rows, caption, skillHeader, groupHeader, hidden = false }: Props = $props()
+  let { rows, caption, skillHeader, groupHeader, hidden = false, describedBy }: Props = $props()
 
   const W = 132
   const PAD = 6
@@ -56,7 +58,7 @@
   <tbody>
     {#each rows as row (row.id)}
       <tr class:muted={row.muted} class:unmeasured={!row.measured} data-row={row.id}>
-        <th scope="row"
+        <th scope="row" aria-describedby={describedBy?.[row.id]}
           >{wrap(row.name)}{#if row.glyph}<span class="glyph" aria-hidden="true">&nbsp;{row.glyph}</span><span class="visually-hidden">
               ({TIER_TEXT[row.tier]})</span
             >{/if}</th

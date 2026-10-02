@@ -97,7 +97,11 @@
     <SkillTip name={EMO_AXIS_NAME} text={EMO_TOOLTIP} label={ENTRY_COPY.tipButton} hint={ENTRY_COPY.tipClose} />
   </div>
   <p class="hb-instructions">{ENTRY_COPY.instructions}</p>
-  <p class="scenario" aria-label={ENTRY_COPY.scenarioLabel}>{parts.scenario}</p>
+  <!-- The label sits on a group, not on the paragraph: a paragraph has no role that may be named (ARIA 1.2), and a
+       reader that honoured the label would read "Situation" in place of the scenario itself. -->
+  <div role="group" aria-label={ENTRY_COPY.scenarioLabel}>
+    <p class="scenario">{parts.scenario}</p>
+  </div>
   <form bind:this={form} class="choices" {onsubmit}>
     <fieldset disabled={locked}>
       <legend>{parts.question ?? ENTRY_COPY.legendFallback}</legend>

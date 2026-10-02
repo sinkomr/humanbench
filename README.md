@@ -464,8 +464,8 @@ anything but a letter ends a word (a digit or `_` too), so `IQR` is not a hit. O
 carry a banned word: the §13 disclaimer, quoted exactly; the R-5.6.5 resource sentence, which is
 spelled out only in `web/src/copy.ts` as `RESOURCE_LINE` (import it; only the results footer renders
 it); and the Emotion Reading tooltip that DESIGN R-5.6.2 fixes word for word, spelled out only in
-`web/src/copy.ts` as `EMO_TOOLTIP` (the vignette renderer shows it; the lint's header records the
-A13 amendment of ROADMAP M6.1). To lint the repo, or just some files, and print each hit:
+`web/src/copy.ts` as `EMO_TOOLTIP` (the vignette renderer and the results view show it; the lint's
+header says why it is allowed: DESIGN R-5.6.2 fixes its words, and ROADMAP A13 does not list it yet). To lint the repo, or just some files, and print each hit:
 
 ```zsh
 cd web

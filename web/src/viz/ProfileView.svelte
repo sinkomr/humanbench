@@ -55,6 +55,7 @@
   import { clusterFacets, unmeasuredReasons, type FacetEstimate, type FacetObservation, type FacetOptions } from './facets'
   import { themeVars, THEMES, type ThemeName } from './palette'
   import { axisEstimates, type AxisEstimate, type ProfileInput } from './profile'
+  import { EMO_AXIS_NAME, EMO_TOOLTIP } from '../copy'
   import { widthOf } from './width'
   import type { Cluster } from '../engine/axes'
 
@@ -111,6 +112,13 @@
   const model = $derived(buildBlob(display === undefined ? estimates : display(estimates), { layout, measure }))
   const clusters = $derived([...new Set(estimates.map((e) => e.cluster))])
   const unmeasured = $derived(unmeasuredReasons(estimates))
+  /**
+   * R-5.6.2: Emotion Reading is named with its tooltip wherever it is shown with a score. A tooltip does not reach
+   * a screen reader or a touch screen reliably in a chart or a table row, so the sentence is printed under the figure
+   * (in both views) and the table's row header points to it (`aria-describedby`).
+   */
+  const emoMeasured = $derived(estimates.some((e) => e.code === 'EMO' && e.measured))
+  const emoNote = $derived(emoMeasured ? { EMO: `${uid}-note-EMO` } : undefined)
   const facets: FacetEstimate[] = $derived(
     selected === null ? [] : clusterFacets(input.score, facetObservations, selected, { catalog: facetCatalog, unmeasured }),
   )
@@ -140,7 +148,7 @@
   </div>
 
   <!-- Before the figure: the data table is what a screen reader meets first (§9.5 c). -->
-  <BarTable rows={estimates} caption={TABLE_CAPTION} skillHeader={TABLE_SKILL} groupHeader={TABLE_CLUSTER} hidden={view === 'blob'} />
+  <BarTable rows={estimates} caption={TABLE_CAPTION} skillHeader={TABLE_SKILL} groupHeader={TABLE_CLUSTER} hidden={view === 'blob'} describedBy={emoNote} />
 
   {#if view === 'blob'}
     <figure class="blob-figure">
@@ -163,6 +171,10 @@
   {#if view === 'bars'}
     <p class="note">{BARS_NOTE}</p>
     <p class="note">{TIER_LEGEND}</p>
+  {/if}
+
+  {#if emoMeasured}
+    <p id="{uid}-note-EMO" class="note skill-note" data-skill-note="EMO"><strong>{EMO_AXIS_NAME}.</strong> {EMO_TOOLTIP}</p>
   {/if}
 
   {#if between}

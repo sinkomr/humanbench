@@ -31,7 +31,8 @@
  * - The §13 disclaimer (`DISCLAIMER`), the one place "clinical" (and "IQ", which it disowns) may
  *   appear. It may be quoted anywhere (README, the no-JS fallback).
  * - The R-5.6.2 Emotion Reading tooltip (`EMO_TOOLTIP` in `src/copy.ts`), the third text, added by
- *   ROADMAP M6.1 (A13 amended). DESIGN R-5.6.2 fixes its words, "… Not a diagnostic or clinical
+ *   ROADMAP M6.1 on the authority of DESIGN R-5.6.2 (ROADMAP A13 itself still lists two allowed
+ *   texts: the ADR needs the owner's amendment, an open follow-up). R-5.6.2 fixes its words, "… Not a diagnostic or clinical
  *   measure; …", which the lint would otherwise flag ("diagnostic", "clinical"); it explains what the
  *   axis is not, to the person looking at the axis. Like `RESOURCE_LINE` it has a single home, so
  *   `lintFiles` fails when any other scanned file spells it out: import it.
@@ -212,7 +213,7 @@ export const ALLOWED_TEXT: readonly AllowedText[] = [
     name: 'EMO_TOOLTIP',
     text: EMO_TOOLTIP,
     home: 'web/src/copy.ts',
-    why: 'R-5.6.2: the Emotion Reading tooltip, word for word; it names "diagnostic" and "clinical" to say what the axis is not (A13 amended by M6.1).',
+    why: 'R-5.6.2: the Emotion Reading tooltip, word for word; it names "diagnostic" and "clinical" to say what the axis is not (DESIGN R-5.6.2; ROADMAP A13 does not list it yet).',
   },
 ]
 

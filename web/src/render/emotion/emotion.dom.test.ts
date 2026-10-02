@@ -54,6 +54,18 @@ describe('EmotionRenderer', () => {
     expect(m.container.querySelector('fieldset')).not.toBeNull()
   })
 
+  it('names the situation on a group and never puts an accessible name on the paragraph (ARIA 1.2: a paragraph has no nameable role)', () => {
+    const m = mountSpec()
+    const p = m.container.querySelector('.scenario') as HTMLElement
+    expect(p.tagName).toBe('P')
+    for (const attr of ['aria-label', 'aria-labelledby', 'title', 'role']) expect(p.hasAttribute(attr)).toBe(false)
+    const group = p.parentElement as HTMLElement
+    expect(group.getAttribute('role')).toBe('group')
+    expect(group.getAttribute('aria-label')).toBe(ENTRY_COPY.scenarioLabel)
+    // the scenario is still the first thing read after the instruction, and the only text in its group
+    expect(group.textContent?.trim()).toBe(p.textContent)
+  })
+
   it('offers the five options as radio inputs in spec order, named by their words, none chosen', () => {
     const m = mountSpec()
     expect(m.radios()).toHaveLength(5)

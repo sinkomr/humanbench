@@ -7,6 +7,7 @@
 import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CLUSTERS } from '../engine/axes'
+import { EMO_AXIS_NAME, EMO_TOOLTIP } from '../copy'
 import { FACET_MIN_ITEMS, clusterFacets, unmeasuredReasons } from './facets'
 import { formatTheta } from './geometry'
 import { HATCH_CAPTION } from './copy'
@@ -233,6 +234,34 @@ describe('bar / lollipop view (§9.5 c: the screen-reader default)', () => {
     expect(root.querySelector('tr[data-row="SPA"] td.stub')!.textContent).toBe('Not measured (skipped)')
     expect(root.querySelector('tr[data-row="EMO"] td.stub')!.textContent).toBe('Not measured (not offered yet)')
     expect(root.querySelector('tr[data-row="LR"] td.stub')!.textContent).toBe('Not measured')
+  })
+})
+
+describe('the Emotion Reading tooltip on the results (R-5.6.2)', () => {
+  it('prints the tooltip word for word under the figure when the skill is measured, and the table row points to it', () => {
+    const root = render(syntheticProfile('full')!)
+    const note = root.querySelector('[data-skill-note="EMO"]') as HTMLElement
+    expect(note).not.toBeNull()
+    expect(note.textContent).toBe(`${EMO_AXIS_NAME}. ${EMO_TOOLTIP}`)
+    expect(note.id).not.toBe('')
+    const header = root.querySelector('tr[data-row="EMO"] th[scope="row"]') as HTMLElement
+    expect(header.getAttribute('aria-describedby')).toBe(note.id)
+    expect(document.getElementById(note.id)).toBe(note)
+    // only that row is described, and the note stays in the bar view too
+    expect(root.querySelectorAll('th[aria-describedby]')).toHaveLength(1)
+    click(button(root, 'Bar view'))
+    expect(root.querySelector('[data-skill-note="EMO"]')).not.toBeNull()
+  })
+
+  it('has no note while the skill is not measured (not offered yet, skipped or no data)', () => {
+    for (const id of ['m1', 'skipped', 'sparse']) {
+      const root = render(syntheticProfile(id)!)
+      expect(root.querySelector('[data-skill-note]'), id).toBeNull()
+      expect(root.querySelectorAll('th[aria-describedby]'), id).toHaveLength(0)
+      unmount(app!)
+      app = undefined
+      document.body.innerHTML = ''
+    }
   })
 })
 
