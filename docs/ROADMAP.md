@@ -485,3 +485,9 @@ Numbered as in proposal §11. The defaults apply until the user decides otherwis
 - **Loading a save:** the file's notes settings (`brief_prefs`) win on the session ready screen, the same as in the notes builder (AI.7). This is a follow-up code change.
 - **RC and VOC items carry no topic tags.** `hb promote` requires `topic` only for the TOPIC_AXES (AI.2 follow-up).
 - **Privacy page:** deferred until M2 collects data.
+- **A6 amended (solver gate G4).** Finite items need no non-Claude or Ollama solvers. Instead a panel of Claude models (Sonnet 5.5, Opus 5.5, Fable 5.1) solves each item independently: no key, no author notes, no other solver's answer, and each must quote its evidence. A solver *disagrees* if its answer differs from the key or it marks the item ambiguous. Rules:
+  - all 3 agree → **pass**;
+  - only Sonnet disagrees → **pass with a soft flag**, and the item joins the G7 human-audit sample;
+  - Opus or Fable disagrees, or 2 or more disagree → **hard flag**, blocked until rewritten or human-reviewed.
+
+  The solves run as Claude Code subagents (no API keys, $0 extra). Ollama is optional, an extra check for later. **Follow-up code change:** update M3.3's G4 rule and adapters to match.

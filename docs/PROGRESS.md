@@ -54,7 +54,6 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 - [ ] **RT jitter self-test** (M1.23): the page is ready. Run `cd ~/code/humanbench/web`, then `npm run build`, then `npm run preview`, and open `rt-selftest.html` on a 120 Hz Mac (or use the live Pages URL once it is pushed). Pass means p95 < 5 ms.
 - [ ] **G7 spot audits** (§4.4): the review page is ready. Run `cd ~/code/humanbench/web` then `npm run review`. It shows 30 instances per family (about 4 h in total), and you export the JSON when done. For M3, 60 items per finite batch.
-- [ ] **Ollama** (G4, M3): run `brew install ollama` and pull two models from different families that fit 16 GB, e.g. a Qwen ~14B and a Gemma ~9B. Claude-authored finite items stay out of `live` until these run (A6).
 - [ ] **Local Postgres** (M2.0): optionally `brew install postgresql@17`. Otherwise Claude uses a pip- or npm-bundled Postgres.
 - [ ] **Supabase project** (M2.6): a free project, the region (us-east or eu-central), secrets, a Vault HMAC key, an age keypair for backups, and CAPTCHA keys.
 - [ ] **Privacy notice**: the controller's name and contact, and sign-off on 24-month retention and consent as the legal basis, before any data-collecting deploy (M2).
