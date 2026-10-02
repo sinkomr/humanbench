@@ -164,6 +164,9 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
     'dev-fermi',
     'dev-fermi-notes',
     'dev-fermi-feedback',
+    'dev-emotion',
+    'dev-emotion-tip',
+    'dev-emotion-feedback',
   ]
 
   it('keeps the routes for the states of a screen that its component alone does not show (an error, a notice, a second look)', () => {

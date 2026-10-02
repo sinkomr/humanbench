@@ -10,9 +10,10 @@ describe('dev route hashes (M1.16)', () => {
     for (const h of ['', '#', '#/blob', '#/dev/', '#/dev/Blob', '#/devx/blob', '#/dev/blob/x']) expect(parseDevHash(h), h).toBeNull()
   })
 
-  it('registers the blob demo, the reveal screens demo (AI.6b) and the Fermi entry demo (M5.1)', () => {
-    expect(Object.keys(DEV_ROUTES)).toEqual(['blob', 'reveal-ai', 'fermi'])
+  it('registers the blob demo, the reveal screens demo (AI.6b), the Fermi entry demo (M5.1) and the emotion entry demo (M6.1)', () => {
+    expect(Object.keys(DEV_ROUTES)).toEqual(['blob', 'reveal-ai', 'fermi', 'emotion'])
     expect(parseDevHash('#/dev/reveal-ai?screen=share')?.name).toBe('reveal-ai')
     expect(parseDevHash('#/dev/fermi?seed=3')?.params.get('seed')).toBe('3')
+    expect(parseDevHash('#/dev/emotion?seed=2')?.params.get('seed')).toBe('2')
   })
 })

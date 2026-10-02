@@ -276,9 +276,12 @@ describe('ROADMAP ADRs A20–A24', () => {
   const adrLine = (n: number): string => lines(adrBlock).find((l) => l.startsWith(`- **A${n} `)) ?? ''
 
   it('adds A20–A23 and the draft A24 once each, in order, after A19', () => {
+    // An ADR is defined once, as "- **A<n> — …" (A24: "- **A24 (draft; …"); an amendment such as "- **A6 amended …"
+    // in the owner decisions (2026-10-01) is not a second definition.
+    const defined = /^- \*\*A(\d+) (?:—|\()/
     const ids = lines(roadmap)
-      .filter((l) => /^- \*\*A\d+ /.test(l))
-      .map((l) => /^- \*\*A(\d+) /.exec(l)?.[1])
+      .filter((l) => defined.test(l))
+      .map((l) => defined.exec(l)?.[1])
     expect(ids).toEqual(Array.from({ length: 24 }, (_, i) => String(i + 1)))
     expect(adrLine(24)).toMatch(/draft; adopt with Part 2/)
     expect(adrLine(21)).toMatch(/Part 2/)

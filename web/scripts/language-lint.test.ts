@@ -2,7 +2,7 @@
  * Tests of the language lint (ROADMAP M1.20, A13; DESIGN R-5.6.1–R-5.6.5, §13): the repo is clean,
  * the fixtures under `scripts/fixtures/language-lint/` fail (banned.*) or pass (allowed.*) exactly
  * as expected, and fast-check properties pin case-insensitivity, letter boundaries, file-type
- * handling, and the exactness of the two allowed texts.
+ * handling, and the exactness of the three allowed texts.
  */
 
 import { spawnSync } from 'node:child_process'
@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { DISCLAIMER, RESOURCE_LINE } from '../src/copy'
+import { DISCLAIMER, EMO_TOOLTIP, RESOURCE_LINE } from '../src/copy'
 import {
   ALLOWED_TEXT,
   BANNED_TERMS,
@@ -175,26 +175,31 @@ describe('banned terms (A13)', () => {
   })
 })
 
-describe('allowed texts (A13: the R-5.6.5 constant; "clinical" only in the §13 disclaimer)', () => {
-  it('are exactly RESOURCE_LINE and DISCLAIMER from src/copy.ts, and only RESOURCE_LINE is pinned to one file', () => {
+describe('allowed texts (A13: the R-5.6.5 constant, the R-5.6.2 tooltip; "clinical" also in the §13 disclaimer)', () => {
+  it('are exactly RESOURCE_LINE, DISCLAIMER and EMO_TOOLTIP from src/copy.ts, and only the disclaimer may be quoted anywhere', () => {
     expect(ALLOWED_TEXT.map((a) => [a.name, a.text, a.home])).toEqual([
       ['RESOURCE_LINE', RESOURCE_LINE, 'web/src/copy.ts'],
       ['DISCLAIMER', DISCLAIMER, undefined],
+      ['EMO_TOOLTIP', EMO_TOOLTIP, 'web/src/copy.ts'],
     ])
   })
 
-  it('unlock only their own words: autism and clinician (R-5.6.5), clinical and IQ (§13)', () => {
+  it('unlock only their own words: autism and clinician (R-5.6.5), clinical and IQ (§13), diagnostic and clinical (R-5.6.2)', () => {
     // Drop the final period so the text no longer masks, and see what it would otherwise trip.
     expect(summary(lintText(RESOURCE_LINE.slice(0, -1), 'x.md'))).toEqual(['1 autism', '1 clinical'])
     expect(summary(lintText(DISCLAIMER.slice(0, -1), 'x.md'))).toEqual(['1 clinical', '1 iq'])
+    expect(terms(lintText(EMO_TOOLTIP.slice(0, -1), 'x.md'))).toEqual(['clinical', 'diagnosis'])
     expect(lintText(RESOURCE_LINE, 'x.md')).toEqual([])
     expect(lintText(DISCLAIMER, 'x.md')).toEqual([])
+    expect(lintText(EMO_TOOLTIP, 'x.md')).toEqual([])
   })
 
   it('mask nothing beyond themselves', () => {
     expect(summary(lintText(`${DISCLAIMER} A clinical view.`, 'x.md'))).toEqual(['1 clinical'])
     expect(summary(lintText(`Autism: ${RESOURCE_LINE}`, 'x.md'))).toEqual(['1 autism'])
     expect(summary(lintText(`${RESOURCE_LINE} IQ. ${DISCLAIMER}`, 'x.md'))).toEqual(['1 iq'])
+    expect(summary(lintText(`${EMO_TOOLTIP} A diagnostic test. ${EMO_TOOLTIP}`, 'x.md'))).toEqual(['1 diagnosis'])
+    expect(terms(lintText(`${EMO_TOOLTIP.replace('Not a', 'not a')}`, 'x.md'))).toEqual(['clinical', 'diagnosis'])
   })
 
   it('the repo lint fails when a file other than src/copy.ts spells out the R-5.6.5 sentence', () => {
@@ -205,15 +210,24 @@ describe('allowed texts (A13: the R-5.6.5 constant; "clinical" only in the §13 
     expect(lintFiles([{ path: 'web/src/results/Footer.svelte', text: "<script lang=\"ts\">\n  import { RESOURCE_LINE } from '../copy'\n</script>\n<p>{RESOURCE_LINE}</p>\n" }])).toEqual([])
   })
 
-  it('records the open R-5.6.2 conflict: its DESIGN-mandated tooltip trips the lint until M6.1 amends A13', () => {
-    // DESIGN R-5.6.2 fixes the Emotion Reading tooltip word for word, but it says "diagnostic" and
-    // "clinical", and A13 allow-lists only RESOURCE_LINE and DISCLAIMER. When M6.1 settles it (a
-    // third exact allowed text, or a reworded R-5.6.2), update this test with the lint header.
+  it('the repo lint fails when a file other than src/copy.ts spells out the R-5.6.2 tooltip', () => {
+    const page = { path: 'web/src/results/Axis.svelte', text: `<p title="x">${EMO_TOOLTIP}</p>\n` }
+    expect(lintFiles([page])).toEqual(['web/src/results/Axis.svelte: spells out EMO_TOOLTIP; import it from web/src/copy.ts instead (A13: one allow-listed constant)'])
+    expect(lintFiles([page], { checkHomes: false })).toEqual([])
+    expect(lintFiles([{ path: 'web/src/copy.ts', text: `export const EMO_TOOLTIP = ${JSON.stringify(EMO_TOOLTIP)}` }])).toEqual([])
+    expect(lintFiles([{ path: 'web/src/render/emotion/Tip.svelte', text: "<script lang=\"ts\">\n  import { EMO_TOOLTIP } from '../../copy'\n</script>\n<p>{EMO_TOOLTIP}</p>\n" }])).toEqual([])
+  })
+
+  it('settles the R-5.6.2 conflict (M6.1): DESIGN\'s tooltip is the allowed text, word for word, and passes the lint', () => {
+    // DESIGN R-5.6.2 fixes the Emotion Reading tooltip word for word, and it says "diagnostic" and
+    // "clinical". A13 as amended by M6.1 allow-lists exactly that sentence (a third text beside
+    // RESOURCE_LINE and DISCLAIMER), pinned to DESIGN here and in src/copy.test.ts.
     const design = readFileSync(join(REPO_ROOT, 'docs', 'DESIGN.md'), 'utf8')
     const tooltip = /^- R-5\.6\.2:.*?tooltip: "([^"\n]+)"/m.exec(design)?.[1]
     expect(tooltip).toMatch(/^Measures agreement with /)
-    expect(terms(lintText(tooltip ?? '', 'x.md'))).toEqual(['clinical', 'diagnosis'])
-    expect(ALLOWED_TEXT.map((a) => a.text)).not.toContain(tooltip)
+    expect(terms(lintText(tooltip?.slice(0, -1) ?? '', 'x.md'))).toEqual(['clinical', 'diagnosis'])
+    expect(lintText(tooltip ?? '', 'x.md')).toEqual([])
+    expect(ALLOWED_TEXT.map((a) => a.text)).toContain(tooltip)
   })
 
   it('the disclaimer may be quoted anywhere, but only exactly', () => {

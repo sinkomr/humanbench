@@ -22,28 +22,27 @@
  * match but "IQR" does not. {@link NOT_BANNED} records near-misses that were left out on purpose,
  * and the tests check they stay unflagged.
  *
- * **What is allowed** ({@link ALLOWED_TEXT}): exactly two texts are masked before matching,
+ * **What is allowed** ({@link ALLOWED_TEXT}): exactly three texts are masked before matching,
  * case-sensitively but ignoring how whitespace wraps (Markdown and HTML may break lines). Change
  * one character and they no longer mask.
- * - The R-5.6.5 resource sentence (`RESOURCE_LINE` in `src/copy.ts`), the only allow-listed
+ * - The R-5.6.5 resource sentence (`RESOURCE_LINE` in `src/copy.ts`), the first allow-listed
  *   constant. {@link lintFiles} also fails when any other scanned file spells it out: import it.
  *   Rendering it only in the results footer, never on a share card, is M1.R/M1.18's rule.
  * - The §13 disclaimer (`DISCLAIMER`), the one place "clinical" (and "IQ", which it disowns) may
  *   appear. It may be quoted anywhere (README, the no-JS fallback).
- * `src/copy.test.ts` pins both word-for-word to docs/DESIGN.md.
- *
- * **Open conflict, for ROADMAP M6.1 to settle:** DESIGN R-5.6.2 requires the Emotion Reading
- * tooltip "… Not a diagnostic or clinical measure; …", which this lint flags ("diagnostic",
- * "clinical"). A13 allow-lists only the two texts above, so shipping that tooltip word-for-word
- * needs an A13 amendment first: either add it here as a third exact text (pinned to DESIGN like
- * `DISCLAIMER`), or reword R-5.6.2. `language-lint.test.ts` pins the conflict so it stays visible.
+ * - The R-5.6.2 Emotion Reading tooltip (`EMO_TOOLTIP` in `src/copy.ts`), the third text, added by
+ *   ROADMAP M6.1 (A13 amended). DESIGN R-5.6.2 fixes its words, "… Not a diagnostic or clinical
+ *   measure; …", which the lint would otherwise flag ("diagnostic", "clinical"); it explains what the
+ *   axis is not, to the person looking at the axis. Like `RESOURCE_LINE` it has a single home, so
+ *   `lintFiles` fails when any other scanned file spells it out: import it.
+ * `src/copy.test.ts` pins all three word-for-word to docs/DESIGN.md.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { DISCLAIMER, RESOURCE_LINE } from '../src/copy'
+import { DISCLAIMER, EMO_TOOLTIP, RESOURCE_LINE } from '../src/copy'
 
 /** The public repo root (this file is web/scripts/language-lint.ts). */
 export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -106,7 +105,7 @@ export const BANNED_TERMS: readonly BannedTerm[] = [
     id: 'diagnosis',
     pattern: 'diagnos\\w*',
     examples: ['diagnosis', 'diagnoses', 'diagnose', 'diagnosed', 'diagnostic', 'non-diagnostic'],
-    why: '§13: the app is not a clinical assessment; R-5.6.3: it never asks about diagnoses. Copy says what the scores are, not which diagnosis they are not (the R-5.6.2 tooltip is an open conflict for M6.1: see the header).',
+    why: '§13: the app is not a clinical assessment; R-5.6.3: it never asks about diagnoses. Copy says what the scores are, not which diagnosis they are not (the one exception is the R-5.6.2 tooltip, an allowed text: see the header).',
   },
   { id: 'prognosis', pattern: 'prognos\\w*', examples: ['prognosis', 'prognostic'], why: 'Medical outcome framing (§13: not a basis for decisions about health).' },
   { id: 'disorder', pattern: 'disorder\\w*', examples: ['disorder', 'Disorders', 'disordered'], why: 'The DSM/ICD category noun (R-5.6.1).' },
@@ -129,7 +128,7 @@ export const BANNED_TERMS: readonly BannedTerm[] = [
     id: 'clinical',
     pattern: 'clinic\\w*',
     examples: ['clinical', 'clinically', 'clinician', 'clinic'],
-    why: 'R-5.6.1 "other clinical terms". A13: allowed only inside the §13 disclaimer ("clinical") and the R-5.6.5 sentence ("clinician").',
+    why: 'R-5.6.1 "other clinical terms". A13: allowed only inside the §13 disclaimer ("clinical"), the R-5.6.5 sentence ("clinician") and the R-5.6.2 tooltip ("clinical").',
   },
   {
     id: 'iq',
@@ -202,12 +201,18 @@ export const ALLOWED_TEXT: readonly AllowedText[] = [
     name: 'RESOURCE_LINE',
     text: RESOURCE_LINE,
     home: 'web/src/copy.ts',
-    why: 'R-5.6.5: the neutral resource line; the only allow-listed constant (A13).',
+    why: 'R-5.6.5: the neutral resource line; an allow-listed constant with one home file (A13).',
   },
   {
     name: 'DISCLAIMER',
     text: DISCLAIMER,
     why: '§13: the non-diagnostic disclaimer; the one place "clinical" (and the disowned "IQ") may appear (A13).',
+  },
+  {
+    name: 'EMO_TOOLTIP',
+    text: EMO_TOOLTIP,
+    home: 'web/src/copy.ts',
+    why: 'R-5.6.2: the Emotion Reading tooltip, word for word; it names "diagnostic" and "clinical" to say what the axis is not (A13 amended by M6.1).',
   },
 ]
 

@@ -121,7 +121,7 @@
         "diagnostic",
         "non-diagnostic"
       ],
-      "why": "§13: the app is not a clinical assessment; R-5.6.3: it never asks about diagnoses. Copy says what the scores are, not which diagnosis they are not (the R-5.6.2 tooltip is an open conflict for M6.1: see the header)."
+      "why": "§13: the app is not a clinical assessment; R-5.6.3: it never asks about diagnoses. Copy says what the scores are, not which diagnosis they are not (the one exception is the R-5.6.2 tooltip, an allowed text: see the header)."
     },
     {
       "id": "prognosis",
@@ -198,7 +198,7 @@
         "clinician",
         "clinic"
       ],
-      "why": "R-5.6.1 \"other clinical terms\". A13: allowed only inside the §13 disclaimer (\"clinical\") and the R-5.6.5 sentence (\"clinician\")."
+      "why": "R-5.6.1 \"other clinical terms\". A13: allowed only inside the §13 disclaimer (\"clinical\"), the R-5.6.5 sentence (\"clinician\") and the R-5.6.2 tooltip (\"clinical\")."
     },
     {
       "id": "iq",
