@@ -2,7 +2,10 @@
  * M2.1 (ROADMAP M2.1 "Amended (Phase AI Part 2 ...)"; DESIGN §7.8; ROADMAP A12, A21, AI.8): rescore(save)
  * and its parity with the app. The expected values come from the TypeScript engine itself
  * (engine/retest.ts rescoreRetest, engine/scorer.ts eapAxis): the same observations, the same practice
- * model, the same grid, compared to 1e-9.
+ * model, the same grid, compared to 1e-9. The parity tests run with the minimum counts and the rounding
+ * switched off (EXACT), because they compare the algorithm; the tests of what rescore withholds
+ * (R-11.1, DESIGN §10, the owner decision of 2026-10-01 "rescore must not leak single-answer verdicts")
+ * run with the published settings (PUBLISHED).
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -23,9 +26,23 @@ const items: FixtureItem[] = fixtureBank({ perAxis: 90, axes: ['QR', 'MAT', 'KST
 const bank = new Map(items.map((i) => [i.itemId, i]))
 const TOL = 1e-9
 
+/** What a person gets (the seed of app_config: schema.db.test.ts checks it): 5 items, 0.1 and 0.05 SD units. */
+const PUBLISHED = { 'rescore.min_axis_items': 5, 'rescore.min_facet_items': 5, 'rescore.mean_step': 0.1, 'rescore.sd_step': 0.05 } as const
+/** The algorithm without the protection, for the parity tests only. */
+const EXACT = { 'rescore.min_axis_items': 1, 'rescore.min_facet_items': 1, 'rescore.mean_step': 0, 'rescore.sd_step': 0 } as const
+
+async function setConfig(values: Readonly<Record<string, number>>): Promise<void> {
+  for (const [key, value] of Object.entries(values)) {
+    await db.owner.query(`update public.app_config set value = $2::jsonb where key = $1`, [key, JSON.stringify(value)])
+  }
+}
+
 beforeAll(async () => {
   db = await openTestDb()
   await loadFixtureBank(db, items)
+  await setConfig(EXACT)
+  // the many calls of these tests are not what the per-anon_id limit is about (a test of its own sets it)
+  await setConfig({ 'rate.rescores_per_anon_day': 1000 })
 })
 afterAll(async () => {
   await db.close()
@@ -162,6 +179,9 @@ interface Result {
   sessions: { session_id: string; known: boolean; calibration_eligible: boolean | null; ordinals: Record<string, number>; rho: Record<string, number>; n_scored: number }[]
   eap: Record<string, { mean: number; sd: number; n: number }>
   facets: Record<string, Record<string, { mean: number; sd: number; n: number }>>
+  /** Counts of scored items for the axes and facets that were held back. */
+  withheld: { eap: Record<string, number>; facets: Record<string, Record<string, number>> }
+  limits: { min_axis_items: number; min_facet_items: number; mean_step: number; sd_step: number }
   skipped: Record<string, number>
 }
 
@@ -340,12 +360,10 @@ describe('rescore: sessions it does not know', () => {
     expect(got).toMatchObject({ eap: {}, facets: {}, sessions: [], skipped: { unknown_sessions: 0 } })
   })
 
-  it('honours the bound anon_id of a session (sig.anon_id) and refuses a save over the session limit', async () => {
+  it('refuses a save over the session limit', async () => {
     const rng = createRng('person-h')
     const mine = await takeSession(undefined, 10, { MAT: 0.2 }, rng)
     await schedule(mine.sessionId, 1)
-    const merged = emptySave('hb_7Q3m9Kx2Vw5rT8pL', { sessions: [{ session_id: mine.sessionId, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: mine.anonId } }] })
-    expect((await rescore(merged)).sessions[0]).toMatchObject({ known: true })
     const tooMany = emptySave(mine.anonId, { sessions: Array.from({ length: 41 }, (_, i) => ({ session_id: `s_sess${String(i).padStart(8, '0')}` })) })
     let code: string | undefined
     try {
@@ -370,7 +388,7 @@ describe('rescore: sessions it does not know', () => {
       }
       expect(code).toBe('PT429')
     } finally {
-      await db.owner.query(`update public.app_config set value = '200' where key = 'rate.rescores_per_day'`)
+      await db.owner.query(`update public.app_config set value = '20' where key = 'rate.rescores_per_day'`)
     }
   })
 })
@@ -400,5 +418,315 @@ describe('rescore: cost', () => {
     expect(Object.keys(got.eap).sort()).toEqual(['KST', 'MAT', 'QR'])
     expect(got.sessions.length).toBe(40)
     expect(ms).toBeLessThan(2500)
+  })
+})
+
+// ------------------------------------------------------------------------------------------ withheld
+// R-11.1 / DESIGN §10: no correctness feedback on finite-bank items. finish() no longer carries the
+// server's verdict on an answer, so the score is the one place it still shows: a posterior mean of one
+// answer IS that answer. rescore therefore returns an axis (a facet) only from rescore.min_axis_items
+// (min_facet_items) scored items, rounds what it returns, and is limited per address and per anon_id.
+
+/** A finished session of `n` answers, all right or all wrong: the script of the key-harvesting probe. */
+async function answerAll(n: number, right: boolean): Promise<Taken> {
+  const ip = freshIp()
+  const s = await startSession(db, ip)
+  issued.set(s.anon_id, [s.session_id])
+  await playSession(db, s, bank, { ip, n, decide: () => right })
+  await db.rpc(from(ip), 'finish', { p_token: s.token })
+  return { sessionId: s.session_id, anonId: s.anon_id, token: s.token, ip }
+}
+
+/**
+ * Leaves exactly `keep` of the session's responses on `axis` (and `facet`, when given) scoring, by marking
+ * the later ones pretest (DESIGN §4.5: pretest responses are not scored). Any `keep` can be set again.
+ */
+async function keepScored(sessionId: string, axis: AxisCode, keep: number, facet?: string): Promise<void> {
+  await db.owner.query(
+    `update public.responses r set pretest = (x.rank > $3)
+       from (select r2.session_id, r2.seq, row_number() over (order by r2.seq) as rank
+               from public.responses r2 join public.items i on i.item_id = r2.item_id join public.item_families f on f.family_id = i.family_id
+              where r2.session_id = $1 and f.axis = $2 and ($4::text is null or f.facet = $4)) x
+      where r.session_id = x.session_id and r.seq = x.seq`,
+    [sessionId, axis, keep, facet ?? null],
+  )
+}
+
+/** How many responses the session has on the axis (and facet). */
+async function countOn(sessionId: string, axis: AxisCode, facet?: string): Promise<number> {
+  const { rows } = await db.owner.query<{ n: number }>(
+    `select count(*)::int as n from public.responses r join public.items i on i.item_id = r.item_id join public.item_families f on f.family_id = i.family_id
+      where r.session_id = $1 and f.axis = $2 and ($3::text is null or f.facet = $3)`,
+    [sessionId, axis, facet ?? null],
+  )
+  return rows[0]!.n
+}
+
+/** The calls of a script that answers `n` items one way and asks what the server thinks of them. */
+const reads = (got: Result): { axes: string[]; facets: string[] } => ({ axes: Object.keys(got.eap), facets: Object.keys(got.facets) })
+
+describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-10-01)', () => {
+  beforeAll(() => setConfig(PUBLISHED))
+  afterAll(() => setConfig(EXACT))
+
+  it('says nothing about a session of one to four answers, right or wrong: the probe that read a verdict out of rescore', async () => {
+    for (const n of [1, 2, 3, 4]) {
+      for (const right of [true, false]) {
+        const s = await answerAll(n, right)
+        const got = await rescore(saveOf(s.anonId, [s.sessionId]))
+        // no axis and no facet, so no mean and no sd for the script to read; only counts of items
+        expect(reads(got), `${n} answers, right=${right}`).toEqual({ axes: [], facets: [] })
+        expect(got.sessions[0]).toMatchObject({ known: true, n_scored: n })
+        const text = JSON.stringify(got)
+        expect(text).not.toMatch(/"mean"|"sd"|"correct"|i:tst/)
+        // the counts held back are the answers given, however they were scored
+        expect(Object.values(got.withheld.eap).reduce((a, b) => a + b, 0)).toBe(n)
+      }
+    }
+  })
+
+  it('returns an axis from the fifth scored item, not before, and counts the items of all the save\'s sessions together', async () => {
+    const rng = createRng('withheld-axis')
+    const a = await takeSession(undefined, 45, { QR: 0.3, MAT: 0.3, KST: 0.3 }, rng)
+    const ids = [a.sessionId]
+    await schedule(a.sessionId, 1)
+    expect(await countOn(a.sessionId, 'QR')).toBeGreaterThanOrEqual(9)
+    for (const keep of [0, 1, 2, 3, 4, 5, 6, 9]) {
+      await keepScored(a.sessionId, 'QR', keep)
+      const got = await rescore(saveOf(a.anonId, ids))
+      if (keep >= 5) {
+        expect(got.eap.QR, `keep ${keep}`).toMatchObject({ n: keep })
+        expect(got.withheld.eap.QR).toBeUndefined()
+      } else {
+        expect(got.eap.QR, `keep ${keep}`).toBeUndefined()
+        expect(got.facets.QR, `keep ${keep}`).toBeUndefined()
+        if (keep > 0) expect(got.withheld.eap.QR).toBe(keep)
+      }
+      // the other axes are not held back by QR having too few
+      expect(got.eap.MAT).toBeDefined()
+    }
+    // 3 + 2 items in two sessions make 5: the count is over the save, not per session
+    const b = await takeSession(a.anonId, 45, { QR: 0.3, MAT: 0.3, KST: 0.3 }, rng)
+    await schedule(b.sessionId, 8)
+    await keepScored(a.sessionId, 'QR', 3)
+    await keepScored(b.sessionId, 'QR', 2)
+    expect((await rescore(saveOf(a.anonId, [a.sessionId, b.sessionId]))).eap.QR).toMatchObject({ n: 5 })
+    await keepScored(b.sessionId, 'QR', 1)
+    const four = await rescore(saveOf(a.anonId, [a.sessionId, b.sessionId]))
+    expect(four.eap.QR).toBeUndefined()
+    expect(four.withheld.eap.QR).toBe(4)
+    // and a session the save does not list adds nothing
+    await keepScored(b.sessionId, 'QR', 9)
+    expect((await rescore(saveOf(a.anonId, [a.sessionId]))).eap.QR).toBeUndefined()
+  })
+
+  it('returns a facet only from five scored items, and only for an axis it returns (A12)', async () => {
+    const rng = createRng('withheld-facet')
+    const a = await takeSession(undefined, 120, { QR: 0.1, MAT: 0.1, KST: 0.1 }, rng)
+    await schedule(a.sessionId, 1)
+    const ids = [a.sessionId]
+    expect(await countOn(a.sessionId, 'MAT', 'mat_f0')).toBeGreaterThanOrEqual(6)
+    expect(await countOn(a.sessionId, 'MAT', 'mat_f1')).toBeGreaterThanOrEqual(6)
+    for (const keep of [1, 4, 5, 6]) {
+      await keepScored(a.sessionId, 'MAT', 6, 'mat_f0')
+      await keepScored(a.sessionId, 'MAT', keep, 'mat_f1')
+      const got = await rescore(saveOf(a.anonId, ids))
+      expect(got.facets.MAT!.mat_f0, `f0 with 6, f1 with ${keep}`).toMatchObject({ n: 6 })
+      if (keep >= 5) {
+        expect(got.facets.MAT!.mat_f1).toMatchObject({ n: keep })
+        expect(got.withheld.facets.MAT?.mat_f1).toBeUndefined()
+      } else {
+        expect(got.facets.MAT!.mat_f1).toBeUndefined()
+        expect(got.withheld.facets.MAT!.mat_f1).toBe(keep)
+      }
+      expect(got.eap.MAT).toBeDefined()
+    }
+    // a facet with plenty of items under an axis that is held back is held back with it
+    await db.owner.query(`update public.responses set pretest = true where session_id = $1`, [a.sessionId])
+    await keepScored(a.sessionId, 'MAT', 4)
+    await db.owner.query(
+      `update public.responses r set pretest = false where r.session_id = $1 and r.seq in (
+         select r2.seq from public.responses r2 join public.items i on i.item_id = r2.item_id join public.item_families f on f.family_id = i.family_id
+          where r2.session_id = $1 and f.axis = 'MAT' order by r2.seq limit 4)`,
+      [a.sessionId],
+    )
+    const small = await rescore(saveOf(a.anonId, ids))
+    expect(small.eap.MAT).toBeUndefined()
+    expect(small.facets.MAT).toBeUndefined()
+  })
+
+  it('rounds the mean to a tenth and the sd up to a twentieth, within half a step of the exact value', async () => {
+    const rng = createRng('rounding')
+    const checked: string[] = []
+    for (const [name, theta] of [['p', { QR: 1.1, MAT: -0.7, KST: 0.2 }], ['q', { QR: -0.4, MAT: 0.05, KST: 1.6 }], ['r', { QR: 0, MAT: 0, KST: 0 }]] as const) {
+      const a = await takeSession(undefined, 60, theta, rng)
+      const b = await takeSession(a.anonId, 60, theta, rng)
+      await schedule(a.sessionId, 2)
+      await schedule(b.sessionId, 12)
+      const save = saveOf(a.anonId, [a.sessionId, b.sessionId])
+      await setConfig(EXACT)
+      const exact = await rescore(save)
+      await setConfig(PUBLISHED)
+      const got = await rescore(save)
+      expect(got.limits).toEqual({ min_axis_items: 5, min_facet_items: 5, mean_step: 0.1, sd_step: 0.05 })
+      expect(Object.keys(got.eap).sort(), name).toEqual(Object.keys(exact.eap).sort())
+      const onGrid = (x: number, step: number): boolean => Math.abs(x / step - Math.round(x / step)) < 1e-9
+      const compare = (g: { mean: number; sd: number; n: number }, e: { mean: number; sd: number; n: number }, what: string): void => {
+        expect(onGrid(g.mean, 0.1), `${what} mean ${g.mean}`).toBe(true)
+        expect(onGrid(g.sd, 0.05), `${what} sd ${g.sd}`).toBe(true)
+        expect(Math.abs(g.mean - e.mean), `${what} mean`).toBeLessThanOrEqual(0.05 + 1e-9)
+        // the sd is rounded up: never smaller than the exact one, and by less than a step
+        expect(g.sd - e.sd, `${what} sd`).toBeGreaterThanOrEqual(-1e-9)
+        expect(g.sd - e.sd, `${what} sd`).toBeLessThan(0.05 + 1e-9)
+        expect(g.n, `${what} n`).toBe(e.n)
+        checked.push(what)
+      }
+      for (const [axis, e] of Object.entries(exact.eap)) compare(got.eap[axis]!, e, `${name}/${axis}`)
+      for (const [axis, byFacet] of Object.entries(exact.facets)) {
+        for (const [facet, e] of Object.entries(byFacet)) {
+          if (e.n >= 5) compare(got.facets[axis]![facet]!, e, `${name}/${axis}/${facet}`)
+          else expect(got.facets[axis]?.[facet]).toBeUndefined()
+        }
+      }
+    }
+    // not vacuous: 3 people x 3 axes, and their facets
+    expect(checked.length).toBeGreaterThanOrEqual(18)
+  })
+
+  it('rounds to the steps in app_config', async () => {
+    const rng = createRng('steps')
+    const a = await takeSession(undefined, 60, { QR: 0.9, MAT: -0.8, KST: 0.1 }, rng)
+    await schedule(a.sessionId, 3)
+    const save = saveOf(a.anonId, [a.sessionId])
+    await setConfig({ 'rescore.mean_step': 0.5, 'rescore.sd_step': 0.25 })
+    try {
+      const got = await rescore(save)
+      expect(got.limits).toMatchObject({ mean_step: 0.5, sd_step: 0.25 })
+      for (const e of Object.values(got.eap)) {
+        expect(Math.abs(e.mean / 0.5 - Math.round(e.mean / 0.5))).toBeLessThan(1e-9)
+        expect(Math.abs(e.sd / 0.25 - Math.round(e.sd / 0.25))).toBeLessThan(1e-9)
+      }
+    } finally {
+      await setConfig(PUBLISHED)
+    }
+  })
+
+  it('has the rounding functions behave: halves away from zero, no float noise, no negative zero, the sd up', async () => {
+    const q = async (sql: string): Promise<number> => Number((await db.owner.query<{ v: number }>(`select ${sql} as v`)).rows[0]!.v)
+    expect(await q('hb.quantise_round(0.3::float8, 0.1::float8)')).toBe(0.3)
+    expect(await q('hb.quantise_round(0.349999::float8, 0.1::float8)')).toBe(0.3)
+    expect(await q('hb.quantise_round(0.35::float8, 0.1::float8)')).toBe(0.4)
+    expect(await q('hb.quantise_round(-0.35::float8, 0.1::float8)')).toBe(-0.4)
+    expect(Object.is(await q('hb.quantise_round(-0.04::float8, 0.1::float8)'), 0)).toBe(true)
+    expect(await q('hb.quantise_round(1.234::float8, 0::float8)')).toBe(1.234)
+    expect(await q('hb.quantise_up(0.3::float8, 0.05::float8)')).toBe(0.3)
+    expect(await q('hb.quantise_up(0.30000000000000004::float8, 0.05::float8)')).toBe(0.3)
+    expect(await q('hb.quantise_up(0.301::float8, 0.05::float8)')).toBe(0.35)
+    expect(await q('hb.quantise_up(0.0001::float8, 0.05::float8)')).toBe(0.05)
+    expect(await q('hb.quantise_up(0.2::float8, 0::float8)')).toBe(0.2)
+  })
+
+  it('does not publish at a smaller minimum than one item, nor with a negative step', async () => {
+    const s = await answerAll(2, true)
+    await setConfig({ 'rescore.min_axis_items': 0, 'rescore.min_facet_items': -3, 'rescore.mean_step': -1, 'rescore.sd_step': -1 })
+    try {
+      const got = await rescore(saveOf(s.anonId, [s.sessionId]))
+      expect(got.limits).toEqual({ min_axis_items: 1, min_facet_items: 1, mean_step: 0, sd_step: 0 })
+    } finally {
+      await setConfig(PUBLISHED)
+    }
+  })
+})
+
+describe('rescore: the anon_id is the caller\'s (a sig.anon_id may only repeat it)', () => {
+  beforeAll(() => setConfig(EXACT))
+
+  it('counts a session as unknown when it was issued to another anon_id than the save names, whatever its sig says', async () => {
+    const rng = createRng('anon-binding')
+    const victim = await takeSession(undefined, 30, { QR: 0.5, MAT: 0.5, KST: 0.5 }, rng)
+    const stranger = await takeSession(undefined, 30, { QR: -0.5, MAT: -0.5, KST: -0.5 }, rng)
+    await schedule(victim.sessionId, 1)
+    await schedule(stranger.sessionId, 1)
+    const sig = (anon: string): Record<string, unknown> => ({ alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: anon })
+    const knownOf = async (doc: Record<string, unknown>): Promise<boolean[]> => (await rescore(doc)).sessions.map((s) => s.known)
+
+    // the honest cases: the save names the anon_id the session was issued to, with or without a sig repeating it
+    expect(await knownOf(saveOf(victim.anonId, [victim.sessionId]))).toEqual([true])
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))).toEqual([true])
+    // a merged file names one anon_id; the session of another one is not that caller's, even with a sig that says whose it is
+    // (before this fix the sig.anon_id replaced the save's: rescore would score a session of an id the caller never named)
+    expect(await knownOf(emptySave(stranger.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))).toEqual([false])
+    // a sig naming another id than the save does not move the session to it
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(stranger.anonId) }] }))).toEqual([false])
+    // a stranger's own session under the victim's id, with a sig repeating that id: it is not the victim's
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [{ session_id: stranger.sessionId, sig: sig(victim.anonId) }] }))).toEqual([false])
+    // and the stranger's own session under the stranger's id is theirs
+    expect(await knownOf(emptySave(stranger.anonId, { sessions: [{ session_id: stranger.sessionId }] }))).toEqual([true])
+
+    // nothing of the victim's data comes out of a call that does not hold the victim's id
+    const leak = await rescore(emptySave(stranger.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))
+    expect(leak.eap).toEqual({})
+    expect(leak.facets).toEqual({})
+    expect(leak.sessions[0]).toMatchObject({ known: false, calibration_eligible: null, n_scored: 0 })
+    expect(leak.skipped.unknown_sessions).toBe(1)
+  })
+
+  it('takes the entry of a repeated session that the caller owns, whichever comes first', async () => {
+    const rng = createRng('anon-duplicate')
+    const mine = await takeSession(undefined, 20, { QR: 0.2, MAT: 0.2, KST: 0.2 }, rng)
+    await schedule(mine.sessionId, 1)
+    const bad = { session_id: mine.sessionId, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' } }
+    const good = { session_id: mine.sessionId }
+    for (const order of [[bad, good], [good, bad]]) {
+      const got = await rescore(emptySave(mine.anonId, { sessions: order }))
+      expect(got.sessions.length).toBe(1)
+      expect(got.sessions[0]).toMatchObject({ known: true })
+      expect(Object.keys(got.eap).length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('rescore: the call limits', () => {
+  beforeAll(() => setConfig(EXACT))
+
+  it('is limited per anon_id as well as per address, counting only calls that hold a session of that anon_id', async () => {
+    const rng = createRng('anon-limit')
+    const mine = await takeSession(undefined, 12, { QR: 0.2 }, rng)
+    const other = await takeSession(undefined, 12, { QR: 0.2 }, rng)
+    await schedule(mine.sessionId, 1)
+    await schedule(other.sessionId, 1)
+    await db.owner.query(`update public.app_config set value = '2' where key = 'rate.rescores_per_anon_day'`)
+    try {
+      const code = async (doc: Record<string, unknown>, ip?: string): Promise<string> => {
+        try {
+          await rescore(doc, ip)
+          return 'ok'
+        } catch (e) {
+          return pgCode(e) ?? 'error'
+        }
+      }
+      // a stranger who knows the id but holds none of its sessions (an empty save, or sessions of someone else's)
+      // does not use its calls up
+      for (let i = 0; i < 4; i++) expect(await code(emptySave(mine.anonId))).toBe('ok')
+      expect(await code(saveOf(mine.anonId, [other.sessionId]))).toBe('ok')
+      expect(await code(saveOf(mine.anonId, [other.sessionId]))).toBe('ok')
+      // the person's own calls, each from a different address: the address limit is not what stops the third
+      expect(await code(saveOf(mine.anonId, [mine.sessionId]))).toBe('ok')
+      expect(await code(saveOf(mine.anonId, [mine.sessionId]))).toBe('ok')
+      expect(await code(saveOf(mine.anonId, [mine.sessionId]))).toBe('PT429')
+      // and the stranger is not stopped by the person's calls having run out
+      expect(await code(emptySave(mine.anonId))).toBe('ok')
+      // another anon_id has its own count
+      expect(await code(saveOf(other.anonId, [other.sessionId]))).toBe('ok')
+      // a call refused for the anon_id is not counted against the address either (the raise rolls it back)
+      await db.owner.query(`update public.app_config set value = '1' where key = 'rate.rescores_per_day'`)
+      const ip = freshIp()
+      expect(await code(saveOf(mine.anonId, [mine.sessionId]), ip)).toBe('PT429')
+      expect(await code(emptySave(other.anonId), ip)).toBe('ok')
+      expect(await code(emptySave(other.anonId), ip)).toBe('PT429')
+    } finally {
+      await db.owner.query(`update public.app_config set value = '20' where key = 'rate.rescores_per_day'`)
+      await db.owner.query(`update public.app_config set value = '1000' where key = 'rate.rescores_per_anon_day'`)
+    }
   })
 })

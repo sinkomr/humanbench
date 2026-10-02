@@ -694,12 +694,13 @@ $$;
 -- rows the server holds: responses as [item_id, pretest, response, correct, rt_ms, confidence].
 -- No sig yet: the per-session HMAC is M2.3.
 --
--- `correct` is null unless app_config finish.include_correct is true (default false). With it on,
--- one finished session tells a script which of its answers were right, 200 items at a time, and a
--- few sessions with different answers pin down a key: that is the leak of R-11.1 and DESIGN §10
--- ("no correctness feedback on finite-bank items"). DESIGN §8 also wants the correctness in the
--- signed save, for offline re-scoring: the two conflict, the default follows R-11.1, and the person
--- gets their scores from rescore() instead. The decision is the owner's; see supabase/README.md.
+-- `correct` is always null: the server never puts its verdict on an answer into a save (owner decision
+-- 2026-10-01, R-11.1, DESIGN §10 "no correctness feedback on finite-bank items"; ROADMAP "Owner decisions").
+-- A finish reply that carried it would tell a script which of its answers were right, 200 items a
+-- session, and a few sessions with different answers would pin down each key. DESIGN §8 also wanted the
+-- correctness in the signed save, for offline re-scoring; the owner chose R-11.1. The rows keep their
+-- verdicts for the server, and the person gets their scores from rescore(), which withholds what would
+-- read out a single answer (supabase/README.md). There is deliberately no setting to turn this on.
 create function hb.session_object(p_session_id text)
 returns jsonb
 language sql stable
@@ -714,7 +715,7 @@ as $$
     'responses', coalesce((
       select pg_catalog.jsonb_agg(
                pg_catalog.jsonb_build_array(r.item_id, case when r.pretest then 1 else 0 end, r.response,
-                                case when hb.cfg('finish.include_correct') = 'true'::jsonb then r.correct end, r.rt_ms, r.confidence)
+                                'null'::pg_catalog.jsonb, r.rt_ms, r.confidence)
                order by r.seq)
         from public.responses r where r.session_id = s.session_id), '[]'::jsonb))
     from public.sessions s where s.session_id = p_session_id
@@ -795,6 +796,31 @@ begin
   perform hb.rate_bump('phrase_fail_ip', v_ip);
   return false;
 end
+$$;
+
+-- Rounding for what rescore() returns (R-11.1, DESIGN §10): a posterior mean or sd computed from a few
+-- answers is a function of those answers, so it is published only to a multiple of `step` (SD units).
+-- quantise_round: nearest multiple (halves away from zero), for a mean. quantise_up: the next multiple
+-- at or above, for an sd, so that the uncertainty is never understated. step <= 0 means exact; the
+-- parity tests use it, and it is not a production setting. Done in numeric, so 0.3 comes out as 0.3 and
+-- not 0.30000000000000004; the nine-decimal rounding in quantise_up keeps float noise (an sd of
+-- 0.30000000000000004) from costing a whole step.
+create function hb.quantise_round(p_x double precision, p_step double precision)
+returns double precision
+language sql immutable
+set search_path = ''
+as $$
+  select case when p_step is null or p_step <= 0 then p_x
+              else (pg_catalog.round(p_x::pg_catalog.numeric / p_step::pg_catalog.numeric) * p_step::pg_catalog.numeric)::double precision end
+$$;
+
+create function hb.quantise_up(p_x double precision, p_step double precision)
+returns double precision
+language sql immutable
+set search_path = ''
+as $$
+  select case when p_step is null or p_step <= 0 then p_x
+              else (pg_catalog.ceil(pg_catalog.round(p_x::pg_catalog.numeric / p_step::pg_catalog.numeric, 9)) * p_step::pg_catalog.numeric)::double precision end
 $$;
 
 -- The population prior of a single axis for the own-axis EAP (DESIGN §7.8, ROADMAP A2, A8, A21):

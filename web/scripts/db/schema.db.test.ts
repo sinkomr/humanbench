@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../../src/engine/axes'
 import { RHO_MAX_PRIOR } from '../../src/engine/retest'
+import { FACET_MIN_ITEMS } from '../../src/viz/facets'
 import { AUTHENTICATED, SERVICE_ROLE, type TestDb } from './harness'
 import { from } from './rpc-support'
 import { exposedSurface, names } from './surface'
@@ -252,6 +253,22 @@ describe('settings that mirror the app', () => {
     expect(cfg['rate.sessions_per_day']).toBe(5)
     expect(cfg['session.max_items']).toBe(200)
     expect(cfg['session.min_avg_ms']).toBe(2000)
+  })
+
+  it('ships rescore withholding and rounding what would read out a single answer (R-11.1, DESIGN §10; owner decision 2026-10-01)', async () => {
+    const { rows } = await db.owner.query<{ key: string; value: unknown }>(`select key, value from public.app_config`)
+    const cfg = Object.fromEntries(rows.map((r) => [r.key, r.value]))
+    // an axis from 5 scored items, a facet from the 5 of A12 (the app's own FACET_MIN_ITEMS)
+    expect(cfg['rescore.min_axis_items']).toBe(5)
+    expect(cfg['rescore.min_facet_items']).toBe(FACET_MIN_ITEMS)
+    // the mean to a tenth, the sd up to a twentieth of an SD unit
+    expect(cfg['rescore.mean_step']).toBe(0.1)
+    expect(cfg['rescore.sd_step']).toBe(0.05)
+    // 5 sessions a day per address leave room for 20 calls and, per anon_id, 10
+    expect(cfg['rate.rescores_per_day']).toBe(20)
+    expect(cfg['rate.rescores_per_anon_day']).toBe(10)
+    // and the switch that put the verdict of each answer into the finish reply does not exist
+    expect(Object.keys(cfg).filter((k) => /include_correct|verdict/.test(k))).toEqual([])
   })
 })
 

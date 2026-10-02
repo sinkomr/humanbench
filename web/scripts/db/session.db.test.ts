@@ -564,7 +564,7 @@ describe('finish', () => {
     for (const t of responses) {
       expect(t.length).toBe(6)
       expect(t[1]).toBe(0)
-      expect(t[3], 'no verdict on an answer by default').toBeNull()
+      expect(t[3], 'no verdict on an answer').toBeNull()
       expect(t[4]).toBe(5000)
       expect(t[5]).toBeNull()
     }
@@ -595,20 +595,23 @@ describe('finish', () => {
     expect((await db.owner.query<{ n: number }>(`select count(*)::int as n from public.responses where correct = 1`)).rows[0]!.n).toBeGreaterThan(0)
   })
 
-  it('puts the verdict of each answer into the session only when finish.include_correct is on (DESIGN §8 against R-11.1: the owner decides)', async () => {
+  it('never puts the verdict of an answer into the session, whatever app_config holds (owner decision 2026-10-01; R-11.1, DESIGN §10)', async () => {
     const ip = freshIp()
     const s = await startSession(db, ip)
     await playSession(db, s, bank, { ip, n: 6, decide: (_it, seq) => seq % 2 === 0 })
-    await db.owner.query(`update public.app_config set value = 'true' where key = 'finish.include_correct'`)
+    // the switch of the first M2.1 draft is gone: no seed row, and a row under the old name does nothing
+    expect((await db.owner.query(`select 1 from public.app_config where key = 'finish.include_correct'`)).rowCount).toBe(0)
+    await db.owner.query(`insert into public.app_config (key, value, description) values ('finish.include_correct', 'true', 'test: the retired switch')`)
     try {
       const out = await rpc<{ session: { responses: unknown[][] } }>(ip, 'finish', { p_token: s.token })
-      for (const [i, t] of out.session.responses.entries()) expect(t[3]).toBe((i + 1) % 2 === 0 ? 1 : 0)
+      expect(out.session.responses.length).toBe(6)
+      for (const t of out.session.responses) expect(t[3]).toBeNull()
       expect(validateSchema(asSave(out.session, s.anon_id)), JSON.stringify(validateSchema.errors)).toBe(true)
     } finally {
-      await db.owner.query(`update public.app_config set value = 'false' where key = 'finish.include_correct'`)
+      await db.owner.query(`delete from public.app_config where key = 'finish.include_correct'`)
     }
-    const again = await rpc<{ session: { responses: unknown[][] } }>(ip, 'finish', { p_token: s.token })
-    for (const t of again.session.responses) expect(t[3]).toBeNull()
+    // the rows keep the verdicts, for the server (rescore, calibration)
+    expect((await db.owner.query<{ n: number }>(`select count(*)::int as n from public.responses where session_id = $1 and correct is not null`, [s.session_id])).rows[0]!.n).toBe(6)
   })
 
   it('is idempotent: a second finish returns the same session and changes nothing', async () => {

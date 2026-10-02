@@ -5,10 +5,11 @@
 -- model of DESIGN §7.8 (engine/retest.ts, retest_v1), and returns the own-axis, practice-adjusted
 -- EAP per axis and per facet.
 --
---   * Which sessions: those the save lists that the server issued to its anon_id and that are
---     finished. Their responses come from the database, never from the upload (A16: calibration uses
---     database rows only). Others are counted as unknown_sessions and contribute nothing. M2.3 will
---     additionally require each session's MAC.
+--   * Which sessions: those the save lists that the server issued to the CALLER's anon_id (the
+--     anon_id of the save: hb.session_owned, in which a sig.anon_id may only repeat it, never replace
+--     it) and that are finished. Their responses come from the database, never from the upload (A16:
+--     calibration uses database rows only). Others are counted as unknown_sessions and contribute
+--     nothing. M2.3 will additionally require each session's MAC (same hb.session_owned seam).
 --   * Which responses score: dichotomous items (2PL, 2PL-testlet scored as 2PL as in the app, 3PL)
 --     with a stored correct 0/1 and a parameter row, not pretest, not on a quarantined item (DESIGN
 --     §4.5), and only in calibration-eligible sessions (A21: ineligible sessions still count as
@@ -23,7 +24,29 @@
 --     posterior A21 asks for, not the correlated MAP.
 --   * facets[axis][facet]: the EAP on the facet's observations with the axis posterior (mean, sd^2)
 --     as the prior (A12, viz/facets.ts, but with the own-axis posterior in place of the correlated MAP
---     until M2.2). Returned with n; the app shows a facet only from 5 items.
+--     until M2.2). Returned with n.
+--
+-- What it does NOT return (R-11.1, DESIGN §10: no correctness feedback on finite-bank items; owner
+-- decision 2026-10-01: "rescore must also not leak single-answer verdicts"). finish() no longer carries
+-- the server's verdict on an answer, so a score is the one place the verdicts still show, and a posterior
+-- mean of one or two answers IS those answers (one right answer moves the mean up, one wrong one down).
+-- So:
+--   * an axis is returned only with at least rescore.min_axis_items (5) scored items over the save's
+--     eligible sessions, a facet only with at least rescore.min_facet_items (5; A12 shows a facet from
+--     5 items). Below that the call returns the count under `withheld`, which says nothing about
+--     right or wrong;
+--   * mean and sd are rounded: the mean to a multiple of rescore.mean_step (0.1), the sd UP to a
+--     multiple of rescore.sd_step (0.05), both in SD units. The 0.1 is well under the posterior sd of
+--     a finished session (0.3 to 0.7), so nothing the blob shows changes;
+--   * the call is limited per client address (rate.rescores_per_day, 20) and per anon_id
+--     (rate.rescores_per_anon_day, 10; only calls that name a session of that anon_id count, so nobody
+--     can use up the calls of an id they merely know).
+-- These do not make a difference of two calls harmless: a script that adds one more one-answer session
+-- to its save and compares the two results can still read that answer's sign (n >= 5 and a 0.1 step
+-- leave a single answer's shift, median 0.15 at n = 30, mostly above the step). What bounds it is the
+-- number of sessions an address may start (5 a day) and these call limits, about 4 answers a day per
+-- address instead of the 200 per session that the finish reply would have given; a minimum session size
+-- for a session to count is M2.2's (hb.is_eligible). See supabase/README.md.
 --
 -- Item parameters: the param_version in app_config, else each item's latest row.
 --
@@ -45,36 +68,51 @@ declare
   v_tau double precision := hb.cfg_num('retest.tau', 1.2);
   v_rho jsonb := coalesce(hb.cfg('retest.rho_max'), '{}'::jsonb);
   v_param text := hb.cfg_text('param_version', null);
+  -- what is published (R-11.1): never fewer than one item, never a negative step
+  v_min_axis int := greatest(hb.cfg_int('rescore.min_axis_items', 5), 1);
+  v_min_facet int := greatest(hb.cfg_int('rescore.min_facet_items', 5), 1);
+  v_mean_step double precision := greatest(hb.cfg_num('rescore.mean_step', 0.1), 0);
+  v_sd_step double precision := greatest(hb.cfg_num('rescore.sd_step', 0.05), 0);
   v_result jsonb;
 begin
   v_anon := hb.check_save(p_save);
   if pg_catalog.jsonb_array_length(p_save -> 'sessions') > hb.cfg_int('rescore.max_sessions', 40) then
     perform hb.fail(413, 'too_many_sessions', 'At most ' || hb.cfg_int('rescore.max_sessions', 40) || ' sessions per call.');
   end if;
-  perform hb.rate_hit('rescore', hb.ip_key('rescore'), hb.cfg_int('rate.rescores_per_day', 200));
+  perform hb.rate_hit('rescore', hb.ip_key('rescore'), hb.cfg_int('rate.rescores_per_day', 20));
+  -- Per anon_id too, so that changing the address between calls does not reset the count. Only a call
+  -- that holds a session of this anon_id is counted: the id alone is in every copy of the person's
+  -- file, and a stranger who knew it must not be able to use up its calls. (A raise below rolls the
+  -- address count back with it, as for every limit.)
+  if exists (
+    select 1 from pg_catalog.jsonb_array_elements(p_save -> 'sessions') e
+     where pg_catalog.jsonb_typeof(e) = 'object' and hb.session_owned(e, v_anon)) then
+    perform hb.rate_hit('rescore_anon', hb.day_key('rescore_anon|' || v_anon), hb.cfg_int('rate.rescores_per_anon_day', 10));
+  end if;
 
   v_result := (
     with
-    -- the save's sessions, once each, in the order sent
+    -- the save's sessions, once each, in the order sent (of a repeated entry, one the caller owns wins)
     req as (
-      select x.session_id, x.bound_anon, x.ord
+      select x.session_id, x.value, x.ord
         from (
           select s.value ->> 'session_id' as session_id,
-                 coalesce(s.value #>> '{sig,anon_id}', v_anon) as bound_anon,
+                 s.value,
                  s.ord,
-                 pg_catalog.row_number() over (partition by s.value ->> 'session_id' order by s.ord) as dup
+                 pg_catalog.row_number() over (partition by s.value ->> 'session_id' order by hb.session_owned(s.value, v_anon) desc, s.ord) as dup
             from pg_catalog.jsonb_array_elements(p_save -> 'sessions') with ordinality s (value, ord)
            where pg_catalog.jsonb_typeof(s.value) = 'object' and (s.value ->> 'session_id') is not null
         ) x
        where x.dup = 1
     ),
+    -- issued to the caller's anon_id (never to the one a sig names) and finished
     known as (
       select ss.session_id,
              pg_catalog.to_char(ss.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_utc,
              ss.calibration_eligible
         from req
-        join public.sessions ss on ss.session_id = req.session_id and ss.anon_id = req.bound_anon
-       where ss.finished_at is not null
+        join public.sessions ss on ss.session_id = req.session_id
+       where ss.finished_at is not null and hb.session_owned(req.value, v_anon)
     ),
     resp as (
       select k.session_id, k.started_utc, k.calibration_eligible, r.pretest, r.correct,
@@ -167,12 +205,16 @@ begin
     axis_mean as (
       select axis, pg_catalog.sum(w) as tw, pg_catalog.sum(w * g) / pg_catalog.sum(w) as mean from axis_w group by axis
     ),
-    axis_est as (
+    axis_raw as (
       select m.axis, m.mean,
              pg_catalog.sqrt(greatest(pg_catalog.sum(w.w * (w.g - m.mean) * (w.g - m.mean)) / m.tw, 0)) as sd,
              (select pg_catalog.count(*) from obs o where o.axis = m.axis) as n
         from axis_mean m join axis_w w on w.axis = m.axis
        group by m.axis, m.mean, m.tw
+    ),
+    -- an axis with too few scored items is not published (R-11.1), and neither are its facets
+    axis_est as (
+      select * from axis_raw where n >= v_min_axis
     ),
     facet_w as (
       select f.axis, f.facet, f.i, f.g,
@@ -187,12 +229,15 @@ begin
     facet_mean as (
       select axis, facet, pg_catalog.sum(w) as tw, pg_catalog.sum(w * g) / pg_catalog.sum(w) as mean from facet_w group by axis, facet
     ),
-    facet_est as (
+    facet_raw as (
       select m.axis, m.facet, m.mean,
              pg_catalog.sqrt(greatest(pg_catalog.sum(w.w * (w.g - m.mean) * (w.g - m.mean)) / m.tw, 0)) as sd,
              (select pg_catalog.count(*) from obs o where o.axis = m.axis and o.facet = m.facet) as n
         from facet_mean m join facet_w w on w.axis = m.axis and w.facet = m.facet
        group by m.axis, m.facet, m.mean, m.tw
+    ),
+    facet_est as (
+      select * from facet_raw where n >= v_min_facet
     )
     select pg_catalog.jsonb_build_object(
       'retest_version', 'retest_v1',
@@ -208,14 +253,28 @@ begin
                    'n_scored', (select pg_catalog.count(*) from cls c where c.session_id = q.session_id and c.outcome = 'scored'))
                  order by q.ord)
           from req q left join known k on k.session_id = q.session_id), '[]'::jsonb),
+      -- mean and sd only above the minimum count, rounded (see the header)
       'eap', coalesce((
-        select pg_catalog.jsonb_object_agg(e.axis, pg_catalog.jsonb_build_object('mean', e.mean, 'sd', e.sd, 'n', e.n)) from axis_est e), '{}'::jsonb),
+        select pg_catalog.jsonb_object_agg(e.axis, pg_catalog.jsonb_build_object(
+                 'mean', hb.quantise_round(e.mean, v_mean_step), 'sd', hb.quantise_up(e.sd, v_sd_step), 'n', e.n))
+          from axis_est e), '{}'::jsonb),
       'facets', coalesce((
         select pg_catalog.jsonb_object_agg(x.axis, x.facets)
           from (
             select e.axis,
-                   pg_catalog.jsonb_object_agg(e.facet, pg_catalog.jsonb_build_object('mean', e.mean, 'sd', e.sd, 'n', e.n)) as facets
+                   pg_catalog.jsonb_object_agg(e.facet, pg_catalog.jsonb_build_object(
+                     'mean', hb.quantise_round(e.mean, v_mean_step), 'sd', hb.quantise_up(e.sd, v_sd_step), 'n', e.n)) as facets
               from facet_est e group by e.axis) x), '{}'::jsonb),
+      -- what was held back, as counts of scored items only (the count does not depend on right or wrong)
+      'withheld', pg_catalog.jsonb_build_object(
+        'eap', coalesce((select pg_catalog.jsonb_object_agg(a.axis, a.n) from axis_raw a where a.n < v_min_axis), '{}'::jsonb),
+        'facets', coalesce((
+          select pg_catalog.jsonb_object_agg(x.axis, x.facets)
+            from (
+              select f.axis, pg_catalog.jsonb_object_agg(f.facet, f.n) as facets
+                from facet_raw f where f.n < v_min_facet group by f.axis) x), '{}'::jsonb)),
+      'limits', pg_catalog.jsonb_build_object(
+        'min_axis_items', v_min_axis, 'min_facet_items', v_min_facet, 'mean_step', v_mean_step, 'sd_step', v_sd_step),
       'skipped', coalesce((
         select pg_catalog.jsonb_object_agg(c.outcome, c.n)
           from (select outcome, pg_catalog.count(*) as n from cls where outcome <> 'scored' group by outcome) c), '{}'::jsonb)

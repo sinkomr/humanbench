@@ -364,10 +364,10 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 | `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the seen lists of a save and, **only if the save proves it**, its `anon_id` (see Identity and proofs); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
 | `next_item(p_token)` | the pending item (a reload gets the same one), else a new one; excludes items, sibling groups and families already served or in the save; only `live`, non-practice items | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'no_items'}` |
 | `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next)` | scores in SQL against the key; stores the answer; repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
-| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples carry **`correct: null`** unless `finish.include_correct` is on (see Decision for the owner) |
+| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer) |
 | `report_problem(p_token, p_kind, p_item_id, p_detail)` | the five item categories (the item must be one this session was served), or `notes_requested` (no item, no text; never counts toward quarantine) | `{recorded}` |
 | `submit_survey(p_token, p_age_band, p_english_first)` | the voluntary two answers | `{recorded}` |
-| `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; see below | `{retest_version, param_version, sessions, eap, facets, skipped}` |
+| `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; returns an axis or facet only from 5 scored items, rounded; see below | `{retest_version, param_version, sessions, eap, facets, withheld, limits, skipped}` |
 | `mirror_put(p_token, p_save, p_phrase)` | stores the save for the session's `anon_id`; the first put returns a 12-word recovery phrase, once, and later puts must present it | `{stored, anon_id, size_bytes, recovery_phrase?}` or `{stored: false, error: 'wrong_phrase'}` |
 | `mirror_get(p_anon_id, p_phrase)` | restore on a new device | `{found, save?, updated_utc?}`; a wrong phrase and an unknown id look the same |
 | `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session the server issued to that `anon_id`; a wrong proof counts against the address | `{deleted, sessions?, mirror?}` |
@@ -391,15 +391,54 @@ screenshot may show it. Nothing is done for an `anon_id` on its name alone.
   HMAC proves the server issued a session to an `anon_id`; it is not a stronger secret than holding the file. Keep
   saves private.
 
-**`rescore`** (Phase AI amendment, ROADMAP A21/AI.8). For each session of the save that the server issued to its
-`anon_id` and finished, it reads the responses from the database and returns, per axis, the own-axis,
-practice-adjusted EAP `{mean, sd, n}` (61 equal-weight grid points on [-4, 4], prior N(0, 1); *not* the correlated MAP)
-and, per facet, the EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only
-calibration-eligible sessions are scored; an ineligible session still counts as a test of the axis (practice,
-`ordinals`, `rho`). Pretest responses and responses on quarantined items (DESIGN §4.5) are left out; block
-observations (RT, span, coding, reading) are not scored on the server before M2.2 and are counted under
-`skipped.block`. `rescore` is held to the app's engine: `rescore.db.test.ts` compares it with
-`rescoreRetest` and `eapAxis` to 1e-9 over generated sessions (practice, ineligible sessions, quarantine, order).
+**`rescore`** (Phase AI amendment, ROADMAP A21/AI.8). For each session of the save that the server issued to **the
+`anon_id` of the save** (the caller's; a `sig.anon_id` on a session may only repeat it, exactly as in `hb.session_owned`)
+and finished, it reads the responses from the database and returns, per axis, the own-axis, practice-adjusted EAP
+`{mean, sd, n}` (61 equal-weight grid points on [-4, 4], prior N(0, 1); *not* the correlated MAP) and, per facet, the
+EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only calibration-eligible
+sessions are scored; an ineligible session still counts as a test of the axis (practice, `ordinals`, `rho`). Pretest
+responses and responses on quarantined items (DESIGN §4.5) are left out; block observations (RT, span, coding,
+reading) are not scored on the server before M2.2 and are counted under `skipped.block`. A session of the save that
+was issued to another `anon_id`, is unfinished or is unknown counts under `skipped.unknown_sessions` and adds nothing;
+that includes the sessions of a *merged* file that were issued to an `anon_id` other than the file's own (a merge keeps
+the smaller id and the sessions keep the id they bind in `sig.anon_id`). Which id a client rescores for a person who
+holds two is for M2.3 (the per-session MAC) and M2.7 to settle; until then the client sets the file's `anon_id` to the
+id it wants rescored.
+
+*What `rescore` does not tell* (R-11.1, DESIGN §10; owner decision 2026-10-01, "`rescore` must also not leak
+single-answer verdicts"). With the verdict gone from `finish`, the score is the one place a script could still read
+its answers: a posterior mean from one answer *is* that answer (right moves it up, wrong down). So:
+
+| Rule | Setting | Value | Why this value |
+|---|---|---|---|
+| an axis is returned only from this many scored items (over all the save's eligible sessions) | `rescore.min_axis_items` | 5 | the count at which the app itself shows a facet (A12; `FACET_MIN_ITEMS`, checked by a test); the posterior sd is still 0.7 there, so one answer is one of five terms and no longer the whole of the value. Fewer: the call returns the count under `withheld.eap` and nothing else |
+| a facet is returned only from this many scored items, and only for an axis that is returned | `rescore.min_facet_items` | 5 | A12 |
+| the mean is rounded to a multiple of | `rescore.mean_step` | 0.1 | a tenth of an SD unit, well under the posterior sd of a finished session (0.3 to 0.7), so what the blob shows does not change |
+| the sd is rounded **up** to a multiple of | `rescore.sd_step` | 0.05 | rounding up never understates the uncertainty (a "show uncertainty" rule of the blob) |
+| calls per client address a day | `rate.rescores_per_day` | 20 | 5 sessions a day and a few views of each result fit with room to spare (it was 200) |
+| calls per `anon_id` a day | `rate.rescores_per_anon_day` | 10 | stops a script that changes its address between calls. Only a call whose save holds a session issued to that `anon_id` is counted, so a stranger who knows an id cannot use up its calls (an `anon_id` is a label, not a credential) |
+
+The reply says what it applied (`limits`), and what it held back as counts of scored items (`withheld`; a count of
+items does not depend on whether they were right), so that the client can say "needs 5 items" and not "no data".
+`rescore.min_axis_items`, `min_facet_items` below 1 or a negative step are read as 1 and 0; a step of 0 means no
+rounding and exists for the parity tests, which compare the algorithm with the app's engine to 1e-9 (the
+roadmap's "matches the client to 1e-6" holds to within the published rounding: half a step for the mean, a step for
+the sd).
+
+*What this does not stop.* A script can still **difference** two calls: score a session of 5 or more answers, add one
+more session with a single answer to the save, rescore, and read the sign of the change. A single answer moves the
+posterior mean by about 0.5 at 5 items already scored, 0.2 at 20 and 0.15 at 30 (median, simulated with the app's
+engine on the fixture bank's parameter ranges), which is more than the 0.1 step until about 50 items. Rounding cannot
+close that without making the score useless, and neither can a minimum count over the whole axis. What bounds it is the
+number of sessions an address may start (5 a day, each costing a full session), the 20 calls a day per address and
+10 per `anon_id`: a handful of single answers a day per address, against the 200 per session that the finish reply
+would have given. A minimum size for a session to count toward the scores (each session at least as many scored items
+on an axis as the DESIGN §7.5 floor of 3, or a minimum number of answers) belongs with M2.2's `hb.is_eligible`,
+which also adds the server-side person-fit; that is the structural fix and is not done here.
+
+`rescore` is held to the app's engine: `rescore.db.test.ts` compares it with `rescoreRetest` and `eapAxis` to 1e-9
+over generated sessions (practice, ineligible sessions, quarantine, order) with the minimum counts and the rounding
+switched off, and tests the withholding, the rounding and the limits with the published settings.
 
 ### Errors
 
@@ -420,7 +459,7 @@ not a `PT` code, PostgREST answers 400) before any RPC runs, for `mirror_put`, `
 
 ### Settings (`public.app_config`)
 
-The limits and priors are rows, not constants: `rate.*` (5 sessions a day, 30 mirror puts, 200 rescores, …),
+The limits and priors are rows, not constants: `rate.*` (5 sessions a day, 30 mirror puts, 20 rescores, …),
 `session.*` (200 items, 2000 ms average, 10 answers before it is checked, token lifetimes), `payload.*`,
 `save.*`, `mirror.*`, `rescore.*`, `retest.tau` and `retest.rho_max` (equal to `RHO_MAX_PRIOR` in
 `engine/retest.ts`, checked by a test), and `bank_version` / `param_version` once the bank pipeline writes them. The rate
@@ -430,9 +469,9 @@ every call (the limits of 5 sessions a day, 60 wrong proofs, the deletes and mir
 would mean nothing). A request without the header shares one bucket and fails closed. M2.6 sets the hop to the entry the
 platform's outermost proxy appended for the client (`-2` if a CDN adds its own address after it).
 
-`finish.include_correct` is `false` (see below).
+There is no setting for the verdict on each answer (see below).
 
-### Decision for the owner: the verdict on each answer (R-11.1 against DESIGN §8)
+### The verdict on each answer (R-11.1 against DESIGN §8: decided 2026-10-01)
 
 Two lines of the design collide. DESIGN §8 says the response tuple of a saved session holds `correct`, "filled from the
 server's scoring RPC ... so that offline re-scoring works". R-11.1 and DESIGN §10 say keys stay on the server and there
@@ -441,12 +480,13 @@ answer is that feedback in bulk: a script answers every item with option k, fini
 and a few sessions pin down the key of each item, 200 items a session. Only the address limit (5 sessions a day per
 client) slows it.
 
-Until the owner decides, **`finish.include_correct` is `false`**: the tuple has `correct: null` (the schema allows it),
-the rows keep their verdicts for the server, and a person gets their scores from `rescore`, which re-scores from the
-database's rows (A16: calibration uses DB rows, never uploads) and returns the per-axis and per-facet EAPs. Setting the
-row `finish.include_correct` to `true` gives the §8 file back, with the leak; nothing else changes. What stays either
-way: a score is an aggregate of the verdicts, so `rescore` on a very short session says something about its items; the
-bound on that is the number of sessions an address may start, and a minimum size for a session to count (M2.2).
+**The owner chose R-11.1** (ROADMAP, "Owner decisions 2026-10-01"): saves never carry per-item correctness for
+server-scored items. The tuple has `correct: null` (the schema allows it), always; the switch of the first draft
+(`finish.include_correct`) is deleted, so a setting cannot bring the leak back (tested: a row under the old name does
+nothing). The rows keep their verdicts for the server, and a person gets their scores from `rescore`, which
+re-scores from the database's rows (A16: calibration uses DB rows, never uploads) and returns the per-axis and
+per-facet EAPs, withholding and rounding what would read out a single answer (above). DESIGN §8 still describes the
+tuple with `correct` filled; this is a deviation the owner has accepted, to be reflected in DESIGN at the next edit.
 
 ### What the next tasks fill in
 
