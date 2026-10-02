@@ -30,6 +30,15 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
+- **In flight: wf7** (`wf_e223672b-6c1`, started 2026-10-01 20:55). The user asked to use up the usage limit quickly, so this run has many parallel agents and no fixed end time. Its chains:
+  - `wf7/prefs`: the file's notes settings win on load.
+  - `wf7/banktags`: RC/VOC carry no topic tags, and the three-model G4 Claude panel.
+  - The `wf6/m2` worktree continues: a shared-memory-free harness, the rescore leak fix, then M2.2–M2.7.
+  - `wf7/m35`: M3.5 authoring, 6 axes × 3 batches, each solved by the Sonnet/Opus/Fable panel.
+
+  After the chains: merger, audit, repair.
+- **If interrupted:** check `git branch --list 'wf7/*' 'wf6/*'`. The M3.5 batch files are uncommitted in `~/code/wt/m35/humanbench-bank/items/m35`. Commit the complete batches, then merge the green branches.
+
 - **wf6 done** (2026-10-01 07:10). Merged and pushed: M1.21, M1.22 and M5.1 (partial: server-side Brier waits on M2), plus the audit repairs. Gates: pub 3,784 unit tests plus 1,802 e2e; bank green.
 - **wf6/m2 is unmerged** (M2.0 and M2.1 are on branch `wf6/m2`; the worktrees are kept). Embedded Postgres fails in `initdb` with `shmget: Cannot allocate memory`; the Claude Bash sandbox probably blocks SysV shared memory. **Before merging:**
   1. Run `npm run test:db` in `~/code/wt/m2/humanbench/web` from a normal terminal.
