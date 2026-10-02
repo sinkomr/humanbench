@@ -35,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1, M2.2 and M2.3 files in order, one concern each', () => {
+  it('has the M2.1 to M2.5 files in order, one concern each', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -50,11 +50,12 @@ describe('migrations: the set', () => {
       '20261002000200_session_scoring.sql',
       '20261002000300_selection.sql',
       '20261003000100_save_signing.sql',
+      '20261004000100_response_archive.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[1-4] \(ROADMAP M2\.[1-4]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[1-5] \(ROADMAP M2\.[1-5]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 
@@ -67,7 +68,8 @@ describe('migrations: functions', () => {
   it('finds the functions (so the checks below are not vacuous)', () => {
     expect(functions.length).toBeGreaterThan(90)
     expect(code(all).match(/create\s+(?:or\s+replace\s+)?function\b/gi)!.length, 'every function is seen by the pattern').toBe(functions.length)
-    expect(functions.filter((f) => f.name.startsWith('public.')).length).toBe(11)
+    // rescore is created in M2.1 and re-created by M2.5 (create or replace): 11 different RPCs
+    expect(new Set(functions.filter((f) => f.name.startsWith('public.')).map((f) => f.name)).size).toBe(11)
   })
 
   it('builds no SQL from its arguments: no dynamic EXECUTE (supabase/README.md, pitfall 5)', () => {
@@ -115,6 +117,33 @@ describe('migrations: functions', () => {
   })
 })
 
+describe('migrations: the readers of old answers (M2.5)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  /** The text of `create [or replace] function <name>(` up to its closing `$$;`. */
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4).replace(/create\s+or\s+replace\s+function/, 'create function')
+  }
+  const archive = byName('_response_archive.sql')
+
+  it('re-creates rescore and hb.is_eligible exactly as before, with hb.responses_of(...) in place of public.responses', () => {
+    const rescoreNow = functionText(archive, 'public.rescore')
+    const rescoreThen = functionText(byName('_rpc_rescore.sql'), 'public.rescore')
+    expect(rescoreNow).toBe(rescoreThen.replace('join public.responses r on r.session_id = k.session_id', 'cross join lateral hb.responses_of(k.session_id) r'))
+    const eligibleNow = functionText(archive, 'hb.is_eligible')
+    const eligibleThen = functionText(byName('_session_scoring.sql'), 'hb.is_eligible')
+    expect(eligibleNow).toBe(eligibleThen.replace('    from public.responses r\n   where r.session_id = p_session_id;', '    from hb.responses_of(p_session_id) r;'))
+  })
+
+  it('is read by exactly rescore and hb.is_eligible, the two readers of a session that may be old', () => {
+    const users = migrations
+      .flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\n\$\$;/g)].filter((x) => /\bhb\.responses_of\(/.test(x[0])).map((x) => x[1]!))
+      .filter((name) => name !== 'hb.responses_of')
+    expect(users.sort()).toEqual(['hb.is_eligible', 'public.rescore'])
+  })
+})
+
 describe('migrations: the one function that reads the Vault', () => {
   const text = code(all)
 
@@ -139,7 +168,7 @@ describe('migrations: tables and grants', () => {
   const tables = [...text.matchAll(/create\s+table\s+public\.(\w+)/gi)].map((x) => x[1]!)
 
   it('enables row level security on every table it creates', () => {
-    expect(tables.length).toBe(16)
+    expect(tables.length).toBe(17)
     for (const t of tables) expect(text, t).toMatch(new RegExp(`alter\\s+table\\s+public\\.${t}\\s+enable\\s+row\\s+level\\s+security`, 'i'))
   })
 

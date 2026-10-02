@@ -68,6 +68,14 @@ describe('(1) anon cannot select any table', () => {
     await db.rpc(from(ip), 'submit_survey', { p_token: s.token, p_age_band: '25-34', p_english_first: true })
     await db.rpc(from(ip), 'mirror_put', { p_token: s.token, p_save: emptySave(s.anon_id) })
     await db.owner.query(`insert into public.calibration_runs (param_version) values ('p-test')`)
+    // and a session long past its token, compacted (M2.5): the archive holds a row too (the first session keeps its live rows)
+    const ip2 = freshIp()
+    const old = await startSession(db, ip2)
+    await playSession(db, old, bank, { ip: ip2, n: 4, decide: () => true })
+    await db.rpc(from(ip2), 'finish', { p_token: old.token })
+    await db.owner.query(`update public.sessions set started_at = now() - interval '40 days', finished_at = now() - interval '40 days' + interval '30 minutes' where session_id = $1`, [old.session_id])
+    const archived = await db.owner.query<{ status: string }>(`select hb.archive_session($1, hb.archive_sha(hb.archive_items($1)), 'acceptance') as status`, [old.session_id])
+    if (archived.rows[0]!.status !== 'archived') throw new Error(`the fixture session was not archived: ${archived.rows[0]!.status}`)
   })
   afterAll(async () => {
     await db.close()
@@ -87,7 +95,7 @@ describe('(1) anon cannot select any table', () => {
 
   it('holds a row in every table of the app, so the tests below could see one', async () => {
     const tables = (await relations()).filter((r) => r.schema === 'public')
-    expect(tables.length).toBe(16)
+    expect(tables.length).toBe(17)
     for (const t of tables) {
       const { rows } = await db.owner.query<{ n: number }>(`select count(*)::int as n from ${qualified(t)}`)
       expect(rows[0]!.n, t.name).toBeGreaterThan(0)
@@ -96,7 +104,7 @@ describe('(1) anon cannot select any table', () => {
 
   it('refuses a select on every table, view and materialised view of every schema, to anon and to authenticated: permission denied', async () => {
     const all = await relations()
-    expect(all.filter((r) => r.schema === 'public').length).toBe(16)
+    expect(all.filter((r) => r.schema === 'public').length).toBe(17)
     expect(all.map((r) => r.schema).filter((s) => s !== 'public')).toContain('vault')
     for (const r of all) {
       for (const [role, ctx] of [['anon', ANON], ['authenticated', AUTHENTICATED]] as const) {

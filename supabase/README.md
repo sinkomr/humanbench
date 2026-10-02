@@ -193,9 +193,8 @@ the host again.
 - The `-beta.17` in the package version is the packager's number; the server is PostgreSQL 17.10.
   Upgrading the minor is a version bump plus `npm run test:db`.
 - **No `psql`, `pg_dump` or `pg_restore`** in the npm binaries (only `initdb`, `pg_ctl`, `postgres`).
-  M2.5's "restore round trip tested locally" must either use a `pg_dump` 17 found on `PATH` (the
-  GitHub runners have one; skip with a message when absent) or test the round trip with a logical
-  dump through `psycopg`/`COPY`. M2.5 decides; this harness does not provide `pg_dump`.
+  M2.5 decided (see "M2.5" below): the bank's backup is a logical dump through `psycopg` and `COPY`, so the
+  restore round trip is tested against this harness, here and in CI, with no `pg_dump` and no version matching.
 - The packages create their shared-library symlinks in a `postinstall` script, which npm is about to
   stop running unreviewed. `prepareBinaries()` creates any missing link itself.
 - **Nothing outlives a run**, in four layers (`engine.ts`, `guard.ts`; `cleanup.db.test.ts` ends a real
@@ -541,9 +540,9 @@ tuple with `correct` filled; this is a deviation the owner has accepted, to be r
 - **M2.3** (done, below) adds the per-session HMAC: `finish` signs the session, `rescore`, `delete_my_data` and
   `start_session` verify it, editing preferences never changes it.
 - **M2.4** (done, below) is the acceptance as its own tests, at the scale the roadmap names.
-- **M2.5** connects the bank (`hb load push` writes the four bank tables as `service_role`; the column names are
-  checked against `hb.load.push.COLUMNS` when the bank repo is next door) and the nightly job (`hb.purge_expired()` is
-  also run by `start_session`). A restore must go into a project that already has the migrations applied (data only):
+- **M2.5** (done, below) connects the bank (`hb load push` writes the four bank tables as `service_role`; the
+  bank's tests push real items into this schema) and the nightly job (`hb.purge_expired()` is also run by
+  `start_session`). A restore must go into a project that already has the migrations applied (data only):
   `hb_definer` is a cluster-level role and a single-database dump does not carry it.
 - **M2.7** is the front end: `toUploadPayload()`, the mirror and deletion UI, the report button.
 
@@ -871,17 +870,74 @@ would accept: a session over a limit comes back unsigned from `finish`, and so d
 ## M2.4: the acceptance tests
 
 ROADMAP M2.4; DESIGN §14.3 "M2 Backend" acceptance (1), (2), (4) and §11.2; R-11.1, R-12.1; A16, AI.26. One file,
-`acceptance.db.test.ts` (26 tests, about 17 s), a block per line of the task. (3) of the DESIGN (p95 RPC latency under 300 ms)
+`acceptance.db.test.ts` (26 tests, about 17 s; M2.5 added a compacted session to the rows it seeds), a block per line of the task. (3) of the DESIGN (p95 RPC latency under 300 ms)
 is a measurement on the live project: M2.6.
 
 | Line of the task | Tests |
 |---|---|
-| `anon` cannot `select` any table | every table, view and materialised view of every schema (the Vault's included), for `anon` and `authenticated`, is `42501`; so are insert, update, delete and truncate on the 16 tables of the app; no table, sequence or column privilege in any schema; RLS on every table and no policy for `anon`, `authenticated` or PUBLIC; and if a `grant select` slipped through, RLS still returns no row (the second wall, tried inside a rolled-back transaction). Every table holds a row first, so "no rows" means something |
+| `anon` cannot `select` any table | every table, view and materialised view of every schema (the Vault's included), for `anon` and `authenticated`, is `42501`; so are insert, update, delete and truncate on the 17 tables of the app; no table, sequence or column privilege in any schema; RLS on every table and no policy for `anon`, `authenticated` or PUBLIC; and if a `grant select` slipped through, RLS still returns no row (the second wall, tried inside a rolled-back transaction). Every table holds a row first, so "no rows" means something |
 | `anon` can EXECUTE only the whitelisted RPCs | the exact list of eleven, with their argument lists, for `anon` and `authenticated`; none for `service_role`; nothing for PUBLIC in `public` or `hb`; no overloads and no extension member in `public`; no `usage` on `hb` or `vault` for any API role, and a call to `hb.mac_sign`, `hb.session_signed`, `hb.cfg` or `vault.create_secret` is `42501`; every RPC is `SECURITY DEFINER`, owned by `hb_definer`, `search_path = ''`; and every one of the eleven can actually be called as `anon` |
 | no payload contains `key` (fuzz, 1,000 items) | 1,000 items with random render payloads (nested objects, the words *key*, *answer*, *correct* as text) and a canary in every column of `item_keys`: all 1,000 through `hb.item_view`, and 400 served through the API (answered right, wrong and with rubbish) with `finish`, `rescore`, `verify_save` and `mirror_put`: no property of any reply is named for a key, an answer, a tolerance, a rationale or a verdict, no canary text, `correct` is `null`; and 1,000 random payloads, half with a key-like field planted at a random depth in a random letter case, are refused by `items.payload`'s CHECK (`23514`) or accepted when clean |
 | tampered save → unverified | a session finished through the API is `verified`; 14 kinds of edit (an answer, a time, an item id, a dropped or reordered response, the duration, the start, the device, a flag, the session id, the MAC, the `anon_id`, the `kid`) are each `unverified`; the file around the session is not covered; a tampered save is not scored, does not delete and does not continue an `anon_id`; an offline file is `unsigned`. The mechanism, with 400 random edits, is `signing.db.test.ts` |
 | rate limits | the 6th `start_session` of an address in a day is `429 rate_limited`, another address is not; counts are keyed by a hash of the address and the day's salt, no address is in any table, the same address is a different hash the next day, and counts and salts are gone after 48 hours; a session of 200 items ends with `done: item_limit` and the 201st cannot be answered; an average under 2 s an item by the server's clock is `429 too_fast` at the 10th answer, a 3 s person is not stopped; the line itself is tested at 1.8 s (stopped) and 2.2 s (not), and as an average (nine answers of 1 s and a tenth of 9.5 s are stopped, of 11.5 s are not); the counts and salts of today and yesterday are kept by the purge and the day before that is gone |
 | AI.26: no `brief_prefs` | 1,000 random saves (sessions, answers of random JSON, seen lists, a posterior cache, extras), half with the key planted in a random object under a random letter case, through `verify_save`, `rescore`, `delete_my_data`, `mirror_put` and `start_session`: every call with the key is `400 brief_prefs_not_accepted`, every call without it succeeds (2,500 calls each way), and afterwards no reply and no row of any table (500 mirrored blobs among them) holds the key, as a key at any depth or as text. Crafted payloads (a unicode-escaped name, capitals, 20 levels deep, inside arrays, a session, a device, a response element) are rejected by all five, and so are a device, an answer and a flags report |
+
+## M2.5: the bank connects, and the database is looked after
+
+ROADMAP M2.5; DESIGN §11.3, §11.4, §11.5, F11; R-11.1, R-12.1; A6. Most of it is in the bank repository (`src/hb/ops/`,
+`src/hb/load/dbpush.py`, `.github/workflows/calibrate.yml` and `backup.yml`, and `docs/ops/backup-restore.md` there);
+this repository holds the part that must be in the database, `20261004000100_response_archive.sql`, and its tests
+(`archive.db.test.ts`, and `migrations.test.ts` for the SQL text).
+
+### The bank's Python against this database
+
+The bank's tests start this harness (`npm run db:up`, driven by `hb.ops.localdb`) and use it: `hb load push` writes real
+promoted items into these tables, as `service_role` only (`--as-role service_role`; it cannot delete what it wrote), and an
+item the database has quarantined stays quarantined when the old bank file is pushed again. The bank's CI job `db` checks
+this repository out next to the bank and runs `npm ci` here. If a migration changes a column the bank writes, the bank's
+tests fail on the next push: that is the point. Set `HB_PUB_DIR` to this checkout's path when the two are not siblings.
+
+### Archive and compaction (DESIGN §11.3)
+
+`responses` and `exposure_log` grow with every session; they are the bulk of the database (measured, 150-item
+sessions: about 62 KB a session in the two tables with their indexes, against 6 KB for the compacted array). The
+DESIGN's mitigation, "export to Parquet, then compact to one JSONB array per session", is the migration plus the bank's
+`hb db archive`:
+
+| Object | What it is |
+|---|---|
+| `public.response_archive` | one row per archived session: the array (format 1: twelve positions per item served, the layout is in the migration), its SHA-256, the reference of the Parquet export. `ON DELETE CASCADE` from `sessions`, so `delete_my_data` deletes it. RLS on, no grant to `anon` or `authenticated`; `service_role` may read it |
+| `hb.archive_items(sid)`, `hb.archive_sha(items)` | the array of a live session, and its digest |
+| `hb.archive_session(sid, sha, ref)` | the compaction of one session, run by the migration role. It locks the session row; refuses a session whose token can still be used (`too_recent`), whose rows have changed since the export (`changed`), that is already archived, or whose response disagrees with its exposure row (`inconsistent`); otherwise it inserts the archive row and deletes the exposure rows (the responses follow by the foreign key). It returns a status, never raises for these |
+| `hb.responses_of(sid)` | the session's answers as `responses` rows, live or archived (a JSON `null` answer and a missing one stay different; timestamps come back to the microsecond) |
+
+`rescore(save)` and `hb.is_eligible` read the answers of a session that may be months old, so they now read
+`hb.responses_of` instead of the table. Their bodies are the earlier ones with that one line changed (`migrations.test.ts`
+checks the text), and `archive.db.test.ts` compares `rescore`'s reply and every eligibility before and after compacting
+none, some and all of a person's sessions. The functions of an active session read the live tables: a session is archived
+only after its token has expired. Compaction frees pages for reuse; `pg_database_size`, which Supabase counts, falls only
+after `VACUUM FULL` (measured: 120 sessions of 150 items, 16.8 MB to 10.2 MB, the 8.8 MB base being the schema), which the
+nightly job runs only when the size is already in the warn zone.
+
+### The nightly job, the backup, the size check
+
+`hb db nightly` (daily, `calibrate.yml`): `hb.purge_expired()` (the 48-hour purge, and activity that keeps a free project from
+pausing), the calibration of M4.10 when it exists, archive and compaction of sessions older than 30 days, a vacuum, the size
+check (fail from 400 MB, F11; warn from 300 MB), and a heartbeat row in `app_config` (`job.nightly_last_ok`, the database's
+clock) that the weekly backup reads: "cron missed for 6 days" fails the weekly job, which emails the owner. `hb db backup`
+(weekly, `backup.yml`) writes an age-encrypted logical backup of every table in `public` but `rate_limits` and `rate_salts`
+(hashes of addresses and the salts that make them reversible; DESIGN §11.2 purges them after 48 hours, so a backup kept eight
+weeks must not hold them) and keeps the newest 8 releases. Both workflows end green while `SUPABASE_DB_URL` is unset.
+
+What a backup does not hold: the Vault (the save-signing keys of M2.3: keep them with your password manager), `auth` and
+`storage`. What a person deleted with `delete_my_data` stays in the encrypted backups for at most eight weeks, which the
+privacy notice (M2.6) has to say. A restore applies to a database that has the migrations; `hb db restore` refuses any
+other schema and names the differences.
+
+To verify against the live project (M2.6), in addition to the lists above: that the connection string of the nightly job
+(Session pooler, role `postgres`) can call `hb.purge_expired()`, `hb.archive_items()` and `hb.archive_session()` (it
+inherits `hb_definer`, as it does here: `grant hb_definer to postgres`), that `VACUUM FULL` is allowed on `responses` and
+`exposure_log`, that `postgres` can `TRUNCATE` and `COPY ... FROM` every table of `public` (a restore; it is the owner and has `BYPASSRLS` here), and that `pg_database_size(current_database())` is what the dashboard calls "database size".
 
 ## Secrets
 
