@@ -479,3 +479,9 @@ Numbered as in proposal §11. The defaults apply until the user decides otherwis
 14. Trial governance (Q14; Part 2): OSF registration, and no publication outside the site. For journal publication later: an academic collaborator's institutional review before enrolment.
 15. MCP server (Q15): defer until people ask; read-only if built.
 16. Posterior level for zones (Part 2): one-sided .90 with the σ_rel floor of .25 after M4. AI.8s also reports .95. Change only through F12.
+
+## Owner decisions 2026-10-01
+- **`finish.include_correct` = false.** Saves never carry per-item correctness for server-scored items (R-11.1). `rescore` must also not leak single-answer verdicts; this blocks merging M2.1.
+- **Loading a save:** the file's notes settings (`brief_prefs`) win on the session ready screen, the same as in the notes builder (AI.7). This is a follow-up code change.
+- **RC and VOC items carry no topic tags.** `hb promote` requires `topic` only for the TOPIC_AXES (AI.2 follow-up).
+- **Privacy page:** deferred until M2 collects data.
