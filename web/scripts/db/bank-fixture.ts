@@ -20,7 +20,7 @@ export interface FixtureItem {
   readonly axis: AxisCode
   readonly facet: string
   readonly itemType: 'mc' | 'numeric'
-  readonly model: '2pl' | '3pl'
+  readonly model: '2pl' | '3pl' | '2pl_testlet'
   readonly a: number
   readonly b: number
   /** Guessing parameter: 1/k for a 4-option item, null for 2PL. */
@@ -30,6 +30,12 @@ export interface FixtureItem {
   readonly key: Record<string, unknown>
   readonly status: FixtureStatus
   readonly practiceOnly: boolean
+  /** The generator family name (`item_families.generator`): what the selector balances an axis over. Default `test`. */
+  readonly generator?: string | undefined
+  /** `item_parameters.extra.expected_time_s`, the E[T] of the selection criterion. Default: none (the length-based prior). */
+  readonly expectedTimeS?: number | undefined
+  /** `item_parameters.se_b`, the sd of b (pretest items: Thompson sampling). Default: null. */
+  readonly seB?: number | null | undefined
 }
 
 export interface BankSpec {
@@ -107,6 +113,33 @@ export function numericItem(n: number, axis: AxisCode, value: string, tol: Recor
   }
 }
 
+/**
+ * One item with every property the selection tests care about set by the caller (axis, model, a, b, c,
+ * generator, expected time, status, sibling group...). `n` makes the ids unique across a database.
+ */
+export function customItem(n: number, axis: AxisCode, over: Partial<FixtureItem> = {}): FixtureItem {
+  const familyId = `f:tst:${hex12(`custom:${n}`)}`
+  const model = over.model ?? '2pl'
+  const four = model === '3pl'
+  return {
+    itemId: `i:tst:cus:${String(n).padStart(6, '0')}`,
+    familyId,
+    siblingGroup: familyId,
+    axis,
+    facet: `${axis.toLowerCase()}_c`,
+    itemType: 'mc',
+    model,
+    a: 1,
+    b: 0,
+    c: four ? 0.25 : null,
+    nOptions: four ? 4 : 5,
+    key: { index: 0 },
+    status: 'live',
+    practiceOnly: false,
+    ...over,
+  }
+}
+
 /** Inserts the items, their families, keys and parameters (as the migration owner, bypassing RLS). */
 export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[], paramVersion = 'p-test'): Promise<void> {
   const families = new Map<string, FixtureItem>()
@@ -115,10 +148,10 @@ export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[],
 
   await run(
     `insert into public.item_families (family_id, sibling_group, axis, facet, generator, gold_tier, source, license, created_by, practice_only)
-     select family_id, sibling_group, axis, facet, 'test', 'a', '{"type":"procedural","family":"test"}'::jsonb, 'CC0', 'test:fixture', practice_only
-       from jsonb_to_recordset($1::jsonb) as t (family_id text, sibling_group text, axis text, facet text, practice_only boolean)
+     select family_id, sibling_group, axis, facet, generator, 'a', '{"type":"procedural","family":"test"}'::jsonb, 'CC0', 'test:fixture', practice_only
+       from jsonb_to_recordset($1::jsonb) as t (family_id text, sibling_group text, axis text, facet text, generator text, practice_only boolean)
      on conflict (family_id) do nothing`,
-    [...families.values()].map((f) => ({ family_id: f.familyId, sibling_group: f.siblingGroup, axis: f.axis, facet: f.facet, practice_only: f.practiceOnly })),
+    [...families.values()].map((f) => ({ family_id: f.familyId, sibling_group: f.siblingGroup, axis: f.axis, facet: f.facet, generator: f.generator ?? 'test', practice_only: f.practiceOnly })),
   )
   await run(
     `insert into public.items (item_id, family_id, item_type, payload, time_limit_s, status, verification, provenance)
@@ -142,10 +175,10 @@ export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[],
     items.map((it) => ({ item_id: it.itemId, key: it.key })),
   )
   await run(
-    `insert into public.item_parameters (item_id, param_version, model, a, b, c, extra, n_resp)
-     select item_id, $2::text, model, a, b, c, '{}'::jsonb, 0
-       from jsonb_to_recordset($1::jsonb) as t (item_id text, model text, a double precision, b double precision, c double precision)`,
-    items.map((it) => ({ item_id: it.itemId, model: it.model, a: it.a, b: it.b, c: it.c })),
+    `insert into public.item_parameters (item_id, param_version, model, a, b, c, extra, n_resp, se_b)
+     select item_id, $2::text, model, a, b, c, case when expected_time_s is null then '{}'::jsonb else jsonb_build_object('expected_time_s', expected_time_s) end, 0, se_b
+       from jsonb_to_recordset($1::jsonb) as t (item_id text, model text, a double precision, b double precision, c double precision, expected_time_s double precision, se_b double precision)`,
+    items.map((it) => ({ item_id: it.itemId, model: it.model, a: it.a, b: it.b, c: it.c, expected_time_s: it.expectedTimeS ?? null, se_b: it.seB ?? null })),
     paramVersion,
   )
 }

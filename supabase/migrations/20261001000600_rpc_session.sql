@@ -1,9 +1,9 @@
 -- M2.1 (ROADMAP M2.1; DESIGN §11.2, §13, R-11.1, R-12.1; ROADMAP A16, AI.26): the session RPCs.
 --
 --   start_session(p_device, p_save)  -> {session_id, token, anon_id, anon_id_adopted, ...}   the token is shown once
---   next_item(p_token)               -> {seq, item} | {done, reason}         the pending item, or a new one
+--   next_item(p_token, p_axes)       -> {seq, item} | {done, reason}         the pending item, or a new one
 --   submit(p_token, p_item_id, ...)  -> {ack, seq, next}                     scores in SQL, no verdict returned
---   finish(p_token, p_flags)         -> {session, calibration_eligible, ...} the session as a save-v1 session
+--   finish(p_token, p_flags)         -> {session, anon_id, n_responses}      the session as a save-v1 session
 --
 -- All are SECURITY DEFINER, owned by hb_definer, with search_path = '' and EXECUTE for anon and
 -- authenticated only. Each rejects a payload that holds a brief_prefs key anywhere (AI.26). No
@@ -18,6 +18,12 @@
 -- Limits (DESIGN §11.2): 5 start_session calls a day per hashed(IP + daily salt); 200 items a
 -- session; an average of at least 2 s per answered item (checked from the server's own clock, after
 -- 10 answers). All the numbers are rows of app_config.
+--
+-- M2.2 amendments (ROADMAP M2.2): next_item and submit take p_axes, the axes of the current segment (null =
+-- all; hb.rank_live), submit adds the answer to the session's grid EAP (sessions.state.eap) before it picks
+-- the next item, and finish computes the correlated MAP and the server-side integrity evidence into
+-- sessions.state and decides sessions.calibration_eligible. Nothing of that is returned: eligibility, the
+-- fit statistics and the MAP are functions of which answers were right (R-11.1; supabase/README.md).
 
 grant create on schema public to hb_definer;
 set local role hb_definer;
@@ -77,7 +83,7 @@ begin
 end
 $$;
 
-create function public.next_item(p_token text)
+create function public.next_item(p_token text, p_axes text[] default null)
 returns jsonb
 language plpgsql security definer
 set search_path = ''
@@ -86,7 +92,7 @@ declare
   s public.sessions;
 begin
   s := hb.session_for_token(p_token);
-  return hb.serve_next(s);
+  return hb.serve_next(s, hb.check_axes(p_axes));
 end
 $$;
 
@@ -101,7 +107,8 @@ create function public.submit(
   p_rt_ms integer,
   p_confidence integer default null,
   p_client_flags jsonb default null,
-  p_next boolean default true
+  p_next boolean default true,
+  p_axes text[] default null
 )
 returns jsonb
 language plpgsql security definer
@@ -117,10 +124,12 @@ declare
   v_correct smallint;
   v_score real;
   v_out jsonb;
+  v_axes text[];
 begin
   perform hb.reject_brief_prefs(p_response);
   perform hb.reject_brief_prefs(p_client_flags);
   s := hb.session_for_token(p_token);
+  v_axes := hb.check_axes(p_axes);
 
   if p_item_id is null or pg_catalog.char_length(p_item_id) > 256 then
     perform hb.fail(400, 'invalid_item');
@@ -158,12 +167,15 @@ begin
     select sc.o_correct, sc.o_score into v_correct, v_score from hb.score_response(p_item_id, p_response) sc;
     insert into public.responses (session_id, seq, item_id, response, correct, score, rt_ms, confidence, pretest, client_flags)
     values (s.session_id, v_exp.seq, p_item_id, p_response, v_correct, v_score, p_rt_ms, p_confidence::smallint, v_exp.pretest, v_flags);
-    update public.sessions set n_answered = n_answered + 1 where session_id = s.session_id;
+    -- the answer enters the session's grid EAP, which the next pick reads (hb.eap_add_response skips what no score counts)
+    update public.sessions set n_answered = n_answered + 1, state = hb.eap_add_response(s, p_item_id, p_response, v_correct, v_exp.pretest)
+     where session_id = s.session_id;
+    select * into s from public.sessions x where x.session_id = s.session_id;
   end if;
 
   v_out := pg_catalog.jsonb_build_object('ack', true, 'seq', v_exp.seq);
   if coalesce(p_next, true) then
-    v_out := v_out || pg_catalog.jsonb_build_object('next', hb.serve_next(s));
+    v_out := v_out || pg_catalog.jsonb_build_object('next', hb.serve_next(s, v_axes));
   end if;
   return v_out;
 end
@@ -171,7 +183,15 @@ $$;
 
 -- Closes the session and returns it as a save-v1 session object, ready for the client to merge into
 -- its save (the per-session signature is M2.3). p_flags is the client's integrity report (the §8
--- session flags); the server adds its own time check and decides calibration eligibility (§13).
+-- session flags); the server adds its own time check.
+--
+-- M2.2: at the first finish the server also (1) keeps a compact summary of the session's grid EAP in place of
+-- the grids, (2) computes the correlated MAP and Laplace covariance of the session's answers under Σ_init
+-- (sessions.state.posterior), (3) computes the §13 evidence it can see for itself (sessions.state.integrity)
+-- and (4) decides sessions.calibration_eligible from that and the client's report (hb.is_eligible). None of
+-- it is in the reply or in the session's flags: each is a function of which answers were right, and a script
+-- that could read "eligible" or a score out of its own session would read its answers (owner decision
+-- 2026-10-01; R-11.1, DESIGN §10). The person's scores come from rescore().
 create function public.finish(p_token text, p_flags jsonb default null)
 returns jsonb
 language plpgsql security definer
@@ -183,7 +203,7 @@ declare
   v_total_s double precision;
   v_avg_ms double precision;
   v_too_fast boolean;
-  v_eligible boolean;
+  v_state jsonb;
 begin
   perform hb.reject_brief_prefs(p_flags);
   s := hb.session_for_token(p_token, true);
@@ -197,36 +217,35 @@ begin
      where r.session_id = s.session_id;
     v_avg_ms := case when s.n_answered > 0 then v_total_s * 1000.0 / s.n_answered end;
     v_too_fast := s.n_answered >= hb.cfg_int('session.min_avg_after', 10) and v_avg_ms < hb.cfg_int('session.min_avg_ms', 2000);
+
+    v_state := coalesce(s.state, '{}'::jsonb)
+      || pg_catalog.jsonb_build_object('eap', hb.eap_summary(s.state));
+    v_state := v_state || pg_catalog.jsonb_build_object('posterior', hb.session_posterior(s.session_id), 'integrity', hb.session_integrity(s.session_id));
     update public.sessions
        set finished_at = pg_catalog.now(),
+           state = v_state,
            flags = v_flags || pg_catalog.jsonb_build_object(
              'server_too_fast', v_too_fast,
              'server_avg_item_ms', case when v_avg_ms is null then null else pg_catalog.round(v_avg_ms::numeric, 0) end)
      where session_id = s.session_id;
-    v_eligible := hb.is_eligible(s.session_id);
-    update public.sessions
-       set calibration_eligible = v_eligible,
-           flags = flags || pg_catalog.jsonb_build_object('calibration_eligible', v_eligible)
-     where session_id = s.session_id;
+    update public.sessions set calibration_eligible = hb.is_eligible(s.session_id) where session_id = s.session_id;
   end if;
 
-  select x.calibration_eligible into v_eligible from public.sessions x where x.session_id = s.session_id;
   return pg_catalog.jsonb_build_object(
     'session', hb.session_object(s.session_id),
     'anon_id', s.anon_id,
-    'calibration_eligible', v_eligible,
     'n_responses', (select x.n_answered from public.sessions x where x.session_id = s.session_id));
 end
 $$;
 
 -- ------------------------------------------------------------------------------ who may call what
 revoke all on function public.start_session(jsonb, jsonb) from public, anon, authenticated, service_role;
-revoke all on function public.next_item(text) from public, anon, authenticated, service_role;
-revoke all on function public.submit(text, text, jsonb, integer, integer, jsonb, boolean) from public, anon, authenticated, service_role;
+revoke all on function public.next_item(text, text[]) from public, anon, authenticated, service_role;
+revoke all on function public.submit(text, text, jsonb, integer, integer, jsonb, boolean, text[]) from public, anon, authenticated, service_role;
 revoke all on function public.finish(text, jsonb) from public, anon, authenticated, service_role;
 grant execute on function public.start_session(jsonb, jsonb) to anon, authenticated;
-grant execute on function public.next_item(text) to anon, authenticated;
-grant execute on function public.submit(text, text, jsonb, integer, integer, jsonb, boolean) to anon, authenticated;
+grant execute on function public.next_item(text, text[]) to anon, authenticated;
+grant execute on function public.submit(text, text, jsonb, integer, integer, jsonb, boolean, text[]) to anon, authenticated;
 grant execute on function public.finish(text, jsonb) to anon, authenticated;
 
 reset role;

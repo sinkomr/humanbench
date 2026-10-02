@@ -25,7 +25,7 @@ From `web/`:
 npm run test:db
 ```
 
-runs every `*.db.test.ts` (about 15 s: one cluster for the run, one cloned database per test file).
+runs every `*.db.test.ts` (about 40 s: one cluster for the run, one cloned database per test file).
 `npm test` never starts a database; its `scripts/db/*.test.ts` files check the wiring and the pure
 parts. CI runs both (the `db` job).
 
@@ -308,6 +308,9 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…700_rpc_report_survey` | `report_problem`, `submit_survey` |
 | `…800_rpc_mirror_delete` | `mirror_put`, `mirror_get`, `delete_my_data` |
 | `…900_rpc_rescore` | `rescore` |
+| `…M2.2 20261002000100_scoring_core` | the PL/pgSQL port of the scorer: `hb.map_theta`, `hb.eap_by_axis`, `hb.obs_terms`, the linear algebra, Σ_init as a setting |
+| `…M2.2 20261002000200_session_scoring` | the in-session EAP, the MAP and the §13 evidence at `finish`, `hb.is_eligible` |
+| `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
 
 ### Who can do what (R-11.1, R-12.1)
 
@@ -362,9 +365,9 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 | RPC | Does | Returns |
 |---|---|---|
 | `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the seen lists of a save and, **only if the save proves it**, its `anon_id` (see Identity and proofs); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
-| `next_item(p_token)` | the pending item (a reload gets the same one), else a new one; excludes items, sibling groups and families already served or in the save; only `live`, non-practice items | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'no_items'}` |
-| `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next)` | scores in SQL against the key; stores the answer; repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
-| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer) |
+| `next_item(p_token, p_axes)` | the pending item (a reload gets the same one), else a new one, chosen as in M2.2 below; `p_axes` restricts the pick to the axes of the client's current segment (null = all) | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'axes_done' \| 'no_items'}` |
+| `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next, p_axes)` | scores in SQL against the key; stores the answer and adds it to the session's grid EAP (`hb.eap_add_response`); repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
+| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, and, at the first call, keeps the correlated MAP and the server's §13 evidence in `sessions.state` and decides `calibration_eligible` (M2.2) | `{session, anon_id, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer). Neither the eligibility nor the MAP is returned or put in the session's flags (M2.2 below) |
 | `report_problem(p_token, p_kind, p_item_id, p_detail)` | the five item categories (the item must be one this session was served), or `notes_requested` (no item, no text; never counts toward quarantine) | `{recorded}` |
 | `submit_survey(p_token, p_age_band, p_english_first)` | the voluntary two answers | `{recorded}` |
 | `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; returns an axis or facet only from sessions that each hold 5 scored answers on it, rounded; see below | `{retest_version, param_version, sessions, eap, facets, withheld, limits, skipped}` |
@@ -414,7 +417,7 @@ its answers: a posterior mean from one answer *is* that answer (right moves it u
 
 | Rule | Setting | Value | Why this value |
 |---|---|---|---|
-| a session's answers on an axis count only if **that session** holds this many scored answers on the axis; an axis is returned if one session counts | `rescore.min_axis_items` | 5 | the count at which the app itself shows a facet (A12; `FACET_MIN_ITEMS`, checked by a test); the posterior sd is still 0.7 there, so one answer is one of five terms and no longer the whole of the value. What any session adds to a published number is a sum of at least five of its answers, never one: a count over the whole save would let a script add a session of one answer and read it out of the difference. The answers of a shorter session are practice only (`ordinals`, `rho`) and are counted under `skipped.short_axis`. An axis nobody counts: the call returns the count of valid answers under `withheld.eap` and nothing else |
+| a session's answers on an axis count only if **that session** holds this many scored answers on the axis; an axis is returned if one session counts | `rescore.min_axis_items` | 5 | the count at which the app itself shows a facet (A12; `FACET_MIN_ITEMS`, checked by a test); the posterior sd is still 0.7 there, so one answer is one of five terms and no longer the whole of the value. What any session adds to a published number is a sum of at least five of its answers, never one: a count over the whole save would let a script add a session of one answer and read it out of the difference. The answers of a shorter session are practice only (`ordinals`, `rho`) and are counted under `skipped.not_counted`. An axis nobody counts: the call returns the count of valid answers under `withheld.eap` and nothing else |
 | the same for a facet, and a facet is returned only under an axis that is returned | `rescore.min_facet_items` | 5 | A12 |
 | the mean is rounded to a multiple of | `rescore.mean_step` | 0.1 | a tenth of an SD unit, well under the posterior sd of a finished session (0.3 to 0.7), so what the blob shows does not change |
 | the sd is rounded **up** to a multiple of | `rescore.sd_step` | 0.05 | rounding up never understates the uncertainty (a "show uncertainty" rule of the blob) |
@@ -450,10 +453,13 @@ one only by comparing it with the key, which would make the count depend on the 
 typed-number items (a multiple-choice item has no answer that is known wrong), and bounded by the 5 sessions an address
 may start a day, the 20 calls a day per address and the 10 per `anon_id`: one reading per axis (and per facet, with five
 numeric items each) per session. Closing it takes either noise on the numbers, which the owner has not decided on, or the
-server-side person fit of M2.2 (`hb.is_eligible`: a session padded with wrong answers is a misfit and is not scored).
-When M2.2 adds that, `rescore` must not show *why* a session was dropped: a `calibration_eligible: false` that follows
-from a person-fit statistic on the answers is a verdict again. A session of unknown answers (all valid) is only an
-aggregate: differencing two such sessions gives a difference of two sums of five verdicts, not one.
+server-side evidence of M2.2 (`hb.is_eligible`: a session of 20 answers or more padded with wrong answers is a misfit and is
+not scored; below 20 answers person fit is not a test, so a session of five is not caught). Because *which* sessions the
+evidence drops is a function of which answers were right, `rescore` does not say why a session was dropped: it carries no
+per-session `calibration_eligible`, and an answer of a session that was not scored for its integrity is counted under
+`skipped.not_counted` together with those of the sessions that are too short. (The absence of a session's numbers is still
+visible to the caller; the call limits bound what a script can make of that.) A session of unknown answers (all valid) is
+only an aggregate: differencing two such sessions gives a difference of two sums of five verdicts, not one.
 
 `rescore` is held to the app's engine: `rescore.db.test.ts` compares it with `rescoreRetest` and `eapAxis` to 1e-9
 over generated sessions (practice, ineligible sessions, quarantine, order) with the minimum counts and the rounding
@@ -481,7 +487,9 @@ not a `PT` code, PostgREST answers 400) before any RPC runs, for `mirror_put`, `
 The limits and priors are rows, not constants: `rate.*` (5 sessions a day, 30 mirror puts, 20 rescores, …),
 `session.*` (200 items, 2000 ms average, 10 answers before it is checked, token lifetimes), `payload.*`,
 `save.*`, `mirror.*`, `rescore.*`, `retest.tau` and `retest.rho_max` (equal to `RHO_MAX_PRIOR` in
-`engine/retest.ts`, checked by a test), and `bank_version` / `param_version` once the bank pipeline writes them. The rate
+`engine/retest.ts`, checked by a test), the M2.2 `selection.*` (cap, floor, stop, top k, pretest share; equal to the app's
+constants where it has them), `integrity.*` (the §13 thresholds of `engine/integrity.ts`) and `scoring.sigma` /
+`scoring.sigma_version` (Σ_init v2, equal to `initialSigma()`), and `bank_version` / `param_version` once the bank pipeline writes them. The rate
 limits use `x-forwarded-for` (`rate.ip_header`) and its **last** entry (`rate.ip_hop` = -1): a proxy appends the address it saw,
 so the entries before it are whatever the caller wrote, and a script that varies the first entry would get a new bucket on
 every call (the limits of 5 sessions a day, 60 wrong proofs, the deletes and mirror puts, and the global `mirror.max_rows`
@@ -509,10 +517,7 @@ tuple with `correct` filled; this is a deviation the owner has accepted, to be r
 
 ### What the next tasks fill in
 
-- **M2.2** replaces `hb.pick_item` (information per second, axis weights, the 0.25 cap using `item_exposure`, pretest
-  slots), adds the per-session EAP grid to `sessions.state`, the correlated MAP at `finish` (`posterior` joins the
-  reply), and the server-side evidence in `hb.is_eligible` (today: the §13 flag count over what the client reported,
-  plus the server's time check). `hb.score_response` returns nulls for items without a key row (blocks).
+- **M2.2** is below: scoring, selection, pretest slots and eligibility.
 - **M2.3** adds the per-session HMAC: `finish` signs the session, `rescore` and `delete_my_data` verify it
   (`hb.session_owned` is today "the server issued that `session_id` to that `anon_id` named in the call"; M2.3 replaces
   it, same signature, and `hb.save_proves_anon` and `start_session` follow), editing preferences never changes it.
@@ -536,6 +541,129 @@ one shared bucket for many people, not as an open door; that PostgREST maps `PT4
 SQLSTATEs to those HTTP statuses; that signing up is disabled (the RPCs also work for `authenticated`, so a signed-up
 user would have the same reach as `anon`, no more); the anon and authenticated statement timeouts (3 s / 8 s; the
 `rescore` of 40 sessions of 100 answers takes about 0.3 s here).
+
+## M2.2: scoring, selection, pretest slots and eligibility
+
+ROADMAP M2.2, DESIGN §6.iii, §7.2, §7.4, §7.7, §11.2, §13, R-7.4, R-11.1; ADRs A2, A8, A9, A11, A17, A18.
+Three migrations (the table above); nothing here is applied to a project before M2.6.
+
+### The scoring core, held to the app (`scoring-core.db.test.ts`)
+
+`hb.map_theta(obs jsonb, mu, sigma)` is a PL/pgSQL port of `engine/scorer.ts` `mapTheta` (the A2 convention: Newton with
+the observed information where Σ⁻¹ + diag(observed) is positive definite, else Fisher scoring, step halving with the 2⁻⁴⁶
+slack, stop on an accepted step under 1e-8, 50 iterations) for all five observation kinds of the wire schema (2PL, 3PL, GRM,
+Gaussian, testlet), and `hb.eap_by_axis` of `eapByAxis`. Both run **every case of `golden/scoring_v2.json`** (84 cases, the
+copy in `web/src/engine/__fixtures__/`, A17) and agree on θ, the Laplace covariance, the per-axis EAP and the log posterior to
+**1e-6** (the file's tolerance), the testlet terms to 1e-9, with generated inputs for each observation kind against
+`engine/irt.ts`, and Cholesky, solve, inverse and log-determinant against `engine/linalg.ts`. A MAP with K = 17 and 150
+observations takes about 10 ms. The prior is Σ_init v2, a setting (`scoring.sigma`, with `scoring.sigma_version`) that a test
+compares with `initialSigma()` and the bank's `sigma_v2.json`, and μ = 0.
+
+PostgreSQL is stricter than JavaScript in one way that matters here: `exp()` that underflows, and a product that underflows to
+0, are errors (`value out of range: underflow`), where JavaScript returns 0. Every `exp()` argument is floored (-700 inside
+likelihood terms, -230 for posterior weights) and a weight or probability below 1e-100 is skipped where it would be
+multiplied by something small. What that changes is below 1e-100 in absolute terms; the extreme golden cases (a = 100,
+b = ±50, |z| ≈ 5,000) are among the 84. `hb.log1p` and `hb.expm1` exist because PostgreSQL has neither.
+
+### What a session keeps, and what it computes at the end
+
+| When | What | Where | Reaches a client? |
+|---|---|---|---|
+| each `submit` | the answer's log-likelihood on the 61-point grid, added to the axis's | `sessions.state.eap[axis] = {n, ll}` | no |
+| each pick | the posterior mean and sd of each axis from that: the grid EAP under N(0, 1); an axis without an answer is its prior exactly (as the app's selector) | `hb.session_posteriors` | only through which item comes next |
+| `finish` | the correlated MAP and covariance of the session's counted answers under Σ_init | `sessions.state.posterior` (θ, the 17 × 17 covariance, `n_by_axis`, 6 decimals) | **no** |
+| `finish` | the §13 evidence the server can compute (below) | `sessions.state.integrity` | **no** |
+| `finish` | `calibration_eligible` | `sessions.calibration_eligible` | **no** |
+| `finish` | the grids are replaced by a summary `{axis: {n, mean, sd}}` | `sessions.state.eap` | no |
+
+Which answers count (in the EAP, the MAP and the evidence alike; the same as `rescore`'s): not pretest, not on a quarantined
+item, a scored 0/1, an item parameter row of a dichotomous model (a 2PL-testlet item is scored as a 2PL, as the app does until
+M3.9 groups testlets), and an answer inside the item's answer space (`hb.response_fits`). Blocks (GRM, Gaussian) are not scored
+on the server.
+
+**Why none of it is returned.** The MAP, the fit statistics and the eligibility are functions of which answers were right.
+`finish` used to return `calibration_eligible`, and with the server's evidence in it that would be one bit per session about the
+answers: two fast answers plus one self-reported flag make the threshold, and the bit says whether a particular answer was
+right. The owner's decision of 2026-10-01 (R-11.1, DESIGN §10) is that a script must not read its verdicts out of its own
+session. So `finish` returns `{session, anon_id, n_responses}`, the session's flags hold only what the client sent and the
+server's time check, and `rescore` (the one place with the withholding and the rounding) is where a person gets scores.
+(The M2.1 notes, and DESIGN §11.2, had `finish` returning a `posterior`; it does not, for that reason.) **How the correlated MAP
+reaches the blob** (the app's blob is drawn from it; `rescore` returns the own-axis EAP, A21) is therefore an open decision for
+M2.7: either `rescore` returns the MAP with the same minimum counts and rounding, or the blob uses the own-axis EAP.
+
+### Selection (`hb.rank_live`, `selection.db.test.ts`)
+
+A live slot is: the candidates (live, not practice-only, with a key and a dichotomous parameter row, on an allowed axis whose
+posterior sd is still ≥ `selection.stop_sd` = 0.3, not seen by this session or the save, exposure under the cap); the criterion
+of §7.4, **w · I · Var / E[T]**, with I the Fisher information of the item's own model at the session's mean on the axis (2PL
+a²PQ, 3PL with its c, 2PL-testlet × 0.8), Var the posterior variance, w = 1 on the allowed axes, E[T] the norms median, else
+`extra.expected_time_s`, else "25 s + 4 s per 50 words"; one candidate per `family_id`; the **coverage floor** (an allowed axis
+with fewer than 3 items, this session's plus the save's earlier ones, is served before the others); **content balancing**
+(`balanceFamilies` of the app: per axis, only the candidates of the generator family(ies) least served so far compete, so the
+cheaper family cannot take the axis; a family with no candidate does not block the other); then the top 5 and one at random.
+The test compares the ranking and the scores with `criterion()` of `engine/selector.ts` (to 1e-12) at the prior and after a
+session's answers (to 1e-9 relative).
+
+`p_axes` is the client's segment (A15 order: RT → Matrix/Series → Spatial → Memory → Quant → ...); null is every axis.
+`{done: true, reason: 'axes_done'}` means every allowed axis has reached the stop sd; `'no_items'` means the bank has nothing
+left for the session on the allowed axes. The weights other than 0/1, the remaining-time test of the app's selector and the
+facet weights of AI.21b (goals sessions, Part 2, not approved) are not here.
+
+**Exposure cap** (§6.iii): an item may be served while (its sessions + 1) ≤ `selection.exposure_cap` (0.25) ×
+max(sessions so far, `selection.exposure_min_sessions` = 20). The minimum is what keeps the first sessions from being refused
+every item (one session of one is a rate of 1); with the default, five sessions may see an item before the cap starts to bind.
+The counter is increased by one statement under that same limit, so two sessions racing for the last place cannot both have it
+(tested with six at once); the loser picks again. A bank too small for its sessions runs out of items, and the session ends with
+`no_items`: the cap is hard (§7.7 sizes the bank with a factor 2 for it). The sessions are counted with `count(*)` on
+`sessions` (an index-only scan; at 10⁶ rows a counter row is worth adding).
+
+**Sibling groups and families**: never twice in a session, never the group of a family in the save, never the family of an item
+in the save's `seen_items` (the older logic took only the item id).
+
+### Pretest slots (§6.iii)
+
+At most `selection.pretest_share` = 10% of a session's slots: slot n + 1 may be a pretest slot only while (pretest so far + 1) ≤
+0.1 · (n + 1), so never one of the first nine; an open slot is taken with probability `selection.pretest_prob` (0.5) so the
+positions are not fixed (the test with probability 1 finds them at 10, 20, 30...). The item is chosen by **Thompson sampling on
+the expected information gain about b**: each candidate of status `pretest` draws b′ ~ N(b, se_b²) (`item_parameters.se_b`, else
+`selection.pretest_default_se_b` = 1, the prior sd of §6.ii) and the largest ½·ln(1 + se_b²·I(θ̂; b′)) wins, I the item's
+information at the session's current mean on its axis. So an uncertain item near θ̂ wins often, a firm one or a far one almost
+never, and it is a sample, not an argmax (tested over 800 draws). A pretest answer is stored with `pretest = true`, counts for
+no score, and the item looks like any other to the client. The cap applies to pretest items too. (The bank pipeline moves an
+item from `pretest` to `live` after calibration, M4.10.)
+
+### The §13 evidence and `calibration_eligible` (`session-scoring.db.test.ts`)
+
+`hb.integrity_evidence` runs four of the six checks of `engine/integrity.ts` on the server's rows: **too fast** (a correct
+answer in less than a quarter of the item's median time, on items whose median is over 20 s), **uniform times** (sd of ln time
+under 0.1 over at least 5 items whose expected times span a factor of 2), **accuracy on hard items** (the exact
+Poisson-binomial tail, b > θ̂ + 1.5, α = 0.01) and **person fit** (Snijders' lz\*, under −2, from 20 items), each compared with the
+app's on the same answers (lz\* to 1e-6, the tail to 1e-9). The differences from the app: the times are the **server's clock**
+(response `created_at` minus the exposure's `served_at`), so a client cannot make itself look slow, and θ̂ is the per-axis Bayes
+mode under N(0, 3²) as the app's. Visibility and paste can only be reported by the client.
+
+`hb.is_eligible` counts the flags as the app does (one per flagged response for visibility, paste and too fast, one each for
+uniform times and hard-item accuracy; ineligible at 2 or more, or on person fit), where a flag counts if the client reported it
+**or** the server saw it, once. Not eligible either: no answer, the server's own time check (`server_too_fast`), a client report of
+misfit, or evidence that could not be computed (the session still closes; the state records `{error: <SQLSTATE>}`). The
+client's own `calibration_eligible` is not taken.
+
+### Measured here (PostgreSQL 17, one connection)
+
+`next_item` / the `next` of `submit` over a bank of 5,000 live items: about 30 ms; of 50,000 (the largest bank DESIGN §11.2 names,
+no `p_axes`): about 0.3 s, and about 70 ms for one axis's segment; linear in the number of candidates. The
+largest costs per row were the E[T] lookup (inlined), the information (inlined), and the sort for one candidate per family (done
+only for families with more than one). If a live project shows more than the 300 ms budget, the lever is a window on |b − θ̂|
+with an index on `item_parameters (param_version, b)`; not built, because it would change which items can be chosen.
+
+### Not done, and left to the owner
+
+- **How the blob gets the correlated MAP** (above): M2.7.
+- Priors for a returning person: the in-session prior is N(0, 1) per axis (A21), not the posterior of the earlier sessions
+  (`nextSessionPrior` in `engine/retest.ts`); the coverage floor does use the save's `seen_items`.
+- Testlets: the DB has no `testlet_id` on an item, so 2PL-testlet items are scored as 2PL (as the app); `hb.map_theta` takes
+  the `testlet` kind when the pipeline groups them.
+- Person fit does not catch a padded session under 20 answers (README, "What this does not stop").
 
 ## Secrets
 

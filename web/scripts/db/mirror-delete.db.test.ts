@@ -8,7 +8,7 @@ import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fixtureBank, loadFixtureBank } from './bank-fixture'
 import type { TestDb } from './harness'
-import { ANON_ID_RE, emptySave, from, startSession, type Started } from './rpc-support'
+import { ANON_ID_RE, emptySave, from, relaxSelection, startSession, type Started } from './rpc-support'
 import { openTestDb, pgCode } from './vitest'
 
 let db: TestDb
@@ -18,6 +18,7 @@ const words = new Set<string>()
 
 beforeAll(async () => {
   db = await openTestDb()
+  await relaxSelection(db)
   await loadFixtureBank(db, fixtureBank({ perAxis: 4, seed: 'mirror' }))
   for (const r of (await db.owner.query<{ word: string }>(`select word from public.recovery_words`)).rows) words.add(r.word)
 })

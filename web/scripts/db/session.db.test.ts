@@ -21,6 +21,7 @@ import {
   from,
   isServed,
   playSession,
+  relaxSelection,
   startSession,
   type Next,
   type Served,
@@ -40,6 +41,7 @@ const validateSchema = ajv.compile(save)
 
 beforeAll(async () => {
   db = await openTestDb()
+  await relaxSelection(db)
   const items = fixtureBank({ perAxis: 12, seed: 'session' })
   for (const it of items) bank.set(it.itemId, it)
   await loadFixtureBank(db, items)
@@ -553,7 +555,9 @@ describe('finish', () => {
     const ip = freshIp()
     const s = await startSession(db, ip)
     await playSession(db, s, bank, { ip, n: 6, decide: (_it, seq) => seq % 2 === 0 })
-    const out = await rpc<{ session: Record<string, unknown>; anon_id: string; calibration_eligible: boolean; n_responses: number }>(ip, 'finish', { p_token: s.token, p_flags: { visibility_hidden_s: 3, paste_events: 0, fast_guess_n: 0 } })
+    const out = await rpc<{ session: Record<string, unknown>; anon_id: string; n_responses: number }>(ip, 'finish', { p_token: s.token, p_flags: { visibility_hidden_s: 3, paste_events: 0, fast_guess_n: 0 } })
+    // M2.2: nothing in the reply is a function of which answers were right (no eligibility, no posterior; the scores come from rescore)
+    expect(Object.keys(out).sort()).toEqual(['anon_id', 'n_responses', 'session'])
     expect(out.anon_id).toBe(s.anon_id)
     expect(out.n_responses).toBe(6)
     expect(out.session.session_id).toBe(s.session_id)
@@ -568,7 +572,8 @@ describe('finish', () => {
       expect(t[4]).toBe(5000)
       expect(t[5]).toBeNull()
     }
-    expect(out.session.flags).toMatchObject({ visibility_hidden_s: 3, paste_events: 0, fast_guess_n: 0, server_too_fast: false, calibration_eligible: true })
+    expect(out.session.flags).toMatchObject({ visibility_hidden_s: 3, paste_events: 0, fast_guess_n: 0, server_too_fast: false })
+    expect(Object.keys(out.session.flags as object).sort()).toEqual(['fast_guess_n', 'paste_events', 'server_avg_item_ms', 'server_too_fast', 'visibility_hidden_s'])
     // it is a valid save once merged into a file for that anon_id, by the schema and by the app's validator
     const doc = asSave(out.session, out.anon_id)
     expect(validateSchema(doc), JSON.stringify(validateSchema.errors)).toBe(true)
@@ -641,9 +646,10 @@ describe('finish', () => {
       const ip = freshIp()
       const s = await startSession(db, ip)
       await playSession(db, s, bank, { ip, n, decide: () => true, ...(itemFlags === undefined ? {} : { clientFlags: itemFlags }) })
-      const out = await rpc<{ calibration_eligible: boolean }>(ip, 'finish', { p_token: s.token, ...(flags === undefined ? {} : { p_flags: flags }) })
-      expect((await sessionRow(s.session_id)).calibration_eligible).toBe(out.calibration_eligible)
-      return out.calibration_eligible
+      const out = await rpc<Record<string, unknown>>(ip, 'finish', { p_token: s.token, ...(flags === undefined ? {} : { p_flags: flags }) })
+      // eligibility is a function of the answers' verdicts (M2.2), so it is kept and used, never returned
+      expect(out).not.toHaveProperty('calibration_eligible')
+      return (await sessionRow(s.session_id)).calibration_eligible as boolean
     }
 
     it('is true for a clean session and one flag, false for none answered, two flags, misfit', async () => {
@@ -669,8 +675,8 @@ describe('finish', () => {
           n = out.next as Served
         }
         await db.owner.query(`update public.app_config set value = '2' where key = 'session.min_avg_after'`)
-        const out = await rpc<{ calibration_eligible: boolean; session: { flags: Record<string, unknown> } }>(ip, 'finish', { p_token: s.token })
-        expect(out.calibration_eligible).toBe(false)
+        const out = await rpc<{ session: { flags: Record<string, unknown> } }>(ip, 'finish', { p_token: s.token })
+        expect((await sessionRow(s.session_id)).calibration_eligible).toBe(false)
         expect(out.session.flags.server_too_fast).toBe(true)
         expect(typeof out.session.flags.server_avg_item_ms).toBe('number')
       } finally {

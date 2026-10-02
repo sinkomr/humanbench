@@ -18,7 +18,7 @@ import type { Observation } from '../../src/engine/types'
 import { createRng, type Rng } from '../../src/engine/prng'
 import { fixtureBank, loadFixtureBank, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
-import { emptySave, from, playSession, startSession, type Started } from './rpc-support'
+import { emptySave, from, playSession, relaxSelection, startSession, type Started } from './rpc-support'
 import { openTestDb, pgCode } from './vitest'
 
 let db: TestDb
@@ -43,6 +43,7 @@ async function setConfig(values: Readonly<Record<string, number>>): Promise<void
 
 beforeAll(async () => {
   db = await openTestDb()
+  await relaxSelection(db)
   await loadFixtureBank(db, items)
   await setConfig(EXACT)
   // the many calls of these tests are not what the per-anon_id limit is about (a test of its own sets it)
@@ -180,7 +181,7 @@ async function expectedFor(sessionIds: readonly string[]): Promise<Expected> {
 interface Result {
   retest_version: string
   param_version: string | null
-  sessions: { session_id: string; known: boolean; calibration_eligible: boolean | null; ordinals: Record<string, number>; rho: Record<string, number>; n_scored: number }[]
+  sessions: { session_id: string; known: boolean; ordinals: Record<string, number>; rho: Record<string, number>; n_scored: number }[]
   eap: Record<string, { mean: number; sd: number; n: number }>
   facets: Record<string, Record<string, { mean: number; sd: number; n: number }>>
   /** Counts of scored items for the axes and facets that were held back. */
@@ -268,10 +269,14 @@ describe('rescore: parity with the app engine', () => {
     expect((await rowsOf([b.sessionId]))[0]!.eligible).toBe(false)
     const got = await rescore(saveOf(a.anonId, ids))
     expectParity(got, await expectedFor(ids), ids)
-    expect(got.sessions.find((s) => s.session_id === b.sessionId)).toMatchObject({ calibration_eligible: false, n_scored: 0 })
+    // a session that is not scored for its integrity is told apart from a short one by nothing in the reply (M2.2: the reason is a function of the answers)
+    expect(got.sessions.find((s) => s.session_id === b.sessionId)).toMatchObject({ n_scored: 0 })
+    expect(got.sessions.find((s) => s.session_id === b.sessionId)).not.toHaveProperty('calibration_eligible')
     // the third session is the third test of the axis although only two sessions are scored
     expect(got.sessions.find((s) => s.session_id === c.sessionId)!.ordinals.QR).toBe(3)
-    expect(got.skipped.ineligible_session).toBe(24)
+    expect(got.skipped.not_counted).toBe(24)
+    expect(got.skipped).not.toHaveProperty('ineligible_session')
+    expect(JSON.stringify(got)).not.toMatch(/eligib/)
   })
 
   it('leaves out pretest responses and responses on quarantined items (DESIGN §4.5), keeping the exposure', async () => {
@@ -488,6 +493,8 @@ async function padded(o: { axis: AxisCode; real: number; right: boolean; n: numb
     ip,
     n: o.n,
     decide: () => o.right,
+    // the first answers are asked of the axis (the client's segment); the rest may come from any axis
+    axes: (index) => (index < o.real ? [o.axis] : undefined),
     respond: (it, seq, right) => {
       if (it.axis === o.axis && seen < o.real) {
         seen++
@@ -518,7 +525,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
         expect(reads(got), `${n} answers, right=${right}`).toEqual({ axes: [], facets: [] })
         // too few on the axis in this session, so none of them counts (practice only)
         expect(got.sessions[0]).toMatchObject({ known: true, n_scored: 0 })
-        expect(got.skipped.short_axis).toBe(n)
+        expect(got.skipped.not_counted).toBe(n)
         const text = JSON.stringify(got)
         expect(text).not.toMatch(/"mean"|"sd"|"correct"|i:tst/)
         // the counts held back are the answers given, however they were scored
@@ -563,7 +570,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
     const split = await rescore(both)
     expect(split.eap.QR).toBeUndefined()
     expect(split.withheld.eap.QR).toBe(5)
-    expect(split.skipped.short_axis).toBeGreaterThanOrEqual(5)
+    expect(split.skipped.not_counted).toBeGreaterThanOrEqual(5)
     // the first session has its five: the second adds to the score only with its own five, and not at all with one to four
     await keepScored(a.sessionId, 'QR', 5)
     const base = await rescore(alone)
@@ -810,7 +817,7 @@ describe('rescore: the anon_id is the caller\'s (a sig.anon_id may only repeat i
     const leak = await rescore(emptySave(stranger.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))
     expect(leak.eap).toEqual({})
     expect(leak.facets).toEqual({})
-    expect(leak.sessions[0]).toMatchObject({ known: false, calibration_eligible: null, n_scored: 0 })
+    expect(leak.sessions[0]).toMatchObject({ known: false, n_scored: 0 })
     expect(leak.skipped.unknown_sessions).toBe(1)
   })
 

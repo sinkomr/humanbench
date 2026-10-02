@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fixtureBank, loadFixtureBank } from './bank-fixture'
 import type { TestDb } from './harness'
-import { from, startSession, type Next, type Served } from './rpc-support'
+import { from, relaxSelection, startSession, type Next, type Served } from './rpc-support'
 import { openTestDb, pgCode } from './vitest'
 
 let db: TestDb
@@ -14,6 +14,7 @@ const freshIp = (): string => `198.51.100.${++ipCounter}`
 
 beforeAll(async () => {
   db = await openTestDb()
+  await relaxSelection(db)
   await loadFixtureBank(db, fixtureBank({ perAxis: 6, seed: 'report' }))
 })
 afterAll(async () => {

@@ -1,5 +1,5 @@
 /**
- * The rules M2.1 sets for every migration, checked on the SQL text (no database; `npm test`
+ * The rules M2.1 sets for every migration (M2.2 keeps them), checked on the SQL text (no database; `npm test`
  * runs this, `npm run test:db` checks the same things from the catalog):
  *   - every function is created as hb_definer, with search_path pinned to empty;
  *   - every table has RLS enabled;
@@ -10,8 +10,21 @@
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { AXIS_CODES } from '../../src/engine/axes'
+import { AXIS_CODES, initialSigma, SIGMA_VERSION } from '../../src/engine/axes'
+import {
+  HARD_ITEM_ALPHA,
+  HARD_ITEM_MARGIN,
+  LZ_STAR_MAX,
+  LZ_STAR_MIN_ITEMS,
+  PERSON_FIT_PRIOR_SD,
+  TOO_FAST_MIN_MEDIAN_S,
+  TOO_FAST_RATIO,
+  UNIFORM_RT_MAX_SD,
+  UNIFORM_RT_MIN_ITEMS,
+  UNIFORM_RT_MIN_TIME_RATIO,
+} from '../../src/engine/integrity'
 import { RHO_MAX_PRIOR } from '../../src/engine/retest'
+import { COVERAGE_FLOOR, RANDOMESQUE_K, STOP_SD, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
 import { BANNED_TERMS } from '../language-lint'
 import { MIGRATIONS_DIR, readMigrations, type SqlFile } from './sql'
 
@@ -22,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1 files in order, one concern each', () => {
+  it('has the M2.1 and M2.2 files in order, one concern each', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -33,21 +46,26 @@ describe('migrations: the set', () => {
       '20261001000700_rpc_report_survey.sql',
       '20261001000800_rpc_mirror_delete.sql',
       '20261001000900_rpc_rescore.sql',
+      '20261002000100_scoring_core.sql',
+      '20261002000200_session_scoring.sql',
+      '20261002000300_selection.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.1 \(ROADMAP M2\.1\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[12] \(ROADMAP M2\.[12]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 
 describe('migrations: functions', () => {
+  // `create function name(args) returns ... | language ... as $$`; a function with only OUT parameters has no `returns`
   const functions = migrations.flatMap((m) =>
-    [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)\s*\(([\s\S]*?)\)\s*returns\b([\s\S]*?)\bas\s+\$\$/gi)].map((x) => ({ file: m.name, name: x[1]!, header: x[3]!, at: x.index! })),
+    [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)\s*\(([\s\S]*?)\)\s*(?=returns\b|language\b)([\s\S]*?)\bas\s+\$\$/gi)].map((x) => ({ file: m.name, name: x[1]!, header: x[3]!, at: x.index! })),
   )
 
   it('finds the functions (so the checks below are not vacuous)', () => {
-    expect(functions.length).toBeGreaterThan(40)
+    expect(functions.length).toBeGreaterThan(90)
+    expect(code(all).match(/create\s+(?:or\s+replace\s+)?function\b/gi)!.length, 'every function is seen by the pattern').toBe(functions.length)
     expect(functions.filter((f) => f.name.startsWith('public.')).length).toBe(10)
   })
 
@@ -179,6 +197,35 @@ describe('migrations: what mirrors the app', () => {
     expect(literals.flatMap((l) => hits(l).map((id) => `${l.slice(0, 60)}: ${id}`))).toEqual([])
     // and the check sees what it is for
     expect(hits('clinic')).toContain('clinical')
+  })
+
+  it('lists the axes of engine/axes.ts in hb.axis_codes() and holds the pinned Σ_init v2 of the app', () => {
+    const codes = /create function hb\.axis_codes\(\)[\s\S]*?array\[([^\]]*)\]/.exec(all)!
+    expect([...codes[1]!.matchAll(/'([A-Z]+)'/g)].map((x) => x[1])).toEqual([...AXIS_CODES])
+    const sigma = /'scoring\.sigma',\s*'(\[\[[^']*\]\])'/.exec(all)!
+    expect(JSON.parse(sigma[1]!)).toEqual(initialSigma())
+    expect(/'scoring\.sigma_version',\s*'"([^"]+)"'/.exec(all)![1]).toBe(SIGMA_VERSION)
+  })
+
+  it('seeds the §13 thresholds of engine/integrity.ts and the §6.iii / §7.4 numbers of engine/selector.ts', () => {
+    const setting = (key: string): number => Number(new RegExp(`'${key.replace('.', '\\.')}',\\s*'(-?[0-9.]+)'`).exec(all)![1])
+    expect(setting('integrity.too_fast_ratio')).toBe(TOO_FAST_RATIO)
+    expect(setting('integrity.too_fast_min_median_s')).toBe(TOO_FAST_MIN_MEDIAN_S)
+    expect(setting('integrity.uniform_rt_max_sd')).toBe(UNIFORM_RT_MAX_SD)
+    expect(setting('integrity.uniform_rt_min_ratio')).toBe(UNIFORM_RT_MIN_TIME_RATIO)
+    expect(setting('integrity.uniform_rt_min_items')).toBe(UNIFORM_RT_MIN_ITEMS)
+    expect(setting('integrity.hard_item_margin')).toBe(HARD_ITEM_MARGIN)
+    expect(setting('integrity.hard_item_alpha')).toBe(HARD_ITEM_ALPHA)
+    expect(setting('integrity.lz_star_max')).toBe(LZ_STAR_MAX)
+    expect(setting('integrity.lz_star_min_items')).toBe(LZ_STAR_MIN_ITEMS)
+    expect(setting('integrity.person_fit_prior_sd')).toBe(PERSON_FIT_PRIOR_SD)
+    expect(setting('selection.top_k')).toBe(RANDOMESQUE_K)
+    expect(setting('selection.coverage_floor')).toBe(COVERAGE_FLOOR)
+    expect(setting('selection.stop_sd')).toBe(STOP_SD)
+    expect(setting('selection.testlet_info_factor')).toBe(TESTLET_INFO_FACTOR)
+    // DESIGN §6.iii
+    expect(setting('selection.exposure_cap')).toBe(0.25)
+    expect(setting('selection.pretest_share')).toBe(0.1)
   })
 
   it('keeps the limits of DESIGN §11.2 as settings', () => {

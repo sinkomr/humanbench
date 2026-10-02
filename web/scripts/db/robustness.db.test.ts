@@ -10,7 +10,7 @@ import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { fixtureBank, loadFixtureBank, numericItem } from './bank-fixture'
 import { AUTHENTICATED, type TestDb } from './harness'
-import { DEVICE, emptySave, from, startSession, type Next, type Served } from './rpc-support'
+import { DEVICE, emptySave, from, relaxSelection, startSession, type Next, type Served } from './rpc-support'
 import { openTestDb, pgCode } from './vitest'
 
 let db: TestDb
@@ -19,6 +19,7 @@ const freshIp = (): string => `203.0.113.${(++ipCounter % 250) + 1}-${Math.floor
 
 beforeAll(async () => {
   db = await openTestDb()
+  await relaxSelection(db)
   await loadFixtureBank(db, [...fixtureBank({ perAxis: 6, seed: 'fuzz' }), numericItem(1, 'QR', '12', { abs: 0.5 })])
 })
 afterAll(async () => {

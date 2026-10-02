@@ -44,6 +44,17 @@ export type Next = Served | { done: true; reason: string }
 
 export const isServed = (n: Next): n is Served => 'item' in n
 
+/**
+ * The picker of M2.1 for tests that are about something else than selection: no exposure cap, no per-axis stop,
+ * no coverage floor, no pretest slots (M2.2 settings; selection.db.test.ts tests them at their defaults). The
+ * tests that play dozens of sessions out of a bank of a few hundred items would otherwise run out of items, or
+ * stop an axis early, for reasons that are not what they check.
+ */
+export async function relaxSelection(db: TestDb): Promise<void> {
+  const values: [string, number][] = [['selection.exposure_cap', 1000], ['selection.stop_sd', 0], ['selection.coverage_floor', 0], ['selection.pretest_share', 0]]
+  for (const [key, value] of values) await db.owner.query(`update public.app_config set value = $2::jsonb where key = $1`, [key, JSON.stringify(value)])
+}
+
 export function startSession(db: TestDb, ip = '203.0.113.1', save?: unknown): Promise<Started> {
   return db.rpc<Started>(from(ip), 'start_session', save === undefined ? { p_device: DEVICE } : { p_device: DEVICE, p_save: save })
 }
@@ -83,11 +94,20 @@ export async function playSession(
     /** Sends this instead of the key-derived option (any JSON, also one outside the answer space); `decide` still says whether it was meant to be right. */
     readonly respond?: (item: FixtureItem, seq: number, right: boolean) => unknown
     readonly clientFlags?: (seq: number) => Record<string, unknown> | undefined
+    /**
+     * Restricts selection to these axes, as the client does with the current segment (M2.2 `p_axes`); a function
+     * says it per item (index = how many have been answered so far), undefined = any axis.
+     */
+    readonly axes?: readonly string[] | ((index: number) => readonly string[] | undefined)
   },
 ): Promise<{ answered: { seq: number; itemId: string; right: boolean }[] }> {
   const ctx = from(options.ip)
   const answered: { seq: number; itemId: string; right: boolean }[] = []
-  let next = await db.rpc<Next>(ctx, 'next_item', { p_token: started.token })
+  const axesFor = (index: number): { p_axes?: string[] } => {
+    const a = typeof options.axes === 'function' ? options.axes(index) : options.axes
+    return a === undefined ? {} : { p_axes: [...a] }
+  }
+  let next = await db.rpc<Next>(ctx, 'next_item', { p_token: started.token, ...axesFor(0) })
   for (let i = 0; i < options.n && isServed(next); i++) {
     const it = bank.get(next.item.item_id)
     if (it === undefined) throw new Error(`served an item the fixture does not know: ${next.item.item_id}`)
@@ -101,6 +121,7 @@ export async function playSession(
       p_response: response,
       p_rt_ms: 5000,
       ...(flags === undefined ? {} : { p_client_flags: flags }),
+      ...axesFor(i + 1),
     })
     answered.push({ seq: next.seq, itemId: next.item.item_id, right })
     next = out.next ?? { done: true, reason: 'no_next' }

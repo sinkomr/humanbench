@@ -26,8 +26,9 @@
 --     [-4, 4]) on that axis's adjusted observations under the population prior N(0, 1): the own-axis
 --     posterior A21 asks for, not the correlated MAP.
 --   * facets[axis][facet]: the EAP on the facet's observations with the axis posterior (mean, sd^2)
---     as the prior (A12, viz/facets.ts, but with the own-axis posterior in place of the correlated MAP
---     until M2.2). Returned with n.
+--     as the prior (A12, viz/facets.ts, but with the own-axis posterior in place of the correlated MAP;
+--     the correlated MAP of M2.2 is kept in sessions.state and is not returned, see hb.session_posterior).
+--     Returned with n.
 --
 -- What it does NOT return (R-11.1, DESIGN §10: no correctness feedback on finite-bank items; owner
 -- decision 2026-10-01: "rescore must also not leak single-answer verdicts"). finish() no longer carries the
@@ -41,7 +42,7 @@
 --     session holds at least rescore.min_facet_items (5; A12 shows a facet from 5 items). What any
 --     session adds to a published number is then a sum of 5 or more of its answers, never one. The
 --     answers of a shorter session are practice only (ordinals, rho); they are counted under
---     skipped.short_axis. An axis is returned if one session counts, a facet if one counts for it,
+--     skipped.not_counted. An axis is returned if one session counts, a facet if one counts for it,
 --     and a facet only under an axis that is returned. Otherwise the call returns the count of valid
 --     scored answers under `withheld`, which says nothing about right or wrong;
 --   * an answer outside the item's answer space is not an answer (above), so it cannot be used to
@@ -57,7 +58,11 @@
 -- near certainty and well formed (a number like 99999999 for an item that asks for a small one), and
 -- a session of 4 such answers and one real answer then publishes that one answer's verdict through the
 -- mean. The server cannot see that without comparing the answer with the key, which would make the count
--- depend on the key. Telling padded sessions apart is M2.2's server-side person fit (hb.is_eligible).
+-- depend on the key. M2.2 narrows it with the server's own evidence (hb.is_eligible: person fit, correct
+-- answers faster than the server clock allows, accuracy on hard items), which can drop a padded session of
+-- 20 answers or more; but what drops a session is a function of which answers were right, so the reply does
+-- not say why a session was dropped: it carries no per-session calibration_eligible, and a session that
+-- is not counted for its integrity is counted under skipped.not_counted with the sessions that are too short.
 -- See supabase/README.md, "What this does not stop".
 --
 -- Item parameters: the param_version in app_config, else each item's latest row.
@@ -277,7 +282,6 @@ begin
                  pg_catalog.jsonb_build_object(
                    'session_id', q.session_id,
                    'known', k.session_id is not null,
-                   'calibration_eligible', k.calibration_eligible,
                    'ordinals', coalesce((select pg_catalog.jsonb_object_agg(r.axis, r.s) from rho r where r.session_id = q.session_id), '{}'::jsonb),
                    'rho', coalesce((select pg_catalog.jsonb_object_agg(r.axis, r.rho) from rho r where r.session_id = q.session_id), '{}'::jsonb),
                    'n_scored', (select pg_catalog.count(*) from cls c where c.session_id = q.session_id and c.outcome = 'scored'))
@@ -321,7 +325,11 @@ begin
         'min_axis_items', v_min_axis, 'min_facet_items', v_min_facet, 'mean_step', v_mean_step, 'sd_step', v_sd_step),
       'skipped', coalesce((
         select pg_catalog.jsonb_object_agg(c.outcome, c.n)
-          from (select outcome, pg_catalog.count(*) as n from cls where outcome <> 'scored' group by outcome) c), '{}'::jsonb)
+          from (
+            -- a session that is not scored for its integrity looks like one that is too short (M2.2: the reason is a
+            -- function of which answers were right and is not told)
+            select case when outcome in ('ineligible_session', 'short_axis') then 'not_counted' else outcome end as outcome, pg_catalog.count(*) as n
+              from cls where outcome <> 'scored' group by 1) c), '{}'::jsonb)
         || pg_catalog.jsonb_build_object(
              'unknown_sessions', (select pg_catalog.count(*) from req) - (select pg_catalog.count(*) from known))));
   return v_result;
