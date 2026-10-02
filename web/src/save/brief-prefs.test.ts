@@ -343,15 +343,48 @@ describe('raiseBriefPrefs and replacedBriefSets (the file’s settings win when 
     expect(replacedBriefSets(page, prefs({ contexts: [context(1, 1)], notes_as_of: '2027-02', fit_log: [fit('01a1b2c3', 'quant/linear', '2026-10')] }))).toBe(0)
   })
 
-  it('agrees with whether a restore changes a set the page has (property)', () => {
+  it('does not count a set that differs only in what was last copied, and counts a set that differs in what the person chose', () => {
+    const copied = { templates: '2026.11', month: '2026-11', lines: [{ id: 'DS', v: '1' }] }
+    const page = prefs({ contexts: [context(1, 9, { copied })] })
+    // the same choices without the record of the copy: the record is replaced, but there is nothing to tell
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 2)] }))).toBe(0)
+    expect(restoreBriefPrefs(page, prefs({ contexts: [context(1, 2)] })).prefs.contexts[0]).toEqual(context(1, 10))
+    // another choice, with or without the record
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 2, { length: 'short' })] }))).toBe(1)
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 2, { length: 'short', copied })] }))).toBe(1)
+  })
+
+  it('counts what the restore really does: a set the ceiling keeps the page’s copy of is not replaced', () => {
+    const page = prefs({ contexts: [context(1, 1_000_000, { preset: 'reading' }), context(2, 4, { preset: 'reading' })] })
+    const loaded = prefs({ contexts: [context(1, 3, { preset: 'coding' }), context(2, 3, { preset: 'coding' })] })
+    // Slot 1 cannot be raised past the ceiling, so the two sets tie and the greater canonical JSON ('reading') is kept:
+    // the page’s copy stays. Slot 2 is raised and replaced.
+    expect(restoreBriefPrefs(page, loaded).prefs.contexts.map((c) => (c as BriefContextV1).preset)).toEqual(['reading', 'coding'])
+    expect(replacedBriefSets(page, loaded)).toBe(1)
+    // the other way round the tie goes to the file’s set, and the count says so
+    const other = prefs({ contexts: [context(1, 1_000_000, { preset: 'coding' })] })
+    const reading = prefs({ contexts: [context(1, 3, { preset: 'reading' })] })
+    expect((restoreBriefPrefs(other, reading).prefs.contexts[0] as BriefContextV1).preset).toBe('reading')
+    expect(replacedBriefSets(other, reading)).toBe(1)
+  })
+
+  it('counts exactly the live sets of the page that a restore changes in what the person chose (property)', () => {
+    const chosen = (c: BriefContextV1 | { slot: number; rev: number; removed: true }): string => {
+      if (isRemovedContext(c)) return jcs({ slot: c.slot, removed: true })
+      const { rev: _rev, copied: _copied, ...rest } = c
+      return jcs(rest)
+    }
     fc.assert(
       fc.property(arbBriefPrefs, arbBriefPrefs, (page, loaded) => {
-        const replaced = replacedBriefSets(page, loaded)
-        if (replaced === 0) return
-        // something the page had is different afterwards
         const before = mergeBriefPrefs([page]) as BriefPrefsV1
         const after = restoreBriefPrefs(page, loaded).prefs
-        expect(jcs(before.contexts.map((c) => ({ ...c, rev: 0 })))).not.toBe(jcs(after.contexts.map((c) => ({ ...c, rev: 0 }))))
+        let want = 0
+        for (const c of before.contexts) {
+          if (isRemovedContext(c)) continue
+          const now = after.contexts.find((x) => x.slot === c.slot)
+          if (now === undefined || chosen(now) !== chosen(c)) want++
+        }
+        expect(replacedBriefSets(page, loaded)).toBe(want)
       }),
       { numRuns: 500 },
     )

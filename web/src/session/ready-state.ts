@@ -6,6 +6,7 @@
 
 import type { RestoreResult } from '../save/autosave'
 import { raiseBriefPrefs, replacedBriefSets } from '../save/brief-prefs'
+import { jcs } from '../save/jcs'
 import { mergeAll } from '../save/merge'
 import type { SaveFileV1 } from '../save/types'
 import { SAVE_CTX } from './constants'
@@ -34,14 +35,18 @@ export function defaultReadyState(restored: RestoreResult | null): ReadyState {
  * join that makes the base (`mergeAll`) keeps them, and so does every join of the device's saves after this
  * session, whether or not the new session is added to the earlier saves found here (the notes settings on
  * the device are the same either way). The device's other sets and its fit notes still join in. A file with
- * no notes settings, or a device with none, is left as it is.
+ * no notes settings, or a device with none, is left as it is, and so is a file whose sets need no raising
+ * (its file-level `sig`, if any, still matches it).
  */
 function withFileSettingsWinning(loaded: SaveFileV1, device: SaveFileV1 | null | undefined): SaveFileV1 {
   const mine = device?.brief_prefs
   if (mine === undefined || loaded.brief_prefs === undefined) return loaded
+  const raised = raiseBriefPrefs(mine, loaded.brief_prefs)
+  // Nothing to raise: the file is used as it is, with a file-level `sig` it may carry (it still matches).
+  if (jcs(raised) === jcs(loaded.brief_prefs)) return loaded
   // Changed settings are no longer the body a file-level `sig` was made over (the merge would drop it anyway).
   const { sig: _sig, ...rest } = loaded
-  return { ...rest, brief_prefs: raiseBriefPrefs(mine, loaded.brief_prefs) }
+  return { ...rest, brief_prefs: raised }
 }
 
 /**

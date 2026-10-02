@@ -213,20 +213,33 @@ export function restoreBriefPrefs(current: BriefPrefsV1 | undefined, loaded: Bri
   return { prefs: merged, changed: true }
 }
 
+/** What a set says to the person: everything but how often it was edited and the record of what was last copied. */
+function chosenSettings(c: BriefContextV1 | BriefContextRemovedV1): string {
+  if (isRemovedContext(c)) return jcs({ slot: c.slot, removed: true })
+  const { rev: _rev, copied: _copied, ...chosen } = c
+  return jcs(chosen)
+}
+
 /**
- * How many of the page's sets a restore of `loaded` replaces with different ones: a slot where the page
- * has a set (not a removed one) and the file has another set, or a removal, that says something else
- * (apart from the edit count). It is 0 when the page has no settings, when the file's sets are the
- * page's, and when the file holds only slots the page has no set in. Used to tell the person that the
- * file's settings are the ones that count.
+ * How many of the page's sets a restore of `loaded` ({@link restoreBriefPrefs}) really replaces with something
+ * else: a slot where the page has a set (not a removed one) and the restored settings hold a different set, or
+ * a removal, there. It is counted on the outcome of the join, so a set the ceiling {@link BRIEF_MAX_REV} keeps
+ * the page's copy of is not counted. Only what the person chose counts: the edit count and the record of what
+ * was last copied (`copied`) can differ without the person seeing a difference. It is 0 when the page has no
+ * settings, when the file's sets are the page's, and when the file holds only slots the page has no set in
+ * (a set the person removed on the page holds nothing to replace). Used to tell the person that the file's
+ * settings are the ones that count.
  */
 export function replacedBriefSets(current: BriefPrefsV1 | undefined, loaded: BriefPrefsV1): number {
-  const page = new Map<number, BriefContextV1>()
-  for (const c of mergeBriefPrefs([current])?.contexts ?? []) if (!isRemovedContext(c)) page.set(c.slot, c)
+  const mine = mergeBriefPrefs([current])
+  if (mine === undefined) return 0
+  const after = new Map<number, BriefContextV1 | BriefContextRemovedV1>()
+  for (const c of (mergeBriefPrefs([mine, raiseBriefPrefs(mine, loaded)]) as BriefPrefsV1).contexts) after.set(c.slot, c)
   let n = 0
-  for (const c of (mergeBriefPrefs([loaded]) as BriefPrefsV1).contexts) {
-    const mine = page.get(c.slot)
-    if (mine !== undefined && jcs({ ...c, rev: 0 }) !== jcs({ ...mine, rev: 0 })) n++
+  for (const c of mine.contexts) {
+    if (isRemovedContext(c)) continue
+    const now = after.get(c.slot)
+    if (now === undefined || chosenSettings(now) !== chosenSettings(c)) n++
   }
   return n
 }

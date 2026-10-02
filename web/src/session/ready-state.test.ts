@@ -114,12 +114,22 @@ describe('loading a save on the ready screen: the file’s notes settings win pe
     expect(jcs(base.brief_prefs!)).toBe(jcs(mergeBriefPrefs([device.brief_prefs]) as BriefPrefsV1))
   })
 
-  it('does not touch the loaded file itself, and drops a file-level signature it no longer matches', () => {
+  it('does not touch the loaded file itself, and drops a file-level signature that no longer matches the changed settings', () => {
     const signed = { ...file, sig: { alg: 'HS256', kid: 'k1', mac: 'AAAA' } } as unknown as SaveFileV1
     const before = jcs(signed)
     const base = baseOf(restored, { includeFound: false, loaded: signed })!
     expect(jcs(signed)).toBe(before)
     expect(base.sig).toBeUndefined()
+    expect(presetOf(base, 1)).toBe('coding')
+  })
+
+  it('keeps a file-level signature when the file’s settings needed no change (they agree with the device’s, or the device has none)', () => {
+    const sig = { alg: 'HS256', kid: 'k1', mac: 'AAAA' }
+    const agreeing = { ...withPrefs(file, device.brief_prefs), sig } as unknown as SaveFileV1
+    expect(baseOf(restored, { includeFound: false, loaded: agreeing })!.sig).toEqual(sig)
+    const noDevice = restoredOf(withPrefs(device, undefined), [anon])
+    expect(baseOf(noDevice, { includeFound: false, loaded: { ...file, sig } as unknown as SaveFileV1 })!.sig).toEqual(sig)
+    expect(baseOf(restored, { includeFound: false, loaded: { ...withPrefs(file, undefined), sig } as unknown as SaveFileV1 })!.sig).toEqual(sig)
   })
 
   it('says the file’s settings replace the device’s only when a set of the device’s is replaced by a different one', () => {
@@ -132,6 +142,18 @@ describe('loading a save on the ready screen: the file’s notes settings win pe
     expect(replacesDeviceSettings(restoredOf(withPrefs(device, undefined), [anon]), file)).toBe(false)
     expect(replacesDeviceSettings(null, file)).toBe(false)
     expect(replacesDeviceSettings({ save: null, keys: [], failures: [], anonIds: [] }, file)).toBe(false)
+  })
+
+  it('says nothing when only what was last copied differs, or when the ceiling of revs keeps the device’s set', () => {
+    const copied = { templates: '2026.11', month: '2026-11', lines: [{ id: 'DS', v: '1' }] }
+    const onDevice = restoredOf(withPrefs(device, prefs({ contexts: [context(1, 8, { preset: 'reading', copied })] })), [anon])
+    expect(replacesDeviceSettings(onDevice, withPrefs(file, prefs({ contexts: [context(1, 2, { preset: 'reading' })] })))).toBe(false)
+    expect(replacesDeviceSettings(onDevice, withPrefs(file, prefs({ contexts: [context(1, 2, { preset: 'coding' })] })))).toBe(true)
+    // at the ceiling the file’s set cannot be raised above the device’s: the greater canonical JSON ('reading') is kept
+    const atCeiling = restoredOf(withPrefs(device, prefs({ contexts: [context(1, 1_000_000, { preset: 'reading' })] })), [anon])
+    const loaded = withPrefs(file, prefs({ contexts: [context(1, 3, { preset: 'coding' })] }))
+    expect(presetOf(baseOf(atCeiling, { includeFound: true, loaded }), 1)).toBe('reading')
+    expect(replacesDeviceSettings(atCeiling, loaded)).toBe(false)
   })
 
   it('gives the file’s content in every slot it has, for any two sets of settings (property)', () => {
