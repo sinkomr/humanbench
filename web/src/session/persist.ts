@@ -24,7 +24,13 @@ export interface PersisterOptions {
   /** The save the person started from (an upload or restored autosaves), or null. */
   readonly base: SaveFileV1 | null
   readonly storage: StorageLike | null
-  /** The anon_id of a new save when there is no base (a server session's, M2.7); default a fresh one. */
+  /**
+   * The anon_id of the save when a server session is running (M2.7): the id the server issued, or
+   * continued from the base. When the server did not continue the base's id (it proves nothing the
+   * server issued, so it never adopts it: `start_session`), the base is re-keyed to this one, so the
+   * file's id is the id its signed session is bound to (`sig.anon_id`; `rescore`, the backup and the
+   * deletion all take only the sessions bound to the file's own id). Default: the base's id, or a fresh one.
+   */
   readonly anonId?: string
   /** Wall-clock epoch ms of a write (`created_utc`, metadata only: `save/clock.ts`). */
   readonly wallClockMs: () => number
@@ -55,9 +61,10 @@ export class SessionPersister {
 
   constructor(run: SessionRun, opts: PersisterOptions) {
     this.#run = run
-    this.#base = opts.base
+    this.anonId = opts.anonId ?? opts.base?.anon_id ?? newAnonId()
+    // Re-keyed, not merged: a merge keeps the smaller of two ids (merge.ts), which is not the server's.
+    this.#base = opts.base !== null && opts.base.anon_id !== this.anonId ? { ...opts.base, anon_id: this.anonId } : opts.base
     this.#wallClockMs = opts.wallClockMs
-    this.anonId = opts.base?.anon_id ?? opts.anonId ?? newAnonId()
     this.key = autosaveKey(run.sessionId)
     this.#onStatus = opts.onStatus
     this.#saver = createAutosaver(run.sessionId, {

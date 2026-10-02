@@ -129,6 +129,12 @@ export const FINISH_CONFIRM_NO = 'Keep going'
 // ------------------------------------------------------------------------------ notices
 
 export const NOTICE_TIMEOUT = 'That question ran out of time. It counts as not answered correctly.'
+/**
+ * The same, for a question the server holds (ROADMAP M2.7): an answer that is no answer at all is
+ * not scored there, neither right nor wrong (`rescore` counts it under `skipped.invalid`, R-11.1), so
+ * the notice does not say it counts as wrong.
+ */
+export const NOTICE_TIMEOUT_SERVED = 'That question ran out of time, so it is left out of your results.'
 export const NOTICE_MALFORMED = 'That answer could not be read. Please check it and try again.'
 export const noticeSkipped = (name: string): string => `${name} skipped. It will show as not measured.`
 /** A served question of a kind this page cannot draw yet (ROADMAP M2.7): not the browser's fault, so it does not blame it. */

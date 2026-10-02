@@ -106,6 +106,22 @@ describe('the supabase-js transport (M2.7)', () => {
     expect(load).toHaveBeenCalledTimes(2)
   })
 
+  it('makes the client with no stored session, no refresh and no session in the URL', async () => {
+    const real = await import('@supabase/supabase-js')
+    let options: Parameters<typeof real.createClient>[2]
+    const load = async (): Promise<typeof real> => ({
+      ...real,
+      createClient: ((url: string, key: string, opts: typeof options) => {
+        options = opts
+        return real.createClient(url, key, opts)
+      }) as typeof real.createClient,
+    })
+    const { fetch } = fakeFetch(() => json(200, { recorded: true }))
+    await supabaseTransport(CONFIG, { load, fetch }).call('submit_survey', {})
+    // supabase-js writes nothing until someone signs in, so what is checked here is what it was told to do
+    expect(options?.auth).toEqual({ persistSession: false, autoRefreshToken: false, detectSessionInUrl: false })
+  })
+
   it('stores nothing in the browser: no session, no storage', async () => {
     const calls: string[] = []
     const store: Storage = {

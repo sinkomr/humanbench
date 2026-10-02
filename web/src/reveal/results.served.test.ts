@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import type { RescoreReply } from '../backend/replies'
 import { AXIS_CODES, AXIS_INDEX, N_AXES } from '../engine/axes'
-import type { SaveFileV1 } from '../save/types'
+import { TIMED_TASKS_ONLY_FLAG, type SaveFileV1 } from '../save/types'
 import { axisEstimates } from '../viz/profile'
 import { buildResults, overlayServed, scoredSessions, type ServedScores } from './results'
 import { botSave } from './test-support'
@@ -78,6 +78,50 @@ describe('overlayServed', () => {
   it('a zero sd still gives a usable variance', () => {
     const o = overlayServed(local, reply({ eap: { MAT: { mean: 0.1, sd: 0, n: 5 } } }))
     expect(o.cov[AXIS_INDEX.MAT]![AXIS_INDEX.MAT]!).toBeGreaterThan(0)
+  })
+})
+
+/** One online sitting as the page saves it: the timed tasks on the device (flagged) and the served part under the server's id. */
+function sitting(deviceId: string, serverId: string, startedMs: number): { sessions: SaveFileV1['sessions']; serverId: string } {
+  const b = botSave(deviceId, { startedMs })
+  const device = {
+    ...b.save.sessions[0]!,
+    flags: { ...b.save.sessions[0]!.flags, [TIMED_TASKS_ONLY_FLAG]: true },
+    responses: b.save.sessions[0]!.responses.filter((t) => !SERVED_FAMILIES.includes(t[0].split(':')[1] ?? '')),
+  }
+  const part = servedLike(serverId, { startedMs: startedMs + 1000 }).sessions[0]!
+  return { sessions: [device, part], serverId }
+}
+
+describe('scoredSessions counts sittings, not sessions, when a sitting was served', () => {
+  const known = (...ids: string[]): RescoreReply => reply({ sessions: ids.map((sessionId) => ({ sessionId, known: true })) })
+  const join = (...parts: ReturnType<typeof sitting>[]): SaveFileV1 => ({ ...served, sessions: parts.flatMap((p) => p.sessions) })
+
+  it('one online sitting is one session on the share card, though the file holds two', () => {
+    const one = sitting('s_SITTINGDEV0001', 's_SITTINGSRV0001', 1_790_000_000_000)
+    const save = join(one)
+    expect(save.sessions).toHaveLength(2)
+    const r = buildResults(save, { sessionIds: new Set([one.serverId]), estimates: known(one.serverId) })!
+    expect(r.servedSessions).toBe(1)
+    expect(r.devicePartSessions).toBe(1)
+    expect(scoredSessions(r)).toBe(1)
+  })
+
+  it('two online sittings are two, and a sitting whose server half could not be scored still counts through its device half', () => {
+    const a = sitting('s_SITTINGDEV0002', 's_SITTINGSRV0002', 1_790_000_000_000)
+    const b = sitting('s_SITTINGDEV0003', 's_SITTINGSRV0003', 1_790_000_000_000 + 8 * 86_400_000)
+    const both = buildResults(join(a, b), { sessionIds: new Set([a.serverId, b.serverId]), estimates: known(a.serverId, b.serverId) })!
+    expect(scoredSessions(both)).toBe(2)
+    const onlyA = buildResults(join(a, b), { sessionIds: new Set([a.serverId, b.serverId]), estimates: known(a.serverId) })!
+    expect(scoredSessions(onlyA)).toBe(2) // b was done on the device and the server could not score it: still a sitting
+  })
+
+  it('a sitting next to a session made without a server is two; the plain count is unchanged without the flag', () => {
+    const a = sitting('s_SITTINGDEV0004', 's_SITTINGSRV0004', 1_790_000_000_000)
+    const offline = botSave('s_OFFLINESESSION1', { startedMs: 1_790_000_000_000 + 9 * 86_400_000 }).save.sessions[0]!
+    const r = buildResults({ ...served, sessions: [...a.sessions, offline] }, { sessionIds: new Set([a.serverId]), estimates: known(a.serverId) })!
+    expect(scoredSessions(r)).toBe(2)
+    expect(scoredSessions({ rescore: r.rescore, servedSessions: 1 })).toBe(3) // the model of an earlier build knows no pairs
   })
 })
 

@@ -34,6 +34,7 @@
     INTERSTITIAL_START,
     NOTICE_MALFORMED,
     NOTICE_TIMEOUT,
+    NOTICE_TIMEOUT_SERVED,
     SKIP_CONFIRM_HEADING,
     SKIP_CONFIRM_NO,
     SKIP_CONFIRM_TEXT,
@@ -118,7 +119,7 @@
     if (n === null) return ''
     switch (n.kind) {
       case 'timeout':
-        return NOTICE_TIMEOUT
+        return n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
       case 'malformed':
         return NOTICE_MALFORMED
       case 'skipped':

@@ -34,7 +34,7 @@
 <div class="served" data-section="online">
   <SaveCheck sessions={standings} localTasks />
   {#if outcome.closed}
-    <MirrorPanel put={(phrase) => outcome.server.mirrorPut(makeSave(), phrase)} {copyText} />
+    <MirrorPanel put={(phrase) => outcome.server.mirrorPut(makeSave(), phrase)} anonId={outcome.server.anonId} {copyText} />
     <Survey send={(s) => outcome.server.submitSurvey(s)} />
   {/if}
   <section class="hb-reveal-panel report-notes" aria-labelledby="{uid}-h" data-section="report">

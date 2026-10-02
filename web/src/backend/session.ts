@@ -22,6 +22,7 @@ import type { DeviceInfo, SaveFileV1, SessionFlags } from '../save/types'
 import type { BackendApi, ProblemReport, Survey } from './api'
 import { toServedItem, type ServedItem } from './items'
 import type { DoneReason, FinishReply, MirrorPutReply, StartedSession } from './replies'
+import { withAnonId } from './upload'
 
 export type CatNext = { readonly kind: 'item'; readonly item: ServedItem } | { readonly kind: 'done'; readonly reason: DoneReason }
 
@@ -111,6 +112,6 @@ export class ServerSession implements CatSource {
    * settings left out (`BackendApi.mirrorPut`).
    */
   mirrorPut(save: SaveFileV1, phrase?: string): Promise<MirrorPutReply> {
-    return this.#api.mirrorPut(this.#token, save.anon_id === this.anonId ? save : { ...save, anon_id: this.anonId }, phrase)
+    return this.#api.mirrorPut(this.#token, withAnonId(save, this.anonId), phrase)
   }
 }

@@ -13,6 +13,8 @@ import { restoreAutosaves, autosaveKey } from '../save/autosave'
 import { jcs } from '../save/jcs'
 import type { SaveSession } from '../save/types'
 import { assertValidSave } from '../save/validate'
+import { botSave } from '../reveal/test-support'
+import type { SaveFileV1 } from '../save/types'
 import { createRng } from '../engine/prng'
 import { answerBlock } from '../sim/responders'
 import { getFamily, resolveItem } from '../tasks/registry'
@@ -41,7 +43,7 @@ class Cat implements CatSource {
   }
 }
 
-function setup(over: { anonId?: string } = {}): { run: SessionRun; p: SessionPersister; cat: Cat; s: SpyStorage; t: { ms: number }; fire: () => void } {
+function setup(over: { anonId?: string; base?: SaveFileV1 | null } = {}): { run: SessionRun; p: SessionPersister; cat: Cat; s: SpyStorage; t: { ms: number }; fire: () => void } {
   const t = { ms: 0 }
   const cat = new Cat()
   const run = new SessionRun({ sessionId: 's_LOCALSESSION001', startedMs: WALL, now: () => t.ms, device: TEST_DEVICE, rtInput: 'keyboard', cat })
@@ -89,6 +91,37 @@ describe('a run with a server in the save library', () => {
     expect(h.p.currentSave().anon_id).toBe('hb_ServerIssuedId1X')
   })
 
+  it('a base under another id is re-keyed to the server’s, with its sessions and what it has seen (start_session did not continue it)', async () => {
+    const earlier = botSave('s_EARLIERSESSION01', { level: 0.3 }).save
+    expect(earlier.anon_id).not.toBe('hb_ServerIssuedId1X')
+    const h = setup({ base: earlier, anonId: 'hb_ServerIssuedId1X' })
+    await answerOne(h)
+    expect(h.p.anonId).toBe('hb_ServerIssuedId1X')
+    const save = h.p.currentSave()
+    expect(save.anon_id).toBe('hb_ServerIssuedId1X')
+    expect(save.sessions.map((s) => s.session_id).sort()).toEqual(['s_EARLIERSESSION01', SERVER_ID])
+    expect(jcs(save.sessions.find((s) => s.session_id === 's_EARLIERSESSION01')!)).toBe(jcs(earlier.sessions[0]!))
+    expect(save.seen_items).toEqual(expect.arrayContaining(earlier.seen_items))
+    // the autosave, which is what a reload restores, carries the new id as well
+    h.fire()
+    expect(restoreAutosaves(SAVE_CTX, h.s).save!.anon_id).toBe('hb_ServerIssuedId1X')
+    // and so does the save once the signed session is in it: the id the session is bound to
+    h.p.attachSigned({ ...signedCopy(), sig: { alg: 'HMAC-SHA256', kid: 'k2026a', mac: 'bWFj', anon_id: 'hb_ServerIssuedId1X' } })
+    expect(h.p.currentSave().anon_id).toBe(h.p.currentSave().sessions.find((s) => s.sig !== undefined)!.sig!.anon_id)
+    assertValidSave(h.p.currentSave())
+  })
+
+  it('a base keeps its own id when the server continued it (the ids are the same), and with no server id', async () => {
+    const earlier = botSave('s_EARLIERSESSION02', { level: 0.3 }).save
+    const same = setup({ base: earlier, anonId: earlier.anon_id })
+    await answerOne(same)
+    expect(same.p.currentSave().anon_id).toBe(earlier.anon_id)
+    const none = setup({ base: earlier })
+    await answerOne(none)
+    expect(none.p.anonId).toBe(earlier.anon_id)
+    expect(none.p.currentSave().anon_id).toBe(earlier.anon_id)
+  })
+
   it('the signed copy replaces the unsigned one, and stays when the save is made again', async () => {
     const h = setup()
     await answerOne(h)
@@ -128,6 +161,9 @@ describe('a run with a server in the save library', () => {
     const [device, served] = [save.sessions.find((s) => s.session_id === 's_LOCALSESSION001')!, save.sessions.find((s) => s.session_id === SERVER_ID)!]
     expect(device.responses.map((t) => t[0].split(':')[1])).toEqual(['rt_simple', 'rt_choice4']) // the timed tasks, with their scorer records
     expect(device.responses.every((t) => t[3] === null)).toBe(true)
+    expect(device.flags.timed_tasks_only).toBe(true) // marks the device half of an online sitting (a count of sittings reads it)
+    expect(served.flags.timed_tasks_only).toBeUndefined()
+    expect(h.run.serverFlags().timed_tasks_only).toBeUndefined() // the server is not told
     expect(served.responses.map((t) => t[0].split(':')[1])).toEqual(['series'])
     expect(device.sig).toBeUndefined()
     expect(save.seen_items).toEqual(expect.arrayContaining(['i:series:1.0.0:1', ...device.responses.map((t) => t[0])]))

@@ -53,6 +53,32 @@ describe('MirrorPanel', () => {
     expect(buttonByText(root, 'Update my backup')).toBeTruthy()
   })
 
+  it('shows the save identifier next to the phrase, and keeps it after the phrase is gone (the way back takes both)', async () => {
+    mounted = mountInto(MirrorPanel, { put: async () => stored(PHRASE) })
+    const root = mounted.target
+    expect(root.querySelector('[data-anon-id]')).toBeNull() // nothing stored yet
+    click(buttonByText(root, 'Keep a backup on the server'))
+    await tick()
+    expect(root.querySelector('[data-phrase] [data-anon-id]')?.textContent).toBe(ANON)
+    expect(root.textContent).toContain('also in your save file')
+    click(root.querySelector<HTMLInputElement>('input[type="checkbox"]')!)
+    click(buttonByText(root, 'Done'))
+    expect(root.querySelector('[data-recovery-phrase]')).toBeNull()
+    expect(root.querySelector('[data-anon-id]')?.textContent).toBe(ANON)
+  })
+
+  it('names the identifier of the session when the backup exists already and the reply carries none', async () => {
+    mounted = mountInto(MirrorPanel, {
+      anonId: ANON,
+      put: async () => {
+        throw new BackendError('conflict', 'mirror_exists', { status: 409 })
+      },
+    })
+    click(buttonByText(mounted.target, 'Keep a backup on the server'))
+    await tick()
+    expect(mounted.target.querySelector('[data-anon-id]')?.textContent).toBe(ANON)
+  })
+
   it('copies the phrase, or says to select it', async () => {
     const copyText = vi.fn(async (_t: string) => true)
     mounted = mountInto(MirrorPanel, { put: async () => stored(PHRASE), copyText })

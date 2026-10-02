@@ -44,8 +44,6 @@ export const OPENING_PROBLEM: Readonly<Record<LoadProblem, string>> = Object.fre
 
 export const LOADING_TEXT = 'Getting your next question…'
 export const LOADING_RETRY = 'Try again'
-export const LOADING_FINISH = 'Finish with what I have'
-export const LOADING_SKIP = (name: string): string => `Skip ${name}`
 export const LOADING_PROBLEM: Readonly<Record<LoadProblem, string>> = Object.freeze({
   offline: 'We could not reach the server. Your answers so far are kept, and the clock is stopped. Check your connection and try again.',
   pace: 'The server asks for a little more time between answers. The clock is stopped. Wait a few seconds and try again.',
@@ -124,7 +122,9 @@ export const SURVEY_SKIPPED = 'Skipped. Nothing was sent.'
 
 export const MIRROR_HEADING = 'Keep a backup on the server (optional)'
 export const MIRROR_TEXT =
-  'Store a copy of your save file on the server, so that you can get it back on another device. You get a recovery phrase of 12 words, shown once. There are no accounts and no email: the phrase is the only way back, and we cannot recover it for you.'
+  'Store a copy of your save file on the server, so that you can get it back on another device. You get a recovery phrase of 12 words, shown once. There are no accounts and no email: the phrase and your save identifier are the only way back, and we cannot recover either for you.'
+export const MIRROR_ID_LABEL = 'Your save identifier'
+export const MIRROR_ID_NOTE = 'To get the backup back you need this identifier and the recovery phrase. The identifier is also in your save file, as anon_id. It does not work without the phrase.'
 export const MIRROR_BUTTON = 'Keep a backup on the server'
 export const MIRROR_UPDATE_BUTTON = 'Update my backup'
 export const MIRROR_HAVE = 'I already have a backup'

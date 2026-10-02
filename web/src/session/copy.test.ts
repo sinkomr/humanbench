@@ -33,9 +33,12 @@ describe('session copy (M1.15; DESIGN §13)', () => {
   })
 
   it('never comments on a counted answer (DESIGN §10): only practice copy speaks of right or wrong', () => {
-    const counted = [copy.CONFIDENCE_LEGEND, copy.confidenceHint(25, 4), copy.confidenceHint(0, null), copy.NOTICE_TIMEOUT, copy.NOTICE_MALFORMED]
+    const counted = [copy.CONFIDENCE_LEGEND, copy.confidenceHint(25, 4), copy.confidenceHint(0, null), copy.NOTICE_TIMEOUT, copy.NOTICE_TIMEOUT_SERVED, copy.NOTICE_MALFORMED]
     for (const t of counted) expect(t).not.toMatch(/\bcorrect\b(?!ly)|incorrect|wrong/i)
     // The legend asks how sure the person is; the time-out notice says the item counts as not answered correctly.
+    // On the server a time-out is no answer at all, left out of the scores (R-11.1), and its notice says so.
+    expect(copy.NOTICE_TIMEOUT_SERVED).toMatch(/left out/)
+    expect(copy.NOTICE_TIMEOUT_SERVED).not.toMatch(/counts as/)
     expect(copy.PRACTICE_CORRECT).toMatch(/correct/)
   })
 })

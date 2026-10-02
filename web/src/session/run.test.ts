@@ -556,7 +556,7 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     const last = st.responses.at(-1)!
     expect(last[0]).toBe(v.item!.item_id)
     expect(last.slice(1, 6)).toEqual([0, null, 0, cap * 1000, null])
-    expect(bot.view().notice?.kind).toBe('timeout')
+    expect(bot.view().notice).toEqual({ kind: 'timeout', seq: expect.any(Number) }) // no 'served' mark: here a time-out counts as not answered correctly
     expect(bot.view().item?.item_id).not.toBe(v.item!.item_id)
     expect(bot.run.result().observations.length).toBe(1)
   })

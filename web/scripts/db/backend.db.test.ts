@@ -11,17 +11,23 @@
  *   not without it, and the server refuses a payload that carries the key (the client's guard stands
  *   in front of that, and a raw call shows the server's own refusal);
  * - the six reports, the survey, the deletion by phrase and by file;
+ * - a file the server cannot prove is re-keyed to the id it issues, and then its signed session is the
+ *   file's own: verified, scored, continued by the next session (the review of M2.7);
+ * - a time-out is stored as an answer of 0 and left out of the estimate, which is what the notice says;
  * - the errors the server raises arrive as `BackendError`s of the right kind.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createBackendApi, ITEM_PROBLEM_KINDS, type BackendApi } from '../../src/backend/api'
 import { BackendError } from '../../src/backend/errors'
+import { closeServedRun } from '../../src/backend/flow'
 import { ServerSession } from '../../src/backend/session'
 import { supabaseTransport } from '../../src/backend/transport'
 import { jcs } from '../../src/save/jcs'
 import type { SaveFileV1, SaveSession } from '../../src/save/types'
 import { TEST_DEVICE } from '../../src/session/bot'
+import { SessionPersister } from '../../src/session/persist'
+import { SessionRun } from '../../src/session/run'
 import { fixtureBank, loadFixtureBank, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
 import { ageExposures, relaxSelection } from './rpc-support'
@@ -187,6 +193,75 @@ describe('a whole session through the real client', () => {
     const { api } = client('198.51.100.250')
     for (let i = 0; i < 5; i++) await ServerSession.start(api, TEST_DEVICE)
     await expect(ServerSession.start(api, TEST_DEVICE)).rejects.toMatchObject({ kind: 'limited', status: 429 })
+  })
+})
+
+describe('a save the server cannot prove (the id is re-keyed to the one it issues)', () => {
+  const STATIC_ERA: SaveFileV1 = {
+    schema_version: '1.0.0',
+    bank_version: 'b',
+    anon_id: 'hb_StaticEraSave0000',
+    created_utc: '2026-09-20T10:00:00Z',
+    sessions: [],
+    seen_items: [],
+    seen_families: [],
+  }
+
+  async function sitting(base: SaveFileV1, rekey: boolean): Promise<{ s: ServerSession; save: SaveFileV1; scored: Awaited<ReturnType<typeof closeServedRun>> }> {
+    const { api } = client()
+    const s = await ServerSession.start(api, TEST_DEVICE, base)
+    const run = new SessionRun({ sessionId: 's_DEVICEHALF00001', startedMs: 1_790_000_600_000, now: () => 0, device: TEST_DEVICE, rtInput: 'keyboard', cat: s })
+    const persister = new SessionPersister(run, { base, storage: null, wallClockMs: () => 1_790_000_600_000, bindHide: false, ...(rekey ? { anonId: s.anonId } : {}) })
+    await play(s, ['MAT'], 7)
+    const scored = await closeServedRun(run, s, persister, api)
+    return { s, save: persister.currentSave(), scored }
+  }
+
+  it('the server issues a new id, the file takes it, and the signed session is verified, scored and continued', async () => {
+    const { s, save, scored } = await sitting(STATIC_ERA, true)
+    expect(s.anonIdAdopted).toBe(false)
+    expect(s.anonId).not.toBe(STATIC_ERA.anon_id)
+    expect(save.anon_id).toBe(s.anonId)
+    const signed = save.sessions.find((x) => x.sig !== undefined)!
+    expect(signed.sig!.anon_id).toBe(save.anon_id)
+    expect(scored.estimates?.sessions).toEqual([{ sessionId: s.sessionId, known: true }])
+    expect(scored.estimates?.eap.MAT?.n).toBe(7)
+    const { api } = client()
+    expect((await api.verifySave(save)).nVerified).toBe(1)
+    const next = await ServerSession.start(api, TEST_DEVICE, save)
+    expect(next.anonIdAdopted).toBe(true)
+    expect(next.anonId).toBe(s.anonId)
+  })
+
+  it('without the re-key the session is the stranger’s: nothing scored (this is what the re-key prevents)', async () => {
+    const { s, save, scored } = await sitting(STATIC_ERA, false)
+    expect(save.anon_id).toBe(STATIC_ERA.anon_id)
+    expect(save.anon_id).not.toBe(s.anonId)
+    expect(scored.estimates?.sessions).toEqual([{ sessionId: s.sessionId, known: false }])
+    expect(scored.estimates?.eap).toEqual({})
+  })
+})
+
+describe('a question that ran out of time', () => {
+  it('is stored as an answer of 0 and left out of the estimate, as its notice says: rescore counts only the answered ones', async () => {
+    const { api } = client()
+    const s = await ServerSession.start(api, TEST_DEVICE)
+    let answered = 0
+    for (let i = 0; i < 8; i++) {
+      const next = await s.next(['MAT'])
+      if (next.kind !== 'item') throw new Error('no item')
+      await ageExposures(db, s.sessionId, 20)
+      const timedOut = i === 1 || i === 4 || i === 6
+      const fx = bank.get(next.item.item_id)!
+      await s.answer({ item: next.item, response: timedOut ? null : (fx.key.index as number), rtMs: timedOut ? 120_000 : 7000, confidence: timedOut ? null : 70, flags: {} })
+      if (!timedOut) answered++
+    }
+    const fin = await s.finish({})
+    const rows = (await db.owner.query(`select correct, response from public.responses where session_id = $1 order by seq`, [s.sessionId])).rows
+    expect(rows.filter((r) => r.response === null).map((r) => r.correct)).toEqual([0, 0, 0])
+    const r = await api.rescore({ schema_version: '1.0.0', bank_version: 'b', anon_id: s.anonId, created_utc: '2026-10-03T17:20:02Z', sessions: [fin.session], seen_items: [], seen_families: [] })
+    expect(r.eap.MAT?.n).toBe(answered)
+    expect(answered).toBe(5)
   })
 })
 

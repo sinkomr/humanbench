@@ -66,9 +66,13 @@ export function toUploadPayload(save: SaveFileV1): SaveFileV1 {
   return rest
 }
 
-/** {@link toUploadPayload}, and only the sessions that carry the server's signature. */
+/**
+ * {@link toUploadPayload}, only the sessions that carry the server's signature, and not the posterior
+ * cache: it summarises every session of the file, the unsigned ones (the timed tasks, which stay on the
+ * device) included, so it would carry their estimates to the server. The server scores from its own rows.
+ */
 export function signedSessionsOnly(save: SaveFileV1): SaveFileV1 {
-  const payload = toUploadPayload(save)
+  const { posterior_cache: _cache, ...payload } = toUploadPayload(save)
   return { ...payload, sessions: payload.sessions.filter((s) => s.sig !== undefined) }
 }
 

@@ -31,7 +31,7 @@ import { AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
 import { adjustObservation } from '../engine/retest'
 import type { ResponseTuple } from '../engine/types'
 import { itemAxis, registryObservation, rescoreSessions, type ResolvedResponse, type SaveRescore } from '../save/rescore'
-import type { SaveFileV1, SaveSession } from '../save/types'
+import { TIMED_TASKS_ONLY_FLAG, type SaveFileV1, type SaveSession } from '../save/types'
 import { getFamily, resolveItem } from '../tasks/registry'
 import type { FacetObservation, FacetOptions } from '../viz/facets'
 import type { ProfileInput } from '../viz/profile'
@@ -85,16 +85,25 @@ export interface ResultsModel {
   readonly servedFacets?: FacetOptions['precomputed']
   /** Sessions the server scored that contributed (M2.7): the ones `rescore` holds and verified, when it published anything. Absent without a server. */
   readonly servedSessions?: number
+  /**
+   * Sessions that scored something here and are the device's half of an online sitting (the timed
+   * tasks, `TIMED_TASKS_ONLY_FLAG`): the other half is a session the server scored. Absent when none.
+   */
+  readonly devicePartSessions?: number
   /** Some session was credited for practice (ρ > 0 on some skill): the profile differs from a plain score. */
   readonly practiceAdjusted: boolean
 }
 
 /**
- * How many of the save's sessions contributed a scored answer (the count a share card states,
- * M1.18: "Based on n sessions"). A session finished at once, or with only skipped parts, is not one.
+ * How many sittings the save's scored sessions come from (the count a share card states, M1.18:
+ * "Based on n sessions"). A session finished at once, or with only skipped parts, is not one. An online
+ * sitting is two sessions in the file, the timed tasks on the device and the questions the server
+ * scored (M2.7), and counts once: a device half pairs with a served session.
  */
-export function scoredSessions(results: Pick<ResultsModel, 'rescore'> & { readonly servedSessions?: number }): number {
-  return Math.max(1, results.rescore.sessions.filter((s) => s.n_observations > 0).length + (results.servedSessions ?? 0))
+export function scoredSessions(results: Pick<ResultsModel, 'rescore'> & { readonly servedSessions?: number; readonly devicePartSessions?: number }): number {
+  const local = results.rescore.sessions.filter((s) => s.n_observations > 0).length
+  const halves = Math.min(results.devicePartSessions ?? 0, local)
+  return Math.max(1, local - halves + Math.max(results.servedSessions ?? 0, halves))
 }
 
 /** The session's `skipped_<axis>` flag (§13, `run.ts`). */
@@ -140,6 +149,8 @@ export function buildResults(save: SaveFileV1, served?: ServedScores): ResultsMo
     return !rescore.sessions.some((rs) => rs.ordinals[k] !== undefined && !skippedIn(sessionById.get(rs.session_id)!, k))
   })
 
+  const devicePartSessions = rescore.sessions.filter((rs) => rs.n_observations > 0 && sessionById.get(rs.session_id)?.flags[TIMED_TASKS_ONLY_FLAG] === true).length
+
   const facetObservations: FacetObservation[] = []
   const rho = new Map(rescore.sessions.map((rs) => [rs.session_id, rs.rho]))
   for (const s of save.sessions) {
@@ -162,6 +173,7 @@ export function buildResults(save: SaveFileV1, served?: ServedScores): ResultsMo
     facetObservations,
     ...(publishes && est !== null ? { servedFacets: est.facets as FacetOptions['precomputed'] } : {}),
     ...(publishes && est !== null ? { servedSessions: est.sessions.filter((x) => x.known).length } : {}),
+    ...(devicePartSessions > 0 ? { devicePartSessions } : {}),
     nSessions: save.sessions.length,
     practiceAdjusted: rescore.sessions.some((rs) => Object.values(rs.rho).some((v) => v > 0)),
   }

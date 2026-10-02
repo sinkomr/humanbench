@@ -8,6 +8,10 @@
   before the call and the server refuses a file that holds them.
   The phrase is held in this component's memory only, while it is on screen. It is never written to
   storage, a URL or the save file.
+  Getting a backup back (the "I already have a backup" form on the ready screen and the data page) takes
+  the save identifier as well as the phrase, so the identifier is shown with the phrase and stays on
+  screen after it: someone who has lost the device and the file has nothing else to read it from. It is
+  a label that is also in every copy of the file, not a secret (the phrase is the secret).
 -->
 <script lang="ts">
   import { MIRROR_NOTE } from '../brief/reveal'
@@ -20,6 +24,8 @@
     MIRROR_FULL,
     MIRROR_HAVE,
     MIRROR_HEADING,
+    MIRROR_ID_LABEL,
+    MIRROR_ID_NOTE,
     MIRROR_PHRASE_COPIED,
     MIRROR_PHRASE_COPY,
     MIRROR_PHRASE_COPY_FAILED,
@@ -43,6 +49,8 @@
     readonly put: (phrase?: string) => Promise<MirrorPutReply>
     /** Injectable for tests: put text on the clipboard, true when it worked. */
     readonly copyText?: (text: string) => Promise<boolean>
+    /** The save identifier the backup is stored under, until the server's reply names it. */
+    readonly anonId?: string
   }
 
   async function clipboardCopy(text: string): Promise<boolean> {
@@ -54,7 +62,7 @@
     }
   }
 
-  let { put, copyText = clipboardCopy }: Props = $props()
+  let { put, copyText = clipboardCopy, anonId = '' }: Props = $props()
 
   const uid = $props.id()
   let busy = $state(false)
@@ -66,6 +74,9 @@
   let typed = $state('')
   let copyMessage = $state('')
   let hasBackup = $state(false)
+  /** The identifier the server stored the backup under (its reply), once it has one. */
+  let storedId = $state('')
+  const shownId = $derived(storedId !== '' ? storedId : anonId)
 
   async function run(): Promise<void> {
     if (busy) return
@@ -81,6 +92,7 @@
         return
       }
       hasBackup = true
+      storedId = r.anonId
       if (r.recoveryPhrase !== null) {
         phrase = r.recoveryPhrase
         kept = false
@@ -115,6 +127,13 @@
   }
 </script>
 
+{#snippet identifier()}
+  {#if shownId !== ''}
+    <p class="ident"><strong>{MIRROR_ID_LABEL}:</strong> <code data-anon-id>{shownId}</code></p>
+    <p class="note">{MIRROR_ID_NOTE}</p>
+  {/if}
+{/snippet}
+
 <section class="hb-reveal-panel mirror" aria-labelledby="{uid}-h" data-section="mirror">
   <h2 id="{uid}-h">{MIRROR_HEADING}</h2>
   <p>{MIRROR_TEXT}</p>
@@ -125,6 +144,7 @@
       <h3>{MIRROR_PHRASE_HEADING}</h3>
       <p class="phrase" data-recovery-phrase>{phrase}</p>
       <p class="warn">{MIRROR_PHRASE_WARNING}</p>
+      {@render identifier()}
       <div class="hb-actions">
         <button type="button" class="hb-btn" onclick={() => void copy()}>{MIRROR_PHRASE_COPY}</button>
       </div>
@@ -138,6 +158,9 @@
       </div>
     </div>
   {:else}
+    {#if hasBackup}
+      {@render identifier()}
+    {/if}
     <details open={hasBackup}>
       <summary>{MIRROR_HAVE}</summary>
       <label for="{uid}-phrase">{MIRROR_PHRASE_LABEL}</label>
@@ -166,6 +189,12 @@
 
   .warn {
     font-weight: 600;
+  }
+
+  code[data-anon-id] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    user-select: all;
+    overflow-wrap: anywhere;
   }
 
   input[type='text'] {

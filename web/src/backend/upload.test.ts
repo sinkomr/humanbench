@@ -106,6 +106,11 @@ describe('signedSessionsOnly (data minimisation)', () => {
         expect(out.sessions.every((s) => s.sig !== undefined)).toBe(true)
         expect(out.sessions).toEqual(save.sessions.filter((s) => s.sig !== undefined))
         expect(out.seen_items).toEqual(save.seen_items)
+        // the cache summarises the sessions that stay on the device too, so it stays on the device
+        expect(Object.hasOwn(out, 'posterior_cache')).toBe(false)
+        const { brief_prefs: _p, posterior_cache: _c, sessions: _s, ...rest } = save
+        const { sessions: _o, ...kept } = out
+        expect(jcs(kept)).toBe(jcs(rest))
       }),
       { numRuns: 200 },
     )

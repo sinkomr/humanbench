@@ -186,6 +186,10 @@ describe('replies that break the contract', () => {
     ['next_item', { seq: 1, item: { item_id: 'x' } }],
     ['next_item', { done: true, reason: 'because' }],
     ['submit', { ack: false }],
+    // everything else about these is well-formed: only the acknowledgement is wrong (a reply that does not say the answer was taken)
+    ['submit', { ack: false, seq: 1 }],
+    ['submit', { seq: 1 }],
+    ['submit', { ack: 'true', seq: 1 }],
     ['finish', { session: { session_id: 's_x' }, anon_id: ANON, n_responses: 0 }],
     ['verify_save', { anon_id: ANON, sessions: [{ status: 'maybe' }], n_verified: 0, n_unverified: 0 }],
     ['rescore', { sessions: [], eap: { NOPE: { mean: 0, sd: 1, n: 1 } }, facets: {} }],

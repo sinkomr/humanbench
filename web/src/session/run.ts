@@ -100,7 +100,7 @@ import {
 import { isJsonValue, type JsonValue, type Observation, type ResponseTuple } from '../engine/types'
 import type { RtInputMode, RtInputType } from '../render/rt/keys'
 import type { SessionState } from '../save/create'
-import type { DeviceInfo, SessionFlags } from '../save/types'
+import { TIMED_TASKS_ONLY_FLAG, type DeviceInfo, type SessionFlags } from '../save/types'
 import { MalformedResponseError, type AnyFamily } from '../tasks/family'
 import { getFamily } from '../tasks/registry'
 import { rtBlockObservation, type RtItem, type RtResponse } from '../tasks/rt'
@@ -142,6 +142,8 @@ export interface Notice {
   readonly kind: NoticeKind
   readonly seq: number
   readonly axis?: AxisCode
+  /** A `timeout` of a question the server holds: there it is left out of the scores, not counted as wrong. */
+  readonly served?: boolean
 }
 
 /** Why the run changed, for the persistence layer (autosave after `response`, `skip`, `break`, `finish`). */
@@ -947,7 +949,7 @@ export class SessionRun {
     if (cur.served !== null) this.#recordServed(cur, null, limitMs, null, start + limitMs)
     else this.#recordItem(cur, null, 0, limitMs, null, start + limitMs)
     this.#current = null
-    this.#notice = { kind: 'timeout', seq: ++this.#noticeSeq }
+    this.#notice = { kind: 'timeout', seq: ++this.#noticeSeq, ...(cur.served === null ? {} : { served: true }) }
     this.#emit('response')
     this.#boundary(() => this.#present())
   }
@@ -1257,7 +1259,8 @@ export class SessionRun {
       startedMs: this.#cfg.startedMs,
       durationS: this.#clock.elapsedS(),
       device: this.#device,
-      flags: this.#flags(),
+      // With a server this session is the half of the sitting that stays on the device (see `catSessionState`).
+      flags: this.#cat === undefined ? this.#flags() : { ...this.#flags(), [TIMED_TASKS_ONLY_FLAG]: true },
       responses: [...this.#responses],
       seenItems: [...this.#seenItems],
       seenFamilies: [...this.#seenFamilies],

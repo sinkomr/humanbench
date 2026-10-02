@@ -125,10 +125,12 @@ test.describe('the flow with a server', () => {
     // The backup: a phrase, once, and the notes settings are not in what was sent.
     await button(page, 'Keep a backup on the server').click()
     await expect(page.locator('[data-recovery-phrase]')).toHaveText(PHRASE)
+    await expect(page.locator('[data-phrase] [data-anon-id]')).toHaveText(ANON_ID) // the way back takes it with the phrase
     await expect(button(page, 'Done')).toBeDisabled()
     await page.getByRole('checkbox', { name: /kept the phrase/ }).check()
     await button(page, 'Done').click()
     await expect(page.locator('[data-recovery-phrase]')).toHaveCount(0)
+    await expect(online(page).locator('[data-anon-id]')).toHaveText(ANON_ID) // and it stays when the phrase is gone
     expect(server.of('mirror_put')).toHaveLength(1)
     expect((server.of('mirror_put')[0]!.body.p_save as { anon_id: string }).anon_id).toBe(ANON_ID)
 
@@ -370,7 +372,8 @@ test.describe('the static fallback (the default build) is untouched', () => {
     await expect(page.locator('.flow + main')).toContainText('keeps nothing on a server')
   })
 
-  test('?hb_backend=off forces the static fallback even in a build that names a server', async ({ page }) => {
+  // This build names no server, so "off" can only be shown to change nothing; that it beats a server named by the build is `selectBackend`'s unit test (config.test.ts).
+  test('?hb_backend=off gives the static fallback: nothing is sent, and the gate says so', async ({ page }) => {
     const server = new FakeServer()
     await server.attach(page)
     await page.goto('./?hb_backend=off')

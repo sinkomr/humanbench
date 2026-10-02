@@ -170,7 +170,7 @@ describe('a served part', () => {
     await settle()
     expect(h.cat.answers[0]).toMatchObject({ response: null, rtMs: 20_000, confidence: null })
     expect(h.run.catSessionState()?.responses[0]).toEqual(['i:series:1.0.0:1', 0, null, null, 20_000, null])
-    expect(h.v().notice?.kind).toBe('timeout')
+    expect(h.v().notice).toMatchObject({ kind: 'timeout', served: true }) // the server leaves it out of the scores: the notice says so
   })
 
   it('refuses a response a renderer could not have given', async () => {

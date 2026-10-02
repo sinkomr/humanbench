@@ -15,8 +15,10 @@ import { ANON, CANNED, ScriptedTransport, SESSION_ID, fakeBackend } from '../bac
 import { ANTI_COERCION, MIRROR_NOTE } from '../brief/save-copy'
 import { buttonByText, click, fakeDisplay, type FakeDisplay } from '../render/common/testing'
 import { settle } from '../render/dom-testing'
+import { botSave } from '../reveal/test-support'
+import { autosaveKey, restoreAutosaves } from '../save/autosave'
 import { getFamily } from '../tasks/registry'
-import { CONSENT_KEY, TERMS_VERSION_SERVER } from './constants'
+import { CONSENT_KEY, SAVE_CTX, TERMS_VERSION_SERVER } from './constants'
 import { fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
 
@@ -258,6 +260,23 @@ describe('the served part', () => {
     expect(host.textContent).not.toContain('Which is larger?') // the page does not improvise a rendering
   })
 
+  it('a question that runs out of time is sent as no answer, and the notice says it is left out, not that it counts as wrong', async () => {
+    const { t, fake } = setup()
+    t.script('next_item', seriesWire(1, 'a'), { done: true, reason: 'axes_done' })
+    await toReady(fake)
+    await toServedPart(fake)
+    await tick()
+    await settle(3)
+    fake.time.ms += 125_000 // past the 120 s of the item; the screen checks the clock every 250 ms
+    await new Promise((r) => setTimeout(r, 300))
+    await tick()
+    await settle(2)
+    expect(t.args('submit')).toMatchObject({ p_response: null, p_confidence: null })
+    const notice = [...host.querySelectorAll('[role="status"]')].map((n) => n.textContent ?? '').join(' ')
+    expect(notice).toContain('That question ran out of time, so it is left out of your results.')
+    expect(notice).not.toContain('counts as not answered correctly')
+  })
+
   it('a skip releases the question on screen, so the server can serve another part', async () => {
     const { t, fake } = setup()
     t.script('next_item', seriesWire(1, 'a'))
@@ -318,6 +337,26 @@ describe('closing and the results', () => {
     expect(host.textContent).not.toMatch(/TODO\(user\)/u) // the results page carries no placeholder
   })
 
+  it('a save the server does not continue is re-keyed to the id it issued, so its signed session is the file’s own', async () => {
+    const { t, fake } = setup()
+    const earlier = botSave('s_EARLIERDEVICE01', { level: 0.3 }).save
+    expect(earlier.anon_id).not.toBe(ANON)
+    fake.storage.data.set(autosaveKey('s_EARLIERDEVICE01'), JSON.stringify(earlier))
+    await toResults(t, fake)
+    await tick(12)
+    await settle(3)
+    expect(h1()).toBe('Session complete')
+    expect((t.args('start_session').p_save as { anon_id: string }).anon_id).toBe(earlier.anon_id) // what the person had
+    // what the server is asked to check and score: the file under the id the session was issued to
+    const asked = t.args('rescore').p_save as { anon_id: string; sessions: { sig?: { anon_id: string } }[] }
+    expect(asked.anon_id).toBe(ANON)
+    expect(asked.sessions.every((s) => s.sig?.anon_id === asked.anon_id)).toBe(true)
+    // and so is the autosave a reload would restore, which still holds the earlier session
+    const kept = restoreAutosaves(SAVE_CTX, fake.storage).save!
+    expect(kept.anon_id).toBe(ANON)
+    expect(kept.sessions.map((x) => x.session_id)).toEqual(expect.arrayContaining(['s_EARLIERDEVICE01', SESSION_ID]))
+  })
+
   it('the backup: a recovery phrase is shown once, the notes settings are not in the file sent, and it goes away when confirmed', async () => {
     const { t, fake } = setup()
     await toResults(t, fake)
@@ -327,6 +366,7 @@ describe('closing and the results', () => {
     await tick()
     const phrase = host.querySelector('[data-recovery-phrase]')?.textContent
     expect(phrase?.split(' ')).toHaveLength(12)
+    expect(host.querySelector('[data-phrase] [data-anon-id]')?.textContent).toBe(ANON) // the way back needs it with the phrase
     const sent = t.args('mirror_put')
     expect(sent.p_token).toBe('hbt_ABCDEFGHIJKLMNOPQRSTUV')
     expect(JSON.stringify(sent)).not.toContain('brief_prefs')
