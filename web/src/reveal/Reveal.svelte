@@ -15,7 +15,7 @@
   Nothing here shows a total, an average or a single score for the person (CLAUDE.md blob rule).
 -->
 <script lang="ts">
-  import { onMount, tick, type ComponentProps } from 'svelte'
+  import { onMount, tick, type ComponentProps, type Snippet } from 'svelte'
   import type { AxisCode } from '../engine/axes'
   import type { RendererTiming } from '../render/common/props'
   import type { ShareOutcome } from '../save/io'
@@ -66,6 +66,8 @@
     readonly share?: (save: SaveFileV1) => Promise<ShareOutcome>
     readonly canShare?: boolean
     readonly copyText?: (text: string) => Promise<boolean>
+    /** What an online session adds under the save (ROADMAP M2.7): the server's check, the backup, the survey. Absent without a server. */
+    readonly online?: Snippet
     /** Injectable for tests: how the share card makes and hands over its images (`ShareCard.svelte`). */
     readonly card?: Pick<ComponentProps<typeof ShareCard>, 'makePng' | 'download' | 'shareFile' | 'canShare' | 'prepareMs' | 'today'>
   }
@@ -88,6 +90,7 @@
     share,
     canShare,
     copyText,
+    online,
     card,
   }: Props = $props()
 
@@ -132,6 +135,7 @@
   <RevealProfile
     input={results.input}
     facetObservations={results.facetObservations}
+    facetPrecomputed={results.servedFacets}
     practiceAdjusted={results.practiceAdjusted}
     frames={timing?.frames}
     {motion}
@@ -146,6 +150,9 @@
 
   {#if built}
     <SavePanel {makeSave} {autosave} {saved} onsaved={() => (saved = true)} {download} {copyCode} {share} {canShare} />
+    {#if online}
+      {@render online()}
+    {/if}
     {#if saved}
       <AfterSave {notesHref} {copyText}>
         {#snippet shareCard()}

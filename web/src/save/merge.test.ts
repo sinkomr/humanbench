@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { jcs } from './jcs'
+import { sessionMacInput } from './mac-input'
 import { distinctAnonIds, flagRank, isUsableCache, mergeAll, mergeSaves, mergeSessions, normalizeSave, sameSave, subsumes } from './merge'
 import { parseSaveText } from './parse'
 import { arbCache, arbSave, arbSaveFamily, arbSession, TEST_CTX } from './testing'
@@ -334,6 +335,25 @@ describe('merge (DESIGN §8 R-8.1)', () => {
           }
           const signedIn = new Set(saves.flatMap((f) => f.sessions.filter((c) => c.sig !== undefined).map((c) => c.session_id)))
           for (const id of signedIn) expect(m.sessions.find((s) => s.session_id === id)?.sig).toBeDefined()
+        }),
+        RUNS,
+      )
+    })
+
+    it('editing, adding or stripping the notes settings never changes a session, so no session\'s MAC input changes (AI.26, M2.3, property)', () => {
+      fc.assert(
+        fc.property(arbSave({ withPrefs: true, bindSigs: true }), arbSave({ withPrefs: true }), (a, other) => {
+          const before = normalizeSave(a, ctx)
+          const macs = (f: SaveFileV1): string[] => f.sessions.map((s) => (s.sig === undefined ? '-' : sessionMacInput(s, s.sig.anon_id)))
+          const sessionsOf = (f: SaveFileV1): string[] => f.sessions.map((s) => jcs(s))
+          // another notes setting in its place, none at all, and the strip toUploadPayload makes before an upload (M2.7)
+          const { brief_prefs: _dropped, ...stripped } = a
+          const edited: SaveFileV1 = other.brief_prefs === undefined ? (stripped as SaveFileV1) : { ...a, brief_prefs: other.brief_prefs }
+          for (const variant of [edited, stripped as SaveFileV1, mergeSaves(a, edited, ctx)]) {
+            const after = normalizeSave(variant, ctx)
+            expect(sessionsOf(after)).toEqual(sessionsOf(before))
+            expect(macs(after)).toEqual(macs(before))
+          }
         }),
         RUNS,
       )

@@ -9,6 +9,8 @@
 -->
 <script lang="ts">
   import type { ComponentProps } from 'svelte'
+  import { servedSessionIds, type ServedOutcome } from '../backend/flow'
+  import ServedPanels from '../backend/ServedPanels.svelte'
   import type { AxisCode } from '../engine/axes'
   import type { RendererTiming } from '../render/common/props'
   import type { ShareOutcome } from '../save/io'
@@ -23,6 +25,8 @@
 
   interface Props {
     readonly result: RunResult
+    /** The server session the run had (ROADMAP M2.7), or null/absent in the static fallback. */
+    readonly outcome?: ServedOutcome | null
     /** The session's id (the worked examples are drawn from it, so a reload shows the same ones). */
     readonly sessionId?: string
     /** The save file to hand over (base ∪ this session), made when asked so it is current. */
@@ -49,6 +53,7 @@
 
   let {
     result,
+    outcome = null,
     sessionId = 's_unknown',
     makeSave,
     autosave,
@@ -68,7 +73,8 @@
 
   // Made once, when the results appear: the save is complete now.
   const save = $derived(makeSave())
-  const results = $derived(buildResults(save))
+  // The sessions the server scores are scored there, not here (R-11.1); the page shows what it returned.
+  const results = $derived(buildResults(save, outcome === null ? undefined : { sessionIds: servedSessionIds(save, outcome.server.sessionId), estimates: outcome.estimates }))
 
   const items = $derived(Object.values(result.itemsByAxis).reduce<number>((n, c) => n + (c ?? 0), 0))
   const minutes = $derived(Math.max(1, Math.round(result.durationS / 60)))
@@ -82,6 +88,9 @@
   {#if results === null}
     <p>{FINISHED_EMPTY}</p>
     <SavePanel {makeSave} {autosave} {saved} onsaved={() => (saved = true)} {download} {copyCode} {share} {canShare} />
+    {#if outcome !== null}
+      <ServedPanels {outcome} {makeSave} {copyText} />
+    {/if}
     <div class="hb-actions">
       <button type="button" class="hb-btn" onclick={onrestart}>{FINISHED_AGAIN}</button>
     </div>
@@ -104,6 +113,13 @@
       {canShare}
       {copyText}
       {card}
+      online={outcome === null ? undefined : online}
     />
   {/if}
 </Screen>
+
+{#snippet online()}
+  {#if outcome !== null}
+    <ServedPanels {outcome} {makeSave} {copyText} />
+  {/if}
+{/snippet}

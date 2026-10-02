@@ -1,10 +1,20 @@
 <!--
   The session flow (ROADMAP M1.15; DESIGN §7.4, §10, §13): welcome → consent and 18+ gate → honour code →
   device check and RT input mode → ready (practice, earlier saves) → the session → results and save.
+  With a server (`env.backend`, ROADMAP M2.7) two screens join the flow: opening the server session between
+  "Begin" and the first part (it can fail, and the person may go on with this device only), and closing it
+  after the last (the answers are sent, the server signs the session, the scores of the served parts are
+  fetched). Without one (the default build) neither exists and the flow is exactly that of M1.
   Screens keep their state in memory until the person passes the gate: the under-18 path never touches
   storage, and the consent, the autosaver and the restore of earlier saves all come after it.
 -->
 <script lang="ts">
+  import { closeServedRun, type ServedOutcome } from '../backend/flow'
+  import { problemOf, type LoadProblem } from '../backend/errors'
+  import Closing from '../backend/Closing.svelte'
+  import Opening from '../backend/Opening.svelte'
+  import { SERVER_GATE_POINTS, SERVER_READY_TEXT } from '../backend/copy'
+  import type { ServerSession } from '../backend/session'
   import type { AxisCode } from '../engine/axes'
   import { FOCUS_TARGET_S } from '../reveal/next'
   import { pruneAutosaves, restoreAutosaves, type RestoreResult } from '../save/autosave'
@@ -19,7 +29,7 @@
   import Ready from './Ready.svelte'
   import SessionScreen from './SessionScreen.svelte'
   import Welcome from './Welcome.svelte'
-  import { SAVE_CTX } from './constants'
+  import { SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
   import { browserSessionEnv, type SessionEnv } from './env'
   import { FAST_BANNER } from './fast'
   import { readConsent, recordConsent } from './gate'
@@ -36,7 +46,12 @@
 
   let { env = browserSessionEnv() }: Props = $props()
 
-  type Phase = 'welcome' | 'gate' | 'blocked' | 'honour' | 'device' | 'ready' | 'practice' | 'run' | 'finished'
+  type Phase = 'welcome' | 'gate' | 'blocked' | 'honour' | 'device' | 'ready' | 'practice' | 'opening' | 'run' | 'closing' | 'finished'
+
+  /** The server of this page, or null: the static fallback, which is the default build. */
+  const backend = $derived(env.backend ?? null)
+  /** The terms the consent covers: the online version's notice says answers are sent to a server. */
+  const terms = $derived(backend === null ? TERMS_VERSION : TERMS_VERSION_SERVER)
 
   // The dev banner exists in the bundle only where the fast flag can be on (`fast.ts`).
   const banner = $derived(__HB_DEV_ROUTES__ && env.scale > 1 ? FAST_BANNER : '')
@@ -53,14 +68,20 @@
   let result: RunResult | null = $state.raw(null)
   let persister: SessionPersister | null = $state.raw(null)
   let autosave: AutosaveStatus = $state('ok')
+  // The server session of the run that is under way or just finished (M2.7), and how opening and closing it stand.
+  let server: ServerSession | null = $state.raw(null)
+  let outcome: ServedOutcome | null = $state.raw(null)
+  let openProblem: LoadProblem | null = $state(null)
+  let openFocus: readonly AxisCode[] | undefined = undefined
+  let closeFailed = $state(false)
 
   function start(): void {
     // Reading is allowed; nothing is written before the gate is passed.
-    phase = readConsent(env.storage()) !== null ? 'honour' : 'gate'
+    phase = readConsent(env.storage(), terms) !== null ? 'honour' : 'gate'
   }
 
   function agree(): void {
-    recordConsent(env.storage())
+    recordConsent(env.storage(), terms)
     phase = 'honour'
   }
 
@@ -88,9 +109,38 @@
     startRun()
   }
 
-  /** Start the session; a focus session (M1.R) runs only the parts of `focus` and lasts 20 minutes. */
+  /**
+   * Start the session; a focus session (M1.R) runs only the parts of `focus` and lasts 20 minutes. With a
+   * server the session is opened there first (M2.7).
+   */
   function startRun(focus?: readonly AxisCode[]): void {
     if (device === null) return
+    if (backend === null) {
+      launch(focus, null)
+      return
+    }
+    void open(focus)
+  }
+
+  /** Ask the server for a session; on failure the person chooses (try again, this device only, back). */
+  async function open(focus: readonly AxisCode[] | undefined): Promise<void> {
+    if (device === null || backend === null) return
+    openFocus = focus
+    openProblem = null
+    phase = 'opening'
+    try {
+      const s = await backend.open(device, base)
+      if (phase === 'opening') launch(focus, s)
+    } catch (e) {
+      if (phase === 'opening') openProblem = problemOf(e)
+    }
+  }
+
+  function launch(focus: readonly AxisCode[] | undefined, s: ServerSession | null): void {
+    if (device === null) return
+    server = s
+    outcome = null
+    closeFailed = false
     const startedMs = env.wallClockMs()
     const sessionId = newSessionId(startedMs)
     const r = new SessionRun({
@@ -103,12 +153,13 @@
       priorItemCounts: priorItemCounts(base),
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
       ...(focus === undefined ? {} : { focus, targetS: FOCUS_TARGET_S }),
+      ...(s === null ? {} : { cat: s }),
       onChange: (kind: ChangeKind) => onChange(kind),
     })
     run = r
     result = null
     autosave = 'ok'
-    persister = new SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (s) => (autosave = s) })
+    persister = new SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (st) => (autosave = st), ...(s === null ? {} : { anonId: s.anonId }) })
     persister.schedule()
     if (r.view().ended !== null) {
       // Nothing to run (every part was skipped from the start): straight to the results.
@@ -118,8 +169,40 @@
     phase = 'run'
   }
 
-  /** The run ended: its save is written, the autosaves it makes redundant are dropped, and the results come up. */
+  /**
+   * The run ended. With a server it is closed there first (M2.7); then its save is written, the autosaves
+   * it makes redundant are dropped, and the results come up.
+   */
   function finishRun(r: SessionRun): void {
+    persister?.flush()
+    if (server === null) {
+      showResults(r)
+      return
+    }
+    phase = 'closing'
+    closeFailed = false
+    void close(r)
+  }
+
+  async function close(r: SessionRun): Promise<void> {
+    if (server === null || persister === null || backend === null) return
+    closeFailed = false
+    try {
+      outcome = await closeServedRun(r, server, persister, backend.api)
+    } catch {
+      if (phase === 'closing') closeFailed = true
+      return
+    }
+    if (phase === 'closing') showResults(r)
+  }
+
+  /** The person goes on without the server: what it scores shows as not measured, and the save keeps the answers. */
+  function continueWithoutServer(r: SessionRun): void {
+    if (server !== null) outcome = { server, estimates: null, closed: false }
+    showResults(r)
+  }
+
+  function showResults(r: SessionRun): void {
     persister?.flush()
     if (persister !== null && persister.status === 'ok') pruneAutosaves(persister.currentSave(), env.storage(), persister.key)
     result = r.result()
@@ -152,6 +235,8 @@
     persister = null
     run = null
     result = null
+    server = null
+    outcome = null
     practice = null
     practiceFamilies = []
     restored = null
@@ -163,20 +248,35 @@
 {#if phase === 'welcome'}
   <Welcome onstart={start} />
 {:else if phase === 'gate' || phase === 'blocked'}
-  <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} />
+  <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} points={backend === null ? undefined : SERVER_GATE_POINTS} />
 {:else if phase === 'honour'}
   <Honour onagree={() => (phase = 'device')} />
 {:else if phase === 'device'}
   <DeviceCheck {env} ondone={deviceDone} />
 {:else if phase === 'ready'}
-  <Ready {restored} choices={readyState} onchoices={(c) => (readyState = c)} onpractice={startPractice} onbegin={begin} onfocus={(axes) => startRun(axes)} />
+  <Ready
+    {restored}
+    choices={readyState}
+    onchoices={(c) => (readyState = c)}
+    onpractice={startPractice}
+    onbegin={begin}
+    onfocus={(axes) => startRun(axes)}
+    text={backend === null ? undefined : SERVER_READY_TEXT}
+    verify={backend === null ? undefined : (save) => backend.api.verifySave(save)}
+    restore={backend === null ? undefined : (id, phrase) => backend.api.mirrorGet(id, phrase)}
+  />
 {:else if phase === 'practice' && practice !== null}
   <PracticeScreen {env} {practice} ondone={() => (phase = 'ready')} />
+{:else if phase === 'opening'}
+  <Opening problem={openProblem} onretry={() => void open(openFocus)} onlocal={() => launch(openFocus, null)} onback={() => (phase = 'ready')} />
 {:else if phase === 'run' && run !== null}
-  <SessionScreen {env} {run} {autosave} {banner} />
+  <SessionScreen {env} {run} {autosave} {banner} report={server === null ? undefined : (r) => server!.reportProblem(r)} />
+{:else if phase === 'closing' && run !== null}
+  <Closing failed={closeFailed} onretry={() => void close(run!)} oncontinue={() => continueWithoutServer(run!)} />
 {:else if phase === 'finished' && result !== null && persister !== null}
   <Finished
     {result}
+    {outcome}
     sessionId={run?.sessionId}
     makeSave={() => persister!.currentSave()}
     {autosave}

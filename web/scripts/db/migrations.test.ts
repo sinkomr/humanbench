@@ -1,0 +1,297 @@
+/**
+ * The rules M2.1 sets for every migration (M2.2 keeps them), checked on the SQL text (no database; `npm test`
+ * runs this, `npm run test:db` checks the same things from the catalog):
+ *   - every function is created as hb_definer, with search_path pinned to empty;
+ *   - every table has RLS enabled;
+ *   - nothing is granted to anon or authenticated but EXECUTE on an RPC;
+ *   - no migration writes answer keys (CLAUDE.md: no item_keys data in this repo);
+ *   - what the migrations hold that mirrors the app (axes, practice priors, recovery words) equals it.
+ */
+
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import { AXIS_CODES, initialSigma, SIGMA_VERSION } from '../../src/engine/axes'
+import {
+  HARD_ITEM_ALPHA,
+  HARD_ITEM_MARGIN,
+  LZ_STAR_MAX,
+  LZ_STAR_MIN_ITEMS,
+  PERSON_FIT_PRIOR_SD,
+  TOO_FAST_MIN_MEDIAN_S,
+  TOO_FAST_RATIO,
+  UNIFORM_RT_MAX_SD,
+  UNIFORM_RT_MIN_ITEMS,
+  UNIFORM_RT_MIN_TIME_RATIO,
+} from '../../src/engine/integrity'
+import { RHO_MAX_PRIOR } from '../../src/engine/retest'
+import { COVERAGE_FLOOR, RANDOMESQUE_K, STOP_SD, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
+import { BANNED_TERMS } from '../language-lint'
+import { MIGRATIONS_DIR, readMigrations, type SqlFile } from './sql'
+
+const migrations: SqlFile[] = readMigrations(MIGRATIONS_DIR)
+const all = migrations.map((m) => m.sql).join('\n')
+
+/** The SQL with `--` comments removed (and string contents left alone: none of these rules need them). */
+const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
+
+describe('migrations: the set', () => {
+  it('has the M2.1 to M2.5 files in order, one concern each', () => {
+    expect(migrations.map((m) => m.name)).toEqual([
+      '20261001000100_foundation.sql',
+      '20261001000200_bank_tables.sql',
+      '20261001000300_session_tables.sql',
+      '20261001000400_recovery_words.sql',
+      '20261001000500_private_functions.sql',
+      '20261001000600_rpc_session.sql',
+      '20261001000700_rpc_report_survey.sql',
+      '20261001000800_rpc_mirror_delete.sql',
+      '20261001000900_rpc_rescore.sql',
+      '20261002000100_scoring_core.sql',
+      '20261002000200_session_scoring.sql',
+      '20261002000300_selection.sql',
+      '20261003000100_save_signing.sql',
+      '20261004000100_response_archive.sql',
+    ])
+  })
+
+  it('opens each file with a comment that cites the task and the requirements', () => {
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[1-5] \(ROADMAP M2\.[1-5]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+  })
+})
+
+describe('migrations: functions', () => {
+  // `create function name(args) returns ... | language ... as $$`; a function with only OUT parameters has no `returns`
+  const functions = migrations.flatMap((m) =>
+    [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)\s*\(([\s\S]*?)\)\s*(?=returns\b|language\b)([\s\S]*?)\bas\s+\$\$/gi)].map((x) => ({ file: m.name, name: x[1]!, header: x[3]!, at: x.index! })),
+  )
+
+  it('finds the functions (so the checks below are not vacuous)', () => {
+    expect(functions.length).toBeGreaterThan(90)
+    expect(code(all).match(/create\s+(?:or\s+replace\s+)?function\b/gi)!.length, 'every function is seen by the pattern').toBe(functions.length)
+    // rescore is created in M2.1 and re-created by M2.5 (create or replace): 11 different RPCs
+    expect(new Set(functions.filter((f) => f.name.startsWith('public.')).map((f) => f.name)).size).toBe(11)
+  })
+
+  it('builds no SQL from its arguments: no dynamic EXECUTE (supabase/README.md, pitfall 5)', () => {
+    expect(code(all)).not.toMatch(/^\s*execute\s/im)
+    expect(code(all)).not.toMatch(/\bset\s+(local\s+)?role\s+(service_role|anon|authenticated|postgres|supabase_admin)\b/i)
+  })
+
+  it('pins search_path to empty on every one', () => {
+    for (const f of functions) expect(f.header, `${f.file}: ${f.name}`).toMatch(/set\s+search_path\s*=\s*''/i)
+  })
+
+  it('creates every function between `set local role hb_definer` and `reset role` (the one that reads the Vault is handed to postgres afterwards)', () => {
+    for (const m of migrations) {
+      const text = code(m.sql)
+      const creates = [...text.matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/gi)].map((x) => ({ at: x.index!, name: x[1]! }))
+      if (creates.length === 0) continue
+      // a block runs from `set local role X;` to the next `reset role;`
+      const resetAt = [...text.matchAll(/reset\s+role\s*;/gi)].map((x) => x.index!)
+      const blocks = [...text.matchAll(/set\s+local\s+role\s+(\w+)\s*;/gi)].map((x, i) => ({ role: x[1]!, start: x.index!, end: resetAt[i] ?? -1 }))
+      expect(blocks.length, m.name).toBe(resetAt.length)
+      expect(blocks.length, m.name).toBeGreaterThan(0)
+      for (const c of creates) {
+        const block = blocks.find((b) => b.start < c.at && c.at < b.end)
+        expect(block, `${m.name}: ${c.name} is created outside a role block`).toBeDefined()
+        expect(block!.role, `${m.name}: ${c.name} is created as ${block!.role}`).toBe('hb_definer')
+      }
+      // hb_definer may create in `public` only inside the file that needs it
+      if (/create\s+(?:or\s+replace\s+)?function\s+public\./i.test(text)) {
+        expect(text, m.name).toMatch(/grant\s+create\s+on\s+schema\s+public\s+to\s+hb_definer\s*;/i)
+        expect(text, m.name).toMatch(/revoke\s+create\s+on\s+schema\s+public\s+from\s+hb_definer\s*;/i)
+      }
+    }
+  })
+
+  it('makes exactly the public functions SECURITY DEFINER RPCs, each revoked from everyone and granted to anon and authenticated', () => {
+    for (const f of functions.filter((x) => x.name.startsWith('public.'))) {
+      expect(f.header, f.name).toMatch(/security\s+definer/i)
+      const sig = new RegExp(`(revoke|grant)\\s+(?:all|execute)\\s+on\\s+function\\s+${f.name.replace('.', '\\.')}\\s*\\(`, 'gi')
+      const hits = [...code(all).matchAll(sig)].map((x) => x[1]!.toLowerCase())
+      expect(hits, f.name).toEqual(['revoke', 'grant'])
+    }
+    for (const f of functions.filter((x) => x.name.startsWith('hb.'))) {
+      expect(code(all), f.name).not.toMatch(new RegExp(`grant\\s+execute\\s+on\\s+function\\s+${f.name.replace('.', '\\.')}\\b[^;]*\\bto\\s+[^;]*\\b(anon|authenticated|public)\\b`, 'i'))
+    }
+  })
+})
+
+describe('migrations: the readers of old answers (M2.5)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  /** The text of `create [or replace] function <name>(` up to its closing `$$;`. */
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4).replace(/create\s+or\s+replace\s+function/, 'create function')
+  }
+  const archive = byName('_response_archive.sql')
+
+  it('re-creates rescore and hb.is_eligible exactly as before, with hb.responses_of(...) in place of public.responses', () => {
+    const rescoreNow = functionText(archive, 'public.rescore')
+    const rescoreThen = functionText(byName('_rpc_rescore.sql'), 'public.rescore')
+    expect(rescoreNow).toBe(rescoreThen.replace('join public.responses r on r.session_id = k.session_id', 'cross join lateral hb.responses_of(k.session_id) r'))
+    const eligibleNow = functionText(archive, 'hb.is_eligible')
+    const eligibleThen = functionText(byName('_session_scoring.sql'), 'hb.is_eligible')
+    expect(eligibleNow).toBe(eligibleThen.replace('    from public.responses r\n   where r.session_id = p_session_id;', '    from hb.responses_of(p_session_id) r;'))
+  })
+
+  it('is read by exactly rescore and hb.is_eligible, the two readers of a session that may be old', () => {
+    const users = migrations
+      .flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\n\$\$;/g)].filter((x) => /\bhb\.responses_of\(/.test(x[0])).map((x) => x[1]!))
+      .filter((name) => name !== 'hb.responses_of')
+    expect(users.sort()).toEqual(['hb.is_eligible', 'public.rescore'])
+  })
+})
+
+describe('migrations: the one function that reads the Vault', () => {
+  const text = code(all)
+
+  it('is handed to postgres, the role the platform lets read the Vault, and to no other owner; only hb_definer may call it', () => {
+    // a role of its own with SELECT on the view alone may be refused by the real Vault (supabase/local/database/40-vault.sql)
+    const owners = [...text.matchAll(/alter\s+function\s+([\w.]+)\s*\([^)]*\)\s+owner\s+to\s+(\w+)/gi)].map((x) => [x[1], x[2]])
+    expect(owners).toEqual([['hb.mac_sign', 'postgres']])
+    expect(text).not.toMatch(/\bcreate\s+role\s+hb_signer\b/i)
+    const grants = [...text.matchAll(/\bgrant\s+execute\s+on\s+function\s+hb\.mac_sign\s*\([^)]*\)\s+to\s+([\w, ]+);/gi)].map((x) => x[1])
+    expect(grants).toEqual(['hb_definer'])
+    expect(text).toMatch(/revoke\s+all\s+on\s+function\s+hb\.mac_sign\s*\(text,\s*text\)\s+from\s+public\s*;/i)
+  })
+
+  it('has no other function that names the Vault in its body', () => {
+    const readers = migrations.flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\bas\s+\$\$([\s\S]*?)\$\$/gi)].filter((x) => /\bvault\./i.test(x[2]!)).map((x) => x[1]))
+    expect(readers).toEqual(['hb.mac_sign'])
+  })
+})
+
+describe('migrations: tables and grants', () => {
+  const text = code(all)
+  const tables = [...text.matchAll(/create\s+table\s+public\.(\w+)/gi)].map((x) => x[1]!)
+
+  it('enables row level security on every table it creates', () => {
+    expect(tables.length).toBe(17)
+    for (const t of tables) expect(text, t).toMatch(new RegExp(`alter\\s+table\\s+public\\.${t}\\s+enable\\s+row\\s+level\\s+security`, 'i'))
+  })
+
+  it('writes no policy for anon, authenticated or PUBLIC', () => {
+    for (const p of text.matchAll(/create\s+policy\s+[\w"]+\s+on\s+[\w.]+[\s\S]*?;/gi)) expect(p[0], p[0]).toMatch(/\sto\s+hb_definer\b/i)
+    expect(text).not.toMatch(/\bto\s+(anon|authenticated|public)\b[^;]*\busing\b/i)
+  })
+
+  it('grants anon and authenticated nothing but EXECUTE on public functions', () => {
+    const grants = [...text.matchAll(/\bgrant\b[\s\S]*?;/gi)].map((x) => x[0]).filter((g) => /\bto\s+[^;]*\b(anon|authenticated)\b/i.test(g))
+    expect(grants.length).toBeGreaterThan(5)
+    for (const g of grants) expect(g, g).toMatch(/^grant\s+execute\s+on\s+function\s+public\./i)
+  })
+
+  it('revokes the default grants of the API roles on tables, sequences and functions', () => {
+    for (const kind of ['tables', 'sequences', 'functions']) {
+      expect(text).toMatch(new RegExp(`alter\\s+default\\s+privileges\\s+for\\s+role\\s+postgres\\s+in\\s+schema\\s+public\\s+revoke\\s+all\\s+on\\s+${kind}\\s+from\\s+anon,\\s*authenticated,\\s*service_role`, 'i'))
+    }
+    expect(text).toMatch(/alter\s+default\s+privileges\s+for\s+role\s+hb_definer\s+revoke\s+execute\s+on\s+functions\s+from\s+public/i)
+  })
+
+  it('has no table or column for the notes (ROADMAP AI.26: "a schema grep finds no notes table")', () => {
+    expect(text).not.toMatch(/create\s+table\s+[\w.]*(brief|note|pref)/i)
+    for (const col of text.matchAll(/^\s{2}(\w*(?:brief|pref|note)\w*)\s/gim)) expect.fail(`a column named ${col[1]}`)
+    // the only mentions of brief_prefs are the checks that keep it out
+    for (const m of migrations) for (const line of code(m.sql).split('\n')) if (/brief_prefs/i.test(line)) expect(line, `${m.name}: ${line}`).toMatch(/json_has_key|no_brief_prefs|reject_brief_prefs|brief_prefs_not_accepted|\^brief_prefs\$|Send the data without|Notes settings stay/i)
+  })
+})
+
+describe('migrations: no key data (CLAUDE.md)', () => {
+  it('writes nothing into item_keys: no insert, update, delete or copy against it', () => {
+    expect(code(all)).not.toMatch(/\b(insert\s+into|update|delete\s+from|copy|truncate(?:\s+table)?)\s+(?:only\s+)?(?:public\.)?item_keys\b/i)
+  })
+
+  it('inserts rows only into app_config and recovery_words', () => {
+    const inserted = [...code(all).matchAll(/\binsert\s+into\s+([\w.]+)/gi)].map((x) => x[1]!)
+    // (the others are inside function bodies: sessions, exposure_log, responses, flags, ...)
+    const topLevel = migrations.filter((m) => /^(\d+)_(bank_tables|recovery_words)\.sql$/.test(m.name)).flatMap((m) => [...code(m.sql).matchAll(/\binsert\s+into\s+([\w.]+)/gi)].map((x) => x[1]!))
+    expect(topLevel.sort()).toEqual(['public.app_config', 'public.recovery_words'])
+    expect(inserted.length).toBeGreaterThan(topLevel.length)
+  })
+})
+
+describe('migrations: what mirrors the app', () => {
+  it('lists the 17 axes of engine/axes.ts in the axis check', () => {
+    const m = /axis text not null check \(axis in \(([^)]*)\)\)/.exec(all)!
+    expect([...m[1]!.matchAll(/'([A-Z]+)'/g)].map((x) => x[1])).toEqual([...AXIS_CODES])
+  })
+
+  it('seeds the §7.8 practice plateaus of engine/retest.ts and its time constant', () => {
+    const rho = /'retest\.rho_max',\s*'(\{[^']*\})'/.exec(all)!
+    expect(JSON.parse(rho[1]!)).toEqual({ ...RHO_MAX_PRIOR })
+    expect(/'retest\.tau',\s*'([0-9.]+)'/.exec(all)![1]).toBe('1.2')
+  })
+
+  it('holds 1,024 recovery words: 4 to 8 lower-case letters, unique, unique first four letters, sorted, idx in order', () => {
+    const sql = migrations.find((m) => m.name.endsWith('_recovery_words.sql'))!.sql
+    const rows = [...sql.matchAll(/\((\d+), '([a-z]+)'\)/g)].map((x) => [Number(x[1]), x[2]!] as const)
+    expect(rows.length).toBe(1024)
+    expect(rows.map((r) => r[0])).toEqual(Array.from({ length: 1024 }, (_, i) => i))
+    const words = rows.map((r) => r[1])
+    for (const w of words) expect(w).toMatch(/^[a-z]{4,8}$/)
+    expect(new Set(words).size).toBe(1024)
+    expect(new Set(words.map((w) => w.slice(0, 4))).size).toBe(1024)
+    expect([...words].sort()).toEqual(words)
+  })
+
+  it('has no recovery word, and no text a person could be shown, in the non-diagnostic vocabulary (A13, R-5.6.1)', () => {
+    const banned = BANNED_TERMS.map((t) => [t.id, new RegExp(`(?<!\\p{L})(?:${t.pattern})(?!\\p{L})`, 'iu')] as const)
+    const hits = (text: string): string[] => banned.filter(([, re]) => re.test(text)).map(([id]) => id)
+    const words = [...migrations.find((m) => m.name.endsWith('_recovery_words.sql'))!.sql.matchAll(/\(\d+, '([a-z]+)'\)/g)].map((x) => x[1]!)
+    expect(words.length).toBe(1024)
+    expect(words.flatMap((w) => hits(w).map((id) => `${w}: ${id}`))).toEqual([])
+    // every string literal outside comments: error details, setting descriptions, JSON keys
+    const literals = [...code(all).matchAll(/'((?:[^']|'')*)'/g)].map((x) => x[1]!.replace(/''/g, "'"))
+    expect(literals.length).toBeGreaterThan(200)
+    expect(literals.flatMap((l) => hits(l).map((id) => `${l.slice(0, 60)}: ${id}`))).toEqual([])
+    // and the check sees what it is for
+    expect(hits('clinic')).toContain('clinical')
+  })
+
+  it('lists the axes of engine/axes.ts in hb.axis_codes() and holds the pinned Σ_init v2 of the app', () => {
+    const codes = /create function hb\.axis_codes\(\)[\s\S]*?array\[([^\]]*)\]/.exec(all)!
+    expect([...codes[1]!.matchAll(/'([A-Z]+)'/g)].map((x) => x[1])).toEqual([...AXIS_CODES])
+    const sigma = /'scoring\.sigma',\s*'(\[\[[^']*\]\])'/.exec(all)!
+    expect(JSON.parse(sigma[1]!)).toEqual(initialSigma())
+    expect(/'scoring\.sigma_version',\s*'"([^"]+)"'/.exec(all)![1]).toBe(SIGMA_VERSION)
+  })
+
+  it('seeds the §13 thresholds of engine/integrity.ts and the §6.iii / §7.4 numbers of engine/selector.ts', () => {
+    const setting = (key: string): number => Number(new RegExp(`'${key.replace('.', '\\.')}',\\s*'(-?[0-9.]+)'`).exec(all)![1])
+    expect(setting('integrity.too_fast_ratio')).toBe(TOO_FAST_RATIO)
+    expect(setting('integrity.too_fast_min_median_s')).toBe(TOO_FAST_MIN_MEDIAN_S)
+    expect(setting('integrity.uniform_rt_max_sd')).toBe(UNIFORM_RT_MAX_SD)
+    expect(setting('integrity.uniform_rt_min_ratio')).toBe(UNIFORM_RT_MIN_TIME_RATIO)
+    expect(setting('integrity.uniform_rt_min_items')).toBe(UNIFORM_RT_MIN_ITEMS)
+    expect(setting('integrity.hard_item_margin')).toBe(HARD_ITEM_MARGIN)
+    expect(setting('integrity.hard_item_alpha')).toBe(HARD_ITEM_ALPHA)
+    expect(setting('integrity.lz_star_max')).toBe(LZ_STAR_MAX)
+    expect(setting('integrity.lz_star_min_items')).toBe(LZ_STAR_MIN_ITEMS)
+    expect(setting('integrity.person_fit_prior_sd')).toBe(PERSON_FIT_PRIOR_SD)
+    expect(setting('selection.top_k')).toBe(RANDOMESQUE_K)
+    expect(setting('selection.coverage_floor')).toBe(COVERAGE_FLOOR)
+    expect(setting('selection.stop_sd')).toBe(STOP_SD)
+    expect(setting('selection.testlet_info_factor')).toBe(TESTLET_INFO_FACTOR)
+    // DESIGN §6.iii
+    expect(setting('selection.exposure_cap')).toBe(0.25)
+    expect(setting('selection.pretest_share')).toBe(0.1)
+  })
+
+  it('keeps the limits of DESIGN §11.2 as settings', () => {
+    expect(all).toMatch(/'rate\.sessions_per_day',\s*'5'/)
+    expect(all).toMatch(/'session\.max_items',\s*'200'/)
+    expect(all).toMatch(/'session\.min_avg_ms',\s*'2000'/)
+  })
+})
+
+describe('the sources', () => {
+  it('carry no secret-shaped value (the wiring test scans too; this checks the new SQL by name)', () => {
+    for (const m of migrations) {
+      expect(m.sql, m.name).not.toMatch(/eyJ[A-Za-z0-9_-]{8,}\./)
+      expect(m.sql, m.name).not.toMatch(/service_role_key|secret_key|api[_-]?key\s*[:=]/i)
+    }
+    expect(readFileSync(new URL('./bank-fixture.ts', import.meta.url), 'utf8')).toMatch(/synthetic item bank[\s\S]*made up[\s*]+at run time/)
+  })
+})

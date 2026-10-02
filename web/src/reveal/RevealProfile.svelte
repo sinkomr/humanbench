@@ -14,13 +14,15 @@
   import { browserFrameSource, type FrameSource } from '../tasks/rt/timing'
   import ProfileView from '../viz/ProfileView.svelte'
   import { axisEstimates, type ProfileInput } from '../viz/profile'
-  import type { FacetObservation } from '../viz/facets'
+  import type { FacetObservation, FacetOptions } from '../viz/facets'
   import { PRACTICE_ADJUSTED_FIRST, PRACTICE_ADJUSTED_LABEL, PRACTICE_ADJUSTED_LATER, REVEAL_BUILDING, REVEAL_READY, REVEAL_REPLAY, REVEAL_SKIP, revealNow } from './copy'
   import { frameEstimates, revealCount, revealingNow, startReveal, type RevealHandle } from './frames'
 
   interface Props {
     readonly input: ProfileInput
     readonly facetObservations: readonly FacetObservation[]
+    /** Facet estimates the server computed (M2.7). */
+    readonly facetPrecomputed?: FacetOptions['precomputed']
     /** More than one session, or a session credited for earlier practice (`ResultsModel.practiceAdjusted`). */
     readonly practiceAdjusted: boolean
     /** rAF source of the build-up (default the browser's; the flow passes its scaled one, `?fast=1`). */
@@ -32,7 +34,7 @@
     readonly between?: Snippet
   }
 
-  let { input, facetObservations, practiceAdjusted, frames = browserFrameSource(), motion = 'auto', onbuilt, between }: Props = $props()
+  let { input, facetObservations, facetPrecomputed, practiceAdjusted, frames = browserFrameSource(), motion = 'auto', onbuilt, between }: Props = $props()
 
   const estimates = $derived(axisEstimates(input))
   const count = $derived(revealCount(estimates))
@@ -102,7 +104,7 @@
     <p class="hb-status" role="status">{announced}</p>
   </div>
 
-  <ProfileView {input} {facetObservations} display={(est) => (building ? frameEstimates(est, progress) : est)} {between} />
+  <ProfileView {input} {facetObservations} {facetPrecomputed} display={(est) => (building ? frameEstimates(est, progress) : est)} {between} />
 </div>
 
 <style>

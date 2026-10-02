@@ -59,6 +59,14 @@ export interface DeviceInfo {
  */
 export type SessionFlags = { [flag: string]: number | boolean | null }
 
+/**
+ * Set by the page on the session of the timed tasks when the counted questions of the same sitting
+ * were served and are saved as a session of their own, under the server's id (M2.7). One online
+ * sitting is two sessions in the file; this lets a count of sittings (the share card's "Based on n
+ * sessions") tell the pair from two sittings. Not sent to the server (`serverFlags`).
+ */
+export const TIMED_TASKS_ONLY_FLAG = 'timed_tasks_only'
+
 /** Server HMAC over the whole file body (the §8 example's file-level `sig`, superseded by A16). */
 export interface SaveSig {
   alg: 'HMAC-SHA256'

@@ -34,6 +34,28 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  db:
+    # The local Postgres harness (ROADMAP M2.0, A6): a throw-away PostgreSQL 17 from the npm binary
+    # packages (npm ci installs the linux-x64 one), the Supabase shim, and the tests of
+    # supabase/migrations. No service container, no Supabase project, no secrets.
+    name: db (local Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npm run test:db
+
   e2e:
     # Playwright + axe-core (ROADMAP M1.A): builds the app, serves it with `vite preview` under
     # /humanbench/, and runs e2e/ in Chromium, WebKit and iPhone 13 (WebKit) emulation.

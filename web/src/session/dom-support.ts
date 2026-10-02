@@ -4,6 +4,7 @@
  * display. Imported only by `*.dom.test.ts` files.
  */
 
+import type { Backend } from '../backend/backend'
 import type { RendererTiming } from '../render/common/props'
 import type { DeviceEnv } from './device'
 import type { SessionEnv } from './env'
@@ -27,7 +28,7 @@ export const DESKTOP: DeviceEnv = Object.freeze({
 export { SpyStorage }
 
 /** The session's browser services on a fake display (pass `fakeDisplay()` from `render/common/testing`). */
-export function fakeEnv<D extends RendererTiming>(display: D, over: { device?: DeviceEnv; storage?: SpyStorage; scale?: number } = {}): FakeEnv<D> {
+export function fakeEnv<D extends RendererTiming>(display: D, over: { device?: DeviceEnv; storage?: SpyStorage; scale?: number; backend?: Backend | null } = {}): FakeEnv<D> {
   const storage = over.storage ?? new SpyStorage()
   const time = { ms: 0 }
   const env: SessionEnv = {
@@ -39,6 +40,7 @@ export function fakeEnv<D extends RendererTiming>(display: D, over: { device?: D
     storage: () => storage,
     wallClockMs: () => 1_790_000_000_000,
     device: () => over.device ?? DESKTOP,
+    backend: over.backend ?? null,
   }
   return { env, storage, display, time }
 }

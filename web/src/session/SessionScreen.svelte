@@ -7,6 +7,9 @@
 -->
 <script lang="ts">
   import { onMount, tick as svelteTick } from 'svelte'
+  import type { ProblemReport } from '../backend/api'
+  import { LOADING_PROBLEM, LOADING_RETRY, LOADING_TEXT } from '../backend/copy'
+  import ReportProblem from '../backend/ReportProblem.svelte'
   import Checklist from './Checklist.svelte'
   import Confidence from './Confidence.svelte'
   import ConfirmPanel from './ConfirmPanel.svelte'
@@ -31,6 +34,7 @@
     INTERSTITIAL_START,
     NOTICE_MALFORMED,
     NOTICE_TIMEOUT,
+    NOTICE_TIMEOUT_SERVED,
     SKIP_CONFIRM_HEADING,
     SKIP_CONFIRM_NO,
     SKIP_CONFIRM_TEXT,
@@ -38,6 +42,7 @@
     aboutMinutes,
     noticeSkipped,
     noticeUnavailable,
+    noticeUnsupported,
     skipButton,
     upNext,
   } from './copy'
@@ -52,9 +57,11 @@
     readonly autosave: AutosaveStatus
     /** The dev banner (`?fast=1`), or ''. */
     readonly banner?: string
+    /** With a server (ROADMAP M2.7): sends a report about the question on screen. Absent in the static fallback. */
+    readonly report?: (r: ProblemReport) => Promise<void>
   }
 
-  let { env, run, autosave, banner = '' }: Props = $props()
+  let { env, run, autosave, banner = '', report }: Props = $props()
 
   // The run is fixed for the life of this screen; its changes arrive through subscribe().
   // svelte-ignore state_referenced_locally
@@ -112,13 +119,15 @@
     if (n === null) return ''
     switch (n.kind) {
       case 'timeout':
-        return NOTICE_TIMEOUT
+        return n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
       case 'malformed':
         return NOTICE_MALFORMED
       case 'skipped':
         return noticeSkipped(n.axis === undefined ? '' : skipTargetName(n.axis))
       case 'unavailable':
         return noticeUnavailable(n.axis === undefined ? '' : skipTargetName(n.axis))
+      case 'unsupported':
+        return noticeUnsupported(n.axis === undefined ? '' : skipTargetName(n.axis))
     }
   })
 
@@ -209,7 +218,7 @@
           />
           {#if view.unavailable}
             <div class="unavailable" role="group" aria-label="This question cannot be shown">
-              <p>{noticeUnavailable(skipName)}</p>
+              <p>{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
               <div class="hb-actions">
                 <button type="button" class="hb-btn hb-primary" onclick={() => run.skipAxis()}>{skipButton(skipName)}</button>
               </div>
@@ -217,6 +226,20 @@
           {/if}
           {#if view.phase === 'confidence' && view.confidence !== null}
             <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct) => run.confirmConfidence(pct)} />
+          {/if}
+          {#if view.reportable !== null && report !== undefined}
+            <ReportProblem itemId={view.reportable} {report} />
+          {/if}
+        {:else if view.phase === 'loading'}
+          {#if view.problem === null}
+            <p role="status" data-loading>{LOADING_TEXT}</p>
+          {:else}
+            <p role="alert" data-loading-problem={view.problem}>{LOADING_PROBLEM[view.problem]}</p>
+            {#if view.problem !== 'ended'}
+              <div class="hb-actions">
+                <button type="button" class="hb-btn hb-primary" onclick={() => run.retryLoad()}>{LOADING_RETRY}</button>
+              </div>
+            {/if}
           {/if}
         {:else if view.phase === 'break_offer'}
           <p>{BREAK_OFFER_TEXT}</p>

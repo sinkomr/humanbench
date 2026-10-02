@@ -24,6 +24,8 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/reveal/`: the results and reveal flow (build-up, distinctive peaks, required save, worked examples, retest advice, norms and pace)
 - `schema/`: JSON Schemas; `schema/save-v1.json` is the save file (JSON Schema 2020-12, mirrored by `web/src/save/validate.ts`; its optional `brief_prefs` holds the notes settings, `web/src/save/brief-prefs.ts`); `schema/brief-v1.json` is the JSON form of the notes (mirrored by `web/src/brief/validate.ts`); the build publishes each `schema/*.json` at `/humanbench/schema/`
 - `web/e2e/`: Playwright end-to-end and axe accessibility tests (`web/playwright.config.ts`); `routes.ts` lists every route for the accessibility pass (M1.21)
+- `supabase/`: the backend's SQL (M2): `migrations/` (M2.1: the schema and the RPCs) and `local/`, the stand-in for what a Supabase project provides; [supabase/README.md](supabase/README.md) has the engine decision and what the stand-in mirrors
+- `web/scripts/db/`: the local Postgres test harness (M2.0): a throw-away PostgreSQL 17, one database per test file, `request()` and `rpc()` that act like PostgREST
 - `.github/workflows/`: `ci.yml` (typecheck, tests, build; Playwright e2e) and `pages.yml` (deploy on push to `main`)
 
 ## Development
@@ -62,6 +64,21 @@ Rerun the tests on every file change:
 ```zsh
 npm run test:watch
 ```
+
+### Local database tests (ROADMAP M2.0)
+
+The backend's SQL is developed and tested on a throw-away PostgreSQL 17 that `npm ci` installs
+(no Docker, no brew, no cloud, no Supabase project). From `web/`:
+
+```zsh
+npm run test:db
+```
+
+runs the tests that need a database (`web/scripts/db/*.db.test.ts`; about 15 s): the harness itself and, since M2.1, the schema and the RPCs. `npm test` never
+starts one. To connect another client (for example the bank's Python) to a database with the same
+setup, run `npm run db:up`: it prints connection URLs and runs until Ctrl-C. If a run is killed and
+leaves a server behind, `npm run db:reap` removes it. The engine choice, what the stand-in for
+Supabase mirrors and what to verify at M2.6 are in [supabase/README.md](supabase/README.md).
 
 ### θ-recovery simulation (ROADMAP M1.4b)
 
@@ -243,6 +260,53 @@ seconds; response times measured that way are not valid scores. It works only wh
 constant `__HB_DEV_ROUTES__` is true (the dev server, the tests and the Playwright build). A plain
 production build ignores it and does not contain it (`web/scripts/dev-routes.test.ts` builds the
 flag's module both ways and runs it).
+
+### Online version (ROADMAP M2.7)
+
+The default build is the static version: no server, nothing sent, exactly the session above. A deploy
+that has a Supabase project (M2.6, which is the user's to create) turns the online version on at build
+time, with the project URL and its public anon key (RLS gives the key no table; it can only call the
+whitelisted RPCs):
+
+```zsh
+VITE_HB_SUPABASE_URL=https://example.supabase.co VITE_HB_SUPABASE_ANON_KEY=the-anon-key npm run build
+```
+
+Never give the front end a service-role key. `web/src/backend/` holds the client; the pieces:
+
+- `config.ts` chooses the server (`https`, or `http` for localhost only; a half-set pair falls back to static
+  with the reason). `?hb_backend=<url>&hb_key=<key>` points one page load at a server and `?hb_backend=off`
+  forces static, but only where `__HB_DEV_ROUTES__` is true (dev, tests, the Playwright build): a production
+  link cannot send a person's answers to another server.
+- `transport.ts` loads supabase-js on demand, after the 18+ gate, with no stored session. A plain
+  production build contains none of it (`web/scripts/backend-bundle.test.ts`); a build that names a server
+  loads it as a chunk of its own.
+- `api.ts` has one method per RPC (`start_session`, `next_item`, `submit`, `finish`, `report_problem`,
+  `submit_survey`, `verify_save`, `rescore`, `mirror_put`, `mirror_get`, `delete_my_data`), checks every
+  reply (`replies.ts`), repeats only the calls that are safe to repeat, and never sends the notes settings:
+  `toUploadPayload()` (`upload.ts`) removes `brief_prefs` from a save, a guard refuses any request that
+  holds the key anywhere, and the server rejects it too (AI.26). Calls that only need the sessions the
+  server issued send only those.
+- `session.ts` is the server session (the token is kept in memory only) and the seam `SessionRun` uses
+  (`RunConfig.cat`): the server picks every counted question of the Matrix & Series, Spatial and
+  Quantitative parts and scores the answer where the key is, so the page never learns a verdict (R-11.1).
+  The timed tasks (reaction time, memory, coding and reading) stay on the device as a session of their own;
+  the served part is saved under the server's session id, unsigned until `finish` returns the signed copy,
+  which replaces it (a merge keeps the signed copy, A16). The results show the server's own-axis scores
+  (`rescore`) for the axes it publishes (`reveal/results.ts`, `overlayServed`).
+- The screens: opening and closing the session (`Opening.svelte`, `Closing.svelte`, with "use this device
+  only" if the server cannot be reached), the wait for a question (`loading` phase of the run, with the
+  clock stopped), "Report a problem" with its six kinds (`ReportProblem.svelte`), what the server could
+  check about the sessions of a save (`SaveCheck.svelte`), the optional survey (`Survey.svelte`), the optional
+  server backup with its recovery phrase (`MirrorPanel.svelte`), and `#/data` for getting a backup back and
+  deleting what is stored (`DataPage.svelte`). `copy.ts` has the words, including the online privacy notice
+  (its controller, contact and retention are still `TODO(user)`).
+
+Tests: the unit tests use a fake transport; `scripts/db/backend.db.test.ts` runs the real client over HTTP
+against the local Postgres and the real functions (`npm run test:db`, with a stand-in for PostgREST in
+`scripts/db/postgrest-shim.ts`); `scripts/backend-contract.test.ts` holds the client to the migrations and
+to DESIGN; `web/e2e/server.spec.ts` drives the whole flow in three engines against a fake project
+(`web/e2e/fake-server.ts`) and checks that the default build names no server.
 
 ### Results and reveal
 

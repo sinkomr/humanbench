@@ -130,6 +130,9 @@ export class Bot {
         this.run.confirmConfidence(pct)
         return true
       }
+      case 'loading':
+        // Only a run with a server (`RunConfig.cat`, M2.7) waits; this bot plays the static version.
+        throw new Error('the bot plays the static version: a run that waits for a server needs a test of its own')
       case 'break_offer':
         if (this.opts.onBreakOffer === 'take') this.run.takeBreak()
         else this.run.declineBreak()

@@ -14,9 +14,11 @@
     readonly onunder18: () => void
     /** Show the blocked screen instead (the under-18 path). */
     readonly blocked?: boolean
+    /** The points of the summary; default the static version's (nothing is uploaded). The online version passes its own (ROADMAP M2.7). */
+    readonly points?: readonly string[]
   }
 
-  let { onagree, onunder18, blocked = false }: Props = $props()
+  let { onagree, onunder18, blocked = false, points = GATE_POINTS }: Props = $props()
 
   const uid = $props.id()
   let agreed = $state(false)
@@ -39,7 +41,7 @@
 {:else}
   <Screen title={GATE_HEADING}>
     <ul class="points">
-      {#each GATE_POINTS as point (point)}
+      {#each points as point (point)}
         <li>{point}</li>
       {/each}
     </ul>

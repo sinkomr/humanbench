@@ -20,5 +20,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["scripts/**/*.ts", "e2e/**/*.ts", "playwright.config.ts"]
+  "include": ["scripts/**/*.ts", "e2e/**/*.ts", "playwright.config.ts", "vitest.db.config.ts", "src/dev/flags.d.ts"]
 }
