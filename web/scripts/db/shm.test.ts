@@ -1,19 +1,22 @@
 /**
- * The System V shared-memory shim and the choice of binaries (ROADMAP M2.0), without starting a
- * database: the macOS-only build (a C library, a re-signed copy of postgres, a wrapper), its cache,
- * and a C probe that checks the library does what Postgres asks of the four calls it replaces,
- * including that a forked child sees the same memory. `npm run test:db` starts real clusters through
- * it (shim.db.test.ts checks that the server then holds no System V segment).
+ * The System V shared-memory and semaphore shim and the choice of binaries (ROADMAP M2.0), without
+ * starting a database: the macOS-only build (a C library with a slice for every architecture of
+ * postgres, a re-signed copy of postgres, a wrapper), its cache and what it trusts, and C probes that
+ * check the library does what Postgres asks of the seven calls it replaces, including that a forked
+ * child sees the same memory, in both architectures where the machine can run them. `npm run test:db`
+ * starts real clusters through it (shim.db.test.ts checks that the server then holds no System V
+ * segment and no semaphore set).
  */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { prepareBinaries } from './engine'
-import { SHIM_SOURCE, WRAPPER_SCRIPT, buildShimmedBinaries, shimKey, type RealBinaries } from './shm'
+import { semaphoreSetsOfInode, sysvKeys } from './ipc'
+import { SHIM_SOURCE, WRAPPER_SCRIPT, buildShimmedBinaries, machoArchs, parseMachoArchs, shimKey, type RealBinaries } from './shm'
 
 const WEB = fileURLToPath(new URL('../../', import.meta.url))
 const darwin = platform() === 'darwin'
@@ -73,10 +76,24 @@ describe('prepareBinaries: which binaries run', () => {
     const b = prepareBinaries({ platform: 'darwin', cacheDirs: unusable })
     expect(b.shm).toBe('sysv')
     expect(b.initdb).toBe(real.initdb)
-    expect(b.shmNote).toMatch(/shim could not be built.*No writable directory/)
+    expect(b.shmNote).toMatch(/shim could not be built.*No usable directory/)
     expect(warn).toHaveBeenCalledTimes(1)
-    expect(() => prepareBinaries({ platform: 'darwin', shm: 'shim', cacheDirs: unusable })).toThrow(/No writable directory/)
+    expect(() => prepareBinaries({ platform: 'darwin', shm: 'shim', cacheDirs: unusable })).toThrow(/No usable directory/)
   })
+
+  it.skipIf(!darwin)('on macOS also falls back, with the note, when a cached overlay is there but does not run; `shim` fails instead', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const dir = cache('does-not-run')
+    const built = buildShimmedBinaries(real, { cacheDirs: [dir] })
+    // The kind of damage the architecture mismatch made: dyld cannot load the inserted library.
+    writeFileSync(built.dylib, 'not a library')
+    chmodSync(built.dylib, 0o755)
+    const b = prepareBinaries({ platform: 'darwin', cacheDirs: [dir] })
+    expect(b.shm).toBe('sysv')
+    expect(b.initdb).toBe(real.initdb)
+    expect(b.shmNote).toMatch(/does not run.*Running the shimmed postgres failed/s)
+    expect(() => prepareBinaries({ platform: 'darwin', shm: 'shim', cacheDirs: [dir] })).toThrow(/Running the shimmed postgres failed/)
+  }, 120_000)
 
   it.skipIf(!darwin)('on macOS builds the shim by default and runs the overlay\'s initdb and postgres', () => {
     delete process.env.HB_PG_SHM
@@ -101,15 +118,71 @@ describe('the wrapper script', () => {
 })
 
 describe('shimKey', () => {
-  it('is 16 hex characters, stable, and different for another architecture', () => {
-    const key = shimKey(real, 'arm64')
+  it('is 16 hex characters, stable, independent of the order of the architectures, and different for another set', () => {
+    const key = shimKey(real, ['arm64', 'x86_64'])
     expect(key).toMatch(/^[0-9a-f]{16}$/)
-    expect(shimKey(real, 'arm64')).toBe(key)
-    expect(shimKey(real, 'x64')).not.toBe(key)
+    expect(shimKey(real, ['arm64', 'x86_64'])).toBe(key)
+    expect(shimKey(real, ['x86_64', 'arm64'])).toBe(key)
+    expect(shimKey(real, ['arm64'])).not.toBe(key)
+    expect(shimKey(real, ['x86_64'])).not.toBe(key)
+  })
+
+  it('by default uses the architectures of the postgres binary', () => {
+    if (darwin) expect(shimKey(real)).toBe(shimKey(real, machoArchs(real.postgres)))
+    else expect(shimKey(real, ['arm64'])).toMatch(/^[0-9a-f]{16}$/)
   })
 
   it('reads the shim source, so editing it builds a new overlay', () => {
     expect(readFileSync(SHIM_SOURCE, 'utf8')).toContain('hb_shmget')
+  })
+})
+
+/** A Mach-O header: thin (little endian, 64-bit) or universal (big endian) with one entry per cpu type. */
+function machoHeader(kind: 'thin' | 'fat' | 'fat64', cpus: readonly [number, number][]): Buffer {
+  const b = Buffer.alloc(4096)
+  if (kind === 'thin') {
+    b.writeUInt32LE(0xfeedfacf, 0)
+    b.writeInt32LE((cpus[0] as [number, number])[0], 4)
+    b.writeInt32LE((cpus[0] as [number, number])[1], 8)
+    return b
+  }
+  b.writeUInt32BE(kind === 'fat' ? 0xcafebabe : 0xcafebabf, 0)
+  b.writeUInt32BE(cpus.length, 4)
+  const size = kind === 'fat' ? 20 : 32
+  cpus.forEach(([type, sub], i) => {
+    b.writeInt32BE(type, 8 + i * size)
+    b.writeInt32BE(sub, 12 + i * size)
+  })
+  return b
+}
+
+const X86_64 = 0x01000007
+const ARM64 = 0x0100000c
+
+describe('parseMachoArchs', () => {
+  it('lists the slices of a universal file and the one architecture of a thin file, sorted', () => {
+    expect(parseMachoArchs(machoHeader('fat', [[X86_64, 3], [ARM64, 0]]))).toEqual(['arm64', 'x86_64'])
+    expect(parseMachoArchs(machoHeader('fat', [[ARM64, 0], [X86_64, 3]]))).toEqual(['arm64', 'x86_64'])
+    expect(parseMachoArchs(machoHeader('fat64', [[ARM64, 0]]))).toEqual(['arm64'])
+    expect(parseMachoArchs(machoHeader('thin', [[X86_64, 3]]))).toEqual(['x86_64'])
+    expect(parseMachoArchs(machoHeader('thin', [[ARM64, 0]]))).toEqual(['arm64'])
+  })
+
+  it('refuses what the shim cannot be built for, and what is not Mach-O', () => {
+    expect(() => parseMachoArchs(machoHeader('thin', [[ARM64, 2]]), 'pg')).toThrow(/pg has a slice .* cannot be built for/)
+    expect(() => parseMachoArchs(machoHeader('fat', [[X86_64, 3], [0x0c, 9]]))).toThrow(/cannot be built for/)
+    expect(() => parseMachoArchs(Buffer.from('#!/bin/sh\n'))).toThrow(/not a 64-bit Mach-O/)
+    expect(() => parseMachoArchs(Buffer.alloc(0))).toThrow(/not a 64-bit Mach-O/)
+    const absurd = machoHeader('fat', [])
+    absurd.writeUInt32BE(5000, 4)
+    expect(() => parseMachoArchs(absurd)).toThrow(/unreadable universal header/)
+  })
+
+  it.skipIf(!darwin)('reads the real binary, which is universal on the npm packages for macOS', () => {
+    const archs = machoArchs(real.postgres)
+    expect(archs.length).toBeGreaterThanOrEqual(1)
+    expect(archs).toEqual(execFileSync('lipo', ['-archs', real.postgres], { encoding: 'utf8' }).trim().split(/\s+/).sort())
+    expect(machoArchs(real.initdb)).toEqual(archs)
   })
 })
 
@@ -138,6 +211,34 @@ describe.skipIf(!darwin)('buildShimmedBinaries (macOS)', () => {
     expect(execFileSync(out.initdb, ['--version'], { encoding: 'utf8' })).toMatch(/^initdb \(PostgreSQL\) 17\./)
   })
 
+  it('builds the library for every architecture of postgres, and each of them runs (also under Rosetta, where there is one)', () => {
+    const out = buildShimmedBinaries(real, { cacheDirs: [cache('layout')] })
+    const archs = machoArchs(real.postgres)
+    expect(execFileSync('lipo', ['-archs', out.dylib], { encoding: 'utf8' }).trim().split(/\s+/).sort()).toEqual(archs)
+    expect(execFileSync('lipo', ['-archs', join(out.dir, 'bin', 'postgres.real')], { encoding: 'utf8' }).trim().split(/\s+/).sort()).toEqual(archs)
+    // The kernel picks the slice of a universal binary by the architecture preference of the process above:
+    // start the wrapper under each of them that this machine can run.
+    let ran = 0
+    for (const arch of archs) {
+      const name = arch === 'x86_64' ? 'x86_64' : 'arm64'
+      if (spawnSync('/usr/bin/arch', [`-${name}`, '/usr/bin/true']).status !== 0) continue
+      expect(execFileSync('/usr/bin/arch', [`-${name}`, out.postgres, '-V'], { encoding: 'utf8' }), name).toMatch(/PostgreSQL\) 17\./)
+      expect(execFileSync('/usr/bin/arch', [`-${name}`, '/bin/sh', '-c', `"${out.postgres}" -V`], { encoding: 'utf8' }), name).toMatch(/PostgreSQL\) 17\./)
+      ran++
+    }
+    expect(ran).toBeGreaterThanOrEqual(1)
+  }, 120_000)
+
+  it('never keeps an overlay whose library lacks the slice that this process tree starts: the build fails with what dyld said', () => {
+    const dir = cache('one-arch')
+    // The architecture a universal program gets here (the kernel's choice, which a Rosetta shell above can change), and the other one.
+    const started = execFileSync('/usr/bin/uname', ['-m'], { encoding: 'utf8' }).trim()
+    const other = started === 'arm64' ? 'x86_64' : 'arm64'
+    if (!machoArchs(real.postgres).includes(other)) return
+    expect(() => buildShimmedBinaries(real, { cacheDirs: [dir], archs: [other] })).toThrow(/Running the shimmed postgres failed.*(incompatible architecture|could not be loaded)/s)
+    expect(readdirSync(dir)).toEqual([])
+  }, 120_000)
+
   it('reuses what is built, replaces a damaged overlay, and sweeps the leftovers of dead builders', () => {
     const dir = cache('reuse')
     const first = buildShimmedBinaries(real, { cacheDirs: [dir] })
@@ -155,6 +256,55 @@ describe.skipIf(!darwin)('buildShimmedBinaries (macOS)', () => {
     expect(existsSync(dead)).toBe(false)
     expect(existsSync(alive)).toBe(true)
     expect(readdirSync(dir).filter((n) => n.startsWith('.build-') && n !== `.build-${process.pid}-abcd`)).toEqual([])
+  }, 120_000)
+
+  it('does not run what is not its own: a group- or world-writable file, a symlink, or a cache directory others can write to is replaced or skipped', () => {
+    const dir = cache('trust')
+    const first = buildShimmedBinaries(real, { cacheDirs: [dir] })
+    expect(statSync(dir).mode & 0o777).toBe(0o700)
+    expect(statSync(first.dir).mode & 0o022).toBe(0)
+    for (const f of ['libhbshm.dylib', 'READY', 'bin/initdb', 'bin/postgres', 'bin/postgres.real']) expect(statSync(join(first.dir, f)).mode & 0o022, f).toBe(0)
+
+    // A file somebody else could have changed: the overlay is not trusted, so it is built again.
+    chmodSync(first.postgres, 0o777)
+    const second = buildShimmedBinaries(real, { cacheDirs: [dir] })
+    expect(second.built).toBe(true)
+    expect(statSync(second.postgres).mode & 0o022).toBe(0)
+
+    // A symbolic link in place of a file (a planted program): the same.
+    rmSync(second.postgres)
+    symlinkSync('/usr/bin/true', second.postgres)
+    const third = buildShimmedBinaries(real, { cacheDirs: [dir] })
+    expect(third.built).toBe(true)
+    expect(lstatSync(third.postgres).isSymbolicLink()).toBe(false)
+    expect(readFileSync(third.postgres, 'utf8')).toBe(WRAPPER_SCRIPT)
+
+    // A cache directory others can write to is never used: the next one is.
+    chmodSync(dir, 0o777)
+    const next = buildShimmedBinaries(real, { cacheDirs: [dir, cache('trust-next')] })
+    expect(next.dir.startsWith(cache('trust-next'))).toBe(true)
+    expect(() => buildShimmedBinaries(real, { cacheDirs: [dir] })).toThrow(/No usable directory/)
+    chmodSync(dir, 0o700)
+    // ... nor one that is a symbolic link to somewhere.
+    symlinkSync(dir, cache('trust-link'))
+    expect(() => buildShimmedBinaries(real, { cacheDirs: [cache('trust-link')] })).toThrow(/No usable directory/)
+  }, 180_000)
+
+  it('removes overlays of other keys once they are old, and nothing else', () => {
+    const dir = cache('prune')
+    mkdirSync(dir, { mode: 0o700 })
+    const longAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+    const old = join(dir, '0123456789abcdef')
+    const young = join(dir, 'fedcba9876543210')
+    const unfinished = join(dir, 'aaaaaaaaaaaaaaaa')
+    const unrelated = join(dir, 'notes')
+    for (const d of [old, young, unfinished, unrelated]) mkdirSync(d)
+    for (const d of [old, young]) writeFileSync(join(d, 'READY'), 'x')
+    utimesSync(join(old, 'READY'), longAgo, longAgo)
+    const out = buildShimmedBinaries(real, { cacheDirs: [dir] })
+    expect(out.built).toBe(true)
+    expect(existsSync(old)).toBe(false)
+    for (const kept of [young, unfinished, unrelated, out.dir]) expect(existsSync(kept), kept).toBe(true)
   }, 120_000)
 
   it('moves on to the next cache directory when the first cannot be created', () => {
@@ -255,5 +405,163 @@ describe.skipIf(!darwin)('the shim, as Postgres uses it (C probe)', () => {
     execFileSync(process.env.CC ?? 'cc', ['-Wall', '-Werror', '-o', join(dir, 'probe'), join(dir, 'probe.c')])
     const run = execFileSync(join(dir, 'probe'), [], { encoding: 'utf8', env: { ...process.env, DYLD_INSERT_LIBRARIES: out.dylib } })
     expect(run.trim()).toBe('ok')
+  }, 60_000)
+})
+
+/** What Postgres asks of semget, semop and semctl, as a C program (it also runs under Rosetta: it is compiled for both architectures). */
+const SEM_PROBE = String.raw`
+#include <dlfcn.h>
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
+static double now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + ts.tv_nsec / 1e9;
+}
+
+static int op(int id, int num, int n, int flags) {
+  struct sembuf b = {(unsigned short)num, (short)n, (short)flags};
+  return semop(id, &b, 1);
+}
+
+static void on_alarm(int sig) { (void)sig; }
+
+int main(void) {
+  if (dlsym(RTLD_DEFAULT, "hb_shm_shim_loaded") == NULL) { puts("shim not loaded"); return 10; }
+  union semun arg;
+  key_t key = 0x48420101;
+  int id = semget(key, 3, IPC_CREAT | IPC_EXCL | 0600);
+  if (id < 0) { printf("semget failed: errno %d\n", errno); return 1; }
+  if (semget(key, 3, IPC_CREAT | IPC_EXCL | 0600) != -1 || errno != EEXIST) { puts("IPC_EXCL on a taken key must be EEXIST"); return 2; }
+  if (semget(key + 1, 3, 0) != -1 || errno != ENOENT) { puts("a key nobody created must be ENOENT"); return 3; }
+  if (semget(key, 3, 0) != id || semget(key, 2, 0) != id) { puts("a lookup by key must find the set"); return 4; }
+  if (semget(key, 4, 0) != -1 || errno != EINVAL) { puts("a lookup asking for more semaphores must be EINVAL"); return 5; }
+
+  arg.val = 1;
+  if (semctl(id, 0, SETVAL, arg) != 0 || semctl(id, 0, GETVAL, arg) != 1) { puts("SETVAL / GETVAL"); return 6; }
+  if (semctl(id, 0, GETPID, arg) != getpid()) { puts("SETVAL must record the pid"); return 7; }
+  if (op(id, 0, 1, 0) != 0 || semctl(id, 0, GETVAL, arg) != 2) { puts("semop +1"); return 8; }
+  if (op(id, 0, -2, 0) != 0 || semctl(id, 0, GETVAL, arg) != 0) { puts("semop -2"); return 9; }
+  if (op(id, 1, -1, IPC_NOWAIT) != -1 || errno != EAGAIN) { puts("IPC_NOWAIT on zero must be EAGAIN"); return 11; }
+  if (op(id, 3, 1, 0) != -1 || errno != EFBIG) { puts("a semaphore number past the end must be EFBIG"); return 12; }
+  struct semid_ds ds;
+  arg.buf = &ds;
+  if (semctl(id, 0, IPC_STAT, arg) != 0 || ds.sem_nsems != 3) { puts("IPC_STAT"); return 13; }
+
+  /* A forked child posts after a while; the parent blocks, then gets it, and GETPID names the last one to touch it. */
+  pid_t child = fork();
+  if (child < 0) { puts("fork failed"); return 14; }
+  if (child == 0) { usleep(150000); op(id, 1, 1, 0); _exit(0); }
+  double t0 = now();
+  if (op(id, 1, -1, 0) != 0) { puts("a blocked semop must succeed once posted"); return 15; }
+  double waited = now() - t0;
+  if (waited < 0.1 || waited > 5) { printf("waited %f s\n", waited); return 16; }
+  if (semctl(id, 1, GETPID, arg) != getpid()) { puts("GETPID after the parent's own semop"); return 17; }
+  waitpid(child, NULL, 0);
+
+  /* A signal that arrives while it waits ends the wait with EINTR (a repeating timer, so one of them finds it asleep). */
+  struct sigaction sa;
+  sa.sa_handler = on_alarm;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGALRM, &sa, NULL);
+  struct itimerval it = {{0, 20000}, {0, 20000}};
+  setitimer(ITIMER_REAL, &it, NULL);
+  int r = op(id, 2, -1, 0);
+  int e = errno;
+  struct itimerval off = {{0, 0}, {0, 0}};
+  setitimer(ITIMER_REAL, &off, NULL);
+  if (r != -1 || e != EINTR) { puts("a signal must interrupt the wait with EINTR"); return 18; }
+
+  /* Many posters, one consumer. */
+  arg.val = 0;
+  semctl(id, 2, SETVAL, arg);
+  for (int c = 0; c < 4; c++) {
+    pid_t p = fork();
+    if (p == 0) { for (int i = 0; i < 500; i++) if (op(id, 2, 1, 0) != 0) _exit(1); _exit(0); }
+  }
+  for (int i = 0; i < 2000; i++) if (op(id, 2, -1, 0) != 0) { puts("consumer"); return 19; }
+  int status = 0, bad = 0;
+  while (wait(&status) > 0) if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) bad = 1;
+  if (bad || semctl(id, 2, GETVAL, arg) != 0) { puts("2000 posts, 2000 waits, 0 left"); return 20; }
+
+  /* Removing a set wakes whoever waits on it, with EIDRM. */
+  child = fork();
+  if (child == 0) { usleep(150000); semctl(id, 0, IPC_RMID, arg); _exit(0); }
+  if (op(id, 2, -1, 0) != -1 || errno != EIDRM) { printf("removal must give EIDRM, got errno %d\n", errno); return 21; }
+  waitpid(child, NULL, 0);
+  if (semget(key, 3, 0) != -1 || errno != ENOENT) { puts("a removed set must not be found by key"); return 22; }
+  if (op(id, 0, 1, 0) != -1 || errno != EINVAL) { puts("a removed id must be EINVAL"); return 23; }
+  int again = semget(key, 3, IPC_CREAT | IPC_EXCL | 0600);
+  if (again < 0 || again == id) { puts("a new set gets a new id"); return 24; }
+  if (op(id, 0, 1, 0) != -1) { puts("the old id must stay dead"); return 25; }
+  if (semctl(again, 0, GETVAL, arg) != 0) { puts("a new set starts at zero"); return 26; }
+  semctl(again, 0, IPC_RMID, arg);
+  int priv = semget(IPC_PRIVATE, 2, IPC_CREAT | 0600);
+  int priv2 = semget(IPC_PRIVATE, 2, IPC_CREAT | 0600);
+  if (priv < 0 || priv2 < 0 || priv == priv2) { puts("IPC_PRIVATE makes a new set each time"); return 27; }
+  puts("ok");
+  return 0;
+}
+`
+
+/** Compiles a probe for every architecture of postgres and runs it with the shim loaded, once per architecture this machine can run. */
+function runProbe(name: string, source: string): string[] {
+  const out = buildShimmedBinaries(real, { cacheDirs: [cache('layout')] })
+  const archs = machoArchs(real.postgres)
+  const dir = mkdtempSync(join(scratch, `${name}-`))
+  writeFileSync(join(dir, 'probe.c'), source)
+  execFileSync(process.env.CC ?? 'cc', ['-Wall', '-Werror', ...archs.flatMap((a) => ['-arch', a]), '-o', join(dir, 'probe'), join(dir, 'probe.c')])
+  const results: string[] = []
+  for (const arch of archs) {
+    if (spawnSync('/usr/bin/arch', [`-${arch}`, '/usr/bin/true']).status !== 0) continue
+    // `arch` and `env` are protected programs, which drop DYLD_* from their own environment but pass on what `env` is given.
+    const run = execFileSync('/usr/bin/arch', [`-${arch}`, '/usr/bin/env', `DYLD_INSERT_LIBRARIES=${out.dylib}`, join(dir, 'probe')], { encoding: 'utf8' })
+    results.push(`${arch}: ${run.trim()}`)
+  }
+  return results
+}
+
+describe.skipIf(!darwin)('the shim, as Postgres uses it, under every architecture of postgres (C probes)', () => {
+  it('shared memory: the probe above passes under each architecture too', () => {
+    const results = runProbe('shm-arch', PROBE)
+    expect(results.length).toBeGreaterThanOrEqual(1)
+    for (const r of results) expect(r).toMatch(/: ok$/)
+  }, 120_000)
+
+  it('semaphores: creates, looks up, sets, waits for a post from a forked process, is interrupted by a signal, survives 2000 posts from four processes, and wakes waiters with EIDRM when removed', () => {
+    const results = runProbe('sem', SEM_PROBE)
+    expect(results.length).toBeGreaterThanOrEqual(1)
+    for (const r of results) expect(r).toMatch(/: ok$/)
+  }, 180_000)
+})
+
+describe.skipIf(!darwin)('ipc.ts: the host\'s own System V IPC, as the tests that check for leaks see it', () => {
+  it('lists a real kernel semaphore set by its key, and the sets near an inode number', () => {
+    const dir = mkdtempSync(join(scratch, 'kernel-set-'))
+    writeFileSync(
+      join(dir, 'make.c'),
+      '#include <stdio.h>\n#include <sys/ipc.h>\n#include <sys/sem.h>\nint main(void) { int id = semget(0x48420f01, 1, IPC_CREAT | 0600); printf("%d", id); return id < 0; }\n',
+    )
+    execFileSync(process.env.CC ?? 'cc', ['-o', join(dir, 'make'), join(dir, 'make.c')])
+    // No DYLD_INSERT_LIBRARIES here: this one is the kernel's.
+    const id = execFileSync(join(dir, 'make'), [], { encoding: 'utf8' }).trim()
+    try {
+      expect(sysvKeys('semaphore')).toContain(0x48420f01)
+      expect(semaphoreSetsOfInode(0x48420f01 - 1, 8)).toEqual([0x48420f01])
+      expect(semaphoreSetsOfInode(0x48420f01 + 1, 8)).toEqual([])
+    } finally {
+      execFileSync('ipcrm', ['-s', id])
+    }
+    expect(sysvKeys('semaphore')).not.toContain(0x48420f01)
+    expect(Array.isArray(sysvKeys('segment'))).toBe(true)
   }, 60_000)
 })

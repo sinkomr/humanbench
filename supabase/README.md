@@ -13,7 +13,7 @@ supabase/
     cluster/00-roles.sql    roles, role settings (once per cluster)
     database/10-…40-….sql   extensions, default grants, auth helpers, Vault shim (per database)
 web/scripts/db/           the harness (TypeScript): engine, template, request()/rpc(), tests
-  shm.ts, shm/            macOS only: the System V shared-memory shim (C) and how it is built (see the ADR)
+  shm.ts, shm/            macOS only: the System V shared-memory and semaphore shim (C) and how it is built (see the ADR)
   guard.ts                the watcher that cleans up after a SIGKILL
 ```
 
@@ -49,7 +49,7 @@ Two environment variables, both optional:
 
 | Variable | Values | Does |
 |---|---|---|
-| `HB_PG_SHM` | `auto` (default), `sysv`, `shim` | How the server gets its System V shared memory. `auto`: on macOS the shim below (built once, about a second), elsewhere the host's. `sysv`: the host's, everywhere. `shim`: macOS only, and an error if the shim cannot be built. |
+| `HB_PG_SHM` | `auto` (default), `sysv`, `shim` | How the server gets its System V shared memory and semaphores. `auto`: on macOS the shim below (built once, a few seconds), elsewhere the host's; on macOS also the host's, with a warning, if the shim cannot be built or the built one does not start in this process tree. `sysv`: the host's, everywhere. `shim`: macOS only, and an error if it cannot be built or does not start. |
 | `HB_PG_GUARD` | `0` | No guard process per cluster (the tests of the reaper need an orphan to stay). |
 
 The first start on macOS needs the Xcode command line tools (`cc`, `codesign`; `xcode-select --install`
@@ -119,35 +119,59 @@ grid and the correlated MAP, M2.2); `pgcrypto` (HMAC-SHA256 for the signed saves
 `<tmp>/hb-pg-XXXXXX`, a free port on 127.0.0.1 only, no Unix socket, SCRAM with a random password,
 `fsync` off, UTC, `C` collation. The client is `pg` (node-postgres).
 
-**Amendment 2026-10-01: independent of the host's System V shared memory.** On the owner's Mac every
+**Amendment 2026-10-01: independent of the host's System V IPC.** On the owner's Mac every
 start failed with `could not create shared memory segment: Cannot allocate memory`
 (`shmget(size=56)`, in `initdb` too). Postgres takes one System V segment even with
 `shared_memory_type=mmap`, a 56-byte header that locks the data directory; macOS leaks the kernel's
 accounting of those segments when a postmaster is killed (`ipcs` is empty, `kern.sysv.shmall`
 stays used up), and only a reboot frees it. The watchdog kills runs with SIGKILL, and `shmmni` is 32
-for all runs at once, so this was going to recur. The harness now never asks the macOS kernel for a
-System V segment:
+for all runs at once, so this was going to recur. On macOS Postgres also keeps its process semaphores
+in System V sets (the binary imports `semget`, `semctl`, `semop`; 7 sets of 20 per cluster), whose keys
+come from the data directory's inode, new for every run, so the sets of a killed postmaster stay
+listed by `ipcs` for good (about 620 killed runs until `semget` fails, at `kern.sysv.semmns=87381`).
+The harness now never asks the macOS kernel for System V shared memory or semaphores:
 
 - **The shim** (`web/scripts/db/shm/hb_shm_shim.c`, built by `shm.ts` with the system `cc`): a small
-  library (about 170 lines of C) that replaces `shmget`, `shmat`, `shmdt` and `shmctl` in the server process with anonymous
-  shared mappings, which the kernel releases when the process dies. It is loaded with
+  library (about 400 lines of C) that replaces `shmget`, `shmat`, `shmdt`, `shmctl`, `semget`, `semop`
+  and `semctl` in the server process. Segments are anonymous shared mappings, which the kernel releases
+  when the process dies. Semaphores are 64-bit atomic words (value and last pid) in one shared mapping
+  made when the library loads, so before the postmaster's first fork; a blocked `semop` polls with a
+  short growing sleep, a signal ends it with `EINTR`, and removing a set wakes the waiters with `EIDRM`.
+  It is lock-free on purpose: no process can die holding a lock the others wait for. It is loaded with
   `DYLD_INSERT_LIBRARIES`, which macOS ignores for hardened-runtime binaries, so the harness runs a
   **copy** of `postgres` re-signed ad hoc (`codesign --force --sign -`); the npm package's files are
   never touched. `initdb` starts `postgres` through `/bin/sh`, which strips `DYLD_*`, so the copy sits
   behind a two-line wrapper script (`env DYLD_INSERT_LIBRARIES=… postgres.real`; `exec` keeps the
-  pid). The overlay (`node_modules/.cache/humanbench-pg/<key>/`, else `<tmp>/hb-pgbin/<key>/`) is
-  keyed by the shim source, the architecture and the binaries, built in a temp directory and renamed
+  pid). The overlay (`node_modules/.cache/humanbench-pg/<key>/`, else `<tmp>/hb-pgbin-<uid>/<key>/`) is
+  keyed by the shim source, the architectures and the binaries, built in a temp directory and renamed
   into place, so concurrent runs share it safely.
-- **`shared_memory_type=mmap` and `dynamic_shared_memory_type=mmap`** on every platform: the main
-  segment is an anonymous mapping and the dynamic segments are files in the data directory, so no
-  POSIX shared-memory object survives a kill either.
-- Linux (CI) runs the package binaries as they are, with only those two settings added: its kernel limits are large and nothing leaks there.
+- **Every architecture of the binary.** The npm packages' `postgres` is universal (x86_64 and arm64)
+  and the kernel, not the harness, picks the slice: a process started under Rosetta (an x86_64 python
+  or shell above the test run, as on the owner's Mac) starts the x86_64 slice, which cannot load an
+  arm64-only library. The library is built with a `-arch` for every slice found in the binary's Mach-O
+  header, and the build and every later start check that the overlay's `postgres -V` runs (else
+  `auto` falls back to the host's IPC with a warning).
+- **What is run is trusted only if it is ours**: the cache directory (created `0700`) and everything in
+  the overlay must be owned by the current user, not be a symbolic link and not be writable by group
+  or others; otherwise a cache directory is skipped and an overlay is rebuilt. Overlays of other keys
+  that finished building more than a week ago are removed after a build.
+- **`shared_memory_type=mmap` and `dynamic_shared_memory_type=mmap`** on every platform, for the server
+  and (`initdb -c`) for `initdb`, whose bootstrap and single-user runs read the `postgresql.conf` that
+  `initdb` writes with `posix`: the main segment is an anonymous mapping and the dynamic segments are
+  files in the data directory, so no POSIX shared-memory object survives a kill either.
+- Linux (CI) runs the package binaries as they are, with only those two settings added: its kernel
+  limits are large. (A SIGKILL of a whole process tree there leaves the cluster's SysV semaphore sets,
+  as for any Postgres; the keys are reused and the limits are large, so nothing breaks.)
 
-A segment of the shim exists only in the process that created it and its forked children, which is
-all Postgres on Unix needs (it forks every child and never re-attaches by id). What it gives up is
-the kernel's second lock on a data directory: `postmaster.pid` still guards it. The tests: a C probe
-runs the four calls as Postgres makes them, including a forked child writing to the shared memory
-(`shm.test.ts`); `shim.db.test.ts` checks that the running server holds no System V segment.
+A segment or semaphore set of the shim exists only in the process that created it and its forked
+children, which is all Postgres on Unix needs (it forks every child, creates its semaphores in the
+postmaster and never re-attaches by id). What it gives up is the kernel's second lock on a data
+directory: `postmaster.pid` still guards it. The tests: C probes run the seven calls as Postgres makes
+them, in both architectures where the machine can run them (a forked child writing to the shared
+memory, a forked child posting a semaphore a parent waits for, `EINTR`, `EIDRM`, 2000 posts from
+four processes; `shm.test.ts`); `shim.db.test.ts` checks that the running server holds no System V
+segment and no semaphore set; `cleanup.db.test.ts` kills a whole process group with SIGKILL and checks
+the host again.
 
 ### Alternatives considered
 
@@ -159,7 +183,9 @@ runs the four calls as Postgres makes them, including a forked child writing to 
 | PGlite 0.5.8 (WASM, PostgreSQL 18.3) | rejected, also as the answer to the shared-memory failure | Smoke-tested: RLS, roles, `SECURITY DEFINER`, PL/pgSQL and `pgcrypto` all work. But it is one in-process connection, so Python cannot connect (2), it is 32-bit WASM, and it is major 18 (1). Re-checked on 2026-10-01 against the failure above: **`statement_timeout` is not enforced** (`set statement_timeout = '300ms'; select pg_sleep(2)` runs the full 2 s, no signals in WASM), so the 3 s / 8 s API limits and the "a 6 s RPC as anon is cancelled" tests cannot run; there is one backend, so the lock and race tests (`robustness.db.test.ts`) would pass without testing anything; and there is no authentication, so the SCRAM and wrong-password tests would go too. Passing the suite would have meant deleting its hardest tests. |
 | `shared_memory_type=mmap` alone | not enough | Checked: `shmget(size=56)` for the data-directory lock is still made, and fails the same way. |
 | Raise `kern.sysv.shmall` | not possible | Needs root and a reboot (`/etc/sysctl.conf`, as PostgreSQL's macOS notes say), and the leak would eat the larger limit as well. |
-| Interpose `shmget` & co. (the shim) | **chosen for macOS** | See the amendment above. |
+| Interpose `shmget` & co. and `semget` & co. (the shim) | **chosen for macOS** | See the amendment above. |
+| Process-shared pthread mutex and condition variable for the shim's semaphores | not used | A process killed while holding the mutex (a SIGKILL, a crash exit) would leave the others waiting for good; atomics with a polling wait cannot. |
+| `ipcrm` the cluster's sets from the guard and the reaper | not used | The keys are the data directory's inode plus a counter, which cannot be told from another running cluster's by `ipcs` alone (no creator pid on macOS); removing the wrong set would break a live run. Not having the sets is simpler. |
 | The `embedded-postgres` npm wrapper | rejected, its binaries are used | Same binaries, but importing it registers `async-exit-hook`, whose `beforeExit` handler calls `process.exit(0)`. A failing vitest run then exits 0, so CI would pass on failing tests (observed while building this). The wrapper is about 30 lines; the harness does those directly. |
 
 ### Consequences
@@ -182,14 +208,24 @@ runs the four calls as Postgres makes them, including a forked child writing to 
   the directory is gone; (4) the reaper, for the case that the guard died too (the whole process tree
   killed, a reboot): every cluster directory holds a marker with its owner's pid;
   `reapStaleClusters()` (run by every start and by `npm run db:reap`) stops postmasters whose owner is
-  dead and removes their directories, and only `hb-pg-*` directories with a marker. The guard and the
-  reaper signal a pid from `postmaster.pid` only if its command line says `postgres`. The reaper is
-  tested with a real `kill -9` and the guard off (`cli.db.test.ts`, `HB_PG_GUARD=0`).
+  dead and removes their directories, and only `hb-pg-*` directories. The guard and the
+  reaper signal a pid from `postmaster.pid` only if its command line says `postgres`. A directory with
+  no marker at all (a start killed between `mkdtemp` and the marker, or a cleanup that removed the
+  marker and could not remove the rest) holds no process, since the marker is written before anything
+  starts, so it is removed once it has not changed for 10 minutes; a marker that exists but cannot be
+  read is never touched. The reaper is tested with a real `kill -9` and the guard off
+  (`cli.db.test.ts`, `HB_PG_GUARD=0`).
+- The guard and the exit hooks also kill whatever else works in the data directory: `initdb` takes it
+  as `-D`, but the `postgres --boot` and `--single` it starts get it only as `PGDATA` in their
+  environment, so they are found with `ps -E` (macOS) as well as by command line. The hook cases of
+  `cleanup.db.test.ts` run with the guard off and look at the host the moment the process has ended,
+  so they fail if the `exit` or signal handlers are removed.
 - The binaries are about 130 MB per platform in `node_modules`, and `npm test` needs them too
   (`engine.test.ts` resolves the package and checks the executables). `npm ci` takes only the
   machine's own, from `optionalDependencies`; `package-lock.json` pins all four with integrity
   hashes.
-- Verified on macOS (arm64), with the shim, on a machine whose System V shared memory is used up. Linux
+- Verified on macOS (arm64), with the shim, on a machine whose System V shared memory is used up, also
+  from a Rosetta (x86_64) shell above the test run (the postgres slice is then x86_64). Linux
   x64 (no shim) is covered by the CI `db` job, not by a local run.
 - The `-beta.N` in the pinned `@embedded-postgres/*` versions is the packager's build number, and every
   release of the packages carries it (npm has no other); the server is the stable PostgreSQL 17.10.

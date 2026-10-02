@@ -6,7 +6,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHmac, randomBytes } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,7 @@ import pg from 'pg'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
 import { CLUSTER_DIR_PREFIX, PG_MAJOR, prepareBinaries } from './engine'
 import { ANON, AUTHENTICATED, SERVICE_ROLE, type TestDb } from './harness'
+import { semaphoreSetsOfInode } from './ipc'
 import { quoteIdent } from './sql'
 import { exposedSurface, names } from './surface'
 import { PERMISSION_DENIED, QUERY_CANCELED, UNDEFINED_FUNCTION, openTestDb, rejectedWith } from './vitest'
@@ -68,7 +69,7 @@ describe('the engine', () => {
     ])
   })
 
-  it.skipIf(platform() !== 'darwin')('on macOS runs the shimmed postgres, which holds no System V segment of the host (M2.0)', () => {
+  it.skipIf(platform() !== 'darwin')('on macOS runs the shimmed postgres, which holds no System V segment or semaphore set of the host (M2.0)', () => {
     expect(prepareBinaries().shm).toBe('shim')
     const pid = Number.parseInt(readFileSync(join(inject('hbCluster').dir, 'data', 'postmaster.pid'), 'utf8').split('\n')[0] ?? '', 10)
     expect(pid).toBeGreaterThan(1)
@@ -83,6 +84,10 @@ describe('the engine', () => {
       expect(row[cpid]).not.toBe(String(pid))
       expect(row[lpid]).not.toBe(String(pid))
     }
+    // Nor a semaphore set: a postmaster's keys count up from the inode of its data directory
+    // (sysv_sema.c). The macOS kernel never frees the sets of a killed postmaster, so none may exist.
+    const inode = statSync(join(inject('hbCluster').dir, 'data')).ino
+    expect(semaphoreSetsOfInode(inode)).toEqual([])
   })
 
   it('rejects a login with the wrong password (scram, a random password per run)', async () => {

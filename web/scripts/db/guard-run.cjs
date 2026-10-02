@@ -43,23 +43,31 @@ function markedForOwner() {
   }
 }
 
-/** Pids of the processes that have this data directory on their command line: initdb, its bootstrap postgres, the postmaster. */
+/**
+ * Pids of the processes that have this data directory on their command line or, where `ps` shows it
+ * (macOS `ps -E`), in their environment: initdb (`-D`), the postmaster (`-D`), and the bootstrap and
+ * single-user postgres that initdb starts, which get the directory only as PGDATA. Same as
+ * `processesUsing()` in proc.ts, repeated here because this file runs without a loader.
+ */
 function processesOfDataDir() {
-  let table = ''
-  try {
-    table = execFileSync('ps', ['-ax', '-o', 'pid=,command='], { encoding: 'utf8' })
-  } catch {
-    return []
+  for (const args of [['-axwwE', '-o', 'pid=,command='], ['-axww', '-o', 'pid=,command=']]) {
+    let table
+    try {
+      table = execFileSync('ps', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+    } catch {
+      continue
+    }
+    const pids = []
+    for (const raw of table.split('\n')) {
+      const line = raw.trim()
+      const space = line.indexOf(' ')
+      if (space < 1) continue
+      const pid = Number(line.slice(0, space))
+      if (Number.isInteger(pid) && pid !== process.pid && line.slice(space + 1).includes(dataDir)) pids.push(pid)
+    }
+    return pids
   }
-  const pids = []
-  for (const raw of table.split('\n')) {
-    const line = raw.trim()
-    const space = line.indexOf(' ')
-    if (space < 1) continue
-    const pid = Number(line.slice(0, space))
-    if (Number.isInteger(pid) && pid !== process.pid && line.slice(space + 1).includes(dataDir)) pids.push(pid)
-  }
-  return pids
+  return []
 }
 
 function kill(pid, signal) {
@@ -84,10 +92,15 @@ async function cleanup() {
     kill(postmaster, 'SIGQUIT')
     for (let i = 0; i < 50 && alive(postmaster); i++) await sleep(100)
   }
-  // Then anything else working in the directory (an initdb the owner started just before it died):
-  // left running it would keep writing into the directory while it is removed.
-  for (const pid of processesOfDataDir()) kill(pid, 'SIGKILL')
-  await sleep(200)
+  // Then anything else working in the directory (an initdb the owner started just before it died, and
+  // the servers initdb started): left running it would keep writing into the directory while it is
+  // removed, and the marker would be gone by then. A second look, in case one of them started another.
+  for (let round = 0; round < 3; round++) {
+    const pids = processesOfDataDir()
+    for (const pid of pids) kill(pid, 'SIGKILL')
+    await sleep(200)
+    if (pids.length === 0) break
+  }
 
   // The marker goes last: if anything is left over, the reaper still knows whose it was.
   for (let attempt = 0; attempt < 20 && fs.existsSync(dir); attempt++) {

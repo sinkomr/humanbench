@@ -12,12 +12,16 @@
  * This module is process management only: start, stop, and reaping clusters a killed run left
  * behind. The Supabase shim, templates and test databases are in harness.ts.
  *
- * Independent of the host's System V shared memory. On macOS the kernel's SysV accounting leaks when
- * a postmaster is killed, and then even `initdb` fails with "shmget: Cannot allocate memory" until a
- * reboot. So there the binaries run through shm.ts: a tiny library gives the server anonymous shared
- * mappings in place of SysV segments. The server's other shared memory is configured not to use the
- * host either (`shared_memory_type=mmap`, `dynamic_shared_memory_type=mmap`: files in the data
- * directory, not POSIX shm objects that outlive a kill). Linux uses the binaries as they are.
+ * Independent of the host's System V IPC. On macOS the kernel's SysV accounting leaks when a
+ * postmaster is killed, and then even `initdb` fails with "shmget: Cannot allocate memory" until a
+ * reboot; the semaphore sets of a killed postmaster stay behind too. So there the binaries run
+ * through shm.ts: a tiny library gives the server anonymous shared mappings in place of SysV
+ * segments and semaphores. The server's other shared memory is configured not to use the host either
+ * (`shared_memory_type=mmap`, `dynamic_shared_memory_type=mmap`: files in the data directory, not
+ * POSIX shm objects that outlive a kill); initdb gets the same two settings (`-c`) because it writes
+ * `posix` into postgresql.conf and its own `--boot` and `--single` runs read it. Linux uses the
+ * binaries as they are, with the host's SysV semaphores (a SIGKILL of a whole process tree leaks
+ * those there, as it does for any Postgres; the limits are large and the keys are reused).
  *
  * Cleanup, in layers, so that nothing outlives a run:
  *   1. `stop()`: the normal end.
@@ -44,6 +48,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -53,10 +58,10 @@ import net from 'node:net'
 import { arch, platform, tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { spawnGuard } from './guard'
-import { isAlive, isPostgresProcess, orTimeout, sleep, sleepSync } from './proc'
-import { buildShimmedBinaries } from './shm'
+import { isAlive, isPostgresProcess, orTimeout, processesUsing, sleep, sleepSync } from './proc'
+import { buildShimmedBinaries, verifyShimmed } from './shm'
 
-export { isAlive }
+export { isAlive, processesUsing }
 
 /** Cluster directories are `<tmp>/hb-pg-XXXXXX`; the reaper only ever touches this prefix. */
 export const CLUSTER_DIR_PREFIX = 'hb-pg-'
@@ -132,7 +137,7 @@ export interface PrepareOptions {
    * the host's. `shim`: macOS only, and an error if it cannot be built.
    */
   readonly shm?: 'auto' | 'sysv' | 'shim'
-  /** Where the shim overlay is cached, in order of preference. Default: `node_modules/.cache/humanbench-pg`, then the temp directory. */
+  /** Where the shim overlay is cached, in order of preference. Default: `node_modules/.cache/humanbench-pg`, then `hb-pgbin-<uid>` in the temp directory. */
   readonly cacheDirs?: readonly string[]
   /** For tests. Default `os.platform()`. */
   readonly platform?: string
@@ -225,13 +230,17 @@ export function prepareBinaries(options: PrepareOptions = {}): Binaries {
     if (mode === 'shim' && os !== 'darwin') throw new Error('HB_PG_SHM=shim: the shared-memory shim is for macOS; other systems use their own System V shared memory.')
     result = sysv()
   } else {
-    const cacheDirs = options.cacheDirs ?? [join(real.packageRoot, '..', '..', '.cache', 'humanbench-pg'), join(tmpdir(), 'hb-pgbin')]
+    // The temp directory is shared by every user of the machine: a name of one's own, so nobody else's directory is in the way.
+    const cacheDirs = options.cacheDirs ?? [join(real.packageRoot, '..', '..', '.cache', 'humanbench-pg'), join(tmpdir(), `hb-pgbin-${process.getuid?.() ?? 'user'}`)]
     try {
       const shim = buildShimmedBinaries(real, { cacheDirs })
+      // A cached overlay is not rebuilt, so check here that it runs in this process tree (a library
+      // without the slice the kernel picks, a damaged copy): else `auto` falls back like it does when the build fails.
+      verifyShimmed(shim)
       result = { root: real.root, initdb: shim.initdb, postgres: shim.postgres, shm: 'shim' }
     } catch (e) {
       if (mode === 'shim') throw e
-      const note = `The System V shared-memory shim could not be built (${e instanceof Error ? e.message : String(e)}), so the host's System V shared memory is used.`
+      const note = `The System V shared-memory shim could not be built or does not run (${e instanceof Error ? e.message : String(e)}), so the host's System V shared memory is used.`
       if (!warnedNoShim) {
         warnedNoShim = true
         console.warn(`[db harness] ${note}`)
@@ -265,6 +274,15 @@ function postmasterPid(dataDir: string): number | undefined {
   }
 }
 
+/** Whether the directory has not changed for `ms`. A directory that cannot be read counts as young. */
+function isOlderThan(dir: string, ms: number): boolean {
+  try {
+    return Date.now() - statSync(dir).mtimeMs >= ms
+  } catch {
+    return false
+  }
+}
+
 /** Fast shutdown (SIGINT), then immediate shutdown (SIGQUIT) if it has not exited in `graceMs`. */
 async function stopPostmaster(dataDir: string, graceMs = 15_000): Promise<void> {
   const pid = postmasterPid(dataDir)
@@ -277,6 +295,14 @@ async function stopPostmaster(dataDir: string, graceMs = 15_000): Promise<void> 
   }
 }
 
+/** A directory with no marker is left alone for this long after its last change (the marker is written within milliseconds of creating the directory, so a younger one may be a start in progress). */
+export const ORPHAN_AFTER_MS = 10 * 60 * 1000
+
+export interface ReapOptions {
+  /** How old a cluster directory without a marker must be to be removed. Default {@link ORPHAN_AFTER_MS}. */
+  readonly orphanAfterMs?: number
+}
+
 export interface ReapResult {
   /** Directories of dead owners that were stopped and removed. */
   readonly reaped: string[]
@@ -287,9 +313,14 @@ export interface ReapResult {
 /**
  * Stops and removes the clusters of runs that died without cleaning up. A directory is reaped only
  * if it is `<baseDir>/hb-pg-*`, has a marker, and the marker's owner pid is no longer alive. A live
- * owner (another test run) or a directory without a marker is never touched.
+ * owner (another test run) is never touched, nor is a marker that cannot be read or names no pid.
+ * A directory with no marker at all is what a start killed between `mkdtemp` and the marker, or a
+ * guard that removed the marker and then could not remove the rest, leaves: nothing runs in it (the
+ * marker is written before anything is started), so once it has not changed for `orphanAfterMs` only
+ * the directory is removed.
  */
-export async function reapStaleClusters(baseDir: string = tmpdir()): Promise<ReapResult> {
+export async function reapStaleClusters(baseDir: string = tmpdir(), options: ReapOptions = {}): Promise<ReapResult> {
+  const orphanAfterMs = options.orphanAfterMs ?? ORPHAN_AFTER_MS
   const result: { reaped: string[]; kept: { dir: string; reason: string }[] } = { reaped: [], kept: [] }
   if (!existsSync(baseDir)) return result
   for (const name of readdirSync(baseDir)) {
@@ -298,8 +329,13 @@ export async function reapStaleClusters(baseDir: string = tmpdir()): Promise<Rea
     let owner: unknown
     try {
       owner = (JSON.parse(readFileSync(join(dir, MARKER_FILE), 'utf8')) as { ownerPid?: unknown }).ownerPid
-    } catch {
-      result.kept.push({ dir, reason: 'no readable marker' })
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT' && isOlderThan(dir, orphanAfterMs)) {
+        await rm(dir, { recursive: true, force: true })
+        result.reaped.push(dir)
+      } else {
+        result.kept.push({ dir, reason: 'no readable marker' })
+      }
       continue
     }
     if (typeof owner !== 'number' || !Number.isInteger(owner)) {
@@ -329,14 +365,18 @@ const POSTGRES_FLAGS = [
   ['max_wal_senders', '0'],
   ['shared_buffers', '32MB'],
   ['max_connections', '100'],
-  // Shared memory that never touches the host's System V or POSIX shared-memory tables (see the
-  // header): the main segment is an anonymous mmap, the dynamic segments are files in the data directory.
+  // Shared memory that never touches the host's POSIX shared-memory table (see the header): the main
+  // segment is an anonymous mmap, the dynamic segments are files in the data directory. (initdb gets
+  // the same two settings; the System V segment and semaphores are the shim's business.)
   ['shared_memory_type', 'mmap'],
   ['dynamic_shared_memory_type', 'mmap'],
   // Supabase runs in UTC.
   ['TimeZone', 'UTC'],
   ['log_timezone', 'UTC'],
 ].flatMap(([k, v]) => ['-c', `${k}=${v}`])
+
+/** The same two settings for `initdb`, which writes them into postgresql.conf and runs its bootstrap and single-user servers with that file. */
+const INITDB_SHARED_MEMORY_FLAGS = ['-c', 'shared_memory_type=mmap', '-c', 'dynamic_shared_memory_type=mmap']
 
 /** English messages, whatever the user's locale (the readiness and port-clash checks read them). */
 const CHILD_ENV = { ...process.env, LC_ALL: 'C', LANG: 'C' }
@@ -408,15 +448,29 @@ interface Live {
 
 const live = new Set<Live>()
 
+/** SIGKILL for every process working in this data directory: initdb, its bootstrap and single-user postgres (see {@link processesUsing}). */
+function killProcessesOf(dataDir: string): void {
+  for (const pid of processesUsing(dataDir)) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
 /** Immediate shutdown (SIGQUIT) of the postmaster, if it is running and is one; then SIGKILL after `graceMs`. Synchronous. */
 function killPostmasterSync(c: Live, graceMs: number): void {
-  // An initdb still running would go on writing into the directory that is about to be removed.
+  // An initdb still running would go on writing into the directory that is about to be removed, and
+  // so would the bootstrap and single-user servers it started (they end when initdb's pipe closes,
+  // but not at once).
   if (c.initdb?.pid !== undefined && c.initdb.exitCode === null && c.initdb.signalCode === null) {
     try {
       process.kill(c.initdb.pid, 'SIGKILL')
     } catch {
       // Already gone.
     }
+    killProcessesOf(c.dataDir)
   }
   const pids = new Set<number>()
   if (c.child?.pid !== undefined && c.child.exitCode === null && c.child.signalCode === null) pids.add(c.child.pid)
@@ -495,6 +549,7 @@ function stopLive(c: Live): Promise<void> {
         const exited = new Promise<void>((resolve) => initdb.once('exit', () => resolve()))
         initdb.kill('SIGKILL')
         await orTimeout(exited, 5_000)
+        killProcessesOf(c.dataDir)
       }
       const child = c.child
       if (child !== undefined && child.exitCode === null && child.signalCode === null) {
@@ -555,7 +610,7 @@ export async function startCluster(options: StartOptions = {}): Promise<Cluster>
     try {
       await runInitdb(
         bins.initdb,
-        ['-D', dataDir, '-U', SUPERUSER, '--auth=scram-sha-256', `--pwfile=${pwFile}`, '--encoding=UTF8', '--locale=C', '--no-sync'],
+        ['-D', dataDir, '-U', SUPERUSER, '--auth=scram-sha-256', `--pwfile=${pwFile}`, '--encoding=UTF8', '--locale=C', '--no-sync', ...INITDB_SHARED_MEMORY_FLAGS],
         log,
         (c) => (entry.initdb = c),
       )

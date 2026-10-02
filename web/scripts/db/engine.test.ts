@@ -5,12 +5,12 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { CLUSTER_DIR_PREFIX, MARKER_FILE, binaryPackage, hydrateLinks, isAlive, prepareBinaries, reapStaleClusters } from './engine'
+import { CLUSTER_DIR_PREFIX, MARKER_FILE, ORPHAN_AFTER_MS, binaryPackage, hydrateLinks, isAlive, prepareBinaries, processesUsing, reapStaleClusters } from './engine'
 import { spawnGuard } from './guard'
 
 let base: string
@@ -72,6 +72,28 @@ describe('reapStaleClusters', () => {
     for (const d of [noMarker, broken, noPid, stringPid, other]) expect(existsSync(d), d).toBe(true)
   })
 
+  it('removes a directory with no marker only once it has not changed for a while (nothing runs in it), and only then', async () => {
+    const young = clusterDir('young01', undefined)
+    const old = clusterDir('old0001', undefined)
+    const longAgo = new Date(Date.now() - 2 * ORPHAN_AFTER_MS)
+    writeFileSync(join(old, 'data', 'PG_VERSION'), '17\n')
+    utimesSync(old, longAgo, longAgo)
+    const brokenMarker = clusterDir('oldbad1', '{not json')
+    utimesSync(brokenMarker, longAgo, longAgo)
+    const other = join(base, 'somebody-elses-old-dir')
+    mkdirSync(other)
+    utimesSync(other, longAgo, longAgo)
+
+    const result = await reapStaleClusters(base)
+    expect(result.reaped).toEqual([old])
+    expect(existsSync(old)).toBe(false)
+    expect(result.kept.map((k) => k.dir).sort()).toEqual([young, brokenMarker].sort())
+    // A marker that exists but cannot be read may be somebody's: it stays, however old. So does what is not a cluster directory.
+    for (const d of [young, brokenMarker, other]) expect(existsSync(d), d).toBe(true)
+    // The age is a parameter.
+    expect((await reapStaleClusters(base, { orphanAfterMs: 0 })).reaped).toEqual([young])
+  })
+
   it('does not signal a process just because a dead run\'s postmaster.pid names it', async () => {
     // pid reuse: the old postmaster's pid now belongs to an unrelated process. Only a process
     // whose command line says postgres is ever stopped.
@@ -92,6 +114,34 @@ describe('reapStaleClusters', () => {
     const result = await reapStaleClusters(base)
     expect(result.reaped.sort()).toEqual([a, b].sort())
     expect(existsSync(live)).toBe(true)
+  })
+})
+
+describe('processesUsing (what the guard and the hooks kill besides the postmaster)', () => {
+  /** A process that waits, with the given environment and arguments. */
+  function waiter(args: string[], env: Record<string, string>): ChildProcess {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', '--', ...args], { env: { ...process.env, ...env }, stdio: 'ignore' })
+    children.push(child)
+    return child
+  }
+
+  async function waitUntil(done: () => boolean): Promise<void> {
+    for (let waited = 0; waited < 5_000 && !done(); waited += 50) await new Promise((r) => setTimeout(r, 50))
+  }
+
+  it('finds a process by its command line and by its environment (initdb hands PGDATA to its servers that way), not itself or others', async () => {
+    const dataDir = join(base, `${CLUSTER_DIR_PREFIX}ps0001`, 'data')
+    const byArgument = waiter(['-D', dataDir], {})
+    const byEnvironment = waiter([], { PGDATA: dataDir })
+    const unrelated = waiter(['-D', join(base, 'elsewhere')], { PGDATA: join(base, 'elsewhere') })
+    await waitUntil(() => processesUsing(dataDir).length >= 2)
+    const found = processesUsing(dataDir)
+    expect(found).toContain(byArgument.pid)
+    // `ps -E` shows the environment on macOS; elsewhere the command line is all there is.
+    if (process.platform === 'darwin') expect(found).toContain(byEnvironment.pid)
+    expect(found).not.toContain(unrelated.pid)
+    expect(found).not.toContain(process.pid)
+    expect(processesUsing(join(base, 'nobody-uses-this'))).toEqual([])
   })
 })
 
@@ -197,6 +247,21 @@ describe('the guard (what cleans up after a SIGKILL)', () => {
     await waitFor('the directory to be removed', () => !existsSync(dir))
     await waitFor('the postmaster to stop', () => !isAlive(postmaster.pid as number))
     await guardExited
+  })
+
+  it.skipIf(process.platform !== 'darwin')('also stops a process that has the data directory only in its environment (the bootstrap and single-user servers initdb starts get it as PGDATA)', async () => {
+    const owner = fakeOwner()
+    const dir = clusterDir('guard06', { ownerPid: owner.pid })
+    const dataDir = join(dir, 'data')
+    const bystander = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { env: { ...process.env, PGDATA: join(base, 'another-data-dir') }, stdio: 'ignore' })
+    const bootstrap = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { env: { ...process.env, PGDATA: dataDir }, stdio: 'ignore' })
+    children.push(bystander, bootstrap)
+    await waitFor('both to be seen by ps', () => processesUsing(dataDir).includes(bootstrap.pid as number))
+    guard(owner, dir)
+    owner.kill('SIGKILL')
+    await waitFor('the process of the data directory to be killed', () => !isAlive(bootstrap.pid as number))
+    await waitFor('the directory to be removed', () => !existsSync(dir))
+    expect(isAlive(bystander.pid as number)).toBe(true)
   })
 
   it('exits by itself, touching nothing, once the directory is gone while the owner lives (a normal stop())', async () => {

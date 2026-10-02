@@ -37,3 +37,30 @@ export async function orTimeout<T>(promise: Promise<T>, ms: number): Promise<T |
 export function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
+
+/**
+ * Pids of the processes that have `path` anywhere in their command line or, where `ps` can show it
+ * (macOS: `ps -E`), their environment. The environment matters: `initdb` hands its data directory to
+ * the `postgres --boot` and `--single` it starts through PGDATA, not on their command line. Never
+ * includes this process.
+ */
+export function processesUsing(path: string): number[] {
+  for (const args of [['-axwwE', '-o', 'pid=,command='], ['-axww', '-o', 'pid=,command=']]) {
+    let table: string
+    try {
+      table = execFileSync('ps', args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] })
+    } catch {
+      continue
+    }
+    const pids: number[] = []
+    for (const raw of table.split('\n')) {
+      const line = raw.trim()
+      const space = line.indexOf(' ')
+      if (space < 1) continue
+      const pid = Number(line.slice(0, space))
+      if (Number.isInteger(pid) && pid !== process.pid && line.slice(space + 1).includes(path)) pids.push(pid)
+    }
+    return pids
+  }
+  return []
+}

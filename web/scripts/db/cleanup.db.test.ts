@@ -9,15 +9,21 @@
  *   SIGINT, SIGTERM, SIGHUP  the signal hooks, which re-raise the signal so the exit status is kept
  *   SIGKILL               the guard process (guard.ts); the reaper is tested in cli.db.test.ts
  *   any of them while initdb is still running (the directory has no postmaster yet)
+ *   SIGKILL of the whole process group, on macOS: no System V segment or semaphore set is left
+ *
+ * The cases for the hooks run with the guard off (HB_PG_GUARD=0) and look at the host the moment the
+ * child's exit is seen: the guard would clean up after any death of the owner within half a second,
+ * and these tests would pass without the hooks. The guard has its own cases (SIGKILL).
  */
 
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
-import { isAlive } from './engine'
+import { isAlive, processesUsing } from './engine'
+import { semaphoreSetsOfInode } from './ipc'
 
 const WEB = fileURLToPath(new URL('../../', import.meta.url))
 const running: ChildProcess[] = []
@@ -62,9 +68,17 @@ interface Launched {
   readonly stdout: () => string
 }
 
-function launch(mode: Mode): Promise<Launched> {
+interface LaunchOptions {
+  /** The guard process is on by default; the cases for the hooks turn it off. */
+  readonly guard?: boolean
+  /** Own session and process group, so that the whole group can be killed at once. */
+  readonly detached?: boolean
+}
+
+function launch(mode: Mode, options: LaunchOptions = {}): Promise<Launched> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', '-e', CHILD, mode], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'] })
+    const env = options.guard === false ? { ...process.env, HB_PG_GUARD: '0' } : process.env
+    const child = spawn(process.execPath, ['--import', 'tsx', '-e', CHILD, mode], { cwd: WEB, env, detached: options.detached === true, stdio: ['ignore', 'pipe', 'pipe'] })
     running.push(child)
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) => child.once('exit', (code, signal) => r({ code, signal })))
     let out = ''
@@ -98,32 +112,41 @@ async function expectGone(l: Launched, ms = 20_000): Promise<void> {
   await waitFor(`the postmaster ${l.postmaster} to exit and ${l.dir} to be removed`, () => !isAlive(l.postmaster) && !existsSync(l.dir), ms)
 }
 
+/**
+ * The same, but the directory must be gone at once: the hooks remove it before the process ends, so
+ * it is done when the exit is seen. (The postmaster may be a zombie for a moment, until init reaps it.)
+ */
+async function expectGoneAlready(l: Launched): Promise<void> {
+  expect(existsSync(l.dir), `${l.dir} is still there`).toBe(false)
+  await waitFor(`the postmaster ${l.postmaster} to exit`, () => !isAlive(l.postmaster), 3_000)
+}
+
 describe('a cluster does not outlive its process', () => {
   it.concurrent('after stop(), called twice at once and again, and a normal exit', async () => {
-    const l = await launch('stop-twice')
+    const l = await launch('stop-twice', { guard: false })
     expect(await l.exited).toEqual({ code: 0, signal: null })
     expect(l.stdout()).toContain('STOPPED')
-    await expectGone(l, 5_000)
+    await expectGoneAlready(l)
   })
 
   it.concurrent('after process.exit()', async () => {
-    const l = await launch('exit')
+    const l = await launch('exit', { guard: false })
     expect((await l.exited).code).toBe(7)
-    await expectGone(l)
+    await expectGoneAlready(l)
   })
 
   it.concurrent('after an uncaught error', async () => {
-    const l = await launch('throw')
+    const l = await launch('throw', { guard: false })
     expect((await l.exited).code).toBe(1)
-    await expectGone(l)
+    await expectGoneAlready(l)
   })
 
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
     it.concurrent(`after ${signal}, and the process still ends by that signal`, async () => {
-      const l = await launch('hold')
+      const l = await launch('hold', { guard: false })
       l.child.kill(signal)
       expect(await l.exited).toEqual({ code: null, signal })
-      await expectGone(l)
+      await expectGoneAlready(l)
     })
   }
 
@@ -134,13 +157,26 @@ describe('a cluster does not outlive its process', () => {
     await l.exited
     await expectGone(l)
   })
+
+  it.skipIf(platform() !== 'darwin').concurrent('after SIGKILL of the whole process group (the watchdog), the host holds no System V semaphore set and no segment of it (macOS)', async () => {
+    const l = await launch('hold', { detached: true })
+    const inode = statSync(join(l.dir, 'data')).ino
+    // Running: the shim, not the kernel, holds the server's semaphores.
+    expect(semaphoreSetsOfInode(inode)).toEqual([])
+    // The postmaster and the child that owns it die at once; only the guard (its own session) survives.
+    process.kill(-(l.child.pid as number), 'SIGKILL')
+    await l.exited
+    await expectGone(l)
+    expect(semaphoreSetsOfInode(inode)).toEqual([])
+  })
 })
 
 /** Starts a child that begins to start a cluster in a base directory of its own, and returns once the cluster's directory exists. */
-async function launchStarting(): Promise<{ child: ChildProcess; base: string; dir: string; exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> }> {
+async function launchStarting(guard: boolean): Promise<{ child: ChildProcess; base: string; dir: string; exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> }> {
   const base = mkdtempSync(join(tmpdir(), 'hb-cleanup-test-'))
   bases.push(base)
-  const child = spawn(process.execPath, ['--import', 'tsx', '-e', CHILD, 'hold', base], { cwd: WEB, stdio: 'ignore' })
+  const env = guard ? process.env : { ...process.env, HB_PG_GUARD: '0' }
+  const child = spawn(process.execPath, ['--import', 'tsx', '-e', CHILD, 'hold', base], { cwd: WEB, env, stdio: 'ignore' })
   running.push(child)
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) => child.once('exit', (code, signal) => r({ code, signal })))
   let dir: string | undefined
@@ -151,23 +187,27 @@ async function launchStarting(): Promise<{ child: ChildProcess; base: string; di
   return { child, base, dir: join(base, dir as string), exited }
 }
 
-/** Whether any process has this path on its command line (initdb, its bootstrap postgres, the postmaster). */
+/**
+ * Whether any process has this path on its command line or in its environment: initdb and the
+ * postmaster have it as `-D`, but the bootstrap and single-user postgres that initdb starts get it
+ * only as PGDATA.
+ */
 function usesPath(path: string): boolean {
-  return execFileSync('ps', ['-ax', '-o', 'command='], { encoding: 'utf8' }).includes(path)
+  return processesUsing(path).length > 0
 }
 
 describe('a cluster does not outlive its process, even if that ends while initdb is running', () => {
-  it.concurrent('SIGTERM: the hook kills initdb and removes the directory', async () => {
-    const l = await launchStarting()
+  it.concurrent('SIGTERM: the hook kills initdb and removes the directory (guard off: the hook alone)', async () => {
+    const l = await launchStarting(false)
     l.child.kill('SIGTERM')
     expect(await l.exited).toEqual({ code: null, signal: 'SIGTERM' })
-    await waitFor('the directory to be removed', () => !existsSync(l.dir), 20_000)
+    expect(existsSync(l.dir), 'the directory is removed by the time the process has ended').toBe(false)
     await waitFor('every process of the directory to be gone', () => !usesPath(l.dir), 20_000)
     expect(readdirSync(l.base)).toEqual([])
   })
 
   it.concurrent('SIGKILL: the guard kills initdb and removes the directory, marker last', async () => {
-    const l = await launchStarting()
+    const l = await launchStarting(true)
     l.child.kill('SIGKILL')
     await l.exited
     await waitFor('the directory to be removed', () => !existsSync(l.dir), 30_000)
