@@ -27,9 +27,9 @@ interface Cli {
 }
 
 /** Runs `db:up` as its own process (node + tsx, so one pid) and waits for the three URLs. */
-function startCli(): Promise<Cli> {
+function startCli(env: Readonly<Record<string, string>> = {}): Promise<Cli> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/db/cli.ts', 'up'], { cwd: WEB, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(process.execPath, ['--import', 'tsx', 'scripts/db/cli.ts', 'up'], { cwd: WEB, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] })
     running.push(child)
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((r) => child.once('exit', (code, signal) => r({ code, signal })))
     let out = ''
@@ -110,8 +110,9 @@ describe('npm run db:up', () => {
     expect(await accepts(cli.urls.HB_DB_URL)).toBe(false)
   })
 
-  it('after a kill -9 leaves an orphan, the reaper stops the postmaster and removes the directory', async () => {
-    const cli = await startCli()
+  it('after a kill -9 leaves an orphan (guard off), the reaper stops the postmaster and removes the directory', async () => {
+    // HB_PG_GUARD=0: the guard (guard.ts, tested in cleanup.db.test.ts) would remove the orphan by itself.
+    const cli = await startCli({ HB_PG_GUARD: '0' })
     const dir = await clusterDirOf(cli.urls.HB_DB_URL_SUPERUSER)
     cli.child.kill('SIGKILL')
     await cli.exited

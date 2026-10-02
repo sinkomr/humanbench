@@ -5,12 +5,13 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { CLUSTER_DIR_PREFIX, MARKER_FILE, binaryPackage, hydrateLinks, isAlive, prepareBinaries, reapStaleClusters } from './engine'
+import { spawnGuard } from './guard'
 
 let base: string
 const children: ChildProcess[] = []
@@ -144,5 +145,107 @@ describe('prepareBinaries', () => {
 
   it('is a package of the platform this test runs on', () => {
     expect(binaryPackage()).toMatch(/^@embedded-postgres\/(darwin|linux)-(arm64|x64)$/)
+  })
+})
+
+describe('the guard (what cleans up after a SIGKILL)', () => {
+  /** A stand-in for a postmaster: a shell script named `postgres`, so its command line says postgres. */
+  function fakePostmaster(): ChildProcess {
+    mkdirSync(join(base, 'fake-bin'), { recursive: true })
+    const exe = join(base, 'fake-bin', 'postgres')
+    writeFileSync(exe, '#!/bin/sh\nwhile true; do sleep 1; done\n')
+    chmodSync(exe, 0o755)
+    const child = spawn(exe, [], { stdio: 'ignore' })
+    children.push(child)
+    return child
+  }
+
+  /** A process that stands for the run that owns the cluster. */
+  function fakeOwner(): ChildProcess {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+    children.push(child)
+    return child
+  }
+
+  async function waitFor(what: string, done: () => boolean, ms = 10_000): Promise<void> {
+    for (let waited = 0; waited < ms; waited += 50) {
+      if (done()) return
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    throw new Error(`still waiting for: ${what}`)
+  }
+
+  function guard(owner: ChildProcess, dir: string): ChildProcess {
+    const g = spawnGuard({ ownerPid: owner.pid as number, dir, prefix: CLUSTER_DIR_PREFIX, marker: MARKER_FILE, intervalMs: 50 })
+    expect(g).toBeDefined()
+    children.push(g as ChildProcess)
+    return g as ChildProcess
+  }
+
+  it('when its owner dies: stops the postmaster, removes the directory, and exits', async () => {
+    const owner = fakeOwner()
+    const postmaster = fakePostmaster()
+    const dir = clusterDir('guard01', { ownerPid: owner.pid })
+    writeFileSync(join(dir, 'data', 'postmaster.pid'), `${postmaster.pid}\n${join(dir, 'data')}\n`)
+    const g = guard(owner, dir)
+    const guardExited = new Promise<void>((r) => g.once('exit', () => r()))
+    await new Promise((r) => setTimeout(r, 300))
+    expect(existsSync(dir)).toBe(true)
+    expect(isAlive(postmaster.pid as number)).toBe(true)
+
+    owner.kill('SIGKILL')
+    await waitFor('the directory to be removed', () => !existsSync(dir))
+    await waitFor('the postmaster to stop', () => !isAlive(postmaster.pid as number))
+    await guardExited
+  })
+
+  it('exits by itself, touching nothing, once the directory is gone while the owner lives (a normal stop())', async () => {
+    const owner = fakeOwner()
+    const postmaster = fakePostmaster()
+    const dir = clusterDir('guard02', { ownerPid: owner.pid })
+    const g = guard(owner, dir)
+    const guardExited = new Promise<void>((r) => g.once('exit', () => r()))
+    rmSync(dir, { recursive: true, force: true })
+    await guardExited
+    expect(isAlive(owner.pid as number)).toBe(true)
+    expect(isAlive(postmaster.pid as number)).toBe(true)
+  })
+
+  it('does not signal a pid from postmaster.pid unless its command line says postgres', async () => {
+    const owner = fakeOwner()
+    const bystander = spawn('sleep', ['60'], { stdio: 'ignore' })
+    children.push(bystander)
+    const dir = clusterDir('guard03', { ownerPid: owner.pid })
+    writeFileSync(join(dir, 'data', 'postmaster.pid'), `${bystander.pid}\n${join(dir, 'data')}\n`)
+    guard(owner, dir)
+    owner.kill('SIGKILL')
+    await waitFor('the directory to be removed', () => !existsSync(dir))
+    expect(isAlive(bystander.pid as number)).toBe(true)
+  })
+
+  it('never touches a directory whose marker names another owner, that has no marker, or that is not a cluster directory', async () => {
+    const owner = fakeOwner()
+    const other = fakeOwner()
+    const wrongOwner = clusterDir('guard04', { ownerPid: other.pid })
+    const noMarker = clusterDir('guard05', undefined)
+    const foreign = join(base, 'somebody-elses-dir')
+    mkdirSync(foreign)
+    writeFileSync(join(foreign, MARKER_FILE), JSON.stringify({ ownerPid: owner.pid }))
+    const guards = [guard(owner, wrongOwner), guard(owner, noMarker), guard(owner, foreign)]
+    const exits = guards.map((g) => new Promise<void>((r) => g.once('exit', () => r())))
+    owner.kill('SIGKILL')
+    await Promise.all(exits)
+    for (const d of [wrongOwner, noMarker, foreign]) expect(existsSync(d), d).toBe(true)
+  })
+
+  it('is off with HB_PG_GUARD=0', () => {
+    const before = process.env.HB_PG_GUARD
+    process.env.HB_PG_GUARD = '0'
+    try {
+      expect(spawnGuard({ ownerPid: process.pid, dir: base, prefix: CLUSTER_DIR_PREFIX, marker: MARKER_FILE })).toBeUndefined()
+    } finally {
+      if (before === undefined) delete process.env.HB_PG_GUARD
+      else process.env.HB_PG_GUARD = before
+    }
   })
 })

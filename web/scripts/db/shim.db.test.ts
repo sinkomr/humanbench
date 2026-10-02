@@ -4,12 +4,15 @@
  * `db` vitest project: `npm run test:db`.
  */
 
+import { execFileSync } from 'node:child_process'
 import { createHmac, randomBytes } from 'node:crypto'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
+import { platform, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, inject } from 'vitest'
-import { CLUSTER_DIR_PREFIX, PG_MAJOR } from './engine'
+import { CLUSTER_DIR_PREFIX, PG_MAJOR, prepareBinaries } from './engine'
 import { ANON, AUTHENTICATED, SERVICE_ROLE, type TestDb } from './harness'
 import { quoteIdent } from './sql'
 import { exposedSurface, names } from './surface'
@@ -53,6 +56,33 @@ describe('the engine', () => {
               (select pg_encoding_to_char(encoding) from pg_database where datname = current_database()) as enc`,
     )
     expect(rows[0]).toEqual({ fsync: 'off', tz: 'UTC', collate: 'C', enc: 'UTF8' })
+  })
+
+  it('keeps its shared memory off the host: an anonymous mmap, and dynamic segments as files in the data directory', async () => {
+    const { rows } = await db.sudo.query<{ name: string; setting: string }>(
+      `select name, setting from pg_settings where name in ('shared_memory_type', 'dynamic_shared_memory_type') order by 1`,
+    )
+    expect(rows).toEqual([
+      { name: 'dynamic_shared_memory_type', setting: 'mmap' },
+      { name: 'shared_memory_type', setting: 'mmap' },
+    ])
+  })
+
+  it.skipIf(platform() !== 'darwin')('on macOS runs the shimmed postgres, which holds no System V segment of the host (M2.0)', () => {
+    expect(prepareBinaries().shm).toBe('shim')
+    const pid = Number.parseInt(readFileSync(join(inject('hbCluster').dir, 'data', 'postmaster.pid'), 'utf8').split('\n')[0] ?? '', 10)
+    expect(pid).toBeGreaterThan(1)
+    expect(execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })).toContain('/bin/postgres.real ')
+    // Segments of other programs may exist; none may have been created or last used by this postmaster.
+    const lines = execFileSync('ipcs', ['-m', '-a'], { encoding: 'utf8' }).split('\n')
+    const header = (lines.find((l) => /^T\s+ID\s/.test(l)) ?? '').trim().split(/\s+/)
+    const [cpid, lpid] = [header.indexOf('CPID'), header.indexOf('LPID')]
+    expect(cpid).toBeGreaterThan(0)
+    expect(lpid).toBeGreaterThan(0)
+    for (const row of lines.filter((l) => /^m\s/.test(l)).map((l) => l.trim().split(/\s+/))) {
+      expect(row[cpid]).not.toBe(String(pid))
+      expect(row[lpid]).not.toBe(String(pid))
+    }
   })
 
   it('rejects a login with the wrong password (scram, a random password per run)', async () => {

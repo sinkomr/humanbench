@@ -74,6 +74,40 @@ describe('npm scripts and dependencies', () => {
   })
 })
 
+describe('the shared-memory shim and the cleanup layers (M2.0, 2026-10-01)', () => {
+  const engine = read('web/scripts/db/engine.ts')
+  const readme = read('supabase/README.md')
+
+  it('ships the C source and builds it from the harness, on macOS only', () => {
+    expect(existsSync(join(REPO, 'web/scripts/db/shm/hb_shm_shim.c'))).toBe(true)
+    expect(read('web/scripts/db/shm/hb_shm_shim.c')).toContain('__DATA,__interpose')
+    expect(engine).toContain("from './shm'")
+    expect(engine).toMatch(/os !== 'darwin'/)
+  })
+
+  it('starts the server with mmap shared memory in both settings', () => {
+    expect(engine).toContain("['shared_memory_type', 'mmap']")
+    expect(engine).toContain("['dynamic_shared_memory_type', 'mmap']")
+  })
+
+  it('adds no dependency for it: no PGlite, no native addon, no wrapper', () => {
+    const all = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies })
+    expect(all.filter((n) => /pglite|ffi|node-gyp|bindings/.test(n))).toEqual([])
+  })
+
+  it('documents the shim, the two environment variables, the four cleanup layers and why PGlite does not do', () => {
+    for (const phrase of ['HB_PG_SHM', 'HB_PG_GUARD', 'Amendment 2026-10-01', 'DYLD_INSERT_LIBRARIES', 'guard', 'statement_timeout` is not enforced']) {
+      expect(readme, phrase).toContain(phrase)
+    }
+  })
+
+  it('has a test that ends a cluster\'s owner every way and one that exercises the shim', () => {
+    for (const f of ['cleanup.db.test.ts', 'shm.test.ts']) expect(existsSync(join(WEB, 'scripts/db', f)), f).toBe(true)
+    const cleanup = read('web/scripts/db/cleanup.db.test.ts')
+    for (const how of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL', 'process.exit', 'stop-twice']) expect(cleanup, how).toContain(how)
+  })
+})
+
 describe('CI', () => {
   const ci = read('.github/workflows/ci.yml')
 

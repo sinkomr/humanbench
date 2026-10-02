@@ -12,13 +12,27 @@
  * This module is process management only: start, stop, and reaping clusters a killed run left
  * behind. The Supabase shim, templates and test databases are in harness.ts.
  *
- * Why a reaper: the workflow watchdog kills a stalled run without letting it clean up, and a
- * SIGKILLed test process leaves its postmaster running. Every cluster directory carries a marker
- * with its owner's pid; the next start (and `npm run db:reap`) stops the postmasters whose owner
- * is dead and removes their directories. Only `hb-pg-*` directories with a marker are touched.
+ * Independent of the host's System V shared memory. On macOS the kernel's SysV accounting leaks when
+ * a postmaster is killed, and then even `initdb` fails with "shmget: Cannot allocate memory" until a
+ * reboot. So there the binaries run through shm.ts: a tiny library gives the server anonymous shared
+ * mappings in place of SysV segments. The server's other shared memory is configured not to use the
+ * host either (`shared_memory_type=mmap`, `dynamic_shared_memory_type=mmap`: files in the data
+ * directory, not POSIX shm objects that outlive a kill). Linux uses the binaries as they are.
+ *
+ * Cleanup, in layers, so that nothing outlives a run:
+ *   1. `stop()`: the normal end.
+ *   2. process `exit` (a crash, process.exit, an uncaught error) and SIGINT / SIGTERM / SIGHUP:
+ *      every live cluster is stopped and deleted, then the signal is re-raised if nobody else
+ *      handles it (so the exit status stays the signal's).
+ *   3. SIGKILL cannot be handled. Each cluster has a detached guard process (guard.ts) that watches
+ *      the owner and stops and deletes the cluster when it dies.
+ *   4. The reaper below, if even the guard is gone (the whole process tree killed, a reboot): every
+ *      cluster directory carries a marker with its owner's pid; the next start (and
+ *      `npm run db:reap`) stops the postmasters whose owner is dead and removes their directories.
+ *      Only `hb-pg-*` directories with a marker are touched.
  */
 
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import {
   accessSync,
@@ -38,6 +52,11 @@ import { createRequire } from 'node:module'
 import net from 'node:net'
 import { arch, platform, tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { spawnGuard } from './guard'
+import { isAlive, isPostgresProcess, orTimeout, sleep, sleepSync } from './proc'
+import { buildShimmedBinaries } from './shm'
+
+export { isAlive }
 
 /** Cluster directories are `<tmp>/hb-pg-XXXXXX`; the reaper only ever touches this prefix. */
 export const CLUSTER_DIR_PREFIX = 'hb-pg-'
@@ -92,14 +111,32 @@ export function binaryPackage(os: string = platform(), cpu: string = arch()): st
   return `@embedded-postgres/${name}`
 }
 
+/** How the server gets its System V shared memory: from the host's kernel, or from the shim (shm.ts). */
+export type ShmMode = 'sysv' | 'shim'
+
 export interface Binaries {
-  /** `<package>/native`: bin/, lib/, share/. */
+  /** `<package>/native`: bin/, lib/, share/ (the package's own files, never modified). */
   readonly root: string
+  /** What to run: the package's executables, or the overlay's copies with the shim. */
   readonly initdb: string
   readonly postgres: string
+  readonly shm: ShmMode
+  /** On macOS, why the shim is not in use although it was wanted; shown when the server then fails to start. */
+  readonly shmNote?: string
 }
 
-let binaries: Binaries | undefined
+export interface PrepareOptions {
+  /**
+   * `auto` (default; also `HB_PG_SHM` unset): the shim on macOS, the host's System V shared memory
+   * elsewhere, and on macOS the host's too if the shim cannot be built (with a note). `sysv`: always
+   * the host's. `shim`: macOS only, and an error if it cannot be built.
+   */
+  readonly shm?: 'auto' | 'sysv' | 'shim'
+  /** Where the shim overlay is cached, in order of preference. Default: `node_modules/.cache/humanbench-pg`, then the temp directory. */
+  readonly cacheDirs?: readonly string[]
+  /** For tests. Default `os.platform()`. */
+  readonly platform?: string
+}
 
 /**
  * Creates the symlinks of `links` (`target` -> `source`, both relative to `packageRoot`, as in the
@@ -120,6 +157,13 @@ export function hydrateLinks(packageRoot: string, links: readonly { source: stri
   return created
 }
 
+/** The package's own binaries, found and prepared once per process. */
+interface Located extends Omit<Binaries, 'shm' | 'shmNote'> {
+  readonly packageRoot: string
+}
+
+let located: Located | undefined
+
 /**
  * Locates the binaries and prepares them once per process:
  * - the packages ship their shared-library symlinks as a JSON list and create them in a
@@ -127,8 +171,8 @@ export function hydrateLinks(packageRoot: string, links: readonly { source: stri
  *   created here (the same links, the same way; existing ones are left alone);
  * - the executables get their exec bit if an extraction lost it.
  */
-export function prepareBinaries(): Binaries {
-  if (binaries !== undefined) return binaries
+function locateBinaries(): Located {
+  if (located !== undefined) return located
   let entry: string
   try {
     entry = createRequire(import.meta.url).resolve(binaryPackage())
@@ -148,8 +192,55 @@ export function prepareBinaries(): Binaries {
       chmodSync(exe, 0o755)
     }
   }
-  binaries = { root, initdb, postgres }
-  return binaries
+  located = { packageRoot, root, initdb, postgres }
+  return located
+}
+
+function shmModeFromEnv(): 'auto' | 'sysv' | 'shim' {
+  const v = process.env.HB_PG_SHM
+  if (v === undefined || v === '' || v === 'auto') return 'auto'
+  if (v === 'sysv' || v === 'shim') return v
+  throw new Error(`HB_PG_SHM must be auto, sysv or shim, not "${v}".`)
+}
+
+const prepared = new Map<string, Binaries>()
+let warnedNoShim = false
+
+/**
+ * The binaries to run (see {@link PrepareOptions} for the shared-memory choice). Cached per
+ * combination of options for the life of the process; building the shim the first time takes a few
+ * seconds, and nothing after that.
+ */
+export function prepareBinaries(options: PrepareOptions = {}): Binaries {
+  const mode = options.shm ?? shmModeFromEnv()
+  const os = options.platform ?? platform()
+  const real = locateBinaries()
+  const cacheKey = `${mode}|${os}|${(options.cacheDirs ?? []).join(',')}`
+  const cached = prepared.get(cacheKey)
+  if (cached !== undefined) return cached
+
+  const sysv = (shmNote?: string): Binaries => ({ root: real.root, initdb: real.initdb, postgres: real.postgres, shm: 'sysv', ...(shmNote === undefined ? {} : { shmNote }) })
+  let result: Binaries
+  if (mode === 'sysv' || os !== 'darwin') {
+    if (mode === 'shim' && os !== 'darwin') throw new Error('HB_PG_SHM=shim: the shared-memory shim is for macOS; other systems use their own System V shared memory.')
+    result = sysv()
+  } else {
+    const cacheDirs = options.cacheDirs ?? [join(real.packageRoot, '..', '..', '.cache', 'humanbench-pg'), join(tmpdir(), 'hb-pgbin')]
+    try {
+      const shim = buildShimmedBinaries(real, { cacheDirs })
+      result = { root: real.root, initdb: shim.initdb, postgres: shim.postgres, shm: 'shim' }
+    } catch (e) {
+      if (mode === 'shim') throw e
+      const note = `The System V shared-memory shim could not be built (${e instanceof Error ? e.message : String(e)}), so the host's System V shared memory is used.`
+      if (!warnedNoShim) {
+        warnedNoShim = true
+        console.warn(`[db harness] ${note}`)
+      }
+      result = sysv(note)
+    }
+  }
+  prepared.set(cacheKey, result)
+  return result
 }
 
 function freePort(): Promise<number> {
@@ -163,26 +254,6 @@ function freePort(): Promise<number> {
     })
   })
 }
-
-/** Whether a process with this pid exists (a process we may not signal still counts). */
-export function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
-
-function isPostgresProcess(pid: number): boolean {
-  try {
-    return /postgres/.test(execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' }))
-  } catch {
-    return false
-  }
-}
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 /** The postmaster pid in `<data>/postmaster.pid` (its first line), or undefined. */
 function postmasterPid(dataDir: string): number | undefined {
@@ -258,6 +329,10 @@ const POSTGRES_FLAGS = [
   ['max_wal_senders', '0'],
   ['shared_buffers', '32MB'],
   ['max_connections', '100'],
+  // Shared memory that never touches the host's System V or POSIX shared-memory tables (see the
+  // header): the main segment is an anonymous mmap, the dynamic segments are files in the data directory.
+  ['shared_memory_type', 'mmap'],
+  ['dynamic_shared_memory_type', 'mmap'],
   // Supabase runs in UTC.
   ['TimeZone', 'UTC'],
   ['log_timezone', 'UTC'],
@@ -282,9 +357,10 @@ class LogBuffer {
   }
 }
 
-function runInitdb(initdb: string, args: string[], log: LogBuffer): Promise<void> {
+function runInitdb(initdb: string, args: string[], log: LogBuffer, onSpawn: (child: ChildProcess) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(initdb, args, { env: CHILD_ENV, stdio: ['ignore', 'pipe', 'pipe'] })
+    onSpawn(child)
     child.stdout.on('data', (d) => log.push(d))
     child.stderr.on('data', (d) => log.push(d))
     child.on('error', reject)
@@ -293,9 +369,10 @@ function runInitdb(initdb: string, args: string[], log: LogBuffer): Promise<void
 }
 
 /** Starts the postmaster and resolves when it accepts connections. */
-function startPostmaster(postgres: string, dataDir: string, port: number, log: LogBuffer, timeoutMs = 60_000): Promise<ChildProcess> {
+function startPostmaster(postgres: string, dataDir: string, port: number, log: LogBuffer, onSpawn: (child: ChildProcess) => void, timeoutMs = 60_000): Promise<ChildProcess> {
   return new Promise((resolve, reject) => {
     const child = spawn(postgres, ['-D', dataDir, '-p', String(port), ...POSTGRES_FLAGS], { env: CHILD_ENV, stdio: ['ignore', 'pipe', 'pipe'] })
+    onSpawn(child)
     let settled = false
     const done = (fn: () => void): void => {
       if (settled) return
@@ -318,18 +395,155 @@ function startPostmaster(postgres: string, dataDir: string, port: number, log: L
   })
 }
 
+/** A cluster this process has started and not yet stopped: what the exit and signal hooks clean up. */
+interface Live {
+  readonly dir: string
+  readonly dataDir: string
+  /** The initdb that is creating the data directory, until it exits. */
+  initdb: ChildProcess | undefined
+  child: ChildProcess | undefined
+  /** Set by the first `stop`; every later call waits for the same work. */
+  stopping: Promise<void> | undefined
+}
+
+const live = new Set<Live>()
+
+/** Immediate shutdown (SIGQUIT) of the postmaster, if it is running and is one; then SIGKILL after `graceMs`. Synchronous. */
+function killPostmasterSync(c: Live, graceMs: number): void {
+  // An initdb still running would go on writing into the directory that is about to be removed.
+  if (c.initdb?.pid !== undefined && c.initdb.exitCode === null && c.initdb.signalCode === null) {
+    try {
+      process.kill(c.initdb.pid, 'SIGKILL')
+    } catch {
+      // Already gone.
+    }
+  }
+  const pids = new Set<number>()
+  if (c.child?.pid !== undefined && c.child.exitCode === null && c.child.signalCode === null) pids.add(c.child.pid)
+  const fromFile = postmasterPid(c.dataDir)
+  if (fromFile !== undefined && isAlive(fromFile) && isPostgresProcess(fromFile)) pids.add(fromFile)
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGQUIT')
+    } catch {
+      // Already gone.
+    }
+  }
+  for (const pid of pids) {
+    for (let waited = 0; isAlive(pid) && waited < graceMs; waited += 50) sleepSync(50)
+    if (isAlive(pid)) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+}
+
+/** The last resort when the process ends without `stop()`: the data is throw-away, so no grace. */
+function cleanupAllSync(): void {
+  for (const c of live) {
+    killPostmasterSync(c, 2_000)
+    rmSync(c.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
+  live.clear()
+}
+
+const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
+
+function onSignal(signal: (typeof SIGNALS)[number]): void {
+  // If something else (vitest, the db:up command) also handles the signal it ends the process
+  // itself, after its own teardown; if we are the only handler, the default action (exit by that
+  // signal) is what the signal would have done, so do it once the clusters are gone.
+  const alone = process.listenerCount(signal) <= 1
+  void Promise.allSettled([...live].map((c) => stopLive(c))).then(() => {
+    if (!alone) return
+    removeHooks()
+    process.kill(process.pid, signal)
+  })
+}
+
+const signalHandlers = new Map<NodeJS.Signals, () => void>()
+let hooksInstalled = false
+
+function installHooks(): void {
+  if (hooksInstalled) return
+  hooksInstalled = true
+  process.on('exit', cleanupAllSync)
+  for (const signal of SIGNALS) {
+    const handler = (): void => onSignal(signal)
+    signalHandlers.set(signal, handler)
+    process.on(signal, handler)
+  }
+}
+
+function removeHooks(): void {
+  if (!hooksInstalled) return
+  hooksInstalled = false
+  process.removeListener('exit', cleanupAllSync)
+  for (const [signal, handler] of signalHandlers) process.removeListener(signal, handler)
+  signalHandlers.clear()
+}
+
+/** Stops the postmaster (fast shutdown, then immediate) and deletes the directory. Idempotent: callers share one run. */
+function stopLive(c: Live): Promise<void> {
+  c.stopping ??= (async () => {
+    try {
+      const initdb = c.initdb
+      if (initdb !== undefined && initdb.exitCode === null && initdb.signalCode === null) {
+        const exited = new Promise<void>((resolve) => initdb.once('exit', () => resolve()))
+        initdb.kill('SIGKILL')
+        await orTimeout(exited, 5_000)
+      }
+      const child = c.child
+      if (child !== undefined && child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        child.kill('SIGINT')
+        if ((await orTimeout(exited, 30_000)) === 'timeout') {
+          child.kill('SIGQUIT')
+          await orTimeout(exited, 5_000)
+        }
+      } else {
+        // No child object (the start failed, or this is the only record): go by the pid file.
+        await stopPostmaster(c.dataDir)
+      }
+    } finally {
+      await rm(c.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      live.delete(c)
+      if (live.size === 0) removeHooks()
+    }
+  })()
+  return c.stopping
+}
+
+/** Added to a start failure on a host whose System V shared memory is the cause. */
+function sharedMemoryHint(log: string, bins: Binaries): string {
+  if (bins.shm !== 'sysv' || !/shmget|shared memory segment/i.test(log)) return ''
+  return (
+    "\nThe host's System V shared memory is exhausted (macOS leaks it when a Postgres is killed, and only a reboot frees it)." +
+    (bins.shmNote === undefined ? ' Run without HB_PG_SHM=sysv on macOS: the harness then avoids System V shared memory.' : `\n${bins.shmNote}`)
+  )
+}
+
 /**
  * Starts a fresh cluster. Throws with the server's last log lines if it does not come up. Call
- * `stop()` when done; if the process is killed instead, the next `startCluster` reaps it.
+ * `stop()` when done; if the process ends or is killed instead, the hooks, the guard and the reaper
+ * (see the header) clean up.
  */
 export async function startCluster(options: StartOptions = {}): Promise<Cluster> {
   const baseDir = options.baseDir ?? tmpdir()
   if (options.reap !== false) await reapStaleClusters(baseDir).catch(() => undefined)
-  const { initdb, postgres } = prepareBinaries()
+  const bins = prepareBinaries()
 
   const dir = mkdtempSync(join(baseDir, CLUSTER_DIR_PREFIX))
   writeFileSync(join(dir, MARKER_FILE), JSON.stringify({ ownerPid: process.pid, startedAt: new Date().toISOString() }))
   const dataDir = join(dir, 'data')
+  const entry: Live = { dir, dataDir, initdb: undefined, child: undefined, stopping: undefined }
+  live.add(entry)
+  installHooks()
+  spawnGuard({ ownerPid: process.pid, dir, prefix: CLUSTER_DIR_PREFIX, marker: MARKER_FILE })
+
   const password = randomBytes(18).toString('base64url')
   const log = new LogBuffer()
 
@@ -340,9 +554,10 @@ export async function startCluster(options: StartOptions = {}): Promise<Cluster>
     writeFileSync(pwFile, `${password}\n`, { mode: 0o600 })
     try {
       await runInitdb(
-        initdb,
+        bins.initdb,
         ['-D', dataDir, '-U', SUPERUSER, '--auth=scram-sha-256', `--pwfile=${pwFile}`, '--encoding=UTF8', '--locale=C', '--no-sync'],
         log,
+        (c) => (entry.initdb = c),
       )
     } finally {
       rmSync(pwFile, { force: true })
@@ -350,7 +565,7 @@ export async function startCluster(options: StartOptions = {}): Promise<Cluster>
     for (let attempt = 1; child === undefined; attempt++) {
       port = options.port ?? (await freePort())
       try {
-        child = await startPostmaster(postgres, dataDir, port, log)
+        child = await startPostmaster(bins.postgres, dataDir, port, log, (c) => (entry.child = c))
       } catch (e) {
         // A port taken between our probe and the server's bind: try another one.
         if (options.port === undefined && attempt < 4 && /address already in use/i.test(log.tail())) continue
@@ -358,20 +573,9 @@ export async function startCluster(options: StartOptions = {}): Promise<Cluster>
       }
     }
   } catch (e) {
-    await stopPostmaster(dataDir).catch(() => undefined)
-    await rm(dir, { recursive: true, force: true })
-    throw new Error(`Local Postgres failed to start: ${e instanceof Error ? e.message : String(e)}\n${log.tail()}`, { cause: e })
+    await stopLive(entry).catch(() => undefined)
+    throw new Error(`Local Postgres failed to start: ${e instanceof Error ? e.message : String(e)}\n${log.tail()}${sharedMemoryHint(log.tail(), bins)}`, { cause: e })
   }
-
-  const running = child
-  let stopped = false
-  // Last resort when the process ends without stop() (a crash, process.exit): the data is
-  // throw-away, so an immediate shutdown (SIGQUIT) and a synchronous delete are fine.
-  const onExit = (): void => {
-    if (running.exitCode === null && running.signalCode === null) running.kill('SIGQUIT')
-    rmSync(dir, { recursive: true, force: true })
-  }
-  process.once('exit', onExit)
 
   return {
     host: HOST,
@@ -379,23 +583,6 @@ export async function startCluster(options: StartOptions = {}): Promise<Cluster>
     password,
     dir,
     logTail: () => log.tail(),
-    async stop() {
-      if (stopped) return
-      stopped = true
-      process.removeListener('exit', onExit)
-      try {
-        if (running.exitCode === null && running.signalCode === null) {
-          const exited = new Promise<void>((resolve) => running.once('exit', () => resolve()))
-          running.kill('SIGINT')
-          const timeout = sleep(30_000).then(() => 'timeout' as const)
-          if ((await Promise.race([exited, timeout])) === 'timeout') {
-            running.kill('SIGQUIT')
-            await Promise.race([exited, sleep(5_000)])
-          }
-        }
-      } finally {
-        await rm(dir, { recursive: true, force: true })
-      }
-    },
+    stop: () => stopLive(entry),
   }
 }
