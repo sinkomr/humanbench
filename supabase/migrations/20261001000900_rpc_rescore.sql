@@ -12,7 +12,7 @@
 --     nothing. M2.3 will additionally require each session's MAC (same hb.session_owned seam).
 --   * Which responses score: dichotomous items (2PL, 2PL-testlet scored as 2PL as in the app, 3PL)
 --     with a stored correct 0/1 and a parameter row, not pretest, not on a quarantined item (DESIGN
---     §4.5), only in calibration-eligible sessions (A21: ineligible sessions still count as practice
+--     §4.5), only in sessions that are eligible BLIND (below; A21: the others still count as practice
 --     exposures), only with a response inside the item's answer space (hb.response_fits: an index out
 --     of range, a letter that is none, a number that does not parse is known wrong to anybody and
 --     says nothing about the person; it is counted under skipped.invalid, not scored), and only in a
@@ -58,12 +58,21 @@
 -- near certainty and well formed (a number like 99999999 for an item that asks for a small one), and
 -- a session of 4 such answers and one real answer then publishes that one answer's verdict through the
 -- mean. The server cannot see that without comparing the answer with the key, which would make the count
--- depend on the key. M2.2 narrows it with the server's own evidence (hb.is_eligible: person fit, correct
--- answers faster than the server clock allows, accuracy on hard items), which can drop a padded session of
--- 20 answers or more; but what drops a session is a function of which answers were right, so the reply does
--- not say why a session was dropped: it carries no per-session calibration_eligible, and a session that
--- is not counted for its integrity is counted under skipped.not_counted with the sessions that are too short.
--- See supabase/README.md, "What this does not stop".
+-- depend on the key. See supabase/README.md, "What this does not stop".
+--
+-- Which sessions count (A21), and why it is the BLIND eligibility. The full calibration eligibility of M2.2
+-- (hb.is_eligible) reads the key: a correct answer under a quarter of the median time is a flag and a wrong one
+-- is not, and person fit and accuracy on hard items are functions of the answers. A script that sets one flag
+-- itself (paste) and answers one item at once is eligible exactly when that answer was wrong, so whether its
+-- session is included, as seen in n_scored, in the presence of eap[axis] or in withheld, would read the
+-- answer out (the first M2.2 version did that; owner decision 2026-10-01: rescore must not leak single-answer
+-- verdicts). rescore therefore reads hb.is_eligible(session, true): the count without the checks that read the
+-- key, a fast answer counting whether or not it was right. A session is then dropped for what the caller chose
+-- (its times and its flags) and never for what it got right, and the reply says nothing more of why: a session
+-- not counted for it is counted under skipped.not_counted with the sessions that are too short, and the reply
+-- carries no per-session eligibility. What the key-reading checks find stays in calibration_eligible, which
+-- only the calibration reads (A16). It is a weaker filter than the full one, by design: the cost of a score that
+-- is a function of its own verdicts is more than the cost of a misfit session in a person's own notes.
 --
 -- Item parameters: the param_version in app_config, else each item's latest row.
 --
@@ -126,13 +135,13 @@ begin
     known as (
       select ss.session_id,
              pg_catalog.to_char(ss.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_utc,
-             ss.calibration_eligible
+             hb.is_eligible(ss.session_id, true) as counts
         from req
         join public.sessions ss on ss.session_id = req.session_id
        where ss.finished_at is not null and hb.session_owned(req.value, v_anon)
     ),
     resp as (
-      select k.session_id, k.started_utc, k.calibration_eligible, r.pretest, r.correct,
+      select k.session_id, k.started_utc, k.counts, r.pretest, r.correct,
              i.status as item_status, f.axis, f.facet, p.model, p.a, p.b, p.c,
              hb.response_fits(ik.key,
                pg_catalog.jsonb_array_length(case when pg_catalog.jsonb_typeof(i.payload -> 'options') = 'array' then i.payload -> 'options' else '[]'::jsonb end),
@@ -155,7 +164,7 @@ begin
              case
                when pretest then 'pretest'
                when item_status = 'quarantined' then 'quarantined'
-               when not calibration_eligible then 'ineligible_session'
+               when not counts then 'ineligible_session'
                when model is null then 'no_params'
                when model not in ('2pl', '2pl_testlet', '3pl') then 'block'
                when correct is null then 'unscored'
@@ -169,7 +178,7 @@ begin
     -- a session's answers on an axis count only if the session holds at least v_min_axis of them
     -- (R-11.1: what a session adds to a score is a sum of that many answers, never one)
     cls as (
-      select c.session_id, c.started_utc, c.calibration_eligible, c.correct, c.axis, c.facet, c.model, c.a, c.b, c.c,
+      select c.session_id, c.started_utc, c.counts, c.correct, c.axis, c.facet, c.model, c.a, c.b, c.c,
              case
                when c.outcome = 'scored' and c.n_axis < v_min_axis then 'short_axis'
                else c.outcome
@@ -326,8 +335,7 @@ begin
       'skipped', coalesce((
         select pg_catalog.jsonb_object_agg(c.outcome, c.n)
           from (
-            -- a session that is not scored for its integrity looks like one that is too short (M2.2: the reason is a
-            -- function of which answers were right and is not told)
+            -- a session that is not scored for its integrity looks like one that is too short (the reason is not told)
             select case when outcome in ('ineligible_session', 'short_axis') then 'not_counted' else outcome end as outcome, pg_catalog.count(*) as n
               from cls where outcome <> 'scored' group by 1) c), '{}'::jsonb)
         || pg_catalog.jsonb_build_object(

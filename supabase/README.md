@@ -398,8 +398,9 @@ screenshot may show it. Nothing is done for an `anon_id` on its name alone.
 `anon_id` of the save** (the caller's; a `sig.anon_id` on a session may only repeat it, exactly as in `hb.session_owned`)
 and finished, it reads the responses from the database and returns, per axis, the own-axis, practice-adjusted EAP
 `{mean, sd, n}` (61 equal-weight grid points on [-4, 4], prior N(0, 1); *not* the correlated MAP) and, per facet, the
-EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only calibration-eligible
-sessions are scored; an ineligible session still counts as a test of the axis (practice, `ordinals`, `rho`). Pretest
+EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only sessions that are eligible
+*blind* are scored (`hb.is_eligible(session, true)`, below: the eligibility without the checks that read the key); a
+session that is not still counts as a test of the axis (practice, `ordinals`, `rho`). Pretest
 responses and responses on quarantined items (DESIGN §4.5) are left out; block observations (RT, span, coding,
 reading) are not scored on the server before M2.2 and are counted under `skipped.block`. A response outside the item's
 answer space (an index that is no option, a letter that is none, an entry that is no number; `hb.response_fits`) is
@@ -452,14 +453,23 @@ the bound, 84% in one call, less when the padding is not certain). The server ca
 one only by comparing it with the key, which would make the count depend on the key. This is limited to axes that have
 typed-number items (a multiple-choice item has no answer that is known wrong), and bounded by the 5 sessions an address
 may start a day, the 20 calls a day per address and the 10 per `anon_id`: one reading per axis (and per facet, with five
-numeric items each) per session. Closing it takes either noise on the numbers, which the owner has not decided on, or the
-server-side evidence of M2.2 (`hb.is_eligible`: a session of 20 answers or more padded with wrong answers is a misfit and is
-not scored; below 20 answers person fit is not a test, so a session of five is not caught). Because *which* sessions the
-evidence drops is a function of which answers were right, `rescore` does not say why a session was dropped: it carries no
-per-session `calibration_eligible`, and an answer of a session that was not scored for its integrity is counted under
-`skipped.not_counted` together with those of the sessions that are too short. (The absence of a session's numbers is still
-visible to the caller; the call limits bound what a script can make of that.) A session of unknown answers (all valid) is
-only an aggregate: differencing two such sessions gives a difference of two sums of five verdicts, not one.
+numeric items each) per session. Closing it takes noise on the numbers, which the owner has not decided on. The server-side
+evidence of M2.2 would catch a padded session of 20 answers or more (it is a misfit), but it cannot be used here: *which*
+sessions that evidence drops is a function of which answers were right, and a score reply that differs with it differs with
+a verdict. (The first M2.2 version did read it, and a script could set one flag itself, answer one item at once and see
+whether its session was scored: `n_scored`, the presence of `eap[axis]` and `withheld` all differ with the answer. Found by
+review, closed by the next paragraph.) **`rescore` reads the blind eligibility only**: the same flag count as the
+calibration's without what reads the key. A fast answer (under a quarter of the median, on items whose median is over 20 s)
+is a flag whether or not it was right, and the server's person fit and accuracy on hard items are not read, only the
+client's report of them. A session is then dropped for what the caller chose (its times, its flags) and never for what it
+got right, so nothing in the reply differs with a verdict through the eligibility. The reply still does not say why a
+session was not counted: it carries no per-session `calibration_eligible`, and the answers of a session that was not
+counted are under `skipped.not_counted` together with those of the sessions that are too short. The cost is a weaker filter:
+a session with two answers that were fast by the server's clock is not scored, wrong or right (the app's own check is about
+correct answers, which a client without the key cannot know), and a misfit session is scored like any other. What the
+key-reading checks find stays in `sessions.calibration_eligible`, which only the calibration reads (A16). A session of
+unknown answers (all valid) is only an aggregate: differencing two such sessions gives a difference of two sums of five
+verdicts, not one.
 
 `rescore` is held to the app's engine: `rescore.db.test.ts` compares it with `rescoreRetest` and `eapAxis` to 1e-9
 over generated sessions (practice, ineligible sessions, quarantine, order) with the minimum counts and the rounding
@@ -572,7 +582,7 @@ b = ±50, |z| ≈ 5,000) are among the 84. `hb.log1p` and `hb.expm1` exist becau
 | each `submit` | the answer's log-likelihood on the 61-point grid, added to the axis's | `sessions.state.eap[axis] = {n, ll}` | no |
 | each pick | the posterior mean and sd of each axis from that: the grid EAP under N(0, 1); an axis without an answer is its prior exactly (as the app's selector) | `hb.session_posteriors` | only through which item comes next |
 | `finish` | the correlated MAP and covariance of the session's counted answers under Σ_init | `sessions.state.posterior` (θ, the 17 × 17 covariance, `n_by_axis`, 6 decimals) | **no** |
-| `finish` | the §13 evidence the server can compute (below) | `sessions.state.integrity` | **no** |
+| `finish` | the §13 evidence the server can compute (below), with the time check that does not read the key (`too_fast_any`) | `sessions.state.integrity` | **no** |
 | `finish` | `calibration_eligible` | `sessions.calibration_eligible` | **no** |
 | `finish` | the grids are replaced by a summary `{axis: {n, mean, sd}}` | `sessions.state.eap` | no |
 
@@ -587,7 +597,8 @@ answers: two fast answers plus one self-reported flag make the threshold, and th
 right. The owner's decision of 2026-10-01 (R-11.1, DESIGN §10) is that a script must not read its verdicts out of its own
 session. So `finish` returns `{session, anon_id, n_responses}`, the session's flags hold only what the client sent and the
 server's time check, and `rescore` (the one place with the withholding and the rounding) is where a person gets scores.
-(The M2.1 notes, and DESIGN §11.2, had `finish` returning a `posterior`; it does not, for that reason.) **How the correlated MAP
+`rescore` may not use the eligibility either, for the same reason, and reads a form of it that does not depend on the answers
+(below). (The M2.1 notes, and DESIGN §11.2, had `finish` returning a `posterior`; it does not, for that reason.) **How the correlated MAP
 reaches the blob** (the app's blob is drawn from it; `rescore` returns the own-axis EAP, A21) is therefore an open decision for
 M2.7: either `rescore` returns the MAP with the same minimum counts and rounding, or the blob uses the own-axis EAP.
 
@@ -598,7 +609,9 @@ posterior sd is still ≥ `selection.stop_sd` = 0.3, not seen by this session or
 of §7.4, **w · I · Var / E[T]**, with I the Fisher information of the item's own model at the session's mean on the axis (2PL
 a²PQ, 3PL with its c, 2PL-testlet × 0.8), Var the posterior variance, w = 1 on the allowed axes, E[T] the norms median, else
 `extra.expected_time_s`, else "25 s + 4 s per 50 words"; one candidate per `family_id`; the **coverage floor** (an allowed axis
-with fewer than 3 items, this session's plus the save's earlier ones, is served before the others); **content balancing**
+with fewer than 3 items, this session's plus the save's earlier ones, is served before the others; in every session, as
+in the app, where `selectNext` defaults `sessionNumber` to 1 and the session flow passes the earlier items as
+`priorItemCounts` (`session/coverage.ts`): the floor is about an axis being covered, not about the ordinal of the session); **content balancing**
 (`balanceFamilies` of the app: per axis, only the candidates of the generator family(ies) least served so far compete, so the
 cheaper family cannot take the axis; a family with no candidate does not block the other); then the top 5 and one at random.
 The test compares the ranking and the scores with `criterion()` of `engine/selector.ts` (to 1e-12) at the prior and after a
@@ -640,13 +653,24 @@ under 0.1 over at least 5 items whose expected times span a factor of 2), **accu
 Poisson-binomial tail, b > θ̂ + 1.5, α = 0.01) and **person fit** (Snijders' lz\*, under −2, from 20 items), each compared with the
 app's on the same answers (lz\* to 1e-6, the tail to 1e-9). The differences from the app: the times are the **server's clock**
 (response `created_at` minus the exposure's `served_at`), so a client cannot make itself look slow, and θ̂ is the per-axis Bayes
-mode under N(0, 3²) as the app's. Visibility and paste can only be reported by the client.
+mode under N(0, 3²) as the app's. Visibility and paste can only be reported by the client. The evidence also holds
+`too_fast_any`, the too-fast list without the condition that the answer was right. The fit statistics are computed in a block
+of their own: if they fail (an overflow in a parameter row, say) the rest is kept and the failure is recorded as `fit_error`.
 
 `hb.is_eligible` counts the flags as the app does (one per flagged response for visibility, paste and too fast, one each for
 uniform times and hard-item accuracy; ineligible at 2 or more, or on person fit), where a flag counts if the client reported it
 **or** the server saw it, once. Not eligible either: no answer, the server's own time check (`server_too_fast`), a client report of
 misfit, or evidence that could not be computed (the session still closes; the state records `{error: <SQLSTATE>}`). The
 client's own `calibration_eligible` is not taken.
+
+`hb.is_eligible(session, true)` is the **blind** form, the only one `rescore` reads (see `rescore` above). The full count
+is a function of which answers were right: a correct fast answer is a flag and a wrong one is not, and person fit and
+hard-item accuracy read the key. So with `paste` set on one answer by the script itself, one fast answer makes the session
+ineligible exactly when it was right. The blind count leaves out what reads the key: a fast answer counts whichever it was
+(`too_fast_any`), the server's person-fit and hard-item verdicts are not read (the client's reports of them are, being the
+client's choice), and a `fit_error` does not change it (an `error`, the times themselves failing, does). Tests:
+`session-scoring.db.test.ts` builds twins that differ in the verdict of one answer and compares everything in the `rescore`
+reply but the numbers of the score, and fails if `rescore` reads the full eligibility.
 
 ### Measured here (PostgreSQL 17, one connection)
 
@@ -663,7 +687,12 @@ with an index on `item_parameters (param_version, b)`; not built, because it wou
   (`nextSessionPrior` in `engine/retest.ts`); the coverage floor does use the save's `seen_items`.
 - Testlets: the DB has no `testlet_id` on an item, so 2PL-testlet items are scored as 2PL (as the app); `hb.map_theta` takes
   the `testlet` kind when the pipeline groups them.
-- Person fit does not catch a padded session under 20 answers (README, "What this does not stop").
+- Person fit does not catch a padded session under 20 answers (README, "What this does not stop"), and `rescore` does not read it at
+  any length (the blind eligibility, above): the padded-session reading of a score is limited by the call limits and the
+  minimum counts only, until the owner decides on noise.
+- A session with two fast answers (by the server's clock, right or wrong) is not scored by `rescore`, where the app's own
+  check counts correct answers only. The count of two is the app's; whether a lone rusher should lose a whole session in the
+  notes is the owner's to weigh.
 
 ## Secrets
 

@@ -16,6 +16,10 @@
 --                    too-fast correct answers by the server clock, uniform response times, accuracy on hard
 --                    items, and person fit lz*; stored in sessions.state.integrity, merged with what the
 --                    client reported by hb.is_eligible into sessions.calibration_eligible.
+--   blind eligibility  hb.is_eligible(session, true): the same count WITHOUT the checks that read the key
+--                    (a correct and fast answer, hard-item accuracy, person fit). A fast answer counts
+--                    whether it was right or not. It depends on times and on what the client reported,
+--                    never on which answers were right, and it is the only eligibility rescore() reads.
 --
 -- Which answers count: the ones rescore() counts (hb.session_obs): not pretest (zero weight until the item is
 -- calibrated, DESIGN §6.iii), not on a quarantined item, with a scored 0/1, an item parameter row of a
@@ -23,8 +27,10 @@
 -- answer space (hb.response_fits). Blocks (GRM, Gaussian) are not scored on the server.
 --
 -- The checks of §13 run on the server so that a client cannot omit them, but their outcome is a function of
--- which answers were right: it is stored and used, never shown (not in finish, not in the session's flags;
--- rescore does not say why a session was dropped).
+-- which answers were right: it is stored and used for the calibration, never shown (not in finish, not in the
+-- session's flags). rescore() must not use it, because a score reply that differs with eligibility would be
+-- a reply that differs with one answer's verdict: it reads the blind eligibility (above) only, in which a
+-- session is dropped for what the script chose (its times, its flags) and not for what it got right.
 
 insert into public.app_config (key, value, description) values
   ('integrity.too_fast_ratio',         '0.25', 'DESIGN §13: a correct answer in less than this fraction of the item''s median time is too fast (engine/integrity.ts TOO_FAST_RATIO); the time is the server''s clock'),
@@ -407,8 +413,15 @@ $$;
 --   * the answers are those that count (the header): an answer outside the item's answer space is no
 --     answer, in the fit statistics as in the score;
 --   * visibility_hidden and paste cannot be seen by the server, only reported by the client.
--- {v, n_scored, too_fast: {n, items}, uniform_rt: {applies, flagged, n_items, time_ratio, sd_log_rt},
---  hard_item_accuracy: {flagged, n_hard, n_correct, p_value}, person_fit: {flagged, n_items, lz_star, lz}}
+--   * too_fast_any is the too-fast list WITHOUT the condition that the answer was right: the time check that does
+--     not depend on the key, used by the blind eligibility (hb.is_eligible, p_blind). too_fast (the app's check)
+--     keeps only the correct ones.
+--   * the fit statistics (hard items, person fit) are computed in a block of their own: if they fail, the rest of
+--     the evidence is kept and the failure is recorded as fit_error, so that a failure that depends on the
+--     answers cannot change the blind eligibility.
+-- {v, n_scored, too_fast: {n, items}, too_fast_any: {n, items}, uniform_rt: {applies, flagged, n_items, time_ratio,
+--  sd_log_rt}, hard_item_accuracy: {flagged, n_hard, n_correct, p_value}, person_fit: {flagged, n_items, lz_star, lz},
+--  fit_error?: <SQLSTATE>}
 create function hb.integrity_evidence(p_session_id text)
 returns jsonb
 language plpgsql stable
@@ -438,8 +451,10 @@ declare
   v_y double precision[] := '{}';
   v_obs jsonb := '[]'::jsonb;
   v_n int := 0;
-  -- too fast
+  -- too fast (the app's check: correct answers only) and too fast whatever the answer was (the blind check)
   v_fast_ids text[] := '{}';
+  v_fast_any_ids text[] := '{}';
+  v_fit_error text;
   -- uniform times over every non-pretest answer
   v_logs double precision[] := '{}';
   v_et_min double precision;
@@ -517,10 +532,14 @@ begin
     v_obs := v_obs || pg_catalog.jsonb_build_array(case when r.model = '3pl'
       then pg_catalog.jsonb_build_object('kind', '3pl', 'axis', r.axis, 'a', r.a, 'b', r.b, 'c', r.c, 'y', r.correct)
       else pg_catalog.jsonb_build_object('kind', '2pl', 'axis', r.axis, 'a', r.a, 'b', r.b, 'y', r.correct) end);
-    -- too fast: a correct answer under a quarter of the median, on an item whose median is over 20 s
+    -- too fast: an answer under a quarter of the median, on an item whose median is over 20 s; the app's check
+    -- keeps the correct ones, the blind list (too_fast_any) every one
     v_et := hb.item_median_time_s(r.extra, r.payload);
-    if r.correct = 1 and v_et > c_min_median and r.elapsed_s < c_ratio * v_et then
-      v_fast_ids := v_fast_ids || r.item_id;
+    if v_et > c_min_median and r.elapsed_s < c_ratio * v_et then
+      v_fast_any_ids := v_fast_any_ids || r.item_id;
+      if r.correct = 1 then
+        v_fast_ids := v_fast_ids || r.item_id;
+      end if;
     end if;
   end loop;
 
@@ -535,43 +554,57 @@ begin
 
   -- person fit and hard items, at the per-axis Bayes modal theta under a weak prior
   if v_n > 0 then
-    v_mu := pg_catalog.array_fill(0::double precision, array[17]);
-    v_sig := pg_catalog.array_fill(0::double precision, array[289]);
-    for k in 1..17 loop
-      v_sig[(k - 1) * 17 + k] := c_prior_sd * c_prior_sd;
-      v_r0[k] := 0;
-    end loop;
-    select * into v_map from hb.map_theta(v_obs, v_mu, v_sig);
-    v_theta := v_map.o_theta;
-    for k in 1..17 loop
-      v_r0[k] := - v_theta[k] / (c_prior_sd * c_prior_sd);
-    end loop;
-    select o.o_lz_star, o.o_lz into v_lz_star, v_lz_val from hb.lz_star(v_axis, v_kind, v_a, v_b, v_c, v_y, v_theta, v_r0) o;
-    v_fit_flag := v_n >= c_lz_items and v_lz_star is not null and v_lz_star < c_lz_max;
+    begin
+      v_mu := pg_catalog.array_fill(0::double precision, array[17]);
+      v_sig := pg_catalog.array_fill(0::double precision, array[289]);
+      for k in 1..17 loop
+        v_sig[(k - 1) * 17 + k] := c_prior_sd * c_prior_sd;
+        v_r0[k] := 0;
+      end loop;
+      select * into v_map from hb.map_theta(v_obs, v_mu, v_sig);
+      v_theta := v_map.o_theta;
+      for k in 1..17 loop
+        v_r0[k] := - v_theta[k] / (c_prior_sd * c_prior_sd);
+      end loop;
+      select o.o_lz_star, o.o_lz into v_lz_star, v_lz_val from hb.lz_star(v_axis, v_kind, v_a, v_b, v_c, v_y, v_theta, v_r0) o;
+      v_fit_flag := v_n >= c_lz_items and v_lz_star is not null and v_lz_star < c_lz_max;
 
-    for i in 1..v_n loop
-      v_t := v_theta[v_axis[i]];
-      if v_b[i] > v_t + c_margin then
-        v_z := v_a[i] * (v_t - v_b[i]);
-        v_ps := v_ps || (case when v_kind[i] = 2 then v_c[i] + (1 - v_c[i]) * hb.sigmoid(v_z) else hb.sigmoid(v_z) end);
-        v_n_hard := v_n_hard + 1;
-        v_n_correct := v_n_correct + v_y[i]::int;
+      for i in 1..v_n loop
+        v_t := v_theta[v_axis[i]];
+        if v_b[i] > v_t + c_margin then
+          v_z := v_a[i] * (v_t - v_b[i]);
+          v_ps := v_ps || (case when v_kind[i] = 2 then v_c[i] + (1 - v_c[i]) * hb.sigmoid(v_z) else hb.sigmoid(v_z) end);
+          v_n_hard := v_n_hard + 1;
+          v_n_correct := v_n_correct + v_y[i]::int;
+        end if;
+      end loop;
+      if v_n_hard > 0 then
+        v_p_value := hb.pb_upper_tail(v_ps, v_n_correct);
       end if;
-    end loop;
-    if v_n_hard > 0 then
-      v_p_value := hb.pb_upper_tail(v_ps, v_n_correct);
-    end if;
-    v_hard_flag := v_p_value < c_alpha;
+      v_hard_flag := v_p_value < c_alpha;
+    exception when others then
+      -- the blind part of the evidence stays; the eligibility that reads the fit takes this as "could not be computed"
+      v_fit_error := sqlstate;
+      v_fit_flag := false;
+      v_hard_flag := false;
+      v_n_hard := 0;
+      v_n_correct := 0;
+      v_p_value := 1;
+      v_lz_star := null;
+      v_lz_val := null;
+    end;
   end if;
 
   return pg_catalog.jsonb_build_object(
     'v', 1,
     'n_scored', v_n,
     'too_fast', pg_catalog.jsonb_build_object('n', pg_catalog.cardinality(v_fast_ids), 'items', pg_catalog.to_jsonb(v_fast_ids)),
+    'too_fast_any', pg_catalog.jsonb_build_object('n', pg_catalog.cardinality(v_fast_any_ids), 'items', pg_catalog.to_jsonb(v_fast_any_ids)),
     'uniform_rt', pg_catalog.jsonb_build_object('applies', v_applies, 'flagged', v_applies and v_sd is not null and v_sd < c_uni_sd,
                     'n_items', v_timed, 'time_ratio', v_ratio, 'sd_log_rt', v_sd),
     'hard_item_accuracy', pg_catalog.jsonb_build_object('flagged', v_hard_flag, 'n_hard', v_n_hard, 'n_correct', v_n_correct, 'p_value', v_p_value),
-    'person_fit', pg_catalog.jsonb_build_object('flagged', v_fit_flag, 'n_items', v_n, 'lz_star', v_lz_star, 'lz', v_lz_val));
+    'person_fit', pg_catalog.jsonb_build_object('flagged', v_fit_flag, 'n_items', v_n, 'lz_star', v_lz_star, 'lz', v_lz_val))
+    || (case when v_fit_error is null then '{}'::jsonb else pg_catalog.jsonb_build_object('fit_error', v_fit_error) end);
 end
 $$;
 
@@ -598,7 +631,23 @@ $$;
 -- finished or has no answer; one whose time, by the server clock, averaged under session.min_avg_ms
 -- (server_too_fast); one whose client reported person misfit. The client's own verdict
 -- ("calibration_eligible: true" in its flags) is not taken.
-create function hb.is_eligible(p_session_id text)
+--
+-- p_blind (default false) is the eligibility that rescore() reads (R-11.1; owner decision 2026-10-01: rescore
+-- must not leak single-answer verdicts). The full eligibility is a function of which answers were right: a
+-- correct answer under a quarter of the median is a flag and a wrong one is not, and person fit and
+-- accuracy on hard items read the key. A script that controls every other flag (paste: true on one answer)
+-- and puts one fast answer in a session therefore gets "eligible" exactly when that answer was wrong, and
+-- would read it out of anything that differs with the eligibility, such as which sessions a score includes.
+-- The blind count leaves out what reads the key and takes the rest as it is:
+--   * too fast: an answer under a quarter of the median counts whether it was right or not
+--     (evidence too_fast_any; the client's own too_fast flag as before);
+--   * person fit and accuracy on hard items: the server's evidence is not read, only the client's report
+--     of the flag (the client chooses it, so the report is not a function of the answers);
+--   * everything else is as above (times, client flags, server_too_fast, uniform_rt).
+-- A failure to compute the fit statistics (evidence.fit_error) does not touch the blind result. It is a
+-- weaker integrity check than the full one, by design: it is what a score may depend on. The calibration
+-- (A16) reads the full one, calibration_eligible.
+create function hb.is_eligible(p_session_id text, p_blind boolean default false)
 returns boolean
 language plpgsql stable
 set search_path = ''
@@ -608,19 +657,23 @@ declare
   v_ev jsonb;
   v_fast text[];
   v_count int;
+  v_path text[] := case when p_blind then array['too_fast_any', 'items'] else array['too_fast', 'items'] end;
 begin
   select * into s from public.sessions x where x.session_id = p_session_id;
   if not found or s.finished_at is null or s.n_answered < 1 then
     return false;
   end if;
   v_ev := coalesce(s.state -> 'integrity', '{}'::jsonb);
-  if v_ev ? 'error' then
+  if v_ev ? 'error' or (not p_blind and v_ev ? 'fit_error') then
     return false; -- the evidence could not be computed: the session does not enter a calibration
   end if;
-  if hb.truthy(s.flags -> 'server_too_fast') or hb.truthy(s.flags -> 'person_fit') or hb.truthy(v_ev #> '{person_fit,flagged}') then
+  if hb.truthy(s.flags -> 'server_too_fast') or hb.truthy(s.flags -> 'person_fit')
+     or (not p_blind and hb.truthy(v_ev #> '{person_fit,flagged}')) then
     return false;
   end if;
-  v_fast := array(select x from pg_catalog.jsonb_array_elements_text(case when pg_catalog.jsonb_typeof(v_ev #> '{too_fast,items}') = 'array' then v_ev #> '{too_fast,items}' else '[]'::jsonb end) x);
+  v_fast := array(
+    select x from pg_catalog.jsonb_array_elements_text(
+      case when pg_catalog.jsonb_typeof(v_ev #> v_path) = 'array' then v_ev #> v_path else '[]'::jsonb end) x);
   select coalesce(pg_catalog.sum(
            (case when hb.truthy(r.client_flags -> 'visibility_hidden') then 1 else 0 end)
          + (case when hb.truthy(r.client_flags -> 'paste') then 1 else 0 end)
@@ -630,7 +683,7 @@ begin
    where r.session_id = p_session_id;
   v_count := v_count
     + (case when hb.truthy(s.flags -> 'uniform_rt') or hb.truthy(v_ev #> '{uniform_rt,flagged}') then 1 else 0 end)
-    + (case when hb.truthy(s.flags -> 'hard_item_accuracy') or hb.truthy(v_ev #> '{hard_item_accuracy,flagged}') then 1 else 0 end);
+    + (case when hb.truthy(s.flags -> 'hard_item_accuracy') or (not p_blind and hb.truthy(v_ev #> '{hard_item_accuracy,flagged}')) then 1 else 0 end);
   return v_count < 2;
 end
 $$;

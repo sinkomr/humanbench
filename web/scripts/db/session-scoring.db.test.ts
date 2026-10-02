@@ -311,7 +311,7 @@ describe('finish: the correlated MAP is kept, not returned', () => {
     expect(Object.keys(again).sort()).toEqual(['anon_id', 'n_responses', 'session'])
   })
 
-  it('records no counted answer as n_obs 0, and a failure as an error code, and finishes the session either way', async () => {
+  it('records no counted answer as n_obs 0, and a failure as an error code (fit_error for the fit statistics), and finishes the session either way', async () => {
     const none = await play(0, () => true)
     expect((await stateOf(none.sessionId)).posterior).toEqual({ v: 1, n_obs: 0 })
     expect(await eligibleOf(none.sessionId)).toBe(false)
@@ -324,7 +324,9 @@ describe('finish: the correlated MAP is kept, not returned', () => {
       expect(out.n_responses).toBe(4)
       const st = await stateOf(p.sessionId)
       expect(st.posterior).toEqual({ v: 1, error: expect.stringMatching(/^[0-9A-Z]{5}$/) })
-      expect(st.integrity).toEqual({ v: 1, error: expect.stringMatching(/^[0-9A-Z]{5}$/) })
+      // the fit statistics fail alone: the times and the rest of the evidence are kept, and the failure is recorded for them
+      expect(st.integrity).toMatchObject({ v: 1, fit_error: expect.stringMatching(/^[0-9A-Z]{5}$/), too_fast_any: { n: expect.any(Number) } })
+      expect(st.integrity).not.toHaveProperty('error')
       expect(await eligibleOf(p.sessionId)).toBe(false) // evidence that cannot be computed is not a calibration
     } finally {
       await db.owner.query(`update public.item_parameters set a = $2 where item_id = $1`, [first.item_id, byId.get(first.item_id)!.a])
@@ -544,6 +546,54 @@ describe('calibration_eligible at finish (DESIGN §13)', () => {
     expect(await eligibleOf(r.sessionId)).toBe(true) // the client's own verdict is not taken, either way
   })
 
+  it('has a blind form that counts a fast answer whether or not it was right, and ignores what reads the key', async () => {
+    const blindOf = async (sessionId: string): Promise<boolean> => (await db.owner.query<{ e: boolean }>(`select hb.is_eligible($1, true) as e`, [sessionId])).rows[0]!.e
+    const fastAt = (idx: readonly number[]): number[] => slow.map((s, i) => (idx.includes(i) ? 3 : s))
+    // two fast answers, both wrong: the app's check is about correct answers, so the full count has no flag, the blind one has two
+    const wrong = chosen.map(() => 0 as const)
+    const fastWrong = await timedSession({ correct: wrong, elapsed: fastAt([longIdx[0]!, longIdx[1]!]) })
+    const ev = (await stateOf(fastWrong.sessionId)).integrity
+    expect(ev.too_fast.n).toBe(0)
+    expect(ev.too_fast_any).toEqual({ n: 2, items: [chosen[longIdx[0]!]!.itemId, chosen[longIdx[1]!]!.itemId] })
+    expect(await eligibleOf(fastWrong.sessionId)).toBe(true)
+    expect(await blindOf(fastWrong.sessionId)).toBe(false)
+    // the same two answers right: the same blind result (it does not read the key), and now the full one agrees
+    const fastRight = await timedSession({ correct: chosen.map(() => 1 as const), elapsed: fastAt([longIdx[0]!, longIdx[1]!]) })
+    expect(await eligibleOf(fastRight.sessionId)).toBe(false)
+    expect(await blindOf(fastRight.sessionId)).toBe(false)
+    // one fast answer is one flag whatever it was; with the client's one paste it is two for both verdicts, and the full count follows the verdict
+    for (const right of [true, false]) {
+      const correct = chosen.map((_, i) => (i === longIdx[0] && right ? 1 : 0)) as (0 | 1)[]
+      const p = await timedSession({ correct, elapsed: fastAt([longIdx[0]!]), itemFlags: chosen.map((_, i) => (i === longIdx[1] ? { paste: true } : undefined)) })
+      expect(await eligibleOf(p.sessionId), `full, right=${right}`).toBe(!right)
+      expect(await blindOf(p.sessionId), `blind, right=${right}`).toBe(false)
+    }
+    // the client's report of person fit and of hard-item accuracy is the client's choice, so it counts in both
+    const reportedFit = await timedSession({ flags: { person_fit: true } })
+    expect(await eligibleOf(reportedFit.sessionId)).toBe(false)
+    expect(await blindOf(reportedFit.sessionId)).toBe(false)
+    const hardPlusUniform = await timedSession({ elapsed: chosen.map(() => 18), flags: { hard_item_accuracy: true } })
+    expect(await blindOf(hardPlusUniform.sessionId)).toBe(false)
+    // the server's own verdicts on fit and hard items are not read: with them raised in the evidence, the blind count is the clean one
+    const clean = await timedSession()
+    await db.owner.query(
+      `update public.sessions set state = jsonb_set(jsonb_set(state, '{integrity,person_fit,flagged}', 'true'), '{integrity,hard_item_accuracy,flagged}', 'true') where session_id = $1`,
+      [clean.sessionId],
+    )
+    expect((await db.owner.query<{ e: boolean }>(`select hb.is_eligible($1) as e`, [clean.sessionId])).rows[0]!.e).toBe(false)
+    expect(await blindOf(clean.sessionId)).toBe(true)
+  })
+
+  it('keeps the blind count when only the fit statistics failed (fit_error), and gives up on the whole evidence failing (error)', async () => {
+    const p = await timedSession()
+    const is = async (blind: boolean): Promise<boolean> => (await db.owner.query<{ e: boolean }>(`select hb.is_eligible($1, $2) as e`, [p.sessionId, blind])).rows[0]!.e
+    expect([await is(false), await is(true)]).toEqual([true, true])
+    await db.owner.query(`update public.sessions set state = jsonb_set(state, '{integrity,fit_error}', '"22003"') where session_id = $1`, [p.sessionId])
+    expect([await is(false), await is(true)]).toEqual([false, true])
+    await db.owner.query(`update public.sessions set state = jsonb_set(state, '{integrity,error}', '"22003"') where session_id = $1`, [p.sessionId])
+    expect([await is(false), await is(true)]).toEqual([false, false])
+  })
+
   it('is false for a session that has no answer, true again for one with evidence cleared (sessions written around the RPCs)', async () => {
     const p = await timedSession()
     await db.owner.query(`update public.sessions set state = state - 'integrity' where session_id = $1`, [p.sessionId])
@@ -627,46 +677,102 @@ describe('which item parameters a session uses', () => {
   })
 })
 
-// ------------------------------------------------------------------------------ nothing says why
-describe('rescore does not say why a session was dropped (R-11.1)', () => {
-  it('a misfit session and a short one look alike in the reply, and neither carries an eligibility', async () => {
-    // one person, two sessions: the second is a misfit
-    const ip = freshIp()
-    const a = await startSession(db, ip)
-    await playSession(db, a, byId, { ip, n: 36, decide: person(0.3, 'rs-a') })
-    await db.rpc(from(ip), 'finish', { p_token: a.token })
-    const ip2 = freshIp()
-    const b = await startSession(db, ip2, {
-      schema_version: '1.0.0',
-      bank_version: 'test',
-      anon_id: a.anon_id,
-      created_utc: '2026-10-01T12:00:00Z',
-      sessions: [{ session_id: a.session_id }],
-      seen_items: [],
-      seen_families: [],
+// ------------------------------------------------------------ rescore does not differ with the verdicts
+// R-11.1; owner decision 2026-10-01: rescore must not leak single-answer verdicts. The full eligibility is a
+// function of which answers were right, so rescore reads the blind one (hb.is_eligible(session, true)). Each test
+// builds twins that differ in the verdict of an answer and in nothing the script chose, and compares everything in
+// the reply that is not a score (the mean and the sd are the score, and are rounded and withheld by rescore.db.test.ts).
+describe('rescore does not differ with which answers were right (R-11.1)', () => {
+  interface Reply {
+    sessions: { session_id: string; known: boolean; n_scored: number; ordinals: Record<string, number> }[]
+    eap: Record<string, { mean: number; sd: number; n: number }>
+    facets: Record<string, Record<string, { n: number }>>
+    withheld: { eap: Record<string, number>; facets: Record<string, Record<string, number>> }
+    skipped: Record<string, number>
+  }
+  const rescoreOf = (p: Played): Promise<Reply> =>
+    db.rpc<Reply>(from(freshIp()), 'rescore', {
+      p_save: { schema_version: '1.0.0', bank_version: 'test', anon_id: p.anonId, created_utc: '2026-10-01T12:00:00Z', sessions: [{ session_id: p.sessionId }], seen_items: [], seen_families: [] },
     })
-    expect(b.anon_id).toBe(a.anon_id)
-    const chosen = spread(45)
-    await db.owner.query(
-      `insert into public.exposure_log (session_id, seq, item_id, family_id, sibling_group, pretest, served_at)
-       select $1, t.seq, i.item_id, i.family_id, f.sibling_group, false, now() - interval '1 hour' + make_interval(secs => t.seq * 100)
-         from unnest($2::text[]) with ordinality as t (item_id, seq) join public.items i on i.item_id = t.item_id join public.item_families f on f.family_id = i.family_id`,
-      [b.session_id, chosen.map((i) => i.itemId)],
-    )
-    await db.owner.query(
-      `insert into public.responses (session_id, seq, item_id, response, correct, score, rt_ms, pretest, client_flags, created_at)
-       select $1, t.seq, t.item_id, to_jsonb(case when t.c = 1 then 0 else 1 end), t.c::smallint, t.c::real, 5000, false, '{}', e.served_at + interval '25 seconds'
-         from unnest($2::text[], $3::int[]) with ordinality as t (item_id, c, seq) join public.exposure_log e on e.session_id = $1 and e.seq = t.seq`,
-      [b.session_id, chosen.map((i) => i.itemId), chosen.map((i) => (i.b > 0 ? 1 : 0))],
-    )
-    await db.owner.query(`update public.sessions set n_served = 45, n_answered = 45 where session_id = $1`, [b.session_id])
-    await db.rpc(from(ip2), 'finish', { p_token: b.token })
-    expect(await eligibleOf(b.session_id)).toBe(false)
-    const save = { schema_version: '1.0.0', bank_version: 'test', anon_id: a.anon_id, created_utc: '2026-10-01T12:00:00Z', sessions: [{ session_id: a.session_id }, { session_id: b.session_id }], seen_items: [], seen_families: [] }
-    const got = await db.rpc<{ sessions: { session_id: string; n_scored: number }[]; skipped: Record<string, number>; eap: Record<string, unknown> }>(from(freshIp()), 'rescore', { p_save: save })
-    expect(got.sessions.find((s) => s.session_id === b.session_id)!.n_scored).toBe(0)
-    expect(got.sessions.find((s) => s.session_id === a.session_id)!.n_scored).toBeGreaterThan(0)
-    expect(got.skipped.not_counted).toBe(45)
-    expect(JSON.stringify(got)).not.toMatch(/eligib|person_fit|lz/)
+  /** Everything in the reply but the numbers of the score: which sessions count, which axes and facets are returned, the counts held back. */
+  const frame = (got: Reply): unknown => ({
+    sessions: got.sessions.map((s) => ({ known: s.known, n_scored: s.n_scored, ordinals: s.ordinals })),
+    axes: Object.fromEntries(Object.entries(got.eap).map(([k, v]) => [k, v.n])),
+    facets: Object.fromEntries(Object.entries(got.facets).map(([k, v]) => [k, Object.fromEntries(Object.entries(v).map(([f, x]) => [f, x.n]))])),
+    withheld: got.withheld,
+    skipped: got.skipped,
+  })
+  const qr40 = items.filter((i) => i.axis === 'QR' && i.expectedTimeS! > 20)
+
+  it('is the same for a right and a wrong answer in the probe that read a verdict out of it: one fast answer and one reported paste', async () => {
+    for (const n of [3, 6]) {
+      const its = qr40.slice(0, n)
+      const twin = (right: boolean): Promise<Played> =>
+        synthetic({
+          items: its,
+          correct: its.map((_, i) => (i === 0 && right ? 1 : 0)) as (0 | 1)[],
+          elapsed: its.map((_, i) => (i === 0 ? 1 : 30)), // the first at once, the others at about 3/4 of the 40 s median
+          itemFlags: its.map((_, i) => (i === 1 ? { paste: true } : undefined)),
+        })
+      const [r, w] = [await twin(true), await twin(false)]
+      // the premise: the full eligibility is the bit that was leaking (one fast correct answer and one paste make two flags)
+      expect([await eligibleOf(r.sessionId), await eligibleOf(w.sessionId)], `n ${n}`).toEqual([false, true])
+      const [gr, gw] = [await rescoreOf(r), await rescoreOf(w)]
+      expect(frame(gr), `n ${n}`).toEqual(frame(gw))
+      // and by the blind count, which is what the script chose (a fast answer and a paste), both are dropped, as practice only
+      expect(gr.sessions[0]).toMatchObject({ known: true, n_scored: 0 })
+      expect(gr.eap).toEqual({})
+      expect(gr.skipped.not_counted).toBe(n)
+      expect(JSON.stringify([gr, gw])).not.toMatch(/eligib|person_fit|lz|fit_error/)
+    }
+  })
+
+  it('counts a session that the key-reading checks would drop, as it counts one they would keep: person fit and hard items do not enter', async () => {
+    const chosenItems = spread(45)
+    const elapsed = chosenItems.map((_, i) => 20 + (i % 7) * 4)
+    // right on the hard items and wrong on the easy ones: a misfit; and the reverse, which fits
+    const misfit = await synthetic({ items: chosenItems, correct: chosenItems.map((it) => (it.b > 0 ? 1 : 0)) as (0 | 1)[], elapsed })
+    const fits = await synthetic({ items: chosenItems, correct: chosenItems.map((it) => (it.b > 0 ? 0 : 1)) as (0 | 1)[], elapsed })
+    expect(await eligibleOf(misfit.sessionId)).toBe(false)
+    expect((await stateOf(misfit.sessionId)).integrity.person_fit.flagged).toBe(true)
+    expect(await eligibleOf(fits.sessionId)).toBe(true)
+    const [gm, gf] = [await rescoreOf(misfit), await rescoreOf(fits)]
+    expect(frame(gm)).toEqual(frame(gf))
+    expect(gm.sessions[0]!.n_scored).toBe(45)
+    expect(Object.keys(gm.eap).sort()).toEqual(['KST', 'MAT', 'QR'])
+    expect(gm.skipped.not_counted).toBeUndefined()
+    expect(JSON.stringify(gm)).not.toMatch(/eligib|person_fit|lz/)
+  })
+
+  it('drops a session for what the script chose, whatever the answers: two reported pastes, or two fast answers (right or wrong)', async () => {
+    const its = qr40.slice(0, 8)
+    const fast = its.map((_, i) => (i < 2 ? 1 : 30))
+    const cases: { name: string; itemFlags?: (Record<string, unknown> | undefined)[]; elapsed: number[] }[] = [
+      { name: 'two pastes', itemFlags: its.map((_, i) => (i < 2 ? { paste: true } : undefined)), elapsed: its.map(() => 30) },
+      { name: 'two fast answers', elapsed: fast },
+    ]
+    for (const c of cases) {
+      const frames: unknown[] = []
+      for (const right of [true, false]) {
+        const p = await synthetic({ items: its, correct: its.map(() => (right ? 1 : 0)) as (0 | 1)[], elapsed: c.elapsed, ...(c.itemFlags === undefined ? {} : { itemFlags: c.itemFlags }) })
+        const got = await rescoreOf(p)
+        expect(got.sessions[0], `${c.name}, right=${right}`).toMatchObject({ n_scored: 0 })
+        expect(got.skipped.not_counted).toBe(8)
+        frames.push(frame(got))
+      }
+      expect(frames[0]).toEqual(frames[1])
+    }
+    // and one flag alone drops nothing, again whatever the answer
+    for (const right of [true, false]) {
+      const p = await synthetic({ items: its, correct: its.map((_, i) => (i === 0 && right ? 1 : 0)) as (0 | 1)[], elapsed: its.map((_, i) => (i === 0 ? 1 : 30)) })
+      expect((await rescoreOf(p)).sessions[0], `one fast answer, right=${right}`).toMatchObject({ n_scored: 8 })
+    }
+  })
+
+  it('is the full eligibility that the calibration reads, and the blind one that rescore reads: a fast wrong answer pair is kept for the calibration and dropped from the score', async () => {
+    const its = qr40.slice(0, 8)
+    const p = await synthetic({ items: its, correct: its.map(() => 0) as (0 | 1)[], elapsed: its.map((_, i) => (i < 2 ? 1 : 30)) })
+    expect(await eligibleOf(p.sessionId)).toBe(true) // the app's check is about correct answers
+    expect((await rescoreOf(p)).sessions[0]).toMatchObject({ n_scored: 0 })
   })
 })

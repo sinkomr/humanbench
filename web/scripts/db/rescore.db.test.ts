@@ -269,7 +269,8 @@ describe('rescore: parity with the app engine', () => {
     expect((await rowsOf([b.sessionId]))[0]!.eligible).toBe(false)
     const got = await rescore(saveOf(a.anonId, ids))
     expectParity(got, await expectedFor(ids), ids)
-    // a session that is not scored for its integrity is told apart from a short one by nothing in the reply (M2.2: the reason is a function of the answers)
+    // a session that is not scored for its integrity is told apart from a short one by nothing in the reply; two flagged answers (the client's
+    // too_fast reports) drop it by the blind eligibility, which reads times and flags and not the key (session-scoring.db.test.ts)
     expect(got.sessions.find((s) => s.session_id === b.sessionId)).toMatchObject({ n_scored: 0 })
     expect(got.sessions.find((s) => s.session_id === b.sessionId)).not.toHaveProperty('calibration_eligible')
     // the third session is the third test of the axis although only two sessions are scored

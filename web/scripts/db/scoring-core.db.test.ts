@@ -126,6 +126,17 @@ describe('golden vectors (bank golden/scoring_v2.json, ROADMAP A2)', () => {
     }
   })
 
+  it('stops by the A2 rule (largest accepted step under 1e-8): the iteration count of the golden file, on every case', async () => {
+    // A2 calls n_iter informational, and a looser tolerance moves theta by far less than 1e-6 (Newton converges quadratically), so
+    // the value comparisons above cannot see the stop rule; the count can: it is the same as the app's when the rule is
+    const diffs: string[] = []
+    for (const c of golden.cases) {
+      const got = await sqlMap(c.inputs.observations, c.inputs.mu, c.inputs.sigma ?? golden.sigma)
+      if (got.o_n_iter !== c.outputs.n_iter) diffs.push(`${c.id}: ${got.o_n_iter} (golden ${c.outputs.n_iter})`)
+    }
+    expect(diffs).toEqual([])
+  })
+
   it('also agrees with the app engine on the log posterior function itself', async () => {
     const c = golden.cases.find((x) => x.id.startsWith('22_random'))!
     const sigma = c.inputs.sigma ?? golden.sigma

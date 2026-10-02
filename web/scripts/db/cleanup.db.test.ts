@@ -184,7 +184,12 @@ async function launchStarting(guard: boolean): Promise<{ child: ChildProcess; ba
     dir = readdirSync(base).find((n) => n.startsWith('hb-pg-') && existsSync(join(base, n, 'hb-harness.json')))
     return dir !== undefined
   }, 60_000)
-  return { child, base, dir: join(base, dir as string), exited }
+  const full = join(base, dir as string)
+  // Kill it only once initdb is working in the directory, which the case is about: the marker appears first, then the hooks are
+  // installed and the guard is spawned, and initdb starts after that. A kill that lands in between (a loaded machine makes the
+  // window long enough to hit) finds neither a hook nor a guard, and the directory stays for the reaper of the next run.
+  await waitFor('initdb (or the server after it) to be working in the directory', () => usesPath(full), 60_000)
+  return { child, base, dir: full, exited }
 }
 
 /**

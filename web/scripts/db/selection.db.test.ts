@@ -9,6 +9,7 @@
  * share one.
  */
 
+import type pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eapAxis } from '../../src/engine/scorer'
 import { criterion, itemInformation } from '../../src/engine/selector'
@@ -225,7 +226,55 @@ describe('the exposure cap (DESIGN §6.iii: at most 0.25 of sessions)', () => {
     }
   })
 
+  it('is hard when two transactions reach the counter at the same moment: the second waits for the first, then finds no place (forced overlap)', async () => {
+    // The six requests of the next test do not overlap where it matters: each does a query of its own first, and they are served one
+    // after the other. Here the first transaction keeps the counter row (its uncommitted increment) while the second picks the same
+    // item from its snapshot (n = 4: a place is left) and reaches the counter, where it must wait for the commit and then find the
+    // place gone. Without the guard on the increment the second one is served too, and the counter passes the limit.
+    const item = customItem(1, 'QR', {})
+    const sc = await scenario([item], { 'selection.coverage_floor': 0, 'selection.pretest_share': 0 })
+    try {
+      await sc.db.owner.query(`insert into public.item_exposure (item_id, n_sessions) values ($1, 4)`, [item.itemId])
+      const [a, b] = [await start(sc), await start(sc)]
+      const serve = (c: pg.PoolClient, sessionId: string): Promise<pg.QueryResult<{ r: Next }>> =>
+        c.query(`select hb.serve_next(s, null) as r from public.sessions s where s.session_id = $1`, [sessionId])
+      // both connections of the owner pool are held from here on; the waiting is watched through the superuser's
+      const c1 = await sc.db.owner.connect()
+      const c2 = await sc.db.owner.connect()
+      try {
+        const pid2 = (await c2.query<{ pid: number }>(`select pg_backend_pid() as pid`)).rows[0]!.pid
+        await c1.query('begin')
+        await c2.query('begin')
+        const first = (await serve(c1, a.session_id)).rows[0]!.r
+        const secondQuery = serve(c2, b.session_id)
+        secondQuery.catch(() => undefined) // a rejection is reported where it is awaited, not as an unhandled one
+        const t0 = performance.now()
+        for (;;) {
+          const w = await sc.db.sudo.query<{ wait_event_type: string | null }>(`select wait_event_type from pg_stat_activity where pid = $1`, [pid2])
+          if (w.rows[0]?.wait_event_type === 'Lock') break
+          if (performance.now() - t0 > 20_000) throw new Error('the second transaction never waited for the counter row')
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        await c1.query('commit')
+        const second = (await secondQuery).rows[0]!.r
+        await c2.query('commit')
+        expect(isServed(first)).toBe(true)
+        expect(second).toEqual({ done: true, reason: 'no_items' })
+        expect((await sc.db.sudo.query<{ n: string }>(`select n_sessions::text as n from public.item_exposure`)).rows[0]!.n).toBe('5')
+      } finally {
+        await c1.query('rollback').catch(() => undefined)
+        await c2.query('rollback').catch(() => undefined)
+        c1.release()
+        c2.release()
+      }
+    } finally {
+      await sc.db.close()
+    }
+  })
+
   it('is hard under concurrency: six sessions asking for the last place of the only item, one gets it', async () => {
+    // the requests mostly run one after the other (each does a query of its own first), so this holds the end-to-end result and the
+    // forced overlap above holds the guard: this test passes with the guard on the increment removed
     const item = customItem(1, 'QR', {})
     const sc = await scenario([item], { 'selection.coverage_floor': 0, 'selection.pretest_share': 0 })
     try {
