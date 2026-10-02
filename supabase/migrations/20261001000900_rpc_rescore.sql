@@ -6,10 +6,11 @@
 -- EAP per axis and per facet.
 --
 --   * Which sessions: those the save lists that the server issued to the CALLER's anon_id (the
---     anon_id of the save: hb.session_owned, in which a sig.anon_id may only repeat it, never replace
---     it) and that are finished. Their responses come from the database, never from the upload (A16:
---     calibration uses database rows only). Others are counted as unknown_sessions and contribute
---     nothing. M2.3 will additionally require each session's MAC (same hb.session_owned seam).
+--     anon_id of the save: hb.session_owned, in which the sig must name that same anon_id) and that are
+--     finished, and whose per-session MAC verifies (M2.3, A16: the upload is the session as issued). Their
+--     responses come from the database, never from the upload (A16: calibration uses database rows only).
+--     Others (unsigned, edited, another person's, unknown) are counted as unknown_sessions and contribute
+--     nothing. Ownership is decided once per session id, up front: the MAC is the expensive part.
 --   * Which responses score: dichotomous items (2PL, 2PL-testlet scored as 2PL as in the app, 3PL)
 --     with a stored correct 0/1 and a parameter row, not pretest, not on a quarantined item (DESIGN
 --     §4.5), only in sessions that are eligible BLIND (below; A21: the others still count as practice
@@ -99,6 +100,7 @@ declare
   v_min_facet int := greatest(hb.cfg_int('rescore.min_facet_items', 5), 1);
   v_mean_step double precision := greatest(hb.cfg_num('rescore.mean_step', 0.1), 0);
   v_sd_step double precision := greatest(hb.cfg_num('rescore.sd_step', 0.05), 0);
+  v_owned text[];
   v_result jsonb;
 begin
   v_anon := hb.check_save(p_save);
@@ -110,35 +112,35 @@ begin
   -- that holds a session of this anon_id is counted: the id alone is in every copy of the person's
   -- file, and a stranger who knew it must not be able to use up its calls. (A raise below rolls the
   -- address count back with it, as for every limit.)
-  if exists (
-    select 1 from pg_catalog.jsonb_array_elements(p_save -> 'sessions') e
-     where pg_catalog.jsonb_typeof(e) = 'object' and hb.session_owned(e, v_anon)) then
+  select coalesce(pg_catalog.array_agg(distinct e ->> 'session_id'), '{}'::text[]) into v_owned
+    from pg_catalog.jsonb_array_elements(p_save -> 'sessions') e
+   where hb.session_owned(e, v_anon);
+  if pg_catalog.cardinality(v_owned) > 0 then
     perform hb.rate_hit('rescore_anon', hb.day_key('rescore_anon|' || v_anon), hb.cfg_int('rate.rescores_per_anon_day', 10));
   end if;
 
   v_result := (
     with
-    -- the save's sessions, once each, in the order sent (of a repeated entry, one the caller owns wins)
+    -- the save's sessions, once each, in the order sent
     req as (
-      select x.session_id, x.value, x.ord
+      select x.session_id, x.ord
         from (
           select s.value ->> 'session_id' as session_id,
-                 s.value,
                  s.ord,
-                 pg_catalog.row_number() over (partition by s.value ->> 'session_id' order by hb.session_owned(s.value, v_anon) desc, s.ord) as dup
+                 pg_catalog.row_number() over (partition by s.value ->> 'session_id' order by s.ord) as dup
             from pg_catalog.jsonb_array_elements(p_save -> 'sessions') with ordinality s (value, ord)
            where pg_catalog.jsonb_typeof(s.value) = 'object' and (s.value ->> 'session_id') is not null
         ) x
        where x.dup = 1
     ),
-    -- issued to the caller's anon_id (never to the one a sig names) and finished
+    -- issued to the caller's anon_id (never to the one a sig names), finished, and verified (v_owned)
     known as (
       select ss.session_id,
              pg_catalog.to_char(ss.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_utc,
              hb.is_eligible(ss.session_id, true) as counts
         from req
         join public.sessions ss on ss.session_id = req.session_id
-       where ss.finished_at is not null and hb.session_owned(req.value, v_anon)
+       where ss.finished_at is not null and ss.session_id = any (v_owned)
     ),
     resp as (
       select k.session_id, k.started_utc, k.counts, r.pretest, r.correct,

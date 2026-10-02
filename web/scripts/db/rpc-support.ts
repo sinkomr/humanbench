@@ -3,6 +3,9 @@
  * with a client address (what the rate limits key on), and a scripted session.
  */
 
+import { createHmac } from 'node:crypto'
+import { sessionMacInput } from '../../src/save/mac-input'
+import type { SaveSession } from '../../src/save/types'
 import { ANON, type RequestContext, type TestDb } from './harness'
 import type { FixtureItem } from './bank-fixture'
 
@@ -71,6 +74,35 @@ export function emptySave(anonId: string, extra: Record<string, unknown> = {}): 
     seen_families: [],
     ...extra,
   }
+}
+
+/** A save-v1 session object as the API hands it over (`finish`), plus whatever a test adds to it. */
+export type SessionObject = Record<string, any>
+
+/**
+ * The session as `finish` hands it over, from the database's rows as they are now, with the sig of the
+ * current key (M2.3). For tests that move a session in time or build a save from sessions they did not
+ * finish in the same breath. `sudo`: the hb schema is not the API's.
+ */
+export async function signedSession(db: TestDb, sessionId: string): Promise<SessionObject> {
+  const { rows } = await db.sudo.query<{ s: SessionObject }>(`select hb.session_signed($1) as s`, [sessionId])
+  return rows[0]!.s
+}
+
+/** The text of a Vault secret, for a test that checks the server's MAC with an independent HMAC. */
+export async function signingKey(db: TestDb, kid = 'k2026a'): Promise<string> {
+  const { rows } = await db.sudo.query<{ k: string }>(`select decrypted_secret as k from vault.decrypted_secrets where name = $1`, [`save_hmac.${kid}`])
+  if (rows[0] === undefined) throw new Error(`no signing key ${kid} in the Vault`)
+  return rows[0].k
+}
+
+/**
+ * The MAC of a session as ROADMAP A16 and supabase/README.md define it, computed here with Node's HMAC and the
+ * app's statement of its input (`src/save/mac-input.ts`, RFC 8785), independently of the database: base64url, no
+ * padding, over the canonical JSON of {anon_id, kind, session} where `session` has no sig.
+ */
+export function referenceMac(key: string, anonId: string, session: SessionObject): string {
+  return createHmac('sha256', Buffer.from(key, 'utf8')).update(sessionMacInput(session as SaveSession, anonId), 'utf8').digest('base64url')
 }
 
 /** Pushes `elapsedS` seconds back into every exposure of a session, as if the person had been slow. */

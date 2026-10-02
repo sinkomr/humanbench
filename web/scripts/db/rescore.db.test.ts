@@ -18,7 +18,7 @@ import type { Observation } from '../../src/engine/types'
 import { createRng, type Rng } from '../../src/engine/prng'
 import { fixtureBank, loadFixtureBank, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
-import { emptySave, from, playSession, relaxSelection, startSession, type Started } from './rpc-support'
+import { emptySave, from, playSession, relaxSelection, signedSession, startSession, type Started } from './rpc-support'
 import { openTestDb, pgCode } from './vitest'
 
 let db: TestDb
@@ -66,8 +66,8 @@ const issued = new Map<string, string[]>()
 /** One finished session of `anonId`, with `n` answers drawn from a person at theta (per axis). */
 async function takeSession(anonId: string | undefined, n: number, theta: Partial<Record<AxisCode, number>>, rng: Rng, itemFlags?: (seq: number) => Record<string, unknown> | undefined): Promise<Taken> {
   const ip = freshIp()
-  // a returning person sends their save, whose sessions prove the anon_id (an unproven id would be replaced by a new one)
-  const save = anonId === undefined ? undefined : emptySave(anonId, { sessions: (issued.get(anonId) ?? []).map((session_id) => ({ session_id })) })
+  // a returning person sends their save, whose signed sessions prove the anon_id (an unproven id would be replaced by a new one)
+  const save = anonId === undefined ? undefined : await sign(emptySave(anonId, { sessions: (issued.get(anonId) ?? []).map((session_id) => ({ session_id })) }))
   const s: Started = await startSession(db, ip, save)
   if (anonId !== undefined && s.anon_id !== anonId) throw new Error(`the save did not carry the anon_id ${anonId} over`)
   issued.set(s.anon_id, [...(issued.get(s.anon_id) ?? []), s.session_id])
@@ -190,7 +190,23 @@ interface Result {
   skipped: Record<string, number>
 }
 
-const rescore = (saveDoc: unknown, ip = freshIp()): Promise<Result> => db.rpc<Result>(from(ip), 'rescore', { p_save: saveDoc })
+/**
+ * A save whose entries are bare `{session_id}` stubs, with those sessions as the server signs them now (M2.3: a bare id
+ * proves nothing). The sessions are re-signed from the rows as they are, so a test that moves a session in time
+ * (`schedule`) after finishing it still sends a session that verifies. Entries that are anything else (a
+ * tampered session, a junk value, an id the server never issued) go through as they are.
+ */
+async function sign(doc: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const sessions: unknown[] = []
+  for (const entry of doc.sessions as unknown[]) {
+    const stub = typeof entry === 'object' && entry !== null && Object.keys(entry).join() === 'session_id' ? (entry as { session_id: string }).session_id : undefined
+    const signed = stub === undefined ? null : await signedSession(db, stub)
+    sessions.push(signed ?? entry)
+  }
+  return { ...doc, sessions }
+}
+
+const rescore = async (saveDoc: Record<string, unknown>, ip = freshIp()): Promise<Result> => db.rpc<Result>(from(ip), 'rescore', { p_save: await sign(saveDoc) })
 const saveOf = (anonId: string, ids: readonly string[]): Record<string, unknown> => emptySave(anonId, { sessions: ids.map((id) => ({ session_id: id })) })
 
 function expectParity(got: Result, want: Expected, ids: readonly string[]): void {
@@ -789,7 +805,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
   })
 })
 
-describe('rescore: the anon_id is the caller\'s (a sig.anon_id may only repeat it)', () => {
+describe('rescore: the anon_id is the caller\'s (the sig names it and the MAC binds it)', () => {
   beforeAll(() => setConfig(EXACT))
 
   it('counts a session as unknown when it was issued to another anon_id than the save names, whatever its sig says', async () => {
@@ -798,24 +814,27 @@ describe('rescore: the anon_id is the caller\'s (a sig.anon_id may only repeat i
     const stranger = await takeSession(undefined, 30, { QR: -0.5, MAT: -0.5, KST: -0.5 }, rng)
     await schedule(victim.sessionId, 1)
     await schedule(stranger.sessionId, 1)
-    const sig = (anon: string): Record<string, unknown> => ({ alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: anon })
+    const vs = await signedSession(db, victim.sessionId)
+    const ss = await signedSession(db, stranger.sessionId)
+    const withAnon = (s: Record<string, any>, anon: string): Record<string, unknown> => ({ ...s, sig: { ...s.sig, anon_id: anon } })
     const knownOf = async (doc: Record<string, unknown>): Promise<boolean[]> => (await rescore(doc)).sessions.map((s) => s.known)
 
-    // the honest cases: the save names the anon_id the session was issued to, with or without a sig repeating it
+    // the honest cases: the save names the anon_id the session was issued to, with the sig the server made
     expect(await knownOf(saveOf(victim.anonId, [victim.sessionId]))).toEqual([true])
-    expect(await knownOf(emptySave(victim.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))).toEqual([true])
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [vs] }))).toEqual([true])
     // a merged file names one anon_id; the session of another one is not that caller's, even with a sig that says whose it is
-    // (before this fix the sig.anon_id replaced the save's: rescore would score a session of an id the caller never named)
-    expect(await knownOf(emptySave(stranger.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))).toEqual([false])
-    // a sig naming another id than the save does not move the session to it
-    expect(await knownOf(emptySave(victim.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(stranger.anonId) }] }))).toEqual([false])
+    expect(await knownOf(emptySave(stranger.anonId, { sessions: [vs] }))).toEqual([false])
+    // a sig naming another id than the one it was made for does not verify, and does not move the session to it
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [withAnon(vs, stranger.anonId)] }))).toEqual([false])
+    expect(await knownOf(emptySave(stranger.anonId, { sessions: [withAnon(vs, stranger.anonId)] }))).toEqual([false])
     // a stranger's own session under the victim's id, with a sig repeating that id: it is not the victim's
-    expect(await knownOf(emptySave(victim.anonId, { sessions: [{ session_id: stranger.sessionId, sig: sig(victim.anonId) }] }))).toEqual([false])
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [withAnon(ss, victim.anonId)] }))).toEqual([false])
+    expect(await knownOf(emptySave(victim.anonId, { sessions: [ss] }))).toEqual([false])
     // and the stranger's own session under the stranger's id is theirs
-    expect(await knownOf(emptySave(stranger.anonId, { sessions: [{ session_id: stranger.sessionId }] }))).toEqual([true])
+    expect(await knownOf(emptySave(stranger.anonId, { sessions: [ss] }))).toEqual([true])
 
     // nothing of the victim's data comes out of a call that does not hold the victim's id
-    const leak = await rescore(emptySave(stranger.anonId, { sessions: [{ session_id: victim.sessionId, sig: sig(victim.anonId) }] }))
+    const leak = await rescore(emptySave(stranger.anonId, { sessions: [withAnon(vs, victim.anonId)] }))
     expect(leak.eap).toEqual({})
     expect(leak.facets).toEqual({})
     expect(leak.sessions[0]).toMatchObject({ known: false, n_scored: 0 })
@@ -826,13 +845,30 @@ describe('rescore: the anon_id is the caller\'s (a sig.anon_id may only repeat i
     const rng = createRng('anon-duplicate')
     const mine = await takeSession(undefined, 20, { QR: 0.2, MAT: 0.2, KST: 0.2 }, rng)
     await schedule(mine.sessionId, 1)
-    const bad = { session_id: mine.sessionId, sig: { alg: 'HMAC-SHA256', kid: 'k', mac: 'x', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' } }
-    const good = { session_id: mine.sessionId }
+    const good = await signedSession(db, mine.sessionId)
+    const bad = { ...good, duration_s: 1 } // edited: its MAC no longer fits
     for (const order of [[bad, good], [good, bad]]) {
       const got = await rescore(emptySave(mine.anonId, { sessions: order }))
       expect(got.sessions.length).toBe(1)
       expect(got.sessions[0]).toMatchObject({ known: true })
       expect(Object.keys(got.eap).length).toBeGreaterThan(0)
+    }
+    // the edited entry alone is not the person's
+    expect((await rescore(emptySave(mine.anonId, { sessions: [bad] }))).sessions[0]).toMatchObject({ known: false })
+  })
+
+  it('does not score a session whose upload was edited, though its rows are the server\'s', async () => {
+    const rng = createRng('anon-edited')
+    const mine = await takeSession(undefined, 20, { QR: 0.2, MAT: 0.2, KST: 0.2 }, rng)
+    await schedule(mine.sessionId, 1)
+    const good = await signedSession(db, mine.sessionId)
+    const unsigned = { ...good }
+    delete (unsigned as Record<string, unknown>).sig
+    for (const entry of [{ ...good, flags: { ...good.flags, paste_events: 3 } }, unsigned, { ...good, sig: { ...good.sig, kid: 'k-other' } }]) {
+      const got = await rescore(emptySave(mine.anonId, { sessions: [entry] }))
+      expect(got.sessions[0]).toMatchObject({ known: false })
+      expect(got.eap).toEqual({})
+      expect(got.skipped.unknown_sessions).toBe(1)
     }
   })
 })

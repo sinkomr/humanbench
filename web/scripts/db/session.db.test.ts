@@ -96,9 +96,14 @@ describe('start_session', () => {
     expect(row.anon_id).toBe(stranger.anon_id)
     expect(row.state).toEqual({ v: 1, seen_items: some, seen_families: ['f:tst:000000000000'] })
     // a save that lists a session this server issued to its anon_id: the same person, the id continues
-    const first = await startSession(db, freshIp())
+    const ip = freshIp()
+    const first = await startSession(db, ip)
     expect(first.anon_id_adopted).toBe(false)
-    const again = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [{ session_id: first.session_id }], seen_items: some }))
+    // the proof is a session the server finished and signed for that anon_id (M2.3): the bare id of an unfinished one is not
+    const finished = await rpc<{ session: Record<string, unknown> }>(ip, 'finish', { p_token: first.token })
+    const bare = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [{ session_id: first.session_id }], seen_items: some }))
+    expect(bare.anon_id_adopted).toBe(false)
+    const again = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [finished.session], seen_items: some }))
     expect(again.anon_id).toBe(first.anon_id)
     expect(again.anon_id_adopted).toBe(true)
     expect((await sessionRow(again.session_id)).anon_id).toBe(first.anon_id)

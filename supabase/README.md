@@ -11,7 +11,7 @@ supabase/
   migrations/             <YYYYMMDDHHMMSS>_<snake_case>.sql; the only files that are deployed (M2.1: the schema and the RPCs)
   local/                  the stand-in for what a Supabase project provides; local only, never deployed
     cluster/00-roles.sql    roles, role settings (once per cluster)
-    database/10-…40-….sql   extensions, default grants, auth helpers, Vault shim (per database)
+    database/10-…50-….sql   extensions, default grants, auth helpers, Vault shim, a throw-away signing key (per database)
 web/scripts/db/           the harness (TypeScript): engine, template, request()/rpc(), tests
   shm.ts, shm/            macOS only: the System V shared-memory and semaphore shim (C) and how it is built (see the ADR)
   guard.ts                the watcher that cleans up after a SIGKILL
@@ -244,6 +244,7 @@ Everything below is written from Supabase's documented defaults, not exported fr
 | Default grants in `public` | Everything `postgres` creates is granted to anon, authenticated and service_role until the migration revokes it, and functions keep PostgreSQL's EXECUTE for PUBLIC. A forgetful migration leaks here as it would there (`20-privileges.sql`, tested with a leaky fixture). |
 | `auth` | `auth.jwt()`, `uid()`, `role()`, `email()`, reading `request.jwt.claims` |
 | Vault | `vault.secrets`, `vault.decrypted_secrets`, `create_secret()`, `update_secret()`; usable only by `postgres` and roles it grants. The secret is stored encrypted with a **public constant key of the shim**, which is not a secret. |
+| Signing key | `50-signing-key.sql` creates the Vault secret `save_hmac.k2026a` from 32 random bytes **when the database is created**: it is written to no file, and dies with the cluster. A project gets its own at M2.6 (see M2.3 below); without one a database signs nothing. Tests that need the unsigned path, a second key or a retired one change the secrets of their own clone. |
 | Stricter than Supabase | A migration whose `GRANT` or `REVOKE` Postgres reports as not applied (it only warns, e.g. no grant option) fails the harness: such a revoke would silently leave an object exposed. |
 
 ## What it does not
@@ -311,6 +312,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.2 20261002000100_scoring_core` | the PL/pgSQL port of the scorer: `hb.map_theta`, `hb.eap_by_axis`, `hb.obs_terms`, the linear algebra, Σ_init as a setting |
 | `…M2.2 20261002000200_session_scoring` | the in-session EAP, the MAP and the §13 evidence at `finish`, `hb.is_eligible` |
 | `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
+| `…M2.3 20261003000100_save_signing` | the role `hb_signer` and `hb.mac_sign`, RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` settings |
 
 ### Who can do what (R-11.1, R-12.1)
 
@@ -328,6 +330,10 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
   `authenticated` only. Helpers live in schema `hb`, which no API role can use; EXECUTE is revoked from PUBLIC on every
   function by default (`alter default privileges for role hb_definer`). The one exception is `hb.no_key_fields`,
   which `service_role` needs because `items.payload`'s CHECK constraint runs as the writer.
+- One function is owned by another role: **`hb.mac_sign`**, by `hb_signer` (`nologin`, no table, no schema `create`). It alone may
+  read the Vault, and it returns a MAC, never a key; `hb_definer`, which owns every RPC, can call it and cannot read the
+  Vault (tested: `select … from vault.decrypted_secrets` as `hb_definer` is `42501`). A bug in any RPC therefore cannot return the
+  signing key. See M2.3.
 - `service_role` (the bank pipeline, M2.5) can write the bank tables, the calibration log and `flags`, and read
   sessions, responses, exposures and surveys. It cannot touch `mirror`, the rate tables or any RPC.
 
@@ -367,32 +373,33 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 | `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the seen lists of a save and, **only if the save proves it**, its `anon_id` (see Identity and proofs); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
 | `next_item(p_token, p_axes)` | the pending item (a reload gets the same one), else a new one, chosen as in M2.2 below; `p_axes` restricts the pick to the axes of the client's current segment (null = all) | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'axes_done' \| 'no_items'}` |
 | `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next, p_axes)` | scores in SQL against the key; stores the answer and adds it to the session's grid EAP (`hb.eap_add_response`); repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
-| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, and, at the first call, keeps the correlated MAP and the server's §13 evidence in `sessions.state` and decides `calibration_eligible` (M2.2) | `{session, anon_id, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer). Neither the eligibility nor the MAP is returned or put in the session's flags (M2.2 below) |
+| `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, and, at the first call, keeps the correlated MAP and the server's §13 evidence in `sessions.state` and decides `calibration_eligible` (M2.2) | `{session, anon_id, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test) **with its `sig`** (M2.3; unsigned while the Vault holds no key). Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer). Neither the eligibility nor the MAP is returned or put in the session's flags (M2.2 below) |
 | `report_problem(p_token, p_kind, p_item_id, p_detail)` | the five item categories (the item must be one this session was served), or `notes_requested` (no item, no text; never counts toward quarantine) | `{recorded}` |
 | `submit_survey(p_token, p_age_band, p_english_first)` | the voluntary two answers | `{recorded}` |
 | `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; returns an axis or facet only from sessions that each hold 5 scored answers on it, rounded; see below | `{retest_version, param_version, sessions, eap, facets, withheld, limits, skipped}` |
 | `mirror_put(p_token, p_save, p_phrase)` | stores the save for the session's `anon_id`; the first put returns a 12-word recovery phrase, once, and later puts must present it | `{stored, anon_id, size_bytes, recovery_phrase?}` or `{stored: false, error: 'wrong_phrase'}` |
 | `mirror_get(p_anon_id, p_phrase)` | restore on a new device | `{found, save?, updated_utc?}`; a wrong phrase and an unknown id look the same |
-| `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session the server issued to that `anon_id`; a wrong proof counts against the address | `{deleted, sessions?, mirror?}` |
+| `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session the server issued to that `anon_id` and signed for it; a wrong proof counts against the address | `{deleted, sessions?, mirror?}` |
+| `verify_save(p_save)` | the unverified path (M2.3): says per session whether the server issued it as it stands; stores nothing; 60 calls a day per client address | `{anon_id, sessions: [{session_id, status: 'verified' \| 'unverified', reason}], n_verified, n_unverified}`; `reason` is `unsigned`, `bad_signature`, `unknown_key` or `malformed` |
 
 **Identity and proofs.** An `anon_id` is a label, not a credential: it is in the person's file, and a file name or a
 screenshot may show it. Nothing is done for an `anon_id` on its name alone.
 
 - The server issues `anon_id`s. `start_session` continues the one in a save only when the save lists a session this
-  server issued to **that** `anon_id` (`hb.save_proves_anon`). Otherwise the session gets a new `anon_id`
+  server issued to **that** `anon_id`, finished and signed for it (`hb.save_proves_anon`; M2.3: the MAC must verify). Otherwise the session gets a new `anon_id`
   (`anon_id_adopted: false`): an offline file, a made-up id, somebody else's id. The seen lists of such a save still
   count; they only keep items away from the new session. An offline-MVP user therefore gets a new `anon_id` at the
   first server session, and the client re-keys the file (M2.7); the offline sessions stay unverified (A16).
 - `mirror_put` accepts only a save whose `anon_id` is the one of the session's token, so nobody can create, or squat
   on, the mirror of an `anon_id` they hold no session for.
 - `delete_my_data` is proved by the recovery phrase or by a save with a session issued to the `anon_id` named in the
-  call. The `anon_id` written inside the file does not matter (a merged file proves each id its sessions belong to),
-  and a `sig.anon_id` on a session may only repeat the id being proved: it never substitutes for it (tested with a
-  stranger's own session carrying the victim's id).
-- What the proof is worth today: the session ids are 95 random bits and only the person's save (and the server) holds
-  them, so **a save file is a credential**: whoever holds one can delete, rescore and continue it. M2.3's per-session
-  HMAC proves the server issued a session to an `anon_id`; it is not a stronger secret than holding the file. Keep
-  saves private.
+  call, finished and signed for it. The `anon_id` written inside the file does not matter (a merged file proves each id its
+  sessions belong to), and the `sig.anon_id` of a session must be the id being proved *and* is under the MAC, so it cannot be
+  changed to another (tested with a stranger's own session carrying the victim's id: the MAC does not fit).
+- What the proof is worth: the sig is the server's MAC over the session and the `anon_id` (M2.3), and the server also holds the
+  row. A session id alone, or a session that is edited in any way, proves nothing. But the MAC lives in the person's file, so
+  **a save file is still a credential**: whoever holds one can delete, rescore and continue it. The HMAC proves that the server
+  issued a session to an `anon_id`; it is not a stronger secret than holding the file. Keep saves private.
 
 **`rescore`** (Phase AI amendment, ROADMAP A21/AI.8). For each session of the save that the server issued to **the
 `anon_id` of the save** (the caller's; a `sig.anon_id` on a session may only repeat it, exactly as in `hb.session_owned`)
@@ -409,8 +416,8 @@ not an answer: it is counted under `skipped.invalid`, enters no number and reach
 was issued to another `anon_id`, is unfinished or is unknown counts under `skipped.unknown_sessions` and adds nothing;
 that includes the sessions of a *merged* file that were issued to an `anon_id` other than the file's own (a merge keeps
 the smaller id and the sessions keep the id they bind in `sig.anon_id`). Which id a client rescores for a person who
-holds two is for M2.3 (the per-session MAC) and M2.7 to settle; until then the client sets the file's `anon_id` to the
-id it wants rescored.
+holds two is for M2.7 to settle; the MAC of M2.3 binds each session to its own `anon_id` (`sig.anon_id`), so a merge never
+moves a session to another; the client sets the file's `anon_id` to the id it wants rescored.
 
 *What `rescore` does not tell* (R-11.1, DESIGN §10; owner decision 2026-10-01, "`rescore` must also not leak
 single-answer verdicts"). With the verdict gone from `finish`, the score is the one place a script could still read
@@ -528,11 +535,10 @@ tuple with `correct` filled; this is a deviation the owner has accepted, to be r
 ### What the next tasks fill in
 
 - **M2.2** is below: scoring, selection, pretest slots and eligibility.
-- **M2.3** adds the per-session HMAC: `finish` signs the session, `rescore` and `delete_my_data` verify it
-  (`hb.session_owned` is today "the server issued that `session_id` to that `anon_id` named in the call"; M2.3 replaces
-  it, same signature, and `hb.save_proves_anon` and `start_session` follow), editing preferences never changes it.
-- **M2.4** repeats the acceptance as its own tests (this task already tests that `anon` reaches no table and only the
-  ten RPCs, a 25-item session reply holds no key, the brief_prefs rejection, the limits).
+- **M2.3** (done, below) adds the per-session HMAC: `finish` signs the session, `rescore`, `delete_my_data` and
+  `start_session` verify it, editing preferences never changes it.
+- **M2.4** repeats the acceptance as its own tests (M2.1 already tests that `anon` reaches no table and only the RPCs, a
+  25-item session reply holds no key, the brief_prefs rejection and the limits).
 - **M2.5** connects the bank (`hb load push` writes the four bank tables as `service_role`; the column names are
   checked against `hb.load.push.COLUMNS` when the bank repo is next door) and the nightly job (`hb.purge_expired()` is
   also run by `start_session`). A restore must go into a project that already has the migrations applied (data only):
@@ -542,7 +548,9 @@ tuple with `correct` filled; this is a deviation the owner has accepted, to be r
 ### To verify against the live project (M2.6)
 
 In addition to the list above: that `postgres` may `create role`, `grant hb_definer to postgres`, `create schema … authorization
-hb_definer` and set default privileges for `hb_definer`; that `extensions` lets `hb_definer` use pgcrypto; that
+hb_definer` and set default privileges for `hb_definer`; that `extensions` lets `hb_definer` and `hb_signer` use pgcrypto; that `postgres` may `create role hb_signer`, grant it
+`usage` on `vault` and `select` on `vault.decrypted_secrets` (the local shim lets `postgres` pass these on; the hosted Vault may
+differ, M2.3); that
 **only `public` is an exposed schema** (Settings, API), so `hb` and the tables' helpers are unreachable; which request
 header carries the client address and which entry of it (`rate.ip_header`, `rate.ip_hop`; the default, -1, is the last
 entry, which a script cannot forge; if a CDN sits in front and appends its own address, the right entry is -2, or the header
@@ -694,10 +702,126 @@ with an index on `item_parameters (param_version, b)`; not built, because it wou
   check counts correct answers only. The count of two is the app's; whether a lone rusher should lose a whole session in the
   notes is the owner's to weigh.
 
+## M2.3: signed saves
+
+ROADMAP M2.3, DESIGN §8 "Tamper evidence", §13, R-8.1; ADR A16; AI.26. One migration (`20261003000100_save_signing`), the shim
+file `50-signing-key.sql`, and `signing.db.test.ts` (47 tests).
+
+### What is signed
+
+`finish` hands the client the finished session as a `save-v1` session object, and now with a `sig` (`schema/save-v1.json`,
+`session_sig`):
+
+```json
+"sig": {"alg": "HMAC-SHA256", "kid": "k2026a", "mac": "xEgBE1GcwUtIq8SbmhG6rjfJI8PibAuE_vdy4MDCIeQ", "anon_id": "hb_7Q3m9Kx2Vw5rT8pL"}
+```
+
+```
+mac = base64url-no-padding( HMAC-SHA256( utf8(key of kid),
+        utf8( jcs({ "anon_id": sig.anon_id, "kind": "hb.session.v1", "session": <the session without sig> }) ) ) )
+```
+
+`jcs` is RFC 8785 canonical JSON, the app's `src/save/jcs.ts` (keys in UTF-16 code unit order, no white space, ECMAScript
+number and string forms). The test computes the same MAC with Node's `createHmac` and that serialiser
+(`referenceMac` in `rpc-support.ts`), so the format is pinned from both sides; `hb.jcs` itself is held to `jcs.ts` on
+the RFC's vectors, on every `d × 10^j` for `d` ≤ 99 and `j` from 15 to 40 (where PostgreSQL's own shortest-digits
+routine differs from ECMAScript: it prints `1e23` as `9.999999999999999e+22`, and `hb.jcs_number` looks for the shorter
+string that reads back as the same double), and on 2,000 random I-JSON values.
+
+- **What the MAC covers:** the session's own data (id, start, duration, device, flags, every response tuple) and the
+  `anon_id` it was issued to. The `anon_id` is in the sig because a merge (R-8.1) may give the file another one.
+- **What it does not cover:** anything around the session: the file's `anon_id`, `seen_items`, `seen_families`,
+  `posterior_cache`, `created_utc`, other sessions. A test verifies one session inside files that differ in all of those.
+  `brief_prefs` is outside every session and is stripped by the client before any upload; a file that still holds it is
+  rejected (`400 brief_prefs_not_accepted`), so editing preferences can never make a session unverified (AI.26).
+- **What does not matter:** the way the client wrote the JSON. Key order, white space and the spelling of numbers (`5000`,
+  `5000.0`, `5e3`) give the same canonical form (tested on 20 respellings of a whole file).
+- **Who signs:** `hb.session_signed`, called by `finish` and by nothing else (a test lists the callers of the signer from the
+  catalog). The server signs a session it built from its own rows, never a file or a session it was sent, so a file that holds
+  sessions the server did not issue cannot be made to look signed (A16: "the server refuses to sign a file that contains any
+  unverified session" holds because there is no way to ask it to sign a file). A second `finish` of the same session (a lost
+  reply; within `session.post_finish_minutes`) returns the same session, signed again with the *current* kid.
+- **Calibration** reads the database's rows (A16), and no RPC writes an upload into `responses` or `sessions` (a test lists the
+  writers of both tables), so an unverified or forged file cannot enter it, whatever it holds.
+
+### The unverified path (DESIGN §8)
+
+`verify_save(p_save)` accepts any `save-v1` file and says, per session, `verified`, or `unverified` with a `reason`:
+
+| reason | means |
+|---|---|
+| `unsigned` | no `sig`: a file from the offline MVP, or written by hand |
+| `bad_signature` | the session, its `anon_id` or the MAC differs from what was signed |
+| `unknown_key` | the sig's `kid` has no usable key (never issued here, or retired) |
+| `malformed` | the sig is not the closed object of the schema; the session is over `sig.max_session_bytes` (256 KB) or nested deeper than 24 levels; or a value cannot be canonicalised |
+
+An unverified session is the person's own data: the client shows it, marked unverified, and keeps it in their file (M2.7). The
+server uses none of it. `verify_save` never errors on a bad session; it errors only on a bad *file* (not a `save-v1`
+object, over `save.max_bytes`, over `verify.max_sessions` = 200 sessions, a `brief_prefs` key) and on the rate limit
+(`rate.verifies_per_day` = 60 per hashed client address). The two MACs are compared through their SHA-256, so the time of the
+comparison tells nothing about how much of a guess was right.
+
+What *needs* a verified session: `hb.session_owned(session, anon_id)` is true only if the sig names that `anon_id`, the server
+holds the session finished and issued to it, **and** the MAC verifies. `rescore` (known sessions), `delete_my_data` (the save
+proof) and `start_session` (continuing an `anon_id`) all go through it. `rescore` decides it once per session id before the
+big statement (the MAC is the costly part: canonicalising one session of 200 answers takes about 3 ms, and `verify_save` of 40 of them about 0.4 s here, most of it the `brief_prefs` walk and size check of the whole file that every RPC with a save makes).
+
+### The key, and rotating it
+
+The key of a `kid` is the Vault secret named **`save_hmac.<kid>`**: any text of at least 32 characters, whose UTF-8 bytes are the
+HMAC key (a shorter one is treated as absent, so a weak key signs and verifies nothing). `app_config` `sig.current_kid` names the
+kid that signs new sessions (`k2026a` as shipped). The migrations create **no** secret. The local database gets a random one at
+creation (`50-signing-key.sql`); on a project the owner creates it at M2.6, in the SQL editor, with a key made on the owner's
+machine:
+
+```zsh
+openssl rand -base64 48
+```
+
+```sql
+select vault.create_secret('<the 64 characters printed above>', 'save_hmac.k2026a', 'save signing key');
+```
+
+Rotation (a new key without invalidating the files in the wild):
+
+1. `select vault.create_secret('<another 64 characters>', 'save_hmac.k2027a', 'save signing key');`
+2. `update public.app_config set value = '"k2027a"' where key = 'sig.current_kid';`
+
+New sessions are signed under `k2027a`; sessions signed under `k2026a` keep verifying for as long as its secret exists. To
+**retire** a key on purpose (it leaked), delete its secret: what it signed becomes `unverified: unknown_key`, and a person who
+still holds the session's token (24 hours after finishing) gets it re-signed by calling `finish` again. After that the session is
+only the person's own data, which is what a retired key is for. Nothing re-signs a file on request, by design (see above).
+
+With no usable key for `sig.current_kid` the server signs nothing and `finish` still returns the session (a `finish` that fails
+would lose a person's results), so every file reads `unverified: unsigned`. **After creating the key, finish a test session and look
+for the `sig`.**
+
+### Who can read the key
+
+Only `hb.mac_sign`, owned by the role **`hb_signer`**: `nologin`, `select` on `vault.decrypted_secrets` and `usage` on `extensions`
+and `vault`, nothing else; no table, no `create` on `hb` or `public` (it gets `create` on `hb` for the migration and loses it
+again). `hb_definer` cannot read the Vault; it can call `hb.mac_sign(kid, message)`, which returns the MAC, never the key.
+`anon`, `authenticated` and `service_role` cannot call it. The tests check each of these from the catalog and by trying (as the
+role), and that the key text is in no RPC reply, no row of any table and no function body. (The shim's own encryption key is a
+public constant; see the Vault row of the table above.)
+
+### Limits and costs
+
+`hb.jcs` is a recursive PL/pgSQL function over `jsonb`; scalars are handled in the same statement that aggregates their
+container, so the cost is the number of containers, not of leaves. Nesting beyond 24 levels raises (`400 too_deep`) and every
+caller that can meet client data catches it. A real session is 10 to 60 KB; one over `sig.max_session_bytes` is `malformed`
+before any canonicalisation. An upload costs the canonicalisation only for sessions that the server holds and that name the
+caller's `anon_id`; for `verify_save`, which has no such precondition, `verify.max_sessions` and the rate limit bound it. The
+questions "whose file is this" (`start_session`, `delete_my_data`) look at the first `verify.max_sessions` sessions of a file only, so
+a file padded with thousands of entries cannot make the server verify thousands of MACs. The server signs only what it would
+accept: a session over `sig.max_session_bytes` comes back unsigned from `finish`, and so does one holding an answer that has no
+canonical form (nested beyond 24 levels, a number no double holds); the session and the person's results are returned either way.
+
 ## Secrets
 
 None. Every password is random per run and dies with the cluster; the Vault shim's key is a public
-constant; the Vault values in tests are fake strings. `web/scripts/db/wiring.test.ts` fails on a JWT,
+constant; the Vault values in tests are fake strings; the local signing key (`50-signing-key.sql`) is random per database
+and written to no file. `web/scripts/db/wiring.test.ts` fails on a JWT,
 an API-key shape, a non-local database URL or a hosted-Supabase host in any file under this directory
 or `web/scripts/db/`, test files included (only `wiring.test.ts` itself is skipped: it holds the
 patterns). Answer keys and `item_keys` data are never committed to this repo

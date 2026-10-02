@@ -95,9 +95,9 @@ describe('readMigrations', () => {
 })
 
 describe('the Supabase shim files', () => {
-  it('are the roles file for the cluster and four numbered files for each database, in order', () => {
+  it('are the roles file for the cluster and five numbered files for each database, in order', () => {
     expect(readShimFiles(SHIM_CLUSTER_DIR).map((f) => f.name)).toEqual(['00-roles.sql'])
-    expect(readShimFiles(SHIM_DATABASE_DIR).map((f) => f.name)).toEqual(['10-extensions.sql', '20-privileges.sql', '30-auth.sql', '40-vault.sql'])
+    expect(readShimFiles(SHIM_DATABASE_DIR).map((f) => f.name)).toEqual(['10-extensions.sql', '20-privileges.sql', '30-auth.sql', '40-vault.sql', '50-signing-key.sql'])
   })
 
   it('ignore non-SQL files and a missing directory', () => {

@@ -35,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1 and M2.2 files in order, one concern each', () => {
+  it('has the M2.1, M2.2 and M2.3 files in order, one concern each', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -49,11 +49,12 @@ describe('migrations: the set', () => {
       '20261002000100_scoring_core.sql',
       '20261002000200_session_scoring.sql',
       '20261002000300_selection.sql',
+      '20261003000100_save_signing.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[12] \(ROADMAP M2\.[12]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[1-4] \(ROADMAP M2\.[1-4]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 
@@ -66,7 +67,7 @@ describe('migrations: functions', () => {
   it('finds the functions (so the checks below are not vacuous)', () => {
     expect(functions.length).toBeGreaterThan(90)
     expect(code(all).match(/create\s+(?:or\s+replace\s+)?function\b/gi)!.length, 'every function is seen by the pattern').toBe(functions.length)
-    expect(functions.filter((f) => f.name.startsWith('public.')).length).toBe(10)
+    expect(functions.filter((f) => f.name.startsWith('public.')).length).toBe(11)
   })
 
   it('builds no SQL from its arguments: no dynamic EXECUTE (supabase/README.md, pitfall 5)', () => {
@@ -78,21 +79,25 @@ describe('migrations: functions', () => {
     for (const f of functions) expect(f.header, `${f.file}: ${f.name}`).toMatch(/set\s+search_path\s*=\s*''/i)
   })
 
-  it('creates every function between `set local role hb_definer` and `reset role`', () => {
+  it('creates every function between `set local role hb_definer` and `reset role` (the one that reads the Vault: as hb_signer)', () => {
     for (const m of migrations) {
       const text = code(m.sql)
-      const creates = [...text.matchAll(/create\s+(?:or\s+replace\s+)?function\b/gi)].map((x) => x.index!)
+      const creates = [...text.matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/gi)].map((x) => ({ at: x.index!, name: x[1]! }))
       if (creates.length === 0) continue
-      const setAt = [...text.matchAll(/set\s+local\s+role\s+hb_definer\s*;/gi)].map((x) => x.index!)
+      // a block runs from `set local role X;` to the next `reset role;`
       const resetAt = [...text.matchAll(/reset\s+role\s*;/gi)].map((x) => x.index!)
-      expect(setAt.length, m.name).toBe(resetAt.length)
-      expect(setAt.length, m.name).toBeGreaterThan(0)
+      const blocks = [...text.matchAll(/set\s+local\s+role\s+(\w+)\s*;/gi)].map((x, i) => ({ role: x[1]!, start: x.index!, end: resetAt[i] ?? -1 }))
+      expect(blocks.length, m.name).toBe(resetAt.length)
+      expect(blocks.length, m.name).toBeGreaterThan(0)
       for (const c of creates) {
-        const inside = setAt.some((s, i) => s < c && c < resetAt[i]!)
-        expect(inside, `${m.name}: a function is created outside hb_definer's block`).toBe(true)
+        const block = blocks.find((b) => b.start < c.at && c.at < b.end)
+        expect(block, `${m.name}: ${c.name} is created outside a role block`).toBeDefined()
+        // only the signer, whose function alone reads the Vault, is created by another role
+        const ok = block!.role === 'hb_definer' || (block!.role === 'hb_signer' && c.name === 'hb.mac_sign')
+        expect(ok, `${m.name}: ${c.name} is created as ${block!.role}`).toBe(true)
       }
       // hb_definer may create in `public` only inside the file that needs it
-      if (/create\s+function\s+public\./i.test(text)) {
+      if (/create\s+(?:or\s+replace\s+)?function\s+public\./i.test(text)) {
         expect(text, m.name).toMatch(/grant\s+create\s+on\s+schema\s+public\s+to\s+hb_definer\s*;/i)
         expect(text, m.name).toMatch(/revoke\s+create\s+on\s+schema\s+public\s+from\s+hb_definer\s*;/i)
       }

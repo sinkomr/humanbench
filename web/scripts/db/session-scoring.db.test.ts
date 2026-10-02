@@ -16,7 +16,7 @@ import type { ItemParams, Observation } from '../../src/engine/types'
 import { createRng } from '../../src/engine/prng'
 import { customItem, loadFixtureBank, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
-import { ageExposures, from, isServed, playSession, relaxSelection, startSession, type Next, type Served } from './rpc-support'
+import { ageExposures, from, isServed, playSession, relaxSelection, signedSession, startSession, type Next, type Served } from './rpc-support'
 import { openTestDb } from './vitest'
 
 let db: TestDb
@@ -690,9 +690,9 @@ describe('rescore does not differ with which answers were right (R-11.1)', () =>
     withheld: { eap: Record<string, number>; facets: Record<string, Record<string, number>> }
     skipped: Record<string, number>
   }
-  const rescoreOf = (p: Played): Promise<Reply> =>
+  const rescoreOf = async (p: Played): Promise<Reply> =>
     db.rpc<Reply>(from(freshIp()), 'rescore', {
-      p_save: { schema_version: '1.0.0', bank_version: 'test', anon_id: p.anonId, created_utc: '2026-10-01T12:00:00Z', sessions: [{ session_id: p.sessionId }], seen_items: [], seen_families: [] },
+      p_save: { schema_version: '1.0.0', bank_version: 'test', anon_id: p.anonId, created_utc: '2026-10-01T12:00:00Z', sessions: [await signedSession(db, p.sessionId)], seen_items: [], seen_families: [] },
     })
   /** Everything in the reply but the numbers of the score: which sessions count, which axes and facets are returned, the counts held back. */
   const frame = (got: Reply): unknown => ({

@@ -90,8 +90,8 @@ $$;
 
 -- Deletes the sessions (and with them responses, exposure log, reports, survey) and the mirror of one
 -- anon_id. Proof, either of: the recovery phrase of its mirror; or a save file that lists a session the
--- server issued to that anon_id (hb.save_proves_anon: M2.1 trusts the unguessable session_id, M2.3 will
--- require the session's MAC). The anon_id inside the file does not matter, only the sessions: a merged
+-- server issued to that anon_id (hb.save_proves_anon: since M2.3 the session must also carry the server's
+-- MAC for that anon_id). The anon_id inside the file does not matter, only the sessions: a merged
 -- file proves each of the ids its sessions were issued to. Nothing about the proof is revealed on
 -- failure, and each failure counts against the address, which is refused once it has used up its
 -- failures (the same counter as the phrase).

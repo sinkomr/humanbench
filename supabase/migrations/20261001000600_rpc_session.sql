@@ -182,8 +182,9 @@ end
 $$;
 
 -- Closes the session and returns it as a save-v1 session object, ready for the client to merge into
--- its save (the per-session signature is M2.3). p_flags is the client's integrity report (the §8
--- session flags); the server adds its own time check.
+-- its save, with the per-session signature of M2.3 (A16: hb.session_signed; unsigned while the Vault
+-- holds no key for sig.current_kid). p_flags is the client's integrity report (the §8 session flags);
+-- the server adds its own time check.
 --
 -- M2.2: at the first finish the server also (1) keeps a compact summary of the session's grid EAP in place of
 -- the grids, (2) computes the correlated MAP and Laplace covariance of the session's answers under Σ_init
@@ -232,7 +233,7 @@ begin
   end if;
 
   return pg_catalog.jsonb_build_object(
-    'session', hb.session_object(s.session_id),
+    'session', hb.session_signed(s.session_id),
     'anon_id', s.anon_id,
     'n_responses', (select x.n_answered from public.sessions x where x.session_id = s.session_id));
 end

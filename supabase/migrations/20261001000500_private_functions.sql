@@ -4,7 +4,8 @@
 --
 -- Seams that later tasks replace with `create or replace function` (same signature):
 --   hb.session_owned(jsonb,text) M2.3: the per-session HMAC (here: the server issued that
---                                session_id to that anon_id; hb.save_proves_anon builds on it)
+--                                session_id to that anon_id; hb.save_proves_anon builds on it).
+--                                Replaced in 20261003000100_save_signing.sql.
 -- (hb.pick_item, hb.serve_next and hb.is_eligible were the seams of M2.2; they are defined in the M2.2
 -- migrations: selection and scoring.)
 --
@@ -630,7 +631,8 @@ $$;
 
 -- The session as a save-v1 session object (schema/save-v1.json "session", DESIGN §8), built from the
 -- rows the server holds: responses as [item_id, pretest, response, correct, rt_ms, confidence].
--- No sig yet: the per-session HMAC is M2.3.
+-- No sig here: this is the object that is signed (hb.session_signed, M2.3), and what a signature is checked
+-- against, so it must stay the unsigned session.
 --
 -- `correct` is always null: the server never puts its verdict on an answer into a save (owner decision
 -- 2026-10-01, R-11.1, DESIGN §10 "no correctness feedback on finite-bank items"; ROADMAP "Owner decisions").
@@ -783,7 +785,8 @@ as $$ select 1::double precision $$;
 -- is the one the CALLER names (p_anon_id), checked against the server's row: a `sig.anon_id` inside
 -- the save is the caller's own claim and may only repeat it, never replace it (a stranger's own
 -- session with sig.anon_id = someone else's id must prove nothing).
--- M2.3 replaces this with the per-session HMAC over (session, anon_id) (ROADMAP A16), same signature.
+-- M2.3 replaces this with the per-session HMAC over (session, anon_id) (ROADMAP A16), same signature
+-- (20261003000100_save_signing.sql: create or replace).
 create function hb.session_owned(p_session jsonb, p_anon_id text)
 returns boolean
 language sql stable

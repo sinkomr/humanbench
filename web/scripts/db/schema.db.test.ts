@@ -39,6 +39,7 @@ const RPCS = [
   'public.start_session',
   'public.submit',
   'public.submit_survey',
+  'public.verify_save',
 ]
 
 const TABLES = [
@@ -168,7 +169,7 @@ describe('tables', () => {
 })
 
 describe('functions', () => {
-  it('are all owned by hb_definer with search_path pinned to empty; RPCs are SECURITY DEFINER, helpers are not (bar the key-field check that bank writes run)', async () => {
+  it('are all owned by hb_definer with search_path pinned to empty (bar the Vault reader, owned by hb_signer); RPCs are SECURITY DEFINER, helpers are not (bar the key-field check that bank writes run, and the Vault reader)', async () => {
     const { rows } = await db.owner.query<{ schema: string; name: string; definer: boolean; owner: string; config: string[] | null; kind: string }>(
       `select n.nspname as schema, p.proname as name, p.prosecdef as definer, r.rolname as owner, p.proconfig as config, p.prokind as kind
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_roles r on r.oid = p.proowner
@@ -177,9 +178,10 @@ describe('functions', () => {
     expect(rows.length).toBeGreaterThan(30)
     for (const f of rows) {
       const id = `${f.schema}.${f.name}`
-      expect(f.owner, id).toBe('hb_definer')
-      expect(f.config, id).toEqual(['search_path=""'])
-      expect(f.definer, id).toBe(f.schema === 'public' || id === 'hb.no_key_fields')
+      // the one function that reads the Vault has an owner of its own (M2.3); the number printer pins float output
+      expect(f.owner, id).toBe(id === 'hb.mac_sign' ? 'hb_signer' : 'hb_definer')
+      expect([...(f.config ?? [])].sort(), id).toEqual(id === 'hb.jcs_number' ? ['extra_float_digits=1', 'search_path=""'] : ['search_path=""'])
+      expect(f.definer, id).toBe(f.schema === 'public' || id === 'hb.no_key_fields' || id === 'hb.mac_sign')
       expect(f.kind, id).toBe('f')
     }
     expect(rows.filter((f) => f.schema === 'public').map((f) => `public.${f.name}`)).toEqual(RPCS)
