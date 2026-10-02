@@ -277,7 +277,8 @@ describe('ROADMAP ADRs A20–A24', () => {
 
   it('adds A20–A23 and the draft A24 once each, in order, after A19', () => {
     const ids = lines(roadmap)
-      .filter((l) => /^- \*\*A\d+ /.test(l))
+      // ADR lines are "- **A<n> — title" (A24: "- **A24 (draft; …"); an owner-decision bullet such as "- **A6 amended (…)" is not one.
+      .filter((l) => /^- \*\*A\d+ [—(]/u.test(l))
       .map((l) => /^- \*\*A(\d+) /.exec(l)?.[1])
     expect(ids).toEqual(Array.from({ length: 24 }, (_, i) => String(i + 1)))
     expect(adrLine(24)).toMatch(/draft; adopt with Part 2/)

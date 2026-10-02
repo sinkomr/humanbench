@@ -14,7 +14,7 @@ import type { ResponseTuple } from '../engine/types'
 import type { ItemInstance } from '../tasks/family'
 import { matrices } from '../tasks/matrices'
 import { rotation } from '../tasks/rotation'
-import { BRIEF_DESTINATIONS, BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS, FIT_KEEP_PER_TOPIC, briefPrefsCovered, isRemovedContext, mergeBriefPrefs, restoreBriefPrefs, withoutBriefPrefs } from './brief-prefs'
+import { BRIEF_DESTINATIONS, BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS, FIT_KEEP_PER_TOPIC, briefPrefsCovered, isRemovedContext, mergeBriefPrefs, raiseBriefPrefs, replacedBriefSets, restoreBriefPrefs, withoutBriefPrefs } from './brief-prefs'
 import { saveWithSession } from './create'
 import { jcs } from './jcs'
 import { mergeAll, normalizeSave, subsumes } from './merge'
@@ -282,6 +282,112 @@ describe('restoreBriefPrefs ("Load settings from a save" is a restore, not a rev
     expect(restoreBriefPrefs(page, prefs({ contexts: [context(1, 1, { mode: 'learn' })], fit_log: page.fit_log })).changed).toBe(true)
     expect(restoreBriefPrefs(page, prefs({ contexts: [context(1, 1)], fit_log: [...page.fit_log, fit('02a1b2c3', 'quant/linear', '2026-10')] })).changed).toBe(true)
     expect(restoreBriefPrefs(page, prefs({ contexts: [context(1, 1)], notes_as_of: '2027-02', fit_log: page.fit_log })).changed).toBe(true)
+  })
+})
+
+describe('raiseBriefPrefs and replacedBriefSets (the file’s settings win when a save is loaded on the ready screen; owner decision 2026-10-01)', () => {
+  it('raises each loaded set one above the page’s rev in its slot, and leaves slots the page has no set in', () => {
+    const page = prefs({ contexts: [context(1, 5), { slot: 2, rev: 3, removed: true }] })
+    const loaded = prefs({ contexts: [context(1, 2, { preset: 'coding' }), context(2, 9, { preset: 'reading' }), context(3, 1)] })
+    const raised = raiseBriefPrefs(page, loaded)
+    expect(raised.contexts.map((c) => [c.slot, c.rev])).toEqual([[1, 6], [2, 10], [3, 1]])
+    // so the plain join (what a merge of the two saves does) now keeps the file’s sets
+    expect((mergeBriefPrefs([page, raised])?.contexts[0] as BriefContextV1).preset).toBe('coding')
+    // a page with no settings raises nothing
+    expect(j(raiseBriefPrefs(undefined, loaded))).toBe(j(mergeBriefPrefs([loaded])))
+  })
+
+  it('leaves a set alone that says what the page’s set says, so loading a save that agrees changes no edit count', () => {
+    const page = prefs({ contexts: [context(1, 7, { lines_on: ['U3', 'LANG'] }), { slot: 2, rev: 3, removed: true }] })
+    // the same sets in another order of lines and with other edit counts, and the same removal
+    const loaded = prefs({ contexts: [context(1, 1, { lines_on: ['LANG', 'U3'] }), { slot: 2, rev: 9, removed: true }, context(3, 4)] })
+    expect(raiseBriefPrefs(page, loaded).contexts.map((c) => [c.slot, c.rev])).toEqual([[1, 1], [2, 9], [3, 4]])
+    // and the join still gives the page its own (higher) edit count for the set that agrees
+    expect(restoreBriefPrefs(page, loaded).prefs.contexts.map((c) => [c.slot, c.rev])).toEqual([[1, 7], [2, 9], [3, 4]])
+  })
+
+  it('never goes past the ceiling of revs', () => {
+    const raised = raiseBriefPrefs(prefs({ contexts: [context(1, 1_000_000)] }), prefs({ contexts: [context(1, 3, { preset: 'coding' })] }))
+    expect(raised.contexts[0]?.rev).toBe(1_000_000)
+    expect(tsOk(save(raised))).toBe(true)
+  })
+
+  it('makes the loaded content win a plain join, whatever the revs were (property)', () => {
+    fc.assert(
+      fc.property(arbBriefPrefs, arbBriefPrefs, (page, loaded) => {
+        const joined = mergeBriefPrefs([page, raiseBriefPrefs(page, loaded)]) as BriefPrefsV1
+        for (const c of (mergeBriefPrefs([loaded]) as BriefPrefsV1).contexts) {
+          const got = joined.contexts.find((x) => x.slot === c.slot)
+          // at the ceiling a tie falls back to the canonical order, so the check holds below it
+          if ((mergeBriefPrefs([page])?.contexts.find((x) => x.slot === c.slot)?.rev ?? 0) >= 1_000_000) continue
+          expect(jcs({ ...got, rev: 0 })).toBe(jcs({ ...c, rev: 0 }))
+        }
+        expect(ajvOk(save(raiseBriefPrefs(page, loaded))), JSON.stringify(ajvValidate.errors)).toBe(true)
+      }),
+      { numRuns: 500 },
+    )
+  })
+
+  it('counts the page’s sets that the file replaces with something else, and nothing else', () => {
+    const page = prefs({ contexts: [context(1, 5), context(2, 1, { preset: 'reading' }), { slot: 3, rev: 4, removed: true }] })
+    // no settings on the page, or none in the file
+    expect(replacedBriefSets(undefined, prefs({ contexts: [context(1, 1, { preset: 'coding' })] }))).toBe(0)
+    expect(replacedBriefSets(page, prefs())).toBe(0)
+    // the same sets (edit counts differ), or only slots the page has no live set in: nothing is replaced
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 1), context(2, 9, { preset: 'reading' })] }))).toBe(0)
+    expect(replacedBriefSets(page, prefs({ contexts: [context(3, 9, { preset: 'coding' }), context(4, 1)] }))).toBe(0)
+    // a different set in a slot where the page has a set, or a removal of it
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 1, { mode: 'learn' })] }))).toBe(1)
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 1, { tier: 'T2' }), { slot: 2, rev: 1, removed: true }] }))).toBe(2)
+    // fit notes and the month alone replace no set
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 1)], notes_as_of: '2027-02', fit_log: [fit('01a1b2c3', 'quant/linear', '2026-10')] }))).toBe(0)
+  })
+
+  it('does not count a set that differs only in what was last copied, and counts a set that differs in what the person chose', () => {
+    const copied = { templates: '2026.11', month: '2026-11', lines: [{ id: 'DS', v: '1' }] }
+    const page = prefs({ contexts: [context(1, 9, { copied })] })
+    // the same choices without the record of the copy: the record is replaced, but there is nothing to tell
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 2)] }))).toBe(0)
+    expect(restoreBriefPrefs(page, prefs({ contexts: [context(1, 2)] })).prefs.contexts[0]).toEqual(context(1, 10))
+    // another choice, with or without the record
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 2, { length: 'short' })] }))).toBe(1)
+    expect(replacedBriefSets(page, prefs({ contexts: [context(1, 2, { length: 'short', copied })] }))).toBe(1)
+  })
+
+  it('counts what the restore really does: a set the ceiling keeps the page’s copy of is not replaced', () => {
+    const page = prefs({ contexts: [context(1, 1_000_000, { preset: 'reading' }), context(2, 4, { preset: 'reading' })] })
+    const loaded = prefs({ contexts: [context(1, 3, { preset: 'coding' }), context(2, 3, { preset: 'coding' })] })
+    // Slot 1 cannot be raised past the ceiling, so the two sets tie and the greater canonical JSON ('reading') is kept:
+    // the page’s copy stays. Slot 2 is raised and replaced.
+    expect(restoreBriefPrefs(page, loaded).prefs.contexts.map((c) => (c as BriefContextV1).preset)).toEqual(['reading', 'coding'])
+    expect(replacedBriefSets(page, loaded)).toBe(1)
+    // the other way round the tie goes to the file’s set, and the count says so
+    const other = prefs({ contexts: [context(1, 1_000_000, { preset: 'coding' })] })
+    const reading = prefs({ contexts: [context(1, 3, { preset: 'reading' })] })
+    expect((restoreBriefPrefs(other, reading).prefs.contexts[0] as BriefContextV1).preset).toBe('reading')
+    expect(replacedBriefSets(other, reading)).toBe(1)
+  })
+
+  it('counts exactly the live sets of the page that a restore changes in what the person chose (property)', () => {
+    const chosen = (c: BriefContextV1 | { slot: number; rev: number; removed: true }): string => {
+      if (isRemovedContext(c)) return jcs({ slot: c.slot, removed: true })
+      const { rev: _rev, copied: _copied, ...rest } = c
+      return jcs(rest)
+    }
+    fc.assert(
+      fc.property(arbBriefPrefs, arbBriefPrefs, (page, loaded) => {
+        const before = mergeBriefPrefs([page]) as BriefPrefsV1
+        const after = restoreBriefPrefs(page, loaded).prefs
+        let want = 0
+        for (const c of before.contexts) {
+          if (isRemovedContext(c)) continue
+          const now = after.contexts.find((x) => x.slot === c.slot)
+          if (now === undefined || chosen(now) !== chosen(c)) want++
+        }
+        expect(replacedBriefSets(page, loaded)).toBe(want)
+      }),
+      { numRuns: 500 },
+    )
   })
 })
 

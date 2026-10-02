@@ -5,7 +5,7 @@ import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
 import { encodeSaveCode } from '../save/codec'
 import { saveText } from '../save/io'
-import type { SaveFileV1 } from '../save/types'
+import type { BriefContextV1, BriefPrefsV1, SaveFileV1 } from '../save/types'
 import { SAVE_CTX } from './constants'
 import Checklist from './Checklist.svelte'
 import Confidence from './Confidence.svelte'
@@ -16,6 +16,7 @@ import Ready from './Ready.svelte'
 import { defaultReadyState, type ReadyState } from './ready-state'
 import { SpyStorage } from './bot'
 import { Bot } from './bot'
+import { READY_LOAD_PREFS_NOTICE } from './copy'
 import type { SegmentView } from './run'
 
 let cleanup: (() => void) | undefined
@@ -202,6 +203,56 @@ describe('Ready: earlier saves (R-8.1, M1.17 UI wiring)', () => {
     expect(c.textContent).toContain('1 earlier session saved on this device')
     click(box)
     expect(reported.at(-1)).toEqual({ includeFound: false, loaded: null })
+  })
+
+  describe('the notes settings in a loaded file (owner decision 2026-10-01)', () => {
+    const set = (preset: BriefContextV1['preset'], rev: number): BriefContextV1 => ({
+      slot: 1,
+      preset,
+      destination: 'chatgpt_instructions',
+      tier: 'T1',
+      mode: 'do',
+      length: 'standard',
+      topics: {},
+      lines_on: [],
+      lines_off: [],
+      rev,
+    })
+    const prefsOf = (c: BriefContextV1): BriefPrefsV1 => ({ v: 1, topics: 'topics-v1', groups: 'g1', notes_as_of: '2026-11', contexts: [c], fit_log: [] })
+
+    async function loadFile(restored: unknown, file: SaveFileV1): Promise<{ c: HTMLElement; reported: ReadyState[] }> {
+      const r = ready({ restored, choices: restored === null ? none : defaultReadyState(restored as never) })
+      r.c.querySelector<HTMLTextAreaElement>('textarea')!.value = await encodeSaveCode(file)
+      r.c.querySelector('textarea')!.dispatchEvent(new Event('input', { bubbles: true }))
+      click(buttonByText(r.c, 'Load'))
+      await vi.waitFor(() => expect(r.reported).toHaveLength(1))
+      flushSync()
+      return r
+    }
+
+    it('says the file’s settings will be used when they differ from the ones saved on the device, and not otherwise', async () => {
+      const base = await savedFile()
+      const onDevice = { ...base, brief_prefs: prefsOf(set('reading', 9)) }
+      const restored = { save: onDevice, keys: ['k'], failures: [], anonIds: [onDevice.anon_id] }
+
+      const different = await loadFile(restored, { ...base, brief_prefs: prefsOf(set('coding', 1)) })
+      const status = different.c.querySelector('[role="status"]')?.textContent ?? ''
+      expect(status).toContain('Loaded 1 earlier session. Your new session will be added to it.')
+      expect(status).toContain(READY_LOAD_PREFS_NOTICE)
+      cleanup?.()
+
+      // the same settings (only the edit count differs): nothing is replaced, so nothing is said
+      const same = await loadFile(restored, { ...base, brief_prefs: prefsOf(set('reading', 1)) })
+      expect(same.c.querySelector('[role="status"]')?.textContent).not.toContain(READY_LOAD_PREFS_NOTICE)
+      cleanup?.()
+
+      // no settings on this device, or none in the file
+      const nothingHere = await loadFile(null, { ...base, brief_prefs: prefsOf(set('coding', 1)) })
+      expect(nothingHere.c.querySelector('[role="status"]')?.textContent).not.toContain(READY_LOAD_PREFS_NOTICE)
+      cleanup?.()
+      const noSettings = await loadFile(restored, base)
+      expect(noSettings.c.querySelector('[role="status"]')?.textContent).not.toContain(READY_LOAD_PREFS_NOTICE)
+    })
   })
 
   it('does not include autosaves from more than one identifier unless asked', async () => {

@@ -76,6 +76,8 @@ export const READY_LOAD_HELP = 'Choose a save file, or paste a save code. This a
 export const READY_LOAD_FILE = 'Save file'
 export const READY_LOAD_CODE = 'Or paste a save code'
 export const READY_LOAD_BUTTON = 'Load'
+/** Shown after a loaded file's notes settings differ from the ones saved on this device (ROADMAP owner decisions 2026-10-01). */
+export const READY_LOAD_PREFS_NOTICE = 'The notes settings in this file will be used in place of the different ones saved on this device.'
 
 // ---------------------------------------------------------------------------- practice
 

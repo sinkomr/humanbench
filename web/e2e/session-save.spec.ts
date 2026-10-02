@@ -23,6 +23,10 @@
  *   the share sheet gets a file (and, on a platform that only shares text, a `.txt` copy) that loads again.
  * - **Notes**: the settings that travelled in the save are the ones the notes builder shows on the other
  *   device, whether it found them in the session's autosave or was given the file.
+ * - **A device that has notes settings of its own** (ROADMAP owner decisions 2026-10-01, AI.7): a save loaded
+ *   on the ready screen wins over them set by set, as in the notes builder, even when the device's sets were
+ *   edited more often (higher revs); the page says so; the choice holds whether or not the new session is added
+ *   to the earlier saves on the device.
  *
  * A download event is observable on the iPhone emulation as on desktop (the pages' own downloads
  * come through it), so the file is read from the event. What the engines cannot do is read the
@@ -34,15 +38,15 @@
 
 import { readFileSync } from 'node:fs'
 import { expect, test, type Browser, type Download, type Page } from '@playwright/test'
-import { PREFS_AUTOSAVE_ID } from '../src/brief-store/persist'
+import { PREFS_AUTOSAVE_ID, prefsOnlySave } from '../src/brief-store/persist'
 import { COPY } from '../src/brief/copy'
 import { SAVE_SHARE, SAVE_SHARED } from '../src/reveal/copy'
 import { autosaveKey } from '../src/save/autosave'
 import { jcs } from '../src/save/jcs'
 import { parseSaveText } from '../src/save/parse'
-import type { BriefPrefsV1, SaveFileV1 } from '../src/save/types'
+import type { BriefContextV1, BriefPrefsV1, SaveFileV1 } from '../src/save/types'
 import { validateSave } from '../src/save/validate'
-import { FINISHED_COPIED, FINISHED_COPY_FAILED, READY_LOAD_BUTTON, READY_LOAD_CODE, READY_LOAD_FILE } from '../src/session/copy'
+import { FINISHED_COPIED, FINISHED_COPY_FAILED, READY_LOAD_BUTTON, READY_LOAD_CODE, READY_LOAD_FILE, READY_LOAD_PREFS_NOTICE } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { button, h1, languageClean, unloadIsGuarded } from './flow'
 import { partsPlayedProblems } from './parts'
@@ -183,6 +187,36 @@ async function loadIntoBuilder(page: Page, isMobile: boolean, file: Pick<Saved, 
   if (isMobile) await page.getByRole('button', { name: COPY.loadButton }).tap()
   else await page.getByRole('button', { name: COPY.loadButton }).click()
   await expect(page.getByTestId('load-status')).toHaveText(COPY.loadDone)
+}
+
+/**
+ * Notes settings a device holds before the session: the saved file's set in slot 1, edited five more times since
+ * (a higher rev) with Programming moved to "New to me", and a second set (slot 2) that only this device has. A plain
+ * join of this device and the file would keep the device's slot 1.
+ */
+function deviceSettings(file: SaveFileV1): BriefPrefsV1 {
+  const prefs = JSON.parse(JSON.stringify(file.brief_prefs)) as BriefPrefsV1
+  const first = prefs.contexts[0] as BriefContextV1
+  const mine: BriefContextV1 = { ...first, rev: first.rev + 5, topics: { ...first.topics, 'other/programming': 'build' } }
+  const second: BriefContextV1 = { ...mine, slot: 2, preset: 'reading', rev: 1 }
+  prefs.contexts = [mine, second]
+  return prefs
+}
+
+/** Put notes settings on a device that has nothing else, as the notes builder would have kept them. */
+async function keepSettingsOnDevice(page: Page, prefs: BriefPrefsV1, anonId: string): Promise<void> {
+  const text = jcs(prefsOnlySave(prefs, anonId, Date.parse('2026-10-01T09:00:00Z')))
+  await page.goto('./')
+  await page.evaluate(`localStorage.setItem(${JSON.stringify(PREFS_KEY)}, ${JSON.stringify(text)})`)
+}
+
+/** Clear the "add my new session to the earlier saves on this device" box on the ready screen. */
+async function leaveOutEarlierSaves(page: Page, isMobile: boolean): Promise<void> {
+  const box = page.getByRole('checkbox', { name: /Add my new session to the/ })
+  await expect(box).toBeChecked()
+  if (isMobile) await box.tap()
+  else await box.uncheck()
+  await expect(box).not.toBeChecked()
 }
 
 /** The next session is added to the save it started from (R-8.1): nothing of the earlier one is lost or changed. */
@@ -548,6 +582,83 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
     expect(settingsOf(rewritten.brief_prefs)).toEqual(settingsOf(saved.file.brief_prefs))
     expect(rewritten.brief_prefs?.fit_log).toHaveLength(1)
     expect(rewritten.brief_prefs?.contexts[0]).toHaveProperty('copied')
+  })
+
+  test('a device that already has notes settings: a loaded file’s settings win set by set, the page says so, and the notes builder shows them', async ({ page, isMobile }) => {
+    test.setTimeout(3 * 60_000)
+    const driver = new SessionDriver(page, { touch: isMobile === true })
+    const fileFirst = saved.file.brief_prefs!.contexts[0] as BriefContextV1
+    const mine = deviceSettings(saved.file)
+    const [mineFirst, mineSecond] = mine.contexts as [BriefContextV1, BriefContextV1]
+    // The device's set was edited more often than the file's: a join by edit counts would keep the device's.
+    expect(mineFirst.rev).toBeGreaterThan(fileFirst.rev)
+    await keepSettingsOnDevice(page, mine, saved.file.anon_id)
+    await driver.toReady()
+    await expect(page.getByRole('heading', { level: 2, name: 'Earlier saves on this device' })).toBeVisible()
+    await expect(page.getByRole('status')).toHaveText('')
+
+    await chooseFile(page, driver, { name: saved.name, mimeType: 'application/json', buffer: Buffer.from(saved.text) })
+    await expect(page.getByRole('status')).toContainText('Loaded 1 earlier session. Your new session will be added to it.')
+    await expect(page.getByRole('status')).toContainText(READY_LOAD_PREFS_NOTICE)
+
+    await driver.begin()
+    await driver.answerOne()
+    await driver.finishEarly()
+    await driver.resultsReady()
+    const after = await downloadSave(page, driver)
+    expect(after.file.anon_id).toBe(saved.file.anon_id)
+    expect(after.file.sessions).toHaveLength(2)
+    // The file's set is the one in slot 1 (one rev above the device's, so every later join keeps it), the device's own second set is kept as it was.
+    expect(after.file.brief_prefs!.contexts).toEqual([{ ...fileFirst, rev: mineFirst.rev + 1 }, mineSecond])
+    expect(after.file.brief_prefs!.fit_log).toEqual(saved.file.brief_prefs!.fit_log)
+    expect(after.text).not.toMatch(/chess|cooking|metric/)
+
+    // The notes builder on this device shows the file's settings (Programming "I know this well"), not the device's old ones.
+    await page.goto('./notes.html')
+    await expect(page.getByRole('heading', { level: 1, name: 'Notes for your AI' })).toBeVisible()
+    await expectNotesSettings(page)
+  })
+
+  test('the file’s notes settings win the same way when the new session is not added to the earlier saves on the device', async ({ page, isMobile }) => {
+    test.setTimeout(3 * 60_000)
+    const touch = isMobile === true
+    const driver = new SessionDriver(page, { touch })
+    const fileFirst = saved.file.brief_prefs!.contexts[0] as BriefContextV1
+    const mine = deviceSettings(saved.file)
+    const [mineFirst, mineSecond] = mine.contexts as [BriefContextV1, BriefContextV1]
+    await keepSettingsOnDevice(page, mine, saved.file.anon_id)
+    await driver.toReady()
+    await leaveOutEarlierSaves(page, touch)
+    await chooseFile(page, driver, { name: saved.name, mimeType: 'text/plain', buffer: Buffer.from(saved.text) })
+    await expect(page.getByRole('status')).toContainText(READY_LOAD_PREFS_NOTICE)
+    await driver.begin()
+    await driver.answerOne()
+    await driver.finishEarly()
+    await driver.resultsReady()
+    const after = await downloadSave(page, driver)
+    // The session was built from the file alone: its own set, one rev above the device's, and nothing of the device's second set.
+    expect(after.file.brief_prefs!.contexts).toEqual([{ ...fileFirst, rev: mineFirst.rev + 1 }])
+
+    // The device keeps its own save of the second set, and the session's save holds the file's first set at the higher rev.
+    // Joined, the device has the file's settings in slot 1 and still its own second set.
+    const stored = await Promise.all((await localKeys(page)).filter((k) => k.startsWith('hb:save:v1:')).map(async (k) => JSON.parse((await page.evaluate<string>(`localStorage.getItem(${JSON.stringify(k)})`))) as SaveFileV1))
+    const sets = stored.flatMap((x) => x.brief_prefs?.contexts ?? []).filter((c): c is BriefContextV1 => !('removed' in c))
+    expect(sets.filter((c) => c.slot === 2)).toEqual([mineSecond])
+    const slotOne = sets.filter((c) => c.slot === 1).sort((a, b) => b.rev - a.rev)[0]
+    expect(slotOne).toEqual({ ...fileFirst, rev: mineFirst.rev + 1 })
+
+    await page.goto('./notes.html')
+    await expect(page.getByRole('heading', { level: 1, name: 'Notes for your AI' })).toBeVisible()
+    await expectNotesSettings(page)
+  })
+
+  test('a device with the same notes settings as the file is told nothing about them', async ({ page, isMobile }) => {
+    const driver = new SessionDriver(page, { touch: isMobile === true })
+    await keepSettingsOnDevice(page, saved.file.brief_prefs!, saved.file.anon_id)
+    await driver.toReady()
+    await chooseFile(page, driver, { name: saved.name, mimeType: 'application/json', buffer: Buffer.from(saved.text) })
+    await expect(page.getByRole('status')).toContainText('Loaded 1 earlier session.')
+    await expect(page.getByRole('status')).not.toContainText(READY_LOAD_PREFS_NOTICE)
   })
 
   test('a change made in the notes builder after a session is in the next session’s save, and in the file that save is downloaded as', async ({ page, browser, isMobile }) => {

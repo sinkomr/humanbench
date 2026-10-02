@@ -171,32 +171,77 @@ function withoutRevs(p: BriefPrefsV1): BriefPrefsV1 {
 }
 
 /**
- * **Load my settings from a save** is a restore, not a merge (AI.7 review; proposal §3.3): the person
- * chose that save on purpose, so its sets replace the page's sets in the same slot, whatever the
- * revs say. Revs count edits per device, so a save from another device or an older visit can carry a
- * lower rev than a page that has had a few clicks since, and a plain join would quietly keep the
- * page's sets. Each loaded set therefore gets a rev one above the page's rev for its slot (a removed
- * set too), which makes it win the join; sets of other slots and the fit notes join as usual.
+ * The loaded settings in normal form with the `rev` of each set that differs from the page's set in the same
+ * slot raised one above the page's rev (a removed set too), so that a join with the page's settings keeps the
+ * loaded set. A slot the page has no set in is left as it is, and so is a set that says what the page's set says
+ * (apart from the edit count): it needs no raising, and loading a save that agrees with the page must not
+ * change the page's edit counts. The ceiling {@link BRIEF_MAX_REV} holds.
+ */
+export function raiseBriefPrefs(current: BriefPrefsV1 | undefined, loaded: BriefPrefsV1): BriefPrefsV1 {
+  const mine = mergeBriefPrefs([current])
+  const page = new Map<number, BriefContextV1 | BriefContextRemovedV1>()
+  for (const c of mine?.contexts ?? []) page.set(c.slot, c)
+  // Normal form first: one set per slot (the higher rev among the loaded ones), so raising them keeps that choice.
+  const one = mergeBriefPrefs([loaded]) as BriefPrefsV1
+  return {
+    ...one,
+    contexts: one.contexts.map((c) => {
+      const there = page.get(c.slot)
+      if (there === undefined || jcs({ ...c, rev: 0 }) === jcs({ ...there, rev: 0 })) return c
+      return { ...c, rev: Math.min(Math.max(there.rev, c.rev) + 1, BRIEF_MAX_REV) }
+    }),
+  }
+}
+
+/**
+ * **Loading a save** (the notes builder's "Load my settings from a save" and the session ready screen's
+ * "load a save"; ROADMAP owner decisions 2026-10-01) is a restore, not a merge (AI.7 review; proposal
+ * §3.3): the person chose that save on purpose, so the file's sets replace the page's sets in the same
+ * slot, whatever the revs say. Revs count edits per device, so a save from another device or an older
+ * visit can carry a lower rev than a page that has had a few clicks since, and a plain join would
+ * quietly keep the page's sets. Each loaded set that differs from the page's therefore gets a rev one
+ * above the page's rev for its slot ({@link raiseBriefPrefs}), which makes it win the join; sets of
+ * other slots and the fit notes join as usual.
  *
  * `changed` is false when the join says nothing new (the settings are the page's already, apart from
  * their revs); `prefs` is then the page's own settings unchanged, so the page can say so.
  */
 export function restoreBriefPrefs(current: BriefPrefsV1 | undefined, loaded: BriefPrefsV1): { prefs: BriefPrefsV1; changed: boolean } {
   const mine = mergeBriefPrefs([current])
-  const pageRev = new Map<number, number>()
-  for (const c of mine?.contexts ?? []) pageRev.set(c.slot, c.rev)
-  // Normal form first: one set per slot (the higher rev among the loaded ones), so raising them keeps that choice.
-  const one = mergeBriefPrefs([loaded]) as BriefPrefsV1
-  const raised: BriefPrefsV1 = {
-    ...one,
-    contexts: one.contexts.map((c) => {
-      const page = pageRev.get(c.slot)
-      return page === undefined ? c : { ...c, rev: Math.min(Math.max(page, c.rev) + 1, BRIEF_MAX_REV) }
-    }),
-  }
-  const merged = mergeBriefPrefs([current, raised]) as BriefPrefsV1
+  const merged = mergeBriefPrefs([current, raiseBriefPrefs(current, loaded)]) as BriefPrefsV1
   if (mine !== undefined && jcs(withoutRevs(merged)) === jcs(withoutRevs(mine))) return { prefs: mine, changed: false }
   return { prefs: merged, changed: true }
+}
+
+/** What a set says to the person: everything but how often it was edited and the record of what was last copied. */
+function chosenSettings(c: BriefContextV1 | BriefContextRemovedV1): string {
+  if (isRemovedContext(c)) return jcs({ slot: c.slot, removed: true })
+  const { rev: _rev, copied: _copied, ...chosen } = c
+  return jcs(chosen)
+}
+
+/**
+ * How many of the page's sets a restore of `loaded` ({@link restoreBriefPrefs}) really replaces with something
+ * else: a slot where the page has a set (not a removed one) and the restored settings hold a different set, or
+ * a removal, there. It is counted on the outcome of the join, so a set the ceiling {@link BRIEF_MAX_REV} keeps
+ * the page's copy of is not counted. Only what the person chose counts: the edit count and the record of what
+ * was last copied (`copied`) can differ without the person seeing a difference. It is 0 when the page has no
+ * settings, when the file's sets are the page's, and when the file holds only slots the page has no set in
+ * (a set the person removed on the page holds nothing to replace). Used to tell the person that the file's
+ * settings are the ones that count.
+ */
+export function replacedBriefSets(current: BriefPrefsV1 | undefined, loaded: BriefPrefsV1): number {
+  const mine = mergeBriefPrefs([current])
+  if (mine === undefined) return 0
+  const after = new Map<number, BriefContextV1 | BriefContextRemovedV1>()
+  for (const c of (mergeBriefPrefs([mine, raiseBriefPrefs(mine, loaded)]) as BriefPrefsV1).contexts) after.set(c.slot, c)
+  let n = 0
+  for (const c of mine.contexts) {
+    if (isRemovedContext(c)) continue
+    const now = after.get(c.slot)
+    if (now === undefined || chosenSettings(now) !== chosenSettings(c)) n++
+  }
+  return n
 }
 
 /** Whether `save` already holds all of `other`'s notes settings (used to prune redundant autosaves). */

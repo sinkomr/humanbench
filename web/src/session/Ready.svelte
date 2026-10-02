@@ -2,7 +2,8 @@
   The last screen before the session (ROADMAP M1.15, M1.17 UI wiring): what is about to happen,
   the optional practice questions, and where the new session is added to earlier ones: the
   autosaves found on this device (merged by the save library, R-8.1) and/or a save file or code
-  the person loads. `onbase` reports the save the session starts from (or null).
+  the person loads. `onbase` reports the save the session starts from (or null). The loaded file's notes
+  settings win over the device's, set by set (`ready-state.ts`), and the screen says so when they differ.
 -->
 <script lang="ts">
   import type { AxisCode } from '../engine/axes'
@@ -14,7 +15,7 @@
   import { parseSaveText, readSaveFile } from '../save/parse'
   import type { RestoreResult } from '../save/autosave'
   import Screen from './Screen.svelte'
-  import { baseOf, type ReadyState } from './ready-state'
+  import { baseOf, replacesDeviceSettings, type ReadyState } from './ready-state'
   import {
     READY_BEGIN,
     READY_FOCUS_SUMMARY,
@@ -24,6 +25,7 @@
     READY_LOAD_FILE,
     READY_LOAD_HEADING,
     READY_LOAD_HELP,
+    READY_LOAD_PREFS_NOTICE,
     READY_PRACTICE,
     READY_PRACTICE_NOTE,
     READY_RESTORE_HEADING,
@@ -76,6 +78,8 @@
     onchoices({ ...choices, loaded: r.save })
     const n = r.save.sessions.length
     message = `Loaded ${n} earlier ${n === 1 ? 'session' : 'sessions'}. Your new session will be added to ${n === 1 ? 'it' : 'them'}.`
+    // The file's notes settings win over the ones on this device (owner decision 2026-10-01): say so when they differ.
+    if (replacesDeviceSettings(restored, r.save)) message += ` ${READY_LOAD_PREFS_NOTICE}`
   }
 </script>
 
