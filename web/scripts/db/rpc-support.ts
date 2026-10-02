@@ -76,7 +76,14 @@ export async function playSession(
   db: TestDb,
   started: Started,
   bank: ReadonlyMap<string, FixtureItem>,
-  options: { readonly ip: string; readonly n: number; readonly decide: (item: FixtureItem, seq: number) => boolean; readonly clientFlags?: (seq: number) => Record<string, unknown> | undefined },
+  options: {
+    readonly ip: string
+    readonly n: number
+    readonly decide: (item: FixtureItem, seq: number) => boolean
+    /** Sends this instead of the key-derived option (any JSON, also one outside the answer space); `decide` still says whether it was meant to be right. */
+    readonly respond?: (item: FixtureItem, seq: number, right: boolean) => unknown
+    readonly clientFlags?: (seq: number) => Record<string, unknown> | undefined
+  },
 ): Promise<{ answered: { seq: number; itemId: string; right: boolean }[] }> {
   const ctx = from(options.ip)
   const answered: { seq: number; itemId: string; right: boolean }[] = []
@@ -85,7 +92,7 @@ export async function playSession(
     const it = bank.get(next.item.item_id)
     if (it === undefined) throw new Error(`served an item the fixture does not know: ${next.item.item_id}`)
     const right = options.decide(it, next.seq)
-    const response = right ? (it.key.index as number) : ((it.key.index as number) + 1) % it.nOptions
+    const response = options.respond !== undefined ? options.respond(it, next.seq, right) : right ? (it.key.index as number) : ((it.key.index as number) + 1) % it.nOptions
     await ageExposures(db, started.session_id, 20)
     const flags = options.clientFlags?.(next.seq)
     const out = await db.rpc<{ ack: boolean; seq: number; next?: Next }>(ctx, 'submit', {

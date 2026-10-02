@@ -367,7 +367,7 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 | `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, decides calibration eligibility | `{session, anon_id, calibration_eligible, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test), without `sig` until M2.3. Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer) |
 | `report_problem(p_token, p_kind, p_item_id, p_detail)` | the five item categories (the item must be one this session was served), or `notes_requested` (no item, no text; never counts toward quarantine) | `{recorded}` |
 | `submit_survey(p_token, p_age_band, p_english_first)` | the voluntary two answers | `{recorded}` |
-| `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; returns an axis or facet only from 5 scored items, rounded; see below | `{retest_version, param_version, sessions, eap, facets, withheld, limits, skipped}` |
+| `rescore(p_save)` | re-scores the save's sessions from the **database's** rows with the DESIGN §7.8 retest model; returns an axis or facet only from sessions that each hold 5 scored answers on it, rounded; see below | `{retest_version, param_version, sessions, eap, facets, withheld, limits, skipped}` |
 | `mirror_put(p_token, p_save, p_phrase)` | stores the save for the session's `anon_id`; the first put returns a 12-word recovery phrase, once, and later puts must present it | `{stored, anon_id, size_bytes, recovery_phrase?}` or `{stored: false, error: 'wrong_phrase'}` |
 | `mirror_get(p_anon_id, p_phrase)` | restore on a new device | `{found, save?, updated_utc?}`; a wrong phrase and an unknown id look the same |
 | `delete_my_data(p_anon_id, p_phrase, p_save)` | deletes the sessions (with responses, exposures, reports, survey) and the mirror of an `anon_id`, proved by the phrase or by a save listing a session the server issued to that `anon_id`; a wrong proof counts against the address | `{deleted, sessions?, mirror?}` |
@@ -398,7 +398,10 @@ and finished, it reads the responses from the database and returns, per axis, th
 EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only calibration-eligible
 sessions are scored; an ineligible session still counts as a test of the axis (practice, `ordinals`, `rho`). Pretest
 responses and responses on quarantined items (DESIGN §4.5) are left out; block observations (RT, span, coding,
-reading) are not scored on the server before M2.2 and are counted under `skipped.block`. A session of the save that
+reading) are not scored on the server before M2.2 and are counted under `skipped.block`. A response outside the item's
+answer space (an index that is no option, a letter that is none, an entry that is no number; `hb.response_fits`) is
+not an answer: it is counted under `skipped.invalid`, enters no number and reaches no minimum (it is stored, and
+`submit` scores it 0 as before). A session of the save that
 was issued to another `anon_id`, is unfinished or is unknown counts under `skipped.unknown_sessions` and adds nothing;
 that includes the sessions of a *merged* file that were issued to an `anon_id` other than the file's own (a merge keeps
 the smaller id and the sessions keep the id they bind in `sig.anon_id`). Which id a client rescores for a person who
@@ -411,8 +414,8 @@ its answers: a posterior mean from one answer *is* that answer (right moves it u
 
 | Rule | Setting | Value | Why this value |
 |---|---|---|---|
-| an axis is returned only from this many scored items (over all the save's eligible sessions) | `rescore.min_axis_items` | 5 | the count at which the app itself shows a facet (A12; `FACET_MIN_ITEMS`, checked by a test); the posterior sd is still 0.7 there, so one answer is one of five terms and no longer the whole of the value. Fewer: the call returns the count under `withheld.eap` and nothing else |
-| a facet is returned only from this many scored items, and only for an axis that is returned | `rescore.min_facet_items` | 5 | A12 |
+| a session's answers on an axis count only if **that session** holds this many scored answers on the axis; an axis is returned if one session counts | `rescore.min_axis_items` | 5 | the count at which the app itself shows a facet (A12; `FACET_MIN_ITEMS`, checked by a test); the posterior sd is still 0.7 there, so one answer is one of five terms and no longer the whole of the value. What any session adds to a published number is a sum of at least five of its answers, never one: a count over the whole save would let a script add a session of one answer and read it out of the difference. The answers of a shorter session are practice only (`ordinals`, `rho`) and are counted under `skipped.short_axis`. An axis nobody counts: the call returns the count of valid answers under `withheld.eap` and nothing else |
+| the same for a facet, and a facet is returned only under an axis that is returned | `rescore.min_facet_items` | 5 | A12 |
 | the mean is rounded to a multiple of | `rescore.mean_step` | 0.1 | a tenth of an SD unit, well under the posterior sd of a finished session (0.3 to 0.7), so what the blob shows does not change |
 | the sd is rounded **up** to a multiple of | `rescore.sd_step` | 0.05 | rounding up never understates the uncertainty (a "show uncertainty" rule of the blob) |
 | calls per client address a day | `rate.rescores_per_day` | 20 | 5 sessions a day and a few views of each result fit with room to spare (it was 200) |
@@ -425,16 +428,32 @@ rounding and exists for the parity tests, which compare the algorithm with the a
 roadmap's "matches the client to 1e-6" holds to within the published rounding: half a step for the mean, a step for
 the sd).
 
-*What this does not stop.* A script can still **difference** two calls: score a session of 5 or more answers, add one
-more session with a single answer to the save, rescore, and read the sign of the change. A single answer moves the
-posterior mean by about 0.5 at 5 items already scored, 0.2 at 20 and 0.15 at 30 (median, simulated with the app's
-engine on the fixture bank's parameter ranges), which is more than the 0.1 step until about 50 items. Rounding cannot
-close that without making the score useless, and neither can a minimum count over the whole axis. What bounds it is the
-number of sessions an address may start (5 a day, each costing a full session), the 20 calls a day per address and
-10 per `anon_id`: a handful of single answers a day per address, against the 200 per session that the finish reply
-would have given. A minimum size for a session to count toward the scores (each session at least as many scored items
-on an axis as the DESIGN §7.5 floor of 3, or a minimum number of answers) belongs with M2.2's `hb.is_eligible`,
-which also adds the server-side person-fit; that is the structural fix and is not done here.
+*What this closes, and what it does not.* The review of the first version found two ways to read a single answer out
+of `rescore`, and both are closed.
+
+1. **Padding.** A script that answers 4 items with an index of -1 (or `"x"` for a letter, or `"n/a"` for a number) and
+   1 item for real knows the verdict of the four, so the mean of a 5-item axis was the real answer's verdict: in the
+   review, 84% of the time in one call with no reference at all, 40 axis readings from one session, 90% by
+   differencing against an all-wrong baseline. Such an answer is outside the answer space of every item, and nothing is
+   learnt about the key from saying so (it depends on the kind of key and on the number of options the client is shown,
+   never on the key's value), so it is not an answer: it reaches no minimum and enters no number.
+2. **Differencing.** Score a session of 5 or more answers, add one session with a single answer to the save, rescore, and
+   read the sign of the change (a single answer moves the mean by about 0.5 at 5 items already scored, 0.2 at 20, 0.15
+   at 30, more than the 0.1 step until about 50). A session now counts toward an axis, and toward a facet, only with its
+   own 5 answers on it, so the difference of two calls is a difference of sums of at least five answers.
+
+*What is left.* A well-formed answer that is wrong with near certainty. For a typed number, any entry that parses is in
+the answer space, so a script can answer 4 numeric items with `99999999` and put one real answer in a fifth: the axis's
+mean then reads out that one answer's verdict, in the same way as with the invalid padding (the review's measurements are
+the bound, 84% in one call, less when the padding is not certain). The server can tell such an entry from a poor wrong
+one only by comparing it with the key, which would make the count depend on the key. This is limited to axes that have
+typed-number items (a multiple-choice item has no answer that is known wrong), and bounded by the 5 sessions an address
+may start a day, the 20 calls a day per address and the 10 per `anon_id`: one reading per axis (and per facet, with five
+numeric items each) per session. Closing it takes either noise on the numbers, which the owner has not decided on, or the
+server-side person fit of M2.2 (`hb.is_eligible`: a session padded with wrong answers is a misfit and is not scored).
+When M2.2 adds that, `rescore` must not show *why* a session was dropped: a `calibration_eligible: false` that follows
+from a person-fit statistic on the answers is a verdict again. A session of unknown answers (all valid) is only an
+aggregate: differencing two such sessions gives a difference of two sums of five verdicts, not one.
 
 `rescore` is held to the app's engine: `rescore.db.test.ts` compares it with `rescoreRetest` and `eapAxis` to 1e-9
 over generated sessions (practice, ineligible sessions, quarantine, order) with the minimum counts and the rounding

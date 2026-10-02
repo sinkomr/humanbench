@@ -12,10 +12,13 @@
 --     nothing. M2.3 will additionally require each session's MAC (same hb.session_owned seam).
 --   * Which responses score: dichotomous items (2PL, 2PL-testlet scored as 2PL as in the app, 3PL)
 --     with a stored correct 0/1 and a parameter row, not pretest, not on a quarantined item (DESIGN
---     §4.5), and only in calibration-eligible sessions (A21: ineligible sessions still count as
---     practice exposures). Block observations (GRM, Gaussian: RT, span, coding, reading) are not
---     scored on the server before M2.2, and the notes never read them (R-17.4); they are counted
---     under skipped.block.
+--     §4.5), only in calibration-eligible sessions (A21: ineligible sessions still count as practice
+--     exposures), only with a response inside the item's answer space (hb.response_fits: an index out
+--     of range, a letter that is none, a number that does not parse is known wrong to anybody and
+--     says nothing about the person; it is counted under skipped.invalid, not scored), and only in a
+--     session that holds at least rescore.min_axis_items such responses on the axis (below). Block
+--     observations (GRM, Gaussian: RT, span, coding, reading) are not scored on the server before M2.2,
+--     and the notes never read them (R-17.4); they are counted under skipped.block.
 --   * Practice (§7.8): the test number s of an axis is the position of the session among the person's
 --     sessions that took the axis (a response on any of its items, scored or not). Every observation
 --     is re-expressed on the trait: b - rho_k(s), rho_k(s) = rho_max_k (1 - exp(-(s-1)/1.2)).
@@ -27,26 +30,35 @@
 --     until M2.2). Returned with n.
 --
 -- What it does NOT return (R-11.1, DESIGN §10: no correctness feedback on finite-bank items; owner
--- decision 2026-10-01: "rescore must also not leak single-answer verdicts"). finish() no longer carries
--- the server's verdict on an answer, so a score is the one place the verdicts still show, and a posterior
+-- decision 2026-10-01: "rescore must also not leak single-answer verdicts"). finish() no longer carries the
+-- server's verdict on an answer, so a score is the one place the verdicts still show, and a posterior
 -- mean of one or two answers IS those answers (one right answer moves the mean up, one wrong one down).
--- So:
---   * an axis is returned only with at least rescore.min_axis_items (5) scored items over the save's
---     eligible sessions, a facet only with at least rescore.min_facet_items (5; A12 shows a facet from
---     5 items). Below that the call returns the count under `withheld`, which says nothing about
---     right or wrong;
+-- A minimum number of items over the whole save is not enough: a script can fill a session with answers
+-- it knows to be wrong (an index of -1) and add one real answer, or add one single-answer session to a
+-- save and compare two calls, and read that answer out of the difference. So:
+--   * a session's answers on an axis count only if THAT session holds at least rescore.min_axis_items
+--     (5) scored answers on the axis, and its answers on a facet count for the facet only if that
+--     session holds at least rescore.min_facet_items (5; A12 shows a facet from 5 items). What any
+--     session adds to a published number is then a sum of 5 or more of its answers, never one. The
+--     answers of a shorter session are practice only (ordinals, rho); they are counted under
+--     skipped.short_axis. An axis is returned if one session counts, a facet if one counts for it,
+--     and a facet only under an axis that is returned. Otherwise the call returns the count of valid
+--     scored answers under `withheld`, which says nothing about right or wrong;
+--   * an answer outside the item's answer space is not an answer (above), so it cannot be used to
+--     reach the minimum;
 --   * mean and sd are rounded: the mean to a multiple of rescore.mean_step (0.1), the sd UP to a
 --     multiple of rescore.sd_step (0.05), both in SD units. The 0.1 is well under the posterior sd of
 --     a finished session (0.3 to 0.7), so nothing the blob shows changes;
 --   * the call is limited per client address (rate.rescores_per_day, 20) and per anon_id
 --     (rate.rescores_per_anon_day, 10; only calls that name a session of that anon_id count, so nobody
 --     can use up the calls of an id they merely know).
--- These do not make a difference of two calls harmless: a script that adds one more one-answer session
--- to its save and compares the two results can still read that answer's sign (n >= 5 and a 0.1 step
--- leave a single answer's shift, median 0.15 at n = 30, mostly above the step). What bounds it is the
--- number of sessions an address may start (5 a day) and these call limits, about 4 answers a day per
--- address instead of the 200 per session that the finish reply would have given; a minimum session size
--- for a session to count is M2.2's (hb.is_eligible). See supabase/README.md.
+-- What is left, and bounded by the 5 sessions an address may start a day and these call limits: a
+-- script that cannot tell a wrong answer from a right one can still choose answers that are wrong with
+-- near certainty and well formed (a number like 99999999 for an item that asks for a small one), and
+-- a session of 4 such answers and one real answer then publishes that one answer's verdict through the
+-- mean. The server cannot see that without comparing the answer with the key, which would make the count
+-- depend on the key. Telling padded sessions apart is M2.2's server-side person fit (hb.is_eligible).
+-- See supabase/README.md, "What this does not stop".
 --
 -- Item parameters: the param_version in app_config, else each item's latest row.
 --
@@ -116,11 +128,15 @@ begin
     ),
     resp as (
       select k.session_id, k.started_utc, k.calibration_eligible, r.pretest, r.correct,
-             i.status as item_status, f.axis, f.facet, p.model, p.a, p.b, p.c
+             i.status as item_status, f.axis, f.facet, p.model, p.a, p.b, p.c,
+             hb.response_fits(ik.key,
+               pg_catalog.jsonb_array_length(case when pg_catalog.jsonb_typeof(i.payload -> 'options') = 'array' then i.payload -> 'options' else '[]'::jsonb end),
+               r.response) as in_space
         from known k
         join public.responses r on r.session_id = k.session_id
         join public.items i on i.item_id = r.item_id
         join public.item_families f on f.family_id = i.family_id
+        left join public.item_keys ik on ik.item_id = r.item_id
         left join lateral (
           select ip.model, ip.a, ip.b, ip.c
             from public.item_parameters ip
@@ -129,7 +145,7 @@ begin
            limit 1
         ) p on true
     ),
-    cls as (
+    cls0 as (
       select resp.*,
              case
                when pretest then 'pretest'
@@ -139,9 +155,25 @@ begin
                when model not in ('2pl', '2pl_testlet', '3pl') then 'block'
                when correct is null then 'unscored'
                when a is null or b is null or (model = '3pl' and c is null) then 'no_params'
+               -- known wrong to anybody, so no answer at all (hb.response_fits); never right or wrong
+               when not in_space then 'invalid'
                else 'scored'
              end as outcome
         from resp
+    ),
+    -- a session's answers on an axis count only if the session holds at least v_min_axis of them
+    -- (R-11.1: what a session adds to a score is a sum of that many answers, never one)
+    cls as (
+      select c.session_id, c.started_utc, c.calibration_eligible, c.correct, c.axis, c.facet, c.model, c.a, c.b, c.c,
+             case
+               when c.outcome = 'scored' and c.n_axis < v_min_axis then 'short_axis'
+               else c.outcome
+             end as outcome
+        from (
+          select cls0.*,
+                 pg_catalog.count(*) filter (where cls0.outcome = 'scored') over (partition by cls0.session_id, cls0.axis) as n_axis
+            from cls0
+        ) c
     ),
     -- test numbers (§7.8): every session that took the axis, scored or not, in time order
     taken as (
@@ -157,8 +189,11 @@ begin
              - coalesce((v_rho ->> o.axis)::double precision, 0) * (pg_catalog.exp(- (o.s - 1) / v_tau) - 1) as rho
         from ord o
     ),
+    -- the answers that count. facet_ok: the facet counts the answer only if the same session holds at
+    -- least v_min_facet counted answers on the facet (the axis counts it either way); no facet, never
     obs as (
-      select c.axis, coalesce(c.facet, '') as facet, c.a, c.b - r.rho as b, c.c, c.correct as y
+      select c.axis, coalesce(c.facet, '') as facet, c.a, c.b - r.rho as b, c.c, c.correct as y,
+             (c.facet is not null and pg_catalog.count(*) over (partition by c.session_id, c.axis, c.facet) >= v_min_facet) as facet_ok
         from cls c
         join rho r on r.axis = c.axis and r.session_id = c.session_id
        where c.outcome = 'scored'
@@ -167,10 +202,10 @@ begin
       select g.i, case when g.i = 60 then 4::double precision else -4::double precision + g.i * (8::double precision / 60) end as g
         from pg_catalog.generate_series(0, 60) g (i)
     ),
-    -- log-likelihood of the observations of one (axis, facet) at each grid point: the 2PL/3PL terms of
-    -- engine/irt.ts, in the same numerically stable form (log sigmoid, log-sum-exp)
+    -- log-likelihood of the observations of one (axis, facet, facet_ok) at each grid point: the 2PL/3PL
+    -- terms of engine/irt.ts, in the same numerically stable form (log sigmoid, log-sum-exp)
     fll as (
-      select o.axis, o.facet, gr.i, gr.g,
+      select o.axis, o.facet, o.facet_ok, gr.i, gr.g,
              pg_catalog.sum(
                case
                  when o.c is null then case when o.y = 1 then lz.pos else lz.neg end
@@ -189,7 +224,7 @@ begin
                 case when o.c is null then 0::double precision else pg_catalog.ln(1 - o.c) + lz.pos end as v
        ) uv
        cross join lateral (select greatest(uv.u, uv.v) as m) mm
-       group by o.axis, o.facet, gr.i, gr.g
+       group by o.axis, o.facet, o.facet_ok, gr.i, gr.g
     ),
     axis_ll as (
       select axis, i, g, pg_catalog.sum(ll) as ll from fll group by axis, i, g
@@ -212,19 +247,17 @@ begin
         from axis_mean m join axis_w w on w.axis = m.axis
        group by m.axis, m.mean, m.tw
     ),
-    -- an axis with too few scored items is not published (R-11.1), and neither are its facets
-    axis_est as (
-      select * from axis_raw where n >= v_min_axis
-    ),
+    -- every axis here has a session with at least v_min_axis answers on it (obs holds no others), so
+    -- every axis here is published; a facet is computed only under one of them
     facet_w as (
       select f.axis, f.facet, f.i, f.g,
              pg_catalog.exp(greatest(lw.v - pg_catalog.max(lw.v) over (partition by f.axis, f.facet), -230)) as w
         from fll f
-        join axis_est e on e.axis = f.axis
+        join axis_raw e on e.axis = f.axis
        cross join lateral (
          select - 0.5 * (f.g - e.mean) * (f.g - e.mean) / greatest(e.sd * e.sd, 1e-12) + f.ll as v
        ) lw
-       where f.facet <> ''
+       where f.facet <> '' and f.facet_ok
     ),
     facet_mean as (
       select axis, facet, pg_catalog.sum(w) as tw, pg_catalog.sum(w * g) / pg_catalog.sum(w) as mean from facet_w group by axis, facet
@@ -232,12 +265,9 @@ begin
     facet_raw as (
       select m.axis, m.facet, m.mean,
              pg_catalog.sqrt(greatest(pg_catalog.sum(w.w * (w.g - m.mean) * (w.g - m.mean)) / m.tw, 0)) as sd,
-             (select pg_catalog.count(*) from obs o where o.axis = m.axis and o.facet = m.facet) as n
+             (select pg_catalog.count(*) from obs o where o.axis = m.axis and o.facet = m.facet and o.facet_ok) as n
         from facet_mean m join facet_w w on w.axis = m.axis and w.facet = m.facet
        group by m.axis, m.facet, m.mean, m.tw
-    ),
-    facet_est as (
-      select * from facet_raw where n >= v_min_facet
     )
     select pg_catalog.jsonb_build_object(
       'retest_version', 'retest_v1',
@@ -257,22 +287,36 @@ begin
       'eap', coalesce((
         select pg_catalog.jsonb_object_agg(e.axis, pg_catalog.jsonb_build_object(
                  'mean', hb.quantise_round(e.mean, v_mean_step), 'sd', hb.quantise_up(e.sd, v_sd_step), 'n', e.n))
-          from axis_est e), '{}'::jsonb),
+          from axis_raw e), '{}'::jsonb),
       'facets', coalesce((
         select pg_catalog.jsonb_object_agg(x.axis, x.facets)
           from (
             select e.axis,
                    pg_catalog.jsonb_object_agg(e.facet, pg_catalog.jsonb_build_object(
                      'mean', hb.quantise_round(e.mean, v_mean_step), 'sd', hb.quantise_up(e.sd, v_sd_step), 'n', e.n)) as facets
-              from facet_est e group by e.axis) x), '{}'::jsonb),
-      -- what was held back, as counts of scored items only (the count does not depend on right or wrong)
+              from facet_raw e group by e.axis) x), '{}'::jsonb),
+      -- what was held back, as counts of valid answers only (the count does not depend on right or wrong):
+      -- an axis no session of which holds enough, and a facet (of an axis that is returned) the same
       'withheld', pg_catalog.jsonb_build_object(
-        'eap', coalesce((select pg_catalog.jsonb_object_agg(a.axis, a.n) from axis_raw a where a.n < v_min_axis), '{}'::jsonb),
+        'eap', coalesce((
+          select pg_catalog.jsonb_object_agg(w.axis, w.n)
+            from (
+              select c.axis, pg_catalog.count(*) as n
+                from cls c
+               where c.outcome in ('scored', 'short_axis')
+                 and not exists (select 1 from axis_raw a where a.axis = c.axis)
+               group by c.axis) w), '{}'::jsonb),
         'facets', coalesce((
           select pg_catalog.jsonb_object_agg(x.axis, x.facets)
             from (
-              select f.axis, pg_catalog.jsonb_object_agg(f.facet, f.n) as facets
-                from facet_raw f where f.n < v_min_facet group by f.axis) x), '{}'::jsonb)),
+              select h.axis, pg_catalog.jsonb_object_agg(h.facet, h.n) as facets
+                from (
+                  select o.axis, o.facet, pg_catalog.count(*) as n
+                    from obs o
+                   where o.facet <> ''
+                   group by o.axis, o.facet
+                  having not pg_catalog.bool_or(o.facet_ok)) h
+               group by h.axis) x), '{}'::jsonb)),
       'limits', pg_catalog.jsonb_build_object(
         'min_axis_items', v_min_axis, 'min_facet_items', v_min_facet, 'mean_step', v_mean_step, 'sd_step', v_sd_step),
       'skipped', coalesce((

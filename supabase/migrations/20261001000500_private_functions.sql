@@ -507,6 +507,53 @@ begin
 end
 $$;
 
+-- Is this response inside the answer space of the item, so that a client with no knowledge of the key
+-- could have given it as an answer? A wrong answer inside the space looks like any other answer; one
+-- outside it is KNOWN to be wrong by anybody, and rescore() must not count it: a script that fills a
+-- session with such answers (an index of -1, "x" for a letter, "n/a" for a number) knows their verdicts,
+-- so a minimum count that included them would be reached with one real answer and four known wrong ones,
+-- and the published mean would read out that one answer (R-11.1, DESIGN §10; the review of M2.1-rescore).
+-- It depends on the key's KIND and on what the client is shown (the number of options), never on the
+-- key's value, so telling the two apart gives nothing about the key.
+--   {index}   an integer from 0 to the number of options - 1 (any integer when the item has no options)
+--   {letter}  one ASCII letter, ignoring surrounding space (the bank's letter families use A-Z)
+--   {value}   a string or number that hb.parse_entry reads as a number or fraction
+--   no key    true (a block: scored elsewhere, and its correct is null)
+-- What stays outside this test: a typed number that is well formed and wildly off (1e15 for an item
+-- whose answer is 7). The server could tell it from a plausible wrong answer only by comparing it with the
+-- key, which would make the count depend on the key; see supabase/README.md, "What this does not stop".
+create function hb.response_fits(p_key jsonb, p_n_options int, p_response jsonb)
+returns boolean
+language plpgsql immutable
+set search_path = ''
+as $$
+declare
+  v_idx numeric;
+  v_type text := pg_catalog.jsonb_typeof(p_response);
+  v_parsed record;
+begin
+  if p_key is null then
+    return true;
+  end if;
+  if p_key ? 'index' then
+    if v_type is distinct from 'number' then
+      return false;
+    end if;
+    v_idx := (p_response #>> '{}')::numeric;
+    return v_idx = pg_catalog.trunc(v_idx) and v_idx >= 0 and (coalesce(p_n_options, 0) = 0 or v_idx < p_n_options);
+  elsif p_key ? 'letter' then
+    return v_type is not distinct from 'string' and pg_catalog.btrim(p_response #>> '{}') ~ '^[A-Za-z]$';
+  elsif p_key ? 'value' then
+    if v_type is null or v_type not in ('string', 'number') then
+      return false;
+    end if;
+    select * into v_parsed from hb.parse_entry(p_response #>> '{}');
+    return v_parsed.o_num is not null;
+  end if;
+  return true;
+end
+$$;
+
 -- Scores one response against the item's key, server side (R-11.1: the key never leaves). A key is
 -- {index} (the option position), {letter} or {value, tol} (ROADMAP A18). A response that is not
 -- valid for the key (null, wrong type, out of range, unparseable) scores 0, as the bank's families
@@ -535,9 +582,9 @@ begin
   end if;
 
   if k.key ? 'index' then
-    if pg_catalog.jsonb_typeof(p_response) = 'number' then
+    v_valid := hb.response_fits(k.key, k.n_opt, p_response);
+    if v_valid then
       v_idx := (p_response #>> '{}')::numeric;
-      v_valid := v_idx = pg_catalog.trunc(v_idx) and v_idx >= 0 and (k.n_opt = 0 or v_idx < k.n_opt);
     end if;
     v_ok := v_valid and v_idx = (k.key ->> 'index')::numeric;
     o_correct := case when v_ok then 1 else 0 end;

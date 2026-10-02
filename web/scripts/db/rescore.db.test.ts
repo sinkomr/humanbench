@@ -5,7 +5,9 @@
  * model, the same grid, compared to 1e-9. The parity tests run with the minimum counts and the rounding
  * switched off (EXACT), because they compare the algorithm; the tests of what rescore withholds
  * (R-11.1, DESIGN §10, the owner decision of 2026-10-01 "rescore must not leak single-answer verdicts")
- * run with the published settings (PUBLISHED).
+ * run with the published settings (PUBLISHED). The minimum counts are per session (a session adds to a
+ * score only a sum of at least five of its answers on the axis) and an answer outside the item's answer
+ * space is not an answer: the two ways the first version let one answer be read out of a score.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -30,6 +32,8 @@ const TOL = 1e-9
 const PUBLISHED = { 'rescore.min_axis_items': 5, 'rescore.min_facet_items': 5, 'rescore.mean_step': 0.1, 'rescore.sd_step': 0.05 } as const
 /** The algorithm without the protection, for the parity tests only. */
 const EXACT = { 'rescore.min_axis_items': 1, 'rescore.min_facet_items': 1, 'rescore.mean_step': 0, 'rescore.sd_step': 0 } as const
+/** The published minimum counts, unrounded: what the rounding test compares the published numbers with. */
+const UNROUNDED = { ...PUBLISHED, 'rescore.mean_step': 0, 'rescore.sd_step': 0 } as const
 
 async function setConfig(values: Readonly<Record<string, number>>): Promise<void> {
   for (const [key, value] of Object.entries(values)) {
@@ -462,6 +466,42 @@ async function countOn(sessionId: string, axis: AxisCode, facet?: string): Promi
   return rows[0]!.n
 }
 
+/** Answers no item can have as its key: also not for a client that has never seen one (R-11.1; hb.response_fits). */
+const OUT_OF_SPACE: readonly unknown[] = [-1, 99, 2.5, null, 'x', '1', true, [1], { i: 1 }, -0.5, 1e9]
+
+interface Padded extends Taken {
+  /** seq of the answers that are outside the answer space. */
+  invalid: number[]
+}
+
+/**
+ * The script of the padding probe: the first `real` answers on `axis` are real (all right or all wrong),
+ * every other answer, on any axis, is one that is known to be wrong.
+ */
+async function padded(o: { axis: AxisCode; real: number; right: boolean; n: number }): Promise<Padded> {
+  const ip = freshIp()
+  const s = await startSession(db, ip)
+  issued.set(s.anon_id, [s.session_id])
+  let seen = 0
+  const invalid: number[] = []
+  await playSession(db, s, bank, {
+    ip,
+    n: o.n,
+    decide: () => o.right,
+    respond: (it, seq, right) => {
+      if (it.axis === o.axis && seen < o.real) {
+        seen++
+        return right ? (it.key.index as number) : ((it.key.index as number) + 1) % it.nOptions
+      }
+      invalid.push(seq)
+      return OUT_OF_SPACE[seq % OUT_OF_SPACE.length]
+    },
+  })
+  expect(seen, 'the fixture served enough items on the axis').toBe(o.real)
+  await db.rpc(from(ip), 'finish', { p_token: s.token })
+  return { sessionId: s.session_id, anonId: s.anon_id, token: s.token, ip, invalid }
+}
+
 /** The calls of a script that answers `n` items one way and asks what the server thinks of them. */
 const reads = (got: Result): { axes: string[]; facets: string[] } => ({ axes: Object.keys(got.eap), facets: Object.keys(got.facets) })
 
@@ -476,7 +516,9 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
         const got = await rescore(saveOf(s.anonId, [s.sessionId]))
         // no axis and no facet, so no mean and no sd for the script to read; only counts of items
         expect(reads(got), `${n} answers, right=${right}`).toEqual({ axes: [], facets: [] })
-        expect(got.sessions[0]).toMatchObject({ known: true, n_scored: n })
+        // too few on the axis in this session, so none of them counts (practice only)
+        expect(got.sessions[0]).toMatchObject({ known: true, n_scored: 0 })
+        expect(got.skipped.short_axis).toBe(n)
         const text = JSON.stringify(got)
         expect(text).not.toMatch(/"mean"|"sd"|"correct"|i:tst/)
         // the counts held back are the answers given, however they were scored
@@ -485,7 +527,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
     }
   })
 
-  it('returns an axis from the fifth scored item, not before, and counts the items of all the save\'s sessions together', async () => {
+  it('returns an axis from the fifth scored item of a session, not before', async () => {
     const rng = createRng('withheld-axis')
     const a = await takeSession(undefined, 45, { QR: 0.3, MAT: 0.3, KST: 0.3 }, rng)
     const ids = [a.sessionId]
@@ -505,22 +547,43 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
       // the other axes are not held back by QR having too few
       expect(got.eap.MAT).toBeDefined()
     }
-    // 3 + 2 items in two sessions make 5: the count is over the save, not per session
-    const b = await takeSession(a.anonId, 45, { QR: 0.3, MAT: 0.3, KST: 0.3 }, rng)
-    await schedule(b.sessionId, 8)
-    await keepScored(a.sessionId, 'QR', 3)
-    await keepScored(b.sessionId, 'QR', 2)
-    expect((await rescore(saveOf(a.anonId, [a.sessionId, b.sessionId]))).eap.QR).toMatchObject({ n: 5 })
-    await keepScored(b.sessionId, 'QR', 1)
-    const four = await rescore(saveOf(a.anonId, [a.sessionId, b.sessionId]))
-    expect(four.eap.QR).toBeUndefined()
-    expect(four.withheld.eap.QR).toBe(4)
-    // and a session the save does not list adds nothing
-    await keepScored(b.sessionId, 'QR', 9)
-    expect((await rescore(saveOf(a.anonId, [a.sessionId]))).eap.QR).toBeUndefined()
   })
 
-  it('returns a facet only from five scored items, and only for an axis it returns (A12)', async () => {
+  it('counts the answers of each session on its own: a session with fewer than five on the axis adds nothing, so adding one cannot be read out by differencing', async () => {
+    const rng = createRng('withheld-sessions')
+    const a = await takeSession(undefined, 45, { QR: 0.3, MAT: 0.3, KST: 0.3 }, rng)
+    const b = await takeSession(a.anonId, 45, { QR: 0.3, MAT: 0.3, KST: 0.3 }, rng)
+    await schedule(a.sessionId, 1)
+    await schedule(b.sessionId, 8)
+    const both = saveOf(a.anonId, [a.sessionId, b.sessionId])
+    const alone = saveOf(a.anonId, [a.sessionId])
+    // 3 + 2 items in two sessions are 5 in all, and still not an axis: nothing in a score is a sum of fewer than five answers
+    await keepScored(a.sessionId, 'QR', 3)
+    await keepScored(b.sessionId, 'QR', 2)
+    const split = await rescore(both)
+    expect(split.eap.QR).toBeUndefined()
+    expect(split.withheld.eap.QR).toBe(5)
+    expect(split.skipped.short_axis).toBeGreaterThanOrEqual(5)
+    // the first session has its five: the second adds to the score only with its own five, and not at all with one to four
+    await keepScored(a.sessionId, 'QR', 5)
+    const base = await rescore(alone)
+    expect(base.eap.QR).toMatchObject({ n: 5 })
+    for (const k of [1, 2, 3, 4]) {
+      await keepScored(b.sessionId, 'QR', k)
+      const plus = await rescore(both)
+      // the whole of QR is unchanged, to the last digit, whichever way the extra answers went (this is the differencing probe)
+      expect(plus.eap.QR, `${k} extra`).toEqual(base.eap.QR)
+      expect(plus.facets.QR, `${k} extra`).toEqual(base.facets.QR)
+    }
+    await keepScored(b.sessionId, 'QR', 5)
+    const five = await rescore(both)
+    expect(five.eap.QR).toMatchObject({ n: 10 })
+    // a session the save does not list adds nothing
+    await keepScored(b.sessionId, 'QR', 9)
+    expect((await rescore(alone)).eap.QR).toEqual(base.eap.QR)
+  })
+
+  it('returns a facet from the fifth scored item of a session on it, not before (A12)', async () => {
     const rng = createRng('withheld-facet')
     const a = await takeSession(undefined, 120, { QR: 0.1, MAT: 0.1, KST: 0.1 }, rng)
     await schedule(a.sessionId, 1)
@@ -541,21 +604,65 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
       }
       expect(got.eap.MAT).toBeDefined()
     }
-    // a facet with plenty of items under an axis that is held back is held back with it
-    await db.owner.query(`update public.responses set pretest = true where session_id = $1`, [a.sessionId])
-    await keepScored(a.sessionId, 'MAT', 4)
-    await db.owner.query(
-      `update public.responses r set pretest = false where r.session_id = $1 and r.seq in (
-         select r2.seq from public.responses r2 join public.items i on i.item_id = r2.item_id join public.item_families f on f.family_id = i.family_id
-          where r2.session_id = $1 and f.axis = 'MAT' order by r2.seq limit 4)`,
-      [a.sessionId],
-    )
-    const small = await rescore(saveOf(a.anonId, ids))
-    expect(small.eap.MAT).toBeUndefined()
-    expect(small.facets.MAT).toBeUndefined()
   })
 
-  it('rounds the mean to a tenth and the sd up to a twentieth, within half a step of the exact value', async () => {
+  it('counts a facet\'s answers per session too: two sessions with three each are not a facet', async () => {
+    const rng = createRng('withheld-facet-sessions')
+    const a = await takeSession(undefined, 120, { QR: 0.1, MAT: 0.1, KST: 0.1 }, rng)
+    const b = await takeSession(a.anonId, 120, { QR: 0.1, MAT: 0.1, KST: 0.1 }, rng)
+    await schedule(a.sessionId, 1)
+    await schedule(b.sessionId, 8)
+    const both = saveOf(a.anonId, [a.sessionId, b.sessionId])
+    const alone = saveOf(a.anonId, [a.sessionId])
+    // the rest of the axis stays scored (so the axis counts in both sessions); only the facet is short
+    await keepScored(a.sessionId, 'MAT', 3, 'mat_f0')
+    await keepScored(b.sessionId, 'MAT', 3, 'mat_f0')
+    const split = await rescore(both)
+    expect(split.eap.MAT).toBeDefined()
+    expect(split.facets.MAT?.mat_f0).toBeUndefined()
+    expect(split.withheld.facets.MAT!.mat_f0).toBe(6)
+    // five in one session make the facet; the other session's two do not change it
+    await keepScored(a.sessionId, 'MAT', 5, 'mat_f0')
+    await keepScored(b.sessionId, 'MAT', 2, 'mat_f0')
+    const one = await rescore(both)
+    expect(one.facets.MAT!.mat_f0).toMatchObject({ n: 5 })
+    // up to four in the other session still add nothing to the facet's n (the axis, its prior, takes the whole session)
+    await keepScored(b.sessionId, 'MAT', 4, 'mat_f0')
+    const more = await rescore(both)
+    expect(more.facets.MAT!.mat_f0).toMatchObject({ n: 5 })
+    await keepScored(b.sessionId, 'MAT', 5, 'mat_f0')
+    expect((await rescore(both)).facets.MAT!.mat_f0).toMatchObject({ n: 10 })
+    expect((await rescore(alone)).facets.MAT!.mat_f0).toMatchObject({ n: 5 })
+  })
+
+  it('returns no facet under an axis that is held back, also when the facet minimum is lower than the axis minimum', async () => {
+    const rng = createRng('withheld-facet-axis')
+    const a = await takeSession(undefined, 120, { QR: 0.1, MAT: 0.1, KST: 0.1 }, rng)
+    await schedule(a.sessionId, 1)
+    const ids = [a.sessionId]
+    await setConfig({ 'rescore.min_axis_items': 5, 'rescore.min_facet_items': 2 })
+    try {
+      // 4 answers on MAT over 3 facets: some facet holds two, enough for the facet minimum, not for the axis
+      await keepScored(a.sessionId, 'MAT', 4)
+      const held = await rescore(saveOf(a.anonId, ids))
+      expect(held.eap.MAT).toBeUndefined()
+      expect(held.facets.MAT).toBeUndefined()
+      expect(held.withheld.eap.MAT).toBe(4)
+      expect(held.eap.QR).toBeDefined()
+      // the fifth answer opens the axis, and with it the facets that have two
+      await keepScored(a.sessionId, 'MAT', 5)
+      const open = await rescore(saveOf(a.anonId, ids))
+      expect(open.eap.MAT).toMatchObject({ n: 5 })
+      const returned = Object.entries(open.facets.MAT ?? {})
+      expect(returned.length).toBeGreaterThan(0)
+      for (const [facet, f] of returned) expect(f.n, facet).toBeGreaterThanOrEqual(2)
+      for (const [facet, n] of Object.entries(open.withheld.facets.MAT ?? {})) expect(n, facet).toBeLessThan(2)
+    } finally {
+      await setConfig(PUBLISHED)
+    }
+  })
+
+  it('rounds the mean to a tenth and the sd up to a twentieth, within half a step of the unrounded value', async () => {
     const rng = createRng('rounding')
     const checked: string[] = []
     for (const [name, theta] of [['p', { QR: 1.1, MAT: -0.7, KST: 0.2 }], ['q', { QR: -0.4, MAT: 0.05, KST: 1.6 }], ['r', { QR: 0, MAT: 0, KST: 0 }]] as const) {
@@ -564,7 +671,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
       await schedule(a.sessionId, 2)
       await schedule(b.sessionId, 12)
       const save = saveOf(a.anonId, [a.sessionId, b.sessionId])
-      await setConfig(EXACT)
+      await setConfig(UNROUNDED)
       const exact = await rescore(save)
       await setConfig(PUBLISHED)
       const got = await rescore(save)
@@ -582,10 +689,12 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
         checked.push(what)
       }
       for (const [axis, e] of Object.entries(exact.eap)) compare(got.eap[axis]!, e, `${name}/${axis}`)
+      expect(Object.keys(got.facets).sort(), name).toEqual(Object.keys(exact.facets).sort())
       for (const [axis, byFacet] of Object.entries(exact.facets)) {
+        expect(Object.keys(got.facets[axis]!).sort(), `${name}/${axis}`).toEqual(Object.keys(byFacet).sort())
         for (const [facet, e] of Object.entries(byFacet)) {
-          if (e.n >= 5) compare(got.facets[axis]![facet]!, e, `${name}/${axis}/${facet}`)
-          else expect(got.facets[axis]?.[facet]).toBeUndefined()
+          expect(e.n, `${name}/${axis}/${facet}`).toBeGreaterThanOrEqual(5)
+          compare(got.facets[axis]![facet]!, e, `${name}/${axis}/${facet}`)
         }
       }
     }
@@ -624,6 +733,40 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
     expect(await q('hb.quantise_up(0.301::float8, 0.05::float8)')).toBe(0.35)
     expect(await q('hb.quantise_up(0.0001::float8, 0.05::float8)')).toBe(0.05)
     expect(await q('hb.quantise_up(0.2::float8, 0::float8)')).toBe(0.2)
+  })
+
+  it('does not count answers outside the item\'s answer space: one real answer and any number of answers known to be wrong read out nothing (the padding probe)', async () => {
+    for (const right of [true, false]) {
+      for (const real of [1, 2, 3, 4]) {
+        const s = await padded({ axis: 'QR', real, right, n: 40 })
+        const got = await rescore(saveOf(s.anonId, [s.sessionId]))
+        // before the fix the 36 to 39 padded answers were scored as wrong, QR reached 5 and its mean was the real answer's verdict
+        expect(reads(got), `${real} real, right=${right}`).toEqual({ axes: [], facets: [] })
+        expect(got.withheld.eap, `${real} real, right=${right}`).toEqual({ QR: real })
+        expect(got.skipped.invalid).toBe(s.invalid.length)
+        expect(got.skipped.invalid).toBeGreaterThanOrEqual(36)
+        expect(got.sessions[0]).toMatchObject({ n_scored: 0 })
+        expect(JSON.stringify(got)).not.toMatch(/"mean"|"sd"/)
+      }
+    }
+  })
+
+  it('leaves answers outside the answer space out of the numbers: five real answers among any number of them give what the five give alone', async () => {
+    const s = await padded({ axis: 'QR', real: 5, right: true, n: 40 })
+    const save = saveOf(s.anonId, [s.sessionId])
+    await schedule(s.sessionId, 1)
+    const withPadding = await rescore(save)
+    expect(withPadding.eap.QR).toMatchObject({ n: 5 })
+    expect(withPadding.skipped.invalid).toBe(s.invalid.length)
+    expect(Object.keys(withPadding.eap)).toEqual(['QR'])
+    // the same session without them (they are rows of the database; the owner may delete them)
+    await db.owner.query(`delete from public.responses where session_id = $1 and seq = any($2)`, [s.sessionId, s.invalid])
+    const without = await rescore(save)
+    expect(without.eap.QR).toEqual(withPadding.eap.QR)
+    expect(without.facets.QR).toEqual(withPadding.facets.QR)
+    // and with four real answers the same padding does not make a fifth
+    const four = await padded({ axis: 'QR', real: 4, right: true, n: 40 })
+    expect((await rescore(saveOf(four.anonId, [four.sessionId]))).eap).toEqual({})
   })
 
   it('does not publish at a smaller minimum than one item, nor with a negative step', async () => {
@@ -728,5 +871,48 @@ describe('rescore: the call limits', () => {
       await db.owner.query(`update public.app_config set value = '20' where key = 'rate.rescores_per_day'`)
       await db.owner.query(`update public.app_config set value = '1000' where key = 'rate.rescores_per_anon_day'`)
     }
+  })
+})
+
+// ------------------------------------------------------------------------------- the answer space
+describe('hb.response_fits: the answer space of an item (what counts as an answer)', () => {
+  const fits = async (key: unknown, nOptions: number | null, response: unknown): Promise<boolean> => {
+    const { rows } = await db.owner.query<{ v: boolean }>(`select hb.response_fits($1::jsonb, $2::int, $3::jsonb) as v`, [
+      key === null ? null : JSON.stringify(key),
+      nOptions,
+      response === undefined ? null : JSON.stringify(response),
+    ])
+    return rows[0]!.v
+  }
+  /** Every key of the kind gives the same answer for the same response: the test never looks at the key's value. */
+  async function table(keys: readonly unknown[], nOptions: number | null, cases: readonly (readonly [unknown, boolean])[]): Promise<void> {
+    for (const [response, want] of cases) {
+      for (const key of keys) expect(await fits(key, nOptions, response), `${JSON.stringify(key)} n=${nOptions} <- ${response === undefined ? 'SQL NULL' : JSON.stringify(response)}`).toBe(want)
+    }
+  }
+
+  it('index keys: an integer from 0 to the number of options minus one; any integer when the item shows no options', async () => {
+    const keys = [{ index: 0 }, { index: 1 }, { index: 3 }]
+    await table(keys, 4, [[0, true], [3, true], [1.0, true], [4, false], [-1, false], [1.5, false], ['1', false], [null, false], [true, false], [[1], false], [{ a: 1 }, false], [undefined, false], [1e9, false]])
+    await table(keys, 0, [[99, true], [0, true], [-1, false], [0.5, false], ['0', false]])
+    await table(keys, null, [[99, true], [-1, false]])
+  })
+
+  it('letter keys: one ASCII letter, surrounding space ignored', async () => {
+    await table([{ letter: 'a' }, { letter: 'Z' }], null, [['a', true], ['Z', true], [' c ', true], ['cc', false], ['', false], [' ', false], ['?', false], ['5', false], [2, false], [null, false], [true, false], [undefined, false]])
+  })
+
+  it('numeric keys: a string or number the entry reader parses; a well formed number nobody could mean still fits', async () => {
+    const keys = [{ value: '7/2', tol: { abs: 0.05 } }, { value: '-3', tol: { abs: 0 } }, { value: '1500', tol: { rel: 0.01 } }]
+    await table(keys, 0, [
+      ['3.5', true], ['7/2', true], ['3 1/2', true], ['$3.50', true], ['1,500', true], ['12%', true], [3.5, true], [-2, true], ['  4 ', true],
+      ['x', false], ['', false], [' ', false], ['1/0', false], ['3,5', false], ['1e3', false], [null, false], [true, false], [[], false], [{ v: 1 }, false], [undefined, false],
+      // the residual (README, "What this does not stop"): the server cannot tell a number far off the key from a plausible wrong one without the key
+      [99999999, true], ['99999999999', true],
+    ])
+  })
+
+  it('an item without a key (a block) has nothing to judge', async () => {
+    for (const response of [{ trials: [] }, null, 'x', 7, undefined]) expect(await fits(null, null, response)).toBe(true)
   })
 })
