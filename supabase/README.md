@@ -68,7 +68,7 @@ let db: TestDb
 beforeAll(async () => { db = await openTestDb() })   // a fresh clone of shim + supabase/migrations
 afterAll(async () => { await db.close() })
 
-// `sessions` and `start_session` are what M2.1 adds; M2.4 writes tests like these.
+// `sessions` and `start_session` are what M2.1 adds; acceptance.db.test.ts (M2.4) writes tests like these at scale.
 it('anon cannot select a table', async () => {
   expect(await rejectedWith(db.query(ANON, 'select * from public.sessions'))).toBe(PERMISSION_DENIED)
   expect((await exposedSurface(db, 'anon')).tables).toEqual([])
@@ -537,8 +537,7 @@ tuple with `correct` filled; this is a deviation the owner has accepted, to be r
 - **M2.2** is below: scoring, selection, pretest slots and eligibility.
 - **M2.3** (done, below) adds the per-session HMAC: `finish` signs the session, `rescore`, `delete_my_data` and
   `start_session` verify it, editing preferences never changes it.
-- **M2.4** repeats the acceptance as its own tests (M2.1 already tests that `anon` reaches no table and only the RPCs, a
-  25-item session reply holds no key, the brief_prefs rejection and the limits).
+- **M2.4** (done, below) is the acceptance as its own tests, at the scale the roadmap names.
 - **M2.5** connects the bank (`hb load push` writes the four bank tables as `service_role`; the column names are
   checked against `hb.load.push.COLUMNS` when the bank repo is next door) and the nightly job (`hb.purge_expired()` is
   also run by `start_session`). A restore must go into a project that already has the migrations applied (data only):
@@ -816,6 +815,21 @@ questions "whose file is this" (`start_session`, `delete_my_data`) look at the f
 a file padded with thousands of entries cannot make the server verify thousands of MACs. The server signs only what it would
 accept: a session over `sig.max_session_bytes` comes back unsigned from `finish`, and so does one holding an answer that has no
 canonical form (nested beyond 24 levels, a number no double holds); the session and the person's results are returned either way.
+
+## M2.4: the acceptance tests
+
+ROADMAP M2.4; DESIGN §14.3 "M2 Backend" acceptance (1), (2), (4) and §11.2; R-11.1, R-12.1; A16, AI.26. One file,
+`acceptance.db.test.ts` (24 tests, about 17 s), a block per line of the task. (3) of the DESIGN (p95 RPC latency under 300 ms)
+is a measurement on the live project: M2.6.
+
+| Line of the task | Tests |
+|---|---|
+| `anon` cannot `select` any table | every table, view and materialised view of every schema (the Vault's included), for `anon` and `authenticated`, is `42501`; so are insert, update, delete and truncate on the 16 tables of the app; no table, sequence or column privilege in any schema; RLS on every table and no policy for `anon`, `authenticated` or PUBLIC; and if a `grant select` slipped through, RLS still returns no row (the second wall, tried inside a rolled-back transaction). Every table holds a row first, so "no rows" means something |
+| `anon` can EXECUTE only the whitelisted RPCs | the exact list of eleven, with their argument lists, for `anon` and `authenticated`; none for `service_role`; nothing for PUBLIC in `public` or `hb`; no overloads and no extension member in `public`; no `usage` on `hb` or `vault` for any API role, and a call to `hb.mac_sign`, `hb.session_signed`, `hb.cfg` or `vault.create_secret` is `42501`; every RPC is `SECURITY DEFINER`, owned by `hb_definer`, `search_path = ''`; and every one of the eleven can actually be called as `anon` |
+| no payload contains `key` (fuzz, 1,000 items) | 1,000 items with random render payloads (nested objects, the words *key*, *answer*, *correct* as text) and a canary in every column of `item_keys`: all 1,000 through `hb.item_view`, and 400 served through the API (answered right, wrong and with rubbish) with `finish`, `rescore`, `verify_save` and `mirror_put`: no property of any reply is named for a key, an answer, a tolerance, a rationale or a verdict, no canary text, `correct` is `null`; and 1,000 random payloads, half with a key-like field planted at a random depth in a random letter case, are refused by `items.payload`'s CHECK (`23514`) or accepted when clean |
+| tampered save → unverified | a session finished through the API is `verified`; 14 kinds of edit (an answer, a time, an item id, a dropped or reordered response, the duration, the start, the device, a flag, the session id, the MAC, the `anon_id`, the `kid`) are each `unverified`; the file around the session is not covered; a tampered save is not scored, does not delete and does not continue an `anon_id`; an offline file is `unsigned`. The mechanism, with 400 random edits, is `signing.db.test.ts` |
+| rate limits | the 6th `start_session` of an address in a day is `429 rate_limited`, another address is not; counts are keyed by a hash of the address and the day's salt, no address is in any table, the same address is a different hash the next day, and counts and salts are gone after 48 hours; a session of 200 items ends with `done: item_limit` and the 201st cannot be answered; an average under 2 s an item by the server's clock is `429 too_fast` at the 10th answer, a 3 s person is not stopped |
+| AI.26: no `brief_prefs` | 1,000 random saves (sessions, answers of random JSON, seen lists, a posterior cache, extras), half with the key planted in a random object under a random letter case, through `verify_save`, `rescore`, `delete_my_data`, `mirror_put` and `start_session`: every call with the key is `400 brief_prefs_not_accepted`, every call without it succeeds (2,500 calls each way), and afterwards no reply and no row of any table (500 mirrored blobs among them) holds the key, as a key at any depth or as text. Crafted payloads (a unicode-escaped name, capitals, 20 levels deep, inside arrays, a session, a device, a response element) are rejected by all five, and so are a device, an answer and a flags report |
 
 ## Secrets
 
