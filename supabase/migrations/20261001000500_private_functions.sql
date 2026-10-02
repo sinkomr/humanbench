@@ -691,6 +691,56 @@ begin
 end
 $$;
 
+-- An upper estimate of what it costs to canonicalise (hb.jcs, M2.3) a JSON text, in units: one for every character
+-- that starts an array or an object or separates two members (`[`, `{` and `,`), which is about one per value, one
+-- for every object key (a quote followed by a colon, which the text of a jsonb value has for each key), and ten for
+-- every run of 17 or more digits not preceded by a digit or a point (an integer of 1e16 or more, for which
+-- hb.jcs_number searches the shortest decimal). Characters inside strings count as well, so the estimate can only be
+-- too high. A unit takes 1 to 4 microseconds to canonicalise on a laptop (the dearest are small arrays and objects
+-- inside one another; a number of 17 digits costs less than ten units); the count itself takes 50 ms per megabyte.
+-- A session of 200 answers is about 1,500 units.
+-- It is what keeps one anonymous call below the 3 s statement timeout: a call cancelled there rolls back its own
+-- rate-limit count, so it would cost the server 3 s and the caller nothing. A call is refused before it can run
+-- that long (M2.3 review).
+create function hb.json_work(p_text text)
+returns int
+language sql immutable
+set search_path = ''
+as $$
+  select (pg_catalog.char_length(p_text) - pg_catalog.char_length(pg_catalog.translate(p_text, '[{,', '')))
+         + pg_catalog.regexp_count(p_text, '":')
+         + 10 * pg_catalog.regexp_count(p_text, '(?<![0-9.])[0-9]{17}')
+$$;
+
+-- Do the sessions of a save, added up, stay within verify.max_work? Each session is counted as it is sent, sig
+-- included, as hb.session_within_limits counts it alone; the array that holds them adds one unit per session
+-- (its opening bracket and its commas), which is not counted. A save without a sessions array is within it
+-- (hb.check_save refuses that). RPCs that canonicalise the sessions of a file ask this first.
+create function hb.save_work_ok(p_save jsonb)
+returns boolean
+language sql stable
+set search_path = ''
+as $$
+  select case when pg_catalog.jsonb_typeof(p_save -> 'sessions') = 'array'
+    then hb.json_work((p_save -> 'sessions')::text) - pg_catalog.jsonb_array_length(p_save -> 'sessions') <= hb.cfg_int('verify.max_work', 100000)
+    else true end
+$$;
+
+-- 413 save_too_complex when hb.save_work_ok says no. Called by the RPCs that answer a file with an error
+-- (verify_save, rescore); start_session and delete_my_data ask hb.save_proves_anon, which treats such a file as
+-- proving nothing.
+create function hb.check_save_work(p_save jsonb)
+returns void
+language plpgsql stable
+set search_path = ''
+as $$
+begin
+  if not hb.save_work_ok(p_save) then
+    perform hb.fail(413, 'save_too_complex', 'The sessions of a save may hold at most ' || hb.cfg_int('verify.max_work', 100000) || ' units of work (arrays, objects and members). A real session of 200 answers is about 1,500.');
+  end if;
+end
+$$;
+
 -- A list of ids from a save (seen_items, seen_families): an array of short strings, at most
 -- save.max_seen of them. Returns it, or an empty array when absent. 400 otherwise.
 create function hb.check_id_list(p_list jsonb, p_name text)

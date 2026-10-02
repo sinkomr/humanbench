@@ -138,6 +138,99 @@ describe('canonical JSON (RFC 8785): hb.jcs against the RFC and against src/save
     expect(got[values.indexOf(1e23)]).toBe('1e+23')
   })
 
+  /** hb.jcs of each element of a JSON array given as TEXT, so that nothing but the database's parser reads the spelling. */
+  async function sqlJcsText(arrayText: string): Promise<string[]> {
+    const { rows } = await db.sudo.query<{ t: string }>(`select hb.jcs(x.v) as t from jsonb_array_elements($1::jsonb) with ordinality x (v, o) order by x.o`, [arrayText])
+    return rows.map((r) => r.t)
+  }
+  const jsOfText = (arrayText: string): string[] => (JSON.parse(arrayText) as unknown[]).map((v) => jcs(v))
+
+  it('agrees with ECMAScript on the double before and after every d x 10^j, d up to 999: the neighbours of a short decimal are where the search for the shortest digits can go wrong', async () => {
+    const f64 = new Float64Array(1)
+    const u64 = new BigUint64Array(f64.buffer)
+    const around = (x: number): number[] => {
+      f64[0] = x
+      const bits = u64[0]!
+      u64[0] = bits + 1n
+      const up = f64[0]!
+      u64[0] = bits - 1n
+      return [x, up, f64[0]!]
+    }
+    const values: number[] = []
+    for (let j = 15; j <= 42; j++) for (let d = 1; d <= 999; d++) values.push(...around(Number(`${d}e${j}`)))
+    for (let i = 0; i < values.length; i += 20_000) {
+      const chunk = values.slice(i, i + 20_000)
+      const text = JSON.stringify(chunk)
+      const got = await sqlJcsText(text)
+      const bad = got.map((g, k) => [g, jcs(chunk[k]!), chunk[k]] as const).filter(([g, want]) => g !== want)
+      expect(bad.slice(0, 5)).toEqual([])
+    }
+  }, 120_000)
+
+  it('agrees with ECMAScript on doubles whose interval edge is a decimal shorter than PostgreSQL prints: 1e23 is one, and so are thousands of doubles from 1e16 on', async () => {
+    // A double x = m x 2^q (m even, 53 bits) reads back from every decimal between (2m-1) x 2^(q-1) and (2m+1) x 2^(q-1),
+    // edges included. PostgreSQL's shortest digits leave the edges out; ECMAScript takes one that has fewer digits.
+    const rng = createRng('midpoints')
+    const sig = (b: bigint): number => b.toString().replace(/0+$/, '').length
+    const withShortEdge: number[] = []
+    for (let q = 1; q <= 70; q++) {
+      for (let i = 0; i < 1500; i++) {
+        const m = ((1n << 52n) | (BigInt(rng.int(0, 2 ** 20 - 1)) << 32n) | BigInt(rng.int(0, 2 ** 32 - 1))) & ~1n
+        const half = 1n << BigInt(q - 1)
+        if (sig((2n * m + 1n) * half) <= 16 || sig((2n * m - 1n) * half) <= 16) withShortEdge.push(Number(m * (1n << BigInt(q))))
+      }
+    }
+    expect(withShortEdge.length).toBeGreaterThan(1500)
+    const text = JSON.stringify(withShortEdge)
+    const got = await sqlJcsText(text)
+    expect(got.map((g, k) => [withShortEdge[k], g, jcs(withShortEdge[k]!)] as const).filter(([, g, want]) => g !== want).slice(0, 5)).toEqual([])
+  })
+
+  it('prints an integer of 16 digits or more as the double nearest to it, as ECMAScript does: the shortcut for plain integers ends at 15 digits', async () => {
+    const text = '[999999999999999, 1000000000000000, 9007199254740991, 9007199254740993, 12345678901234567891, -9007199254740993, 123456789012345678, 100000000000000000000, 1000000000000000000000, 1e22, 2e21, 4611686018427387905, -18446744073709551617]'
+    const got = await sqlJcsText(text)
+    expect(got).toEqual(jsOfText(text))
+    expect(got.slice(0, 5)).toEqual(['999999999999999', '1000000000000000', '9007199254740991', '9007199254740992', '12345678901234567000'])
+  })
+
+  it('prints a decimal as ECMAScript does however it is spelt: up to 15 digits as they are, trailing zeros dropped, 1e-6 and 1e-7, 16 and 17 digits through the double', async () => {
+    const rng = createRng('decimals')
+    const digits = (n: number): string => Array.from({ length: n }, () => String(rng.int(0, 9))).join('')
+    const spellings: string[] = [
+      '0.1', '0.5', '-0.5', '0.10', '0.0', '-0.0', '1.0', '1.50', '10.10', '100.5', '100.25', '0.30000000000000004', '0.1000000000000001', '0.100000000000001', '0.999999999999999',
+      '1.000000000000001', '1.00000000000001', '123456789012345.6', '12345678901234.56', '1234567890123.456', '999999999999999.9', '99999999999999.99', '10000000000000.5',
+      '0.000001', '0.0000010', '0.000001234', '0.0000009999999', '0.0000001', '0.00000011', '0.000000999999999999', '0.00001', '0.000123456789012345', '0.0001234567890123456',
+      '5e-324', '1.7976931348623157e308', '0.000000000000000000001', '123456789.123456789', '4.35', '3411.123', '-3411.123', '0.2', '0.7', '2.675', '1.005',
+    ]
+    for (let i = 0; i < 6000; i++) {
+      const intLen = rng.int(0, 17)
+      const fracLen = rng.int(0, 18)
+      const intPart = intLen === 0 ? '0' : String(rng.int(1, 9)) + digits(intLen - 1)
+      let frac = digits(fracLen)
+      if (rng.next() < 0.3) frac = '0'.repeat(rng.int(1, 8)) + frac
+      if (rng.next() < 0.2) frac += '0'.repeat(rng.int(1, 3))
+      spellings.push(`${rng.next() < 0.3 ? '-' : ''}${intPart}${frac === '' ? '' : `.${frac}`}`)
+    }
+    const text = `[${spellings.join(', ')}]`
+    const got = await sqlJcsText(text)
+    const bad = got.map((g, k) => [spellings[k], g, jsOfText(text)[k]] as const).filter(([, g, want]) => g !== want)
+    expect(bad.slice(0, 5)).toEqual([])
+  })
+
+  it('sorts keys by code point when no key reaches beyond U+FFFF, whatever the database\'s collation, and by UTF-16 units when one does', async () => {
+    const rng = createRng('keys')
+    const bmp = ['a', 'B', '_', '-', 'Z', 'z', 'é', 'Ö', 'ǅ', '\u0080', '߿', 'ࠀ', '퟿', '', '', 'דּ', '�', 'ab', 'a-b', 'a_b', 'A', 'b', ' ', 'a b', 'aB', 'Ab', '10', '9', '1', '', 'k'.repeat(300), `${'k'.repeat(300)}z`]
+    const astral = ['😀', '\u{10000}', '\u{1d11e}', 'a😀', '😀a']
+    const objects = (pool: string[]): Record<string, number>[] =>
+      Array.from({ length: 40 }, () => Object.fromEntries(rng.shuffle(pool).slice(0, rng.int(2, 12)).map((k, i) => [k, i])))
+    const values = [...objects(bmp), ...objects([...bmp, ...astral]), ...objects(astral)]
+    const got = await sqlJcs(values)
+    expect(got.filter((g, i) => g !== jcs(values[i]))).toEqual([])
+    // the shortcut is what pins the order to code points (a database collation of en_US would put "a" before "B")
+    const src = await db.sudo.query<{ ok: boolean }>(`select prosrc like '%collate "C"%' as ok from pg_proc where oid = 'hb.jcs(jsonb, int)'::regprocedure`)
+    expect(src.rows[0]!.ok).toBe(true)
+  })
+
   it('matches the RFC §3.2.2 example: number spellings, string escapes, literals, key order', async () => {
     const text = String.raw`{
       "numbers": [333333333.33333329, 1E30, 4.50, 2e-3, 0.000000000000000000000000001],
@@ -616,7 +709,7 @@ describe('what the server does with an unverified save (DESIGN §8: displayed, n
         )
       ).rows.map((r) => r.f)
     expect(await callers('mac_sign')).toEqual(['hb.session_mac'])
-    expect(await callers('session_mac')).toEqual(['hb.session_signed', 'hb.session_verdict'])
+    expect(await callers('session_mac')).toEqual(['hb.session_signed', 'hb.session_verdict', 'hb.signing_check'])
     expect(await callers('session_signed')).toEqual(['public.finish'])
     // and finish takes no session or file from the caller: its arguments are a token and the client's flags (numbers and booleans)
     const { rows } = await db.sudo.query<{ args: string }>(`select pg_get_function_identity_arguments('public.finish(text, jsonb)'::regprocedure) as args`)
@@ -762,26 +855,33 @@ describe('a session whose answers the canonical form cannot hold', () => {
 })
 
 describe('what a file can make the server do', () => {
-  it('signs only a session that verify would accept: one over sig.max_session_bytes is returned unsigned', async () => {
+  it('signs a session exactly when verify would accept it: one byte over sig.max_session_bytes is returned unsigned and is malformed', async () => {
     const ctx = await openBankDb('size')
     try {
       const small = await finishedSession(ctx, 1)
       const big = await finishedSession(ctx, 12)
       expect(small.session.sig).toBeDefined()
       expect(big.session.sig).toBeDefined()
-      // a limit between the two (the size verify measures: the unsigned object as jsonb text)
-      const size = async (id: string): Promise<number> => (await ctx.sudo.query<{ n: number }>(`select octet_length(hb.session_object($1)::text)::int as n`, [id])).rows[0]!.n
-      const [a, b] = [await size(small.sessionId), await size(big.sessionId)]
+      // the size both sides measure: the session as it is sent, sig included, as jsonb text
+      const size = async (f: Finished): Promise<number> => (await ctx.sudo.query<{ n: number }>(`select octet_length($1::jsonb::text)::int as n`, [JSON.stringify(f.session)])).rows[0]!.n
+      const [a, b] = [await size(small), await size(big)]
       expect(a).toBeLessThan(b)
-      await ctx.owner.query(`update public.app_config set value = to_jsonb($1::int) where key = 'sig.max_session_bytes'`, [Math.floor((a + b) / 2)])
-      // finishing again signs afresh: the small one still, the big one no longer
+      const setLimit = (n: number): Promise<unknown> => ctx.owner.query(`update public.app_config set value = to_jsonb($1::int) where key = 'sig.max_session_bytes'`, [n])
       const again = async (f: Finished): Promise<SessionObject> => (await ctx.rpc<{ session: SessionObject }>(from(f.ip), 'finish', { p_token: f.token })).session
+
+      // a limit of exactly the big one's size: both are signed and both verify
+      await setLimit(b)
+      const atLimit = await again(big)
+      expect(atLimit.sig).toBeDefined()
+      expect(await statuses(ctx, big.anonId, [atLimit, small.session])).toEqual(['verified', 'verified'])
+      // a byte less: finishing again signs the small one still, the big one no longer
+      await setLimit(b - 1)
       expect((await again(small)).sig).toBeDefined()
       const unsigned = await again(big)
       expect(unsigned.sig).toBeUndefined()
       expect(unsigned.responses.length).toBe(12)
       // and the one signed before the limit came down is no longer accepted either: the same size rule on both sides
-      expect(await statuses(ctx, big.anonId, [big.session, small.session])).toEqual(['malformed', 'verified'])
+      expect(await statuses(ctx, big.anonId, [atLimit, small.session])).toEqual(['malformed', 'verified'])
     } finally {
       await ctx.close()
     }
@@ -801,6 +901,217 @@ describe('what a file can make the server do', () => {
     } finally {
       await ctx.close()
     }
+  })
+})
+
+// ------------------------------------------------------------------------ bounded work
+
+describe('the work one call can cause is bounded (the anon timeout is 3 s, and a cancelled call keeps no rate-limit count)', () => {
+  let ctx: TestDb
+  let good: Finished
+  beforeAll(async () => {
+    ctx = await openBankDb('work')
+    good = await finishedSession(ctx, 4)
+  })
+  afterAll(async () => {
+    await ctx.close()
+  })
+
+  const work = async (text: string): Promise<number> => (await ctx.sudo.query<{ w: number }>(`select hb.json_work($1) as w`, [text])).rows[0]!.w
+  /** The work of a session as it is sent, sig included. */
+  const sentWork = async (session: SessionObject): Promise<number> => (await ctx.sudo.query<{ w: number }>(`select hb.json_work($1::jsonb::text) as w`, [JSON.stringify(session)])).rows[0]!.w
+  const setWork = (n: number): Promise<unknown> => ctx.owner.query(`update public.app_config set value = to_jsonb($1::int) where key = 'verify.max_work'`, [n])
+  const DEFAULT_WORK = 100_000
+
+  it('counts a unit for every array start, object start, comma and object key, and ten for a run of 17 digits or more that does not follow a digit or a point', async () => {
+    expect(await work('[]')).toBe(1)
+    expect(await work('[1,2,3]')).toBe(3)
+    expect(await work('{"a":1,"b":[1,2]}')).toBe(6)
+    expect(await work('"i:tst:g1:00001"')).toBe(0) // the colons of an id are no keys
+    expect(await work('"a, b: [c] {d}"')).toBe(3) // inside strings too: an estimate can only be too high
+    expect(await work('12345678901234567')).toBe(10)
+    expect(await work('[12345678901234567,1234567890123456]')).toBe(12)
+    expect(await work('0.12345678901234567')).toBe(0)
+    expect(await work('12345678901234567.5')).toBe(10)
+    expect(await work('1'.repeat(300))).toBe(10)
+    expect(await work('')).toBe(0)
+  })
+
+  it('is about 1,500 units for a real session of 200 answers, and 40 of them are within the budget', async () => {
+    const body = {
+      session_id: 's_bench00000001',
+      started_utc: '2026-10-01T12:00:00Z',
+      duration_s: 1234.5,
+      device: DEVICE,
+      flags: { visibility_hidden_s: 2, paste_events: 0, fast_guess_n: 0 },
+      responses: Array.from({ length: 200 }, (_, j) => [`i:tst:g1:${String(1 + (j % 60)).padStart(5, '0')}`, 0, j % 4, null, 3000 + j * 13, j % 5 === 0 ? 80 : null]),
+    }
+    const w = await work((await ctx.sudo.query<{ t: string }>(`select $1::jsonb::text as t`, [JSON.stringify(body)])).rows[0]!.t)
+    expect(w).toBeGreaterThan(1300)
+    expect(w).toBeLessThan(1700)
+    expect(w * 40).toBeLessThan(DEFAULT_WORK) // rescore takes at most 40 sessions
+  })
+
+  it('signs a session exactly when verify would accept it: the same limit in units on both sides, to the unit, the sig included', async () => {
+    const f = await finishedSession(ctx, 6)
+    // the work of the session as it is sent
+    const w = (await ctx.sudo.query<{ w: number }>(`select hb.json_work($1::jsonb::text) as w`, [JSON.stringify(f.session)])).rows[0]!.w
+    const again = async (): Promise<SessionObject> => (await ctx.rpc<{ session: SessionObject }>(from(f.ip), 'finish', { p_token: f.token })).session
+    try {
+      await setWork(w)
+      const signed = await again()
+      expect(signed.sig).toBeDefined()
+      // alone in a file it passes the file's rule as well: the file is measured with its sigs
+      expect(await statuses(ctx, f.anonId, [signed])).toEqual(['verified'])
+      await setWork(w - 1)
+      const unsigned = await again()
+      expect(unsigned.sig).toBeUndefined()
+      expect(unsigned.responses.length).toBe(6)
+      // signed before the limit came down, the same session is over it: a file of it is refused as a file (413), and the
+      // session's own rule, which the proofs use, calls it malformed
+      expect(pgCode(await verify(ctx, emptySave(f.anonId, { sessions: [signed] })).catch((e: unknown) => e))).toBe('PT413')
+      const v = await ctx.sudo.query<{ v: string }>(`select hb.session_verdict($1::jsonb) as v`, [JSON.stringify(signed)])
+      expect(v.rows[0]!.v).toBe('malformed')
+    } finally {
+      await setWork(DEFAULT_WORK)
+    }
+  })
+
+  it('refuses a file whose sessions add up to more than the budget before doing any work: 413 save_too_complex from verify_save and rescore; start_session and delete_my_data take it as proof of nothing', async () => {
+    const one = await sentWork(good.session)
+    const copy: SessionObject = { ...clone(good.session), session_id: 's_copy000000001' }
+    const single = emptySave(good.anonId, { sessions: [good.session] })
+    const twice = emptySave(good.anonId, { sessions: [good.session, copy] })
+    try {
+      await setWork(Math.ceil(one * 1.5)) // room for one copy of the session, not for two
+      expect((await verify(ctx, single)).sessions[0]!.status).toBe('verified')
+      for (const fn of ['verify_save', 'rescore']) {
+        const err = await ctx.rpc(from(freshIp()), fn, { p_save: twice }).catch((e: unknown) => e)
+        expect(pgCode(err), fn).toBe('PT413')
+        expect((err as Error).message, fn).toBe('save_too_complex')
+      }
+      expect((await startSession(ctx, freshIp(), twice)).anon_id_adopted).toBe(false)
+      expect(await ctx.rpc(from(freshIp()), 'delete_my_data', { p_anon_id: good.anonId, p_save: twice })).toEqual({ deleted: false })
+      // the same file, with room, proves the anon_id
+      await setWork(one * 3)
+      expect((await startSession(ctx, freshIp(), twice)).anon_id_adopted).toBe(true)
+    } finally {
+      await setWork(DEFAULT_WORK)
+    }
+  })
+
+  // Sessions that carry the signature of a real one but a heavy answer: forged, so every one is canonicalised and
+  // found "bad_signature", which is the whole cost. Two of them add up to 70,000 to 80,000 units, under the budget.
+  const forged = (answer: unknown, i: number): SessionObject => ({
+    ...clone(good.session),
+    session_id: `s_heavy${String(i).padStart(6, '0')}`,
+    responses: [['i:tst:g1:00001', 0, answer, null, 1000, null]],
+  })
+  // [what the answer is made of, the answer, how many sessions of it, the least units the file must have to be a fair test]
+  const SHAPES: [string, unknown, number, number][] = [
+    ['12,000 objects with a member', Array.from({ length: 12_000 }, () => ({ a: 1 })), 2, 60_000],
+    ['12,000 arrays in arrays', Array.from({ length: 12_000 }, () => [[1]]), 2, 60_000],
+    ['3,500 integers of 17 digits, the dearest number to print', Array.from({ length: 3_500 }, (_, i) => 12345678901234000 + 2 * i), 2, 60_000],
+    ['11,000 numbers of 17 significant digits behind the point, as many sessions as a file holds', Array.from({ length: 11_000 }, (_, i) => 0.12345678901234567 + i / 1e10), 6, 50_000],
+  ]
+
+  it.each(SHAPES)('finishes, and is counted against the address, when a file near the limits is made of %s', async (_label, answer, n, least) => {
+    const save = emptySave(good.anonId, { sessions: Array.from({ length: n }, (_, i) => forged(answer, i + 1)) })
+    const w = (await ctx.sudo.query<{ w: number }>(`select hb.json_work(($1::jsonb -> 'sessions')::text) as w`, [JSON.stringify(save)])).rows[0]!.w
+    expect(w).toBeGreaterThan(least)
+    expect(w).toBeLessThanOrEqual(DEFAULT_WORK)
+    const ip = freshIp()
+    await ctx.owner.query(`update public.app_config set value = '1' where key = 'rate.verifies_per_day'`)
+    try {
+      // with a statement_timeout of 3 s this would reject with 57014, and the count would be rolled back with it
+      const out = await verify(ctx, save, ip)
+      expect(out.sessions.map((x) => x.reason)).toEqual(Array.from({ length: n }, () => 'bad_signature'))
+      expect(pgCode(await verify(ctx, emptySave(good.anonId), ip).catch((e: unknown) => e))).toBe('PT429')
+    } finally {
+      await ctx.owner.query(`update public.app_config set value = '60' where key = 'rate.verifies_per_day'`)
+    }
+  })
+
+  it('refuses the same shapes, just over the budget, at once and with a 413, and signs and verifies nothing of them', async () => {
+    const answer = Array.from({ length: 12_000 }, () => ({ a: 1 }))
+    const save = emptySave(good.anonId, { sessions: [forged(answer, 1), forged(answer, 2), forged(answer, 3)] })
+    for (const fn of ['verify_save', 'rescore']) {
+      const t0 = performance.now()
+      const err = await ctx.rpc(from(freshIp()), fn, { p_save: save }).catch((e: unknown) => e)
+      expect(pgCode(err), fn).toBe('PT413')
+      expect((err as Error).message).toBe('save_too_complex')
+      expect(performance.now() - t0, fn).toBeLessThan(2500)
+    }
+  })
+
+  it('does not take a session with an answer that has no canonical form for a fault: it is malformed, with a code of its own from the MAC function', async () => {
+    const deep = JSON.parse('['.repeat(40) + ']'.repeat(40)) as unknown
+    const err = await ctx.sudo.query(`select hb.session_mac('k2026a', 'hb_AAAAAAAAAAAAAAAA', $1::jsonb)`, [JSON.stringify({ a: deep })]).catch((e: unknown) => e)
+    expect(pgCode(err)).toBe('PT400')
+    expect((err as Error).message).toBe('not_canonical')
+    expect(await statuses(ctx, good.anonId, [{ ...clone(good.session), responses: [['i:tst:g1:00001', 0, deep, null, 1000, null]] }])).toEqual(['malformed'])
+  })
+})
+
+// ------------------------------------------------------------------------ a fault is not a missing key
+
+describe('a fault of the signer is not a missing key', () => {
+  let fdb: TestDb
+  beforeAll(async () => {
+    fdb = await openBankDb('fault')
+  })
+  afterAll(async () => {
+    await fdb.close()
+  })
+
+  const check = (): Promise<Record<string, unknown>> => fdb.sudo.query<{ r: Record<string, unknown> }>(`select hb.signing_check() as r`).then((x) => x.rows[0]!.r)
+  const currentKid = (kid: string): Promise<unknown> => fdb.owner.query(`update public.app_config set value = to_jsonb($1::text) where key = 'sig.current_kid'`, [kid])
+
+  it('hb.signing_check says ok with a key, says why when there is none, and never shows the key or a MAC', async () => {
+    expect(await check()).toEqual({ ok: true, kid: 'k2026a' })
+    expect(JSON.stringify(await check())).not.toContain(await signingKey(fdb))
+    await currentKid('k-nothing-here')
+    expect(await check()).toEqual({ ok: false, kid: 'k-nothing-here', reason: 'no_usable_key' })
+    await fdb.sudo.query(`select vault.create_secret('too-short-secret', 'save_hmac.kshort')`)
+    await currentKid('kshort')
+    expect(await check()).toEqual({ ok: false, kid: 'kshort', reason: 'no_usable_key' })
+    await fdb.owner.query(`delete from public.app_config where key = 'sig.current_kid'`)
+    expect(await check()).toEqual({ ok: false, reason: 'no_current_kid' })
+    await fdb.owner.query(`insert into public.app_config (key, value) values ('sig.current_kid', '"k2026a"')`)
+    expect(await check()).toEqual({ ok: true, kid: 'k2026a' })
+  })
+
+  it('is raised, not hidden: with the signer unable to read the Vault, verify_save errors instead of calling a signed session malformed, hb.signing_check raises, and finish still returns the results, unsigned, with a WARNING', async () => {
+    const before = await finishedSession(fdb, 4)
+    expect(before.session.sig).toBeDefined()
+    const notices: string[] = []
+    const c = await fdb.sudo.connect()
+    c.on('notice', (n) => notices.push(`${n.severity}: ${n.message}`))
+    await fdb.sudo.query(`revoke select on table vault.decrypted_secrets from postgres`)
+    try {
+      // the deployment is faulty: the checks that need the signer say so, in an error
+      expect(pgCode(await check().catch((e: unknown) => e))).toBe(PERMISSION_DENIED)
+      const err = await verify(fdb, emptySave(before.anonId, { sessions: [before.session] })).catch((e: unknown) => e)
+      expect(pgCode(err)).toBe(PERMISSION_DENIED)
+      // nothing is called malformed or unsigned that was neither: an unsigned or malformed session needs no signer
+      const offline: SessionObject = { ...clone(before.session), session_id: 's_offlineMVP0002' }
+      delete offline.sig
+      expect((await verify(fdb, emptySave(before.anonId, { sessions: [offline, { sig: 7 }] }))).sessions.map((x) => x.reason)).toEqual(['unsigned', 'malformed'])
+      // finish: the person's results are returned, unsigned, and the log says what happened
+      const after = await finishedSession(fdb, 3)
+      expect(after.session.sig).toBeUndefined()
+      expect(after.session.responses.length).toBe(3)
+      const signed = await c.query<{ s: SessionObject }>(`select hb.session_signed($1) as s`, [after.sessionId])
+      expect(signed.rows[0]!.s.sig).toBeUndefined()
+      expect(notices.join('\n')).toMatch(/WARNING: hb: signing a session failed \(SQLSTATE 42501: permission denied for view decrypted_secrets\)/)
+      expect(notices.join('\n')).not.toContain(await signingKey(fdb).catch(() => 'no key readable'))
+    } finally {
+      await fdb.sudo.query(`grant select on table vault.decrypted_secrets to postgres with grant option`)
+      c.release()
+    }
+    // repaired: everything works again, and the session finished while it was broken is signed by finishing again
+    expect(await check()).toEqual({ ok: true, kid: 'k2026a' })
+    expect(await statuses(fdb, before.anonId, [before.session])).toEqual(['verified'])
   })
 })
 
@@ -831,30 +1142,45 @@ describe('nothing reads the key but the function that signs with it', () => {
     expect(await asRole('hb_definer', `select secret from vault.secrets`)).toBe(PERMISSION_DENIED)
     expect(await asRole('hb_definer', `select hb.mac_sign('k2026a', 'x')`)).toBeUndefined()
     expect(await asRole('service_role', `select hb.mac_sign('k2026a', 'x')`)).toBe(PERMISSION_DENIED)
-    // the signer itself reads the view and does nothing else
-    expect(await asRole('hb_signer', `select decrypted_secret from vault.decrypted_secrets`)).toBeUndefined()
-    expect(await asRole('hb_signer', `select * from public.sessions`)).toBe(PERMISSION_DENIED)
-    expect(await asRole('hb_signer', `select * from public.item_keys`)).toBe(PERMISSION_DENIED)
+    // the migration role, which owns the signer, is the one role that reads the view
+    expect(await asRole('postgres', `select decrypted_secret from vault.decrypted_secrets`)).toBeUndefined()
   })
 
-  it('has a signer role that owns one function, cannot log in, and is held by the migration role alone', async () => {
-    const role = await db.sudo.query(`select rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication, rolinherit from pg_roles where rolname = 'hb_signer'`)
-    expect(role.rows).toEqual([{ rolsuper: false, rolbypassrls: false, rolcreaterole: false, rolcreatedb: false, rolcanlogin: false, rolreplication: false, rolinherit: true }])
-    const owned = await db.sudo.query(`select n.nspname || '.' || p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_roles r on r.oid = p.proowner where r.rolname = 'hb_signer'`)
-    expect(owned.rows.map((r) => r.f)).toEqual(['hb.mac_sign'])
-    const tables = await db.sudo.query(`select c.relname from pg_class c join pg_roles r on r.oid = c.relowner where r.rolname = 'hb_signer'`)
-    expect(tables.rows).toEqual([])
-    const members = await db.sudo.query(`select distinct m.rolname from pg_auth_members a join pg_roles r on r.oid = a.roleid join pg_roles m on m.oid = a.member where r.rolname = 'hb_signer' order by 1`)
-    expect(members.rows.map((r) => r.rolname)).toEqual(['postgres'])
-    // it holds no privilege on any table of public or hb, and no CREATE or USAGE on them
-    const reach = await db.sudo.query<{ n: number }>(
-      `select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
-        where n.nspname in ('public', 'hb') and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
-          and (has_any_column_privilege('hb_signer', c.oid, 'SELECT, INSERT, UPDATE, REFERENCES') or has_table_privilege('hb_signer', c.oid, 'DELETE, TRUNCATE, TRIGGER'))`,
+  it('applies the real Vault\'s privilege rule: a role granted SELECT on the view and nothing else cannot read a secret (so the signer is owned by postgres)', async () => {
+    // The first version of M2.3 gave the signer a role of its own with exactly these grants. The view decrypts through
+    // vault._crypto_aead_det_decrypt, whose EXECUTE is checked against the role that runs the query; the shim has
+    // that rule, so a repeat of the mistake fails here and not on the live project.
+    const c = await db.sudo.connect()
+    try {
+      await c.query('begin')
+      await c.query('create role probe_reader nologin')
+      await c.query('grant usage on schema vault to probe_reader')
+      await c.query('grant select on vault.decrypted_secrets to probe_reader')
+      await c.query('set local role probe_reader')
+      // the columns that need no decryption are readable: it is the function that is refused
+      expect((await c.query('select count(*)::int as n from vault.decrypted_secrets where name is not null')).rows[0].n).toBeGreaterThan(0)
+      const err = await c.query('select decrypted_secret from vault.decrypted_secrets').then(() => undefined, (e: unknown) => e)
+      expect(pgCode(err)).toBe(PERMISSION_DENIED)
+      expect((err as Error).message).toMatch(/permission denied for function _crypto_aead_det_decrypt/)
+    } finally {
+      await c.query('rollback').catch(() => undefined)
+      c.release()
+    }
+  })
+
+  it('has one function owned by the migration role, the signer, and no role of its own for it', async () => {
+    expect((await db.sudo.query(`select 1 from pg_roles where rolname = 'hb_signer'`)).rows).toEqual([])
+    const owned = await db.sudo.query(
+      `select n.nspname || '.' || p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_roles r on r.oid = p.proowner
+        where r.rolname = 'postgres' and n.nspname in ('public', 'hb') order by 1`,
     )
-    expect(reach.rows[0]!.n).toBe(0)
-    const create = await db.sudo.query(`select has_schema_privilege('hb_signer', 'hb', 'CREATE') as hb, has_schema_privilege('hb_signer', 'public', 'CREATE') as pub, has_schema_privilege('hb_signer', 'hb', 'USAGE') as hb_usage`)
-    expect(create.rows[0]).toEqual({ hb: false, pub: false, hb_usage: false })
+    expect(owned.rows.map((r) => r.f)).toEqual(['hb.mac_sign'])
+    // only hb_definer may call it, and nobody else holds a privilege on it
+    const acl = await db.sudo.query<{ acl: string[] }>(`select proacl::text[] as acl from pg_proc where oid = 'hb.mac_sign(text, text)'::regprocedure`)
+    expect([...acl.rows[0]!.acl].sort()).toEqual(['hb_definer=X/postgres', 'postgres=X/postgres'])
+    // it is the signer's key that is meant to be hidden: the function is SECURITY DEFINER with an empty search_path
+    const f = await db.sudo.query(`select prosecdef, proconfig from pg_proc where oid = 'hb.mac_sign(text, text)'::regprocedure`)
+    expect(f.rows[0]).toEqual({ prosecdef: true, proconfig: ['search_path=""'] })
   })
 
   it('leaves the surface of anon as it was plus the one new RPC', async () => {

@@ -169,7 +169,7 @@ describe('tables', () => {
 })
 
 describe('functions', () => {
-  it('are all owned by hb_definer with search_path pinned to empty (bar the Vault reader, owned by hb_signer); RPCs are SECURITY DEFINER, helpers are not (bar the key-field check that bank writes run, and the Vault reader)', async () => {
+  it('are all owned by hb_definer with search_path pinned to empty (bar the Vault reader, owned by postgres); RPCs are SECURITY DEFINER, helpers are not (bar the key-field check that bank writes run, and the Vault reader)', async () => {
     const { rows } = await db.owner.query<{ schema: string; name: string; definer: boolean; owner: string; config: string[] | null; kind: string }>(
       `select n.nspname as schema, p.proname as name, p.prosecdef as definer, r.rolname as owner, p.proconfig as config, p.prokind as kind
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace join pg_roles r on r.oid = p.proowner
@@ -178,8 +178,9 @@ describe('functions', () => {
     expect(rows.length).toBeGreaterThan(30)
     for (const f of rows) {
       const id = `${f.schema}.${f.name}`
-      // the one function that reads the Vault has an owner of its own (M2.3); the number printer pins float output
-      expect(f.owner, id).toBe(id === 'hb.mac_sign' ? 'hb_signer' : 'hb_definer')
+      // the one function that reads the Vault is owned by the migration role, the one the platform lets read it (M2.3);
+      // the number printer pins float output
+      expect(f.owner, id).toBe(id === 'hb.mac_sign' ? 'postgres' : 'hb_definer')
       expect([...(f.config ?? [])].sort(), id).toEqual(id === 'hb.jcs_number' ? ['extra_float_digits=1', 'search_path=""'] : ['search_path=""'])
       expect(f.definer, id).toBe(f.schema === 'public' || id === 'hb.no_key_fields' || id === 'hb.mac_sign')
       expect(f.kind, id).toBe('f')

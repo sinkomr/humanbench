@@ -556,6 +556,18 @@ describe('(5) rate limits', () => {
     expect((await db.owner.query(`select count(*)::int as n from public.rate_salts where day < (now() at time zone 'utc')::date - 1`)).rows[0].n).toBe(0)
   })
 
+  it('keeps the counts and salts of today and yesterday and purges the day before: nothing older than two days survives, and nothing younger is lost', async () => {
+    await db.owner.query(`delete from public.rate_limits where kind = 'boundary'`)
+    for (const age of [0, 1, 2, 3]) {
+      await db.owner.query(`insert into public.rate_limits (kind, key_hash, day, n) values ('boundary', $1, (now() at time zone 'utc')::date - $2::int, 1)`, [`h${age}`, age])
+      await db.owner.query(`insert into public.rate_salts (day, salt) values ((now() at time zone 'utc')::date - $1::int, '\\x00')  on conflict (day) do nothing`, [age])
+    }
+    await db.sudo.query(`select hb.purge_expired()`)
+    const days = async (sql: string): Promise<number[]> => (await db.owner.query<{ age: number }>(sql)).rows.map((r) => r.age)
+    expect(await days(`select ((now() at time zone 'utc')::date - day)::int as age from public.rate_limits where kind = 'boundary' order by 1`)).toEqual([0, 1])
+    expect(await days(`select ((now() at time zone 'utc')::date - day)::int as age from public.rate_salts order by 1`)).toEqual([0, 1])
+  })
+
   it('ends a session at 200 items: the 201st is not served, and cannot be answered', async () => {
     const ip = freshIp()
     const s = await startSession(db, ip)
@@ -567,6 +579,47 @@ describe('(5) rate limits', () => {
     expect(pgCode(err)).toBe('PT404')
     expect((await db.owner.query<{ n: number }>(`select n_served::int as n from public.sessions where session_id = $1`, [s.session_id])).rows[0]!.n).toBe(200)
   }, 180_000)
+
+  /**
+   * A person who spends `seconds[i]` on item i by the server's clock: before each answer only the item being answered is
+   * aged, so the answer takes that long plus the few milliseconds of the test. Stops at the first refusal.
+   */
+  async function answerAfter(seconds: number[]): Promise<{ answered: number; blocked: unknown }> {
+    const ip = freshIp()
+    const s = await startSession(db, ip)
+    let next = await rpc<Next>(ip, 'next_item', { p_token: s.token })
+    let answered = 0
+    for (const sec of seconds) {
+      if (!isServed(next)) break
+      await db.owner.query(`update public.exposure_log set served_at = served_at - make_interval(secs => $3) where session_id = $1 and item_id = $2`, [s.session_id, next.item.item_id, sec])
+      try {
+        const out = await rpc<{ next: Next }>(ip, 'submit', { p_token: s.token, p_item_id: next.item.item_id, p_response: 0, p_rt_ms: 60_000 })
+        answered++
+        next = out.next
+      } catch (e) {
+        return { answered, blocked: e }
+      }
+    }
+    return { answered, blocked: undefined }
+  }
+
+  it('puts the limit at 2 s an item on average: 1.8 s is stopped at the 10th answer, 2.2 s is not stopped in 14, and it is an average of all answers so far', async () => {
+    const slow = await answerAfter(Array.from({ length: 14 }, () => 2.2))
+    expect(slow.blocked).toBeUndefined()
+    expect(slow.answered).toBe(14)
+
+    const fast = await answerAfter(Array.from({ length: 14 }, () => 1.8))
+    expect(pgCode(fast.blocked)).toBe('PT429')
+    expect((fast.blocked as Error).message).toBe('too_fast')
+    expect(fast.answered).toBe(9)
+
+    // nine quick answers and one long one: the average of the ten decides, not any single answer
+    const average = (tenth: number): number[] => [...Array.from({ length: 9 }, () => 1), tenth]
+    expect(pgCode((await answerAfter(average(9.5))).blocked)).toBe('PT429') // (9 + 9.5) / 10 = 1.85
+    const rescued = await answerAfter(average(11.5)) // (9 + 11.5) / 10 = 2.05
+    expect(rescued.blocked).toBeUndefined()
+    expect(rescued.answered).toBe(10)
+  })
 
   it('blocks a session that averages under 2 s an item, by the server\'s clock and after 10 answers, and not a slower one', async () => {
     const ip = freshIp()

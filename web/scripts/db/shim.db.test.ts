@@ -17,7 +17,7 @@ import { ANON, AUTHENTICATED, SERVICE_ROLE, type TestDb } from './harness'
 import { semaphoreSetsOfInode } from './ipc'
 import { quoteIdent } from './sql'
 import { exposedSurface, names } from './surface'
-import { PERMISSION_DENIED, QUERY_CANCELED, UNDEFINED_FUNCTION, openTestDb, rejectedWith } from './vitest'
+import { PERMISSION_DENIED, QUERY_CANCELED, UNDEFINED_FUNCTION, openTestDb, pgCode, rejectedWith } from './vitest'
 
 const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url))
 const rand = (): string => randomBytes(4).toString('hex')
@@ -340,7 +340,24 @@ describe('Vault shim', () => {
     }
   })
 
-  it('supports the M2.3 pattern: a SECURITY DEFINER function owned by a restricted role signs with the Vault key', async () => {
+  it('supports the M2.3 pattern: a SECURITY DEFINER function owned by postgres signs with the Vault key', async () => {
+    const fn = `public.t_sign_pg_${rand()}`
+    await db.owner.query(
+      `create function ${fn}(msg text) returns text language sql security definer set search_path = ''
+       as $$ select encode(extensions.hmac(msg, (select decrypted_secret from vault.decrypted_secrets where name = '${secretName}'), 'sha256'), 'hex') $$`,
+    )
+    await db.owner.query(`revoke execute on function ${fn}(text) from public, anon, authenticated`)
+    await db.owner.query(`grant execute on function ${fn}(text) to anon`)
+
+    const { rows } = await db.query<{ mac: string }>(ANON, `select ${fn}('{"a":1}') as mac`)
+    expect(rows[0]?.mac).toBe(createHmac('sha256', secret).update('{"a":1}').digest('hex'))
+    // ...while anon still cannot read the key itself.
+    expect(await rejectedWith(db.query(ANON, `select * from vault.decrypted_secrets`))).toBe(PERMISSION_DENIED)
+  })
+
+  it('applies the real Vault\'s rule that a role granted SELECT on the view alone cannot decrypt (the first M2.3 design relied on the opposite)', async () => {
+    // The view decrypts through vault._crypto_aead_det_decrypt(), and PostgreSQL checks EXECUTE on a function
+    // called inside a view against the role that runs the query. On Supabase that function is not PUBLIC's.
     const fn = `public.t_sign_${rand()}`
     const sign = (): Promise<pg.QueryResult<{ mac: string }>> => db.query<{ mac: string }>(ANON, `select ${fn}('{"a":1}') as mac`)
 
@@ -359,18 +376,20 @@ describe('Vault shim', () => {
     await db.owner.query(`revoke execute on function ${fn}(text) from public, anon, authenticated`)
     await db.owner.query(`grant execute on function ${fn}(text) to anon`)
 
-    // Each grant the owner needs is a separate one; none is implied.
+    // Each grant the owner needs is a separate one; none is implied...
     expect(await rejectedWith(sign())).toBe(PERMISSION_DENIED)
     await db.owner.query(`grant usage on schema extensions to ${definer}`)
     expect(await rejectedWith(sign())).toBe(PERMISSION_DENIED)
     await db.owner.query(`grant usage on schema vault to ${definer}`)
     expect(await rejectedWith(sign())).toBe(PERMISSION_DENIED)
     await db.owner.query(`grant select on vault.decrypted_secrets to ${definer}`)
-
-    const { rows } = await sign()
-    expect(rows[0]?.mac).toBe(createHmac('sha256', secret).update('{"a":1}').digest('hex'))
-    // ...while anon still cannot read the key itself.
-    expect(await rejectedWith(db.query(ANON, `select * from vault.decrypted_secrets`))).toBe(PERMISSION_DENIED)
+    // ...and the three of them are still not enough: the decrypting function is refused
+    const err = await sign().then(() => undefined, (e: unknown) => e)
+    expect(pgCode(err)).toBe(PERMISSION_DENIED)
+    expect((err as Error).message).toContain('permission denied for function _crypto_aead_det_decrypt')
+    // what it takes, and what a hosted project may not let `postgres` give away
+    await db.owner.query(`grant execute on function vault._crypto_aead_det_decrypt(text) to ${definer}`)
+    expect((await sign()).rows[0]?.mac).toBe(createHmac('sha256', secret).update('{"a":1}').digest('hex'))
   })
 })
 

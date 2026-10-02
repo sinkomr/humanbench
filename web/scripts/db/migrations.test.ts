@@ -79,7 +79,7 @@ describe('migrations: functions', () => {
     for (const f of functions) expect(f.header, `${f.file}: ${f.name}`).toMatch(/set\s+search_path\s*=\s*''/i)
   })
 
-  it('creates every function between `set local role hb_definer` and `reset role` (the one that reads the Vault: as hb_signer)', () => {
+  it('creates every function between `set local role hb_definer` and `reset role` (the one that reads the Vault is handed to postgres afterwards)', () => {
     for (const m of migrations) {
       const text = code(m.sql)
       const creates = [...text.matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/gi)].map((x) => ({ at: x.index!, name: x[1]! }))
@@ -92,9 +92,7 @@ describe('migrations: functions', () => {
       for (const c of creates) {
         const block = blocks.find((b) => b.start < c.at && c.at < b.end)
         expect(block, `${m.name}: ${c.name} is created outside a role block`).toBeDefined()
-        // only the signer, whose function alone reads the Vault, is created by another role
-        const ok = block!.role === 'hb_definer' || (block!.role === 'hb_signer' && c.name === 'hb.mac_sign')
-        expect(ok, `${m.name}: ${c.name} is created as ${block!.role}`).toBe(true)
+        expect(block!.role, `${m.name}: ${c.name} is created as ${block!.role}`).toBe('hb_definer')
       }
       // hb_definer may create in `public` only inside the file that needs it
       if (/create\s+(?:or\s+replace\s+)?function\s+public\./i.test(text)) {
@@ -114,6 +112,25 @@ describe('migrations: functions', () => {
     for (const f of functions.filter((x) => x.name.startsWith('hb.'))) {
       expect(code(all), f.name).not.toMatch(new RegExp(`grant\\s+execute\\s+on\\s+function\\s+${f.name.replace('.', '\\.')}\\b[^;]*\\bto\\s+[^;]*\\b(anon|authenticated|public)\\b`, 'i'))
     }
+  })
+})
+
+describe('migrations: the one function that reads the Vault', () => {
+  const text = code(all)
+
+  it('is handed to postgres, the role the platform lets read the Vault, and to no other owner; only hb_definer may call it', () => {
+    // a role of its own with SELECT on the view alone may be refused by the real Vault (supabase/local/database/40-vault.sql)
+    const owners = [...text.matchAll(/alter\s+function\s+([\w.]+)\s*\([^)]*\)\s+owner\s+to\s+(\w+)/gi)].map((x) => [x[1], x[2]])
+    expect(owners).toEqual([['hb.mac_sign', 'postgres']])
+    expect(text).not.toMatch(/\bcreate\s+role\s+hb_signer\b/i)
+    const grants = [...text.matchAll(/\bgrant\s+execute\s+on\s+function\s+hb\.mac_sign\s*\([^)]*\)\s+to\s+([\w, ]+);/gi)].map((x) => x[1])
+    expect(grants).toEqual(['hb_definer'])
+    expect(text).toMatch(/revoke\s+all\s+on\s+function\s+hb\.mac_sign\s*\(text,\s*text\)\s+from\s+public\s*;/i)
+  })
+
+  it('has no other function that names the Vault in its body', () => {
+    const readers = migrations.flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\bas\s+\$\$([\s\S]*?)\$\$/gi)].filter((x) => /\bvault\./i.test(x[2]!)).map((x) => x[1]))
+    expect(readers).toEqual(['hb.mac_sign'])
   })
 })
 

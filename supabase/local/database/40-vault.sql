@@ -10,12 +10,20 @@
 -- Stricter than needed on purpose: a test that passes here cannot depend on a grant the live
 -- project may not give. Verify against the live project at M2.6 (ROADMAP).
 --
+-- The privilege rule of the real view is mirrored too, because the first version of M2.3 got it wrong
+-- and no local test could tell. On Supabase the view decrypts through vault._crypto_aead_det_decrypt(),
+-- a function that `REVOKE ALL ... FROM PUBLIC` leaves to the owner of the extension and the roles the
+-- platform grants it to (`postgres`). PostgreSQL checks EXECUTE on a function called inside a view against
+-- the role that RUNS the query, not the view's owner. So a role that was granted SELECT on the view and
+-- nothing else (a definer role of the app's own) is refused with 42501 "permission denied for function";
+-- only `postgres`, or a SECURITY DEFINER function it owns, can read a secret. Here the view calls
+-- vault._crypto_aead_det_decrypt() (the shim's version of it, same name, EXECUTE for `postgres` alone), and
+-- web/scripts/db/signing.db.test.ts holds a role with SELECT on the view alone to the refusal. hb.mac_sign
+-- (20261003000100_save_signing.sql) is owned by `postgres` for that reason.
+--
 -- Not mirrored: pgsodium, key rotation of the Vault key, the `nonce`/`key_id` semantics. The
 -- "encryption" key below is a public constant of this shim, NOT a secret; the secrets that tests
--- put in the Vault are fake values (CLAUDE.md: no real secrets in the repo). It is written out in
--- each of the three places that use it instead of living in a helper function, because Postgres
--- checks EXECUTE on a function called inside a view against the caller, and a role granted SELECT
--- on vault.decrypted_secrets must not need any other grant, as on the real Vault.
+-- put in the Vault are fake values (CLAUDE.md: no real secrets in the repo).
 
 create schema if not exists vault;
 
@@ -76,13 +84,22 @@ begin
 end
 $$;
 
+-- The shim's counterpart of the Vault's decrypting function: callable by `postgres` only (see above).
+create function vault._crypto_aead_det_decrypt(message text)
+returns text
+language sql immutable
+set search_path = ''
+as $$
+  select extensions.pgp_sym_decrypt(pg_catalog.decode(message, 'base64'), 'hb-vault-shim-public-constant-not-a-secret')
+$$;
+
 create view vault.decrypted_secrets as
 select
   s.id,
   s.name,
   s.description,
   s.secret,
-  extensions.pgp_sym_decrypt(decode(s.secret, 'base64'), 'hb-vault-shim-public-constant-not-a-secret') as decrypted_secret,
+  vault._crypto_aead_det_decrypt(s.secret) as decrypted_secret,
   s.key_id,
   s.nonce,
   s.created_at,
@@ -90,11 +107,13 @@ select
 from vault.secrets s;
 
 revoke all on table vault.secrets, vault.decrypted_secrets from public;
+revoke all on function vault._crypto_aead_det_decrypt(text) from public;
 revoke all on function vault.create_secret(text, text, text, uuid) from public;
 revoke all on function vault.update_secret(uuid, text, text, text, uuid) from public;
 
 grant usage on schema vault to postgres with grant option;
 grant all on table vault.secrets to postgres with grant option;
 grant select on table vault.decrypted_secrets to postgres with grant option;
+grant execute on function vault._crypto_aead_det_decrypt(text) to postgres with grant option;
 grant execute on function vault.create_secret(text, text, text, uuid) to postgres with grant option;
 grant execute on function vault.update_secret(uuid, text, text, text, uuid) to postgres with grant option;

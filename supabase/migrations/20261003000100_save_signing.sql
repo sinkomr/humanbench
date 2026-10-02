@@ -36,79 +36,82 @@
 -- and nothing verifies. This migration creates no secret (CLAUDE.md: no real secrets in the repo); M2.6 creates the
 -- real one, and the local database gets a random throw-away one (supabase/local/database/50-signing-key.sql).
 --
--- Who can read the key. Only hb.mac_sign, a SECURITY DEFINER function owned by its own role (hb_signer), which
--- alone may select from the Vault. It returns a MAC, never the key. hb_definer, which owns every other function and
--- therefore every RPC, can call it and cannot read the Vault: a bug in any RPC cannot return a key.
+-- Who can read the key. Only hb.mac_sign, a SECURITY DEFINER function that returns a MAC and never the key. It is
+-- owned by `postgres`, the migration role, because that is the role the platform lets read the Vault: the view
+-- vault.decrypted_secrets calls vault._crypto_aead_det_decrypt, whose EXECUTE is not PUBLIC's and is checked against the
+-- role that runs the query, so a role of its own that was granted SELECT on the view alone (the first version of
+-- this migration had one, `hb_signer`) may well be refused on a hosted project, where no local test could show it.
+-- hb_definer, which owns every other function and therefore every RPC, can call hb.mac_sign and cannot read the
+-- Vault: a bug in any RPC cannot return a key. The local shim of the Vault (supabase/local/database/40-vault.sql)
+-- applies the same rule on purpose, and tests that a role with SELECT on the view alone is refused.
+--
+-- A fault is not a missing key. A kid without a (long enough) secret is the normal "no key" case: hb.mac_sign returns
+-- null, `finish` returns the session unsigned and nothing verifies. Anything else that goes wrong inside the signer
+-- (a revoked grant, a missing function) is a fault of the deployment: verify_save and the proofs raise it instead of
+-- calling a signed session "malformed", and `finish` still returns the person's results, unsigned, but writes a
+-- WARNING to the log. hb.signing_check() (run in the SQL editor after creating the key, and now and then) makes the
+-- same call on purpose and raises on a fault, so a regression does not stay unseen.
 --
 -- Canonical JSON. hb.jcs is RFC 8785 (I-JSON input): keys in UTF-16 code unit order, no whitespace, strings as
 -- PostgreSQL writes them (the same escapes as ECMAScript), numbers as ECMAScript prints the nearest double. A test
 -- compares it with the app's src/save/jcs.ts on random values; the server and the client agree on the bytes.
 --
--- Limits: a session over sig.max_session_bytes, or nested deeper than 24 levels, is "malformed" and costs no
--- canonicalisation; verify_save takes at most verify.max_sessions sessions and rate.verifies_per_day calls per
--- hashed client address and day.
+-- Limits. Canonicalising costs time in proportion to the number of values (1 to 4 microseconds for an element of an
+-- array or a member of an object, up to ten times that for an integer of 1e16 or more), not to the bytes, and a call
+-- that runs into the 3 s statement timeout is cancelled together with the rate-limit count it made: it would cost the
+-- server 3 s and the caller nothing. Hence hb.json_work (20261001000500): the sessions of a file may add up to
+-- verify.max_work units (an estimate over the text; a real session is about 1,300 units), else verify_save and rescore
+-- answer 413 save_too_complex before doing any work, and start_session and delete_my_data treat the file as proving
+-- nothing. A session over sig.max_session_bytes, over verify.max_work units, or nested deeper than 24 levels is
+-- "malformed" and costs no canonicalisation (and `finish` does not sign it); verify_save takes at most
+-- verify.max_sessions sessions and rate.verifies_per_day calls per hashed client address and day.
 
--- ------------------------------------------------------------------------------ the signer role
-do $$
-begin
-  if not exists (select 1 from pg_catalog.pg_roles where rolname = 'hb_signer') then
-    create role hb_signer nologin;
-  end if;
-end
-$$;
-
-grant hb_signer to postgres;
-
--- The three things the signer needs, each separately (supabase/README.md, pitfall 3). Revoked again from the
--- schema `hb` below: it needs it only to create its function there.
-grant usage on schema extensions to hb_signer;
-grant usage on schema vault to hb_signer;
-grant select on table vault.decrypted_secrets to hb_signer;
-
--- PostgreSQL lets PUBLIC execute a new function unless the creating role's defaults say otherwise.
-alter default privileges for role hb_signer revoke execute on functions from public;
-
+-- ----------------------------------------------------------------------------------- the signer
 set local role hb_definer;
-grant usage, create on schema hb to hb_signer;
-reset role;
-
-set local role hb_signer;
 
 -- HMAC-SHA256 of p_msg under the Vault secret `save_hmac.<p_kid>`, base64url without padding. Null when the kid is
 -- malformed, has no secret, or its secret is shorter than 32 characters (a weak key signs nothing and verifies
--- nothing). The key is read here and goes nowhere else.
+-- nothing). The key is read here and goes nowhere else. Written in PL/pgSQL so that creating it does not need
+-- the right to look at the schema `vault` (a SQL function's body is analysed when it is created).
 create function hb.mac_sign(p_kid text, p_msg text)
 returns text
-language sql stable security definer
+language plpgsql stable security definer
 set search_path = ''
 as $$
-  select pg_catalog.translate(
+declare
+  v_key text;
+begin
+  if p_kid is null or p_kid !~ '^[0-9A-Za-z._-]{1,64}$' then
+    return null;
+  end if;
+  select s.decrypted_secret into v_key from vault.decrypted_secrets s where s.name = 'save_hmac.' || p_kid;
+  if v_key is null or pg_catalog.char_length(v_key) < 32 then
+    return null;
+  end if;
+  return pg_catalog.translate(
            pg_catalog.rtrim(
              pg_catalog.encode(
-               extensions.hmac(pg_catalog.convert_to(p_msg, 'UTF8'), pg_catalog.convert_to(s.decrypted_secret, 'UTF8'), 'sha256'),
+               extensions.hmac(pg_catalog.convert_to(p_msg, 'UTF8'), pg_catalog.convert_to(v_key, 'UTF8'), 'sha256'),
                'base64'),
              '='),
-           '+/', '-_')
-    from vault.decrypted_secrets s
-   where p_kid ~ '^[0-9A-Za-z._-]{1,64}$'
-     and s.name = 'save_hmac.' || p_kid
-     and pg_catalog.char_length(s.decrypted_secret) >= 32
+           '+/', '-_');
+end
 $$;
 
+reset role;
+
+-- The one function that the migration role owns: `postgres` is the role that reads the Vault (see the head of this
+-- file). hb_definer keeps the right to call it, nobody else has any.
+alter function hb.mac_sign(text, text) owner to postgres;
 revoke all on function hb.mac_sign(text, text) from public;
 grant execute on function hb.mac_sign(text, text) to hb_definer;
-
-reset role;
-
-set local role hb_definer;
-revoke usage, create on schema hb from hb_signer;
-reset role;
 
 -- ------------------------------------------------------------------------------------ settings
 insert into public.app_config (key, value, description) values
   ('sig.current_kid',      '"k2026a"', 'kid of the Vault secret `save_hmac.<kid>` that signs new sessions (M2.3). Rotate by creating the new secret first, then changing this; delete an old secret only to retire that key. No secret, no signature'),
   ('sig.max_session_bytes','262144',   'a session larger than this (as JSON text) is "malformed" when verified: a real one is 10 to 60 KB'),
   ('verify.max_sessions',  '200',      'most sessions in a save passed to verify_save'),
+  ('verify.max_work',      '100000',   'most units of canonicalisation work (hb.json_work: 1 to 4 us each on a laptop; a real session of 200 answers is about 1,500) that the sessions of one saved file, or one session, may need. Over it a file is 413 save_too_complex and a session is "malformed" and unsigned: a call must end well before the 3 s statement timeout, which would roll its rate-limit count back'),
   ('rate.verifies_per_day','60',       'verify_save calls per hashed IP per UTC day');
 
 -- ------------------------------------------------------------------------------- the functions
@@ -185,20 +188,33 @@ begin
   end if;
   -- PostgreSQL's shortest-digits routine never takes a decimal that lies exactly on the edge of the numbers that
   -- read back as this double (it prints 1e23 as 9.999999999999999e+22); ECMAScript reads ties to even and does
-  -- take it. Such an edge is an integer of 54 bits or so, so only magnitudes from 1e16 can have one: look for
-  -- a shorter string that reads back as the same double, the shortest first.
+  -- take it. Such an edge is the midpoint of two neighbouring doubles: (an odd number of 54 bits) x 2^(q-1), an
+  -- integer once the double is 2^53 or more, so only magnitudes from 1e16 can have one. Look for a shorter
+  -- string that reads back as the same double, the shortest first, among the candidates that can be such a
+  -- midpoint. A candidate head x 10^(n-j) (head of j digits, or head + 1) has the odd part odd(head) x 5^(n-j), which
+  -- must lie in [2^53 - 1, 2^54): it is at most 10^j x 5^(n-j) = 2^j x 5^n, and at least 5^(n-j). So j is at least
+  -- 53 - n log2(5) (taken a tenth short, for the rounding of the floating-point product) and n - j is at most 23. That
+  -- is a saving of time and not a change of result: a shorter edge is also the candidate of every longer j up to
+  -- k - 1 (the neighbour of the double on that side of the grid), so the first j that finds it only decides how soon.
+  -- For an integer just under 1e17 that is 3 values of j (14 to 16) instead of 16, each tried twice, and for 1e25 or
+  -- more it is few or none. The tests hold the result to ECMAScript's on the neighbours of d x 10^j, on thousands of doubles
+  -- whose interval edge is a shorter decimal than PostgreSQL's, and (once, not committed) on 2.5 million more.
   if v_n >= 17 and v_k > 1 then
     <<shorter>>
-    for j in 1 .. v_k - 1 loop
+    for j in greatest(1, v_n - 23, pg_catalog.ceil(52.9 - v_n * 2.321928094887362)::int) .. v_k - 1 loop
       v_head := pg_catalog.substr(v_digits, 1, j)::numeric;
       for pass in 1 .. 2 loop
         -- the nearer of head and head + 1 first
         v_cand := v_head + case when (pg_catalog.substr(v_digits, j + 1, 1) >= '5') = (pass = 1) then 1 else 0 end;
-        begin
-          v_same := (v_cand::text || 'e' || (v_n - j)::text)::double precision = pg_catalog.abs(v_f);
-        exception when numeric_value_out_of_range then
-          v_same := false; -- 2e308 is not a number a double can be
-        end;
+        if v_n >= 308 then
+          begin
+            v_same := (v_cand::text || 'e' || (v_n - j)::text)::double precision = pg_catalog.abs(v_f);
+          exception when numeric_value_out_of_range then
+            v_same := false; -- 2e308 is not a number a double can be
+          end;
+        else
+          v_same := (v_cand::text || 'e' || (v_n - j)::text)::double precision = pg_catalog.abs(v_f); -- below 1e308: no overflow, no subtransaction
+        end if;
         if v_same then
           v_n := v_n + (pg_catalog.char_length(v_cand::text) - j); -- 99 + 1 = 100 is one digit longer
           v_digits := pg_catalog.rtrim(v_cand::text, '0');
@@ -221,9 +237,15 @@ end
 $$;
 
 -- RFC 8785 canonical JSON of a jsonb value. A jsonb scalar's text form is already what RFC 8785 asks for in a
--- string (the escapes are those of ECMAScript's JSON.stringify), in true, false and null, and in an integer of up
--- to 15 digits; every other number goes through hb.jcs_number. Nesting beyond 24 levels raises (400 too_deep);
--- callers that can meet client data catch it.
+-- string (the escapes are those of ECMAScript's JSON.stringify), in true, false and null, and in a number that
+-- is an integer of up to 15 digits or a decimal of up to 15 significant digits without a trailing zero, no smaller
+-- than 1e-6 (c_plain): a decimal of at most 15 digits is the shortest string of its double, because two such
+-- decimals never read back as the same double (DBL_DIG = 15), and ECMAScript lays it out as it is. Every other
+-- number goes through hb.jcs_number.
+-- Keys are sorted by UTF-16 code units. When no key of the object has a character beyond U+FFFF that is the order of
+-- code points, which is the byte order of UTF-8, i.e. COLLATE "C" (whatever the database's collation is); an object
+-- with such a key takes the slow way, hb.utf16_units.
+-- Nesting beyond 24 levels raises (400 too_deep); callers that can meet client data catch it.
 create function hb.jcs(p_json jsonb, p_depth int default 0)
 returns text
 language plpgsql immutable
@@ -231,6 +253,8 @@ set search_path = ''
 as $$
 declare
   v_type text := pg_catalog.jsonb_typeof(p_json);
+  c_plain constant text := '^-?(?:[0-9]{1,15}|(?=[0-9.]{3,16}$)[1-9][0-9]*\.[0-9]*[1-9]|(?=[0-9.]{3,17}$)0\.(?!0{6})[0-9]*[1-9])$';
+  c_astral constant text := '[\U00010000-\U0010FFFF]';
 begin
   if p_depth > 24 then
     perform hb.fail(400, 'too_deep');
@@ -243,11 +267,12 @@ begin
                  when 'string' then e.value::text
                  when 'boolean' then e.value::text
                  when 'null' then 'null'
-                 when 'number' then case when e.value::text ~ '^-?[0-9]{1,15}$' then e.value::text else hb.jcs_number((e.value #>> '{}')::numeric) end
+                 when 'number' then case when e.value::text ~ c_plain then e.value::text else hb.jcs_number((e.value #>> '{}')::numeric) end
                  else hb.jcs(e.value, p_depth + 1)
                end,
-               ',' order by hb.utf16_units(e.key))
-        from (select x.key, x.value, pg_catalog.jsonb_typeof(x.value) as t from pg_catalog.jsonb_each(p_json) x) e), '') || '}';
+               ',' order by (case when e.astral then null else e.key end) collate "C", (case when e.astral then hb.utf16_units(e.key) end))
+        from (select x.key, x.value, pg_catalog.jsonb_typeof(x.value) as t, pg_catalog.bool_or(x.key ~ c_astral) over () as astral
+                from pg_catalog.jsonb_each(p_json) x) e), '') || '}';
   elsif v_type = 'array' then
     return '[' || coalesce((
       select pg_catalog.string_agg(
@@ -255,26 +280,51 @@ begin
                  when 'string' then e.value::text
                  when 'boolean' then e.value::text
                  when 'null' then 'null'
-                 when 'number' then case when e.value::text ~ '^-?[0-9]{1,15}$' then e.value::text else hb.jcs_number((e.value #>> '{}')::numeric) end
+                 when 'number' then case when e.value::text ~ c_plain then e.value::text else hb.jcs_number((e.value #>> '{}')::numeric) end
                  else hb.jcs(e.value, p_depth + 1)
                end,
                ',' order by e.ord)
         from (select x.value, x.ord, pg_catalog.jsonb_typeof(x.value) as t from pg_catalog.jsonb_array_elements(p_json) with ordinality x (value, ord)) e), '') || ']';
   elsif v_type = 'number' then
-    return case when p_json::text ~ '^-?[0-9]{1,15}$' then p_json::text else hb.jcs_number((p_json #>> '{}')::numeric) end;
+    return case when p_json::text ~ c_plain then p_json::text else hb.jcs_number((p_json #>> '{}')::numeric) end;
   end if;
   return p_json::text;
 end
 $$;
 
--- The bytes the MAC is computed over, and the MAC: null when the kid has no usable key. Raises on a value that
--- cannot be canonicalised (too deep, a number outside the double range).
+-- The MAC of a session body for an anon_id under the key of p_kid: null when the kid has no usable key. 400
+-- not_canonical when the data has no canonical form (nested too deep, a number outside the double range): that is
+-- a property of the data, and the only error here that is. Every other error is the signer's, a fault of the
+-- deployment, and is left to rise (see the head of this file).
 create function hb.session_mac(p_kid text, p_anon_id text, p_body jsonb)
 returns text
+language plpgsql stable
+set search_path = ''
+as $$
+declare
+  v_msg text;
+begin
+  begin
+    v_msg := hb.jcs(pg_catalog.jsonb_build_object('anon_id', p_anon_id, 'kind', 'hb.session.v1', 'session', p_body));
+  exception when others then
+    perform hb.fail(400, 'not_canonical');
+  end;
+  return hb.mac_sign(p_kid, v_msg);
+end
+$$;
+
+-- Is the text of a session as it is sent (its sig included) within the limits that keep verifying it cheap:
+-- sig.max_session_bytes (a real one is 10 to 60 KB) and verify.max_work units of canonicalisation? One rule for both
+-- sides: `finish` signs a session only if its signed form passes this, and a session that does not pass is
+-- "malformed". The sig is in the measure because a file is measured with its sigs (hb.save_work_ok): a session that
+-- was signed can always be verified alone, at the limit to the byte and to the unit.
+create function hb.session_within_limits(p_text text)
+returns boolean
 language sql stable
 set search_path = ''
 as $$
-  select hb.mac_sign(p_kid, hb.jcs(pg_catalog.jsonb_build_object('anon_id', p_anon_id, 'kind', 'hb.session.v1', 'session', p_body)))
+  select pg_catalog.octet_length(p_text) <= hb.cfg_int('sig.max_session_bytes', 262144)
+     and hb.json_work(p_text) <= hb.cfg_int('verify.max_work', 100000)
 $$;
 
 -- schema/save-v1.json "session_sig": a closed object of the four fields.
@@ -294,12 +344,14 @@ as $$
 $$;
 
 -- What the server says of a session object it was sent: 'verified', or why not. The MAC is checked against the
--- anon_id the sig itself names; whether that is the caller's is hb.session_owned's business. Never raises.
+-- anon_id the sig itself names; whether that is the caller's is hb.session_owned's business.
 --   unsigned       no sig (an offline-MVP file, a hand-written one)
---   malformed      not an object, a sig that is not the closed object of the schema, too large, too deep, or a
---                  value that cannot be canonicalised
+--   malformed      not an object, a sig that is not the closed object of the schema, a body over the limits of
+--                  hb.session_within_limits, or one that cannot be canonicalised (too deep, a number no double holds)
 --   unknown_key    the sig's kid has no usable key (never issued here, or retired)
 --   bad_signature  the session or its anon_id differ from what was signed, or the MAC is not the server's
+-- It does not raise on any session. It does raise when the signer cannot do its job (a fault of the deployment, not
+-- of the file; see the head of this file): the caller sees an error, not a verdict that blames the person's file.
 -- The two MACs are compared through their SHA-256 digests, so the time the comparison takes says nothing about how
 -- many leading characters of a guess were right.
 create function hb.session_verdict(p_session jsonb)
@@ -309,6 +361,7 @@ set search_path = ''
 as $$
 declare
   v_sig jsonb;
+  v_body jsonb;
   v_expected text;
 begin
   if pg_catalog.jsonb_typeof(p_session) is distinct from 'object' then
@@ -321,12 +374,13 @@ begin
   if not hb.valid_session_sig(v_sig) then
     return 'malformed';
   end if;
-  if pg_catalog.octet_length(p_session::text) > hb.cfg_int('sig.max_session_bytes', 262144) then
+  if not hb.session_within_limits(p_session::text) then
     return 'malformed';
   end if;
+  v_body := p_session - 'sig';
   begin
-    v_expected := hb.session_mac(v_sig ->> 'kid', v_sig ->> 'anon_id', p_session - 'sig');
-  exception when others then
+    v_expected := hb.session_mac(v_sig ->> 'kid', v_sig ->> 'anon_id', v_body);
+  exception when sqlstate 'PT400' then
     return 'malformed';
   end;
   if v_expected is null then
@@ -366,8 +420,9 @@ $$;
 
 -- Does this save hold a session the server issued to p_anon_id and signed for it? start_session adopts the
 -- anon_id of a save, and delete_my_data deletes, on it. Merged files are fine: it asks only about the one id named,
--- whatever else the file holds. Only the first verify.max_sessions sessions of the file are looked at, so a file
--- padded with thousands of entries cannot make the server verify thousands of MACs.
+-- whatever else the file holds. Only the first verify.max_sessions sessions of the file are looked at, and a file
+-- whose sessions add up to more than verify.max_work units proves nothing (hb.save_work_ok), so a file padded with
+-- thousands of entries, or with entries that are expensive to canonicalise, cannot keep the server busy.
 create or replace function hb.save_proves_anon(p_save jsonb, p_anon_id text)
 returns boolean
 language sql stable
@@ -375,6 +430,7 @@ set search_path = ''
 as $$
   select p_anon_id is not null
      and pg_catalog.jsonb_typeof(p_save -> 'sessions') = 'array'
+     and hb.save_work_ok(p_save)
      and exists (
        select 1
          from pg_catalog.jsonb_array_elements(p_save -> 'sessions') with ordinality e (value, ord)
@@ -383,10 +439,11 @@ as $$
 $$;
 
 -- The finished session as `finish` hands it over: hb.session_object plus its sig. Without a usable key for
--- sig.current_kid (none created, a short one, a value that cannot be canonicalised, a session over
--- sig.max_session_bytes) the session comes unsigned,
--- which is "unverified" everywhere, rather than a finish that fails and loses the person's results. An unfinished
--- session is never signed.
+-- sig.current_kid (none created, a short one), or for a session that hb.session_verdict would call "malformed" (over
+-- the limits, no canonical form: a MAC nobody can verify is of no use to the person), the session comes unsigned,
+-- which is "unverified" everywhere, rather than a finish that fails and loses the person's results. So does a fault of
+-- the signer (a revoked grant, a missing function), but that one writes a WARNING with its SQLSTATE to the log, for
+-- the operator to find (hb.signing_check() reproduces it). An unfinished session is never signed.
 create function hb.session_signed(p_session_id text)
 returns jsonb
 language plpgsql stable
@@ -402,20 +459,48 @@ begin
   if not found or s.finished_at is null or v_kid is null then
     return v_obj;
   end if;
-  -- what hb.session_verdict would call "malformed" is not signed either: a MAC nobody can verify is no use to the person
-  if pg_catalog.octet_length(v_obj::text) > hb.cfg_int('sig.max_session_bytes', 262144) then
+  -- measured as it will be sent: the sig has a fixed shape, its MAC is 43 characters of base64url
+  if not hb.session_within_limits((v_obj || pg_catalog.jsonb_build_object('sig', pg_catalog.jsonb_build_object(
+       'alg', 'HMAC-SHA256', 'kid', v_kid, 'mac', pg_catalog.repeat('A', 43), 'anon_id', s.anon_id)))::text) then
     return v_obj;
   end if;
   begin
     v_mac := hb.session_mac(v_kid, s.anon_id, v_obj);
-  exception when others then
-    v_mac := null;
+  exception
+    when sqlstate 'PT400' then
+      v_mac := null; -- no canonical form
+    when others then
+      raise warning 'hb: signing a session failed (SQLSTATE %: %); finish returned it unsigned. Run select hb.signing_check() to see the fault.', sqlstate, sqlerrm;
+      v_mac := null;
   end;
   if v_mac is null then
     return v_obj;
   end if;
   return v_obj || pg_catalog.jsonb_build_object('sig',
     pg_catalog.jsonb_build_object('alg', 'HMAC-SHA256', 'kid', v_kid, 'mac', v_mac, 'anon_id', s.anon_id));
+end
+$$;
+
+-- Can the server sign now? For the operator, in the SQL editor, after creating the key and whenever something
+-- about the Vault or its grants may have changed. {"ok": true, "kid": ...} when the key of sig.current_kid signs;
+-- {"ok": false, "reason": ...} when it cannot be used (no current kid, no secret under that kid, a secret
+-- shorter than 32 characters). It RAISES when the signer itself fails: that is the fault `finish` and the proofs
+-- would otherwise only log. It never returns a key or a MAC.
+create function hb.signing_check()
+returns jsonb
+language plpgsql stable
+set search_path = ''
+as $$
+declare
+  v_kid text := hb.cfg_text('sig.current_kid', null);
+begin
+  if v_kid is null then
+    return pg_catalog.jsonb_build_object('ok', false, 'reason', 'no_current_kid');
+  end if;
+  if hb.session_mac(v_kid, 'hb_0000000000000000', '{}'::jsonb) is null then
+    return pg_catalog.jsonb_build_object('ok', false, 'kid', v_kid, 'reason', 'no_usable_key');
+  end if;
+  return pg_catalog.jsonb_build_object('ok', true, 'kid', v_kid);
 end
 $$;
 
@@ -435,6 +520,8 @@ begin
   if pg_catalog.jsonb_array_length(p_save -> 'sessions') > hb.cfg_int('verify.max_sessions', 200) then
     perform hb.fail(413, 'too_many_sessions', 'At most ' || hb.cfg_int('verify.max_sessions', 200) || ' sessions per call.');
   end if;
+  -- Before the count, so that no call runs for long enough to be cancelled (a cancelled call rolls its count back)
+  perform hb.check_save_work(p_save);
   perform hb.rate_hit('verify_save', hb.ip_key('verify_save'), hb.cfg_int('rate.verifies_per_day', 60));
 
   select coalesce(pg_catalog.jsonb_agg(

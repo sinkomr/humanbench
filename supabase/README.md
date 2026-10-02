@@ -243,7 +243,7 @@ Everything below is written from Supabase's documented defaults, not exported fr
 | `extensions` schema | Owned by `postgres`; `pgcrypto` installed there, so migrations call `extensions.hmac(...)` |
 | Default grants in `public` | Everything `postgres` creates is granted to anon, authenticated and service_role until the migration revokes it, and functions keep PostgreSQL's EXECUTE for PUBLIC. A forgetful migration leaks here as it would there (`20-privileges.sql`, tested with a leaky fixture). |
 | `auth` | `auth.jwt()`, `uid()`, `role()`, `email()`, reading `request.jwt.claims` |
-| Vault | `vault.secrets`, `vault.decrypted_secrets`, `create_secret()`, `update_secret()`; usable only by `postgres` and roles it grants. The secret is stored encrypted with a **public constant key of the shim**, which is not a secret. |
+| Vault | `vault.secrets`, `vault.decrypted_secrets`, `create_secret()`, `update_secret()`; usable only by `postgres` and roles it grants. As on Supabase, the view decrypts through `vault._crypto_aead_det_decrypt()`, whose EXECUTE is `postgres`'s alone and is checked against the role that runs the query: a role granted `select` on the view and nothing else is refused (`42501 permission denied for function _crypto_aead_det_decrypt`), so only `postgres`, or a SECURITY DEFINER function it owns, reads a secret. The secret is stored encrypted with a **public constant key of the shim**, which is not a secret. |
 | Signing key | `50-signing-key.sql` creates the Vault secret `save_hmac.k2026a` from 32 random bytes **when the database is created**: it is written to no file, and dies with the cluster. A project gets its own at M2.6 (see M2.3 below); without one a database signs nothing. Tests that need the unsigned path, a second key or a retired one change the secrets of their own clone. |
 | Stricter than Supabase | A migration whose `GRANT` or `REVOKE` Postgres reports as not applied (it only warns, e.g. no grant option) fails the harness: such a revoke would silently leave an object exposed. |
 
@@ -272,9 +272,12 @@ Each is covered by a test in `web/scripts/db/*.db.test.ts`.
    write `extensions.hmac(...)`.
 3. Creating a role does not make the creator a member of it. To give a function to a restricted
    owner: `grant that_role to postgres;`, a temporary `grant create on schema public to that_role;`,
-   `alter function … owner to that_role;`, `revoke create …`. The owner then needs
-   `usage on schema extensions`, `usage on schema vault` and `select on vault.decrypted_secrets`,
-   each separately. See the "M2.3 pattern" test in `shim.db.test.ts`.
+   `alter function … owner to that_role;`, `revoke create …`. A function that reads the Vault must **not** be given to
+   a role of its own, though: the owner would need `usage on schema extensions`, `usage on schema vault`,
+   `select on vault.decrypted_secrets` *and* `execute` on the Vault's decrypting function, which the view calls on behalf
+   of whoever queries it and which only `postgres` holds. (The first version of M2.3 had such a role, `hb_signer`,
+   and a shim that let it work; the review found that the real Vault would very probably refuse it, and that nothing
+   local could show it.) `hb.mac_sign` is owned by `postgres`. See the "M2.3 pattern" tests in `shim.db.test.ts`.
 4. A `GRANT` or `REVOKE` by a role without the right only warns and changes nothing (the harness
    fails the migration).
 5. `SET ROLE` is checked against the session user, `authenticator`, which belongs to all three API
@@ -312,7 +315,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.2 20261002000100_scoring_core` | the PL/pgSQL port of the scorer: `hb.map_theta`, `hb.eap_by_axis`, `hb.obs_terms`, the linear algebra, Σ_init as a setting |
 | `…M2.2 20261002000200_session_scoring` | the in-session EAP, the MAP and the §13 evidence at `finish`, `hb.is_eligible` |
 | `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
-| `…M2.3 20261003000100_save_signing` | the role `hb_signer` and `hb.mac_sign`, RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` settings |
+| `…M2.3 20261003000100_save_signing` | `hb.mac_sign` (owned by `postgres`), RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, `hb.signing_check`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` and `verify.*` settings. (The work estimate `hb.json_work` and its checks live with `hb.check_save` in `…500`.) |
 
 ### Who can do what (R-11.1, R-12.1)
 
@@ -330,10 +333,10 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
   `authenticated` only. Helpers live in schema `hb`, which no API role can use; EXECUTE is revoked from PUBLIC on every
   function by default (`alter default privileges for role hb_definer`). The one exception is `hb.no_key_fields`,
   which `service_role` needs because `items.payload`'s CHECK constraint runs as the writer.
-- One function is owned by another role: **`hb.mac_sign`**, by `hb_signer` (`nologin`, no table, no schema `create`). It alone may
-  read the Vault, and it returns a MAC, never a key; `hb_definer`, which owns every RPC, can call it and cannot read the
-  Vault (tested: `select … from vault.decrypted_secrets` as `hb_definer` is `42501`). A bug in any RPC therefore cannot return the
-  signing key. See M2.3.
+- One function is owned by another role: **`hb.mac_sign`**, by `postgres`, the migration role, which is the role the platform lets
+  read the Vault from a SECURITY DEFINER function. It alone reads the Vault, and it returns a MAC, never a key; `hb_definer`,
+  which owns every RPC, can call it and cannot read the Vault (tested: `select … from vault.decrypted_secrets` as `hb_definer`
+  is `42501`). A bug in any RPC therefore cannot return the signing key. See M2.3.
 - `service_role` (the bank pipeline, M2.5) can write the bank tables, the calibration log and `flags`, and read
   sessions, responses, exposures and surveys. It cannot touch `mirror`, the rate tables or any RPC.
 
@@ -547,9 +550,10 @@ tuple with `correct` filled; this is a deviation the owner has accepted, to be r
 ### To verify against the live project (M2.6)
 
 In addition to the list above: that `postgres` may `create role`, `grant hb_definer to postgres`, `create schema … authorization
-hb_definer` and set default privileges for `hb_definer`; that `extensions` lets `hb_definer` and `hb_signer` use pgcrypto; that `postgres` may `create role hb_signer`, grant it
-`usage` on `vault` and `select` on `vault.decrypted_secrets` (the local shim lets `postgres` pass these on; the hosted Vault may
-differ, M2.3); that
+hb_definer` and set default privileges for `hb_definer`; that `extensions` lets `hb_definer` use pgcrypto; **that `postgres` can read `vault.decrypted_secrets` inside a SECURITY DEFINER
+function it owns** (`hb.mac_sign`; the local shim applies the rule that the view calls `vault._crypto_aead_det_decrypt`
+for the querying role, from the Vault's source, and lets `postgres` alone execute it; if a hosted `postgres` cannot, no
+session is ever signed, which `select hb.signing_check();` shows at once, see M2.3); that
 **only `public` is an exposed schema** (Settings, API), so `hb` and the tables' helpers are unreachable; which request
 header carries the client address and which entry of it (`rate.ip_header`, `rate.ip_hop`; the default, -1, is the last
 entry, which a script cannot forge; if a CDN sits in front and appends its own address, the right entry is -2, or the header
@@ -704,7 +708,7 @@ with an index on `item_parameters (param_version, b)`; not built, because it wou
 ## M2.3: signed saves
 
 ROADMAP M2.3, DESIGN §8 "Tamper evidence", §13, R-8.1; ADR A16; AI.26. One migration (`20261003000100_save_signing`), the shim
-file `50-signing-key.sql`, and `signing.db.test.ts` (47 tests).
+file `50-signing-key.sql`, and `signing.db.test.ts` (65 tests).
 
 ### What is signed
 
@@ -756,14 +760,16 @@ string that reads back as the same double), and on 2,000 random I-JSON values.
 
 An unverified session is the person's own data: the client shows it, marked unverified, and keeps it in their file (M2.7). The
 server uses none of it. `verify_save` never errors on a bad session; it errors only on a bad *file* (not a `save-v1`
-object, over `save.max_bytes`, over `verify.max_sessions` = 200 sessions, a `brief_prefs` key) and on the rate limit
-(`rate.verifies_per_day` = 60 per hashed client address). The two MACs are compared through their SHA-256, so the time of the
-comparison tells nothing about how much of a guess was right.
+object, over `save.max_bytes`, over `verify.max_sessions` = 200 sessions, a `brief_prefs` key, or sessions that add up to more
+than `verify.max_work` = 100,000 units of work: `413 save_too_complex`, see Limits and costs), on the rate limit
+(`rate.verifies_per_day` = 60 per hashed client address), and when the signer itself is broken (see the key, below): that is an
+error of the deployment, never a verdict that blames the person's file. The two MACs are compared through their SHA-256, so the
+time of the comparison tells nothing about how much of a guess was right.
 
 What *needs* a verified session: `hb.session_owned(session, anon_id)` is true only if the sig names that `anon_id`, the server
 holds the session finished and issued to it, **and** the MAC verifies. `rescore` (known sessions), `delete_my_data` (the save
 proof) and `start_session` (continuing an `anon_id`) all go through it. `rescore` decides it once per session id before the
-big statement (the MAC is the costly part: canonicalising one session of 200 answers takes about 3 ms, and `verify_save` of 40 of them about 0.4 s here, most of it the `brief_prefs` walk and size check of the whole file that every RPC with a save makes).
+big statement (the MAC is the costly part: canonicalising one session of 200 answers takes about 5 ms, see Limits and costs).
 
 ### The key, and rotating it
 
@@ -791,35 +797,81 @@ New sessions are signed under `k2027a`; sessions signed under `k2026a` keep veri
 still holds the session's token (24 hours after finishing) gets it re-signed by calling `finish` again. After that the session is
 only the person's own data, which is what a retired key is for. Nothing re-signs a file on request, by design (see above).
 
-With no usable key for `sig.current_kid` the server signs nothing and `finish` still returns the session (a `finish` that fails
-would lose a person's results), so every file reads `unverified: unsigned`. **After creating the key, finish a test session and look
-for the `sig`.**
+With no usable key for `sig.current_kid` (no secret under that kid, one shorter than 32 characters, no kid set) the server signs
+nothing and `finish` still returns the session (a `finish` that fails would lose a person's results), so every file reads
+`unverified: unsigned`. That is the *ordinary* no-key case. A **fault** of the signer is another thing: the Vault's grants
+changed, a function is missing, a hosted `postgres` is not allowed to read the view. `hb.mac_sign` then raises; `verify_save` and
+the proofs (`rescore`, `delete_my_data`, `start_session`) pass the error on instead of calling a signed session "malformed"; and `finish`
+returns the results unsigned and writes a **`WARNING` to the Postgres log**
+(`hb: signing a session failed (SQLSTATE 42501: permission denied for view decrypted_secrets); finish returned it unsigned`), because
+nothing the person sent is wrong and their results matter more than their signature. Nothing else would show a fault like that (every file
+would just read "unsigned"), so there is a check to run:
+
+```sql
+select hb.signing_check();
+```
+
+It answers `{"ok": true, "kid": "k2026a"}` when the current key signs, `{"ok": false, "reason": "no_current_kid"}` or
+`{"ok": false, "kid": …, "reason": "no_usable_key"}` when there is none, and **raises** on a fault. It signs one fixed message and
+shows no key and no MAC. Run it after creating the key (M2.6), after any change to the Vault, its grants or `sig.current_kid`, and now and
+then; and finish a test session and look for the `sig`.
 
 ### Who can read the key
 
-Only `hb.mac_sign`, owned by the role **`hb_signer`**: `nologin`, `select` on `vault.decrypted_secrets` and `usage` on `extensions`
-and `vault`, nothing else; no table, no `create` on `hb` or `public` (it gets `create` on `hb` for the migration and loses it
-again). `hb_definer` cannot read the Vault; it can call `hb.mac_sign(kid, message)`, which returns the MAC, never the key.
-`anon`, `authenticated` and `service_role` cannot call it. The tests check each of these from the catalog and by trying (as the
-role), and that the key text is in no RPC reply, no row of any table and no function body. (The shim's own encryption key is a
-public constant; see the Vault row of the table above.)
+Only `hb.mac_sign`, owned by `postgres` (the migration role): a SECURITY DEFINER function with an empty `search_path`, EXECUTE for
+`hb_definer` alone, which returns a MAC and never the key. `hb_definer` cannot read the Vault. `anon`, `authenticated` and
+`service_role` cannot call it. The tests check each of these from the catalog and by trying (as the role), and that the key text is in
+no RPC reply, no row of any table and no function body. (The shim's own encryption key is a public constant; see the Vault row of the
+table above.)
+
+Why `postgres`, and not a role of its own: the first version of this migration gave the signer a role, `hb_signer`, with `select`
+on `vault.decrypted_secrets` and nothing else, and a shim that let that work. The real view decrypts through
+`vault._crypto_aead_det_decrypt`, a function that `REVOKE ALL … FROM PUBLIC` leaves to the platform's roles and whose EXECUTE
+PostgreSQL checks against the role that runs the query, so such a role is refused on a hosted project, almost certainly: no session
+would be signed, and `finish` would not say so. The shim now applies that rule (`40-vault.sql`; two tests hold a role with `select`
+on the view alone to a `42501`), and the signer is owned by the role the platform documents for reading the Vault from a
+SECURITY DEFINER function. Whether the hosted `postgres` really can is the first thing to check at M2.6 (`hb.signing_check()`).
 
 ### Limits and costs
 
-`hb.jcs` is a recursive PL/pgSQL function over `jsonb`; scalars are handled in the same statement that aggregates their
-container, so the cost is the number of containers, not of leaves. Nesting beyond 24 levels raises (`400 too_deep`) and every
-caller that can meet client data catches it. A real session is 10 to 60 KB; one over `sig.max_session_bytes` is `malformed`
-before any canonicalisation. An upload costs the canonicalisation only for sessions that the server holds and that name the
-caller's `anon_id`; for `verify_save`, which has no such precondition, `verify.max_sessions` and the rate limit bound it. The
-questions "whose file is this" (`start_session`, `delete_my_data`) look at the first `verify.max_sessions` sessions of a file only, so
-a file padded with thousands of entries cannot make the server verify thousands of MACs. The server signs only what it would
-accept: a session over `sig.max_session_bytes` comes back unsigned from `finish`, and so does one holding an answer that has no
-canonical form (nested beyond 24 levels, a number no double holds); the session and the person's results are returned either way.
+`hb.jcs` is a recursive PL/pgSQL function over `jsonb`. What it costs, measured on a laptop with Postgres 17: a plain integer or a
+decimal of up to 15 digits (every number a real session holds) about 1.5 to 3 µs, copied as the database prints it; an array or an
+object 4 to 7 µs (a sub-select each), with an object key the sort of the keys, kept cheap for keys below U+10000 by sorting with
+`COLLATE "C"`; a decimal of 16 or 17 digits about 7 µs; an integer of 1e16 or more 12 to 19 µs, the dearest, because the shortest
+decimal that reads back as the same double is searched for (`hb.jcs_number`, which tries only the candidates that can be an edge of
+the double's interval). A session of 200 answers is about 5 ms. (The first version of this section said that the cost was the number of
+containers and not of leaves. That was wrong for numbers: it had 26 µs for an integer of 1e16, a subtransaction per candidate, and
+objects with a key at 50 µs.)
+
+**Why a work budget.** A call that runs into the anon `statement_timeout` (3 s) is cancelled, and the rate-limit count it made is rolled
+back with it. A file that kept the server busy for 3 s would cost the caller nothing, once, again, and without limit (found by the
+review of M2.3 with 11,000 integers of 17 digits in each of 7 sessions, and with objects: 3 s per call, never counted). So the work
+is estimated from the text before any is done: `hb.json_work` counts a unit for every `[`, `{`, `,` and object key and ten for every
+integer of 17 digits or more (characters inside strings count too, so the estimate is never low). It takes 50 ms per megabyte, a real session
+of 200 answers is about 1,500 units, and the dearest shapes cost 1 to 4 µs a unit.
+
+- A **file** whose sessions add up to more than `verify.max_work` (100,000 units: about 65 sessions of 200 answers; `rescore`
+  takes 40) is `413 save_too_complex` from `verify_save` and `rescore`, before the rate-limit count and before any MAC; for `start_session`
+  and `delete_my_data` it proves nothing (a new `anon_id` is issued; the recovery phrase still deletes). A person with more sessions
+  than that verifies them in batches.
+- A **session** over `verify.max_work` units, over `sig.max_session_bytes` (256 KB; a real one is 10 to 60 KB), or nested beyond 24
+  levels is `malformed` and costs no canonicalisation; `finish` does not sign it (the person's results are returned either way). Both
+  limits are measured on the session as it is sent, sig included, so a session that was signed always verifies alone, at the limit to the unit.
+- So one call costs at most: the `brief_prefs` walk of `check_save` (about 1 s for a 2 MB file of tiny arrays, before the count
+  but bounded by `save.max_bytes`), the estimate (0.1 s), and 100,000 units (0.4 s). The tests build files of 60,000 to 80,000 units
+  from each of the dearest shapes (objects with a key, arrays in arrays, integers of 17 digits, 17-digit decimals filling six 250 KB
+  sessions) and require that the call finishes, and is counted.
+
+An upload costs the canonicalisation only for sessions that the server holds and that name the caller's `anon_id`; for `verify_save`,
+which has no such precondition, `verify.max_sessions`, the work budget and the rate limit bound it. The questions "whose file is this"
+(`start_session`, `delete_my_data`) look at the first `verify.max_sessions` sessions of a file only. The server signs only what it
+would accept: a session over a limit comes back unsigned from `finish`, and so does one holding an answer that has no canonical form
+(nested beyond 24 levels, a number no double holds); the session and the person's results are returned either way.
 
 ## M2.4: the acceptance tests
 
 ROADMAP M2.4; DESIGN §14.3 "M2 Backend" acceptance (1), (2), (4) and §11.2; R-11.1, R-12.1; A16, AI.26. One file,
-`acceptance.db.test.ts` (24 tests, about 17 s), a block per line of the task. (3) of the DESIGN (p95 RPC latency under 300 ms)
+`acceptance.db.test.ts` (26 tests, about 17 s), a block per line of the task. (3) of the DESIGN (p95 RPC latency under 300 ms)
 is a measurement on the live project: M2.6.
 
 | Line of the task | Tests |
@@ -828,7 +880,7 @@ is a measurement on the live project: M2.6.
 | `anon` can EXECUTE only the whitelisted RPCs | the exact list of eleven, with their argument lists, for `anon` and `authenticated`; none for `service_role`; nothing for PUBLIC in `public` or `hb`; no overloads and no extension member in `public`; no `usage` on `hb` or `vault` for any API role, and a call to `hb.mac_sign`, `hb.session_signed`, `hb.cfg` or `vault.create_secret` is `42501`; every RPC is `SECURITY DEFINER`, owned by `hb_definer`, `search_path = ''`; and every one of the eleven can actually be called as `anon` |
 | no payload contains `key` (fuzz, 1,000 items) | 1,000 items with random render payloads (nested objects, the words *key*, *answer*, *correct* as text) and a canary in every column of `item_keys`: all 1,000 through `hb.item_view`, and 400 served through the API (answered right, wrong and with rubbish) with `finish`, `rescore`, `verify_save` and `mirror_put`: no property of any reply is named for a key, an answer, a tolerance, a rationale or a verdict, no canary text, `correct` is `null`; and 1,000 random payloads, half with a key-like field planted at a random depth in a random letter case, are refused by `items.payload`'s CHECK (`23514`) or accepted when clean |
 | tampered save → unverified | a session finished through the API is `verified`; 14 kinds of edit (an answer, a time, an item id, a dropped or reordered response, the duration, the start, the device, a flag, the session id, the MAC, the `anon_id`, the `kid`) are each `unverified`; the file around the session is not covered; a tampered save is not scored, does not delete and does not continue an `anon_id`; an offline file is `unsigned`. The mechanism, with 400 random edits, is `signing.db.test.ts` |
-| rate limits | the 6th `start_session` of an address in a day is `429 rate_limited`, another address is not; counts are keyed by a hash of the address and the day's salt, no address is in any table, the same address is a different hash the next day, and counts and salts are gone after 48 hours; a session of 200 items ends with `done: item_limit` and the 201st cannot be answered; an average under 2 s an item by the server's clock is `429 too_fast` at the 10th answer, a 3 s person is not stopped |
+| rate limits | the 6th `start_session` of an address in a day is `429 rate_limited`, another address is not; counts are keyed by a hash of the address and the day's salt, no address is in any table, the same address is a different hash the next day, and counts and salts are gone after 48 hours; a session of 200 items ends with `done: item_limit` and the 201st cannot be answered; an average under 2 s an item by the server's clock is `429 too_fast` at the 10th answer, a 3 s person is not stopped; the line itself is tested at 1.8 s (stopped) and 2.2 s (not), and as an average (nine answers of 1 s and a tenth of 9.5 s are stopped, of 11.5 s are not); the counts and salts of today and yesterday are kept by the purge and the day before that is gone |
 | AI.26: no `brief_prefs` | 1,000 random saves (sessions, answers of random JSON, seen lists, a posterior cache, extras), half with the key planted in a random object under a random letter case, through `verify_save`, `rescore`, `delete_my_data`, `mirror_put` and `start_session`: every call with the key is `400 brief_prefs_not_accepted`, every call without it succeeds (2,500 calls each way), and afterwards no reply and no row of any table (500 mirrored blobs among them) holds the key, as a key at any depth or as text. Crafted payloads (a unicode-escaped name, capitals, 20 levels deep, inside arrays, a session, a device, a response element) are rejected by all five, and so are a device, an answer and a flags report |
 
 ## Secrets

@@ -107,6 +107,8 @@ begin
   if pg_catalog.jsonb_array_length(p_save -> 'sessions') > hb.cfg_int('rescore.max_sessions', 40) then
     perform hb.fail(413, 'too_many_sessions', 'At most ' || hb.cfg_int('rescore.max_sessions', 40) || ' sessions per call.');
   end if;
+  -- Before the count, so that no call runs for long enough to be cancelled (a cancelled call rolls its count back)
+  perform hb.check_save_work(p_save);
   perform hb.rate_hit('rescore', hb.ip_key('rescore'), hb.cfg_int('rate.rescores_per_day', 20));
   -- Per anon_id too, so that changing the address between calls does not reset the count. Only a call
   -- that holds a session of this anon_id is counted: the id alone is in every copy of the person's
