@@ -183,7 +183,7 @@ UI
 - [~] **M5.1** — Fermi items (≥ 2 sources, uncertainty in dex, down-weighting above 0.15 dex, reject above 0.3), the magnitude + unit entry UI, 80% intervals, server-side Brier. *(library, Python/TS scoring parity, entry UI and dev fixtures are done; server-side Brier waits on M2)*
 
 ## M6 — Tier (c) (v2)
-- [~] **M6.1** — appraisal vignettes + rule engine (100% rule-key agreement; AI-vs-theory ≥ 85% or reject), R-5.6.2 label and tooltip. *(built on branch `wf8/m61`, not yet merged)*
+- [x] **M6.1** — appraisal vignettes + rule engine (100% rule-key agreement; AI-vs-theory ≥ 85% or reject), R-5.6.2 label and tooltip. *(merged 2026-10-03: 60 vignettes, the rule engine, the panel gate and the UI. 5 vignettes whose text changed need a panel re-run)*
 - [ ] **M6.2** — SJT + key blending (§5.2), circularity guard, F6 check (expert ratings need the user or recruited raters).
 - [ ] **M6.3** — RAT with a compound check (corpus licensing is the user's call) and spelling variants.
 - [ ] **M6.4** — AUT with in-browser MiniLM, the "don't type personal info" warning, opt-in Ocsai consent, hatch rendering.

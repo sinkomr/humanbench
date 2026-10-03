@@ -30,34 +30,18 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: wf9** (`wf_2839ddf7-e8e`). No time limit; it runs until done or the weekly usage limit is reached. Steps:
-  - merge `wf8/m35b` and `wf8/m61`;
-  - on `wf9/panel`: a verbatim G4 panel re-run of all 18 M3.5 batches. Solvers write their raw files themselves, and code (`hb panel verdict`) computes the verdicts;
-  - on `wf9/repair`: finish the parked repair and the minor audit items;
-  - final merge, then audit.
-
-  ADR A24-sec, accepting both leaks, is already committed. Resume ticks run at :41.
-- **If interrupted:** check `git branch --list 'wf9/*' 'wf8/*'`. The raw panel files live under `panels/m35-r3/` in `wt/panel`.
-
-- **wf7 done; merged and pushed 2026-10-02** (stopped at 20:36 during its final repair pass).
-  - Merged:
-    - AI.7: the file's notes settings win on load.
-    - AI.2: RC/VOC carry no topic tags.
-    - M3.3: the three-model Claude G4 panel.
-    - All of M2: M2.0 with a harness that needs no host shared memory, M2.1 with the rescore fix, M2.2, M2.3/M2.4, M2.5 and M2.7, all local.
-    - M3.5: 972 draft items.
-  - Gates: pub 4,144 unit tests, 544 DB tests and 1,888 e2e; bank 4,890 tests.
-  - The unfinished pub repair is parked, unverified, on `wip/wf7-repair-pub`.
-- **Open audit findings (next tasks):**
-  - **HIGH (M2.1/M2.2):** the next item served by `submit`/`next_item` reveals whether the previous answer was right (adaptive difficulty), so a script can harvest keys. A mitigation is needed: delayed θ updates, randomisation, or not serving finite-bank items adaptively per response.
-  - **MEDIUM (rescore):** a caller who knows 4 answers can infer the 5th.
-  - **MEDIUM (M3.5):** the G4 records look normalised by the recorder agent, so the panel's independence can't be reproduced. Re-run the panel with raw solver outputs stored verbatim before any item moves past draft.
-  - **Low:**
-    - an M2.7 flaky timing test;
-    - LR solution text refers to pre-shuffle option positions;
-    - 2 UK items lack a region tag;
-    - `toUploadPayload` must handle U+0000.
-- **wf8 done, not merged:** `wf8/m35b` (bank: 119 Fermi items) and `wf8/m61` (both repos: M6.1 emotion vignettes, rule engine and UI). Both are committed and green in their worktrees; run the gates, then merge.
+- **wf9 done** (2026-10-03 02:30). Merged and pushed:
+  - wf8, with 119 Fermi drafts and M6.1.
+  - ADR A24-sec.
+  - The repairs: U+0000 and lone-surrogate cleaning, server-side seen lists, a load-robust test, and the LR and UK-tag fixes.
+  - The verbatim panel harness (`hb panel verdict/apply`).
+- **Panel re-run result:** 2,917 of 2,919 raw answers name the key and call the item unambiguous. But G4 counts only 7 passes, because the M3.3 implementation requires a verbatim quote as evidence, and the wf9 solver prompt never asked for one; that was the orchestrator's fault. 965 items are `not_run` and 0 are hard (LR-b1-053 was rewritten). All 70 keys hand-checked by the audit are correct.
+  - **Next:** either drop the quote requirement (the owner's A6 rule doesn't require it) and recompute by code, or re-run the panel with a quote instruction.
+- **Leftovers:**
+  - The `wip/wf7-repair-pub` branch is kept (its work was redone on dev).
+  - A13 needs an owner amendment to allow the R-5.6.2 EMO tooltip.
+  - The Fermi README has 2 stale notes.
+  - Agent logs and a keyless packet remain in `~/code/wt/` (outside both repos).
 
 ## Needs you (blocked on the user)
 
