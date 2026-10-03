@@ -67,7 +67,8 @@ describe('prepareBinaries: which binaries run', () => {
     expect(() => prepareBinaries({ platform: 'linux', shm: 'shim' })).toThrow(/macOS/)
   })
 
-  it('on macOS falls back to the host\'s shared memory, with a note and a warning, if the shim cannot be built; `shim` fails instead', () => {
+  // Building the shim needs the macOS toolchain; elsewhere it fails before the directory check.
+  it.skipIf(process.platform !== 'darwin')('on macOS falls back to the host\'s shared memory, with a note and a warning, if the shim cannot be built; `shim` fails instead', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     // A cache "directory" below a regular file can never be created.
     const file = join(scratch, 'a-file')
