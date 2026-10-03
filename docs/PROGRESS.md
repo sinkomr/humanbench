@@ -30,6 +30,15 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
+- **In flight: wf10** (started 2026-10-03 16:20; the 11-hour window ends at 03:20 on 2026-10-04). Four lead-run workstreams, each an Opus lead with its own team, on branches `wf10/<name>` in `wt/wf10-<name>`:
+  - `g6`: the G6 three-model sensitivity pass over all of about 1,150 items.
+  - `banks`: the LG pool, a Fermi G4 rule and panel, the M6.1 and LR re-panel, and batches 4–6 for six axes.
+  - `ux`: a persona-based product review, plus fixes.
+  - `m6`: SJT, AUT and RAT engines (filler).
+
+  Also running: `fix/rt-ts-guard`, the Safari event-timestamp guard, kept minimal. The final merge happens once all are done. Ticks run at :23.
+- **If interrupted:** for each `wf10/*` branch whose integrator committed green work, merge it into `dev` after the gates pass.
+
 - **wf9 done** (2026-10-03 02:30). Merged and pushed:
   - wf8, with 119 Fermi drafts and M6.1.
   - ADR A24-sec.
