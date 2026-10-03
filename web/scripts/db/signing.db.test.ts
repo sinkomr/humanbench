@@ -1041,8 +1041,14 @@ describe('the work one call can cause is bounded (the anon timeout is 3 s, and a
     await ctx.owner.query(`update public.app_config set value = '1' where key = 'rate.verifies_per_day'`)
     try {
       // with a statement_timeout of 3 s this would reject with 57014, and the count would be rolled back with it
+      const t0 = performance.now()
       const out = await verify(ctx, save, ip)
+      const ms = performance.now() - t0
       expect(out.sessions.map((x) => x.reason)).toEqual(Array.from({ length: n }, () => 'bad_signature'))
+      // Headroom: the worst shapes take 0.2 to 0.6 s on a laptop (they took 0.9 to 1.6 s before the M2.3 performance fix, and
+      // ran into the timeout on a CI runner). A call that needs more than two thirds of the anon timeout, which is 3 s, is
+      // a regression even where it still finishes, and a slow runner has the room to run it.
+      expect(ms, `${_label}: ${Math.round(ms)} ms`).toBeLessThan(2000)
       expect(pgCode(await verify(ctx, emptySave(good.anonId), ip).catch((e: unknown) => e))).toBe('PT429')
     } finally {
       await ctx.owner.query(`update public.app_config set value = '60' where key = 'rate.verifies_per_day'`)

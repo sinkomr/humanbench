@@ -86,3 +86,4 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
   - The audit found 8 issues; the repair fixed all 7 actionable ones: the M1.4b parity framing, the M4.5 metric (A19), the §9.3 fuzz, a WebKit ResizeObserver error, focus at the end of blocks, the G7 export format, and the random lint in render/ and viz/.
   - Gates: pub 1,927 unit tests plus 168 e2e; bank about 2,260 tests.
 
+- 2026-10-03: **fix/jcs-perf** (M2.3 performance): the worst-case saves of the work budget timed out (3 s) on the CI runner. `hb.jcs` is now one set-based walk with a decimal fast path, and `verify_save` asks for each session's verdict once, not three times (migration `20261006000100_jcs_fast`). The worst shapes went from 0.9 to 1.6 s to 0.2 to 0.7 s on a laptop; the test asserts under 2 s. Limits unchanged. Gates: check, test, build, test:db green.

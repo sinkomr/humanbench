@@ -181,9 +181,9 @@ describe('functions', () => {
     for (const f of rows) {
       const id = `${f.schema}.${f.name}`
       // the one function that reads the Vault is owned by the migration role, the one the platform lets read it (M2.3);
-      // the number printer pins float output
+      // the number printer and the canonicaliser pin float output
       expect(f.owner, id).toBe(id === 'hb.mac_sign' ? 'postgres' : 'hb_definer')
-      expect([...(f.config ?? [])].sort(), id).toEqual(id === 'hb.jcs_number' ? ['extra_float_digits=1', 'search_path=""'] : ['search_path=""'])
+      expect([...(f.config ?? [])].sort(), id).toEqual(id === 'hb.jcs_number' || id === 'hb.jcs' ? ['extra_float_digits=1', 'search_path=""'] : ['search_path=""'])
       expect(f.definer, id).toBe(f.schema === 'public' || id === 'hb.no_key_fields' || id === 'hb.mac_sign')
       expect(f.kind, id).toBe('f')
     }
