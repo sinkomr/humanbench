@@ -52,6 +52,7 @@ describe('migrations: the set', () => {
       '20261003000100_save_signing.sql',
       '20261004000100_response_archive.sql',
       '20261005000100_server_seen_lists.sql',
+      '20261006000100_jcs_fast.sql',
     ])
   })
 

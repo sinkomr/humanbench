@@ -315,6 +315,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.2 20261002000200_session_scoring` | the in-session EAP, the MAP and the §13 evidence at `finish`, `hb.is_eligible` |
 | `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
 | `…M2.2 20261005000100_server_seen_lists` | `hb.save_proved_anons`, `hb.seen_for_session` and `start_session` re-created: the seen lists of a session are the server's own rows plus the procedural families a save names (post-merge audit fix, below) |
+| `…M2.3 20261006000100_jcs_fast` | `hb.jcs` re-created as one set-based walk (no call per node), a fast path for decimals in `hb.jcs`, and `verify_save` re-created so that it asks `hb.session_verdict` once per session instead of three times (performance fix, see Limits and costs). Same output, signature, owner and grants |
 | `…M2.3 20261003000100_save_signing` | `hb.mac_sign` (owned by `postgres`), RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, `hb.signing_check`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` and `verify.*` settings. (The work estimate `hb.json_work` and its checks live with `hb.check_save` in `…500`.) |
 
 ### Who can do what (R-11.1, R-12.1)
@@ -976,6 +977,19 @@ on the view alone to a `42501`), and the signer is owned by the role the platfor
 SECURITY DEFINER function. Whether the hosted `postgres` really can is the first thing to check at M2.6 (`hb.signing_check()`).
 
 ### Limits and costs
+
+**Performance fix (`20261006000100_jcs_fast`).** On the CI runner (ubuntu, 4 vCPU) the worst-case saves below ran into the 3 s anon
+timeout (57014), and on a laptop they took 0.9 to 1.6 s. Two causes. (1) `hb.jcs` called itself, with a sub-select, a `string_agg` and a
+regex, for every array and object; it is now one recursive query that lists the nodes (each container's children ranked in the RFC 8785
+key order), one sort by the path of ranks, and one `string_agg` over the tokens; a decimal that `float8` prints without an exponent (a
+16 or 17 digit decimal) skips `hb.jcs_number`, because those digits are already the shortest round trip and are laid out as ECMAScript
+lays them out. (2) `verify_save` evaluated `hb.session_verdict` three times per session (a STABLE function in a sub-select the outer
+select reads three times, which the planner pulls up); `offset 0` makes it once. Result, `verify_save` of the worst shapes, in the
+test, on a laptop: 12,000 objects 0.92 s to 0.40 s, 12,000 arrays in arrays 1.28 s to 0.51 s, 3,500 integers of 17 digits 0.43 s to
+0.17 s, 66,000 decimals of 17 digits in six sessions 1.58 s to 0.66 s; the output is byte for byte the same. The tests now assert
+2 s for each (two thirds of the timeout). The limits (`verify.max_work`, depth 24, bytes) did not need lowering: a real session is
+1,500 units and 10 to 60 KB, and the budget is 100,000 units. The figures below are those of the recursive version, and about
+three times too high for a container.
 
 `hb.jcs` is a recursive PL/pgSQL function over `jsonb`. What it costs, measured on a laptop with Postgres 17: a plain integer or a
 decimal of up to 15 digits (every number a real session holds) about 1.5 to 3 µs, copied as the database prints it; an array or an
