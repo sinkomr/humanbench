@@ -30,6 +30,15 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
+- **In flight: wf9** (`wf_2839ddf7-e8e`). No time limit; it runs until done or the weekly usage limit is reached. Steps:
+  - merge `wf8/m35b` and `wf8/m61`;
+  - on `wf9/panel`: a verbatim G4 panel re-run of all 18 M3.5 batches. Solvers write their raw files themselves, and code (`hb panel verdict`) computes the verdicts;
+  - on `wf9/repair`: finish the parked repair and the minor audit items;
+  - final merge, then audit.
+
+  ADR A24-sec, accepting both leaks, is already committed. Resume ticks run at :41.
+- **If interrupted:** check `git branch --list 'wf9/*' 'wf8/*'`. The raw panel files live under `panels/m35-r3/` in `wt/panel`.
+
 - **wf7 done; merged and pushed 2026-10-02** (stopped at 20:36 during its final repair pass).
   - Merged:
     - AI.7: the file's notes settings win on load.
