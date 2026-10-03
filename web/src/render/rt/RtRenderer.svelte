@@ -18,7 +18,7 @@
   import { isOwnKey } from '../common/focus'
   import { browserTiming, type RendererProps } from '../common/props'
   import { afterFrames } from '../common/sequence'
-  import { createOnsetScheduler, combineTimestampSources, responseRtMs, responseTimestampFromEvent, type ScheduledOnset, type TimestampSource } from '../../tasks/rt/timing'
+  import { BlockTimestampPolicy, createOnsetScheduler, combineTimestampSources, responseRtMs, type ScheduledOnset, type TimestampReason, type TimestampSource } from '../../tasks/rt/timing'
   import { RT_PRACTICE_TRIALS, type RtResponse, type RtSpec } from '../../tasks/rt/types'
   import { CHOICE_KEY_LABELS, RT_EARLY_ITI_MS, RT_ITI_MS, pointerInputType, positionOfKey, responseWindowMs, type RtInputMode, type RtInputType } from './keys'
 
@@ -36,9 +36,10 @@
     /**
      * Called once at the end of the block, just before `onrespond`, with where the response
      * timestamps came from: 'event' (the input events' own timestamps), 'handler' (clock read in
-     * the handler, the fallback) or 'mixed'. Stored as the observation's `rt_timestamp_source`.
+     * the handler, the fallback) or 'mixed', and the reason when the block switched to the handler
+     * clock (the event clock is offset from performance.now(), e.g. Safari). Stored as the observation's `rt_timestamp_source`.
      */
-    readonly ontimestampsource?: (source: TimestampSource | 'mixed') => void
+    readonly ontimestampsource?: (source: TimestampSource | 'mixed', reason?: TimestampReason) => void
   }
 
   let { spec, onrespond, timing, inputMode, oninputmode, oninputtype, ontimestampsource }: Props = $props()
@@ -70,6 +71,8 @@
   const practicePointers: string[] = []
   const scoredPointers: string[] = []
   const stampSources: TimestampSource[] = []
+  // Decided after the practice trials; one source for the whole block (§11.6).
+  const clockPolicy = new BlockTimestampPolicy()
 
   let onset: ScheduledOnset | null = null
   let deadline: ScheduledOnset | null = null
@@ -117,7 +120,8 @@
   /** Record a response to the running trial; false when no trial is waiting for one. */
   function respond(position: number, event: { readonly timeStamp: number }): boolean {
     if (phase !== 'running' || trialState === 'blank' || onset === null) return false
-    const stamp = responseTimestampFromEvent(event, t.clock, onset.onsetFrameTs ?? onset.target)
+    if (stage === 'practice') clockPolicy.observe(event, t.clock)
+    const stamp = clockPolicy.stamp(event, t.clock, onset.onsetFrameTs ?? onset.target)
     if (stage === 'main') stampSources.push(stamp.source)
     const rt = responseRtMs(onset, stamp.ts)
     record(rt, spec.mode === 'simple' ? 0 : position)
@@ -162,6 +166,7 @@
       return
     }
     if (stage === 'practice') {
+      clockPolicy.decide()
       phase = 'ready'
       trialState = 'blank'
       flushSync()
@@ -174,7 +179,11 @@
     statusEl?.focus()
     oninputtype?.(inputType())
     const source = combineTimestampSources(stampSources)
-    if (source !== undefined) ontimestampsource?.(source)
+    const decision = clockPolicy.decision
+    if (source !== undefined) {
+      if (decision?.reason !== undefined && source === 'handler') ontimestampsource?.(source, decision.reason)
+      else ontimestampsource?.(source)
+    }
     onrespond({
       rt_ms: [...rts],
       choice: [...choices],

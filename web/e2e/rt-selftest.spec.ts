@@ -33,6 +33,7 @@ interface Report {
   refresh: { hz: number; raw_hz: number; snapped: boolean; n_deltas: number }
   metrics: Record<string, Metric>
   pass: boolean
+  event_lag: { max_ms: number; key_rt_source: string | null; pointer_rt_source: string | null }
 }
 
 /** Start a quick run and wait for the key-press phase (the automatic part is done). */
@@ -86,7 +87,7 @@ test.describe('RT timing self-test page (M1.23)', () => {
     await expect(page.getByRole('table')).toContainText('Stimulus onset error')
 
     const r = await readReport(page)
-    expect(r.report_version).toBe('rt_selftest_v2')
+    expect(r.report_version).toBe('rt_selftest_v3')
     expect(r).toMatchObject({ threshold_ms: 5, gate_quantile: 0.95, quick: true })
     expect(typeof r.pass).toBe('boolean')
     expect(r.refresh.n_deltas).toBeGreaterThanOrEqual(60)
@@ -103,8 +104,13 @@ test.describe('RT timing self-test page (M1.23)', () => {
     for (const k of ['raf_jitter_ms', 'timer_resolution_ms', 'onset_error_ms']) {
       expect(typeof r.metrics[k]?.pass, k).toBe('boolean')
     }
-    // Input latency is informational: RT uses the event timestamp (§11.6).
-    for (const k of ['key_latency_ms', 'pointer_latency_ms']) expect(r.metrics[k]?.pass, k).toBeNull()
+    // Input lag is informational while RT uses the event timestamp (§11.6); a p50 lag over the bound fails it.
+    expect(r.event_lag.max_ms).toBe(25)
+    for (const [k, src] of [['key_latency_ms', r.event_lag.key_rt_source], ['pointer_latency_ms', r.event_lag.pointer_rt_source]] as const) {
+      expect(src, k).toMatch(/^(event|handler)$/)
+      if (src === 'event') expect(r.metrics[k]?.pass, k).toBeNull()
+      else expect(r.metrics[k]?.pass, k).toBe(false)
+    }
     await expect(page.getByText(/^Overall:/)).toContainText(r.pass ? 'Pass' : 'Fail')
     await expect(page.getByRole('button', { name: 'Run again' })).toBeEnabled()
     // The results fit the viewport (iPhone 13 too): no sideways page scroll.

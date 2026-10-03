@@ -92,6 +92,8 @@ export interface RtDevice {
   readonly input_type?: string
   /** Where the response timestamps came from: 'event' (input event timeStamp), 'handler' (performance.now() fallback) or 'mixed' (§11.6). */
   readonly rt_timestamp_source?: string
+  /** Why the block used the handler clock ('event_clock_offset', 'event_lag_high'); absent otherwise. */
+  readonly rt_timestamp_reason?: string
   /** Refresh-rate estimate from `estimateRefreshRate` (§11.6 item 2). */
   readonly refresh_hz_est?: number
 }
@@ -120,6 +122,8 @@ export interface RtObservationMeta extends RtTrialCounts {
   readonly device_class: string
   readonly input_type?: string
   readonly rt_timestamp_source?: string
+  /** Why the block used the handler clock ('event_clock_offset', 'event_lag_high'); absent otherwise. */
+  readonly rt_timestamp_reason?: string
   readonly refresh_hz_est?: number
   /** Version of the norm table that set β, s and τ_res (`RT_NORMS_VERSION`). */
   readonly norms_version: string

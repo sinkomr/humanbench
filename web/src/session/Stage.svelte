@@ -30,7 +30,7 @@
     readonly onunavailable?: () => void
     readonly onpaste?: (itemId: string) => void
     readonly oninputtype?: (type: RtInputType) => void
-    readonly ontimestampsource?: (source: 'event' | 'handler' | 'mixed') => void
+    readonly ontimestampsource?: (source: 'event' | 'handler' | 'mixed', reason?: string) => void
   }
 
   let { family, itemId, spec, block = false, scale, timing, disabled = false, inputMode, onrespond, onshown, onunavailable, onpaste, oninputtype, ontimestampsource }: Props = $props()

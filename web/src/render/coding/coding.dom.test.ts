@@ -57,9 +57,9 @@ describe('CodingRenderer', () => {
     click(buttonByText(m.container, 'Start'))
     m.display.advance(FRAME)
     const t0 = m.display.now()
-    m.display.advance(900) // the handler runs 900 ms after the first glyph...
+    m.display.advance(650) // the handler runs 650 ms after the first glyph...
     const first = item.spec.legend.find((c) => c.symbol === item.spec.sequence[0])?.digit ?? 1
-    press(String(first), null, {}, t0 + 640) // ...for an event stamped 640 ms after it
+    press(String(first), null, {}, t0 + 640) // ...for an event stamped 640 ms after it (10 ms dispatch lag)
     m.display.advance(90_000)
     expect((m.responses[0] as CodingResponses)[0]?.t_ms).toBeCloseTo(640, 6)
   })
