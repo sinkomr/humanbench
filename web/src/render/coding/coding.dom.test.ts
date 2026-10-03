@@ -51,6 +51,19 @@ describe('CodingRenderer', () => {
     expect(cells.map((c) => c.querySelector('.hb-sr-only')?.textContent)).toEqual(item.spec.legend.map((c) => `${GLYPHS[c.symbol].name}:`))
   })
 
+  it('times a key press from the event timestamp, not from when the handler ran (§11.6)', () => {
+    const item = coding.generate('render-coding-evts')
+    const m = mountCoding(item)
+    click(buttonByText(m.container, 'Start'))
+    m.display.advance(FRAME)
+    const t0 = m.display.now()
+    m.display.advance(900) // the handler runs 900 ms after the first glyph...
+    const first = item.spec.legend.find((c) => c.symbol === item.spec.sequence[0])?.digit ?? 1
+    press(String(first), null, {}, t0 + 640) // ...for an event stamped 640 ms after it
+    m.display.advance(90_000)
+    expect((m.responses[0] as CodingResponses)[0]?.t_ms).toBeCloseTo(640, 6)
+  })
+
   it('answers glyph by glyph from the keyboard and keypad, timed from the first glyph frame, and score() counts them', () => {
     const item = coding.generate('render-coding-run')
     const m = mountCoding(item)

@@ -87,9 +87,10 @@ export function render(component: Component<any>, props: Record<string, unknown>
 }
 
 /** Press a key: a keydown on `target` (default: the focused element or body), bubbling. */
-export function press(key: string, target?: Element | null, init: KeyboardEventInit = {}): KeyboardEvent {
+export function press(key: string, target?: Element | null, init: KeyboardEventInit = {}, timeStamp = 0): KeyboardEvent {
   const el = target ?? document.activeElement ?? document.body
   const ev = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+  Object.defineProperty(ev, 'timeStamp', { value: timeStamp })
   el.dispatchEvent(ev)
   flushSync()
   return ev
@@ -106,9 +107,10 @@ export function click(el: Element | null | undefined): void {
  * A pointerdown on an element (jsdom has no PointerEvent: a MouseEvent of that type, with
  * `pointerType` set when given, e.g. 'mouse' or 'touch').
  */
-export function pointerDown(el: Element | null | undefined, pointerType?: string): void {
+export function pointerDown(el: Element | null | undefined, pointerType?: string, timeStamp = 0): void {
   if (!(el instanceof HTMLElement)) throw new Error(`pointerDown(): no element (${String(el)})`)
   const ev = new MouseEvent('pointerdown', { bubbles: true, cancelable: true })
+  Object.defineProperty(ev, 'timeStamp', { value: timeStamp })
   if (pointerType !== undefined) Object.defineProperty(ev, 'pointerType', { value: pointerType })
   el.dispatchEvent(ev)
   flushSync()

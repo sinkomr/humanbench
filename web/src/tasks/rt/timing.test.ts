@@ -17,6 +17,9 @@ import {
   reactionTimeMs,
   responseRtMs,
   responseTimestamp,
+  responseTimestampFromEvent,
+  combineTimestampSources,
+  EVENT_TS_MAX_AGE_MS,
   snapRefreshRate,
   type Clock,
   type FrameCallback,
@@ -296,5 +299,55 @@ describe('RT = response timestamp (performance.now) − onset frame timestamp', 
     src.cancel(7)
     expect(host.requestAnimationFrame).toHaveBeenCalledWith(cb)
     expect(host.cancelAnimationFrame).toHaveBeenCalledWith(7)
+  })
+})
+
+describe('responseTimestampFromEvent (§11.6)', () => {
+  const clock: Clock = { now: () => 5000 }
+  const from = (timeStamp: number, notBefore?: number) => responseTimestampFromEvent({ timeStamp }, clock, notBefore)
+
+  it('uses the event timestamp when it is on the performance.now() timeline', () => {
+    expect(from(4996.5)).toEqual({ ts: 4996.5, source: 'event' })
+    expect(from(5000)).toEqual({ ts: 5000, source: 'event' })
+    expect(from(4990, 4980)).toEqual({ ts: 4990, source: 'event' })
+  })
+
+  it('falls back to the clock for a future timestamp', () => {
+    expect(from(5000.5)).toEqual({ ts: 5000, source: 'handler' })
+    expect(from(1.7e12)).toEqual({ ts: 5000, source: 'handler' }) // epoch milliseconds
+  })
+
+  it('falls back for zero, negative, NaN, infinite and non-number timestamps', () => {
+    for (const bad of [0, -3, NaN, Infinity, -Infinity]) expect(from(bad), String(bad)).toEqual({ ts: 5000, source: 'handler' })
+    expect(responseTimestampFromEvent({ timeStamp: '4990' as unknown as number }, clock)).toEqual({ ts: 5000, source: 'handler' })
+  })
+
+  it('falls back for a timestamp before the onset minus the margin, or too far behind now()', () => {
+    const notBefore = 2300 // cut-off notBefore - margin = 1300
+    const c1400: Clock = { now: () => 1400 }
+    expect(responseTimestampFromEvent({ timeStamp: 1299 }, c1400, notBefore)).toEqual({ ts: 1400, source: 'handler' })
+    expect(responseTimestampFromEvent({ timeStamp: 1301 }, c1400, notBefore)).toEqual({ ts: 1301, source: 'event' })
+    expect(from(5000 - EVENT_TS_MAX_AGE_MS - 1)).toEqual({ ts: 5000, source: 'handler' })
+    expect(from(5000 - EVENT_TS_MAX_AGE_MS).source).toBe('event')
+  })
+
+  it('RT = event timestamp − onset, without the handler delay', () => {
+    const onset = { target: 4000, onsetFrameTs: 4100, cancelled: false, cancel() {} }
+    const s = from(4400)
+    expect(responseRtMs(onset, s.ts)).toBe(300) // the clock says 900 ms; the dispatch delay is excluded
+  })
+
+  it('never reads the wall clock', () => {
+    const spy = vi.spyOn(Date, 'now')
+    from(4000)
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('combines the sources of a block', () => {
+    expect(combineTimestampSources([])).toBeUndefined()
+    expect(combineTimestampSources(['event', 'event'])).toBe('event')
+    expect(combineTimestampSources(['handler'])).toBe('handler')
+    expect(combineTimestampSources(['event', 'handler'])).toBe('mixed')
   })
 })

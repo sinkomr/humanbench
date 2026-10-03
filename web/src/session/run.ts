@@ -330,6 +330,8 @@ interface CurrentBlock {
   readonly step: Extract<PlannedStep, { kind: 'block' }>
   readonly startedMs: number
   inputType: RtInputType | null
+  /** Where the RT block's response timestamps came from (§11.6); null = not reported. */
+  timestampSource: 'event' | 'handler' | 'mixed' | null
 }
 
 const round1 = (x: number): number => Math.max(0, Math.round(x * 10) / 10)
@@ -706,7 +708,7 @@ export class SessionRun {
       this.#endSegment('complete')
       return
     }
-    this.#currentBlock = { step, startedMs: this.#cfg.now(), inputType: null }
+    this.#currentBlock = { step, startedMs: this.#cfg.now(), inputType: null, timestampSource: null }
     this.#phase = 'block'
     this.#emit('phase')
   }
@@ -1011,6 +1013,13 @@ export class SessionRun {
 
   // ------------------------------------------------------------------------------ blocks
 
+  /** The RT renderer reported where its response timestamps came from (§11.6: event timestamp or handler clock). */
+  blockTimestampSource(source: 'event' | 'handler' | 'mixed'): void {
+    const blk = this.#currentBlock
+    if (this.#limitsHit() || this.#phase !== 'block' || blk === null) return
+    blk.timestampSource = source
+  }
+
   /** The RT renderer reported the input type its responses came from (§11.6, §13: normed separately). */
   blockInputType(type: RtInputType): void {
     const blk = this.#currentBlock
@@ -1035,6 +1044,7 @@ export class SessionRun {
         const device = {
           device_class: this.#device.class,
           ...(inputType === undefined ? {} : { input_type: inputType }),
+          ...(blk.timestampSource === null ? {} : { rt_timestamp_source: blk.timestampSource }),
           ...(this.#device.refresh_hz_est === null ? {} : { refresh_hz_est: this.#device.refresh_hz_est }),
         }
         const r = rtBlockObservation(item as RtItem, response as RtResponse, device)

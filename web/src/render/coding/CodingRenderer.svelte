@@ -3,7 +3,7 @@
   spec's glyph–digit pairs, in its order) stays on view; one glyph at a time is shown and the taker
   types its digit on the keypad or the digit keys, and the next glyph follows at once. The 90 s
   window (`spec.duration_s`) starts in the animation frame that draws the first glyph and is
-  measured with `performance.now()`; each press records its digit and its time from that frame
+  measured with `performance.now()`; each press records its digit and its time from that frame (the press time is the input event's own timestamp when valid, else `performance.now()` in the handler; §11.6)
   (`CodingResponse`). The block ends when the window closes or every glyph is answered, and the
   response list goes to `onrespond`. No right/wrong feedback is shown. One polite status line
   stays mounted in every phase; when the block ends it says so and takes focus, so keyboard and
@@ -15,7 +15,7 @@
   import Keypad from '../common/Keypad.svelte'
   import { digitOfKey, isOwnKey } from '../common/focus'
   import { browserTiming, type RendererProps } from '../common/props'
-  import { responseTimestamp } from '../../tasks/rt/timing'
+  import { responseTimestampFromEvent } from '../../tasks/rt/timing'
   import { CODING_DIGITS, type CodingResponse, type CodingResponses, type CodingSpec } from '../../tasks/coding/config'
   import Glyph from './Glyph.svelte'
   import { GLYPHS } from './glyphs'
@@ -91,9 +91,9 @@
     onrespond(responses.map((r) => ({ ...r })))
   }
 
-  function press(digit: number): void {
+  function press(digit: number, event: { readonly timeStamp: number }): void {
     if (phase !== 'running' || !visible) return
-    const at = responseTimestamp(t.clock) - t0
+    const at = responseTimestampFromEvent(event, t.clock, t0).ts - t0
     if (at >= windowMs) {
       finish('time')
       return
@@ -112,7 +112,7 @@
     const d = digitOfKey(event)
     if (d === null) return
     event.preventDefault()
-    press(d)
+    press(d, event)
   }
 
   onDestroy(() => {

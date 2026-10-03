@@ -28,6 +28,7 @@ function mountRt(item: RtItem, inputMode?: RtInputMode) {
   const responses: RtResponse[] = []
   const modes: RtInputMode[] = []
   const types: RtInputType[] = []
+  const sources: string[] = []
   /** Callback order: 'type' (oninputtype) must come before 'respond'. */
   const calls: string[] = []
   const props: Record<string, unknown> = {
@@ -36,11 +37,12 @@ function mountRt(item: RtItem, inputMode?: RtInputMode) {
     timing: display,
     oninputmode: (m: RtInputMode) => modes.push(m),
     oninputtype: (x: RtInputType) => (calls.push('type'), types.push(x)),
+    ontimestampsource: (s: string) => (calls.push('source'), sources.push(s)),
   }
   if (inputMode) props.inputMode = inputMode
   const r = render(RtRenderer, props as never)
   cleanup.push(r.destroy)
-  return { ...r, display, responses, modes, types, calls }
+  return { ...r, display, responses, modes, types, sources, calls }
 }
 
 const stimulusOn = (root: HTMLElement): boolean => root.querySelector('.pad.on') !== null
@@ -111,6 +113,75 @@ describe('RtRenderer', () => {
     until(m.display, () => stimulusOn(m.container))
     expect(m.display.now()).toBeGreaterThanOrEqual(trialStart + fp - 1e-6)
     expect(m.display.now()).toBeLessThan(trialStart + fp + FRAME + 1e-6)
+  })
+
+  it('stamps a key response with the event timestamp: RT = timeStamp − onset, not handler time − onset', () => {
+    const item = rtSimple.generate('render-rt-evts')
+    const m = mountRt(item, 'keyboard')
+    click(buttonByText(m.container, 'Start practice'))
+    until(m.display, () => stimulusOn(m.container))
+    const onsetTs = m.display.now()
+    m.display.advance(400) // the handler runs 400 ms after onset...
+    press(' ', null, {}, onsetTs + 250) // ...for an event the browser stamped 250 ms after onset
+    for (let i = 1; i < item.spec.practice_positions.length; i++) answerTrial(m, ' ', 300)
+    until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+    click(buttonByText(m.container, 'Start'))
+    for (let i = 0; i < item.spec.positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      const on = m.display.now()
+      m.display.advance(500)
+      press(' ', null, {}, on + 320)
+    }
+    until(m.display, () => m.responses.length === 1, 20_000)
+    const r = m.responses[0] as RtResponse
+    expect(r.practice_rt_ms?.[0]).toBeCloseTo(250, 6)
+    expect(r.practice_rt_ms?.[1]).toBeCloseTo(300, 6) // a synthetic event without a usable timeStamp falls back to the handler clock
+    for (const rt of r.rt_ms) expect(rt).toBeCloseTo(320, 6)
+    expect(m.sources).toEqual(['event'])
+    expect(m.calls.slice(-3)).toEqual(['type', 'source', 'respond'])
+  })
+
+  it('falls back to the handler clock, and says so, when the event timestamp is unusable (zero, future)', () => {
+    const item = rtSimple.generate('render-rt-evfallback')
+    const m = mountRt(item, 'keyboard')
+    click(buttonByText(m.container, 'Start practice'))
+    for (let i = 0; i < item.spec.practice_positions.length; i++) answerTrial(m, ' ', 300)
+    until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+    click(buttonByText(m.container, 'Start'))
+    for (let i = 0; i < item.spec.positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      const on = m.display.now()
+      m.display.advance(300)
+      press(' ', null, {}, i % 2 === 0 ? 0 : on + 99_999)
+    }
+    until(m.display, () => m.responses.length === 1, 20_000)
+    for (const rt of (m.responses[0] as RtResponse).rt_ms) expect(rt).toBeCloseTo(300, 6)
+    expect(m.sources).toEqual(['handler'])
+  })
+
+  it('stamps a pointer response with the event timestamp too', () => {
+    const item = rtSimple.generate('render-rt-evptr')
+    const m = mountRt(item, 'touch')
+    click(buttonByText(m.container, 'Start practice'))
+    until(m.display, () => stimulusOn(m.container))
+    const onsetTs = m.display.now()
+    m.display.advance(350)
+    pointerDown(m.container.querySelector('button.pad'), 'touch', onsetTs + 180)
+    for (let i = 1; i < item.spec.practice_positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      m.display.advance(300)
+      pointerDown(m.container.querySelector('button.pad'), 'touch')
+    }
+    until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+    click(buttonByText(m.container, 'Start'))
+    for (let i = 0; i < item.spec.positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      m.display.advance(300)
+      pointerDown(m.container.querySelector('button.pad'), 'touch')
+    }
+    until(m.display, () => m.responses.length === 1, 20_000)
+    expect((m.responses[0] as RtResponse).practice_rt_ms?.[0]).toBeCloseTo(180, 6)
+    expect(m.sources).toEqual(['handler'])
   })
 
   it('runs 3 practice trials then the scored trials; RTs, anticipations and misses are recorded and score()d', () => {
@@ -243,7 +314,7 @@ describe('RtRenderer', () => {
     expect(rtResponseProblems('simple', r)).toEqual([])
     expect(mouse.modes).toEqual(['touch'])
     expect(mouse.types).toEqual(['mouse'])
-    expect(mouse.calls).toEqual(['type', 'respond'])
+    expect(mouse.calls).toEqual(['type', 'source', 'respond'])
     mouse.destroy()
     // Scored taps decide: practice with a mouse, then fingers.
     const touch = mountRt(item, 'touch')
