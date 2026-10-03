@@ -32,6 +32,11 @@ Repo tags: **pub** = `~/code/humanbench` (public, GitHub Pages) · **bank** = `~
   - §4.5: the negative-a rule applies only when SE(a) ≤ 1.0 (NEG_A_MAX_SE).
   - The negative point-biserial rule should require a minimum count of the minority response. This is open, and belongs in M4.4/M4.6.
   - A12 facet counting treats a block as one observation. Revisit in M4.
+- **A24-sec — Accepted inference risks (owner decision, 2026-10-02).** HumanBench is a low-stakes self-knowledge test, not a credential or an LLM benchmark. Two key-harvesting channels are accepted, documented risks rather than engineered away:
+  1. **Adaptive leak:** the next item served after `submit`/`next_item` reveals whether the previous answer was right.
+  2. **Rescore differencing:** a caller who already knows 4 answers can read the 5th from a minimum-n axis estimate.
+
+  Both need a deliberate script and many sessions. The protections in place: rate limits (5 sessions/day per hashed IP plus salt, 200 items, ≥ 2 s per item on average); the 0.25 per-item exposure cap with randomesque selection; finish.include_correct = false; and items showing anomalous exposure or p-value drift are rotated (M4.4 QA). Revisit if stakes change, for example published norms or third-party use.
 - **A20 — Notes for your AI: contract (Part 1 approved 2026-09-29).**
   - **Generation.** Notes are generated in the browser by a deterministic rule table (`web/src/brief/`) from `brief_prefs` and, in Part 2, the local save or the M2 `rescore` result. There is no LLM, no API call, no send-to integration, no deep link and no telemetry. HumanBench never stores, logs or transmits notes.
   - **Grammar.** Every line comes from the closed, versioned grammar `hb-brief/1`, with slots from closed lists. Custom lines are allowed; they are flagged, checked and never persisted. The checker enforces `parse(render(p)) = p` and parses every released version.
