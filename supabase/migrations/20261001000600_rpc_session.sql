@@ -29,8 +29,8 @@
 -- fit statistics and the MAP are functions of which answers were right (R-11.1; supabase/README.md).
 --
 -- Amended by 20261005000100_server_seen_lists: start_session still checks the save's seen_items and
--- seen_families for form, but the lists kept in sessions.state are what the server itself served to the
--- session's anon_id, not what the save says.
+-- seen_families for form, but the lists kept in sessions.state are what the server itself served to the person
+-- (the anon_ids the save proves) and the procedural families the save names; a save names no finite-bank item.
 
 grant create on schema public to hb_definer;
 set local role hb_definer;

@@ -9,8 +9,9 @@
 --      >= selection.stop_sd (0.3, §7.4 "per-axis early stop"), that the session cannot already have
 --      seen (the item, its family, its sibling group: in this session, in what the server served to the
 --      session's anon_id before (sessions.state.seen_items and seen_families, which
---      20261005000100_server_seen_lists fills from the server's own rows, never from the save), and the
---      groups of the families in those lists), and whose exposure is under the cap;
+--      20261005000100_server_seen_lists fills from the server's own rows and the procedural families a
+--      save names, never a finite-bank item it names), and the groups of the families in those lists), and
+--      whose exposure is under the cap;
 --   2. the criterion, §7.4: w_k * I_j(theta_k) * Var(theta_k) / E[T_j] with theta_k and Var(theta_k) the
 --      session's EAP mean and variance on the axis (hb.session_posteriors), I_j the Fisher information
 --      of the ITEM's model (2PL a²PQ; 3PL with its c; 2PL-testlet times selection.testlet_info_factor,

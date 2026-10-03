@@ -234,6 +234,31 @@ describe('requests at once', () => {
   })
 })
 
+describe('a lone surrogate in a call', () => {
+  // The sibling of U+0000: JSON.stringify writes a lone half of a pair as an escape ("\ud800"), which PostgreSQL's json parser
+  // refuses (22P02, "Unicode low surrogate must follow a high surrogate") before any function runs. A save never reaches the
+  // server with one (the save validator refuses it); a typed answer and the text of a report do not pass the validator, so the
+  // client replaces the half with U+FFFD (toUploadPayload and the guarded transport, M2.7). A whole pair is fine.
+  it('is refused by PostgreSQL itself (22P02) in every RPC that takes text, a whole pair is stored, and nothing is stored for the refused ones', async () => {
+    const ip = freshIp()
+    const st = await startSession(db, ip)
+    const bad = emptySave(st.anon_id, { sessions: [{ session_id: st.session_id, responses: [['i:x', 0, 'a\ud800b', null, 1, null]] }] })
+    const calls: Array<[string, Record<string, unknown>]> = [
+      ['mirror_put', { p_token: st.token, p_save: bad }],
+      ['start_session', { p_device: DEVICE, p_save: bad }],
+      ['rescore', { p_save: bad }],
+      ['delete_my_data', { p_anon_id: st.anon_id, p_save: bad }],
+      ['submit', { p_token: st.token, p_item_id: 'i:x', p_response: 'a\ud800b', p_rt_ms: 5 }],
+      ['report_problem', { p_token: st.token, p_kind: 'typo', p_item_id: 'i:x', p_detail: 'cut \ud83d' }],
+    ]
+    for (const [fn, args] of calls) expect(await settle(db.rpc(from(ip), fn, args)), fn).toBe('22P02')
+    expect((await db.owner.query(`select count(*)::int as n from public.mirror where anon_id = $1`, [st.anon_id])).rows[0].n).toBe(0)
+    expect((await db.owner.query(`select count(*)::int as n from public.flags where session_id = $1`, [st.session_id])).rows[0].n).toBe(0)
+    const ok = emptySave(st.anon_id, { sessions: [{ session_id: st.session_id, responses: [['i:x', 0, 'a\ud83d\ude00b', null, 1, null]] }] })
+    await expect(db.rpc(from(ip), 'mirror_put', { p_token: st.token, p_save: ok })).resolves.toMatchObject({ stored: true })
+  })
+})
+
 describe('U+0000 in a save', () => {
   // I-JSON (and the app's save validator) allows a NUL escape in a string, a typed answer for example; PostgreSQL's jsonb does not.
   // The refusal comes from the database before an RPC runs, so it is not a PT code. A client must not send such a save: the

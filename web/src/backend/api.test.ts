@@ -6,7 +6,7 @@ import type { SaveFileV1 } from '../save/types'
 import { createBackendApi, ITEM_PROBLEM_KINDS, MAX_PROBLEM_DETAIL, type BackendApi } from './api'
 import { BackendError } from './errors'
 import { ANON, CANNED, FakeTransport, SESSION_ID, TOKEN } from './testing'
-import { hasBriefPrefs, hasNul } from './upload'
+import { hasBriefPrefs, hasUnstorable } from './upload'
 
 const instant = (): Promise<void> => Promise.resolve()
 const make = (): { t: FakeTransport; api: BackendApi; slept: number[] } => {
@@ -146,7 +146,7 @@ describe('what leaves the device (AI.26, data minimisation)', () => {
     const saves = fc.sample(arbSave({ withPrefs: true }), { numRuns: 1000, seed: 26 }).map((s, i) =>
       i % 2 === 0 ? { ...s, seen_items: [...s.seen_items, `i:x\u0000${i}`] } : { ...s, [`extra\u0000${i}`]: { 'k\u0000': 'v\u0000' } },
     ) as SaveFileV1[]
-    expect(saves.every((s) => hasNul(s))).toBe(true) // so this is not vacuous
+    expect(saves.every((s) => hasUnstorable(s))).toBe(true) // so this is not vacuous
     const { t, api } = make()
     for (const save of saves) {
       await api.startSession(TEST_DEVICE, save)
@@ -158,9 +158,21 @@ describe('what leaves the device (AI.26, data minimisation)', () => {
     await api.submit(TOKEN, { itemId: 'i:series:1.0.0:1', response: '4\u00002', rtMs: 10, confidence: null, next: false })
     await api.reportProblem(TOKEN, { kind: 'typo', itemId: 'i:series:1.0.0:1', detail: 'a\u0000b' })
     expect(t.calls).toHaveLength(5002)
-    for (const c of t.calls) expect(hasNul(JSON.parse(c.body)), `${c.fn} sent U+0000`).toBe(false)
+    for (const c of t.calls) expect(hasUnstorable(JSON.parse(c.body)), `${c.fn} sent U+0000`).toBe(false)
     expect(t.args('submit').p_response).toBe('42')
     expect(t.args('report_problem').p_detail).toBe('ab')
+  })
+
+  it('a lone surrogate in a typed answer, the text of a report or an offline session of a save never reaches a body (the database refuses it with a 400)', async () => {
+    const { t, api } = make()
+    const offline = { ...fc.sample(arbSession(false), { numRuns: 1, seed: 7 })[0]!, session_id: 's_01OFFLINEX0002', responses: [['i:aut:1', 0, 'cut \ud83d', null, 4000, null]] }
+    const save = baseSave({ sessions: [offline] as unknown as SaveFileV1['sessions'] })
+    await api.mirrorPut(TOKEN, save, 'p')
+    await api.submit(TOKEN, { itemId: 'i:series:1.0.0:1', response: 'a\ud800b', rtMs: 10, confidence: null, next: false })
+    await api.reportProblem(TOKEN, { kind: 'typo', itemId: 'i:series:1.0.0:1', detail: 'x\udc00y' })
+    for (const c of t.calls) expect(hasUnstorable(JSON.parse(c.body)), `${c.fn} sent a lone surrogate`).toBe(false)
+    expect(t.args('submit').p_response).toBe('a\ufffdb')
+    expect(t.args('report_problem').p_detail).toBe('x\ufffdy')
   })
 
   it('the guard refuses a call that carries the key from anywhere else', async () => {

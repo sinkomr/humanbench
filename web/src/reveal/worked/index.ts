@@ -9,7 +9,11 @@
  * - **Left out afterwards.** The families of the examples, and of their siblings, are added to the
  *   save's `seen_families` by the caller (`SessionPersister.addSeenFamilies`): a person who has
  *   seen a worked solution must not meet that question type, or a near-isomorph of it, as a counted
- *   item later (§7.7; it would inflate the practice effect and leak the solution). `seen_families`
+ *   item later (§7.7; it would inflate the practice effect and leak the solution). The device's own
+ *   selector reads the list, and so does the server's `start_session` for a served session: it keeps
+ *   the procedural families of a save away from the person (their `family_id` is one function in both
+ *   repos, A11), which is why the examples are procedural and not finite-bank items, whose families
+ *   a server ignores when a save names them (supabase/README.md). `seen_families`
  *   holds family ids only, so a sibling group is spelled out as the ids of its members
  *   ({@link siblingFamilyIds}). No quant variant of the stratum used here is grouped today (the
  *   groups sit in strata 1, 3 and 4), so this is exact bookkeeping for a change of stratum or of

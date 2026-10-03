@@ -175,6 +175,21 @@ describe('guarded', () => {
     expect(sent.at(-1)).toBe(args)
   })
 
+  it('replaces a lone surrogate, which the database refuses just as it refuses U+0000, with U+FFFD in a typed answer and the text of a report', async () => {
+    const sent: unknown[] = []
+    const inner: RpcTransport = { call: (_fn, args) => (sent.push(args), Promise.resolve('ok')) }
+    const t = guarded(inner)
+    await t.call('submit', { p_token: 't', p_response: 'a\ud800b', p_item_id: 'i:x' })
+    await t.call('report_problem', { p_detail: 'cut \ud83d' })
+    await t.call('submit', { p_token: 't', p_response: 'well \ud83d\ude00 formed\u0000', p_item_id: 'i:x' })
+    expect(sent).toEqual([
+      { p_token: 't', p_response: 'a\ufffdb', p_item_id: 'i:x' },
+      { p_detail: 'cut \ufffd' },
+      { p_token: 't', p_response: 'well \ud83d\ude00 formed', p_item_id: 'i:x' },
+    ])
+    for (const a of sent) expect(JSON.stringify(a)).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/iu)
+  })
+
   it('reads a notes key spelled with the character as the notes key, and refuses it', async () => {
     const inner: RpcTransport = { call: () => Promise.resolve('ok') }
     await expect(guarded(inner).call('mirror_put', { p_save: { ['brief_\u0000prefs']: 1 } })).rejects.toMatchObject({ kind: 'local', code: 'brief_prefs_in_payload' })

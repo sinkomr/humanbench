@@ -314,7 +314,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.2 20261002000100_scoring_core` | the PL/pgSQL port of the scorer: `hb.map_theta`, `hb.eap_by_axis`, `hb.obs_terms`, the linear algebra, Σ_init as a setting |
 | `…M2.2 20261002000200_session_scoring` | the in-session EAP, the MAP and the §13 evidence at `finish`, `hb.is_eligible` |
 | `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
-| `…M2.2 20261005000100_server_seen_lists` | `hb.seen_by_anon` and `start_session` re-created: the seen lists of a session are the server's own rows (post-merge audit fix, below) |
+| `…M2.2 20261005000100_server_seen_lists` | `hb.save_proved_anons`, `hb.seen_for_session` and `start_session` re-created: the seen lists of a session are the server's own rows plus the procedural families a save names (post-merge audit fix, below) |
 | `…M2.3 20261003000100_save_signing` | `hb.mac_sign` (owned by `postgres`), RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, `hb.signing_check`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` and `verify.*` settings. (The work estimate `hb.json_work` and its checks live with `hb.check_save` in `…500`.) |
 
 ### Who can do what (R-11.1, R-12.1)
@@ -373,7 +373,7 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 
 | RPC | Does | Returns |
 |---|---|---|
-| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`) and the save, takes the save's `anon_id` **only if the save proves it** (see Identity and proofs), and keeps from earlier sessions what the **server** served to that `anon_id`, never what the save says it has seen (see What the next item tells); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
+| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`) and the save, takes the save's `anon_id` **only if the save proves it** (see Identity and proofs), and keeps from earlier sessions what the **server** served to the ids the save proves, plus the **procedural** families the save lists, and never a finite-bank item or family the save names (see What the next item tells); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
 | `next_item(p_token, p_axes)` | the pending item (a reload gets the same one), else a new one, chosen as in M2.2 below; `p_axes` restricts the pick to the axes of the client's current segment (null = all) | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'axes_done' \| 'no_items'}` |
 | `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next, p_axes)` | scores in SQL against the key; stores the answer and adds it to the session's grid EAP (`hb.eap_add_response`); repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
 | `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, and, at the first call, keeps the correlated MAP and the server's §13 evidence in `sessions.state` and decides `calibration_eligible` (M2.2) | `{session, anon_id, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test) **with its `sig`** (M2.3; unsigned while the Vault holds no key). Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer). Neither the eligibility nor the MAP is returned or put in the session's flags (M2.2 below) |
@@ -390,11 +390,21 @@ screenshot may show it. Nothing is done for an `anon_id` on its name alone.
 
 - The server issues `anon_id`s. `start_session` continues the one in a save only when the save lists a session this
   server issued to **that** `anon_id`, finished and signed for it (`hb.save_proves_anon`; M2.3: the MAC must verify). Otherwise the session gets a new `anon_id`
-  (`anon_id_adopted: false`): an offline file, a made-up id, somebody else's id. The seen lists of a save count for
-  nothing, proven or not: what keeps an item away from a session is what this server served to the session's `anon_id`
-  (`hb.seen_by_anon`), and a new `anon_id` has been served nothing. An offline-MVP user therefore gets a new `anon_id` at the
-  first server session, and the client re-keys the file (M2.7); the offline sessions stay unverified (A16), and the offline
-  version serves procedural items only, which are not in the server's bank.
+  (`anon_id_adopted: false`): an offline file, a made-up id, somebody else's id. A save can prove more than one id: a file
+  merged from two devices (R-8.1) holds sessions of two, and `hb.save_proved_anons` returns each id for which one of its sessions
+  is proved. What keeps an item away from a session is what this server served to **any** of them (`hb.seen_for_session`: the
+  exposure log of their sessions and the compacted arrays), whether or not the file's own `anon_id` is among them, and a new
+  `anon_id` with no proof has been served nothing. The seen lists of a save count for **procedural families only**: the bank
+  calls a family procedural (`item_families.source.type`) when a public generator computes its answers (A1, A11), and those are
+  the families of the reveal's three worked examples (DESIGN §10, §7.7: a person who has seen a worked solution must not meet
+  that question type, or a near-isomorph of it, as a counted item later; the app writes their families to `seen_families`) and
+  of whatever an offline or static-fallback session served (a `family_id` is one function in both repos, A11, so the offline
+  version's families are the server's, and the server's bank holds procedural items too). A save counts for these proven or not,
+  because naming one steers nothing worth having: a client that picks which procedural item it is served learns no key. It
+  counts for no finite-bank item or family and for none of authored content (`provenance.finite_content`, the reading gate
+  questions), and for no id the bank does not hold. An offline-MVP user therefore gets a new `anon_id` at the first server
+  session, and the client re-keys the file (M2.7); the offline sessions stay unverified (A16), and their procedural families
+  still stay out.
 - `mirror_put` accepts only a save whose `anon_id` is the one of the session's token, so nobody can create, or squat
   on, the mirror of an `anon_id` they hold no session for.
 - `delete_my_data` is proved by the recovery phrase or by a save with a session issued to the `anon_id` named in the
@@ -521,15 +531,20 @@ a raise would roll back the failure count that limits guessing (60 a day per cli
 `anon_id`, which would let anyone who knows an id block its owner). A wrong save proof in `delete_my_data` is counted
 the same way, in the same counter.
 
-**A save with U+0000 in a string cannot be sent.** I-JSON, and the app's save validator, allow a `\u0000` escape inside a
-string (a typed answer, say); PostgreSQL's `jsonb` does not. The database refuses such a parameter itself (`22P05`,
+**Text with U+0000 or a lone surrogate cannot be sent.** I-JSON allows a `\u0000` escape inside a string (a typed answer, say), and
+the app's save validator accepts it; PostgreSQL's `jsonb` does not. The database refuses such a parameter itself (`22P05`,
 not a `PT` code, PostgREST answers 400) before any RPC runs, for `mirror_put`, `start_session`, `rescore`,
-`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The app drops the character before any call
-(`web/src/backend/upload.ts`, M2.7): `toUploadPayload` removes it from every string and object key of a save, and the guarded
-transport from the arguments of every other call (an answer typed into a box, the text of a report), so a stray character in a
-typed answer cannot make the server refuse a save, a mirror or an answer. A session the server signed never holds one (jsonb
-cannot), so the strip never changes a signature's bytes; a value nested more than 256 levels that holds one is refused locally
-(`payload_too_deep`). A script that sends one gets the 400.
+`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The same goes for a **lone UTF-16 surrogate**, half of
+a pair with no other half beside it (a string cut in the middle of an emoji): `JSON.stringify` writes it as an escape,
+and PostgreSQL answers `22P02` ("Unicode low surrogate must follow a high surrogate"), also for `submit` and for
+`report_problem` (the text of a report), also tested. A save's own text never holds one (the validator refuses an unpaired
+surrogate, `save/validate.ts`), but a typed answer and the text of a report do not pass the validator. The app cleans both before any
+call (`web/src/backend/upload.ts`, M2.7): `toUploadPayload` cleans every string and object key of a save, and the guarded
+transport the arguments of every other call (an answer typed into a box, the text of a report). U+0000 is removed, and a
+lone surrogate becomes U+FFFD (the text keeps its length and place; a whole pair is kept), so a stray character in a typed
+answer cannot make the server refuse a save, a mirror, an answer or a report. A session the server signed never holds either
+(jsonb cannot), so the cleaning never changes a signature's bytes; a value nested more than 256 levels that needs it is
+refused locally (`payload_too_deep`). A script that sends one gets the 400.
 
 ### Settings (`public.app_config`)
 
@@ -664,7 +679,7 @@ M2.7: either `rescore` returns the MAP with the same minimum counts and rounding
 ### Selection (`hb.rank_live`, `selection.db.test.ts`)
 
 A live slot is: the candidates (live, not practice-only, with a key and a dichotomous parameter row, on an allowed axis whose
-posterior sd is still ≥ `selection.stop_sd` = 0.3, not seen by this session or the save, exposure under the cap); the criterion
+posterior sd is still ≥ `selection.stop_sd` = 0.3, not seen by this session or by the person in earlier ones, exposure under the cap); the criterion
 of §7.4, **w · I · Var / E[T]**, with I the Fisher information of the item's own model at the session's mean on the axis (2PL
 a²PQ, 3PL with its c, 2PL-testlet × 0.8), Var the posterior variance, w = 1 on the allowed axes, E[T] the norms median, else
 `extra.expected_time_s`, else "25 s + 4 s per 50 words"; one candidate per `family_id`; the **coverage floor** (an allowed axis
@@ -690,8 +705,9 @@ The counter is increased by one statement under that same limit, so two sessions
 `sessions` (an index-only scan; at 10⁶ rows a counter row is worth adding).
 
 **Sibling groups and families**: never twice in a session, never the group of a family the server served to the session's
-`anon_id` before, never the family of an item it served (the older logic took only the item id), and nothing the save's own
-`seen_items` and `seen_families` list: they are checked for form and then ignored (below).
+`anon_id` (or any id the save proves) before, never the family of an item it served (the older logic took only the item id),
+and never a procedural family, or the family of a procedural item, that the save's own `seen_items` and `seen_families` list and
+the bank holds. The finite-bank ids of a save are checked for form and ignored (below).
 
 ### What the next item tells (R-11.1, DESIGN §10; found by the audit of the merged M2.1 and M2.2; accepted, ROADMAP A24-sec)
 
@@ -707,17 +723,36 @@ engineered away.** Two things were found; one is closed (the client's hand in it
 excluded them, so a script that listed every item but one in `seen_items` was served that one first (reproduced on a bank of
 90 items; the audit's target ranked 41st at the prior). A chosen first item is what makes
 the channel cheap to read: the script does not wait for the item it wants, it asks for it. Proving the save would not help,
-because the lists sit outside the per-session MAC and anybody who has finished one session holds a signed one. So the lists
-no longer decide anything. They are still checked for form (`400 invalid_save` as before) and then ignored; what keeps an
-item away from a session is what the server served to the session's `anon_id` in its own tables (`hb.seen_by_anon`: the
-exposure log of the person's sessions, the compacted arrays of those `hb db archive` has archived, unanswered items
-included), and a new `anon_id`, which an unproven save gets, has been served nothing. The cost is that a person whose server
-rows are gone (deleted, or purged) and whose file is unsigned may meet an item again; one who restores on a new device loses
-nothing, since the rows are the server's. This is not a step against the accepted channel below, which stays as it is: it keeps
-the protections that A24-sec counts on (randomesque selection and the 0.25 exposure cap) from being steered by the client, which
-could otherwise concentrate its sessions on one item of its choosing. (`session.db.test.ts` and `selection.db.test.ts` test it with a file that lists
-items the server never served, from a stranger and from the person's own proven file; `archive.db.test.ts`, that the items of a
-compacted session stay out; `migrations.test.ts`, that no function reads the lists but to check their form.)
+because the lists sit outside the per-session MAC and anybody who has finished one session holds a signed one. So a save's
+lists no longer decide which finite-bank item a session is served. They are still checked for form (`400 invalid_save` as
+before). What keeps a finite-bank item away from a session is what the server served to the person in its own tables
+(`hb.seen_for_session`: the exposure log of the sessions of every `anon_id` the save proves, the compacted arrays of those
+`hb db archive` has archived, unanswered items included, and the families of those items), and a new `anon_id` with no proof has
+been served nothing. The cost is that a person whose server rows are gone (deleted, or purged) and whose file is unsigned may
+meet a finite-bank item again; one who restores on a new device loses nothing, since the rows are the server's, and a file
+merged from two devices proves both of its ids (R-8.1), so what was served under either stays out.
+
+**Kept: what a save says about procedural families.** The first version of this fix ignored the lists altogether, and the
+review of it found what that lost (DESIGN §7.7, §10, D3). The reveal shows three worked examples (a matrix, a series and a
+quantitative item, each with its solution), and the app writes their families, and those of their siblings, to the save's
+`seen_families` so that "a person who has seen a worked solution must not meet that question type, or a near-isomorph of it, as
+a counted item later" (it would inflate the practice effect and give the solution away): the server serves the counted Matrix
+& Series and Quantitative parts, and `family_id` is one function in both repos (A11) so that this exclusion holds across them.
+The server has no row for what the reveal showed, nor for what an offline or static-fallback session served, so the save is the
+only record, and ignoring it handed a returning person a counted isomorph of a solution they had just been shown. The lists
+count again, for exactly the families whose answers anybody can compute: `item_families.source.type = 'procedural'` (the
+bank's own flag; the families of the reading gate questions, whose items carry `provenance.finite_content`, are authored and
+are not counted as procedural), and only ids the bank holds, so the state of a session stays as small as the bank and a client
+cannot name what it cannot enumerate (a finite item's family id is in no reply). A client that lists procedural families can
+narrow its own pool of procedural items and nothing else: it cannot pick one finite-bank item among the rest, so the steering
+that the audit closed stays closed, and what a procedural item's key would have given away is public already (the generators
+are public, A1). (`seen-lists.db.test.ts` tests all of this with files from a stranger and from a file that proves its id,
+with a file listing every finite item and every procedural family but one, with a sibling group named by one of its families,
+with lists of 20,000 ids, and with merged and tampered files; `session.db.test.ts` and `selection.db.test.ts`, that finite items a
+file lists are served; `archive.db.test.ts`, that the items of a compacted session stay out; `migrations.test.ts`, that no
+function reads a list but through the bank's flag.) The accepted channel below stays as it is: none of this is a step against
+it. It keeps the protections that A24-sec counts on (randomesque selection and the 0.25 exposure cap) from being steered by
+the client, which could otherwise concentrate its sessions on one finite-bank item of its choosing.
 
 **Accepted (A24-sec): what a right and a wrong answer do to the pool.** Measured on a synthetic bank of 90 QR items with selection relaxed
 (no exposure cap, floor or pretest), reading the pool of the next pick straight from `hb.rank_live` after the first answer:

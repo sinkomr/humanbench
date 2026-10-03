@@ -85,9 +85,9 @@ describe('start_session', () => {
     expect(new Set([a.session_id, b.session_id, a.token, b.token, a.anon_id, b.anon_id]).size).toBe(6)
   })
 
-  it('takes the seen lists from the server\'s own rows, never from the save; the anon_id continues only when the save proves it', async () => {
+  it('takes the finite-bank seen lists from the server\'s own rows, never from the save (the procedural ones it does take: seen-lists.db.test.ts); the anon_id continues only when the save proves it', async () => {
     const some = [...bank.keys()].slice(0, 3)
-    // a save whose anon_id the server never issued (an offline file, a made-up id): its lists decide nothing, the id is replaced
+    // a save whose anon_id the server never issued (an offline file, a made-up id): its lists of finite-bank items decide nothing, the id is replaced
     const stranger = await startSession(db, freshIp(), emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_items: some, seen_families: ['f:tst:000000000000'] }))
     expect(stranger.anon_id).toMatch(ANON_ID_RE)
     expect(stranger.anon_id).not.toBe('hb_7Q3m9Kx2Vw5rT8pL')

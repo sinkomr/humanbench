@@ -145,7 +145,7 @@ describe('migrations: the readers of old answers (M2.5)', () => {
   })
 })
 
-describe('migrations: the seen lists come from the server (post-merge audit fix, supabase/README.md "What the next item tells")', () => {
+describe('migrations: the seen lists (post-merge audit fix, supabase/README.md "What the next item tells")', () => {
   const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
   const functionText = (sql: string, name: string): string => {
     const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
@@ -154,27 +154,48 @@ describe('migrations: the seen lists come from the server (post-merge audit fix,
   }
   const fixed = byName('_server_seen_lists.sql')
 
-  it('re-creates start_session so that a save\'s lists are checked for form and used for nothing', () => {
+  it('re-creates start_session so that a save\'s lists are checked for form, and what a session starts with is hb.seen_for_session', () => {
     const now = functionText(fixed, 'public.start_session')
     const then = functionText(byName('_rpc_session.sql'), 'public.start_session')
-    // the first version kept the lists of the save in the session; the new one keeps what the server served to the anon_id
+    // the first version kept the lists of the save in the session; the new one keeps what the server served, and the procedural families the file names
     expect(then).toMatch(/v_seen_items\s*:=\s*hb\.check_id_list\(p_save -> 'seen_items'/)
     expect(code(now)).not.toMatch(/v_seen_items|v_seen_families/)
     expect(code(now)).toContain("'seen_items', v_seen -> 'items', 'seen_families', v_seen -> 'families'")
-    expect(code(now)).toContain('v_seen := hb.seen_by_anon(v_anon)')
+    expect(code(now)).toContain('v_seen := hb.seen_for_session(v_proved, p_save)')
+    // the save's lists are read here only to check their form
     const reads = [...code(now).matchAll(/p_save\s*->\s*'seen_\w+'/g)]
     expect(reads.length).toBe(2)
     for (const m of reads) expect(code(now).slice(m.index! - 40, m.index!), m[0]).toMatch(/perform hb\.check_id_list\(\s*$/)
-    // the anon_id is decided before the lists are looked up (so a fresh id has none)
-    expect(code(now).indexOf('v_seen := hb.seen_by_anon(v_anon)')).toBeGreaterThan(code(now).indexOf("v_anon := 'hb_' || hb.rand_b62(16)"))
+    // the ids the save proves are decided before the lists are looked up; the claimed id is continued only if it is one of them
+    expect(code(now).indexOf('v_proved := hb.save_proved_anons(p_save)')).toBeGreaterThan(code(now).indexOf("hb.rate_hit('start_session'"))
+    expect(code(now).indexOf('v_seen := hb.seen_for_session(v_proved, p_save)')).toBeGreaterThan(code(now).indexOf("v_anon := 'hb_' || hb.rand_b62(16)"))
+    expect(code(now)).toContain('v_claimed = any (v_proved)')
   })
 
-  it('reads the lists of an anon_id from the exposure log of its sessions and from the compacted arrays, and nothing a client sends', () => {
-    const fn = code(functionText(fixed, 'hb.seen_by_anon'))
-    expect(fn).toMatch(/from public\.sessions s where s\.anon_id = p_anon_id/)
+  it('proves an id only by a session of the file that hb.session_owned accepts, within the work limits of every other proof', () => {
+    const fn = code(functionText(fixed, 'hb.save_proved_anons'))
+    expect(fn).toContain('hb.save_work_ok(p_save)')
+    expect(fn).toContain('hb.session_owned(s.value, c.anon_id)')
+    expect(fn).toContain("hb.cfg_int('verify.max_sessions', 200)")
+    expect(fn).not.toMatch(/seen_|brief_prefs|item_keys/)
+  })
+
+  it('reads what the server served from the exposure log of the proved ids\' sessions and the compacted arrays; the file\'s lists count only for procedural families without authored content', () => {
+    const fn = code(functionText(fixed, 'hb.seen_for_session'))
+    expect(fn).toMatch(/from public\.sessions s where s\.anon_id = any \(p_anon_ids\)/)
     expect(fn).toMatch(/from public\.exposure_log e/)
     expect(fn).toMatch(/from public\.response_archive ra/)
-    expect(fn).not.toMatch(/p_save|brief_prefs|item_keys/)
+    // the file's lists: through the bank's own flag, so a finite item or family (or one the bank does not hold) is never named by a client
+    expect(fn).toContain("(f.source ->> 'type') = 'procedural'")
+    expect(fn).toContain("x.provenance ? 'finite_content'")
+    const claimed = [...fn.matchAll(/p_save\s*->\s*'seen_\w+'/g)]
+    expect(claimed.length).toBeGreaterThan(0)
+    expect(fn).toMatch(/open_fams as \(\s*select f\.family_id\s+from public\.item_families f\s+join said s on s\.family_id = f\.family_id/)
+    // a family reaches the state from the file only as a row of open_fams, an item only as a row of open_items (which joins open_fams)
+    expect(fn).toMatch(/all_fams as \(\s*select f\.family_id from served_fams f\s+union\s+select o\.family_id from open_fams o\s*\)/)
+    expect(fn).toMatch(/all_ids as \(\s*select d\.item_id from served_ids d\s+union\s+select o\.item_id from open_items o\s*\)/)
+    expect(fn).toMatch(/open_items as \([^)]*join open_fams o on o\.family_id = i\.family_id/)
+    expect(fn).not.toMatch(/brief_prefs|item_keys/)
   })
 })
 

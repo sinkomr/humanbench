@@ -85,7 +85,7 @@ export type DeleteProof = { readonly phrase: string; readonly save?: SaveFileV1 
 // -------------------------------------------------------------------------------- api
 
 export interface BackendApi {
-  /** Opens a session. `save` (if given) lets the server continue its anon_id when the save proves it; what it keeps away from the session is what the server itself served to that id, not what the save lists. */
+  /** Opens a session. `save` (if given) lets the server continue its anon_id when the save proves it. What it keeps away from the session is what the server itself served to the ids the save proves (a merged file proves each) and the procedural families the save lists (the worked examples, an offline session); it ignores a save's finite-bank items. */
   startSession(device: DeviceInfo, save?: SaveFileV1 | null): Promise<StartedSession>
   /** The pending item, or a new one. Which one follows from the answers so far: the accepted adaptive leak (ROADMAP A24-sec). */
   nextItem(token: string, axes?: readonly AxisCode[]): Promise<NextReply>

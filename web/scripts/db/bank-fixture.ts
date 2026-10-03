@@ -32,6 +32,14 @@ export interface FixtureItem {
   readonly practiceOnly: boolean
   /** The generator family name (`item_families.generator`): what the selector balances an axis over. Default `test`. */
   readonly generator?: string | undefined
+  /**
+   * A generated family whose answers anybody can compute (`item_families.source.type = 'procedural'`), not one of the
+   * finite bank (`authored`): the seen lists of a save count only for the former (supabase/README.md). Default false:
+   * the fixture's items stand for finite-bank items.
+   */
+  readonly procedural?: boolean | undefined
+  /** An item of a family whose generator only reshuffles authored content (the reading bank, A14): `provenance.finite_content`. Default false. */
+  readonly finiteContent?: boolean | undefined
   /** `item_parameters.extra.expected_time_s`, the E[T] of the selection criterion. Default: none (the length-based prior). */
   readonly expectedTimeS?: number | undefined
   /** `item_parameters.se_b`, the sd of b (pretest items: Thompson sampling). Default: null. */
@@ -148,20 +156,23 @@ export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[],
 
   await run(
     `insert into public.item_families (family_id, sibling_group, axis, facet, generator, gold_tier, source, license, created_by, practice_only)
-     select family_id, sibling_group, axis, facet, generator, 'a', '{"type":"procedural","family":"test"}'::jsonb, 'CC0', 'test:fixture', practice_only
-       from jsonb_to_recordset($1::jsonb) as t (family_id text, sibling_group text, axis text, facet text, generator text, practice_only boolean)
+     select family_id, sibling_group, axis, facet, generator, 'a',
+            case when procedural then '{"type":"procedural","family":"test"}'::jsonb else '{"type":"authored"}'::jsonb end, 'CC0', 'test:fixture', practice_only
+       from jsonb_to_recordset($1::jsonb) as t (family_id text, sibling_group text, axis text, facet text, generator text, practice_only boolean, procedural boolean)
      on conflict (family_id) do nothing`,
-    [...families.values()].map((f) => ({ family_id: f.familyId, sibling_group: f.siblingGroup, axis: f.axis, facet: f.facet, generator: f.generator ?? 'test', practice_only: f.practiceOnly })),
+    [...families.values()].map((f) => ({ family_id: f.familyId, sibling_group: f.siblingGroup, axis: f.axis, facet: f.facet, generator: f.generator ?? 'test', practice_only: f.practiceOnly, procedural: f.procedural ?? false })),
   )
   await run(
     `insert into public.items (item_id, family_id, item_type, payload, time_limit_s, status, verification, provenance)
-     select item_id, family_id, item_type, payload, 180, status, '{}'::jsonb, '{"created_by":"test:fixture"}'::jsonb
-       from jsonb_to_recordset($1::jsonb) as t (item_id text, family_id text, item_type text, payload jsonb, status text)`,
+     select item_id, family_id, item_type, payload, 180, status, '{}'::jsonb,
+            case when finite_content then '{"created_by":"test:fixture","finite_content":{"bank":"test"}}'::jsonb else '{"created_by":"test:fixture"}'::jsonb end
+       from jsonb_to_recordset($1::jsonb) as t (item_id text, family_id text, item_type text, payload jsonb, status text, finite_content boolean)`,
     items.map((it) => ({
       item_id: it.itemId,
       family_id: it.familyId,
       item_type: it.itemType,
       status: it.status,
+      finite_content: it.finiteContent ?? false,
       payload: {
         stem: `Test item ${it.itemId}`,
         media: { renderer: 'test', facet: it.facet },
