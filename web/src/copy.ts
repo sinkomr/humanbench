@@ -17,5 +17,25 @@ export const DISCLAIMER =
 export const RESOURCE_LINE =
   "If you're curious about autism or social-communication differences, a qualified clinician is the right route; online tests can't tell you."
 
+/**
+ * The user-facing name of the emotion axis, DESIGN R-5.6.2 word-for-word (copy.test.ts). It is the
+ * name of axis EMO in `engine/axes.ts` and, on two lines, the label in `viz/profile.ts`. It says what
+ * is measured (reading emotions in text scenarios) and nothing about people.
+ */
+export const EMO_AXIS_NAME = 'Emotion Reading (text scenarios)'
+
+/**
+ * The tooltip of the emotion axis, DESIGN R-5.6.2 word-for-word (copy.test.ts). It states the
+ * non-diagnostic limits in the words the spec fixes, so it names "diagnostic" and "clinical": it is
+ * the third allow-listed text of the language lint (after RESOURCE_LINE and DISCLAIMER), masked only
+ * when it is exactly this sentence, and this module is the only place it may be spelled out (the lint
+ * fails on a copy elsewhere; import it). DESIGN R-5.6.2 is its authority; ROADMAP A13 still names only
+ * two allowed texts, so the ADR wants an amendment from the owner (open follow-up). Shown wherever the
+ * axis is named with a score: the vignette renderer (`render/emotion`) and the results view
+ * (`viz/ProfileView`, printed under the figure and linked from the table row).
+ */
+export const EMO_TOOLTIP =
+  'Measures agreement with appraisal-theory and consensus keys. Not a diagnostic or clinical measure; scores are strongly affected by vocabulary, culture and test familiarity.'
+
 /** The product name: the heading of the start screen (ROADMAP M0.1 hello page, replaced by the M1.15 session flow). */
 export const HEADING = 'HumanBench'

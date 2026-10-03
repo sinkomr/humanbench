@@ -19,6 +19,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { COPY as NOTES_COPY } from '../src/brief/copy'
 import { ENTRY_COPY as FERMI_COPY, MAGNITUDE_NOTES } from '../src/tasks/fermi/copy'
+import { ENTRY_COPY as EMOTION_COPY } from '../src/tasks/emotion/copy'
 import { demoFermiItem } from '../src/tasks/fermi/demo'
 import { REVIEW_URL, visualGalleryUrl } from './dev-server'
 import { agreeGate, answerItem, button, h1, loadSave, simulatedSave, toReady, toResults } from './flow'
@@ -60,6 +61,7 @@ export interface Route {
  */
 export const RENDERER_ROOTS: Readonly<Record<string, string>> = {
   'render/coding/CodingRenderer.svelte': 'section.hb-render.coding',
+  'render/emotion/EmotionRenderer.svelte': 'section.hb-render.emotion',
   'render/fermi/FermiRenderer.svelte': 'section.hb-render.fermi',
   'render/matrices/MatrixRenderer.svelte': 'div.matrix',
   'render/quant/QuantRenderer.svelte': 'section.hb-render.quant',
@@ -239,6 +241,13 @@ async function openFermi(page: Page): Promise<void> {
   await page.goto('./#/dev/fermi?seed=1')
   await expect(page.getByRole('heading', { level: 1, name: 'Estimation entry demo (development only)' })).toBeVisible()
   await expect(page.getByLabel(FERMI_COPY.value)).toBeVisible()
+}
+
+/** The emotion vignette demo (M6.1) on its first made-up situation, once its options have unlocked. */
+async function openEmotion(page: Page): Promise<void> {
+  await page.goto('./#/dev/emotion?seed=1')
+  await expect(page.getByRole('heading', { level: 1, name: 'Emotion reading entry demo (development only)' })).toBeVisible()
+  await expect(page.getByRole('radio').first()).toBeEnabled()
 }
 
 export const ROUTES: readonly Route[] = [
@@ -923,6 +932,40 @@ export const ROUTES: readonly Route[] = [
       await page.getByRole('combobox', { name: FERMI_COPY.unit }).selectOption(FERMI_DEMO_UNIT)
       await page.getByRole('button', { name: FERMI_COPY.submit }).click()
       await expect(page.getByTestId('fermi-feedback')).toBeVisible()
+    },
+  },
+  {
+    id: 'dev-emotion',
+    group: 'dev',
+    state: '#/dev/emotion: the emotion vignette entry (situation, five feelings, the skill name and its tooltip button) on a made-up situation',
+    phone: true,
+    covers: ['#/dev/emotion', 'dev/EmotionDemo.svelte', 'render/emotion/EmotionRenderer.svelte'],
+    open: async (page) => {
+      await openEmotion(page)
+    },
+  },
+  {
+    id: 'dev-emotion-tip',
+    group: 'dev',
+    state: '#/dev/emotion: the R-5.6.2 tooltip of the skill open over the situation',
+    phone: true,
+    covers: ['#/dev/emotion', 'render/emotion/EmotionRenderer.svelte', 'render/emotion/SkillTip.svelte'],
+    open: async (page) => {
+      await openEmotion(page)
+      await page.getByRole('button', { name: new RegExp(`^${EMOTION_COPY.tipButton}`) }).click()
+      await expect(page.locator('[role="tooltip"]')).toBeVisible()
+    },
+  },
+  {
+    id: 'dev-emotion-feedback',
+    group: 'dev',
+    state: '#/dev/emotion: the answer recorded, with the demo feedback under the entry',
+    covers: ['#/dev/emotion', 'dev/EmotionDemo.svelte'],
+    open: async (page) => {
+      await openEmotion(page)
+      await page.getByRole('radio').nth(1).check()
+      await page.getByRole('button', { name: 'Confirm', exact: true }).click()
+      await expect(page.getByTestId('emotion-feedback')).toBeVisible()
     },
   },
   {

@@ -16,6 +16,7 @@ export const DEV_ROUTES: Readonly<Record<string, () => Promise<{ default: Compon
   blob: () => import('./BlobDemo.svelte'),
   'reveal-ai': () => import('./RevealAiDemo.svelte'),
   fermi: () => import('./FermiDemo.svelte'),
+  emotion: () => import('./EmotionDemo.svelte'),
 })
 
 /** `#/dev/blob?profile=full` → { name: 'blob', params }, or null for any other hash. */

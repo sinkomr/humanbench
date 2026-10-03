@@ -15,8 +15,8 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/engine/`: scoring (MAP/Laplace, EAP, the §7.8 retest model for multi-session saves), timing
   - `web/src/save/`: the save file (DESIGN §8): schema v1 validator, RFC 8785 canonical JSON, merge, migrations, copy code, upload by content, download/share, localStorage autosave
   - `web/src/session/`: the session flow (consent and 18+ gate, honour code, device check, practice, the A15 blocks and items with their clock, break, hard stop and confidence slider, results and save)
-  - `web/src/tasks/`: task families; `tasks/fermi/` (M5.1) is the Fermi scoring library (units, log error, 80% interval, truth weight, Brier summary; a TS mirror of the bank's `hb.fermi`, held to `golden/fermi_scoring_v1.json`), the magnitude reader and the entry's check. It holds no Fermi item or truth value: the only truths are the synthetic demo question's (`demo.ts`) and the golden file's synthetic ones
-  - `web/src/render/`: the item and block renderers (what the taker sees), by family; `render/fermi/` is the magnitude + unit entry with an 80% range (demo at `#/dev/fermi`, dev builds only; it is wired into the session when the server serves Fermi items, M2)
+  - `web/src/tasks/`: task families; `tasks/fermi/` (M5.1) is the Fermi scoring library (units, log error, 80% interval, truth weight, Brier summary; a TS mirror of the bank's `hb.fermi`, held to `golden/fermi_scoring_v1.json`), the magnitude reader and the entry's check. It holds no Fermi item or truth value: the only truths are the synthetic demo question's (`demo.ts`) and the golden file's synthetic ones; `tasks/emotion/` (M6.1) is the emotion vignette's render spec and copy plus a synthetic practice situation for the demo (`demo.ts`): it holds no vignette, appraisal profile or key, which stay in the private bank
+  - `web/src/render/`: the item and block renderers (what the taker sees), by family; `render/fermi/` is the magnitude + unit entry with an 80% range (demo at `#/dev/fermi`, dev builds only; it is wired into the session when the server serves Fermi items, M2); `render/emotion/` (M6.1) is the "Emotion Reading (text scenarios)" vignette entry: a situation, five feelings, and the skill's R-5.6.2 tooltip behind a button (demo at `#/dev/emotion`, dev builds only; wired in with the server, M2)
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/brief/`: "Notes for your AI" (Phase AI): a pure, deterministic generator of short notes a person pastes into their own assistant. Closed grammar `hb-brief/1`, lint, parser, checker (`check.ts`: paste any notes, see what they say and what is foreign, edited, out of date or switched off), `surfaces.json` (install and removal steps), no network; storage only when the person says they are 18 or older and asks to keep their settings, as the optional `brief_prefs` of a prefs-only save (`web/src/brief-store/`, `hb:save:v1:prefs`; settings and fit notes only, never what was typed); the builder page is `web/notes.html`; `npm run dump:briefs -- --as-of YYYY-MM` writes the notes (and the results-talk preamble) the bank's behaviour harness reads; `reveal.ts` is the light barrel the reveal and share-card screens import for the "Working with AI" card and the "Talking about your results with an AI" helper (demo at `#/dev/reveal-ai`, dev builds only)
@@ -524,12 +524,12 @@ randomness in `web/src/engine` and `web/src/tasks`: timing uses `performance.now
 literals and Svelte markup under `web/src`, JSON copy, `web/public`, the published `schema/` JSON,
 `web/index.html` and this README (not tests, test data or code comments). It fails on the banned
 terms listed, each with its reason, in `web/scripts/language-lint.ts`. Matching ignores case, and
-anything but a letter ends a word (a digit or `_` too), so `IQR` is not a hit. Only two texts may
-carry a banned word: the §13 disclaimer, quoted exactly, and the R-5.6.5 resource sentence, which
-is spelled out only in `web/src/copy.ts` as `RESOURCE_LINE` (import it; only the results footer
-renders it). The Emotion Reading tooltip that DESIGN R-5.6.2 fixes word for word is not allowed
-yet: ROADMAP M6.1 must settle that with an A13 amendment (see the lint's header). To lint the repo,
-or just some files, and print each hit:
+anything but a letter ends a word (a digit or `_` too), so `IQR` is not a hit. Only three texts may
+carry a banned word: the §13 disclaimer, quoted exactly; the R-5.6.5 resource sentence, which is
+spelled out only in `web/src/copy.ts` as `RESOURCE_LINE` (import it; only the results footer renders
+it); and the Emotion Reading tooltip that DESIGN R-5.6.2 fixes word for word, spelled out only in
+`web/src/copy.ts` as `EMO_TOOLTIP` (the vignette renderer and the results view show it; the lint's
+header says why it is allowed: DESIGN R-5.6.2 fixes its words, and ROADMAP A13 does not list it yet). To lint the repo, or just some files, and print each hit:
 
 ```zsh
 cd web
