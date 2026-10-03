@@ -153,6 +153,7 @@ export function scoreRtResponse(mode: RtMode, keyPositions: readonly number[], r
     ...trialCounts,
     device_class: device.device_class,
     ...(device.input_type === undefined ? {} : { input_type: device.input_type }),
+    ...(device.rt_timestamp_source === undefined ? {} : { rt_timestamp_source: device.rt_timestamp_source }),
     ...(device.refresh_hz_est === undefined ? {} : { refresh_hz_est: device.refresh_hz_est }),
     norms_version: RT_NORMS_VERSION,
   }

@@ -8,7 +8,7 @@
 
   interface Props {
     readonly digits: readonly number[]
-    readonly onpress: (digit: number) => void
+    readonly onpress: (digit: number, event: MouseEvent) => void
     /** Accessible name of the keypad group. */
     readonly label: string
     readonly disabled?: boolean
@@ -19,7 +19,7 @@
 
 <div class="keypad" role="group" aria-label={label}>
   {#each digits as d (d)}
-    <button type="button" class="hb-btn key" {disabled} onclick={() => onpress(d)}>{d}</button>
+    <button type="button" class="hb-btn key" {disabled} onclick={(e) => onpress(d, e)}>{d}</button>
   {/each}
 </div>
 

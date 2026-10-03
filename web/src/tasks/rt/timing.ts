@@ -8,9 +8,12 @@
  *   `rafNow` appears in the first frame whose timestamp is ≥ rafNow + onsetAfterMs; the
  *   `onOnset` callback runs synchronously inside that frame's callback so the stimulus is drawn
  *   in that very frame, and the onset time is that frame's timestamp;
- * - RT = response timestamp − onset frame timestamp, where the response timestamp comes from
- *   `performance.now()` (the monotonic high-resolution clock that rAF and event timestamps
- *   share). The wall clock is never used: it is coarse and jumps when the system clock is set.
+ * - RT = response timestamp − onset frame timestamp, where the response timestamp is the input
+ *   event's own `timeStamp` when that is on the `performance.now()` timeline (the monotonic
+ *   high-resolution clock that rAF and event timestamps share), so the delay between the input
+ *   and the handler running is not added to the RT; otherwise `performance.now()` read in the
+ *   handler ({@link responseTimestampFromEvent}). The wall clock is never used: it is coarse and
+ *   jumps when the system clock is set.
  *   A press before the onset frame has run is an anticipation (negative RT), even when it comes
  *   after the target time ({@link responseRtMs}).
  */
@@ -28,6 +31,62 @@ export const performanceClock: Clock = Object.freeze({ now: () => performance.no
 /** The response timestamp for an input event handled now (§11.6: performance.now()). */
 export function responseTimestamp(clock: Clock = performanceClock): number {
   return clock.now()
+}
+
+/** Where a response timestamp came from: the event's own `timeStamp`, or the clock read in the handler. */
+export type TimestampSource = 'event' | 'handler'
+
+/** A response timestamp and its {@link TimestampSource}. */
+export interface ResponseStamp {
+  readonly ts: number
+  readonly source: TimestampSource
+}
+
+/**
+ * An event timestamp older than this (ms) before the handler ran is not trusted as being on the
+ * performance.now() timeline (a clock with another origin, e.g. relative to a different time
+ * zero, lands far from now()). Real dispatch delays are milliseconds.
+ */
+export const EVENT_TS_MAX_AGE_MS = 1000
+
+/** How far (ms) before the reference time (the onset) an event timestamp may lie and still be trusted. */
+export const EVENT_TS_PRE_ONSET_MARGIN_MS = 1000
+
+/**
+ * The response timestamp of an input event (§11.6). The event's own `timeStamp` is when the
+ * browser received the input, before any main-thread queueing, so using it keeps the handler
+ * dispatch delay (milliseconds on a busy page) out of the RT. It is used only when it is on the
+ * performance.now() timeline: a finite number > 0, not later than `clock.now()`, not more than
+ * {@link EVENT_TS_MAX_AGE_MS} earlier, and, when `notBefore` (the onset frame, or the target
+ * before it) is given, not more than {@link EVENT_TS_PRE_ONSET_MARGIN_MS} before it. Epoch
+ * milliseconds (≈ 1.7e12, older engines and synthetic events), 0 and NaN (synthetic events),
+ * and a timeline with another origin all fail those checks and fall back to `clock.now()`.
+ */
+export function responseTimestampFromEvent(
+  event: { readonly timeStamp: number },
+  clock: Clock = performanceClock,
+  notBefore?: number,
+): ResponseStamp {
+  const now = clock.now()
+  const ts: unknown = event.timeStamp
+  if (
+    typeof ts === 'number' &&
+    Number.isFinite(ts) &&
+    ts > 0 &&
+    ts <= now &&
+    now - ts <= EVENT_TS_MAX_AGE_MS &&
+    (notBefore === undefined || !Number.isFinite(notBefore) || ts >= notBefore - EVENT_TS_PRE_ONSET_MARGIN_MS)
+  ) {
+    return { ts, source: 'event' }
+  }
+  return { ts: now, source: 'handler' }
+}
+
+/** The overall source of a block's timestamps: 'event', 'handler', or 'mixed'; undefined with no samples. */
+export function combineTimestampSources(sources: readonly TimestampSource[]): TimestampSource | 'mixed' | undefined {
+  if (sources.length === 0) return undefined
+  const first = sources[0] as TimestampSource
+  return sources.every((s) => s === first) ? first : 'mixed'
 }
 
 export type FrameCallback = (timestamp: number) => void

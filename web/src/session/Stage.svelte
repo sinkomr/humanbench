@@ -30,9 +30,10 @@
     readonly onunavailable?: () => void
     readonly onpaste?: (itemId: string) => void
     readonly oninputtype?: (type: RtInputType) => void
+    readonly ontimestampsource?: (source: 'event' | 'handler' | 'mixed') => void
   }
 
-  let { family, itemId, spec, block = false, scale, timing, disabled = false, inputMode, onrespond, onshown, onunavailable, onpaste, oninputtype }: Props = $props()
+  let { family, itemId, spec, block = false, scale, timing, disabled = false, inputMode, onrespond, onshown, onunavailable, onpaste, oninputtype, ontimestampsource }: Props = $props()
 
   const Renderer = $derived((VISUAL_RENDERERS as Readonly<Record<string, import('svelte').Component<any> | undefined>>)[family] ?? entryRenderer(family))
 </script>
@@ -41,7 +42,7 @@
   {#if Renderer === undefined}
     <p class="hb-render error" role="alert">This question type is not available in this version.</p>
   {:else if block}
-    <Renderer {spec} {onrespond} {timing} {inputMode} {oninputtype} />
+    <Renderer {spec} {onrespond} {timing} {inputMode} {oninputtype} {ontimestampsource} />
   {:else}
     <Renderer
       {spec}

@@ -140,7 +140,7 @@ UI
 - [x] **M1.21 pub** — accessibility pass: axe 0 serious/critical on every route, a keyboard-only full session e2e, prefers-reduced-motion, 200% zoom, a contrast unit test. *Amended (Phase AI, AI.5):* the Notes for your AI builder routes join the route list.
 - [x] **M1.22 pub** — Playwright e2e: a full `?fast=1` session; WebKit/iOS emulation of save download and upload (M1 acceptance 4). *Amended (Phase AI, AI.7):* the WebKit round trip covers `brief_prefs` if AI.7 lands first; if M1.22 lands first, AI.7 re-runs it as its own acceptance.
 - [x] **M1.Q both** — retest priors ρ_k(s) (§7.8) applied when re-scoring multi-session saves. *(done: library; rescoreSessions applies §7.8, retest_v1 golden parity 1e-9)*
-- [~] **M1.23 pub** — RT jitter self-test page; the **user** runs it on a 120 Hz Mac (< 5 ms). *(page done at `rt-selftest.html`; the **user** must run it on a 120 Hz Mac)*
+- [~] **M1.23 pub** — RT jitter self-test page; the **user** runs it on a 120 Hz Mac (< 5 ms). *(page done at `rt-selftest.html`; the **user** must run it on a 120 Hz Mac; RT responses now use the input event timestamp (§11.6), so key/pointer latency is informational, report `rt_selftest_v2`)*
 - [!] **M1.G7 user** — spot audit of 30 instances per procedural family (§4.4). Claude builds the procedural review page, and the user does the audit (~4 h total). *(Claude's half done: `npm run review` opens the dev-only review page, 30 items per family, and exports `familyAudits`. Bank ingest comes in M3.4.)*
 
 ## M3.1 — Item schema (moved ahead of M2)

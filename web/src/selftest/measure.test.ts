@@ -4,6 +4,7 @@ import type { Clock, FrameCallback, FrameSource } from '../tasks/rt/timing'
 import {
   DEFAULT_PLAN,
   GATED_METRICS,
+  INPUT_LATENCY_NOTE,
   ONSET_DELAY_MIN_MS,
   ONSET_DELAY_SPAN_MS,
   QUICK_PLAN,
@@ -384,6 +385,8 @@ describe('report and verdict', () => {
     expect(r.refresh).toMatchObject({ hz: 120, repeated_timestamps: 0 })
     expect(r.pass).toBe(true)
     for (const k of GATED_METRICS) expect(r.metrics[k].pass, k).toBe(true)
+    expect(r.metrics.key_latency_ms.pass).toBeNull()
+    expect(r.metrics.pointer_latency_ms.pass).toBeNull()
     expect(r.metrics.raf_interval_ms.pass).toBeNull()
     expect(r.metrics.onset_lag_ms.pass).toBeNull()
     expect(JSON.parse(reportJson(r))).toEqual(r)
@@ -396,11 +399,22 @@ describe('report and verdict', () => {
     expect(r.pass).toBe(true)
   })
 
-  it('slow input handling fails the run', () => {
+  it('slow input handling is reported but informational: it does not fail the run', () => {
     const slow = Array.from({ length: 20 }, (_, i) => ({ eventTs: i * 100, handlerTs: i * 100 + 12 }))
-    const r = buildReport(base({ pointers: slow }))
-    expect(r.metrics.pointer_latency_ms.pass).toBe(false)
-    expect(r.pass).toBe(false)
+    const r = buildReport(base({ pointers: slow, keys: slow }))
+    for (const k of ['key_latency_ms', 'pointer_latency_ms'] as const) {
+      expect(r.metrics[k].pass, k).toBeNull()
+      expect(r.metrics[k].summary?.p95, k).toBeCloseTo(12, 9)
+      expect(r.metrics[k].note, k).toBe(INPUT_LATENCY_NOTE)
+    }
+    expect(r.metrics.key_latency_ms.note).toMatch(/event timestamp/)
+    expect(r.pass).toBe(true)
+  })
+
+  it('the overall verdict depends only on the jitter, timer and onset metrics', () => {
+    expect([...GATED_METRICS]).toEqual(['raf_jitter_ms', 'timer_resolution_ms', 'onset_error_ms'])
+    const late = base().onsets.map((o) => ({ ...o, onsetFrameTs: o.onsetFrameTs + 3 * P120 }))
+    expect(buildReport(base({ onsets: late })).pass).toBe(false)
   })
 
   it('a clock that never advanced fails (the required metrics must be measured)', () => {
@@ -413,12 +427,12 @@ describe('report and verdict', () => {
     expect(buildReport(base({ timerIncrements: Array<number>(50).fill(1) })).metrics.timer_resolution_ms.pass).toBe(true)
   })
 
-  it('property: pass ⇔ every measured gated metric has p95 < 5 ms', () => {
+  it('property: pass ⇔ the timer p95 < 5 ms, whatever the (informational) input latency', () => {
     fc.assert(
       fc.property(fc.double({ min: 0, max: 12, noNaN: true }), fc.double({ min: 0.001, max: 12, noNaN: true }), fc.boolean(), (lat, tick, skip) => {
         const keys = skip ? null : Array.from({ length: 10 }, (_, i) => ({ eventTs: i * 100, handlerTs: i * 100 + lat }))
         const r = buildReport(base({ keys, timerIncrements: Array<number>(20).fill(tick) }))
-        const expected = (skip || lat < 5) && tick < 5
+        const expected = tick < 5
         expect(r.pass).toBe(expected)
       }),
     )

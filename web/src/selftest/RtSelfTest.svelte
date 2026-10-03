@@ -45,8 +45,8 @@
     { key: 'timer_resolution_ms', label: 'Timer resolution' },
     { key: 'onset_error_ms', label: 'Stimulus onset error' },
     { key: 'onset_lag_ms', label: 'Wait from onset target to next frame' },
-    { key: 'key_latency_ms', label: 'Key press handling delay' },
-    { key: 'pointer_latency_ms', label: 'Pointer press handling delay' },
+    { key: 'key_latency_ms', label: 'Key press handling delay (information only)' },
+    { key: 'pointer_latency_ms', label: 'Pointer press handling delay (information only)' },
   ]
 
   let phase = $state<Phase>('intro')
@@ -252,8 +252,9 @@
   <p>
     This page checks how precisely this browser, display and input devices can time reaction-time trials. It measures the refresh rate, the
     regularity of animation frames, the timer resolution, how closely stimuli appear in the frame they were scheduled for, and the delay
-    before key and pointer presses are timestamped. Each check reports the median (p50), the 95th percentile (p95) and the maximum; a check
-    passes when its p95 is below {SELFTEST_THRESHOLD_MS} ms. Nothing is saved or sent.
+    before key and pointer presses are handled. Each check reports the median (p50), the 95th percentile (p95) and the maximum; a timing
+    check passes when its p95 is below {SELFTEST_THRESHOLD_MS} ms. The press-handling delays are for information only: reaction times use
+    the input event's own timestamp, so that delay is not part of them. Nothing is saved or sent.
   </p>
   <p class="hint">
     Keep this tab in front and the window on the display you want to test, and close other busy tabs. The automatic part takes about

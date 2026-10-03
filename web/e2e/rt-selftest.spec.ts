@@ -86,7 +86,7 @@ test.describe('RT timing self-test page (M1.23)', () => {
     await expect(page.getByRole('table')).toContainText('Stimulus onset error')
 
     const r = await readReport(page)
-    expect(r.report_version).toBe('rt_selftest_v1')
+    expect(r.report_version).toBe('rt_selftest_v2')
     expect(r).toMatchObject({ threshold_ms: 5, gate_quantile: 0.95, quick: true })
     expect(typeof r.pass).toBe('boolean')
     expect(r.refresh.n_deltas).toBeGreaterThanOrEqual(60)
@@ -100,9 +100,11 @@ test.describe('RT timing self-test page (M1.23)', () => {
     expect(r.metrics.onset_error_ms?.summary?.n).toBe(8)
     expect(r.metrics.key_latency_ms?.summary?.n).toBe(3)
     expect(r.metrics.pointer_latency_ms?.summary?.n).toBe(3)
-    for (const k of ['raf_jitter_ms', 'timer_resolution_ms', 'onset_error_ms', 'key_latency_ms', 'pointer_latency_ms']) {
+    for (const k of ['raf_jitter_ms', 'timer_resolution_ms', 'onset_error_ms']) {
       expect(typeof r.metrics[k]?.pass, k).toBe('boolean')
     }
+    // Input latency is informational: RT uses the event timestamp (§11.6).
+    for (const k of ['key_latency_ms', 'pointer_latency_ms']) expect(r.metrics[k]?.pass, k).toBeNull()
     await expect(page.getByText(/^Overall:/)).toContainText(r.pass ? 'Pass' : 'Fail')
     await expect(page.getByRole('button', { name: 'Run again' })).toBeEnabled()
     // The results fit the viewport (iPhone 13 too): no sideways page scroll.

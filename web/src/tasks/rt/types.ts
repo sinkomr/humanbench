@@ -90,6 +90,8 @@ export interface RtDevice {
   readonly device_class: string
   /** "keyboard", "mouse" or "touch" (§11.6 item 5, §13). */
   readonly input_type?: string
+  /** Where the response timestamps came from: 'event' (input event timeStamp), 'handler' (performance.now() fallback) or 'mixed' (§11.6). */
+  readonly rt_timestamp_source?: string
   /** Refresh-rate estimate from `estimateRefreshRate` (§11.6 item 2). */
   readonly refresh_hz_est?: number
 }
@@ -117,6 +119,7 @@ export interface RtObservationMeta extends RtTrialCounts {
   readonly min_valid: number
   readonly device_class: string
   readonly input_type?: string
+  readonly rt_timestamp_source?: string
   readonly refresh_hz_est?: number
   /** Version of the norm table that set β, s and τ_res (`RT_NORMS_VERSION`). */
   readonly norms_version: string
