@@ -7,15 +7,18 @@
 --   1. candidates: live, not practice-only items that have a key and a dichotomous parameter row, on an
 --      axis the call allows (p_axes, the current segment, null = all) whose posterior sd is still
 --      >= selection.stop_sd (0.3, §7.4 "per-axis early stop"), that the session cannot already have
---      seen (the item, its family, its sibling group: in this session, in the save the session started
---      from, and the groups of the families in that save), and whose exposure is under the cap;
+--      seen (the item, its family, its sibling group: in this session, in what the server served to the
+--      session's anon_id before (sessions.state.seen_items and seen_families, which
+--      20261005000100_server_seen_lists fills from the server's own rows and the procedural families a
+--      save names, never a finite-bank item it names), and the groups of the families in those lists), and
+--      whose exposure is under the cap;
 --   2. the criterion, §7.4: w_k * I_j(theta_k) * Var(theta_k) / E[T_j] with theta_k and Var(theta_k) the
 --      session's EAP mean and variance on the axis (hb.session_posteriors), I_j the Fisher information
 --      of the ITEM's model (2PL a²PQ; 3PL with its c; 2PL-testlet times selection.testlet_info_factor,
 --      0.8, §7.1), w_k = 1 for the axes allowed, E[T_j] = hb.item_median_time_s;
 --   3. one candidate per family_id (the best), as the app keeps one per family;
 --   4. coverage floor, §7.4: while an allowed axis has fewer than selection.coverage_floor (3) items
---      (this session's, plus those of the save's seen_items on the axis), only those axes compete;
+--      (this session's, plus the items the server served to the anon_id before, on the axis), only those axes compete;
 --   5. content balancing, the app's balanceFamilies: per axis only the candidates of the generator
 --      family(ies) least served so far this session compete (matrices and series alternate on MAT), so
 --      the criterion, which prefers the cheaper family, cannot leave an axis measured by one family;
@@ -36,6 +39,13 @@
 -- 0.5 * ln(1 + se_b² * I(theta; b')) wins, I being the Fisher information of the item at the session's
 -- current estimate on its axis. A pretest answer is stored with pretest = true and counts for no score.
 -- The client cannot tell a pretest item from a live one: item_view shows neither status nor flag.
+--
+-- The accepted adaptive leak (ROADMAP A24-sec, owner decision 2026-10-02): the pick is made on the posterior AFTER
+-- the last answer, so which item comes next depends on whether that answer was right, and a deliberate script
+-- over many sessions can read a key from it. HumanBench is a low-stakes self-knowledge test; the risk is accepted
+-- and documented, not engineered away (no wider pool, no noise on the selection, no lagged update). What bounds
+-- it: the exposure cap above, randomesque top-k, the session rate limit and the rotation of items with anomalous
+-- exposure or p-value drift. supabase/README.md, "What the next item tells".
 --
 -- Not here, because the app's selector gets them from the session flow: the remaining-time test
 -- (remainingS), and the exposure cap and facet weights of AI.21b (goals sessions, Part 2, only if approved).

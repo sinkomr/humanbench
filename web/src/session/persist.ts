@@ -121,9 +121,12 @@ export class SessionPersister {
 
   /**
    * Record families the person was shown outside the session, e.g. the reveal's worked examples
-   * (DESIGN §10, §7.7): the save lists them in `seen_families`, so a later session leaves them out.
-   * Written to the autosave at once, so nothing stays pending on the results screen; the download
-   * always includes them.
+   * (DESIGN §10, §7.7): the save lists them in `seen_families`, so a later session leaves them out:
+   * the device's own selector reads the list, and so does the server's `start_session`, which keeps
+   * the procedural families of a save away from a served session (the worked examples are all
+   * procedural; a finite-bank family in a save is ignored by the server, whose own rows say what it
+   * served, supabase/README.md). Written to the autosave at once, so nothing stays pending on the
+   * results screen; the download always includes them.
    */
   addSeenFamilies(ids: readonly string[]): void {
     const fresh = ids.filter((id) => !this.#extraSeenFamilies.includes(id))

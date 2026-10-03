@@ -314,6 +314,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.2 20261002000100_scoring_core` | the PL/pgSQL port of the scorer: `hb.map_theta`, `hb.eap_by_axis`, `hb.obs_terms`, the linear algebra, Σ_init as a setting |
 | `…M2.2 20261002000200_session_scoring` | the in-session EAP, the MAP and the §13 evidence at `finish`, `hb.is_eligible` |
 | `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
+| `…M2.2 20261005000100_server_seen_lists` | `hb.save_proved_anons`, `hb.seen_for_session` and `start_session` re-created: the seen lists of a session are the server's own rows plus the procedural families a save names (post-merge audit fix, below) |
 | `…M2.3 20261003000100_save_signing` | `hb.mac_sign` (owned by `postgres`), RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, `hb.signing_check`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` and `verify.*` settings. (The work estimate `hb.json_work` and its checks live with `hb.check_save` in `…500`.) |
 
 ### Who can do what (R-11.1, R-12.1)
@@ -372,7 +373,7 @@ All are called as `anon` (the public key) through PostgREST; arguments are named
 
 | RPC | Does | Returns |
 |---|---|---|
-| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`), takes the seen lists of a save and, **only if the save proves it**, its `anon_id` (see Identity and proofs); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
+| `start_session(p_device, p_save)` | validates the device (the closed object of `schema/save-v1.json`) and the save, takes the save's `anon_id` **only if the save proves it** (see Identity and proofs), and keeps from earlier sessions what the **server** served to the ids the save proves, plus the **procedural** families the save lists, and never a finite-bank item or family the save names (see What the next item tells); counts one of the 5 a day for the client | `{session_id, token, anon_id, anon_id_adopted, bank_version, param_version, limits}`. The token (128 random bits, `hbt_…`) is shown once. `anon_id_adopted: false` means the server issued a new `anon_id` and the client re-keys its file to it |
 | `next_item(p_token, p_axes)` | the pending item (a reload gets the same one), else a new one, chosen as in M2.2 below; `p_axes` restricts the pick to the axes of the client's current segment (null = all) | `{seq, item: {item_id, item_type, time_limit_s, stem, media, options}}` or `{done: true, reason: 'item_limit' \| 'axes_done' \| 'no_items'}` |
 | `submit(p_token, p_item_id, p_response, p_rt_ms, p_confidence, p_client_flags, p_next, p_axes)` | scores in SQL against the key; stores the answer and adds it to the session's grid EAP (`hb.eap_add_response`); repeats are acknowledged and change nothing; blocks a session whose average, by the server clock, is under 2 s an item after 10 answers | `{ack, seq, next}` (`next` as `next_item`, unless `p_next` is false). **No verdict on the answer** |
 | `finish(p_token, p_flags)` | closes the session, merges the client's integrity report with the server's time check, and, at the first call, keeps the correlated MAP and the server's §13 evidence in `sessions.state` and decides `calibration_eligible` (M2.2) | `{session, anon_id, n_responses}`; `session` is a `save-v1` session object built from the rows (validated against the schema by a test) **with its `sig`** (M2.3; unsigned while the Vault holds no key). Its response tuples always carry **`correct: null`**: the owner decided on 2026-10-01 that a save never holds the server's verdict on an answer (see The verdict on each answer). Neither the eligibility nor the MAP is returned or put in the session's flags (M2.2 below) |
@@ -389,9 +390,21 @@ screenshot may show it. Nothing is done for an `anon_id` on its name alone.
 
 - The server issues `anon_id`s. `start_session` continues the one in a save only when the save lists a session this
   server issued to **that** `anon_id`, finished and signed for it (`hb.save_proves_anon`; M2.3: the MAC must verify). Otherwise the session gets a new `anon_id`
-  (`anon_id_adopted: false`): an offline file, a made-up id, somebody else's id. The seen lists of such a save still
-  count; they only keep items away from the new session. An offline-MVP user therefore gets a new `anon_id` at the
-  first server session, and the client re-keys the file (M2.7); the offline sessions stay unverified (A16).
+  (`anon_id_adopted: false`): an offline file, a made-up id, somebody else's id. A save can prove more than one id: a file
+  merged from two devices (R-8.1) holds sessions of two, and `hb.save_proved_anons` returns each id for which one of its sessions
+  is proved. What keeps an item away from a session is what this server served to **any** of them (`hb.seen_for_session`: the
+  exposure log of their sessions and the compacted arrays), whether or not the file's own `anon_id` is among them, and a new
+  `anon_id` with no proof has been served nothing. The seen lists of a save count for **procedural families only**: the bank
+  calls a family procedural (`item_families.source.type`) when a public generator computes its answers (A1, A11), and those are
+  the families of the reveal's three worked examples (DESIGN §10, §7.7: a person who has seen a worked solution must not meet
+  that question type, or a near-isomorph of it, as a counted item later; the app writes their families to `seen_families`) and
+  of whatever an offline or static-fallback session served (a `family_id` is one function in both repos, A11, so the offline
+  version's families are the server's, and the server's bank holds procedural items too). A save counts for these proven or not,
+  because naming one steers nothing worth having: a client that picks which procedural item it is served learns no key. It
+  counts for no finite-bank item or family and for none of authored content (`provenance.finite_content`, the reading gate
+  questions), and for no id the bank does not hold. An offline-MVP user therefore gets a new `anon_id` at the first server
+  session, and the client re-keys the file (M2.7); the offline sessions stay unverified (A16), and their procedural families
+  still stay out.
 - `mirror_put` accepts only a save whose `anon_id` is the one of the session's token, so nobody can create, or squat
   on, the mirror of an `anon_id` they hold no session for.
 - `delete_my_data` is proved by the recovery phrase or by a save with a session issued to the `anon_id` named in the
@@ -422,7 +435,7 @@ holds two is for M2.7 to settle; the MAC of M2.3 binds each session to its own `
 moves a session to another; the client sets the file's `anon_id` to the id it wants rescored.
 
 *What `rescore` does not tell* (R-11.1, DESIGN §10; owner decision 2026-10-01, "`rescore` must also not leak
-single-answer verdicts"). With the verdict gone from `finish`, the score is the one place a script could still read
+single-answer verdicts"; the residual under "What is left" is an accepted risk, ROADMAP A24-sec, 2026-10-02). With the verdict gone from `finish`, the score is the one place a script could still read
 its answers: a posterior mean from one answer *is* that answer (right moves it up, wrong down). So:
 
 | Rule | Setting | Value | Why this value |
@@ -455,15 +468,38 @@ of `rescore`, and both are closed.
    at 30, more than the 0.1 step until about 50). A session now counts toward an axis, and toward a facet, only with its
    own 5 answers on it, so the difference of two calls is a difference of sums of at least five answers.
 
-*What is left.* A well-formed answer that is wrong with near certainty. For a typed number, any entry that parses is in
-the answer space, so a script can answer 4 numeric items with `99999999` and put one real answer in a fifth: the axis's
-mean then reads out that one answer's verdict, in the same way as with the invalid padding (the review's measurements are
-the bound, 84% in one call, less when the padding is not certain). The server can tell such an entry from a poor wrong
-one only by comparing it with the key, which would make the count depend on the key. This is limited to axes that have
-typed-number items (a multiple-choice item has no answer that is known wrong), and bounded by the 5 sessions an address
-may start a day, the 20 calls a day per address and the 10 per `anon_id`: one reading per axis (and per facet, with five
-numeric items each) per session. Closing it takes noise on the numbers, which the owner has not decided on. The server-side
-evidence of M2.2 would catch a padded session of 20 answers or more (it is a misfit), but it cannot be used here: *which*
+*What is left (accepted: ROADMAP A24-sec).* A well-formed answer whose verdict the caller already knows, on **any** kind of item. The minimum count and the
+rounding stop a script that knows nothing; they do not stop one that knows four answers on an axis and reads the fifth out of
+one call. Two ways to know four:
+
+- **A typed number.** Any entry that parses is in the answer space, so a script can answer 4 numeric items with `99999999`
+  (wrong with near certainty, and no key needed) and put one real answer in a fifth.
+- **Multiple choice.** A script that can solve four items, or that has learnt their keys, answers them right, or with
+  `(key + 1) mod n`, which is inside the answer space and known to be wrong. (The first version of this section said that a
+  multiple-choice item has no answer that is known wrong, and that the residual was limited to axes with typed-number
+  items. That is true for a caller who knows nothing, and false for one who knows the key: the post-merge audit measured it.)
+
+Measured (wf7 audit, re-run by hand; QR multiple-choice, the published settings: 5 items, mean step 0.1; 12 sessions each way,
+the 5th answer is the one being read):
+
+| the other four answers | `eap.QR.mean` with the 5th right | with the 5th wrong |
+|---|---|---|
+| in-space and wrong | −1.3 to −0.8 | −1.9 to −1.5 |
+| right | 1.3 to 1.8 | 0.7 to 1.4 |
+
+With four known-wrong answers the two sets are apart (a threshold at −1.45 separates all 24 readings); with four right ones they
+mostly are. So one call reads one answer's verdict. It is bounded by the 5 sessions an address may start a day, the 20 calls
+a day per address and the 10 per `anon_id`: one reading per axis (and per facet) per session, and a multiple-choice reading
+needs the keys of four other items on the axis, which earlier readings give (each one teaches one key that can pad the next).
+Closing it takes noise on the numbers, and rounding does not do it: the mean of a score of n answers moves by about 0.5 at
+n = 5 and 0.2 at n = 20 for one answer, and a script that controls the other answers can slide the mean across any fixed rounding
+boundary. Only noise that is not under the caller's control (and a budget of calls, which exists) bounds what a caller learns.
+**Owner decision, 2026-10-02 (ROADMAP A24-sec): this is an accepted risk.** The condition of the 2026-10-01 decision
+("`rescore` must also not leak single-answer verdicts", which blocked M2.1) is met against a caller who knows nothing, and the
+residual against one who already knows four answers is accepted for a low-stakes self-knowledge test: it needs a deliberate script
+and many sessions, and it is bounded by the limits above. Nothing here adds noise or otherwise tries to close it, and nobody should
+without the owner's say; revisit if the stakes change (published norms, third-party use). The
+server-side evidence of M2.2 would catch a padded session of 20 answers or more (it is a misfit), but it cannot be used here: *which*
 sessions that evidence drops is a function of which answers were right, and a score reply that differs with it differs with
 a verdict. (The first M2.2 version did read it, and a script could set one flag itself, answer one item at once and see
 whether its session was scored: `n_scored`, the presence of `eap[axis]` and `withheld` all differ with the answer. Found by
@@ -495,11 +531,20 @@ a raise would roll back the failure count that limits guessing (60 a day per cli
 `anon_id`, which would let anyone who knows an id block its owner). A wrong save proof in `delete_my_data` is counted
 the same way, in the same counter.
 
-**A save with U+0000 in a string cannot be sent.** I-JSON, and the app's save validator, allow a `\u0000` escape inside a
-string (a typed answer, say); PostgreSQL's `jsonb` does not. The database refuses such a parameter itself (`22P05`,
+**Text with U+0000 or a lone surrogate cannot be sent.** I-JSON allows a `\u0000` escape inside a string (a typed answer, say), and
+the app's save validator accepts it; PostgreSQL's `jsonb` does not. The database refuses such a parameter itself (`22P05`,
 not a `PT` code, PostgREST answers 400) before any RPC runs, for `mirror_put`, `start_session`, `rescore`,
-`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The client's upload payload
-(`toUploadPayload`, M2.7) has to refuse such a save, or drop the character, before the call.
+`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The same goes for a **lone UTF-16 surrogate**, half of
+a pair with no other half beside it (a string cut in the middle of an emoji): `JSON.stringify` writes it as an escape,
+and PostgreSQL answers `22P02` ("Unicode low surrogate must follow a high surrogate"), also for `submit` and for
+`report_problem` (the text of a report), also tested. A save's own text never holds one (the validator refuses an unpaired
+surrogate, `save/validate.ts`), but a typed answer and the text of a report do not pass the validator. The app cleans both before any
+call (`web/src/backend/upload.ts`, M2.7): `toUploadPayload` cleans every string and object key of a save, and the guarded
+transport the arguments of every other call (an answer typed into a box, the text of a report). U+0000 is removed, and a
+lone surrogate becomes U+FFFD (the text keeps its length and place; a whole pair is kept), so a stray character in a typed
+answer cannot make the server refuse a save, a mirror, an answer or a report. A session the server signed never holds either
+(jsonb cannot), so the cleaning never changes a signature's bytes; a value nested more than 256 levels that needs it is
+refused locally (`payload_too_deep`). A script that sends one gets the 400.
 
 ### Settings (`public.app_config`)
 
@@ -533,6 +578,25 @@ nothing). The rows keep their verdicts for the server, and a person gets their s
 re-scores from the database's rows (A16: calibration uses DB rows, never uploads) and returns the per-axis and
 per-facet EAPs, withholding and rounding what would read out a single answer (above). DESIGN §8 still describes the
 tuple with `correct` filled; this is a deviation the owner has accepted, to be reflected in DESIGN at the next edit.
+
+### Accepted inference risks (ROADMAP A24-sec, owner decision 2026-10-02)
+
+HumanBench is a low-stakes self-knowledge test, not a credential or an LLM benchmark. Two ways to read a key out of the
+server are therefore **accepted, documented risks, and are not to be engineered away** (no noise on the numbers, no delayed
+updates, no wider pool, no new limit on these paths without the owner's say):
+
+1. **Adaptive leak.** The next item served after `submit` or `next_item` shows whether the previous answer was right,
+   because the posterior moves before the pick (details: "What the next item tells", under M2.2).
+2. **Rescore differencing.** A caller who already knows four answers on an axis can read the fifth out of one `rescore`
+   call, from the mean of a minimum-n axis estimate (details: "What `rescore` does not tell", above).
+
+Both need a deliberate script and many sessions. What stays in place: the rate limits (5 sessions a day per hashed address
+plus salt, 200 items a session, an average of at least 2 s an item, 20 `rescore` calls a day per address and 10 per `anon_id`),
+the 0.25 exposure cap with randomesque selection, `correct: null` in every saved tuple (above), and the rotation of items that
+show anomalous exposure or p-value drift (M4.4 QA). Revisit if the stakes change, for example published norms or use by a third
+party. The code on these paths cites A24-sec: the migrations of the session RPCs (`submit`, `next_item`), of selection
+(`hb.serve_next`), of `rescore` and of `hb.response_fits`; `ServerSession` and the `nextItem`, `submit` and `rescore` methods in
+`web/src/backend/`; and the README of the repository.
 
 ### What the next tasks fill in
 
@@ -590,7 +654,7 @@ b = ±50, |z| ≈ 5,000) are among the 84. `hb.log1p` and `hb.expm1` exist becau
 | When | What | Where | Reaches a client? |
 |---|---|---|---|
 | each `submit` | the answer's log-likelihood on the 61-point grid, added to the axis's | `sessions.state.eap[axis] = {n, ll}` | no |
-| each pick | the posterior mean and sd of each axis from that: the grid EAP under N(0, 1); an axis without an answer is its prior exactly (as the app's selector) | `hb.session_posteriors` | only through which item comes next |
+| each pick | the posterior mean and sd of each axis from that: the grid EAP under N(0, 1); an axis without an answer is its prior exactly (as the app's selector) | `hb.session_posteriors` | only through which item comes next (see What the next item tells) |
 | `finish` | the correlated MAP and covariance of the session's counted answers under Σ_init | `sessions.state.posterior` (θ, the 17 × 17 covariance, `n_by_axis`, 6 decimals) | **no** |
 | `finish` | the §13 evidence the server can compute (below), with the time check that does not read the key (`too_fast_any`) | `sessions.state.integrity` | **no** |
 | `finish` | `calibration_eligible` | `sessions.calibration_eligible` | **no** |
@@ -615,7 +679,7 @@ M2.7: either `rescore` returns the MAP with the same minimum counts and rounding
 ### Selection (`hb.rank_live`, `selection.db.test.ts`)
 
 A live slot is: the candidates (live, not practice-only, with a key and a dichotomous parameter row, on an allowed axis whose
-posterior sd is still ≥ `selection.stop_sd` = 0.3, not seen by this session or the save, exposure under the cap); the criterion
+posterior sd is still ≥ `selection.stop_sd` = 0.3, not seen by this session or by the person in earlier ones, exposure under the cap); the criterion
 of §7.4, **w · I · Var / E[T]**, with I the Fisher information of the item's own model at the session's mean on the axis (2PL
 a²PQ, 3PL with its c, 2PL-testlet × 0.8), Var the posterior variance, w = 1 on the allowed axes, E[T] the norms median, else
 `extra.expected_time_s`, else "25 s + 4 s per 50 words"; one candidate per `family_id`; the **coverage floor** (an allowed axis
@@ -640,8 +704,88 @@ The counter is increased by one statement under that same limit, so two sessions
 `no_items`: the cap is hard (§7.7 sizes the bank with a factor 2 for it). The sessions are counted with `count(*)` on
 `sessions` (an index-only scan; at 10⁶ rows a counter row is worth adding).
 
-**Sibling groups and families**: never twice in a session, never the group of a family in the save, never the family of an item
-in the save's `seen_items` (the older logic took only the item id).
+**Sibling groups and families**: never twice in a session, never the group of a family the server served to the session's
+`anon_id` (or any id the save proves) before, never the family of an item it served (the older logic took only the item id),
+and never a procedural family, or the family of a procedural item, that the save's own `seen_items` and `seen_families` list and
+the bank holds. The finite-bank ids of a save are checked for form and ignored (below).
+
+### What the next item tells (R-11.1, DESIGN §10; found by the audit of the merged M2.1 and M2.2; accepted, ROADMAP A24-sec)
+
+DESIGN §10 says there is no correctness feedback on finite-bank items. No reply carries a verdict, but one channel is left that no
+field shows: `submit` adds the answer to the session's posterior before it picks the next item, so *which* item comes next
+depends on whether the last answer was right. A script that answers the same first item with each option in turn, over many
+sessions, sees one pool of next items after the key and another after every wrong option, and the key is the odd one out.
+This is inherent to adaptive testing (choosing the next item by what the person has just shown is the point of §7.4), so it
+can be made dearer, not removed. **Owner decision, 2026-10-02 (ROADMAP A24-sec): the channel is an accepted risk, and is not to be
+engineered away.** Two things were found; one is closed (the client's hand in it) and the other is accepted.
+
+**Closed: the client chose the item.** `start_session` took the seen lists of a save "without proof" and the selector
+excluded them, so a script that listed every item but one in `seen_items` was served that one first (reproduced on a bank of
+90 items; the audit's target ranked 41st at the prior). A chosen first item is what makes
+the channel cheap to read: the script does not wait for the item it wants, it asks for it. Proving the save would not help,
+because the lists sit outside the per-session MAC and anybody who has finished one session holds a signed one. So a save's
+lists no longer decide which finite-bank item a session is served. They are still checked for form (`400 invalid_save` as
+before). What keeps a finite-bank item away from a session is what the server served to the person in its own tables
+(`hb.seen_for_session`: the exposure log of the sessions of every `anon_id` the save proves, the compacted arrays of those
+`hb db archive` has archived, unanswered items included, and the families of those items), and a new `anon_id` with no proof has
+been served nothing. The cost is that a person whose server rows are gone (deleted, or purged) and whose file is unsigned may
+meet a finite-bank item again; one who restores on a new device loses nothing, since the rows are the server's, and a file
+merged from two devices proves both of its ids (R-8.1), so what was served under either stays out.
+
+**Kept: what a save says about procedural families.** The first version of this fix ignored the lists altogether, and the
+review of it found what that lost (DESIGN §7.7, §10, D3). The reveal shows three worked examples (a matrix, a series and a
+quantitative item, each with its solution), and the app writes their families, and those of their siblings, to the save's
+`seen_families` so that "a person who has seen a worked solution must not meet that question type, or a near-isomorph of it, as
+a counted item later" (it would inflate the practice effect and give the solution away): the server serves the counted Matrix
+& Series and Quantitative parts, and `family_id` is one function in both repos (A11) so that this exclusion holds across them.
+The server has no row for what the reveal showed, nor for what an offline or static-fallback session served, so the save is the
+only record, and ignoring it handed a returning person a counted isomorph of a solution they had just been shown. The lists
+count again, for exactly the families whose answers anybody can compute: `item_families.source.type = 'procedural'` (the
+bank's own flag; the families of the reading gate questions, whose items carry `provenance.finite_content`, are authored and
+are not counted as procedural), and only ids the bank holds, so the state of a session stays as small as the bank and a client
+cannot name what it cannot enumerate (a finite item's family id is in no reply). A client that lists procedural families can
+narrow its own pool of procedural items and nothing else: it cannot pick one finite-bank item among the rest, so the steering
+that the audit closed stays closed, and what a procedural item's key would have given away is public already (the generators
+are public, A1). (`seen-lists.db.test.ts` tests all of this with files from a stranger and from a file that proves its id,
+with a file listing every finite item and every procedural family but one, with a sibling group named by one of its families,
+with lists of 20,000 ids, and with merged and tampered files; `session.db.test.ts` and `selection.db.test.ts`, that finite items a
+file lists are served; `archive.db.test.ts`, that the items of a compacted session stay out; `migrations.test.ts`, that no
+function reads a list but through the bank's flag.) The accepted channel below stays as it is: none of this is a step against
+it. It keeps the protections that A24-sec counts on (randomesque selection and the 0.25 exposure cap) from being steered by
+the client, which could otherwise concentrate its sessions on one finite-bank item of its choosing.
+
+**Accepted (A24-sec): what a right and a wrong answer do to the pool.** Measured on a synthetic bank of 90 QR items with selection relaxed
+(no exposure cap, floor or pretest), reading the pool of the next pick straight from `hb.rank_live` after the first answer:
+
+| `selection.top_k` | pool size | items shared by the pool after the key and the pool after a wrong option (each of the first items that can come first) |
+|---:|---:|---|
+| 5 (the default, §6.iii) | 5 | 0 or 1 |
+| 10 | 10 | 1 to 3 |
+| 20 | 20 | 6 to 9 |
+
+A wider pool lowers what one session tells; at 20 of 90 more than half of the pool still differs, and it gives up the
+efficiency §7.4 is for. The effect is largest early on an axis, when the posterior is wide and one answer moves the mean
+most, and shrinks as answers accumulate. What does **not** help, so that nobody tries it:
+
+- *Lagging the update by one answer* (select on the posterior before the latest answer). Answer k - 1 then shapes the pool of
+  slot k + 1 exactly as it shaped the pool of slot k: the same leak, one slot later, and the script waits one more item.
+- *Updating in blocks.* Answers outside the item's answer space enter no posterior (`hb.eap_add_response`), so a script pads the
+  block with them and the one real answer moves the estimate alone; counting only valid answers makes the script pad with
+  in-space answers it knows are wrong, which needs the keys of other items (the same bootstrapping as in the `rescore`
+  residual above).
+- *Rounding the pool's scores* is a deterministic function of the verdicts and can be probed across its boundaries.
+
+What bounds the channel today, none of it a proof: 5 sessions per client address a day (`rate.sessions_per_day`), the exposure
+cap (0.25 of sessions), the work per key (a few sessions for each option of each item, because a pool has to be seen more than
+once to be recognised), and the finiteness of the bank, which is why the finite bank is rotated. A patient script behind many
+addresses is not stopped. **Owner decision (ROADMAP A24-sec, 2026-10-02): accepted.** HumanBench is a low-stakes self-knowledge
+test, not a credential or an LLM benchmark, and reading a key this way needs a deliberate script and many sessions. So the pool
+is not widened (`selection.top_k` stays 5, equal to the app's `RANDOMESQUE_K` by a test, so a change of it is a change of §6.iii
+too), no noise is put on the selection and no update is lagged. What stays in place is the list above, `correct: null` in every
+saved tuple and the rotation of items that show anomalous exposure or p-value drift (M4.4 QA). The two ways that were weighed and
+not taken: a wider pool for the first slots of each axis (a wider pool where the criterion is flat costs little information), and
+a choice from the pool with a weaker dependence on the score (noise on the selection, which costs measurement). Revisit if the
+stakes change, for example published norms or use by a third party.
 
 ### Pretest slots (§6.iii)
 
@@ -694,12 +838,12 @@ with an index on `item_parameters (param_version, b)`; not built, because it wou
 
 - **How the blob gets the correlated MAP** (above): M2.7.
 - Priors for a returning person: the in-session prior is N(0, 1) per axis (A21), not the posterior of the earlier sessions
-  (`nextSessionPrior` in `engine/retest.ts`); the coverage floor does use the save's `seen_items`.
+  (`nextSessionPrior` in `engine/retest.ts`); the coverage floor does use the items the server served to the `anon_id` before.
 - Testlets: the DB has no `testlet_id` on an item, so 2PL-testlet items are scored as 2PL (as the app); `hb.map_theta` takes
   the `testlet` kind when the pipeline groups them.
-- Person fit does not catch a padded session under 20 answers (README, "What this does not stop"), and `rescore` does not read it at
+- Person fit does not catch a padded session under 20 answers (README, "What `rescore` does not tell"), and `rescore` does not read it at
   any length (the blind eligibility, above): the padded-session reading of a score is limited by the call limits and the
-  minimum counts only, until the owner decides on noise.
+  minimum counts only (an accepted risk, ROADMAP A24-sec).
 - A session with two fast answers (by the server's clock, right or wrong) is not scored by `rescore`, where the app's own
   check counts correct answers only. The count of two is the app's; whether a lone rusher should lose a whole session in the
   notes is the owner's to weigh.

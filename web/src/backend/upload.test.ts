@@ -5,7 +5,7 @@ import { sessionMacInput } from '../save/mac-input'
 import { arbSave, arbSession } from '../save/testing'
 import type { SaveFileV1 } from '../save/types'
 import { BackendError } from './errors'
-import { BRIEF_PREFS_KEY, assertNoBriefPrefs, hasBriefPrefs, signedSessionsOnly, toUploadPayload, withAnonId } from './upload'
+import { BRIEF_PREFS_KEY, assertNoBriefPrefs, hasBriefPrefs, hasUnstorable, signedSessionsOnly, toUploadPayload, withAnonId, storable } from './upload'
 
 const withPrefs = arbSave({ withPrefs: true })
 
@@ -57,7 +57,7 @@ describe('toUploadPayload (AI.26, R-17.1)', () => {
         expect(hasBriefPrefs(out)).toBe(false)
         expect(jcs(save)).toBe(before) // the input is not changed
         const { brief_prefs: _p, ...rest } = save
-        expect(jcs(out)).toBe(jcs(rest))
+        expect(jcs(out)).toBe(jcs(storable(rest))) // (a random payload may hold the character U+0000, which goes too)
       }),
       { numRuns: 300 },
     )
@@ -76,6 +76,7 @@ describe('toUploadPayload (AI.26, R-17.1)', () => {
   it('never changes what a session signature covers: editing preferences keeps every session byte for byte (AI.26)', () => {
     fc.assert(
       fc.property(withPrefs, (save) => {
+        fc.pre(!hasUnstorable(save)) // (a session that holds the character U+0000 was never signed: the database cannot store one)
         const out = toUploadPayload(save)
         expect(out.sessions).toBe(save.sessions) // the same objects, so the same bytes
         for (const s of save.sessions) expect(sessionMacInput(s, save.anon_id)).toBe(sessionMacInput(out.sessions.find((x) => x.session_id === s.session_id && x === s)!, save.anon_id))
@@ -101,6 +102,7 @@ describe('signedSessionsOnly (data minimisation)', () => {
   it('keeps the signed sessions and drops the rest, and the notes settings', () => {
     fc.assert(
       fc.property(arbSave({ withPrefs: true, sessions: fc.array(arbSession(), { maxLength: 6 }) }), (save) => {
+        fc.pre(!hasUnstorable(save))
         const out = signedSessionsOnly(save)
         expect(hasBriefPrefs(out)).toBe(false)
         expect(out.sessions.every((s) => s.sig !== undefined)).toBe(true)
@@ -128,5 +130,255 @@ describe('withAnonId', () => {
       }),
       { numRuns: 50 },
     )
+  })
+})
+
+// ------------------------------------------------- U+0000 and lone surrogates (supabase/README.md, Errors)
+// I-JSON and the save validator allow U+0000 in a string; PostgreSQL's jsonb and text do not, and the database
+// refuses the whole call (22P05 / 22021, HTTP 400). The client drops it before any call. A lone surrogate, which a
+// typed answer or a report can hold (the save validator refuses one in a file), is refused the same way (22P02) and
+// becomes U+FFFD.
+const NUL = '\u0000'
+
+/** Every string and key of `v` with U+0000 removed, by an independent route (a JSON round trip with a replacer for the strings). */
+function reference(v: unknown): unknown {
+  const text = JSON.stringify(v, (_k, x: unknown) => (typeof x === 'string' ? x.split(NUL).join('') : x))
+  const parsed = JSON.parse(text) as unknown
+  // keys: rename through the same route
+  const rename = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(rename)
+    if (typeof x === 'object' && x !== null) {
+      const out: Record<string, unknown> = {}
+      for (const [k, y] of Object.entries(x)) Object.defineProperty(out, k.split(NUL).join(''), { value: rename(y), enumerable: true, writable: true, configurable: true })
+      return out
+    }
+    return x
+  }
+  return rename(parsed)
+}
+
+describe('hasUnstorable and storable', () => {
+  it('find it in a string, a key, an array and any depth, and nowhere else', () => {
+    expect(hasUnstorable(`a${NUL}b`)).toBe(true)
+    expect(hasUnstorable({ [`k${NUL}`]: 1 })).toBe(true)
+    expect(hasUnstorable({ a: [[{ b: `x${NUL}` }]] })).toBe(true)
+    expect(hasUnstorable('\\u0000')).toBe(false) // a backslash and the text u0000 are not the character
+    expect(hasUnstorable({ a: 'u0000', b: 0, c: null, d: [true] })).toBe(false)
+    expect(hasUnstorable(null)).toBe(false)
+    expect(hasUnstorable(7)).toBe(false)
+  })
+
+  it('removes it from strings and keys, and leaves a clean value as the very same object', () => {
+    const clean = { a: ['x', { b: 'y' }], c: 1 }
+    expect(storable(clean)).toBe(clean)
+    expect(storable(`a${NUL}b${NUL}`)).toBe('ab')
+    expect(storable({ [`k${NUL}`]: [`v${NUL}`, 2] })).toEqual({ k: ['v', 2] })
+    const part = { same: { deep: [1, 2, { x: 'y' }] }, dirty: { s: `1${NUL}2` } }
+    const out = storable(part)
+    expect(out).toEqual({ same: { deep: [1, 2, { x: 'y' }] }, dirty: { s: '12' } })
+    expect(out.same).toBe(part.same) // only the branch that held it is copied
+    expect(part.dirty.s).toBe(`1${NUL}2`) // the input is not changed
+  })
+
+  it('keeps a key called __proto__ a key, and merges two keys that differ only by the character (the later wins)', () => {
+    const parsed = JSON.parse('{"__proto__": {"p": "x\\u0000"}, "a\\u0000": 1, "a": 2}') as Record<string, unknown>
+    const out = storable(parsed)
+    expect(Object.keys(out)).toEqual(['__proto__', 'a'])
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(JSON.stringify(out)).toBe('{"__proto__":{"p":"x"},"a":2}')
+  })
+
+  it('agrees with an independent route on any JSON value, leaves none behind, and is idempotent', () => {
+    // strings and keys that often hold the character, a backslash or the text u0000
+    const text = fc.string({ unit: fc.constantFrom('a', 'b', NUL, NUL, '\\', 'u', '0', '"'), maxLength: 6 })
+    const tree = fc.letrec<{ node: unknown }>((tie) => ({
+      node: fc.oneof(
+        { depthSize: 'small' },
+        text,
+        fc.integer(),
+        fc.boolean(),
+        fc.constant(null),
+        fc.array(tie('node'), { maxLength: 3 }),
+        fc.dictionary(text, tie('node'), { maxKeys: 3 }),
+      ),
+    })).node
+    fc.assert(
+      fc.property(tree, (planted) => {
+        const out = storable(planted)
+        expect(hasUnstorable(out)).toBe(false)
+        expect(out).toEqual(reference(planted))
+        expect(storable(out)).toBe(out)
+        if (!hasUnstorable(planted)) expect(out).toBe(planted)
+      }),
+      { numRuns: 600 },
+    )
+  })
+
+  it('refuses a value that holds it deeper than any real save (the walk is bounded), and passes a deep one that holds none', () => {
+    let deep: unknown = { s: `x${NUL}` }
+    for (let i = 0; i < 400; i++) deep = { next: deep }
+    expect(() => storable(deep)).toThrowError(BackendError)
+    try {
+      storable(deep)
+    } catch (e) {
+      expect(e).toMatchObject({ kind: 'local', code: 'payload_too_deep' })
+    }
+    let clean: unknown = { s: 'x' }
+    for (let i = 0; i < 20_000; i++) clean = { next: clean }
+    expect(storable(clean)).toBe(clean)
+  })
+
+  it('survives a cycle in a value that holds none', () => {
+    const a: Record<string, unknown> = { s: 'x' }
+    a.self = a
+    expect(storable(a)).toBe(a)
+  })
+})
+
+describe('hasUnstorable and storable: lone surrogates', () => {
+  const HIGH = '\ud83d'
+  const LOW = '\ude00'
+  const PAIR = HIGH + LOW // U+1F600, a proper pair
+  const FFFD = '�'
+
+  /** A string with each lone surrogate unit replaced by U+FFFD, by an independent route: the string iterator yields code points, so a lone half comes out alone. */
+  const wellFormed = (t: string): string => [...t].map((ch) => (ch.length === 1 && ch.charCodeAt(0) >= 0xd800 && ch.charCodeAt(0) <= 0xdfff ? FFFD : ch)).join('')
+
+  it('finds a lone half in any position, in a string, a key and any depth, and not a proper pair', () => {
+    for (const t of [HIGH, LOW, `a${HIGH}`, `${HIGH}b`, `${LOW}${HIGH}`, `${HIGH}${HIGH}${LOW}`, `${HIGH}x${LOW}`, `${PAIR}${LOW}`, `${HIGH}${PAIR}`]) {
+      expect(hasUnstorable(t), JSON.stringify(t)).toBe(true)
+      expect(hasUnstorable({ [t]: 1 }), `key ${JSON.stringify(t)}`).toBe(true)
+      expect(hasUnstorable({ a: [[{ b: t }]] })).toBe(true)
+    }
+    for (const t of ['', 'abc', PAIR, `a${PAIR}b${PAIR}${PAIR}`, 'é日٣', '퟿']) expect(hasUnstorable(t), JSON.stringify(t)).toBe(false)
+    expect(hasUnstorable({ a: PAIR, b: [PAIR] })).toBe(false)
+  })
+
+  it('replaces each lone half with U+FFFD (the length and place of the text are kept), keeps proper pairs, and drops U+0000 in the same pass', () => {
+    expect(storable(`a${HIGH}b`)).toBe(`a${FFFD}b`)
+    expect(storable(`${LOW}${HIGH}`)).toBe(`${FFFD}${FFFD}`)
+    expect(storable(`${PAIR}${HIGH}${PAIR}`)).toBe(`${PAIR}${FFFD}${PAIR}`)
+    expect(storable(`${HIGH}${HIGH}${LOW}`)).toBe(`${FFFD}${PAIR}`)
+    expect(storable(`x${NUL}${HIGH}${NUL}y`)).toBe(`x${FFFD}y`)
+    // U+0000 goes first: two halves it kept apart are a pair once it is gone, and the text the database gets is what is left
+    expect(storable(`${HIGH}${NUL}${LOW}`)).toBe(PAIR)
+    expect(storable({ [`k${HIGH}`]: [`v${LOW}`, 2] })).toEqual({ [`k${FFFD}`]: [`v${FFFD}`, 2] })
+    const part = { same: { deep: [1, { x: PAIR }] }, dirty: { s: `1${HIGH}2` } }
+    const out = storable(part)
+    expect(out.same).toBe(part.same)
+    expect(out.dirty.s).toBe(`1${FFFD}2`)
+    expect(part.dirty.s).toBe(`1${HIGH}2`) // the input is not changed
+    const clean = { a: [PAIR, 'x'], b: 1 }
+    expect(storable(clean)).toBe(clean)
+  })
+
+  it('agrees with an independent route on any JSON value, leaves no lone half or U+0000 behind (also after a JSON round trip), and is idempotent', () => {
+    const text = fc.string({ unit: fc.constantFrom('a', NUL, HIGH, LOW, HIGH, LOW, PAIR, '\\', 'ud83d'), maxLength: 6 })
+    const tree = fc.letrec<{ node: unknown }>((tie) => ({
+      node: fc.oneof({ depthSize: 'small' }, text, fc.integer(), fc.boolean(), fc.constant(null), fc.array(tie('node'), { maxLength: 3 }), fc.dictionary(text, tie('node'), { maxKeys: 3 })),
+    })).node
+    const everyText = (v: unknown, f: (t: string) => void): void => {
+      if (typeof v === 'string') f(v)
+      else if (Array.isArray(v)) v.forEach((x) => everyText(x, f))
+      else if (typeof v === 'object' && v !== null) {
+        for (const [k, x] of Object.entries(v)) (f(k), everyText(x, f))
+      }
+    }
+    fc.assert(
+      fc.property(tree, (planted) => {
+        const out = storable(planted)
+        expect(hasUnstorable(out)).toBe(false)
+        // what the database is sent: the JSON text, parsed again
+        everyText(JSON.parse(JSON.stringify(out)), (t) => {
+          expect(t.includes(NUL)).toBe(false)
+          expect(wellFormed(t)).toBe(t)
+        })
+        const byRef = (v: unknown): unknown => {
+          if (typeof v === 'string') return wellFormed(v.split(NUL).join(''))
+          if (Array.isArray(v)) return v.map(byRef)
+          if (typeof v === 'object' && v !== null) {
+            const o: Record<string, unknown> = {}
+            for (const [k, x] of Object.entries(v)) Object.defineProperty(o, wellFormed(k.split(NUL).join('')), { value: byRef(x), enumerable: true, writable: true, configurable: true })
+            return o
+          }
+          return v
+        }
+        expect(out).toEqual(byRef(planted))
+        expect(storable(out)).toBe(out)
+        if (!hasUnstorable(planted)) expect(out).toBe(planted)
+      }),
+      { numRuns: 600 },
+    )
+  })
+
+  it('refuses a dirty value nested deeper than any real save, and passes a deep one that is clean', () => {
+    let deep: unknown = { s: `x${HIGH}` }
+    for (let i = 0; i < 400; i++) deep = { next: deep }
+    expect(() => storable(deep)).toThrowError(BackendError)
+    let clean: unknown = { s: PAIR }
+    for (let i = 0; i < 20_000; i++) clean = { next: clean }
+    expect(storable(clean)).toBe(clean)
+  })
+
+  it('toUploadPayload and signedSessionsOnly clean a typed answer and leave a signed session as the same object', () => {
+    const signed = fc.sample(arbSession(true), { numRuns: 1, seed: 11 })[0]!
+    const typed = { ...fc.sample(arbSession(false), { numRuns: 1, seed: 12 })[0]!, session_id: 's_01J9ZK3QE', responses: [['i:aut:1', 0, `idea${HIGH}`, null, 4000, null]] } as SaveFileV1['sessions'][number]
+    const save = { ...fc.sample(arbSave(), { numRuns: 1, seed: 13 })[0]!, sessions: [signed, typed] }
+    const out = toUploadPayload(save)
+    expect(out.sessions[0]).toBe(signed)
+    expect(out.sessions[1]!.responses[0]![2]).toBe(`idea${FFFD}`)
+    expect(typed.responses[0]![2]).toBe(`idea${HIGH}`)
+    expect(hasUnstorable(out)).toBe(false)
+    expect(hasUnstorable(signedSessionsOnly(save))).toBe(false)
+  })
+})
+
+describe('toUploadPayload and U+0000', () => {
+  const sampleSession = (signed: boolean, seed: number): SaveFileV1['sessions'][number] => fc.sample(arbSession(signed), { numRuns: 1, seed })[0]!
+  /** The session with one typed answer (an AUT-style text) in place of its responses. */
+  const answering = (s: SaveFileV1['sessions'][number], text: string): SaveFileV1['sessions'][number] => ({ ...s, responses: [['i:aut:1', 0, text, null, 4000, null]] })
+  const sampleSave = (seed: number, sessions?: SaveFileV1['sessions']): SaveFileV1 => {
+    const base = fc.sample(arbSave(), { numRuns: 1, seed })[0]!
+    return sessions === undefined ? base : { ...base, sessions }
+  }
+
+  it('drops it from a typed answer of an unsigned session, leaves the other sessions as the same objects, and does not change the input', () => {
+    const signed = [{ ...sampleSession(true, 1), session_id: 's_01J9ZK3QA' }, { ...sampleSession(true, 2), session_id: 's_01J9ZK3QB' }]
+    const dirty = answering({ ...sampleSession(false, 3), session_id: 's_01J9ZK3QC' }, `hello${NUL}world`)
+    const save = sampleSave(3, [...signed, dirty])
+    const before = jcs(save)
+    const out = toUploadPayload(save)
+    expect(jcs(save)).toBe(before)
+    expect(hasUnstorable(out)).toBe(false)
+    expect(out.sessions[0]).toBe(save.sessions[0]) // a signed session is untouched, byte for byte
+    expect(out.sessions[1]).toBe(save.sessions[1])
+    expect(out.sessions[2]!.responses[0]![2]).toBe('helloworld')
+  })
+
+  it('gives a save that holds none back as it is (the same sessions array), with or without notes settings', () => {
+    fc.assert(
+      fc.property(withPrefs, (save) => {
+        fc.pre(!hasUnstorable(save))
+        const out = toUploadPayload(save)
+        expect(out.sessions).toBe(save.sessions)
+        expect(toUploadPayload(out)).toBe(out)
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it('treats a notes key spelled with the character as the notes key: it goes too, and nothing reaches the guard', () => {
+    const sneaky = { ...sampleSave(5), [`brief${NUL}_prefs`]: { v: 1 } } as unknown as SaveFileV1
+    const out = toUploadPayload(sneaky)
+    expect(hasBriefPrefs(out)).toBe(false)
+    expect(hasUnstorable(out)).toBe(false)
+    expect(() => assertNoBriefPrefs({ p_save: out }, 'mirror_put')).not.toThrow()
+  })
+
+  it('is what signedSessionsOnly sends too', () => {
+    const dirty = answering({ ...sampleSession(true, 4), session_id: 's_01J9ZK3QD', sig: { alg: 'HMAC-SHA256', kid: 'k2026a', mac: 'AAAA', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL' } }, `a${NUL}b`)
+    const out = signedSessionsOnly(sampleSave(6, [dirty]))
+    expect(out.sessions).toHaveLength(1)
+    expect(hasUnstorable(out)).toBe(false)
   })
 })

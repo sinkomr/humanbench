@@ -28,7 +28,8 @@
 -- which web/scripts/db/migrations.test.ts checks against the earlier files), and archive.db.test.ts compares
 -- rescore's reply and every eligibility before and after compaction. The functions of an active
 -- session (submit, finish, next_item: integrity evidence, the grid, selection) read the live tables, because a
--- session is archived only after its token has expired. Nothing reads the exposure log of an old session.
+-- session is archived only after its token has expired. Only hb.seen_for_session (20261005000100) reads the exposure
+-- log of an old session, or its compacted array, to keep what a person was served away from their next one.
 --
 -- Access (R-12.1): like every table, RLS on and no grant or policy for anon or authenticated. The compaction runs
 -- as the migration role (`postgres`, the SUPABASE_DB_URL of the nightly job), the owner of the tables; the

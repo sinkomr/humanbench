@@ -85,28 +85,33 @@ describe('start_session', () => {
     expect(new Set([a.session_id, b.session_id, a.token, b.token, a.anon_id, b.anon_id]).size).toBe(6)
   })
 
-  it('remembers the items a save has seen, whoever sends it, but continues its anon_id only when the save proves it', async () => {
+  it('takes the finite-bank seen lists from the server\'s own rows, never from the save (the procedural ones it does take: seen-lists.db.test.ts); the anon_id continues only when the save proves it', async () => {
     const some = [...bank.keys()].slice(0, 3)
-    // a save whose anon_id the server never issued (an offline file, a made-up id): the seen lists count, the id is replaced
+    // a save whose anon_id the server never issued (an offline file, a made-up id): its lists of finite-bank items decide nothing, the id is replaced
     const stranger = await startSession(db, freshIp(), emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_items: some, seen_families: ['f:tst:000000000000'] }))
     expect(stranger.anon_id).toMatch(ANON_ID_RE)
     expect(stranger.anon_id).not.toBe('hb_7Q3m9Kx2Vw5rT8pL')
     expect(stranger.anon_id_adopted).toBe(false)
     const row = await sessionRow(stranger.session_id)
     expect(row.anon_id).toBe(stranger.anon_id)
-    expect(row.state).toEqual({ v: 1, seen_items: some, seen_families: ['f:tst:000000000000'] })
+    expect(row.state).toEqual({ v: 1, seen_items: [], seen_families: [] })
     // a save that lists a session this server issued to its anon_id: the same person, the id continues
     const ip = freshIp()
     const first = await startSession(db, ip)
     expect(first.anon_id_adopted).toBe(false)
+    const served = await rpc<Served>(ip, 'next_item', { p_token: first.token })
     // the proof is a session the server finished and signed for that anon_id (M2.3): the bare id of an unfinished one is not
     const finished = await rpc<{ session: Record<string, unknown> }>(ip, 'finish', { p_token: first.token })
     const bare = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [{ session_id: first.session_id }], seen_items: some }))
     expect(bare.anon_id_adopted).toBe(false)
-    const again = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [finished.session], seen_items: some }))
+    expect((await sessionRow(bare.session_id)).state).toEqual({ v: 1, seen_items: [], seen_families: [] })
+    const again = await startSession(db, freshIp(), emptySave(first.anon_id, { sessions: [finished.session], seen_items: some, seen_families: ['f:tst:000000000000'] }))
     expect(again.anon_id).toBe(first.anon_id)
     expect(again.anon_id_adopted).toBe(true)
-    expect((await sessionRow(again.session_id)).anon_id).toBe(first.anon_id)
+    const next = await sessionRow(again.session_id)
+    expect(next.anon_id).toBe(first.anon_id)
+    // what the person saw is what the server served them (the item that was never answered included), and not what the file claims
+    expect(next.state).toEqual({ v: 1, seen_items: [served.item.item_id], seen_families: [bank.get(served.item.item_id)!.familyId] })
   })
 
   it('never gives a session to an anon_id on its name alone: not on an unproven save, a made-up session, a session of someone else, or a sig.anon_id', async () => {
@@ -314,35 +319,47 @@ describe('next_item', () => {
     }
   })
 
-  it('never serves two items of one sibling group, nor a group of a family in the save', async () => {
+  it('never serves two items of one sibling group, nor the group of a family the server served this person before; the save\'s own lists decide nothing', async () => {
     const db2 = await openTestDb()
     try {
       // 12 QR items in 4 groups of 3
       const items = fixtureBank({ perAxis: 12, axes: ['QR'], seed: 'groups', groupSize: 3 })
       await loadFixtureBank(db2, items)
-      const run = async (saveDoc?: unknown): Promise<FixtureItem[]> => {
+      const play = async (saveDoc?: unknown, max = 99): Promise<{ got: FixtureItem[]; ip: string; s: Started }> => {
         const ip = freshIp()
         const s = await db2.rpc<Started>(from(ip), 'start_session', saveDoc === undefined ? { p_device: DEVICE } : { p_device: DEVICE, p_save: saveDoc })
         const got: FixtureItem[] = []
-        for (;;) {
+        while (got.length < max) {
           const n = await db2.rpc<Next>(from(ip), 'next_item', { p_token: s.token })
-          if (!isServed(n)) return got
+          if (!isServed(n)) break
           got.push(items.find((i) => i.itemId === n.item.item_id)!)
           await ageExposures(db2, s.session_id, 20)
           await db2.rpc(from(ip), 'submit', { p_token: s.token, p_item_id: n.item.item_id, p_response: 0, p_rt_ms: 4000, p_next: false })
         }
+        return { got, ip, s }
       }
-      const all = await run()
+      const all = (await play()).got
       expect(all.length).toBe(4)
       expect(new Set(all.map((i) => i.siblingGroup)).size).toBe(4)
-      // the save has seen one family of the first group: that whole group is out
-      const seen = items[0]!
-      const rest = await run(emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_families: [seen.familyId] }))
-      expect(rest.length).toBe(3)
-      expect(rest.map((i) => i.siblingGroup)).not.toContain(seen.siblingGroup)
-      // a seen item id excludes that item
-      const byItem = await run(emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_items: [items[5]!.itemId] }))
-      expect(byItem.map((i) => i.itemId)).not.toContain(items[5]!.itemId)
+      // a person who was served one item: the whole group of its family is out of their next session
+      const person = async (): Promise<{ first: Awaited<ReturnType<typeof play>>; finished: { session: Record<string, unknown> } }> => {
+        const first = await play(undefined, 1)
+        return { first, finished: await db2.rpc<{ session: Record<string, unknown> }>(from(first.ip), 'finish', { p_token: first.s.token }) }
+      }
+      const { first, finished } = await person()
+      const rest = await play(emptySave(first.s.anon_id, { sessions: [finished.session] }))
+      expect(rest.s.anon_id_adopted).toBe(true)
+      expect(rest.got.length).toBe(3)
+      expect(rest.got.map((i) => i.siblingGroup)).not.toContain(first.got[0]!.siblingGroup)
+      // what a file says it has seen decides nothing: not for a stranger's file, and not for the person's own
+      const others = items.filter((i) => i.siblingGroup !== first.got[0]!.siblingGroup)
+      const claim = { seen_families: [others[0]!.familyId], seen_items: [others.at(-1)!.itemId] }
+      expect((await play(emptySave('hb_7Q3m9Kx2Vw5rT8pL', claim))).got.length).toBe(4)
+      const other = await person() // (the first person's later session is in the server's rows now: all 4 groups)
+      const othersGroups = items.filter((i) => i.siblingGroup !== other.first.got[0]!.siblingGroup)
+      const own = await play(emptySave(other.first.s.anon_id, { sessions: [other.finished.session], seen_families: [othersGroups[0]!.familyId], seen_items: [othersGroups.at(-1)!.itemId] }))
+      expect(own.got.map((i) => i.siblingGroup)).not.toContain(other.first.got[0]!.siblingGroup)
+      expect(own.got.length).toBe(3)
     } finally {
       await db2.close()
     }

@@ -265,12 +265,16 @@ describe('the served part', () => {
     t.script('next_item', seriesWire(1, 'a'), { done: true, reason: 'axes_done' })
     await toReady(fake)
     await toServedPart(fake)
-    await tick()
+    // The question is on screen and its first frame has been reported before the clock moves. That frame's timestamp is
+    // on the page's real timeline (performance.now(): the renderers' rAF), while the run's clock is the fake one, so
+    // the jump has to cover the real age of the page too: with a fixed jump of 125 s the test passed only while the
+    // page was under 5 s old, and failed on a loaded machine, where loading the modules alone takes longer.
+    await vi.waitFor(() => expect(host.querySelector('section.series input')).not.toBeNull(), { timeout: 10_000, interval: 25 })
     await settle(3)
-    fake.time.ms += 125_000 // past the 120 s of the item; the screen checks the clock every 250 ms
+    fake.time.ms += 125_000 + performance.now() // past the 120 s of the item; the screen checks the clock every 250 ms (real time)
     // That check is a real 250 ms interval: wait until it has sent the answer rather than a fixed 300 ms, which a
     // loaded machine overran (the interval fired late and 'submit' had not been called yet).
-    await vi.waitFor(() => expect(t.calls.some((c) => c.fn === 'submit')).toBe(true), { timeout: 10_000, interval: 50 })
+    await vi.waitFor(() => expect(t.callsOf('submit')).toBeGreaterThan(0), { timeout: 10_000, interval: 25 })
     await tick()
     await settle(2)
     expect(t.args('submit')).toMatchObject({ p_response: null, p_confidence: null })

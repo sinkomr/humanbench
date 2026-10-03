@@ -290,6 +290,9 @@ Never give the front end a service-role key. `web/src/backend/` holds the client
 - `session.ts` is the server session (the token is kept in memory only) and the seam `SessionRun` uses
   (`RunConfig.cat`): the server picks every counted question of the Matrix & Series, Spatial and
   Quantitative parts and scores the answer where the key is, so the page never learns a verdict (R-11.1).
+  Two inference channels stay open on purpose and are documented, not engineered away (ROADMAP A24-sec; the
+  details are in `supabase/README.md`): which question comes next follows from whether the last answer was
+  right, and a caller who already knows four answers on an axis can read the fifth out of `rescore`.
   The timed tasks (reaction time, memory, coding and reading) stay on the device as a session of their own;
   the served part is saved under the server's session id, unsigned until `finish` returns the signed copy,
   which replaces it (a merge keeps the signed copy, A16). The results show the server's own-axis scores

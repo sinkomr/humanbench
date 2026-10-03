@@ -13,7 +13,8 @@
  * - **One shape of failure.** Every failure, from a dropped connection to a PostgREST error, is a
  *   {@link BackendError} (`errors.ts`).
  * - **The AI.26 guard.** {@link guarded} wraps any transport so that no call goes out with a
- *   `brief_prefs` key in its arguments (`upload.ts`).
+ *   `brief_prefs` key in its arguments (`upload.ts`), and drops the character U+0000 from every
+ *   string and key, which the database would refuse with a 400.
  *
  * The transport knows nothing of HumanBench: `call(fn, args)` posts `args` to `rpc/<fn>`.
  */
@@ -21,7 +22,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BackendConfig } from './config'
 import { BackendError, backendErrorFrom } from './errors'
-import { assertNoBriefPrefs } from './upload'
+import { assertNoBriefPrefs, storable } from './upload'
 
 export interface RpcTransport {
   /** Calls the RPC `fn` with the named arguments and resolves to its JSON result. Rejects with a {@link BackendError}. */
@@ -84,16 +85,23 @@ export function supabaseTransport(config: BackendConfig, deps: SupabaseDeps = {}
   }
 }
 
-/** `transport` that refuses any call whose arguments hold a `brief_prefs` key (AI.26). */
+/**
+ * `transport` that refuses any call whose arguments hold a `brief_prefs` key (AI.26), and cleans every string and key
+ * it sends of the characters the database refuses with a 400 before any function runs: U+0000 is dropped and a lone
+ * surrogate becomes U+FFFD ({@link storable}).
+ */
 export function guarded(transport: RpcTransport): RpcTransport {
   return {
     call(fn, args) {
+      let clean: Readonly<Record<string, unknown>>
       try {
-        assertNoBriefPrefs(args, fn)
+        // the characters first: a key such as "brief_<U+0000>prefs" is the notes key once it is gone
+        clean = storable(args)
+        assertNoBriefPrefs(clean, fn)
       } catch (e) {
         return Promise.reject(e)
       }
-      return transport.call(fn, args)
+      return transport.call(fn, clean)
     },
   }
 }

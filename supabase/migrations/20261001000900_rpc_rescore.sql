@@ -55,11 +55,17 @@
 --     (rate.rescores_per_anon_day, 10; only calls that name a session of that anon_id count, so nobody
 --     can use up the calls of an id they merely know).
 -- What is left, and bounded by the 5 sessions an address may start a day and these call limits: a
--- script that cannot tell a wrong answer from a right one can still choose answers that are wrong with
--- near certainty and well formed (a number like 99999999 for an item that asks for a small one), and
--- a session of 4 such answers and one real answer then publishes that one answer's verdict through the
--- mean. The server cannot see that without comparing the answer with the key, which would make the count
--- depend on the key. See supabase/README.md, "What this does not stop".
+-- caller who KNOWS the verdict of four answers on an axis reads the fifth out of one call. For a typed
+-- number it takes no knowledge (99999999 is wrong with near certainty and well formed); for a multiple-choice
+-- item it takes the key of four items ((key + 1) mod n is inside the answer space and known to be wrong; four
+-- known-right answers do nearly as well). The wf7 audit measured it with the published settings: the mean with
+-- the fifth right and with it wrong did not overlap in 24 readings. The server cannot see padding without
+-- comparing the answer with the key, which would make the count depend on the key; closing this takes noise on
+-- the numbers. ACCEPTED RISK, owner decision 2026-10-02 (ROADMAP A24-sec, "rescore differencing"): HumanBench
+-- is a low-stakes self-knowledge test, so the residual is documented and not engineered away. Do not add noise,
+-- widen the minimums or tighten the limits here to close it without the owner's say; revisit if the stakes
+-- change (published norms, third-party use). See supabase/README.md, "Accepted inference risks" and "What
+-- `rescore` does not tell".
 --
 -- Which sessions count (A21), and why it is the BLIND eligibility. The full calibration eligibility of M2.2
 -- (hb.is_eligible) reads the key: a correct answer under a quarter of the median time is a flag and a wrong one

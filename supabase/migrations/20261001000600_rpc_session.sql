@@ -7,7 +7,10 @@
 --
 -- All are SECURITY DEFINER, owned by hb_definer, with search_path = '' and EXECUTE for anon and
 -- authenticated only. Each rejects a payload that holds a brief_prefs key anywhere (AI.26). No
--- response carries a key, a tolerance, a rationale, a parameter or a verdict on an answer.
+-- response carries a key, a tolerance, a rationale, a parameter or a verdict on an answer. One thing still depends on
+-- the verdict: WHICH item comes next, because submit adds the answer to the posterior before the pick (the adaptive
+-- step of §7.4). That is the accepted adaptive leak, ROADMAP A24-sec; do not engineer it away (supabase/README.md,
+-- "What the next item tells").
 --
 -- The anon_id: a label, not a credential (it is in the person's file and may be seen by others). The
 -- server continues the anon_id of a save only when the save proves it, i.e. holds a session this server
@@ -24,6 +27,10 @@
 -- the next item, and finish computes the correlated MAP and the server-side integrity evidence into
 -- sessions.state and decides sessions.calibration_eligible. Nothing of that is returned: eligibility, the
 -- fit statistics and the MAP are functions of which answers were right (R-11.1; supabase/README.md).
+--
+-- Amended by 20261005000100_server_seen_lists: start_session still checks the save's seen_items and
+-- seen_families for form, but the lists kept in sessions.state are what the server itself served to the person
+-- (the anon_ids the save proves) and the procedural families the save names; a save names no finite-bank item.
 
 grant create on schema public to hb_definer;
 set local role hb_definer;
@@ -99,7 +106,9 @@ $$;
 -- One answer. The item must be one this session was served and not yet answered (a repeat of an
 -- answered item is acknowledged and changes nothing, so a retry after a lost reply is safe). The
 -- answer is scored here, against the key that never leaves the database; the reply says only that it
--- was received (and, unless p_next is false, hands over the next item in the same round trip).
+-- was received (and, unless p_next is false, hands over the next item in the same round trip). The next
+-- item is chosen after the answer has moved the posterior, so it depends on whether the answer was right:
+-- the accepted adaptive leak (ROADMAP A24-sec; supabase/README.md, "What the next item tells").
 create function public.submit(
   p_token text,
   p_item_id text,
