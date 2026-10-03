@@ -25,12 +25,13 @@ if (!target) throw new Error('HumanBench: #app mount point missing')
 const now = wallClockMs()
 const today = utcSeconds(now).slice(0, 10)
 const asOf = today.slice(0, 7)
-// A browser without crypto still gets a name that is unlikely to repeat.
+// A browser without crypto still gets a name that is unlikely to repeat. Digits only, like the letters-never-touch rule of
+// fileToken: a base-36 clock could spell a word the language lint bans (A13).
 let token: string
 try {
   token = fileToken()
 } catch {
-  token = now.toString(36).slice(-4)
+  token = String(now).slice(-4)
 }
 // What the device holds: reading storage is not writing it.
 const store = createPrefsStore({ wallClockMs })

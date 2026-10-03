@@ -75,11 +75,19 @@ export function downloadText(text: string, name: string, mime: string, env: Down
   return name
 }
 
-/** A short random token for unique download names (`k3f9`): lower-case letters and digits, drawn from the browser's crypto. */
+/**
+ * A short random token for unique download names (`k3f9`), drawn from the browser's crypto: a lower-case letter, then a digit,
+ * alternating. No two letters ever touch, so the name the page shows can never spell a word the language lint bans (A13, R-5.6.1;
+ * every banned term is two or more letters, and digits delimit): a free draw once showed `hb-notes-2026-10-iq5y.txt`.
+ */
 export function fileToken(length = 4, source: Pick<Crypto, 'getRandomValues'> = crypto): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const letters = 'abcdefghijklmnopqrstuvwxyz'
+  const digits = '0123456789'
   const bytes = source.getRandomValues(new Uint8Array(length))
-  return Array.from(bytes, (b) => alphabet.charAt(b % alphabet.length)).join('')
+  return Array.from(bytes, (b, i) => {
+    const set = i % 2 === 0 ? letters : digits
+    return set.charAt(b % set.length)
+  }).join('')
 }
 
 /** `length` random lowercase hex digits from the browser's crypto (fit note ids). */

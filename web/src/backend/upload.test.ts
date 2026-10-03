@@ -140,21 +140,23 @@ describe('withAnonId', () => {
 // becomes U+FFFD.
 const NUL = '\u0000'
 
-/** Every string and key of `v` with U+0000 removed, by an independent route (a JSON round trip with a replacer for the strings). */
+/**
+ * Every string and key of `v` with U+0000 removed, by an independent route: a recursive walk (storable checks with an
+ * iterative scan and copies only dirty branches) that rebuilds every object and array.
+ *
+ * Not a JSON round trip: V8's JSON.parse (Node 26.5) can return the wrong key for an escaped one. After it has parsed
+ * `{"": null, "\\u": 1}`, parsing `{"": null, "\u0000a": 1}` gives the key "\\u" (a backslash and a u), not U+0000 and
+ * "a", so a JSON reference failed this property on a correct storable.
+ */
 function reference(v: unknown): unknown {
-  const text = JSON.stringify(v, (_k, x: unknown) => (typeof x === 'string' ? x.split(NUL).join('') : x))
-  const parsed = JSON.parse(text) as unknown
-  // keys: rename through the same route
-  const rename = (x: unknown): unknown => {
-    if (Array.isArray(x)) return x.map(rename)
-    if (typeof x === 'object' && x !== null) {
-      const out: Record<string, unknown> = {}
-      for (const [k, y] of Object.entries(x)) Object.defineProperty(out, k.split(NUL).join(''), { value: rename(y), enumerable: true, writable: true, configurable: true })
-      return out
-    }
-    return x
+  if (typeof v === 'string') return v.split(NUL).join('')
+  if (Array.isArray(v)) return v.map(reference)
+  if (typeof v === 'object' && v !== null) {
+    const out: Record<string, unknown> = {}
+    for (const [k, y] of Object.entries(v)) Object.defineProperty(out, k.split(NUL).join(''), { value: reference(y), enumerable: true, writable: true, configurable: true })
+    return out
   }
-  return rename(parsed)
+  return v
 }
 
 describe('hasUnstorable and storable', () => {

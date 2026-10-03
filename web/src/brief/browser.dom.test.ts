@@ -39,15 +39,16 @@ describe('browser helpers', () => {
     expect(revoked).toEqual(['blob:x'])
   })
 
-  it('draws a short lower-case token for file names', () => {
+  it('draws a short lower-case token for file names: a letter, then a digit, alternating', () => {
     const t = fileToken(4, {
       getRandomValues: <T extends ArrayBufferView | null>(a: T): T => {
         ;(a as unknown as Uint8Array).set([0, 1, 35, 36])
         return a
       },
     })
-    expect(t).toBe('ab9a')
-    expect(fileToken()).toMatch(/^[a-z0-9]{4}$/)
-    expect(fileToken(8)).toMatch(/^[a-z0-9]{8}$/)
+    expect(t).toBe('a1j6')
+    expect(fileToken()).toMatch(/^[a-z][0-9][a-z][0-9]$/)
+    expect(fileToken(8)).toMatch(/^(?:[a-z][0-9]){4}$/)
+    expect(fileToken(5)).toMatch(/^(?:[a-z][0-9]){2}[a-z]$/)
   })
 })

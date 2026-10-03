@@ -226,7 +226,7 @@ test.describe('copy and download (M1.22-style, WebKit and iOS included)', () => 
   test('downloads a uniquely named file with the previewed bytes', async ({ page }) => {
     await open(page)
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /^Download hb-notes-/ }).click()])
-    expect(download.suggestedFilename()).toMatch(/^hb-notes-\d{4}-\d{2}-[a-z0-9]{4}\.txt$/)
+    expect(download.suggestedFilename()).toMatch(/^hb-notes-\d{4}-\d{2}-[a-z][0-9][a-z][0-9]\.txt$/)
     const stream = await download.createReadStream()
     const chunks: Buffer[] = []
     for await (const c of stream) chunks.push(c as Buffer)
@@ -239,7 +239,7 @@ test.describe('copy and download (M1.22-style, WebKit and iOS included)', () => 
     await open(page)
     await page.getByRole('radio', { name: /Coding and data/ }).check()
     const name = (await page.getByTestId('file-name').innerText()).trim()
-    expect(name).toMatch(/^hb-skill-\d{4}-\d{2}-[a-z0-9]{4}\.md$/)
+    expect(name).toMatch(/^hb-skill-\d{4}-\d{2}-[a-z][0-9][a-z][0-9]\.md$/)
     const posix = await page.getByTestId('install-commands').innerText()
     expect(posix).toContain(`[ -e ~/.claude/skills/working-with-me/SKILL.md ] && echo "A file with that name already exists; nothing was changed." || mv ~/Downloads/${name} ~/.claude/skills/working-with-me/SKILL.md`)
     expect(posix).not.toContain('#')
