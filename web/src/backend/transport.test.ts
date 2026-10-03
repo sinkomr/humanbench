@@ -156,4 +156,34 @@ describe('guarded', () => {
     await expect(t.call('b', { p: { deep: [{ brief_prefs: 1 }] } })).rejects.toMatchObject({ kind: 'local' })
     expect(seen).toEqual(['a'])
   })
+
+  it('drops the character U+0000, which the database refuses, from the strings and keys of every call', async () => {
+    const sent: unknown[] = []
+    const inner: RpcTransport = { call: (_fn, args) => (sent.push(args), Promise.resolve('ok')) }
+    const t = guarded(inner)
+    await t.call('submit', { p_token: 't', p_response: 'a\u0000b', p_item_id: 'i:x' })
+    await t.call('report_problem', { p_detail: 'one\u0000two' })
+    await t.call('mirror_put', { p_save: { sessions: [{ responses: [['i:aut', 0, ['x\u0000', { 'k\u0000': 1 }]]] }] } })
+    expect(sent).toEqual([
+      { p_token: 't', p_response: 'ab', p_item_id: 'i:x' },
+      { p_detail: 'onetwo' },
+      { p_save: { sessions: [{ responses: [['i:aut', 0, ['x', { k: 1 }]]] }] } },
+    ])
+    // a call with none is passed on as the same object
+    const args = { p_token: 't', p_response: 3 }
+    await t.call('submit', args)
+    expect(sent.at(-1)).toBe(args)
+  })
+
+  it('reads a notes key spelled with the character as the notes key, and refuses it', async () => {
+    const inner: RpcTransport = { call: () => Promise.resolve('ok') }
+    await expect(guarded(inner).call('mirror_put', { p_save: { ['brief_\u0000prefs']: 1 } })).rejects.toMatchObject({ kind: 'local', code: 'brief_prefs_in_payload' })
+  })
+
+  it('refuses, instead of throwing, a payload too deep to clean', async () => {
+    let deep: unknown = { s: 'x\u0000' }
+    for (let i = 0; i < 400; i++) deep = { next: deep }
+    const inner: RpcTransport = { call: () => Promise.resolve('ok') }
+    await expect(guarded(inner).call('mirror_put', { p_save: deep })).rejects.toMatchObject({ kind: 'local', code: 'payload_too_deep' })
+  })
 })

@@ -498,8 +498,12 @@ the same way, in the same counter.
 **A save with U+0000 in a string cannot be sent.** I-JSON, and the app's save validator, allow a `\u0000` escape inside a
 string (a typed answer, say); PostgreSQL's `jsonb` does not. The database refuses such a parameter itself (`22P05`,
 not a `PT` code, PostgREST answers 400) before any RPC runs, for `mirror_put`, `start_session`, `rescore`,
-`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The client's upload payload
-(`toUploadPayload`, M2.7) has to refuse such a save, or drop the character, before the call.
+`delete_my_data` and `submit` alike (tested, `robustness.db.test.ts`). The app drops the character before any call
+(`web/src/backend/upload.ts`, M2.7): `toUploadPayload` removes it from every string and object key of a save, and the guarded
+transport from the arguments of every other call (an answer typed into a box, the text of a report), so a stray character in a
+typed answer cannot make the server refuse a save, a mirror or an answer. A session the server signed never holds one (jsonb
+cannot), so the strip never changes a signature's bytes; a value nested more than 256 levels that holds one is refused locally
+(`payload_too_deep`). A script that sends one gets the 400.
 
 ### Settings (`public.app_config`)
 

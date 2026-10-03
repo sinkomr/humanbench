@@ -396,6 +396,40 @@ describe('the server backup (AI.26: it holds the save without the notes settings
     expect(shim.requests.length).toBe(before)
   })
 
+  it('drops the character U+0000, which the database refuses: a typed answer that holds one cannot make the backup or an answer fail', async () => {
+    const p = await finished(3)
+    const { raw } = client()
+    // an offline session whose typed answer holds the character (JSON allows it in a string; jsonb does not)
+    const offline: SaveSession = {
+      session_id: 's_01OFFLINEX0001',
+      started_utc: '2026-10-02T09:00:00Z',
+      duration_s: 30,
+      device: p.signed.device,
+      flags: {},
+      responses: [['i:aut:1', 0, 'one idea\u0000and another', null, 4000, null]],
+    }
+    const save: SaveFileV1 = { ...p.save, sessions: [...p.save.sessions, offline] }
+    // the server itself refuses it (22P05 before any function runs) ...
+    await expect(raw.call('mirror_put', { p_token: 'hbt_ABCDEFGHIJKLMNOPQRSTUV', p_save: save })).rejects.toMatchObject({ kind: 'rejected', status: 400 })
+    await expect(raw.call('verify_save', { p_save: save })).rejects.toMatchObject({ kind: 'rejected', status: 400 })
+    // ... and the app never sends it: the backup is stored with the character gone, the signed session byte for byte
+    const put = await p.s.mirrorPut(save)
+    expect(put.stored).toBe(true)
+    const blob = JSON.parse((await db.owner.query<{ t: string }>(`select blob::text as t from public.mirror where anon_id = $1`, [p.s.anonId])).rows[0]!.t) as SaveFileV1
+    expect(blob.sessions).toHaveLength(2)
+    expect(blob.sessions[1]!.responses[0]![2]).toBe('one ideaand another')
+    expect(jcs(blob.sessions[0]!)).toBe(jcs(p.signed))
+    expect((await p.api.verifySave(blob)).nVerified).toBe(1)
+    // a typed answer to a served question, the same way
+    const t = await ServerSession.start(client().api, TEST_DEVICE)
+    const next = await t.next(['MAT'])
+    if (next.kind !== 'item') throw new Error('no item')
+    await ageExposures(db, t.sessionId, 20)
+    await t.answer({ item: next.item, response: '4\u00002', rtMs: 6000, confidence: null, flags: {} })
+    const stored = (await db.owner.query<{ response: unknown }>(`select response from public.responses where session_id = $1`, [t.sessionId])).rows
+    expect(stored).toEqual([{ response: '42' }])
+  })
+
   it('no request body the client sent in this file ever held the key, and the tables hold no such key', async () => {
     const calls = shim.requests.filter((r) => !/brief_prefs/u.test(r.body) || false)
     expect(calls.length).toBeGreaterThan(20)

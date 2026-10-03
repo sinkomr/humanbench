@@ -6,7 +6,7 @@ import type { SaveFileV1 } from '../save/types'
 import { createBackendApi, ITEM_PROBLEM_KINDS, MAX_PROBLEM_DETAIL, type BackendApi } from './api'
 import { BackendError } from './errors'
 import { ANON, CANNED, FakeTransport, SESSION_ID, TOKEN } from './testing'
-import { hasBriefPrefs } from './upload'
+import { hasBriefPrefs, hasNul } from './upload'
 
 const instant = (): Promise<void> => Promise.resolve()
 const make = (): { t: FakeTransport; api: BackendApi; slept: number[] } => {
@@ -139,6 +139,28 @@ describe('what leaves the device (AI.26, data minimisation)', () => {
     }
     expect(t.calls).toHaveLength(5000)
     for (const c of t.calls) expect(c.body.includes('brief_prefs'), `${c.fn} sent brief_prefs`).toBe(false)
+  })
+
+  it('1,000 random saves, an answer and a report: no body of any call holds the character U+0000, which the database refuses', async () => {
+    // the character planted in a top-level list and in a key, so that every call that sends a save has it to drop
+    const saves = fc.sample(arbSave({ withPrefs: true }), { numRuns: 1000, seed: 26 }).map((s, i) =>
+      i % 2 === 0 ? { ...s, seen_items: [...s.seen_items, `i:x\u0000${i}`] } : { ...s, [`extra\u0000${i}`]: { 'k\u0000': 'v\u0000' } },
+    ) as SaveFileV1[]
+    expect(saves.every((s) => hasNul(s))).toBe(true) // so this is not vacuous
+    const { t, api } = make()
+    for (const save of saves) {
+      await api.startSession(TEST_DEVICE, save)
+      await api.verifySave(save)
+      await api.rescore(save)
+      await api.mirrorPut(TOKEN, save, 'p')
+      await api.deleteMyData(ANON, { save })
+    }
+    await api.submit(TOKEN, { itemId: 'i:series:1.0.0:1', response: '4\u00002', rtMs: 10, confidence: null, next: false })
+    await api.reportProblem(TOKEN, { kind: 'typo', itemId: 'i:series:1.0.0:1', detail: 'a\u0000b' })
+    expect(t.calls).toHaveLength(5002)
+    for (const c of t.calls) expect(hasNul(JSON.parse(c.body)), `${c.fn} sent U+0000`).toBe(false)
+    expect(t.args('submit').p_response).toBe('42')
+    expect(t.args('report_problem').p_detail).toBe('ab')
   })
 
   it('the guard refuses a call that carries the key from anywhere else', async () => {
