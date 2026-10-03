@@ -30,36 +30,25 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: wf7** (`wf_e223672b-6c1`, started 2026-10-01 20:55). The user asked to use up the usage limit quickly, so this run has many parallel agents and no fixed end time. Its chains:
-  - `wf7/prefs`: the file's notes settings win on load.
-  - `wf7/banktags`: RC/VOC carry no topic tags, and the three-model G4 Claude panel.
-  - The `wf6/m2` worktree continues: a shared-memory-free harness, the rescore leak fix, then M2.2–M2.7.
-  - `wf7/m35`: M3.5 authoring, 6 axes × 3 batches, each solved by the Sonnet/Opus/Fable panel.
-
-  After the chains: merger, audit, repair.
-- **Also in flight: wf8** (`wf_7835017a-b06`). It authors Fermi items (3 batches, uncommitted in `wt/m35b`), then commits them on `wf8/m35b`. In parallel it builds M6.1 (appraisal vignettes, rule engine and the EMO UI) on `wf8/m61`. **wf8 has no merger:** merge its branches after wf7 lands.
-- **Work window:** the user allowed 16 h from 22:30 on 2026-10-01, so it ends at 14:30 on 2026-10-02. Ticks run at :37.
-- **If interrupted:** check `git branch --list 'wf7/*' 'wf6/*'`. The M3.5 batch files are uncommitted in `~/code/wt/m35/humanbench-bank/items/m35`. Commit the complete batches, then merge the green branches.
-
-- **wf6 done** (2026-10-01 07:10). Merged and pushed: M1.21, M1.22 and M5.1 (partial: server-side Brier waits on M2), plus the audit repairs. Gates: pub 3,784 unit tests plus 1,802 e2e; bank green.
-- **wf6/m2 is unmerged** (M2.0 and M2.1 are on branch `wf6/m2`; the worktrees are kept). Embedded Postgres fails in `initdb` with `shmget: Cannot allocate memory`; the Claude Bash sandbox probably blocks SysV shared memory. **Before merging:**
-  1. Run `npm run test:db` in `~/code/wt/m2/humanbench/web` from a normal terminal.
-  2. Fix `rescore()` so it doesn't leak per-item verdicts at small n. This is a blocker; the plan is to do it in M2.2.
-  3. Use the caller's `anon_id` in `rescore`.
-  4. Pin a non-beta `@embedded-postgres`.
-- **Known flakes:** under heavy machine load the timing tests fail (scorer.bench, selector.bench and one test in Reveal.dom). The keyboard-only session e2e assumes a matrices item appears. The selector rarely serves the matrices family, so in practice MAT is measured by series alone; this is worth a look.
-
-- **wf5 done** (2026-09-30 08:10; 51 agents; all 6 chains are green, merged, audited and repaired, then pushed).
-  - Tasks: AI.1–AI.7 and AI.6b, M1.15, M1.R, M1.18, M1.4b (option 1), M3.3, M3.4, M3.6, M3.7, M3.9, M4.6 (Opus beat Sonnet 8.5 to 5.5), and M4.7–M4.9.
-  - Gates: pub 3,398 unit tests plus 529 e2e; bank 4,247 tests.
-  - Ticked in ROADMAP. **TODO next session:** add the AI.1 "Needs you" items from proposal §11. Decide whether RC and VOC items must carry topic tags (AI.2 follow-up) before M3.5.
-  - CI fixes on 2026-09-30:
-    - Bank: Typer forced colour in the CLI tests.
-    - Pub: the e2e job is split by browser project, the apt step is capped at 8 min, and the job limit is 35 min.
-- **Decisions (user, 2026-09-29):**
-  - M1.4b: option 1, 20 items/axis.
-  - Phase AI Part 1 is approved.
-  - Build with Sonnet 5.5 subagents; Opus reviews and judges.
+- **wf7 done; merged and pushed 2026-10-02** (stopped at 20:36 during its final repair pass).
+  - Merged:
+    - AI.7: the file's notes settings win on load.
+    - AI.2: RC/VOC carry no topic tags.
+    - M3.3: the three-model Claude G4 panel.
+    - All of M2: M2.0 with a harness that needs no host shared memory, M2.1 with the rescore fix, M2.2, M2.3/M2.4, M2.5 and M2.7, all local.
+    - M3.5: 972 draft items.
+  - Gates: pub 4,144 unit tests, 544 DB tests and 1,888 e2e; bank 4,890 tests.
+  - The unfinished pub repair is parked, unverified, on `wip/wf7-repair-pub`.
+- **Open audit findings (next tasks):**
+  - **HIGH (M2.1/M2.2):** the next item served by `submit`/`next_item` reveals whether the previous answer was right (adaptive difficulty), so a script can harvest keys. A mitigation is needed: delayed θ updates, randomisation, or not serving finite-bank items adaptively per response.
+  - **MEDIUM (rescore):** a caller who knows 4 answers can infer the 5th.
+  - **MEDIUM (M3.5):** the G4 records look normalised by the recorder agent, so the panel's independence can't be reproduced. Re-run the panel with raw solver outputs stored verbatim before any item moves past draft.
+  - **Low:**
+    - an M2.7 flaky timing test;
+    - LR solution text refers to pre-shuffle option positions;
+    - 2 UK items lack a region tag;
+    - `toUploadPayload` must handle U+0000.
+- **wf8 done, not merged:** `wf8/m35b` (bank: 119 Fermi items) and `wf8/m61` (both repos: M6.1 emotion vignettes, rule engine and UI). Both are committed and green in their worktrees; run the gates, then merge.
 
 ## Needs you (blocked on the user)
 
