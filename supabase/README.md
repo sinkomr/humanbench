@@ -425,7 +425,7 @@ holds two is for M2.7 to settle; the MAC of M2.3 binds each session to its own `
 moves a session to another; the client sets the file's `anon_id` to the id it wants rescored.
 
 *What `rescore` does not tell* (R-11.1, DESIGN §10; owner decision 2026-10-01, "`rescore` must also not leak
-single-answer verdicts"). With the verdict gone from `finish`, the score is the one place a script could still read
+single-answer verdicts"; the residual under "What is left" is an accepted risk, ROADMAP A24-sec, 2026-10-02). With the verdict gone from `finish`, the score is the one place a script could still read
 its answers: a posterior mean from one answer *is* that answer (right moves it up, wrong down). So:
 
 | Rule | Setting | Value | Why this value |
@@ -458,15 +458,38 @@ of `rescore`, and both are closed.
    at 30, more than the 0.1 step until about 50). A session now counts toward an axis, and toward a facet, only with its
    own 5 answers on it, so the difference of two calls is a difference of sums of at least five answers.
 
-*What is left.* A well-formed answer that is wrong with near certainty. For a typed number, any entry that parses is in
-the answer space, so a script can answer 4 numeric items with `99999999` and put one real answer in a fifth: the axis's
-mean then reads out that one answer's verdict, in the same way as with the invalid padding (the review's measurements are
-the bound, 84% in one call, less when the padding is not certain). The server can tell such an entry from a poor wrong
-one only by comparing it with the key, which would make the count depend on the key. This is limited to axes that have
-typed-number items (a multiple-choice item has no answer that is known wrong), and bounded by the 5 sessions an address
-may start a day, the 20 calls a day per address and the 10 per `anon_id`: one reading per axis (and per facet, with five
-numeric items each) per session. Closing it takes noise on the numbers, which the owner has not decided on. The server-side
-evidence of M2.2 would catch a padded session of 20 answers or more (it is a misfit), but it cannot be used here: *which*
+*What is left (accepted: ROADMAP A24-sec).* A well-formed answer whose verdict the caller already knows, on **any** kind of item. The minimum count and the
+rounding stop a script that knows nothing; they do not stop one that knows four answers on an axis and reads the fifth out of
+one call. Two ways to know four:
+
+- **A typed number.** Any entry that parses is in the answer space, so a script can answer 4 numeric items with `99999999`
+  (wrong with near certainty, and no key needed) and put one real answer in a fifth.
+- **Multiple choice.** A script that can solve four items, or that has learnt their keys, answers them right, or with
+  `(key + 1) mod n`, which is inside the answer space and known to be wrong. (The first version of this section said that a
+  multiple-choice item has no answer that is known wrong, and that the residual was limited to axes with typed-number
+  items. That is true for a caller who knows nothing, and false for one who knows the key: the post-merge audit measured it.)
+
+Measured (wf7 audit, re-run by hand; QR multiple-choice, the published settings: 5 items, mean step 0.1; 12 sessions each way,
+the 5th answer is the one being read):
+
+| the other four answers | `eap.QR.mean` with the 5th right | with the 5th wrong |
+|---|---|---|
+| in-space and wrong | −1.3 to −0.8 | −1.9 to −1.5 |
+| right | 1.3 to 1.8 | 0.7 to 1.4 |
+
+With four known-wrong answers the two sets are apart (a threshold at −1.45 separates all 24 readings); with four right ones they
+mostly are. So one call reads one answer's verdict. It is bounded by the 5 sessions an address may start a day, the 20 calls
+a day per address and the 10 per `anon_id`: one reading per axis (and per facet) per session, and a multiple-choice reading
+needs the keys of four other items on the axis, which earlier readings give (each one teaches one key that can pad the next).
+Closing it takes noise on the numbers, and rounding does not do it: the mean of a score of n answers moves by about 0.5 at
+n = 5 and 0.2 at n = 20 for one answer, and a script that controls the other answers can slide the mean across any fixed rounding
+boundary. Only noise that is not under the caller's control (and a budget of calls, which exists) bounds what a caller learns.
+**Owner decision, 2026-10-02 (ROADMAP A24-sec): this is an accepted risk.** The condition of the 2026-10-01 decision
+("`rescore` must also not leak single-answer verdicts", which blocked M2.1) is met against a caller who knows nothing, and the
+residual against one who already knows four answers is accepted for a low-stakes self-knowledge test: it needs a deliberate script
+and many sessions, and it is bounded by the limits above. Nothing here adds noise or otherwise tries to close it, and nobody should
+without the owner's say; revisit if the stakes change (published norms, third-party use). The
+server-side evidence of M2.2 would catch a padded session of 20 answers or more (it is a misfit), but it cannot be used here: *which*
 sessions that evidence drops is a function of which answers were right, and a score reply that differs with it differs with
 a verdict. (The first M2.2 version did read it, and a script could set one flag itself, answer one item at once and see
 whether its session was scored: `n_scored`, the presence of `eap[axis]` and `withheld` all differ with the answer. Found by
@@ -540,6 +563,25 @@ nothing). The rows keep their verdicts for the server, and a person gets their s
 re-scores from the database's rows (A16: calibration uses DB rows, never uploads) and returns the per-axis and
 per-facet EAPs, withholding and rounding what would read out a single answer (above). DESIGN §8 still describes the
 tuple with `correct` filled; this is a deviation the owner has accepted, to be reflected in DESIGN at the next edit.
+
+### Accepted inference risks (ROADMAP A24-sec, owner decision 2026-10-02)
+
+HumanBench is a low-stakes self-knowledge test, not a credential or an LLM benchmark. Two ways to read a key out of the
+server are therefore **accepted, documented risks, and are not to be engineered away** (no noise on the numbers, no delayed
+updates, no wider pool, no new limit on these paths without the owner's say):
+
+1. **Adaptive leak.** The next item served after `submit` or `next_item` shows whether the previous answer was right,
+   because the posterior moves before the pick (details: "What the next item tells", under M2.2).
+2. **Rescore differencing.** A caller who already knows four answers on an axis can read the fifth out of one `rescore`
+   call, from the mean of a minimum-n axis estimate (details: "What `rescore` does not tell", above).
+
+Both need a deliberate script and many sessions. What stays in place: the rate limits (5 sessions a day per hashed address
+plus salt, 200 items a session, an average of at least 2 s an item, 20 `rescore` calls a day per address and 10 per `anon_id`),
+the 0.25 exposure cap with randomesque selection, `correct: null` in every saved tuple (above), and the rotation of items that
+show anomalous exposure or p-value drift (M4.4 QA). Revisit if the stakes change, for example published norms or use by a third
+party. The code on these paths cites A24-sec: the migrations of the session RPCs (`submit`, `next_item`), of selection
+(`hb.serve_next`), of `rescore` and of `hb.response_fits`; `ServerSession` and the `nextItem`, `submit` and `rescore` methods in
+`web/src/backend/`; and the README of the repository.
 
 ### What the next tasks fill in
 
@@ -761,12 +803,12 @@ with an index on `item_parameters (param_version, b)`; not built, because it wou
 
 - **How the blob gets the correlated MAP** (above): M2.7.
 - Priors for a returning person: the in-session prior is N(0, 1) per axis (A21), not the posterior of the earlier sessions
-  (`nextSessionPrior` in `engine/retest.ts`); the coverage floor does use the save's `seen_items`.
+  (`nextSessionPrior` in `engine/retest.ts`); the coverage floor does use the items the server served to the `anon_id` before.
 - Testlets: the DB has no `testlet_id` on an item, so 2PL-testlet items are scored as 2PL (as the app); `hb.map_theta` takes
   the `testlet` kind when the pipeline groups them.
-- Person fit does not catch a padded session under 20 answers (README, "What this does not stop"), and `rescore` does not read it at
+- Person fit does not catch a padded session under 20 answers (README, "What `rescore` does not tell"), and `rescore` does not read it at
   any length (the blind eligibility, above): the padded-session reading of a score is limited by the call limits and the
-  minimum counts only, until the owner decides on noise.
+  minimum counts only (an accepted risk, ROADMAP A24-sec).
 - A session with two fast answers (by the server's clock, right or wrong) is not scored by `rescore`, where the app's own
   check counts correct answers only. The count of two is the app's; whether a lone rusher should lose a whole session in the
   notes is the owner's to weigh.

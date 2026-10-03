@@ -39,6 +39,13 @@
 -- current estimate on its axis. A pretest answer is stored with pretest = true and counts for no score.
 -- The client cannot tell a pretest item from a live one: item_view shows neither status nor flag.
 --
+-- The accepted adaptive leak (ROADMAP A24-sec, owner decision 2026-10-02): the pick is made on the posterior AFTER
+-- the last answer, so which item comes next depends on whether that answer was right, and a deliberate script
+-- over many sessions can read a key from it. HumanBench is a low-stakes self-knowledge test; the risk is accepted
+-- and documented, not engineered away (no wider pool, no noise on the selection, no lagged update). What bounds
+-- it: the exposure cap above, randomesque top-k, the session rate limit and the rotation of items with anomalous
+-- exposure or p-value drift. supabase/README.md, "What the next item tells".
+--
 -- Not here, because the app's selector gets them from the session flow: the remaining-time test
 -- (remainingS), and the exposure cap and facet weights of AI.21b (goals sessions, Part 2, only if approved).
 

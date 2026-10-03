@@ -87,13 +87,16 @@ export type DeleteProof = { readonly phrase: string; readonly save?: SaveFileV1 
 export interface BackendApi {
   /** Opens a session. `save` (if given) lets the server continue its anon_id when the save proves it; what it keeps away from the session is what the server itself served to that id, not what the save lists. */
   startSession(device: DeviceInfo, save?: SaveFileV1 | null): Promise<StartedSession>
+  /** The pending item, or a new one. Which one follows from the answers so far: the accepted adaptive leak (ROADMAP A24-sec). */
   nextItem(token: string, axes?: readonly AxisCode[]): Promise<NextReply>
+  /** Hands over an answer; the reply carries no verdict, but its `next` item depends on it (the accepted adaptive leak, ROADMAP A24-sec). */
   submit(token: string, args: SubmitArgs): Promise<SubmitReply>
   finish(token: string, flags?: SessionFlags): Promise<FinishReply>
   reportProblem(token: string, report: ProblemReport): Promise<void>
   /** True if the server stored something (two skipped questions store nothing). */
   submitSurvey(token: string, survey: Survey): Promise<boolean>
   verifySave(save: SaveFileV1): Promise<VerifyReply>
+  /** The server's own-axis scores for the signed sessions of `save`. Differencing by a caller who knows four answers is an accepted risk (ROADMAP A24-sec). */
   rescore(save: SaveFileV1): Promise<RescoreReply>
   mirrorPut(token: string, save: SaveFileV1, phrase?: string): Promise<MirrorPutReply>
   mirrorGet(anonId: string, phrase: string): Promise<MirrorGetReply>

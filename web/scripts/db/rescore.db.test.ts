@@ -759,6 +759,9 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
     expect(await q('hb.quantise_up(0.2::float8, 0::float8)')).toBe(0.2)
   })
 
+  // This and the next test close the padding of a caller who knows nothing (answers no item can have). They do not stop one who
+  // already knows four verdicts on an axis, with `99999999` or `(key + 1) mod n`, and reads the fifth: that residual is an accepted
+  // risk (ROADMAP A24-sec, owner decision 2026-10-02; README, "What `rescore` does not tell"), not a gap to close with noise here.
   it('does not count answers outside the item\'s answer space: one real answer and any number of answers known to be wrong read out nothing (the padding probe)', async () => {
     for (const right of [true, false]) {
       for (const real of [1, 2, 3, 4]) {
@@ -951,7 +954,7 @@ describe('hb.response_fits: the answer space of an item (what counts as an answe
     await table(keys, 0, [
       ['3.5', true], ['7/2', true], ['3 1/2', true], ['$3.50', true], ['1,500', true], ['12%', true], [3.5, true], [-2, true], ['  4 ', true],
       ['x', false], ['', false], [' ', false], ['1/0', false], ['3,5', false], ['1e3', false], [null, false], [true, false], [[], false], [{ v: 1 }, false], [undefined, false],
-      // the residual (README, "What this does not stop"): the server cannot tell a number far off the key from a plausible wrong one without the key
+      // the residual (README, "What `rescore` does not tell", "What is left"; an accepted risk, ROADMAP A24-sec): the server cannot tell a number far off the key from a plausible wrong one without the key
       [99999999, true], ['99999999999', true],
     ])
   })

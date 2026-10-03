@@ -518,9 +518,12 @@ $$;
 --   {letter}  one ASCII letter, ignoring surrounding space (the bank's letter families use A-Z)
 --   {value}   a string or number that hb.parse_entry reads as a number or fraction
 --   no key    true (a block: scored elsewhere, and its correct is null)
--- What stays outside this test: a typed number that is well formed and wildly off (1e15 for an item
--- whose answer is 7). The server could tell it from a plausible wrong answer only by comparing it with the
--- key, which would make the count depend on the key; see supabase/README.md, "What this does not stop".
+-- What stays outside this test: an answer that is well formed and known to be wrong by a caller who knows the
+-- key or the kind of item: a typed number wildly off (1e15 for an item whose answer is 7), or, for a caller who
+-- has the key, a wrong option. The server could tell them from a plausible wrong answer only by comparing them
+-- with the key, which would make the count depend on the key; see supabase/README.md, "What `rescore` does not
+-- tell", "What is left". That residual is an accepted risk (ROADMAP A24-sec, rescore differencing), not a gap
+-- to close here.
 create function hb.response_fits(p_key jsonb, p_n_options int, p_response jsonb)
 returns boolean
 language plpgsql immutable

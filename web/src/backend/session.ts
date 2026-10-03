@@ -14,6 +14,12 @@
  * - it does not take the timed tasks (reaction time, memory, coding, reading), which stay on the
  *   device as they were in the static version and are saved as a session of their own, without a
  *   signature (A16: only a session the server built from its own rows is signed).
+ *
+ * What it does not hide (ROADMAP A24-sec, owner decision 2026-10-02): the next item the server picks follows
+ * from whether the last answer was right (the adaptive step of §7.4), so a deliberate script over many sessions
+ * could read a key from the items it is served; and `rescore` can be differenced by a caller who already knows
+ * four answers on an axis. Both are accepted, documented risks of a low-stakes self-knowledge test, and nothing
+ * here tries to hide or randomise them (supabase/README.md, "Accepted inference risks").
  */
 
 import type { AxisCode } from '../engine/axes'
