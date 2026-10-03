@@ -85,7 +85,7 @@ export type DeleteProof = { readonly phrase: string; readonly save?: SaveFileV1 
 // -------------------------------------------------------------------------------- api
 
 export interface BackendApi {
-  /** Opens a session. `save` (if given) lets the server continue its anon_id and keep its items away from this session. */
+  /** Opens a session. `save` (if given) lets the server continue its anon_id when the save proves it; what it keeps away from the session is what the server itself served to that id, not what the save lists. */
   startSession(device: DeviceInfo, save?: SaveFileV1 | null): Promise<StartedSession>
   nextItem(token: string, axes?: readonly AxisCode[]): Promise<NextReply>
   submit(token: string, args: SubmitArgs): Promise<SubmitReply>

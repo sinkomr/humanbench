@@ -72,7 +72,7 @@ export class ServerSession implements CatSource {
     this.paramVersion = started.paramVersion
   }
 
-  /** Opens a session for `device`; `save` lets the server continue its anon_id and leave out what it has seen. */
+  /** Opens a session for `device`; `save` lets the server continue its anon_id when the save proves it (what it leaves out is what the server itself served to that id, not what the save lists). */
   static async start(api: BackendApi, device: DeviceInfo, save?: SaveFileV1 | null): Promise<ServerSession> {
     return new ServerSession(api, await api.startSession(device, save))
   }

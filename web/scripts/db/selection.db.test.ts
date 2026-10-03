@@ -15,7 +15,7 @@ import { eapAxis } from '../../src/engine/scorer'
 import { criterion, itemInformation } from '../../src/engine/selector'
 import type { Observation } from '../../src/engine/types'
 import { customItem, loadFixtureBank, type FixtureItem } from './bank-fixture'
-import { ageExposures, from, isServed, startSession, type Next, type Served, type Started } from './rpc-support'
+import { ageExposures, emptySave, from, isServed, startSession, type Next, type Served, type Started } from './rpc-support'
 import type { TestDb } from './harness'
 import { openTestDb, pgCode } from './vitest'
 
@@ -69,6 +69,26 @@ async function pool(sc: Scenario, sessionId: string, axes: readonly string[] | n
     [sessionId, axes],
   )
   return rows.map((r) => ({ id: r.o_item_id, score: r.o_score, info: r.o_info, axis: r.o_axis }))
+}
+
+/**
+ * A person with a finished, signed session in which the server served (and they answered) `k` items: the save that
+ * proves their anon_id (it lists the signed session and nothing else), and the items they were served. A new session
+ * started with that save continues the anon_id, so the server's own rows are what keep those items away from it.
+ */
+async function personWithHistory(sc: Scenario, k: number, axes?: readonly string[]): Promise<{ save: Record<string, unknown>; anonId: string; served: FixtureItem[] }> {
+  const s = await start(sc)
+  const served: FixtureItem[] = []
+  for (let i = 0; i < k; i++) {
+    const n = await nextOf(sc, s, axes)
+    if (!isServed(n)) break
+    const it = sc.bank.get(n.item.item_id)!
+    served.push(it)
+    await ageExposures(sc.db, s.session_id, 20)
+    await sc.db.rpc(from(s.ip), 'submit', { p_token: s.token, p_item_id: it.itemId, p_response: it.key.index, p_rt_ms: 5000, p_next: false, ...(axes === undefined ? {} : { p_axes: [...axes] }) })
+  }
+  const fin = await sc.db.rpc<{ session: Record<string, unknown> }>(from(s.ip), 'finish', { p_token: s.token })
+  return { save: emptySave(s.anon_id, { sessions: [fin.session] }), anonId: s.anon_id, served }
 }
 
 const paramsOf = (it: FixtureItem): Parameters<typeof itemInformation>[0] =>
@@ -306,7 +326,7 @@ describe('the exposure cap (DESIGN §6.iii: at most 0.25 of sessions)', () => {
 
 // ------------------------------------------------------------------------------------- exclusions
 describe('exclusion: items, families and sibling groups (A11, A18)', () => {
-  it('never serves two items of one sibling group or one family in a session, nor anything of a group the save has seen', async () => {
+  it('never serves two items of one sibling group or one family in a session, nor anything of a group the server served this person before', async () => {
     // 36 QR items: 12 groups of 3 siblings (three families in a group)
     const items = Array.from({ length: 36 }, (_, k) => {
       const group = Math.floor(k / 3)
@@ -335,19 +355,25 @@ describe('exclusion: items, families and sibling groups (A11, A18)', () => {
       const group = sc.bank.get(first.item.item_id)!.siblingGroup
       const ids = (await pool(sc, s.session_id)).map((p) => sc.bank.get(p.id)!.siblingGroup)
       expect(ids).not.toContain(group)
-      // a save that has seen two items: their families, the groups of those families and the items themselves are out
-      const seen = [items[0]!, items[7]!]
-      const rest = await run({ schema_version: '1.0.0', bank_version: 'test', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL', created_utc: '2026-10-01T12:00:00Z', sessions: [], seen_items: [seen[0]!.itemId], seen_families: [seen[1]!.familyId] })
+      // a person the server served two items before (the proof is their signed session): those items, the other items of
+      // their families and the groups of those families are out of every later session
+      const person = await personWithHistory(sc, 2)
+      expect(person.served.length).toBe(2)
+      const rest = await run(person.save)
       expect(rest.length).toBe(10)
       const groups = new Set(rest.map((i) => i.siblingGroup))
-      expect(groups.has(seen[0]!.siblingGroup)).toBe(false)
-      expect(groups.has(seen[1]!.siblingGroup)).toBe(false)
+      for (const seen of person.served) expect(groups.has(seen.siblingGroup)).toBe(false)
+      // what a file claims it has seen decides nothing: not a stranger's, not the person's own (the server's rows are the only list)
+      const claim = { seen_items: [items[20]!.itemId], seen_families: [items[30]!.familyId] }
+      expect((await run(emptySave('hb_7Q3m9Kx2Vw5rT8pL', claim))).length).toBe(12)
+      const second = await personWithHistory(sc, 2) // (the first person's later session is in the server's rows now: all 12 groups)
+      expect((await run({ ...second.save, ...claim })).length).toBe(10)
     } finally {
       await sc.db.close()
     }
   })
 
-  it('also excludes the family of a seen item that the save lists only by item id', async () => {
+  it('also excludes the other items of the family of an item the server served this person', async () => {
     const a = customItem(1, 'QR', {})
     const sibling = { ...customItem(2, 'QR', {}), familyId: a.familyId, siblingGroup: a.siblingGroup } // a second item of the same family
     const other = customItem(3, 'QR', {})
@@ -359,9 +385,14 @@ describe('exclusion: items, families and sibling groups (A11, A18)', () => {
       )
       await sc.db.owner.query(`insert into public.item_keys (item_id, key) values ($1, '{"index": 0}')`, [sibling.itemId])
       await sc.db.owner.query(`insert into public.item_parameters (item_id, param_version, model, a, b, extra) values ($1, 'p-test', '2pl', 1, 0, '{}')`, [sibling.itemId])
-      const s = await start(sc, { schema_version: '1.0.0', bank_version: 'test', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL', created_utc: '2026-10-01T12:00:00Z', sessions: [], seen_items: [a.itemId], seen_families: [] })
+      const person = await personWithHistory(sc, 1)
+      const seenFamily = person.served[0]!.familyId
+      const s = await start(sc, person.save)
       const ids = (await pool(sc, s.session_id)).map((p) => p.id)
-      expect(ids).toEqual([other.itemId])
+      // three items in two families; the family of what they were served is out, whichever of its items that was, and one item of the other is left
+      expect(ids.length).toBe(1)
+      const { rows } = await sc.db.owner.query<{ family_id: string }>(`select family_id from public.items where item_id = $1`, [ids[0]])
+      expect(rows[0]!.family_id).not.toBe(seenFamily)
     } finally {
       await sc.db.close()
     }
@@ -405,15 +436,19 @@ describe('coverage floor, per-axis stop and the segment\'s axes (§7.4, A15)', (
     expect(without.get('QR')).toBeGreaterThanOrEqual(7) // E[T] 10 s against 60 s: the criterion alone serves QR
   })
 
-  it('counts the items of the save\'s earlier sessions toward the floor', async () => {
+  it('counts the items the server served in the person\'s earlier sessions toward the floor, and not what a file says', async () => {
     const sc = await scenario(bank(), { 'selection.coverage_floor': 3, 'selection.pretest_share': 0, 'selection.top_k': 200 })
     try {
-      const earlier = sc.items.filter((i) => i.axis === 'MAT' || i.axis === 'KST').slice(0, 0)
-      const seenMat = sc.items.filter((i) => i.axis === 'MAT').slice(0, 3).map((i) => i.itemId)
-      const s = await start(sc, { schema_version: '1.0.0', bank_version: 'test', anon_id: 'hb_7Q3m9Kx2Vw5rT8pL', created_utc: '2026-10-01T12:00:00Z', sessions: [], seen_items: [...seenMat, ...earlier.map((i) => i.itemId)], seen_families: [] })
+      const person = await personWithHistory(sc, 3, ['MAT'])
+      expect(person.served.map((i) => i.axis)).toEqual(['MAT', 'MAT', 'MAT'])
       // MAT has its 3: the floor applies to KST and QR only
+      const s = await start(sc, person.save)
       const axes = new Set((await pool(sc, s.session_id)).map((p) => p.axis))
       expect([...axes].sort()).toEqual(['KST', 'QR'])
+      // a file that lists three MAT items it never had from this server does not move the floor
+      const seenMat = sc.items.filter((i) => i.axis === 'MAT').slice(0, 3).map((i) => i.itemId)
+      const claimed = await start(sc, emptySave('hb_7Q3m9Kx2Vw5rT8pL', { seen_items: seenMat }))
+      expect([...new Set((await pool(sc, claimed.session_id)).map((p) => p.axis))].sort()).toEqual(['KST', 'MAT', 'QR'])
     } finally {
       await sc.db.close()
     }

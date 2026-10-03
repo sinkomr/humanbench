@@ -35,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1 to M2.5 files in order, one concern each', () => {
+  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists) in order, one concern each', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -51,6 +51,7 @@ describe('migrations: the set', () => {
       '20261002000300_selection.sql',
       '20261003000100_save_signing.sql',
       '20261004000100_response_archive.sql',
+      '20261005000100_server_seen_lists.sql',
     ])
   })
 
@@ -68,7 +69,7 @@ describe('migrations: functions', () => {
   it('finds the functions (so the checks below are not vacuous)', () => {
     expect(functions.length).toBeGreaterThan(90)
     expect(code(all).match(/create\s+(?:or\s+replace\s+)?function\b/gi)!.length, 'every function is seen by the pattern').toBe(functions.length)
-    // rescore is created in M2.1 and re-created by M2.5 (create or replace): 11 different RPCs
+    // rescore is created in M2.1 and re-created by M2.5, start_session by the seen-list fix (create or replace): 11 different RPCs
     expect(new Set(functions.filter((f) => f.name.startsWith('public.')).map((f) => f.name)).size).toBe(11)
   })
 
@@ -141,6 +142,39 @@ describe('migrations: the readers of old answers (M2.5)', () => {
       .flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\n\$\$;/g)].filter((x) => /\bhb\.responses_of\(/.test(x[0])).map((x) => x[1]!))
       .filter((name) => name !== 'hb.responses_of')
     expect(users.sort()).toEqual(['hb.is_eligible', 'public.rescore'])
+  })
+})
+
+describe('migrations: the seen lists come from the server (post-merge audit fix, supabase/README.md "What the next item tells")', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
+  }
+  const fixed = byName('_server_seen_lists.sql')
+
+  it('re-creates start_session so that a save\'s lists are checked for form and used for nothing', () => {
+    const now = functionText(fixed, 'public.start_session')
+    const then = functionText(byName('_rpc_session.sql'), 'public.start_session')
+    // the first version kept the lists of the save in the session; the new one keeps what the server served to the anon_id
+    expect(then).toMatch(/v_seen_items\s*:=\s*hb\.check_id_list\(p_save -> 'seen_items'/)
+    expect(code(now)).not.toMatch(/v_seen_items|v_seen_families/)
+    expect(code(now)).toContain("'seen_items', v_seen -> 'items', 'seen_families', v_seen -> 'families'")
+    expect(code(now)).toContain('v_seen := hb.seen_by_anon(v_anon)')
+    const reads = [...code(now).matchAll(/p_save\s*->\s*'seen_\w+'/g)]
+    expect(reads.length).toBe(2)
+    for (const m of reads) expect(code(now).slice(m.index! - 40, m.index!), m[0]).toMatch(/perform hb\.check_id_list\(\s*$/)
+    // the anon_id is decided before the lists are looked up (so a fresh id has none)
+    expect(code(now).indexOf('v_seen := hb.seen_by_anon(v_anon)')).toBeGreaterThan(code(now).indexOf("v_anon := 'hb_' || hb.rand_b62(16)"))
+  })
+
+  it('reads the lists of an anon_id from the exposure log of its sessions and from the compacted arrays, and nothing a client sends', () => {
+    const fn = code(functionText(fixed, 'hb.seen_by_anon'))
+    expect(fn).toMatch(/from public\.sessions s where s\.anon_id = p_anon_id/)
+    expect(fn).toMatch(/from public\.exposure_log e/)
+    expect(fn).toMatch(/from public\.response_archive ra/)
+    expect(fn).not.toMatch(/p_save|brief_prefs|item_keys/)
   })
 })
 

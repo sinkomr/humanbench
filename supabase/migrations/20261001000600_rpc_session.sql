@@ -24,6 +24,10 @@
 -- the next item, and finish computes the correlated MAP and the server-side integrity evidence into
 -- sessions.state and decides sessions.calibration_eligible. Nothing of that is returned: eligibility, the
 -- fit statistics and the MAP are functions of which answers were right (R-11.1; supabase/README.md).
+--
+-- Amended by 20261005000100_server_seen_lists: start_session still checks the save's seen_items and
+-- seen_families for form, but the lists kept in sessions.state are what the server itself served to the
+-- session's anon_id, not what the save says.
 
 grant create on schema public to hb_definer;
 set local role hb_definer;

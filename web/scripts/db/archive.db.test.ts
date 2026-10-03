@@ -166,6 +166,30 @@ describe('compaction keeps what reads old answers', () => {
     expect(await readerRows(ids)).toEqual(rowsBefore)
   })
 
+  it('keeps the items of an archived session out of the person’s next session: the seen lists are the server’s rows, live or compacted', async () => {
+    const rng = createRng('archive-seen')
+    const a = await takeSession(undefined, 20, { QR: 0.3, MAT: 0.1 }, rng)
+    await schedule(a.sessionId, 2)
+    const file = await sign(saveOf(a.anonId, [a.sessionId]))
+    const col = async (sql: string): Promise<string[]> => (await db.owner.query<{ x: string }>(sql, [a.sessionId])).rows.map((r) => r.x)
+    const served = await col(`select item_id as x from public.exposure_log where session_id = $1 order by item_id`)
+    const families = await col(`select distinct family_id as x from public.exposure_log where session_id = $1 order by family_id`)
+    expect(served.length).toBeGreaterThanOrEqual(20) // the unanswered item that was pending at the end counts too
+    const stateOf = async (sid: string): Promise<{ seen_items: string[]; seen_families: string[] }> =>
+      (await db.owner.query<{ state: { seen_items: string[]; seen_families: string[] } }>(`select state from public.sessions where session_id = $1`, [sid])).rows[0]!.state
+    const live = await startSession(db, freshIp(), file)
+    expect(live.anon_id).toBe(a.anonId)
+    expect(await stateOf(live.session_id)).toMatchObject({ seen_items: served, seen_families: families })
+    // compacted: the rows are gone, the array holds the item ids, and the next session still keeps them away
+    expect(await archive(a.sessionId)).toBe('archived')
+    expect(await col(`select item_id as x from public.exposure_log where session_id = $1`)).toEqual([])
+    const later = await startSession(db, freshIp(), file)
+    expect(await stateOf(later.session_id)).toMatchObject({ seen_items: served, seen_families: families })
+    // and a stranger who sends the same file with an id the server did not issue is served the lot again
+    const stranger = await startSession(db, freshIp(), { ...file, anon_id: 'hb_7Q3m9Kx2Vw5rT8pL', sessions: [], seen_items: served })
+    expect(await stateOf(stranger.session_id)).toEqual({ v: 1, seen_items: [], seen_families: [] })
+  })
+
   it('stores the session in a fraction of the live rows’ space', async () => {
     const rng = createRng('archive-size')
     const a = await takeSession(undefined, 60, { QR: 0.1, MAT: 0.1 }, rng)
