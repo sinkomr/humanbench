@@ -15,7 +15,7 @@
   import Keypad from '../common/Keypad.svelte'
   import { digitOfKey, isOwnKey } from '../common/focus'
   import { browserTiming, type RendererProps } from '../common/props'
-  import { responseTimestampFromEvent } from '../../tasks/rt/timing'
+  import { BlockTimestampPolicy, responseTimestampFromEvent } from '../../tasks/rt/timing'
   import { CODING_DIGITS, type CodingResponse, type CodingResponses, type CodingSpec } from '../../tasks/coding/config'
   import Glyph from './Glyph.svelte'
   import { GLYPHS } from './glyphs'
@@ -34,6 +34,10 @@
   let stageEl: HTMLElement | undefined = $state()
   let statusEl: HTMLElement | undefined = $state()
   const responses: CodingResponse[] = []
+  // Both candidate clocks of each response, so the block's single source (§11.6) can be applied
+  // at the end: there is no practice here, and the decision uses every response's lag.
+  const raw: { digit: number; handlerAt: number; eventAt: number | null }[] = []
+  const clockPolicy = new BlockTimestampPolicy()
   let t0 = 0
   let handle: number | null = null
 
@@ -78,6 +82,17 @@
     })
   }
 
+  /** Responses timed with the block's one clock: the handler's if the event clock is offset, else the event's where usable. */
+  function finalResponses(): CodingResponse[] {
+    const d = clockPolicy.decide()
+    let last = 0
+    return raw.map((r) => {
+      const at = d?.source === 'handler' || r.eventAt === null ? r.handlerAt : r.eventAt
+      last = Math.max(at, last, 0)
+      return { digit: r.digit, t_ms: last }
+    })
+  }
+
   function finish(by: 'time' | 'all'): void {
     if (phase !== 'running') return
     if (handle !== null) t.frames.cancel(handle)
@@ -88,18 +103,22 @@
     flushSync()
     // The stage and keypad that held focus are gone: move focus to the status line.
     statusEl?.focus()
-    onrespond(responses.map((r) => ({ ...r })))
+    onrespond(finalResponses())
   }
 
   function press(digit: number, event: { readonly timeStamp: number }): void {
     if (phase !== 'running' || !visible) return
-    const at = responseTimestampFromEvent(event, t.clock, t0).ts - t0
+    clockPolicy.observe(event, t.clock)
+    const handlerAt = t.clock.now() - t0
+    const stamp = responseTimestampFromEvent(event, t.clock, t0)
+    const at = stamp.ts - t0
     if (at >= windowMs) {
       finish('time')
       return
     }
     const last = responses[responses.length - 1]?.t_ms ?? 0
     responses.push({ digit, t_ms: Math.max(at, last, 0) })
+    raw.push({ digit, handlerAt, eventAt: stamp.source === 'event' ? at : null })
     if (responses.length >= spec.sequence.length) {
       finish('all')
       return

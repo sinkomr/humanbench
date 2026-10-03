@@ -15,6 +15,8 @@ import {
   collectFrames,
   frameMetrics,
   inputLatency,
+  rtSourceForLag,
+  EVENT_OFFSET_NOTE,
   isHighResEventTs,
   onsetDelays,
   onsetMetrics,
@@ -409,6 +411,38 @@ describe('report and verdict', () => {
     }
     expect(r.metrics.key_latency_ms.note).toMatch(/event timestamp/)
     expect(r.pass).toBe(true)
+  })
+
+  it('a constant ~205 ms event offset (Safari): latency FAILs with the note, the run fails, RT source is the handler', () => {
+    const off = Array.from({ length: 12 }, (_, i) => ({ eventTs: i * 100, handlerTs: i * 100 + 203 + (i % 7) }))
+    const r = buildReport(base({ keys: off, pointers: off }))
+    for (const k of ['key_latency_ms', 'pointer_latency_ms'] as const) {
+      expect(r.metrics[k].pass, k).toBe(false)
+      expect(r.metrics[k].note, k).toBe(EVENT_OFFSET_NOTE)
+      expect(r.metrics[k].summary?.p50, k).toBeGreaterThan(200)
+    }
+    expect(r.event_lag).toEqual({ max_ms: 25, key_rt_source: 'handler', pointer_rt_source: 'handler' })
+    expect(r.pass).toBe(false)
+    expect(r.report_version).toBe('rt_selftest_v3')
+  })
+
+  it('3 ms lag stays informational with the event source; the p50 bound is exactly 25 ms', () => {
+    const ok = Array.from({ length: 12 }, (_, i) => ({ eventTs: i * 100, handlerTs: i * 100 + 3 }))
+    const r = buildReport(base({ keys: ok, pointers: ok }))
+    expect(r.metrics.key_latency_ms.pass).toBeNull()
+    expect(r.event_lag.key_rt_source).toBe('event')
+    expect(r.pass).toBe(true)
+    const at = (lag: number) => summarize([lag, lag, lag])
+    expect(rtSourceForLag(at(25))).toBe('event')
+    expect(rtSourceForLag(at(25.01))).toBe('handler')
+    expect(rtSourceForLag(null)).toBe('handler')
+  })
+
+  it('a high p50 fails even if only the keys are offset; skipped phases report no source', () => {
+    const off = Array.from({ length: 5 }, (_, i) => ({ eventTs: i * 100, handlerTs: i * 100 + 205 }))
+    const r = buildReport(base({ keys: off, pointers: null }))
+    expect(r.pass).toBe(false)
+    expect(r.event_lag).toMatchObject({ key_rt_source: 'handler', pointer_rt_source: null })
   })
 
   it('the overall verdict depends only on the jitter, timer and onset metrics', () => {

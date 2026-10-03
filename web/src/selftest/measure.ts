@@ -16,10 +16,13 @@
  *   refresh at or after the target ({@link scheduledFrameTs}). A dropped frame shows up as about
  *   one frame period; the sub-frame wait from the target to the next refresh is frame
  *   quantisation, not error, and is reported separately as **onset lag** (informational);
- * - **keyboard / pointer event latency** (informational): |performance.now() in the handler −
- *   event.timeStamp| (both on the performance.now() timeline), the delay between the input event
- *   and the handler. It is reported but not gated: RT responses are stamped with the event's own
- *   timestamp (`responseTimestampFromEvent`, §11.6), so this dispatch delay is not part of any RT.
+ * - **keyboard / pointer event lag**: performance.now() in the handler − event.timeStamp, reported
+ *   as p50 / p95 / max. RT responses are stamped with the event's own timestamp when it is on the
+ *   performance.now() timeline (`responseTimestampFromEvent`, §11.6), so a small lag is dispatch
+ *   delay that is not part of any RT and is informational. When the p50 lag exceeds
+ *   {@link MAX_EVENT_LAG_MS} the event clock is offset from performance.now() (Safari measured a
+ *   constant ~205 ms), RT falls back to the handler clock, the dispatch delay counts again, and
+ *   the metric is gated like the others (p95 < 5 ms), which an offset that large fails.
  *
  * Verdict: a gated metric passes iff its p95 is below {@link SELFTEST_THRESHOLD_MS} (5 ms, the
  * ROADMAP M1.23 bar). p95, not max, because one GC pause or dropped frame in a few hundred samples
@@ -37,6 +40,7 @@ import {
   MIN_REFRESH_DELTAS,
   type Clock,
   type FrameCallback,
+  MAX_EVENT_LAG_MS,
   type FrameSource,
   type RefreshEstimate,
 } from '../tasks/rt/timing'
@@ -46,7 +50,7 @@ export const SELFTEST_THRESHOLD_MS = 5
 /** The quantile the verdict uses (see the module comment). */
 export const GATE_QUANTILE = 0.95
 /** Version tag of the copyable JSON report. */
-export const SELFTEST_REPORT_VERSION = 'rt_selftest_v2'
+export const SELFTEST_REPORT_VERSION = 'rt_selftest_v3'
 
 /** Sample sizes of a run. */
 export interface SelfTestPlan {
@@ -206,11 +210,16 @@ export function isHighResEventTs(eventTs: number, handlerTs: number): boolean {
   return Number.isFinite(eventTs) && eventTs >= 0 && eventTs <= handlerTs + 1000
 }
 
-/** Latency |handler − event| of each sample; null when any timestamp is not on the performance.now() timeline. */
+/** Lag handler − event of each sample (ms, signed); null when any timestamp is not on the performance.now() timeline. */
 export function inputLatency(samples: readonly InputSample[]): Summary | null {
   if (samples.length === 0) return null
   if (!samples.every((s) => Number.isFinite(s.handlerTs) && isHighResEventTs(s.eventTs, s.handlerTs))) return null
-  return summarize(samples.map((s) => Math.abs(s.handlerTs - s.eventTs)))
+  return summarize(samples.map((s) => s.handlerTs - s.eventTs))
+}
+
+/** Which clock RT would use for these lags: the event's, or the handler's when the median lag exceeds {@link MAX_EVENT_LAG_MS}. */
+export function rtSourceForLag(lag: Summary | null): 'event' | 'handler' {
+  return lag === null || lag.p50 > MAX_EVENT_LAG_MS ? 'handler' : 'event'
 }
 
 /** The {@link InputSample} of an event handled now: read the clock before anything else in the handler. */
@@ -343,7 +352,13 @@ export interface SelfTestReport {
   readonly quick: boolean
   readonly refresh: { readonly hz: number; readonly raw_hz: number; readonly snapped: boolean; readonly n_deltas: number; readonly repeated_timestamps: number }
   readonly metrics: Readonly<Record<GatedMetric | InfoMetric, MetricReport>>
-  /** True iff every gated metric (jitter, timer, onset) passes; input latency is informational. */
+  /** The event-lag bound, and the clock RT would use for each input type (null = not measured). */
+  readonly event_lag: { readonly max_ms: number; readonly key_rt_source: 'event' | 'handler' | null; readonly pointer_rt_source: 'event' | 'handler' | null }
+  /**
+   * True iff every gated metric (jitter, timer, onset) passes and no measured input lag FAILs. Input
+   * lag is informational while RT uses the event timestamp, and FAIL (p50 lag over the bound, RT on
+   * the handler clock, p95 not under the threshold) otherwise.
+   */
   readonly pass: boolean
   readonly context: {
     readonly cross_origin_isolated: boolean | null
@@ -371,12 +386,23 @@ function gated(summary: Summary | null, note: string | undefined, thresholdMs: n
 /** The note on the informational input-latency metrics (§11.6: RT uses the event timestamp). */
 export const INPUT_LATENCY_NOTE = 'Informational: RT responses use the input event timestamp, so this dispatch delay is excluded from RT.'
 
-function inputReport(samples: readonly InputSample[] | null): MetricReport {
+/** The note when the event clock is offset from performance.now() and RT uses the handler clock. */
+export const EVENT_OFFSET_NOTE = 'event timestamps are offset from performance.now() in this browser; RT falls back to the handler clock'
+
+function inputReport(samples: readonly InputSample[] | null, thresholdMs: number): MetricReport {
   if (samples === null) return { summary: null, pass: null, note: 'skipped' }
   if (samples.length === 0) return { summary: null, pass: null, note: 'no events' }
   const s = inputLatency(samples)
   if (s === null) return { summary: null, pass: null, note: 'event.timeStamp is not on the performance.now() timeline; RT falls back to performance.now() in the handler' }
+  // The handler clock is what RT would use: its dispatch delay counts, so gate it like the rest.
+  if (rtSourceForLag(s) === 'handler') return { summary: s, pass: passes(s, thresholdMs), note: EVENT_OFFSET_NOTE }
   return { summary: s, pass: null, note: INPUT_LATENCY_NOTE }
+}
+
+/** The clock RT would use for a phase's events: null when skipped, empty, or not on the timeline (then the handler clock). */
+function phaseSource(samples: readonly InputSample[] | null): 'event' | 'handler' | null {
+  if (samples === null || samples.length === 0) return null
+  return rtSourceForLag(inputLatency(samples))
 }
 
 /** Build the report from a run's measurements (pure). Throws a RangeError on too few frames or no onsets. */
@@ -391,10 +417,10 @@ export function buildReport(m: SelfTestMeasurements, thresholdMs: number = SELFT
     timer_resolution_ms: gated(timer, 'the clock did not advance', thresholdMs),
     onset_error_ms: gated(om.error, undefined, thresholdMs),
     onset_lag_ms: { summary: om.lag, pass: null },
-    key_latency_ms: inputReport(m.keys),
-    pointer_latency_ms: inputReport(m.pointers),
+    key_latency_ms: inputReport(m.keys, thresholdMs),
+    pointer_latency_ms: inputReport(m.pointers, thresholdMs),
   }
-  const pass = REQUIRED_METRICS.every((k) => metrics[k].pass === true)
+  const pass = REQUIRED_METRICS.every((k) => metrics[k].pass === true) && metrics.key_latency_ms.pass !== false && metrics.pointer_latency_ms.pass !== false
   return {
     report_version: SELFTEST_REPORT_VERSION,
     threshold_ms: thresholdMs,
@@ -402,6 +428,7 @@ export function buildReport(m: SelfTestMeasurements, thresholdMs: number = SELFT
     quick: m.quick,
     refresh: { hz: fm.refresh.hz, raw_hz: fm.refresh.raw_hz, snapped: fm.refresh.snapped, n_deltas: fm.refresh.n_deltas, repeated_timestamps: fm.repeated },
     metrics,
+    event_lag: { max_ms: MAX_EVENT_LAG_MS, key_rt_source: phaseSource(m.keys), pointer_rt_source: phaseSource(m.pointers) },
     pass,
     context: m.context,
   }

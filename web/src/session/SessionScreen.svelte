@@ -202,7 +202,7 @@
             inputMode={view.rtInput}
             onrespond={(r) => run.blockResponded(r)}
             oninputtype={(t) => run.blockInputType(t)}
-            ontimestampsource={(s) => run.blockTimestampSource(s)}
+            ontimestampsource={(s, reason) => run.blockTimestampSource(s, reason)}
           />
         {:else if (view.phase === 'item' || view.phase === 'confidence') && view.item !== null}
           <Stage

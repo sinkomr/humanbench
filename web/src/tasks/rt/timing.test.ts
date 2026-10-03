@@ -19,7 +19,10 @@ import {
   responseTimestamp,
   responseTimestampFromEvent,
   combineTimestampSources,
+  MAX_EVENT_LAG_MS,
   EVENT_TS_MAX_AGE_MS,
+  BlockTimestampPolicy,
+  eventLagMs,
   snapRefreshRate,
   type Clock,
   type FrameCallback,
@@ -324,17 +327,35 @@ describe('responseTimestampFromEvent (§11.6)', () => {
 
   it('falls back for a timestamp before the onset minus the margin, or too far behind now()', () => {
     const notBefore = 2300 // cut-off notBefore - margin = 1300
-    const c1400: Clock = { now: () => 1400 }
-    expect(responseTimestampFromEvent({ timeStamp: 1299 }, c1400, notBefore)).toEqual({ ts: 1400, source: 'handler' })
+    const c1400: Clock = { now: () => 1320 }
+    expect(responseTimestampFromEvent({ timeStamp: 1299 }, c1400, notBefore)).toEqual({ ts: 1320, source: 'handler' })
     expect(responseTimestampFromEvent({ timeStamp: 1301 }, c1400, notBefore)).toEqual({ ts: 1301, source: 'event' })
+    expect(responseTimestampFromEvent({ timeStamp: 1301 }, { now: () => 1400 }, notBefore).source).toBe('handler') // 99 ms lag
     expect(from(5000 - EVENT_TS_MAX_AGE_MS - 1)).toEqual({ ts: 5000, source: 'handler' })
-    expect(from(5000 - EVENT_TS_MAX_AGE_MS).source).toBe('event')
+  })
+
+  it('accepts 0 <= lag <= MAX_EVENT_LAG_MS exactly, and rejects either side', () => {
+    expect(MAX_EVENT_LAG_MS).toBe(25)
+    expect(from(5000 - MAX_EVENT_LAG_MS)).toEqual({ ts: 4975, source: 'event' })
+    expect(from(5000 - MAX_EVENT_LAG_MS - 0.01).source).toBe('handler')
+    expect(from(5000).source).toBe('event')
+    expect(from(5000.01).source).toBe('handler')
+  })
+
+  it('a 3 ms lag uses the event; a constant 205 ms offset (Safari) falls back to the handler', () => {
+    expect(from(4997)).toEqual({ ts: 4997, source: 'event' })
+    for (const lag of [203, 205, 209]) expect(from(5000 - lag), String(lag)).toEqual({ ts: 5000, source: 'handler' })
+  })
+
+  it('a decided-consistent block tolerates a long dispatch up to the sanity limit', () => {
+    expect(responseTimestampFromEvent({ timeStamp: 4900 }, clock, undefined, EVENT_TS_MAX_AGE_MS).source).toBe('event')
+    expect(responseTimestampFromEvent({ timeStamp: 5000 - EVENT_TS_MAX_AGE_MS - 1 }, clock, undefined, EVENT_TS_MAX_AGE_MS).source).toBe('handler')
   })
 
   it('RT = event timestamp − onset, without the handler delay', () => {
-    const onset = { target: 4000, onsetFrameTs: 4100, cancelled: false, cancel() {} }
-    const s = from(4400)
-    expect(responseRtMs(onset, s.ts)).toBe(300) // the clock says 900 ms; the dispatch delay is excluded
+    const onset = { target: 4900, onsetFrameTs: 4950, cancelled: false, cancel() {} }
+    const s = from(4990)
+    expect(responseRtMs(onset, s.ts)).toBe(40) // the clock says 50 ms; the dispatch delay is excluded
   })
 
   it('never reads the wall clock', () => {
@@ -349,5 +370,59 @@ describe('responseTimestampFromEvent (§11.6)', () => {
     expect(combineTimestampSources(['event', 'event'])).toBe('event')
     expect(combineTimestampSources(['handler'])).toBe('handler')
     expect(combineTimestampSources(['event', 'handler'])).toBe('mixed')
+  })
+})
+
+describe('BlockTimestampPolicy: per-block clock consistency (§11.6)', () => {
+  const clock: Clock = { now: () => 5000 }
+  const ev = (lag: number) => ({ timeStamp: 5000 - lag })
+  const policy = (lags: number[]) => {
+    const p = new BlockTimestampPolicy()
+    for (const l of lags) p.observe(ev(l), clock)
+    return p
+  }
+
+  it('eventLagMs: now minus timeStamp; null for synthetic (0, NaN, negative) timestamps', () => {
+    expect(eventLagMs(ev(7), clock)).toBe(7)
+    for (const bad of [0, NaN, -1, Infinity]) expect(eventLagMs({ timeStamp: bad }, clock)).toBeNull()
+  })
+
+  it('constant offset (205 ms, low spread) -> handler, reason event_clock_offset, for every later response', () => {
+    const p = policy([203, 205, 209, 205])
+    expect(p.decide()).toMatchObject({ source: 'handler', reason: 'event_clock_offset', n: 4 })
+    expect(p.stamp(ev(3), clock)).toEqual({ ts: 5000, source: 'handler' }) // even a 3 ms-lag event
+  })
+
+  it('consistent small lag -> event, no reason', () => {
+    const p = policy([1, 3, 7, 2])
+    const d = p.decide()
+    expect(d).toMatchObject({ source: 'event' })
+    expect(d?.reason).toBeUndefined()
+    expect(p.stamp(ev(3), clock)).toEqual({ ts: 4997, source: 'event' })
+    expect(p.stamp(ev(200), clock).source).toBe('event') // one late dispatch on a good clock keeps the block on one source
+  })
+
+  it('median at the bound is consistent; just over is not; a high-spread bad median is event_lag_high', () => {
+    expect(policy([MAX_EVENT_LAG_MS, MAX_EVENT_LAG_MS]).decide()?.source).toBe('event')
+    expect(policy([MAX_EVENT_LAG_MS + 0.5, MAX_EVENT_LAG_MS + 0.5]).decide()).toMatchObject({ source: 'handler', reason: 'event_clock_offset' })
+    expect(policy([30, 400, 900]).decide()).toMatchObject({ source: 'handler', reason: 'event_lag_high' })
+  })
+
+  it('a median in the future (negative lag) is inconsistent too', () => {
+    expect(policy([-5, -6, -4]).decide()?.source).toBe('handler')
+  })
+
+  it('too few samples: undecided, per-response rule applies', () => {
+    const p = policy([205])
+    expect(p.decide()).toBeNull()
+    expect(p.stamp(ev(205), clock).source).toBe('handler')
+    expect(p.stamp(ev(3), clock).source).toBe('event')
+  })
+
+  it('observations after the decision do not change it', () => {
+    const p = policy([205, 205])
+    p.decide()
+    for (let i = 0; i < 10; i++) p.observe(ev(1), clock)
+    expect(p.decide()?.source).toBe('handler')
   })
 })

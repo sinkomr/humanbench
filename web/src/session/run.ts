@@ -332,6 +332,7 @@ interface CurrentBlock {
   inputType: RtInputType | null
   /** Where the RT block's response timestamps came from (§11.6); null = not reported. */
   timestampSource: 'event' | 'handler' | 'mixed' | null
+  timestampReason: string | null
 }
 
 const round1 = (x: number): number => Math.max(0, Math.round(x * 10) / 10)
@@ -708,7 +709,7 @@ export class SessionRun {
       this.#endSegment('complete')
       return
     }
-    this.#currentBlock = { step, startedMs: this.#cfg.now(), inputType: null, timestampSource: null }
+    this.#currentBlock = { step, startedMs: this.#cfg.now(), inputType: null, timestampSource: null, timestampReason: null }
     this.#phase = 'block'
     this.#emit('phase')
   }
@@ -1014,10 +1015,11 @@ export class SessionRun {
   // ------------------------------------------------------------------------------ blocks
 
   /** The RT renderer reported where its response timestamps came from (§11.6: event timestamp or handler clock). */
-  blockTimestampSource(source: 'event' | 'handler' | 'mixed'): void {
+  blockTimestampSource(source: 'event' | 'handler' | 'mixed', reason?: string): void {
     const blk = this.#currentBlock
     if (this.#limitsHit() || this.#phase !== 'block' || blk === null) return
     blk.timestampSource = source
+    blk.timestampReason = reason ?? null
   }
 
   /** The RT renderer reported the input type its responses came from (§11.6, §13: normed separately). */
@@ -1045,6 +1047,7 @@ export class SessionRun {
           device_class: this.#device.class,
           ...(inputType === undefined ? {} : { input_type: inputType }),
           ...(blk.timestampSource === null ? {} : { rt_timestamp_source: blk.timestampSource }),
+          ...(blk.timestampReason === null ? {} : { rt_timestamp_reason: blk.timestampReason }),
           ...(this.#device.refresh_hz_est === null ? {} : { refresh_hz_est: this.#device.refresh_hz_est }),
         }
         const r = rtBlockObservation(item as RtItem, response as RtResponse, device)

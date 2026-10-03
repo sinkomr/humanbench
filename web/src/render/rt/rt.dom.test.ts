@@ -29,6 +29,7 @@ function mountRt(item: RtItem, inputMode?: RtInputMode) {
   const modes: RtInputMode[] = []
   const types: RtInputType[] = []
   const sources: string[] = []
+  const reasons: (string | undefined)[] = []
   /** Callback order: 'type' (oninputtype) must come before 'respond'. */
   const calls: string[] = []
   const props: Record<string, unknown> = {
@@ -37,12 +38,12 @@ function mountRt(item: RtItem, inputMode?: RtInputMode) {
     timing: display,
     oninputmode: (m: RtInputMode) => modes.push(m),
     oninputtype: (x: RtInputType) => (calls.push('type'), types.push(x)),
-    ontimestampsource: (s: string) => (calls.push('source'), sources.push(s)),
+    ontimestampsource: (s: string, reason?: string) => (calls.push('source'), sources.push(s), reasons.push(reason)),
   }
   if (inputMode) props.inputMode = inputMode
   const r = render(RtRenderer, props as never)
   cleanup.push(r.destroy)
-  return { ...r, display, responses, modes, types, sources, calls }
+  return { ...r, display, responses, modes, types, sources, reasons, calls }
 }
 
 const stimulusOn = (root: HTMLElement): boolean => root.querySelector('.pad.on') !== null
@@ -121,20 +122,20 @@ describe('RtRenderer', () => {
     click(buttonByText(m.container, 'Start practice'))
     until(m.display, () => stimulusOn(m.container))
     const onsetTs = m.display.now()
-    m.display.advance(400) // the handler runs 400 ms after onset...
-    press(' ', null, {}, onsetTs + 250) // ...for an event the browser stamped 250 ms after onset
+    m.display.advance(300) // the handler runs 300 ms after onset...
+    press(' ', null, {}, onsetTs + 290) // ...for an event the browser stamped 290 ms after onset (10 ms dispatch lag)
     for (let i = 1; i < item.spec.practice_positions.length; i++) answerTrial(m, ' ', 300)
     until(m.display, () => m.container.textContent?.includes('Practice done') === true)
     click(buttonByText(m.container, 'Start'))
     for (let i = 0; i < item.spec.positions.length; i++) {
       until(m.display, () => stimulusOn(m.container))
       const on = m.display.now()
-      m.display.advance(500)
+      m.display.advance(330)
       press(' ', null, {}, on + 320)
     }
     until(m.display, () => m.responses.length === 1, 20_000)
     const r = m.responses[0] as RtResponse
-    expect(r.practice_rt_ms?.[0]).toBeCloseTo(250, 6)
+    expect(r.practice_rt_ms?.[0]).toBeCloseTo(290, 6)
     expect(r.practice_rt_ms?.[1]).toBeCloseTo(300, 6) // a synthetic event without a usable timeStamp falls back to the handler clock
     for (const rt of r.rt_ms) expect(rt).toBeCloseTo(320, 6)
     expect(m.sources).toEqual(['event'])
@@ -159,13 +160,67 @@ describe('RtRenderer', () => {
     expect(m.sources).toEqual(['handler'])
   })
 
+  /** A practice + main block where every key event is stamped `lagMs` before its handler (null = main events carry `mainLagMs`). */
+  function runLagBlock(seed: string, practiceLag: number, mainLag: (i: number) => number) {
+    const item = rtSimple.generate(seed)
+    const m = mountRt(item, 'keyboard')
+    click(buttonByText(m.container, 'Start practice'))
+    for (let i = 0; i < item.spec.practice_positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      m.display.advance(300)
+      press(' ', null, {}, m.display.now() - practiceLag)
+    }
+    until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+    click(buttonByText(m.container, 'Start'))
+    for (let i = 0; i < item.spec.positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      const on = m.display.now()
+      m.display.advance(300)
+      press(' ', null, {}, m.display.now() - mainLag(i))
+      void on
+    }
+    until(m.display, () => m.responses.length === 1, 20_000)
+    return { m, r: m.responses[0] as RtResponse }
+  }
+
+  it('a constant 205 ms event offset (Safari) switches the whole block to the handler clock, with the reason', () => {
+    const { m, r } = runLagBlock('render-rt-offset', 205, (i) => (i === 1 ? 3 : 205 + (i % 3)))
+    for (const rt of r.rt_ms) expect(rt).toBeCloseTo(300, 6) // not ~95: the event clock is ignored, even for the 3 ms-lag event
+    for (const rt of r.practice_rt_ms ?? []) expect(rt).toBeCloseTo(300, 6)
+    expect(m.sources).toEqual(['handler'])
+    expect(m.reasons).toEqual(['event_clock_offset'])
+  })
+
+  it('a consistent event clock (3 ms lag) is used for the block, without a reason; one late dispatch stays on the event clock', () => {
+    const { m, r } = runLagBlock('render-rt-consistent', 3, (i) => (i === 0 ? 60 : 3))
+    for (const [i, rt] of r.rt_ms.entries()) expect(rt, String(i)).toBeCloseTo(i === 0 ? 240 : 297, 6)
+    expect(m.sources).toEqual(['event'])
+    expect(m.reasons).toEqual([undefined])
+  })
+
+  it('an undecided block (no usable practice timestamps) applies the per-response rule and reports mixed', () => {
+    const item = rtSimple.generate('render-rt-undecided')
+    const m = mountRt(item, 'keyboard')
+    click(buttonByText(m.container, 'Start practice'))
+    for (let i = 0; i < item.spec.practice_positions.length; i++) answerTrial(m, ' ', 300) // synthetic timeStamp 0
+    until(m.display, () => m.container.textContent?.includes('Practice done') === true)
+    click(buttonByText(m.container, 'Start'))
+    for (let i = 0; i < item.spec.positions.length; i++) {
+      until(m.display, () => stimulusOn(m.container))
+      m.display.advance(300)
+      press(' ', null, {}, i % 2 === 0 ? m.display.now() - 4 : 0)
+    }
+    until(m.display, () => m.responses.length === 1, 20_000)
+    expect(m.sources).toEqual(['mixed'])
+  })
+
   it('stamps a pointer response with the event timestamp too', () => {
     const item = rtSimple.generate('render-rt-evptr')
     const m = mountRt(item, 'touch')
     click(buttonByText(m.container, 'Start practice'))
     until(m.display, () => stimulusOn(m.container))
     const onsetTs = m.display.now()
-    m.display.advance(350)
+    m.display.advance(190)
     pointerDown(m.container.querySelector('button.pad'), 'touch', onsetTs + 180)
     for (let i = 1; i < item.spec.practice_positions.length; i++) {
       until(m.display, () => stimulusOn(m.container))

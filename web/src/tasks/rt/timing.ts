@@ -43,29 +43,47 @@ export interface ResponseStamp {
 }
 
 /**
- * An event timestamp older than this (ms) before the handler ran is not trusted as being on the
- * performance.now() timeline (a clock with another origin, e.g. relative to a different time
- * zero, lands far from now()). Real dispatch delays are milliseconds.
+ * The most (ms) an event timestamp may lag the handler's clock reading and still be trusted as
+ * the input's own time (§11.6). A genuine dispatch delay is a few ms (Chrome at 120 Hz measured
+ * 1-7 ms, max 11), so 25 ms is about 3 frames at 120 Hz or 1.5 at 60 Hz: generous for a busy main
+ * thread, far below a timeline offset. Safari (macOS, 60 Hz) measured a constant ~205 ms between
+ * performance.now() and event.timeStamp, which is a clock offset, not delay; using that
+ * timestamp would shorten every RT by ~200 ms. Beyond the bound the handler clock is used.
+ */
+export const MAX_EVENT_LAG_MS = 25
+
+/**
+ * Once a block has judged the event clock consistent ({@link BlockTimestampPolicy}), a single
+ * late dispatch (a long task or GC pause) is real delay on a good clock, so the bound relaxes to
+ * this sanity limit instead of switching that one response to the other clock.
  */
 export const EVENT_TS_MAX_AGE_MS = 1000
 
 /** How far (ms) before the reference time (the onset) an event timestamp may lie and still be trusted. */
 export const EVENT_TS_PRE_ONSET_MARGIN_MS = 1000
 
+/** now - event.timeStamp (ms) if the timestamp is a finite number > 0 (0 and NaN are synthetic events), else null. */
+export function eventLagMs(event: { readonly timeStamp: number }, clock: Clock = performanceClock): number | null {
+  const ts: unknown = event.timeStamp
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) return null
+  return clock.now() - ts
+}
+
 /**
  * The response timestamp of an input event (§11.6). The event's own `timeStamp` is when the
  * browser received the input, before any main-thread queueing, so using it keeps the handler
- * dispatch delay (milliseconds on a busy page) out of the RT. It is used only when it is on the
- * performance.now() timeline: a finite number > 0, not later than `clock.now()`, not more than
- * {@link EVENT_TS_MAX_AGE_MS} earlier, and, when `notBefore` (the onset frame, or the target
- * before it) is given, not more than {@link EVENT_TS_PRE_ONSET_MARGIN_MS} before it. Epoch
- * milliseconds (≈ 1.7e12, older engines and synthetic events), 0 and NaN (synthetic events),
- * and a timeline with another origin all fail those checks and fall back to `clock.now()`.
+ * dispatch delay out of the RT. It is used only when it is on the performance.now() timeline: a
+ * finite number > 0, with 0 <= clock.now() - timeStamp <= `maxLagMs` ({@link MAX_EVENT_LAG_MS}),
+ * and, when `notBefore` (the onset frame, or the target before it) is given, not more than
+ * {@link EVENT_TS_PRE_ONSET_MARGIN_MS} before it. Epoch milliseconds (about 1.7e12), 0 and NaN
+ * (synthetic events), a timeline with another origin or offset (Safari, about 205 ms) all fail
+ * those checks and fall back to `clock.now()`.
  */
 export function responseTimestampFromEvent(
   event: { readonly timeStamp: number },
   clock: Clock = performanceClock,
   notBefore?: number,
+  maxLagMs: number = MAX_EVENT_LAG_MS,
 ): ResponseStamp {
   const now = clock.now()
   const ts: unknown = event.timeStamp
@@ -74,12 +92,77 @@ export function responseTimestampFromEvent(
     Number.isFinite(ts) &&
     ts > 0 &&
     ts <= now &&
-    now - ts <= EVENT_TS_MAX_AGE_MS &&
+    now - ts <= maxLagMs &&
     (notBefore === undefined || !Number.isFinite(notBefore) || ts >= notBefore - EVENT_TS_PRE_ONSET_MARGIN_MS)
   ) {
     return { ts, source: 'event' }
   }
   return { ts: now, source: 'handler' }
+}
+
+/** Why a block uses the handler clock for every response. */
+export type TimestampReason = 'event_clock_offset' | 'event_lag_high'
+
+/** A block's clock decision: which source every response uses, and why when it is the handler. */
+export interface BlockClockDecision {
+  readonly source: 'event' | 'handler'
+  readonly reason?: TimestampReason
+  readonly median_lag_ms: number
+  readonly n: number
+}
+
+/**
+ * Fewest lag samples a decision needs. Practice has 3+ trials; one clean sample is not enough
+ * to call a clock consistent, but any single sample far beyond the bound is not noise.
+ */
+export const MIN_LAG_SAMPLES = 2
+
+/**
+ * Per-block event-clock consistency check (§11.6). Feed it the lag (now - event.timeStamp) of the
+ * practice or early responses ({@link observe}); {@link decide} then fixes the source for the
+ * whole block: the handler clock if the median lag is outside [0, {@link MAX_EVENT_LAG_MS}]
+ * ('event_clock_offset' when the lags are tightly clustered, i.e. a constant offset, else
+ * 'event_lag_high'), otherwise the event clock. Undecided (too few samples) blocks use the
+ * per-response rule of {@link responseTimestampFromEvent}, and report 'mixed' if both sources occur.
+ */
+export class BlockTimestampPolicy {
+  #lags: number[] = []
+  #decision: BlockClockDecision | null = null
+
+  get decision(): BlockClockDecision | null {
+    return this.#decision
+  }
+
+  /** Record the lag of an event (no-op once decided, and for events without a usable timestamp). */
+  observe(event: { readonly timeStamp: number }, clock: Clock = performanceClock): void {
+    if (this.#decision !== null) return
+    const lag = eventLagMs(event, clock)
+    if (lag !== null) this.#lags.push(lag)
+  }
+
+  /** Decide from the lags seen so far; null (still undecided) with fewer than {@link MIN_LAG_SAMPLES}. */
+  decide(): BlockClockDecision | null {
+    if (this.#decision !== null) return this.#decision
+    const n = this.#lags.length
+    if (n < MIN_LAG_SAMPLES) return null
+    const med = median(this.#lags)
+    if (med >= 0 && med <= MAX_EVENT_LAG_MS) {
+      this.#decision = { source: 'event', median_lag_ms: med, n }
+    } else {
+      const spread = Math.max(...this.#lags) - Math.min(...this.#lags)
+      const reason: TimestampReason = spread <= MAX_EVENT_LAG_MS ? 'event_clock_offset' : 'event_lag_high'
+      this.#decision = { source: 'handler', reason, median_lag_ms: med, n }
+    }
+    return this.#decision
+  }
+
+  /** The response timestamp under the block's decision (per-response rule while undecided). */
+  stamp(event: { readonly timeStamp: number }, clock: Clock = performanceClock, notBefore?: number): ResponseStamp {
+    const d = this.#decision
+    if (d === null) return responseTimestampFromEvent(event, clock, notBefore)
+    if (d.source === 'handler') return { ts: clock.now(), source: 'handler' }
+    return responseTimestampFromEvent(event, clock, notBefore, EVENT_TS_MAX_AGE_MS)
+  }
 }
 
 /** The overall source of a block's timestamps: 'event', 'handler', or 'mixed'; undefined with no samples. */
