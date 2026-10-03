@@ -8,7 +8,7 @@
  */
 
 import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackendError } from '../backend/errors'
 import { SERVER_GATE_POINTS, SERVER_READY_TEXT } from '../backend/copy'
 import { ANON, CANNED, ScriptedTransport, SESSION_ID, fakeBackend } from '../backend/testing'
@@ -268,7 +268,9 @@ describe('the served part', () => {
     await tick()
     await settle(3)
     fake.time.ms += 125_000 // past the 120 s of the item; the screen checks the clock every 250 ms
-    await new Promise((r) => setTimeout(r, 300))
+    // That check is a real 250 ms interval: wait until it has sent the answer rather than a fixed 300 ms, which a
+    // loaded machine overran (the interval fired late and 'submit' had not been called yet).
+    await vi.waitFor(() => expect(t.calls.some((c) => c.fn === 'submit')).toBe(true), { timeout: 10_000, interval: 50 })
     await tick()
     await settle(2)
     expect(t.args('submit')).toMatchObject({ p_response: null, p_confidence: null })
