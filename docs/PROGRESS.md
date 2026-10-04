@@ -30,14 +30,12 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 
 ## Now
 
-- **In flight: wf10** (started 2026-10-03 16:20; the 11-hour window ends at 03:20 on 2026-10-04). Four lead-run workstreams, each an Opus lead with its own team, on branches `wf10/<name>` in `wt/wf10-<name>`:
-  - `g6`: the G6 three-model sensitivity pass over all of about 1,150 items.
-  - `banks`: the LG pool, a Fermi G4 rule and panel, the M6.1 and LR re-panel, and batches 4–6 for six axes.
-  - `ux`: a persona-based product review, plus fixes.
-  - `m6`: SJT, AUT and RAT engines (filler).
-
-  Also running: `fix/rt-ts-guard`, the Safari event-timestamp guard, kept minimal. The final merge happens once all are done. Ticks run at :23.
-- **If interrupted:** for each `wf10/*` branch whose integrator committed green work, merge it into `dev` after the gates pass.
+- **wf10 stopped (2026-10-04 04:30).** All four workstreams hit the usage limit after the team wave and before the lead's review and integration. Nothing is merged. The team output is saved as **unverified WIP commits** on local branches. Each needs the lead review, a second wave, integration and gates before merging (resume with `Workflow({scriptPath, resumeFromRunId})` in the same session, or re-run):
+  - `wf10/g6` (bank, 247 files): G6 harness, raw reviews and verdicts. 38 of 42 agents done.
+  - `wf10/banks` (bank, 46 files): partial batches 4–6 (LR, RC and VOC mostly). The LG pool, the Fermi G4 rule and the re-panel were not done. 12 of 43 agents done.
+  - `wf10/ux` (pub): persona findings, no fixes yet. 13 of 25 agents done.
+  - `wf10/m6` (both repos): SJT, AUT and RAT partial; the SJT ratings were not done. 16 of 40 agents done.
+- Also landed this session: the RT event-timestamp guard, and M1.23 ticked.
 
 - **wf9 done** (2026-10-03 02:30). Merged and pushed:
   - wf8, with 119 Fermi drafts and M6.1.
