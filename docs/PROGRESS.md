@@ -31,7 +31,7 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
 ## Now
 
 - **wf10 stopped (2026-10-04 04:30).** All four workstreams hit the usage limit after the team wave and before the lead's review and integration. Nothing is merged. The team output is saved as **unverified WIP commits** on local branches. Each needs the lead review, a second wave, integration and gates before merging (resume with `Workflow({scriptPath, resumeFromRunId})` in the same session, or re-run):
-  - `wf10/g6` (bank, 247 files): G6 harness, raw reviews and verdicts. 38 of 42 agents done.
+  - `wf10/g6` **finished and merged (2026-10-04).** The G6 three-model pass covers all 1,151 finite items: 1,145 pass, 6 soft (added to the G7 sample: kap-b3-018/-028/-030/-045, khu-b3-042, lr-b3-034), 0 hard. 6 KAP items were region-tagged US and fer-b3-003 was rewritten. **Note:** after merging any later workstream that touches items, re-run `hb g6 verdict` and `hb panel verdict`.
   - `wf10/banks` (bank, 46 files): partial batches 4–6 (LR, RC and VOC mostly). The LG pool, the Fermi G4 rule and the re-panel were not done. 12 of 43 agents done.
   - `wf10/ux` (pub): persona findings, no fixes yet. 13 of 25 agents done.
   - `wf10/m6` (both repos): SJT, AUT and RAT partial; the SJT ratings were not done. 16 of 40 agents done.
