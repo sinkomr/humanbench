@@ -110,6 +110,24 @@ npm run sim:cat -- --part b --n 300 --target-min 45 --fixed 0 --json sim.json
 npm run test:slow
 ```
 
+### Whole-session simulation (UX-066)
+
+`npm run sim:session` drives the real session machine (`web/src/session/run.ts`) with the
+simulated taker of `web/src/session/bot.ts`, so the session clock, the break offer, each part's
+budget and the Quantitative three-question floor are the rules the app runs (`sim:cat` models the
+CAT budget on its own and never skips a part). It prints the mean active session length, each
+part's mean active time, the "About N min" each adaptive part showed on its "Up next" screen, the
+floor misses and where the break was offered. `--skip <axis>` skips that skill at its "Up next"
+screen, `--interstitial-s <s>` makes the taker wait that long on each "Up next" screen (the session
+clock does not count it), `--target-min` changes the session target and `--json <file>` also
+writes the result.
+
+```zsh
+npm run sim:session
+npm run sim:session -- --n 300 --skip SPA
+npm run sim:session -- --n 300 --skip QR --interstitial-s 60 --json sim-session.json
+```
+
 ### End-to-end and accessibility tests
 
 The Playwright suite in `web/e2e/` (ROADMAP M1.A) builds the app, serves the production build with
