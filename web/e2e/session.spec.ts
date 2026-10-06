@@ -186,8 +186,10 @@ test.describe('consent and the 18+ gate (§13)', () => {
     await expect(page.getByText('Nothing has been stored')).toBeVisible()
     expect(await storage(page)).toEqual({ local: 0, session: 0, cookie: '', idb: 0, caches: 0 })
     await expectNoSeriousAxe(page)
-    // Nothing on the screen goes further, and a reload starts over with nothing kept.
-    await expect(page.getByRole('button')).toHaveCount(0)
+    // Nothing on the screen goes further: its one button, "I chose this by mistake", goes back to the gate (UX-REVIEW
+    // D24, uxdec-funnel.spec.ts). A reload starts over with nothing kept.
+    await expect(page.getByRole('button')).toHaveCount(1)
+    await expect(button(page, 'I chose this by mistake')).toBeVisible()
     await page.reload()
     await expect(h1(page)).toHaveText('HumanBench')
     expect(await storage(page)).toEqual({ local: 0, session: 0, cookie: '', idb: 0, caches: 0 })

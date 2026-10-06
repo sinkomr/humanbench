@@ -9,6 +9,10 @@
   the tab order): it is `aria-disabled` and does nothing until the facts are in. The "checking" line sits
   in a status line that is on the page, empty, before its text is put in, so it is announced; and it is
   taken out when done, so a translated copy of it goes too.
+  The refresh-rate measurement may already be done (provisional default, UX-REVIEW D23): the flow starts it
+  while the 18+ gate and the honour screen are shown and hands it over as `probe`. Done, its rate is used at
+  once and the facts are there when the screen opens, with nothing to wait for; still under way, the screen
+  waits for what is left of it; hidden, cancelled, too old or without a rate, it measures here as it always did.
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte'
@@ -16,15 +20,17 @@
   import type { DeviceInfo } from '../save/types'
   import Screen from './Screen.svelte'
   import { DEVICE_CONTINUE, DEVICE_FACTS, DEVICE_HEADING, DEVICE_INPUT_KEYBOARD, DEVICE_INPUT_LEGEND, DEVICE_INPUT_TOUCH, DEVICE_INTRO, DEVICE_MEASURING } from './copy'
-  import { checkDevice, defaultRtInput, deviceRemarks } from './device'
+  import { defaultRtInput, describeDevice, deviceRemarks, measureHz, probeHz, type RefreshProbe } from './device'
   import type { SessionEnv } from './env'
 
   interface Props {
     readonly env: SessionEnv
     readonly ondone: (info: DeviceInfo, input: RtInputMode) => void
+    /** The refresh-rate measurement the flow started on the gate (D23), if there is one. */
+    readonly probe?: RefreshProbe | null
   }
 
-  let { env, ondone }: Props = $props()
+  let { env, ondone, probe = null }: Props = $props()
 
   const uid = $props.id()
   let info: DeviceInfo | null = $state(null)
@@ -34,16 +40,32 @@
   onMount(() => {
     const denv = env.device()
     input = defaultRtInput(denv)
+    const deps = { env: denv, frames: env.realFrames, clock: env.realClock }
     let live = true
+    const finish = (hz: number | null): void => {
+      if (!live) return
+      info = describeDevice(deps, hz, input)
+      measuring = false
+    }
+    // Measured on the gate: the facts are in before the first paint of this screen.
+    const early = probeHz(probe, env.realClock.now())
+    if (typeof early === 'number') {
+      finish(early)
+      return () => {
+        live = false
+      }
+    }
     // After the status line is in the page, so the text that goes into it is announced.
     void tick().then(() => {
       if (live && info === null) measuring = true
     })
-    void checkDevice({ env: denv, frames: env.realFrames, clock: env.realClock }, input).then((r) => {
-      if (!live) return
-      info = r
-      measuring = false
-    })
+    const measure = (): void => void measureHz({ frames: env.realFrames }).then(finish)
+    if (probe !== null && early === undefined) {
+      // Still measuring: what is left of it, and a measurement of our own when it comes to nothing.
+      void probe.done.then((hz) => (hz === null ? (live ? measure() : undefined) : finish(hz)))
+    } else {
+      measure()
+    }
     return () => {
       live = false
     }

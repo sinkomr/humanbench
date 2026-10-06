@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AUTOSAVE_PREFIX } from '../save/autosave'
 import { CONSENT_KEY, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
-import { forgetLocalData, readAdultConsent, readConsent, recordConsent } from './gate'
+import { forgetLocalData, hasAdultRecord, readAdultConsent, readConsent, recordConsent } from './gate'
 import { SpyStorage } from './bot'
 
 describe('the consent record (DESIGN §13)', () => {
@@ -75,5 +75,43 @@ describe('the 18+ confirmation under either notice (M2.7)', () => {
     expect(readAdultConsent(other)).toBeNull()
     expect(readAdultConsent(new SpyStorage())).toBeNull()
     expect(readAdultConsent(null)).toBeNull()
+  })
+})
+
+describe('an adult record under any terms (the welcome row, provisional default, UX-REVIEW D22)', () => {
+  it('is true for the record of the current terms, of the online terms and of older ones; false for none', () => {
+    expect(hasAdultRecord(new SpyStorage())).toBe(false)
+    for (const terms of [TERMS_VERSION, TERMS_VERSION_SERVER, 'terms-2026-09-draft', 'anything-else']) {
+      const s = new SpyStorage()
+      s.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms, adult: true }))
+      expect(hasAdultRecord(s), terms).toBe(true)
+    }
+  })
+
+  it('is only a door: an older record is not honoured as consent for the current terms', () => {
+    const s = new SpyStorage()
+    s.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms: 'terms-2026-09-draft', adult: true }))
+    expect(hasAdultRecord(s)).toBe(true)
+    expect(readConsent(s)).toBeNull()
+    expect(readAdultConsent(s)).toBeNull()
+  })
+
+  it('is false for a malformed record, another record version, a record that is not adult or has no terms', () => {
+    for (const bad of ['{', 'null', '[]', '"x"', '{"v":2,"terms":"t","adult":true}', '{"v":1,"terms":"t","adult":false}', '{"v":1,"terms":"t"}', '{"v":1,"adult":true}', '{"v":1,"terms":7,"adult":true}']) {
+      const s = new SpyStorage()
+      s.data.set(CONSENT_KEY, bad)
+      expect(hasAdultRecord(s), bad).toBe(false)
+    }
+  })
+
+  it('reads one key and writes nothing; storage that is missing or throws is false', () => {
+    const s = new SpyStorage()
+    s.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms: 'old', adult: true }))
+    hasAdultRecord(s)
+    expect(s.calls).toEqual([`get:${CONSENT_KEY}`])
+    expect(s.writes).toEqual([])
+    expect(hasAdultRecord(null)).toBe(false)
+    const throwing = { length: 0, key: () => null, getItem: () => { throw new Error('blocked') }, setItem: () => undefined, removeItem: () => undefined }
+    expect(hasAdultRecord(throwing)).toBe(false)
   })
 })

@@ -4,8 +4,10 @@
  *
  * Nothing is written before the person confirms they are 18 or older and agrees to the terms:
  * the welcome and gate screens keep their state in memory only, and the under-18 path never calls
- * any function of this module (`SessionApp.dom.test.ts` and `e2e/session.spec.ts` check that
- * localStorage, sessionStorage, cookies and IndexedDB stay empty). After the person passes, one
+ * a function of this module that writes (`SessionApp.dom.test.ts` and `e2e/session.spec.ts` check that
+ * localStorage, sessionStorage, cookies and IndexedDB stay empty). It reads one key, the consent record,
+ * to know whether the gate was passed before ({@link readConsent}, {@link hasAdultRecord}); no autosave
+ * is read until a record of an adult is found. After the person passes, one
  * record is kept so the next visit does not ask again: `hb:consent:v1` = `{ v: 1, terms, adult }`
  * (no time, no id). The record is honoured only for the terms version it was given for.
  * {@link forgetLocalData} removes it together with every autosave (the privacy page's button).
@@ -41,6 +43,26 @@ export function readConsent(storage: StorageLike | null = browserStorage(), term
  */
 export function readAdultConsent(storage: StorageLike | null = browserStorage()): Consent | null {
   return readConsent(storage, TERMS_VERSION) ?? readConsent(storage, TERMS_VERSION_SERVER)
+}
+
+/**
+ * Whether this browser holds an adult consent record under ANY terms version, honoured or not (provisional
+ * default, UX-REVIEW D22). The welcome screen asks it to decide whether a returning visitor gets the row
+ * "See my results" and "Notes for your AI": a record of older terms still proves that the 18+ gate was passed
+ * here, and the row is only a door. It is not consent for the current terms: {@link readConsent} stays the
+ * one that lets the flow skip the gate, and a person who goes through the door with an older record is shown
+ * the gate first. Reads one key and writes nothing; no record (the under-18 path never stores one) is false.
+ */
+export function hasAdultRecord(storage: StorageLike | null = browserStorage()): boolean {
+  if (storage === null) return false
+  try {
+    const text = storage.getItem(CONSENT_KEY)
+    if (text === null) return false
+    const c = JSON.parse(text) as Partial<Consent> | null
+    return c !== null && typeof c === 'object' && c.v === 1 && c.adult === true && typeof c.terms === 'string'
+  } catch {
+    return false
+  }
 }
 
 /** Keep the consent (call only after the person confirmed the gate). False when storage refused it. */

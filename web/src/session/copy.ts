@@ -21,6 +21,13 @@ export const WELCOME_INTRO =
   'The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.'
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
+/**
+ * The row for a browser that already holds HumanBench data (provisional default, UX-REVIEW D22): its name for
+ * assistive technology, and the notes link. The door to earlier results is the ready screen's own wording
+ * (READY_SHOW_RESULTS), so the same words lead to the same screen from either place.
+ */
+export const WELCOME_RETURNING_LABEL = 'Earlier results and notes on this device'
+export const WELCOME_NOTES = 'Notes for your AI'
 /** After a link that opens a new tab, shown as the notes page and the results show it (UX-011). */
 export const NEW_TAB = ' (opens in a new tab)'
 
@@ -39,6 +46,8 @@ export const GATE_UNDER_18 = 'I am under 18'
 export const GATE_UNCHECKED = 'Tick the box to confirm that you are 18 or older and agree to the terms.'
 export const BLOCKED_HEADING = 'HumanBench is for adults'
 export const BLOCKED_TEXT = 'You must be 18 or older to take part. Nothing has been stored on this device. You can close this page.'
+/** A quiet way back from a mis-tap on "I am under 18": the gate again, with its box unticked (provisional default, UX-REVIEW D24). */
+export const BLOCKED_MISTAKE = 'I chose this by mistake'
 
 // ----------------------------------------------------------------------------- honour
 
