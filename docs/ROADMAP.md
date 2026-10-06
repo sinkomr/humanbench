@@ -185,7 +185,7 @@ UI
 ## M6 — Tier (c) (v2)
 - [x] **M6.1** — appraisal vignettes + rule engine (100% rule-key agreement; AI-vs-theory ≥ 85% or reject), R-5.6.2 label and tooltip. *(merged 2026-10-03: 60 vignettes, the rule engine, the panel gate and the UI. 5 vignettes whose text changed need a panel re-run)*
 - [~] **M6.2** — SJT + key blending (§5.2), circularity guard, F6 check (expert ratings need the user or recruited raters). *(built 2026-10-06: 60 SJT drafts, 57 panel-keyed. Expert ratings are owner-pending; dev route only)*
-- [~] **M6.3** — RAT with a compound check (corpus licensing is the user's call) and spelling variants. *(engine built on a fixture lexicon; 0 triads until the owner chooses a corpus, see bank docs/rat-corpus.md)*
+- [~] **M6.3** — RAT with a compound check (corpus licensing is the user's call) and spelling variants. *(2026-10-06: real permissive resources; 146 triads, G4 146 pass, G6 145 + 1 soft; dev route only. Open-compound frequency is a flagged proxy, because Google 2-grams are 324 GB, over the cap. Stratum 1 is empty under prior v2.)*
 - [~] **M6.4** — AUT with in-browser MiniLM, the "don't type personal info" warning, opt-in Ocsai consent, hatch rendering. *(built: in-browser MiniLM scoring, aut-v0 parameters provisional; Ocsai off; dev route only)*
 
 ## Phase AI — "Notes for your AI" (Part 1 approved 2026-09-29; Part 2 needs separate approval)
