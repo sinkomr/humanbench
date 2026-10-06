@@ -9,6 +9,7 @@
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { axisName } from '../axis-names'
 import { DISCLAIMER, RESOURCE_LINE } from '../copy'
 import { AXIS_CODES, axis, type AxisCode } from '../engine/axes'
 import { NOTES_LEAK_MARKERS } from '../brief/leak-markers'
@@ -194,7 +195,7 @@ describe('which skills are on the card', () => {
     // The desc lists exactly the shown skills' names.
     const desc = /<desc[^>]*>([^<]*)<\/desc>/.exec(card.svg)![1]!
     const skills = unesc(desc).split(' Skills: ')[1]!.replace(/\.$/, '').split(', ')
-    expect(skills).toEqual(card.shown.map((c) => axis(c).name))
+    expect(skills).toEqual(card.shown.map((c) => axisName(c)))
   })
 
   it('is byte-identical, for the same peaks, whatever a hidden skill estimates: nothing of a hidden value reaches the picture (property)', () => {
@@ -317,7 +318,7 @@ describe('the most distinctive peaks on the card', () => {
     const sorted = [...FULL_PEAKS].sort((a, b) => b.contrast - a.contrast)
     expect(card.peaks.map((p) => p.code)).toEqual(sorted.slice(0, CARD_MAX_PEAKS).map((p) => p.code))
     const names = textsOf(card.svg)
-    for (const p of card.peaks) expect(names).toContain(axis(p.code).name)
+    for (const p of card.peaks) expect(names).toContain(axisName(p.code))
   })
 
   it('leaves out the peak of a hidden skill and lists the next one; a hidden skill is never listed (property over any subset)', () => {
@@ -344,7 +345,7 @@ describe('the most distinctive peaks on the card', () => {
     const p: CardPeak = { code: 'MAT', name: 'ZZ caller-supplied name', contrast: 0.94, lo90: 0.38, hi90: 1.5 }
     const card = buildCard({ estimates: FULL, peaks: [p], sessions: 1 })
     const texts = textsOf(card.svg)
-    expect(texts).toContain(axis('MAT').name)
+    expect(texts).toContain(axisName('MAT'))
     expect(texts).toContain('Stands out by about 0.9 SD')
     expect(texts).toContain(`90% range ${formatTheta(0.38, 1)} to ${formatTheta(1.5, 1)} SD`)
     expect(card.svg).not.toContain('ZZ caller-supplied')
@@ -405,7 +406,7 @@ describe('only known words are on the card; notes for an AI never are (proposal 
   function columnAllowed(t: string, card: CardModel, sessions: number): boolean {
     if ([CARD_BRAND, CARD_TITLE, cardSessions(sessions), CARD_PEAKS_HEADING, ...RING_NOTE].includes(t)) return true
     if (/^Stands out by about \d\.\d SD$/.test(t) || /^90% range [+−]\d\.\d to [+−]\d\.\d SD$/.test(t)) return true
-    if (card.peaks.some((p) => axis(p.code).name.includes(t))) return true
+    if (card.peaks.some((p) => axisName(p.code).includes(t))) return true
     // Lines of the wrapped paragraphs: a run of the card's own sentences (the small print flows from one into the next).
     const flows = [[CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), [CARD_KEY, CARD_SD_MEANING].join(' '), CARD_PEAKS_SUB, CARD_NO_PEAKS]
     return flows.some((text) => text.includes(t))

@@ -211,8 +211,8 @@ export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.fre
   {
     heading: 'What is sent to the server',
     paragraphs: [
-      'Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative are sent to the server as you give them, with your response times, how sure you said you were, and the device details above. The server scores them where the answers are kept, so your browser never learns whether a counted answer was right.',
-      'The timed tasks (reaction time, working memory, coding and reading) stay on your device. They are in your save file and are not sent unless you choose to keep a backup of that file on the server.',
+      'Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative Reasoning are sent to the server as you give them, with your response times, how sure you said you were, and the device details above. The server scores them where the answers are kept, so your browser never learns whether a counted answer was right.',
+      'The timed tasks of the parts Reaction Time, Working Memory and Processing & Reading Speed stay on your device. They are in your save file and are not sent unless you choose to keep a backup of that file on the server.',
       'If you report a problem, the report names the question and, if you write it, the text you add. Please do not include personal details. If you answer the two optional questions at the end, the answers are kept apart from your other data and are used only to check that the questions are fair.',
     ],
   },

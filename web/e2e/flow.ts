@@ -66,7 +66,7 @@ export async function toResults(page: Page, sessions: 1 | 2 = 1): Promise<Simula
   await toReady(page)
   await loadSave(page, sim.save)
   await button(page, 'Begin').click()
-  await expect(h1(page)).toHaveText('Up next: Reaction time')
+  await expect(h1(page)).toHaveText('Up next: Reaction Time')
   await button(page, 'Finish early').click()
   await button(page, 'Finish now').click()
   await expect(h1(page)).toHaveText('Session complete')

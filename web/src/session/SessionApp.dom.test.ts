@@ -210,7 +210,7 @@ describe('ready, practice and the start of a session', () => {
     const fake = fakeEnv(fakeDisplay())
     await toReady(fake)
     click(buttonByText(host, 'Begin'))
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     expect(host.textContent).toMatch(/About \d+ minutes?\./)
     const ring = host.querySelector('[role="progressbar"]')
     expect(ring?.getAttribute('aria-label')).toBe('Session time')
@@ -238,7 +238,7 @@ describe('ready, practice and the start of a session', () => {
     click(buttonByText(host, 'Skip this part'))
     click(buttonByText(host, 'Skip Reaction Time')) // asks first
     expect(h1()).toBe('Up next: Matrix & Series')
-    // Reaction time is skipped, but Speed still has processing and reading speed ahead.
+    // Reaction Time is skipped, but Speed still has processing and reading speed ahead.
     // ... but it is not what comes next: Spatial/Memory is "Up next", Speed "Later" (UX-007a).
     expect(host.querySelector('.checklist li[data-status="later"]')?.textContent).toContain('Speed')
     expect(host.querySelector('.checklist li[data-status="upcoming"]')?.textContent).toContain('Spatial/Memory')
@@ -260,7 +260,7 @@ describe('ready, practice and the start of a session', () => {
     expect(host.querySelector('section.confirm h2')?.textContent).toBe('Finish now?')
     click(buttonByText(host, 'Keep going'))
     expect(host.querySelector('section.confirm')).toBeNull()
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     click(buttonByText(host, 'Finish early'))
     click(buttonByText(host, 'Finish now'))
     expect(h1()).toBe('Session ended') // nothing was measured (UX-009b)

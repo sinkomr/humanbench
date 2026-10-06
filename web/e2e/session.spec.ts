@@ -58,7 +58,7 @@ async function toReady(page: Page, input: 'Keyboard' | 'Tap or click' = 'Keyboar
 async function begin(page: Page): Promise<void> {
   await toReady(page)
   await button(page, 'Begin').click()
-  await expect(h1(page)).toHaveText('Up next: Reaction time')
+  await expect(h1(page)).toHaveText('Up next: Reaction Time')
 }
 
 /** Skip the part on the current interstitial; returns the next heading. */
@@ -370,7 +370,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
   test('the reaction-time block opens with its instructions; axe passes on it', async ({ page }) => {
     await begin(page)
     await button(page, 'Start').click()
-    await expect(h1(page)).toHaveText('Reaction time')
+    await expect(h1(page)).toHaveText('Reaction Time')
     await expect(button(page, 'Start practice')).toBeVisible()
     await expectNoSeriousAxe(page)
   })
@@ -515,7 +515,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await button(page, 'Begin').click()
     // A session with no answer yet is not written (a start that is abandoned leaves nothing behind):
     // its first answer writes the save of both sessions.
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     await skipPart(page)
     await button(page, 'Start').click()
     await answerItem(page)
@@ -682,7 +682,7 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await expect(h1(page)).toHaveText('Ready when you are')
     await expect(page.getByText('Earlier saves on this device')).toHaveCount(0)
     await button(page, 'Begin').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     // Counted as session 2, QR would have had no floor (0 items after long span blocks).
     expect(await quantWithoutBudget(page)).toEqual(['quant', 'quant', 'quant'])
   })
@@ -790,7 +790,7 @@ test.describe('reflow at 320 CSS px with a wide font (WCAG 1.4.10)', () => {
     await button(page, 'Continue').click()
     await overflow(page, 'ready')
     await button(page, 'Begin').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     await overflow(page, 'interstitial')
     await skipPart(page)
     await button(page, 'Start').click()

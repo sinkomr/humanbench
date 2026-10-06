@@ -112,7 +112,7 @@ export class SessionDriver {
   /** From the ready screen into the first part. */
   async begin(): Promise<void> {
     await this.press(button(this.page, 'Begin'))
-    await expect(h1(this.page)).toHaveText('Up next: Reaction time')
+    await expect(h1(this.page)).toHaveText('Up next: Reaction Time')
   }
 
   /** Skip the part on the interstitial (it asks first, like the skip during an item). */
@@ -282,7 +282,7 @@ export class SessionDriver {
   }
 
   /**
-   * Reaction time, simple or four positions: wait for each target (the box that lights up), then press
+   * Reaction Time, simple or four positions: wait for each target (the box that lights up), then press
    * its key or tap it. A target that is gone by the time the press arrives is a miss, as for any taker.
    *
    * Under `?fast=1` the block's clock runs 20 times faster, so a person's 200 to 600 ms is 10 to 30 ms of

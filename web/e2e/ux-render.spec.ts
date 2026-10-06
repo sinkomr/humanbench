@@ -110,7 +110,7 @@ test.describe('the other timed stages start in view and have names (UX-002, UX-0
   for (const size of PHONES) {
     test(`reaction time and digit span, ${size.name}`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height })
-      // Reaction time: the stage that takes focus when the practice starts.
+      // Reaction Time: the stage that takes focus when the practice starts.
       await intoSegment(page, 0)
       await button(page, 'Start practice').click()
       const rt = page.getByRole('group', { name: /^Reaction stage: (press Space|tap the target)/ })
@@ -121,8 +121,8 @@ test.describe('the other timed stages start in view and have names (UX-002, UX-0
       expect(rtBox!.bottom).toBeLessThanOrEqual(h + 0.5)
       expect(await rt.evaluate((el) => getComputedStyle(el).touchAction)).toBe('manipulation')
       await expect(page.locator('.rt .progress span[translate="no"]')).toHaveCount(2)
-      // The two headings are not the same words: the session's h1 says "Reaction time", the block says what is different.
-      await expect(h1(page)).toHaveText('Reaction time')
+      // The two headings are not the same words: the session's h1 says "Reaction Time", the block says what is different.
+      await expect(h1(page)).toHaveText('Reaction Time')
       await expect(page.locator('.rt .title')).toHaveText('One position')
     })
 

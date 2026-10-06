@@ -113,7 +113,7 @@ describe('what the flow tells the run about earlier sessions (coverage floor per
     const first = fakeEnv(fakeDisplay(), { storage })
     await toReady(first, true)
     click(buttonByText(host, 'Begin'))
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     // Nothing waits for a timer: no session without an answer is written, then or on leaving the page.
     await new Promise((resolve) => setTimeout(resolve, 400))
     window.dispatchEvent(new Event('pagehide'))

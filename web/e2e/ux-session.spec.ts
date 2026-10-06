@@ -20,7 +20,7 @@ const SE = { width: 320, height: 568 } as const
 async function begin(page: Page): Promise<void> {
   await toReady(page)
   await button(page, 'Begin').click()
-  await expect(h1(page)).toHaveText('Up next: Reaction time')
+  await expect(h1(page)).toHaveText('Up next: Reaction Time')
 }
 
 /** Skip the part on the interstitial (it asks first). */
@@ -267,7 +267,7 @@ test.describe('practice and the confirmation panels (UX-004, UX-005a)', () => {
     test.skip(isMobile === true, 'needs a keyboard')
     await begin(page)
     await button(page, 'Start').click()
-    await expect(h1(page)).toHaveText('Reaction time')
+    await expect(h1(page)).toHaveText('Reaction Time')
     await button(page, 'Start practice').click()
     const block = page.locator('section.hb-render.rt')
     await expect(block.locator('.stage')).toBeVisible()
@@ -295,7 +295,7 @@ test.describe('practice and the confirmation panels (UX-004, UX-005a)', () => {
     await page.keyboard.press('Escape')
     await expect(page.locator('section.confirm')).toHaveCount(0)
     await expect(button(page, 'Finish early')).toBeFocused()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
   })
 
   test.describe('a phone', () => {
@@ -519,7 +519,7 @@ test.describe('leaving a session by accident (UX-011)', () => {
     const notice = await opened
     await expect(notice.getByRole('heading', { level: 1 })).toHaveText('Privacy and terms')
     await notice.close()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     await expect(button(page, 'Finish early')).toBeVisible()
   })
 })
@@ -589,7 +589,7 @@ test.describe('the ready screen’s save file (UX-012a)', () => {
     await button(page, 'Load').click()
     await expect(page.getByRole('status')).toContainText('Loaded 1 earlier session.')
     await button(page, 'Begin').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
   })
 })
 

@@ -221,7 +221,7 @@ describe('leaving a run by accident (UX-011)', () => {
     const fake = fakeEnv(fakeDisplay())
     await toReady(fake)
     click(buttonByText(host, 'Begin'))
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     expect(guarded()).toBe(false) // nothing to lose yet: an abandoned start leaves nothing behind
     await answerOne()
     expect(guarded()).toBe(true)
@@ -240,7 +240,7 @@ describe('leaving a run by accident (UX-011)', () => {
     window.dispatchEvent(new PopStateEvent('popstate'))
     flushSync()
     expect(push).toHaveBeenCalledTimes(2) // put back, so the next Back asks again
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     expect(host.querySelector('section.confirm h2')?.textContent).toBe('Finish now?')
     expect(document.activeElement).toBe(host.querySelector('section.confirm h2'))
     click(buttonByText(host, 'Keep going'))
@@ -354,7 +354,7 @@ describe('the results code comes as a chunk of its own (UX-100)', () => {
     expect(hand.importer).toHaveBeenCalledTimes(1)
     // Starting the run while it is still on its way does not ask for it a second time.
     click(buttonByText(host, 'Begin'))
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     expect(hand.importer).toHaveBeenCalledTimes(1)
     await hand.settle('resolve')
     click(buttonByText(host, 'Finish early'))

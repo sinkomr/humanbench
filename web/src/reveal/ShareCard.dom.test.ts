@@ -8,8 +8,9 @@
 import fc from 'fast-check'
 import { flushSync } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { axisName } from '../axis-names'
 import { RESOURCE_LINE } from '../copy'
-import { AXIS_CODES, AXIS_INDEX, axis, type AxisCode } from '../engine/axes'
+import { AXIS_CODES, AXIS_INDEX, type AxisCode } from '../engine/axes'
 import { buttonByText, click, render } from '../render/common/testing'
 import { buildCard, cardAxes, cardSvg, EMO_CODE, type CardModel } from '../viz/card'
 import type { ImageShareOutcome, Raster } from '../viz/export'
@@ -102,7 +103,7 @@ describe('the skills toggles', () => {
     expect(measured.length).toBeLessThan(est.length)
     for (const box of m.c.querySelectorAll<HTMLInputElement>('input[data-skill]')) expect(box.checked).toBe(true)
     // Each is labelled with the skill's full name.
-    for (const code of measured) expect(checkbox(m.c, code)!.closest('label')!.textContent!.trim()).toBe(axis(code).name)
+    for (const code of measured) expect(checkbox(m.c, code)!.closest('label')!.textContent!.trim()).toBe(axisName(code))
     await counted(m.c)
     expect(status(m.c, 'count')).toBe(`${measured.length} skills are on the card.`)
   })
@@ -151,8 +152,8 @@ describe('the skills toggles', () => {
     click(checkbox(m.c, 'KHU'))
     const svg = svgOf(m.c)
     for (const code of [top.code, 'KHU'] as const) {
-      expect(svg).not.toContain(`>${axis(code).name}<`)
-      expect(preview(m.c)!.getAttribute('alt')).not.toContain(axis(code).name)
+      expect(svg).not.toContain(`>${axisName(code)}<`)
+      expect(preview(m.c)!.getAttribute('alt')).not.toContain(axisName(code))
     }
   })
 

@@ -14,7 +14,7 @@ import { SEGMENT_INFO } from '../src/session/segments'
 /** A session that showed everything the parts need, with `override` replacing the kinds of one part. */
 function session(override: Record<string, string[]> = {}): Map<string, Set<string>> {
   const played = new Map<string, Set<string>>([
-    ['Reaction time', new Set(['rt'])],
+    ['Reaction Time', new Set(['rt'])],
     ['Matrix & Series', new Set(['choice', 'entry', 'confidence'])],
     ['Spatial', new Set(['choice', 'confidence'])],
     ['Working Memory', new Set(['span', 'corsi'])],
@@ -51,6 +51,6 @@ describe('what a played session must have shown, by part', () => {
     const none = new Map<string, Set<string>>()
     const problems = partsPlayedProblems(none)
     expect(problems).toHaveLength(Object.values(PART_SCREENS).reduce((n, groups) => n + groups.length, 0))
-    expect(problems).toContain('Reaction time: none of rt (saw nothing)')
+    expect(problems).toContain('Reaction Time: none of rt (saw nothing)')
   })
 })

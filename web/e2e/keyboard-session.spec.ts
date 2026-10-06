@@ -261,7 +261,7 @@ class Taker {
     await this.page.waitForFunction(`(() => { const r = document.querySelector('section.hb-render.${kind}'); return !r || r.getAttribute('aria-labelledby') !== ${JSON.stringify(id)} })()`, undefined, { polling: 'raf', timeout: 20_000 })
   }
 
-  /** Reaction time, simple or four positions: read the target from the live region and press its key. */
+  /** Reaction Time, simple or four positions: read the target from the live region and press its key. */
   private async playRt(): Promise<void> {
     const { page } = this
     const rt = page.locator('section.hb-render.rt')
@@ -475,7 +475,7 @@ test.describe('practice by keyboard alone (UX-004, WCAG 2.4.3, 4.1.3)', () => {
     // time they last about ten seconds, far longer than these few presses.
     await taker.toReady('./')
     await taker.activate(control(page, 'button', 'Start'))
-    await expect(heading(page)).toHaveText('Reaction time')
+    await expect(heading(page)).toHaveText('Reaction Time')
     await taker.activate(control(page, 'button', 'Start practice'))
     const stage = page.locator('section.hb-render.rt .stage')
     await expect(stage).toBeVisible()

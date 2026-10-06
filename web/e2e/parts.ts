@@ -17,7 +17,7 @@ type Kind = 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'codin
 
 /** Per part, groups of kinds: from each group at least one must have been on screen. */
 export const PART_SCREENS: Readonly<Record<(typeof SEGMENT_TITLES)[number], readonly (readonly Kind[])[]>> = {
-  'Reaction time': [['rt']],
+  'Reaction Time': [['rt']],
   'Matrix & Series': [['choice'], ['entry'], ['confidence']],
   Spatial: [['choice'], ['confidence']],
   'Working Memory': [['span'], ['corsi']],
