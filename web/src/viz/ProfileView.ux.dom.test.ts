@@ -224,9 +224,9 @@ describe('plain facet names and no empty facet chart (UX-040, UX-041)', () => {
   it('draws the facet chart only from three measured facets', () => {
     const m1 = render(syntheticProfile('m1')!)
     click(button(m1, 'Quantitative'))
-    // 2 of 4 measured: the table alone.
+    // 1 of 2 measured (the quant topic groups, UX review D4): the table alone.
     expect(m1.querySelector('.facet-panel svg.hb-blob')).toBeNull()
-    expect(m1.querySelectorAll('.facet-panel tbody tr')).toHaveLength(4)
+    expect(m1.querySelectorAll('.facet-panel tbody tr')).toHaveLength(2)
     unmount(app!)
     app = undefined
     document.body.innerHTML = ''

@@ -609,7 +609,7 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
     // Facet notes: "insufficient data" wraps in compact labels.
     const p = syntheticProfile('m1')!
     const qr = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: unmeasuredReasons(est) })
-    const ratio = qr.find((f) => f.facet === 'ratio')!
+    const ratio = qr.find((f) => f.facet === 'quant/ratios_rates_averages')!
     expect(spokeLines(ratio, true).filter((l) => l.note).map((l) => l.text)).toEqual(['insufficient', 'data'])
     expect(spokeLines(ratio, false).filter((l) => l.note).map((l) => l.text)).toEqual(['insufficient data'])
   })

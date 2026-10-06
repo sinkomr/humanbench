@@ -283,11 +283,10 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     expect(panel.querySelector('h3')!.textContent).toBe('Quantitative: facets')
     const est = axisEstimates(p.input)
     const rows = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: unmeasuredReasons(est) })
+    // The quant templates count as their topic groups (UX review D4): percent 6 + arith 5 + fraction 3, and ratio 2.
     expect(rows.map((r) => [r.facet, r.nItems, r.measured])).toEqual([
-      ['percent', 6, true],
-      ['arith', 5, true],
-      ['fraction', 3, false],
-      ['ratio', 2, false],
+      ['quant/arith_fractions_percent', 14, true],
+      ['quant/ratios_rates_averages', 2, false],
     ])
     for (const r of rows) {
       const tr = panel.querySelector(`tr[data-row="${r.id}"]`)!
@@ -295,9 +294,9 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
       else expect(tr.querySelector('td.stub')!.textContent).toBe(`Insufficient data (${r.nItems} questions; 5 needed)`)
     }
     // Plain names, and no generator code anywhere in the panel (UX-040).
-    expect([...panel.querySelectorAll('tbody th')].map((th) => th.textContent!.trim())).toEqual(['Percentages', 'Arithmetic', 'Fractions', 'Ratios'])
+    expect([...panel.querySelectorAll('tbody th')].map((th) => th.textContent!.trim())).toEqual(['Arithmetic, fractions and percentages', 'Ratios, rates and averages'])
     expect(panel.textContent).not.toMatch(/_|\bPercent\b|\bitems?\b|\bblocks?\b/)
-    // Two of the four are measured: too few for a chart of its own (UX-041), so the table stands alone.
+    // One of the two is measured: too few for a chart of its own (UX-041), so the table stands alone.
     expect(panel.querySelector('svg.hb-blob')).toBeNull()
     click(btn)
     expect(root.querySelector('.facet-panel')).toBeNull()

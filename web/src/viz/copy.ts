@@ -118,8 +118,13 @@ export const DRILL_PROMPT = 'Explore a cluster:'
 export function facetHeading(cluster: string): string {
   return `${cluster}: facets`
 }
+/**
+ * The facet chart's description and the facet table's caption. Its last sentence says why a facet's range sits on its
+ * skill's: the leave-facet-out prior (UX-REVIEW D4 A, a provisional default; `facets.ts`), which gives facets no spread of
+ * their own until the model has one. Drop it with that change.
+ */
 export function facetCaption(cluster: string): string {
-  return `Facets of ${cluster}, in SD units on a provisional scale. A facet needs ${FACET_MIN_ITEMS} scored questions or timed tasks before it gets an estimate.`
+  return `Facets of ${cluster}, in SD units on a provisional scale. A facet needs ${FACET_MIN_ITEMS} scored questions or timed tasks before it gets an estimate. Each facet's range also draws on the rest of its skill, so for now a facet sits close to its skill.`
 }
 /** UX-041: one line instead of an empty chart, when no facet of the cluster has enough data yet. */
 export function facetNone(cluster: string, n: number): string {

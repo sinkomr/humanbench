@@ -1,7 +1,7 @@
 /**
  * M2.1 (ROADMAP M2.1 "Amended (Phase AI Part 2 ...)"; DESIGN §7.8; ROADMAP A12, A21, AI.8): rescore(save)
  * and its parity with the app. The expected values come from the TypeScript engine itself
- * (engine/retest.ts rescoreRetest, engine/scorer.ts eapAxis): the same observations, the same practice
+ * (engine/retest.ts rescoreRetest, engine/scorer.ts eapAxis and its grid): the same observations, the same practice
  * model, the same grid, compared to 1e-9. The parity tests run with the minimum counts and the rounding
  * switched off (EXACT), because they compare the algorithm; the tests of what rescore withholds
  * (R-11.1, DESIGN §10, the owner decision of 2026-10-01 "rescore must not leak single-answer verdicts")
@@ -13,9 +13,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { AXIS_CODES, type AxisCode } from '../../src/engine/axes'
 import { rescoreRetest, type RetestSession } from '../../src/engine/retest'
-import { eapAxis } from '../../src/engine/scorer'
+import { observationLoglik } from '../../src/engine/irt'
+import { EAP_HI, EAP_LO, EAP_N_GRID } from '../../src/engine/scorer'
 import type { Observation } from '../../src/engine/types'
 import { createRng, type Rng } from '../../src/engine/prng'
+import { QUANT_GROUP_IDS } from '../../src/tasks/quant/topics'
+import { QUANT_TEMPLATES } from '../../src/tasks/quant/templates'
+import { drillFacet } from '../../src/viz/facets'
 import { fixtureBank, loadFixtureBank, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
 import { emptySave, from, playSession, relaxSelection, signedSession, startSession, type Started } from './rpc-support'
@@ -129,6 +133,24 @@ interface Expected {
   rho: Map<string, Partial<Record<AxisCode, number>>>
 }
 
+/**
+ * The facet EAP on the leave-facet-out prior, on the engine's grid (engine/scorer.ts eapAxis: 61 points on [-4, 4]):
+ * the prior is the own-axis posterior without the facet, N(0, 1) times the likelihood of `rest`, exact on the grid,
+ * and the facet's likelihood is added once (UX review D4, viz/facets.ts).
+ */
+function leaveOutGridEap(rest: readonly Observation[], facet: readonly Observation[]): { mean: number; sd: number } {
+  const step = (EAP_HI - EAP_LO) / (EAP_N_GRID - 1)
+  const grid = Array.from({ length: EAP_N_GRID }, (_, i) => (i === EAP_N_GRID - 1 ? EAP_HI : EAP_LO + i * step))
+  const prior = grid.map((t) => -0.5 * t * t + rest.reduce((sum, o) => sum + observationLoglik(o, t), 0))
+  const logw = grid.map((t, i) => prior[i]! + facet.reduce((sum, o) => sum + observationLoglik(o, t), 0))
+  const mx = Math.max(...logw)
+  const w = logw.map((v) => Math.exp(v - mx))
+  const total = w.reduce((x, y) => x + y, 0)
+  const mean = grid.reduce((sum, t, i) => sum + (w[i]! / total) * t, 0)
+  const variance = grid.reduce((sum, t, i) => sum + (w[i]! / total) * (t - mean) * (t - mean), 0)
+  return { mean, sd: Math.sqrt(Math.max(variance, 0)) }
+}
+
 /** What the app's own engine says about the same sessions. */
 async function expectedFor(sessionIds: readonly string[]): Promise<Expected> {
   const rows = await rowsOf(sessionIds)
@@ -150,29 +172,37 @@ async function expectedFor(sessionIds: readonly string[]): Promise<Expected> {
   const counts = new Map<AxisCode, number>()
   for (const s of sessions) for (const o of s.observations) counts.set(o.axis, (counts.get(o.axis) ?? 0) + 1)
   for (const [axis, e] of Object.entries(score.eap)) eap[axis as AxisCode] = { mean: e.mean, sd: e.sd, n: counts.get(axis as AxisCode) ?? 0 }
-  // facets: the facet's observations, adjusted by the same practice gains, on the axis posterior
+  // facets (UX review D4): the facet's observations, adjusted by the same practice gains and keyed by drill-down
+  // facet (a quant template's topic group, viz/facets.ts drillFacet), on the leave-facet-out prior: the own-axis
+  // grid posterior without them (population prior N(0, 1)), then the facet's likelihood once
   const ord = new Map<string, Partial<Record<AxisCode, number>>>()
   const rho = new Map<string, Partial<Record<AxisCode, number>>>()
   for (const ss of score.sessions) {
     ord.set(ss.session_id, ss.ordinals)
     rho.set(ss.session_id, ss.rho)
   }
+  const axisObs = new Map<AxisCode, { facet: string | null; obs: Observation }[]>()
   for (const sid of sessionIds) {
     for (const r of rows.filter((x) => x.session_id === sid)) {
       const scorable = !r.pretest && r.status !== 'quarantined' && r.eligible && r.correct !== null && ['2pl', '2pl_testlet', '3pl'].includes(r.model)
-      if (!scorable || r.facet === null) continue
+      if (!scorable) continue
       const g = rho.get(sid)![r.axis]!
       const o = observationOf(r)
       const adj: Observation = o.kind === '3pl' ? { ...o, b: o.b - g } : o.kind === '2pl' ? { ...o, b: o.b - g } : o
-      const key = `${r.axis}|${r.facet}`
+      const facet = r.facet === null ? null : drillFacet(r.axis, r.facet)
+      axisObs.set(r.axis, [...(axisObs.get(r.axis) ?? []), { facet, obs: adj }])
+      if (facet === null) continue
+      const key = `${r.axis}|${facet}`
       facetObs.set(key, [...(facetObs.get(key) ?? []), adj])
     }
   }
   const facets: Expected['facets'] = {}
   for (const [key, obs] of facetObs) {
     const [axis, facet] = key.split('|') as [AxisCode, string]
-    const a = score.eap[axis]!
-    const e = eapAxis(obs, a.mean, a.sd * a.sd)
+    const rest = (axisObs.get(axis) ?? []).filter((x) => x.facet !== facet).map((x) => x.obs)
+    const e = leaveOutGridEap(rest, obs)
+    // prior × likelihood is the axis posterior again: the facet repeats its axis's EAP
+    expect(Math.abs(e.mean - score.eap[axis]!.mean), key).toBeLessThan(TOL)
     ;(facets[axis] ??= {})[facet] = { mean: e.mean, sd: e.sd, n: obs.length }
   }
   return { eap, facets, ordinals: ord, rho }
@@ -961,5 +991,57 @@ describe('hb.response_fits: the answer space of an item (what counts as an answe
 
   it('an item without a key (a block) has nothing to judge', async () => {
     for (const response of [{ trials: [] }, null, 'x', 7, undefined]) expect(await fits(null, null, response)).toBe(true)
+  })
+})
+
+// UX review D4 (a provisional default; 20261007000100_rescore_facets.sql): a facet's prior leaves its own answers out,
+// so a facet repeats its axis's mean and sd, and quant answers count under their template's topic group.
+describe('rescore: facets by drill-down facet, on the leave-facet-out prior (UX review D4)', () => {
+  const q = async (sql: string, params: unknown[] = []): Promise<string | null> => (await db.owner.query<{ v: string | null }>(`select ${sql} as v`, params)).rows[0]!.v
+
+  it('has hb.drill_facet map exactly as the app does: a quant template to its topic group, everything else to itself', async () => {
+    expect(QUANT_TEMPLATES.length).toBeGreaterThanOrEqual(18)
+    for (const t of QUANT_TEMPLATES) expect(await q('hb.drill_facet($1, $2)', ['QR', t]), t).toBe(drillFacet('QR', t))
+    for (const g of QUANT_GROUP_IDS) expect(await q('hb.drill_facet($1, $2)', ['QR', g]), g).toBe(g)
+    expect(await q('hb.drill_facet($1, $2)', ['QR', 'qr_f0'])).toBe('qr_f0')
+    expect(await q('hb.drill_facet($1, $2)', ['KST', 'percent'])).toBe('percent')
+    expect(await q('hb.drill_facet($1, $2)', ['MAT', 'series'])).toBe('series')
+    expect(await q('hb.drill_facet($1, null)', ['QR'])).toBeNull()
+  })
+
+  it('counts quant answers under the topic group, per session, and gives every facet its axis\'s mean and sd', async () => {
+    const relabel = async (pairs: readonly (readonly [string, string])[]): Promise<void> => {
+      for (const [from, to] of pairs) await db.owner.query(`update public.item_families set facet = $2 where axis = 'QR' and facet = $1`, [from, to])
+    }
+    const templates = [['qr_f0', 'percent'], ['qr_f1', 'arith'], ['qr_f2', 'ratio']] as const
+    await relabel(templates)
+    try {
+      const rng = createRng('drill-facets')
+      const a = await takeSession(undefined, 120, { QR: 0.4, MAT: -0.2, KST: 0.3 }, rng)
+      await schedule(a.sessionId, 1)
+      const ids = [a.sessionId]
+      for (const [, t] of templates) expect(await countOn(a.sessionId, 'QR', t), t).toBeGreaterThanOrEqual(3)
+      // the algorithm (EXACT): keyed by group, and the parity reference computes the leave-out prior on the grid
+      const exact = await rescore(saveOf(a.anonId, ids))
+      expect(Object.keys(exact.facets.QR!).sort()).toEqual(['quant/arith_fractions_percent', 'quant/ratios_rates_averages'])
+      expectParity(exact, await expectedFor(ids), ids)
+      for (const [axis, byFacet] of Object.entries(exact.facets)) {
+        for (const [facet, f] of Object.entries(byFacet)) expect({ mean: f.mean, sd: f.sd }, `${axis}/${facet}`).toEqual({ mean: exact.eap[axis]!.mean, sd: exact.eap[axis]!.sd })
+      }
+      // what a person gets (PUBLISHED): three answers each on percent, arith and ratio are six in one group and three in the other
+      await setConfig(PUBLISHED)
+      try {
+        for (const [, t] of templates) await keepScored(a.sessionId, 'QR', 3, t)
+        const got = await rescore(saveOf(a.anonId, ids))
+        expect(got.eap.QR).toMatchObject({ n: 9 })
+        expect(Object.keys(got.facets.QR!)).toEqual(['quant/arith_fractions_percent'])
+        expect(got.facets.QR!['quant/arith_fractions_percent']).toEqual({ ...got.eap.QR!, n: 6 })
+        expect(got.withheld.facets.QR).toEqual({ 'quant/ratios_rates_averages': 3 })
+      } finally {
+        await setConfig(EXACT)
+      }
+    } finally {
+      await relabel(templates.map(([from, to]) => [to, from] as const))
+    }
   })
 })

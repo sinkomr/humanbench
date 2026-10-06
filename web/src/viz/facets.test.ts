@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { AXIS_INDEX } from '../engine/axes'
 import { eapAxis, scoreAll } from '../engine/scorer'
 import type { Observation } from '../engine/types'
-import { countText, notMeasuredText } from './copy'
+import { countText, facetCaption, notMeasuredText } from './copy'
 import { FAMILIES } from '../tasks/registry'
-import { clusterFacets, FACET_LABELS, FACET_MIN_ITEMS, facetLabel, unmeasuredReasons, type FacetObservation } from './facets'
+import { clusterFacets, FACET_LABELS, FACET_MIN_ITEMS, facetLabel, leaveOutPrior, unmeasuredReasons, type FacetObservation } from './facets'
 import { Z90 } from './geometry'
 import { axisEstimates } from './profile'
 import { syntheticProfile } from './synthetic'
@@ -14,8 +14,8 @@ function items(facet: string, n: number, y: (i: number) => 0 | 1): FacetObservat
   return Array.from({ length: n }, (_, i) => ({ facet, obs: { kind: '2pl', axis: 'MAT', a: 1.2, b: (i % 5) - 2, y: y(i) } satisfies Observation }))
 }
 
-describe('facet drill-down (§9.6, A12)', () => {
-  it('shows an estimate only at ≥ 5 items: the EAP on the facet items with the axis posterior as prior', () => {
+describe('facet drill-down (§9.6, A12, UX review D4)', () => {
+  it('shows an estimate only at ≥ 5 items: the EAP on the facet items with the leave-facet-out prior (the axis itself for a facet that holds the axis)', () => {
     fc.assert(
       fc.property(fc.integer({ min: 0, max: 12 }), fc.integer({ min: 0, max: 12 }), (nMatrix, nSeries) => {
         const obs = [...items('matrix', nMatrix, (i) => (i % 3 === 0 ? 0 : 1)), ...items('series', nSeries, (i) => (i % 2 === 0 ? 1 : 0))]
@@ -26,8 +26,11 @@ describe('facet drill-down (§9.6, A12)', () => {
         for (const row of rows) {
           const mine = obs.filter((o) => o.facet === row.facet).map((o) => o.obs)
           expect(row.nItems).toBe(mine.length)
-          if (mine.length >= FACET_MIN_ITEMS) {
-            const want = eapAxis(mine, score.theta[k]!, score.cov[k]![k]!)
+          if (mine.length >= FACET_MIN_ITEMS && mine.length === obs.length) {
+            expect(row).toMatchObject({ measured: true, theta: score.theta[k], sd: Math.sqrt(score.cov[k]![k]!) })
+          } else if (mine.length >= FACET_MIN_ITEMS) {
+            const prior = leaveOutPrior(score, 'MAT', mine)
+            const want = eapAxis(mine, prior.mean, prior.variance)
             expect(row).toMatchObject({ measured: true, theta: want.mean, sd: want.sd })
           } else {
             expect(row).toMatchObject({ measured: false, reason: 'insufficient_data' })
@@ -127,9 +130,12 @@ describe('facet drill-down (§9.6, A12)', () => {
   it('names a facet row by its label alone: the skill is the next column', () => {
     const p = syntheticProfile('m1')!
     const rows = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: unmeasuredReasons(axisEstimates(p.input)) })
-    expect(rows.map((r) => r.name)).toEqual(['Percentages', 'Arithmetic', 'Fractions', 'Ratios'])
+    // The quant templates (percent, arith, fraction; ratio) show as their topic groups (D4, DATA-14).
+    expect(rows.map((r) => r.name)).toEqual(['Arithmetic, fractions and percentages', 'Ratios, rates and averages'])
     expect(rows.every((r) => !r.name.includes('('))).toBe(true)
-    expect(rows.map((r) => r.shortLabel[0])).toEqual(rows.map((r) => r.name))
+    // A long name takes two chart lines, in its own words.
+    expect(rows.map((r) => r.shortLabel.join(' '))).toEqual(rows.map((r) => r.name))
+    expect(rows[0]!.shortLabel).toEqual(['Arithmetic, fractions', 'and percentages'])
   })
 })
 
@@ -155,5 +161,14 @@ describe('facets that arrive computed (the server’s, M2.7)', () => {
       unmeasured: { MAT: 'skipped' },
     })
     expect(rows.find((r) => r.id === 'MAT:series')).toMatchObject({ measured: false, reason: 'skipped' })
+  })
+})
+
+describe('the facet caption (UX review D4)', () => {
+  it('says why a facet sits close to its skill under the leave-facet-out prior, in plain words', () => {
+    const text = facetCaption('Quantitative')
+    expect(text).toContain('Facets of Quantitative, in SD units on a provisional scale.')
+    expect(text).toContain("Each facet's range also draws on the rest of its skill, so for now a facet sits close to its skill.")
+    expect(text).not.toMatch(/TODO|\{|\}|undefined/)
   })
 })
