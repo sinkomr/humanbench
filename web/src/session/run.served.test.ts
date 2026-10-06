@@ -395,6 +395,71 @@ describe('a served part', () => {
   })
 })
 
+describe('a served part and the clock between parts (UX-066)', () => {
+  it('the "Up next" hold and the wait for the server are held apart: neither ending restarts a clock the other holds', async () => {
+    const h = new Harness()
+    h.cat.steps = ['hang', 'hang']
+    expect(h.v().clockHeld).toBe(true) // the first "Up next" screen
+    h.t += 40_000
+    expect(h.v().elapsedS).toBe(0)
+    await h.toMatrix() // Start: the interstitial lets go, the wait for the item holds
+    expect(h.v().phase).toBe('loading')
+    h.t += 30_000
+    expect(h.v().elapsedS).toBe(0)
+    h.run.skipAxis() // the wait is abandoned (its hold goes) and the next interstitial holds the clock
+    expect(h.v().phase).toBe('interstitial')
+    expect(h.v().segment?.id).toBe('spatial')
+    h.t += 30_000
+    expect(h.v().elapsedS).toBe(0)
+    h.run.startSegment()
+    await settle()
+    expect(h.v().phase).toBe('loading')
+    h.t += 30_000
+    expect(h.v().elapsedS).toBe(0)
+    h.cat.release({ kind: 'item', item: served(1) }) // the reply to the abandoned request: ignored
+    await settle()
+    expect(h.v().phase).toBe('loading')
+    h.cat.release({ kind: 'item', item: served(2, { item_id: 'i:rotation:1.0.0:2', family: 'rotation', item_type: 'rotation', options_count: 4 }) })
+    await settle()
+    expect(h.v().phase).toBe('item')
+    h.t += 12_000
+    expect(h.v().elapsedS).toBe(12) // runs once the item is up, and only then
+  })
+
+  it('a part that ends on the server’s word holds the clock on the next "Up next" screen', async () => {
+    const h = new Harness()
+    h.cat.steps = [{ kind: 'item', item: served(1) }, { kind: 'done', reason: 'axes_done' }]
+    await h.toMatrix()
+    h.answerOnScreen('1', 50, 8)
+    await settle()
+    expect(h.v().phase).toBe('interstitial')
+    const at = h.v().elapsedS
+    expect(at).toBe(8)
+    h.t += 60_000
+    expect(h.v().elapsedS).toBe(at)
+  })
+
+  it('sends an untouched confidence as no rating (null) and counts it in the flags the server takes (UX-063)', async () => {
+    const h = new Harness()
+    h.cat.steps = [{ kind: 'item', item: served(1) }, { kind: 'item', item: served(2) }, { kind: 'item', item: served(3) }]
+    await h.toMatrix()
+    h.run.itemShown(h.t)
+    h.t += 4000
+    h.run.itemResponded('7')
+    h.run.confirmConfidence(h.v().confidence!.startPct, false)
+    await settle()
+    h.run.itemShown(h.t)
+    h.t += 4000
+    h.run.itemResponded('8')
+    h.run.confirmConfidence(80, true)
+    await settle()
+    expect(h.cat.answers.map((a) => a.confidence)).toEqual([null, 80])
+    expect(h.run.catSessionState()?.responses.map((t) => t[5])).toEqual([null, 80])
+    expect(h.run.serverFlags().confidence_untouched_n).toBe(1)
+    expect(h.run.catSessionState()?.flags.confidence_untouched_n).toBe(1)
+  })
+})
+
 describe('the static run is untouched', () => {
   it('has no served part, no problem and nothing to send', () => {
     const h = new Harness({ cat: undefined })

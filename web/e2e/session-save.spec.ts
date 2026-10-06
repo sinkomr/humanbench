@@ -303,6 +303,9 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
 
     // Every part of the session was played, in the order of the plan (A15), each showing its own kind of screen.
     expect(driver.segments, 'the parts of the session, by their interstitials').toEqual([...SEGMENT_TITLES])
+    // One break offer, at the part boundary nearest half-way: before Working Memory (UX-066; owner decision 2026-10-05, UX-REVIEW D5).
+    expect(driver.breakOffers, 'break offers in the session').toBe(1)
+    expect(driver.breakBefore, 'the part the break offer came before').toBe('Working Memory')
     // Each part showed the kinds of screen it cannot do without (`parts.ts`: the Matrix & Series part serves both a matrix and a series item, because the selector balances the two families).
     expect(partsPlayedProblems(driver.played), 'screens a part of the session did not show').toEqual([])
 

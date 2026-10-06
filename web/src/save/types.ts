@@ -52,7 +52,8 @@ export interface DeviceInfo {
 }
 
 /**
- * Integrity flag counters (§13), e.g. `visibility_hidden_s`, `paste_events`, `fast_guess_n`.
+ * Integrity flag counters (§13), e.g. `visibility_hidden_s`, `paste_events`, `fast_guess_n`,
+ * `confidence_untouched_n` (answers whose confidence slider was not moved, UX-063).
  * Keys are snake_case; M1.19's `integrityReport().save_flags` (`engine/integrity.ts` SaveFlags)
  * adds `flag_count`, `calibration_eligible` and the session-level kinds as booleans. A merge
  * keeps the copy of a session with the most flag information (`merge.ts` flagRank).
@@ -67,7 +68,6 @@ export type SessionFlags = { [flag: string]: number | boolean | null }
  */
 export const TIMED_TASKS_ONLY_FLAG = 'timed_tasks_only'
 
-/** Server HMAC over the whole file body (the §8 example's file-level `sig`, superseded by A16). */
 /**
  * Set (true) on a session that continues the session just before it in time order: an interrupted
  * session picked up again as a new session, its finished parts not served again (UX-064). The two
@@ -77,6 +77,7 @@ export const TIMED_TASKS_ONLY_FLAG = 'timed_tasks_only'
  */
 export const CONTINUATION_FLAG = 'continuation'
 
+/** Server HMAC over the whole file body (the §8 example's file-level `sig`, superseded by A16). */
 export interface SaveSig {
   alg: 'HMAC-SHA256'
   kid: string

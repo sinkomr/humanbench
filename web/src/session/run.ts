@@ -19,9 +19,15 @@
  * ## Time
  *
  * - **Progress** is time, not items: elapsed active seconds over the A15 target.
- * - **Segment budgets.** A CAT segment starts with `(target − elapsed − time of the blocks still
- *   to run) / CAT segments left`, so slow or fast blocks and unused time move to the segments
- *   after them (never below 0).
+ * - **Between parts the clock waits** (UX-066): from the moment a part ends (or the session begins)
+ *   until Start on the next "Up next" screen, the clock is held, the break offer and Skip on an
+ *   interstitial included, so reading what comes next is not session time. The holds are named
+ *   (`clock.ts`): the wait for a served item and a break hold it for reasons of their own, so one of
+ *   them ending never restarts a clock another still holds.
+ * - **Segment budgets.** A CAT segment starts with its planned share (the plan's `budget_s`) or
+ *   `(target − elapsed − time of the blocks still to run) / CAT segments left`, whichever is less
+ *   (never below 0): slow blocks shorten the parts after them, but a skipped part or time left
+ *   unused never makes a later part longer than planned, so a skip shortens the session (UX-066).
  * - **Coverage floor** (§7.4 L584, the M1.15 fix). The ≥ 3-item floor is a requirement, not part
  *   of a segment's budget: the selector is given the time to the hard stop as `floorRemainingS`,
  *   so a segment whose budget ran out (long span blocks, slow items before it) still gets its 3
@@ -29,8 +35,10 @@
  *   about 5% of simulated sessions. The floor is per axis, not per session number: earlier
  *   sessions' items are given as `priorItemCounts` (`coverage.ts`), so an axis that no earlier
  *   session covered keeps its floor, e.g. after a session that was abandoned before it.
- * - **Break** (§10): once the session has run 30 active minutes a break is offered at the next
- *   boundary (never mid-item); taking it pauses the clock. Offered once.
+ * - **Break** (§10, UX-066): offered once, between two parts: before the "Up next" screen of the
+ *   part whose planned start (the plan's cumulative time) is nearest half the target (`breakAtS`),
+ *   or, when that part was skipped, before the next interstitial shown after it. A plan of one part
+ *   has no break. The clock is already held there; taking the break adds a hold of its own.
  * - **Hard stop** (§7.4): at 57 active minutes the session ends where it is; an item in progress is
  *   dropped, an answered item still waiting for its confidence is kept without one. The hard stop
  *   is noticed on the next `tick()`, but the recorded time is the limit, not the late reading.
@@ -56,6 +64,15 @@
  * and its later segments are passed over; what was already answered stays in the save, and the
  * profile shows the axis as not measured (`flags.skipped_<axis>`). "Finish early" ends the session
  * with what there is (§7.4).
+ *
+ * ## Picking up an interrupted session (UX-064)
+ *
+ * The flags record how far the session got: `done_<part>` for each part that ended normally here and
+ * `completed` for a session that reached its end (`finished_early` and `hard_stop` are the other ends),
+ * so an autosave with none of the three is an interrupted session (`resume.ts`). A continuation
+ * (`RunConfig.continues`; provisional default, UX-REVIEW D6 option B) is a new session of the same
+ * sitting: the parts the interrupted session finished are shown as done and not run, the part it was in
+ * starts from its beginning, and `flags.continuation` is set.
  *
  * ## What is recorded
  *
@@ -100,13 +117,14 @@ import {
 import { isJsonValue, type JsonValue, type Observation, type ResponseTuple } from '../engine/types'
 import type { RtInputMode, RtInputType } from '../render/rt/keys'
 import type { SessionState } from '../save/create'
-import { TIMED_TASKS_ONLY_FLAG, type DeviceInfo, type SessionFlags } from '../save/types'
+import { CONTINUATION_FLAG, TIMED_TASKS_ONLY_FLAG, type DeviceInfo, type SessionFlags } from '../save/types'
 import { MalformedResponseError, type AnyFamily } from '../tasks/family'
 import { getFamily } from '../tasks/registry'
 import { rtBlockObservation, type RtItem, type RtResponse } from '../tasks/rt'
 import { calibrationObservation, calibrationSummary, type CalibrationSummary, type RatedAnswer } from '../tasks/calibration'
 import { confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
-import { BREAK_AT_S, DEFAULT_ITEM_LIMIT_S, HARD_STOP_S } from './constants'
+import { DEFAULT_ITEM_LIMIT_S, HARD_STOP_S } from './constants'
+import { COMPLETED_FLAG, doneFlag, FOCUS_SESSION_FLAG, isProgressFlag } from './resume'
 import { SEGMENT_INFO } from './segments'
 import { SessionClock, type NowMs } from './clock'
 
@@ -123,7 +141,7 @@ export type RunPhase =
   | 'item'
   /** The item was answered; the confidence slider is showing. */
   | 'confidence'
-  /** The 30-minute break is suggested. */
+  /** The break is suggested, between two parts (the clock is held). */
   | 'break_offer'
   /** On a break: the clock is paused. */
   | 'on_break'
@@ -196,7 +214,12 @@ export interface RunView {
   readonly notice: Notice | null
   readonly elapsedS: number
   readonly targetS: number
+  /** The planned session second the break is placed nearest to (half the target unless configured). */
   readonly breakAtS: number
+  /** The part before whose "Up next" screen the break is offered; null when the plan has no boundary for it. */
+  readonly breakBefore: SegmentId | null
+  /** The clock is held (an "Up next" screen, the break offer, a break, the wait for a served item). */
+  readonly clockHeld: boolean
   readonly hardStopS: number
   readonly counts: { readonly items: number; readonly blocks: number }
   readonly skipped: readonly AxisCode[]
@@ -242,8 +265,20 @@ export interface RunConfig {
    * neither the save's flags nor the profile treat them as skipped.
    */
   readonly focus?: readonly AxisCode[]
-  /** Session target seconds (default {@link A15_TARGET_S}). */
+  /**
+   * A continuation (UX-064; provisional default, UX-REVIEW D6 option B; `resume.ts`): this new session picks up an
+   * interrupted one of the same sitting. The parts it finished (`done`) stay in the plan, shown as done, and are not
+   * run again; the skills it skipped stay skipped (shown as skipped); the first part left starts from its beginning.
+   * The session is flagged {@link CONTINUATION_FLAG}, so the retest model does not practice-adjust the two against
+   * each other (§7.8). Its target is the planned time of the parts left, and no break is offered before its first part.
+   */
+  readonly continues?: { readonly done: readonly SegmentId[]; readonly skipped: readonly AxisCode[] }
+  /** Session target seconds (default {@link A15_TARGET_S}; a continuation's is the planned time of the parts it runs). */
   readonly targetS?: number
+  /**
+   * The planned session second the break is offered nearest to: the boundary between two parts whose
+   * planned cumulative time is closest to it (default half the target, UX-066).
+   */
   readonly breakAtS?: number
   readonly hardStopS?: number
   /** Per-axis stop SD (default 0.3, §7.4 L588). */
@@ -282,6 +317,8 @@ export interface RunResult {
   readonly blocks: readonly BlockRecord[]
   /** How each CAT segment ended: the selector's reason, or 'skipped'. */
   readonly segmentEnds: readonly { readonly segment: SegmentId; readonly reason: NoItemReason | 'skipped' }[]
+  /** Each CAT segment that started: its planned share and the budget it started with (never more, UX-066). */
+  readonly budgets: readonly { readonly segment: SegmentId; readonly plannedS: number; readonly budgetS: number }[]
 }
 
 // ---------------------------------------------------------------------------- internals
@@ -292,6 +329,8 @@ interface Segment {
   readonly axes: readonly AxisCode[]
   readonly steps: readonly PlannedStep[]
   status: SegmentStatus
+  /** Planned seconds: the blocks' E[T], or the plan's `budget_s` of a CAT segment (its planned share). */
+  readonly plannedS: number
   /** CAT: seconds this segment may use (set when it starts). */
   budgetS: number
   startedAtS: number
@@ -387,6 +426,8 @@ export class SessionRun {
   readonly #clock: SessionClock
   readonly #targetS: number
   readonly #breakAtS: number
+  /** Index of the segment before whose interstitial the break is offered, or -1 (see the module comment). */
+  readonly #breakIdx: number
   readonly #hardStopS: number
   readonly #stopSd: number
   readonly #priorCounts: Readonly<Partial<Record<AxisCode, number>>>
@@ -406,6 +447,10 @@ export class SessionRun {
   #endReason: EndReason | null = null
   #breakOffered = false
   #breaks = 0
+  /** Confidence ratings confirmed without the slider being moved (UX-063): recorded as not rated. */
+  #untouched = 0
+  /** Parts that ended normally in this session (`done_<part>` flags, read by `resume.ts`). */
+  readonly #doneHere = new Set<SegmentId>()
   #afterBreak: (() => void) | null = null
   #noticeSeq = 0
   #notice: Notice | null = null
@@ -421,6 +466,7 @@ export class SessionRun {
   readonly #seenFamilies: string[] = []
   readonly #blockRecords: BlockRecord[] = []
   readonly #segmentEnds: { segment: SegmentId; reason: NoItemReason | 'skipped' }[] = []
+  readonly #budgets: { segment: SegmentId; plannedS: number; budgetS: number }[] = []
   readonly #visibility: VisibilityEvent[] = []
   readonly #paste: PasteEvent[] = []
   // Served parts (M2.7): see the module comment. All empty and unused without `cfg.cat`.
@@ -444,8 +490,8 @@ export class SessionRun {
     this.#cfg = cfg
     this.sessionId = cfg.sessionId
     this.#seed = cfg.seed ?? cfg.sessionId
-    this.#targetS = cfg.targetS ?? A15_TARGET_S
-    this.#breakAtS = cfg.breakAtS ?? BREAK_AT_S
+    const planTargetS = cfg.targetS ?? A15_TARGET_S
+    this.#breakAtS = cfg.breakAtS ?? planTargetS / 2
     this.#hardStopS = cfg.hardStopS ?? HARD_STOP_S
     this.#stopSd = cfg.stopSd ?? STOP_SD
     this.#priorCounts = cfg.priorItemCounts ?? {}
@@ -455,8 +501,22 @@ export class SessionRun {
     this.#cat = cfg.cat
     for (const k of cfg.skipped ?? []) this.#markSkipped(k)
     if (cfg.focus !== undefined) for (const k of AXIS_CODES) if (!cfg.focus.includes(k) && !this.#skipped.has(k)) this.#weights[k] = 0
-    const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: this.#targetS, seenFamilies: this.#seenBase })
+    const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: planTargetS, seenFamilies: this.#seenBase })
     this.#segments = SessionRun.#group(plan)
+    const cont = cfg.continues
+    if (cont !== undefined) {
+      // Marked after the plan is drawn, so the parts stay on the checklist: done, or skipped, not "not in this version".
+      for (const k of cont.skipped) if (!this.#skipped.has(k)) this.#markSkipped(k)
+      for (const s of this.#segments) {
+        if (cont.done.includes(s.id)) s.status = 'done'
+        else if (s.axes.every((k) => this.#skipped.has(k))) s.status = 'skipped'
+      }
+    }
+    const left = this.#segments.filter((s) => s.status === 'upcoming')
+    this.#targetS = cont === undefined ? planTargetS : Math.max(60, left.reduce((t, s) => t + s.plannedS, 0))
+    const halfWay = SessionRun.#halfWay(this.#segments, this.#breakAtS)
+    // A continuation offers the break only between two of its own parts, never before the first one.
+    this.#breakIdx = cont !== undefined && halfWay <= this.#nextLive(-1) ? -1 : halfWay
     this.#clock = new SessionClock(cfg.now)
     this.#clock.start()
     this.#enterNextSegment()
@@ -473,9 +533,28 @@ export class SessionRun {
         continue
       }
       const axes = step.kind === 'block' ? [step.axis] : [...step.axes]
-      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', budgetS: 0, startedAtS: 0 })
+      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', plannedS: 0, budgetS: 0, startedAtS: 0 })
     }
-    return out
+    return out.map((s) => ({ ...s, plannedS: s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : st.budget_s), 0) }))
+  }
+
+  /**
+   * The segment before whose interstitial the break goes: of the boundaries between two segments, the
+   * one whose planned cumulative time is nearest `atS` (the earlier one on a tie); -1 with one segment.
+   */
+  static #halfWay(segments: readonly Segment[], atS: number): number {
+    let best = -1
+    let bestGap = Infinity
+    let cum = 0
+    for (let i = 1; i < segments.length; i++) {
+      cum += segments[i - 1]!.plannedS
+      const gap = Math.abs(cum - atS)
+      if (gap < bestGap) {
+        best = i
+        bestGap = gap
+      }
+    }
+    return best
   }
 
   // ------------------------------------------------------------------------------- views
@@ -586,6 +665,8 @@ export class SessionRun {
       elapsedS: this.elapsedS(),
       targetS: this.#targetS,
       breakAtS: this.#breakAtS,
+      breakBefore: this.#segments[this.#breakIdx]?.id ?? null,
+      clockHeld: this.#clock.paused,
       hardStopS: this.#hardStopS,
       counts: { items: this.#administered.length + this.#catAnswered(), blocks: this.#blockRecords.length },
       skipped: [...this.#skipped],
@@ -624,20 +705,9 @@ export class SessionRun {
     return false
   }
 
-  /**
-   * A boundary between units: a break is offered here once the session has run `breakAtS`
-   * (§10), else `next` runs.
-   */
+  /** A boundary between units: `next` runs unless the hard stop has come (the break is offered between parts, {@link #enterNextSegment}). */
   #boundary(next: () => void): void {
     if (this.#limitsHit()) return
-    if (!this.#breakOffered && this.#clock.elapsedS() >= this.#breakAtS) {
-      this.#breakOffered = true
-      this.#afterBreak = next
-      this.#phase = 'break_offer'
-      this.#newScreen()
-      this.#emit('phase')
-      return
-    }
     next()
   }
 
@@ -656,7 +726,7 @@ export class SessionRun {
     return this.#catAxes.length
   }
 
-  /** Budget in seconds for the CAT segment at `idx` if it started now (see the module comment). */
+  /** Budget in seconds for the CAT segment at `idx` if it started now: at most its planned share (see the module comment). */
   #budgetFor(idx: number): number {
     const elapsed = this.#clock.elapsedS()
     let blocksAfter = 0
@@ -667,11 +737,36 @@ export class SessionRun {
       if (s.kind === 'cat') catLeft++
       else if (i > idx) blocksAfter += s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : 0), 0)
     }
-    return catLeft === 0 ? 0 : Math.max(0, (this.#targetS - elapsed - blocksAfter) / catLeft)
+    if (catLeft === 0) return 0
+    const planned = this.#segments[idx]?.plannedS ?? 0
+    return Math.min(planned, Math.max(0, (this.#targetS - elapsed - blocksAfter) / catLeft))
   }
 
-  /** Moves to the next segment that still has an axis to measure and shows its interstitial; finishes after the last. */
+  /** Index of the first segment after `from` that still has an axis to measure (and was not done earlier in the sitting), or -1. */
+  #nextLive(from: number): number {
+    for (let i = from + 1; i < this.#segments.length; i++) {
+      const s = this.#segments[i]!
+      if (s.status !== 'done' && !s.axes.every((k) => this.#skipped.has(k))) return i
+    }
+    return -1
+  }
+
+  /**
+   * Moves to the next segment that still has an axis to measure and shows its interstitial; finishes
+   * after the last. The clock is held from here until Start. The break is offered first, once, when
+   * that segment is the half-way one or comes after it (a skipped half-way part moves the offer on).
+   */
   #enterNextSegment(): void {
+    const next = this.#nextLive(this.#segIdx)
+    if (next >= 0) this.#clock.hold('between_parts')
+    if (next >= 0 && !this.#breakOffered && this.#breakIdx >= 0 && next >= this.#breakIdx) {
+      this.#breakOffered = true
+      this.#afterBreak = () => this.#enterNextSegment()
+      this.#phase = 'break_offer'
+      this.#newScreen()
+      this.#emit('phase')
+      return
+    }
     for (;;) {
       this.#segIdx++
       const s = this.#segments[this.#segIdx]
@@ -680,6 +775,8 @@ export class SessionRun {
         this.#finish('complete')
         return
       }
+      // A part a continuation's sitting finished earlier stays done (RunConfig.continues).
+      if (s.status === 'done') continue
       if (s.axes.every((k) => this.#skipped.has(k))) {
         s.status = 'skipped'
         continue
@@ -698,6 +795,7 @@ export class SessionRun {
     if (s === undefined) return
     if (s.kind === 'cat') this.#segmentEnds.push({ segment: s.id, reason: reason === 'complete' ? 'axes_done' : reason })
     s.status = s.axes.every((k) => this.#skipped.has(k)) ? 'skipped' : 'done'
+    if (s.status === 'done') this.#doneHere.add(s.id)
     this.#current = null
     this.#currentBlock = null
     this.#boundary(() => this.#enterNextSegment())
@@ -708,8 +806,12 @@ export class SessionRun {
     if (this.#limitsHit() || this.#phase !== 'interstitial') return
     const s = this.#segments[this.#segIdx]
     if (s === undefined) return
+    this.#clock.release('between_parts')
     s.startedAtS = this.#clock.elapsedS()
-    if (s.kind === 'cat') s.budgetS = this.#budgetFor(this.#segIdx)
+    if (s.kind === 'cat') {
+      s.budgetS = this.#budgetFor(this.#segIdx)
+      this.#budgets.push({ segment: s.id, plannedS: s.plannedS, budgetS: s.budgetS })
+    }
     this.#blockIdx = 0
     this.#present()
   }
@@ -793,7 +895,7 @@ export class SessionRun {
     this.#problem = null
     this.#current = null
     // Waiting for the network is not working: the session clock stands still until the item is up.
-    this.#clock.pause()
+    this.#clock.hold('loading')
     this.#phase = 'loading'
     this.#emit('phase')
     void this.#load(l, ++this.#fetchSeq)
@@ -831,11 +933,11 @@ export class SessionRun {
     }
   }
 
-  /** The wait is over (or abandoned): the clock runs again and no request is current. */
+  /** The wait is over (or abandoned): the wait's hold on the clock goes and no request is current. */
   #settle(): void {
     this.#loading = null
     this.#fetchSeq++
-    this.#clock.resume()
+    this.#clock.release('loading')
   }
 
   #showServed(item: ServedItem): void {
@@ -956,13 +1058,21 @@ export class SessionRun {
     this.#emit('phase')
   }
 
-  /** The person confirmed how sure they are (percent, an integer from the slider's floor to 100). */
-  confirmConfidence(pct: number): void {
+  /**
+   * The person confirmed how sure they are (percent, an integer from the slider's floor to 100).
+   * `touched` false: the slider was confirmed where it started, never moved (Continue, Enter or a
+   * double click straight away). Such an answer is recorded as not rated (`confidence_pct` null, as
+   * after a skip or the hard stop), so it stays out of the calibration, and the session counts it in
+   * the flag `confidence_untouched_n` (UX-063).
+   */
+  confirmConfidence(pct: number, touched = true): void {
     const cur = this.#current
     if (this.#limitsHit() || this.#phase !== 'confidence' || cur === null || cur.pending === null) return
     if (!isConfidencePct(pct, confidenceFloorPct(this.#facts(cur).options_count))) return
-    if (cur.served !== null) this.#recordServed(cur, cur.pending.response, cur.pending.rtMs, pct, cur.pending.endMs)
-    else this.#recordItem(cur, cur.pending.response, cur.pending.correct as 0 | 1, cur.pending.rtMs, pct, cur.pending.endMs)
+    const rated = touched ? pct : null
+    if (!touched) this.#untouched++
+    if (cur.served !== null) this.#recordServed(cur, cur.pending.response, cur.pending.rtMs, rated, cur.pending.endMs)
+    else this.#recordItem(cur, cur.pending.response, cur.pending.correct as 0 | 1, cur.pending.rtMs, rated, cur.pending.endMs)
     this.#current = null
     this.#emit('response')
     this.#boundary(() => this.#present())
@@ -1179,10 +1289,10 @@ export class SessionRun {
 
   // ---------------------------------------------------------------------------- breaks
 
-  /** Take the suggested break: the clock pauses until {@link resume}. */
+  /** Take the suggested break: the clock is held until {@link resume} (and, after it, until Start on the next part). */
   takeBreak(): void {
     if (this.#limitsHit() || this.#phase !== 'break_offer') return
-    this.#clock.pause()
+    this.#clock.hold('break')
     this.#breaks++
     this.#phase = 'on_break'
     this.#newScreen()
@@ -1192,7 +1302,7 @@ export class SessionRun {
   /** End the break; the session goes on where it was. */
   resume(): void {
     if (this.#phase !== 'on_break') return
-    this.#clock.resume()
+    this.#clock.release('break')
     const next = this.#afterBreak
     this.#afterBreak = null
     this.#emit('break')
@@ -1249,8 +1359,15 @@ export class SessionRun {
     const flags: SessionFlags = this.#cat === undefined ? { ...this.#integrityReport().save_flags } : this.#servedIntegrityFlags()
     for (const k of this.#skipped) flags[`skipped_${k.toLowerCase()}`] = true
     if (this.#breaks > 0) flags.breaks = this.#breaks
+    if (this.#untouched > 0) flags.confidence_untouched_n = this.#untouched
     if (this.#endReason === 'finish_early') flags.finished_early = true
     if (this.#endReason === 'hard_stop') flags.hard_stop = true
+    // How far the session got, for picking up an interrupted one (`resume.ts`): the parts that ended normally, and
+    // `completed` for the third way to end. A session with none of the three ends was interrupted.
+    for (const s of this.#segments) if (this.#doneHere.has(s.id)) flags[doneFlag(s.id)] = true
+    if (this.#endReason === 'complete') flags[COMPLETED_FLAG] = true
+    if (this.#cfg.focus !== undefined) flags[FOCUS_SESSION_FLAG] = true
+    if (this.#cfg.continues !== undefined) flags[CONTINUATION_FLAG] = true
     return flags
   }
 
@@ -1262,10 +1379,14 @@ export class SessionRun {
 
   /**
    * The flags the server takes at `finish` (names and values as `hb.valid_flags` allows): the integrity
-   * counters and what the person chose (skipped parts, breaks, how it ended).
+   * counters and what the person chose (skipped parts, breaks, how it ended). The flags of how far the session
+   * got (`done_<part>`, `completed`, `focus_session`, `continuation`) are for this browser's crash recovery
+   * (`resume.ts`) and stay in the save: the server keeps its own rows of what it served.
    */
   serverFlags(): SessionFlags {
-    return this.#flags()
+    const out: SessionFlags = {}
+    for (const [k, v] of Object.entries(this.#flags())) if (!isProgressFlag(k)) out[k] = v
+    return out
   }
 
   /**
@@ -1321,6 +1442,7 @@ export class SessionRun {
       itemsByAxis,
       blocks: [...this.#blockRecords],
       segmentEnds: [...this.#segmentEnds],
+      budgets: [...this.#budgets],
     }
   }
 }

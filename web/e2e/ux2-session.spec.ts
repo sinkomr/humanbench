@@ -398,6 +398,11 @@ test.describe('a question the browser cannot draw says so once (UX-017a)', () =>
   test('Skip leaves for the next part; the parked renderer goes with the screen', async ({ page }) => {
     await noWebGlSpatial(page)
     await page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' }).click()
+    // Spatial ends the first half of the plan: the one break offer comes first (UX-066; UX-REVIEW D5), and the parked renderer is gone already.
+    await expect(h1(page)).toHaveText('Time for a break?')
+    await expect(page.locator('.unavailable')).toHaveCount(0)
+    await expect(page.locator('div.rotation')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Keep going', exact: true }).click()
     await expect(h1(page)).toHaveText('Up next: Working Memory')
     await expect(page.locator('.unavailable')).toHaveCount(0)
     await expect(page.locator('div.rotation')).toHaveCount(0)

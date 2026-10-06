@@ -10,9 +10,11 @@ import { SAVE_CTX } from './constants'
 import Checklist from './Checklist.svelte'
 import Confidence from './Confidence.svelte'
 import Finished from './Finished.svelte'
+import ConsentGate from './ConsentGate.svelte'
 import Privacy from './Privacy.svelte'
 import ProgressRing from './ProgressRing.svelte'
 import Ready from './Ready.svelte'
+import Welcome from './Welcome.svelte'
 import { defaultReadyState, type ReadyState } from './ready-state'
 import { SpyStorage } from './bot'
 import { Bot } from './bot'
@@ -139,7 +141,7 @@ describe('Checklist (DESIGN §10: per-cluster checklist)', () => {
     expect(statuses(first)).toEqual(['Now', 'Up next', 'Later', 'Later', 'With each answer'])
     expect([...first.querySelectorAll('li')].map((li) => li.getAttribute('data-status'))).toEqual(['current', 'upcoming', 'later', 'later', 'embedded'])
     cleanup?.()
-    // Reaction time skipped: Speed still has the last part ahead, but it is not next. Spatial/Memory is.
+    // Reaction Time skipped: Speed still has the last part ahead, but it is not next. Spatial/Memory is.
     const skipped = mountIt(Checklist, { segments: allSix({ rt: 'skipped', matrix_series: 'current' }) })
     expect(statuses(skipped)).toEqual(['Later', 'Now', 'Up next', 'Later', 'With each answer'])
     cleanup?.()
@@ -190,6 +192,32 @@ describe('Confidence', () => {
     expect(c.querySelector('.hint')?.textContent).toBe('With 4 options, guessing would be right about 25% of the time. 100% means you are certain.')
     click(buttonByText(c, 'Continue'))
     expect(seen).toEqual([63])
+  })
+
+  it('says whether the slider was moved: Continue straight away is untouched, a move (even back to the start) is touched (UX-063)', () => {
+    const seen: [number, boolean][] = []
+    const a = mountIt(Confidence, { floorPct: 25, startPct: 63, optionsCount: 4, onconfirm: (p: number, t: boolean) => seen.push([p, t]) })
+    click(buttonByText(a, 'Continue'))
+    cleanup?.() // one slider at a time: the first is gone before the second is mounted
+    const b = mountIt(Confidence, { floorPct: 25, startPct: 63, optionsCount: 4, onconfirm: (p: number, t: boolean) => seen.push([p, t]) })
+    const r = b.querySelector<HTMLInputElement>('input[type="range"]')!
+    r.value = '80'
+    r.dispatchEvent(new Event('input', { bubbles: true }))
+    r.value = '63'
+    r.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+    click(buttonByText(b, 'Continue'))
+    expect(seen).toEqual([
+      [63, false],
+      [63, true],
+    ])
+  })
+
+  it('Enter on an untouched slider (the form submit) is untouched too', () => {
+    const seen: [number, boolean][] = []
+    const c = mountIt(Confidence, { floorPct: 0, startPct: 50, optionsCount: null, onconfirm: (p: number, t: boolean) => seen.push([p, t]) })
+    c.querySelector('form')!.requestSubmit()
+    expect(seen).toEqual([[50, false]])
   })
 
   it('typed entry has a floor of 0 and its own hint', () => {
@@ -476,15 +504,24 @@ describe('Privacy: delete what is kept in this browser', () => {
     expect(c.querySelector('[role="status"]')?.textContent).toContain('holds no HumanBench data')
   })
 
-  it('is the whole notice: controller and contact are TODO(user), 18+ only, in-browser storage, a way back', () => {
+  it('is the whole notice: no personally identifiable information, no placeholder, 18+ only, in-browser storage, a way back (UX-REVIEW D1)', () => {
     const c = mountIt(Privacy, { storage: () => new SpyStorage() })
     const text = c.textContent ?? ''
-    expect(text).toContain('Controller: TODO(user)')
-    expect(text).toContain('Contact: TODO(user)')
+    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(text).not.toMatch(/TODO|Controller:|Contact:/)
     expect(text).toContain('18 or older')
     expect(text).toContain('Nothing is sent to a server')
-    expect(text).toContain('retention period (draft: 24 months)')
+    expect(text).toContain('at most 24 months')
     expect(c.querySelector('a[href="#/"]')).not.toBeNull()
+  })
+
+  it('the online notice renders without a placeholder too (UX-REVIEW D1)', async () => {
+    const { SERVER_PRIVACY_SECTIONS } = await import('../backend/copy')
+    const c = mountIt(Privacy, { storage: () => new SpyStorage(), sections: SERVER_PRIVACY_SECTIONS, dataLink: true })
+    const text = c.textContent ?? ''
+    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(text).not.toMatch(/TODO|Controller:|Contact:/)
+    expect(c.querySelector('a[href="#/data"]')).not.toBeNull()
   })
 })
 
@@ -504,5 +541,120 @@ describe('Stage finds a renderer for every family of the session (A15, A18)', ()
     }
     const c = mountIt(Stage, { family: 'nope', itemId: 'i:nope:1:x', spec: {}, scale: 1, timing: display, onrespond: () => undefined })
     expect(c.querySelector('[role="alert"]')?.textContent).toContain('not available')
+  })
+})
+
+describe('Welcome (UX-REVIEW D22, provisional default: the row for a returning visitor)', () => {
+  const noop = (): void => undefined
+  const row = (c: HTMLElement): HTMLElement | null => c.querySelector('[data-testid="welcome-returning"]')
+
+  it('a first visit: the tagline, the intro, Start and the privacy link, and no row', () => {
+    const onstart = vi.fn()
+    const c = mountIt(Welcome, { onstart })
+    expect(c.querySelector('h1')?.textContent).toBe('HumanBench')
+    expect([...c.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Start'])
+    expect([...c.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['#/privacy'])
+    expect(row(c)).toBeNull()
+    click(buttonByText(c, 'Start'))
+    expect(onstart).toHaveBeenCalledTimes(1)
+  })
+
+  it('returning with nothing to offer (null, or both off) shows no row', () => {
+    for (const returning of [null, { results: false, notes: false }]) {
+      const c = mountIt(Welcome, { onstart: noop, returning, onresults: noop })
+      expect(row(c), JSON.stringify(returning)).toBeNull()
+      cleanup?.()
+    }
+  })
+
+  it('"See my results" calls the flow, and Start is still the only primary button', () => {
+    const onstart = vi.fn()
+    const onresults = vi.fn()
+    const c = mountIt(Welcome, { onstart, onresults, returning: { results: true, notes: false } })
+    expect(c.querySelectorAll('.hb-primary')).toHaveLength(1)
+    expect(buttonByText(c, 'Start').classList.contains('hb-primary')).toBe(true)
+    const see = buttonByText(c, 'See my results')
+    expect(see.classList.contains('hb-primary')).toBe(false)
+    expect(row(c)?.contains(see)).toBe(true)
+    click(see)
+    expect(onresults).toHaveBeenCalledTimes(1)
+    expect(onstart).not.toHaveBeenCalled()
+  })
+
+  it('no results button without a way to show them (the build with a server scores them there), but the notes link stays', () => {
+    const c = mountIt(Welcome, { onstart: noop, returning: { results: true, notes: true } })
+    expect([...c.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Start'])
+    expect(c.querySelector('[data-testid="welcome-notes"]')).not.toBeNull()
+  })
+
+  it('the notes link is a link in a new tab that says so, to the page it is given', () => {
+    const c = mountIt(Welcome, { onstart: noop, returning: { results: false, notes: true }, notesHref: '/hb/notes.html' })
+    const a = c.querySelector<HTMLAnchorElement>('[data-testid="welcome-notes"]')!
+    expect(a.getAttribute('href')).toBe('/hb/notes.html')
+    expect(a.getAttribute('target')).toBe('_blank')
+    expect(a.getAttribute('rel')).toBe('noopener')
+    expect(a.textContent).toBe('Notes for your AI (opens in a new tab)')
+    expect(a.classList.contains('hb-standalone-link')).toBe(true)
+    expect(c.querySelector('button.hb-btn:not(.hb-primary)')).toBeNull()
+  })
+
+  it('names the row for assistive technology, and keeps the privacy link last', () => {
+    const c = mountIt(Welcome, { onstart: noop, onresults: noop, returning: { results: true, notes: true } })
+    const group = row(c)!
+    expect(group.getAttribute('role')).toBe('group')
+    expect(group.getAttribute('aria-label')).toBe('Earlier results and notes on this device')
+    expect([...c.querySelectorAll('main button, main a')].map((e) => e.textContent?.trim())).toEqual(['Start', 'See my results', 'Notes for your AI (opens in a new tab)', 'Privacy and terms'])
+  })
+
+  it('reads and writes no storage itself', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const getItem = vi.spyOn(Storage.prototype, 'getItem')
+    mountIt(Welcome, { onstart: noop, onresults: noop, returning: { results: true, notes: true } })
+    expect(setItem).not.toHaveBeenCalled()
+    expect(getItem).not.toHaveBeenCalled()
+    setItem.mockRestore()
+    getItem.mockRestore()
+  })
+})
+
+describe('ConsentGate (UX-REVIEW D24, provisional default: a way back from the under-18 screen)', () => {
+  it('the under-18 screen says what it said, and has the way back only when the flow gives one', () => {
+    const without = mountIt(ConsentGate, { onagree: vi.fn(), onunder18: vi.fn(), blocked: true })
+    expect(without.querySelector('h1')?.textContent).toBe('HumanBench is for adults')
+    expect(without.querySelectorAll('button')).toHaveLength(0)
+    cleanup?.()
+    const onmistake = vi.fn()
+    const withBack = mountIt(ConsentGate, { onagree: vi.fn(), onunder18: vi.fn(), onmistake, blocked: true })
+    expect(withBack.querySelector('[role="status"]')?.textContent).toContain('You must be 18 or older to take part.')
+    expect([...withBack.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['I chose this by mistake'])
+    click(buttonByText(withBack, 'I chose this by mistake'))
+    expect(onmistake).toHaveBeenCalledTimes(1)
+  })
+
+  it('taking the choice back asks nothing else of the flow: no agree, no under-18, and no storage is touched', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    const getItem = vi.spyOn(Storage.prototype, 'getItem')
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem')
+    const onagree = vi.fn()
+    const onunder18 = vi.fn()
+    const onmistake = vi.fn()
+    const c = mountIt(ConsentGate, { onagree, onunder18, onmistake, blocked: true })
+    click(buttonByText(c, 'I chose this by mistake'))
+    expect(onagree).not.toHaveBeenCalled()
+    expect(onunder18).not.toHaveBeenCalled()
+    for (const spy of [setItem, getItem, removeItem]) {
+      expect(spy).not.toHaveBeenCalled()
+      spy.mockRestore()
+    }
+  })
+
+  it('the gate itself has no such link: its box is unticked, and "I am under 18" is the choice it already had', () => {
+    const onunder18 = vi.fn()
+    const c = mountIt(ConsentGate, { onagree: vi.fn(), onunder18, onmistake: vi.fn() })
+    expect(c.querySelector('h1')?.textContent).toBe('Before you start')
+    expect(c.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false)
+    expect([...c.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Continue', 'I am under 18'])
+    click(buttonByText(c, 'I am under 18'))
+    expect(onunder18).toHaveBeenCalledTimes(1)
   })
 })

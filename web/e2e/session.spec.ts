@@ -4,7 +4,8 @@
  * and the 18+ gate (the under-18 path writes nothing to any storage), the privacy notice (no
  * placeholder: UX-REVIEW D1), the honour code, the device check and RT input mode, practice mode, the
  * interstitials, the time-based progress ring and per-cluster checklist, skip axis, finish early,
- * the break at 30 minutes, the hard stop at 57, the ≥ 3-item coverage floor when the time budget is
+ * the one break offer before the half-way part and the clock held on "Up next" screens (UX-066; owner
+ * decision 2026-10-05, UX-REVIEW D5), the hard stop at 57, the ≥ 3-item coverage floor when the time budget is
  * gone (the known QR issue), the per-axis early stop, the confidence slider, autosave through the
  * save library, and the `?fast=1` dev flag. Rules that depend on minutes run on a fake clock
  * (`page.clock`), so the tests take seconds. Every screen is checked with axe (0 serious or critical
@@ -14,6 +15,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER } from '../src/copy'
+import { BREAK_OFFER_TEXT } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { FINISHED_HEADINGS } from './flow'
 import { useWideFont } from './wide-font'
@@ -268,14 +270,14 @@ test.describe('honour code and device check (§13)', () => {
   test('the honour code is DESIGN §13’s wording, needs its box, and passes axe', async ({ page }) => {
     await toHonour(page)
     await expect(page.getByText("No AI tools, search, calculators (except where provided), or help. Your blob is only meaningful if it's yours.")).toBeVisible()
-    await expectNoSeriousAxe(page)
-    await button(page, 'Continue').click()
-    await expect(page.getByRole('alert')).toContainText('honour code')
-    await expect(h1(page)).toHaveText('Honour code')
     // A lead-in that says what the blob is (UX-REVIEW D26), and paper yes, calculators and AI chatbots no (owner decision, D10).
     await expect(page.getByText(/your results are drawn as a shape we call your blob/)).toBeVisible()
     await expect(page.getByText(/scratch paper and a pencil ready.*calculator or an AI chatbot/)).toBeVisible()
     await expect(page.locator('body')).not.toContainText('TODO')
+    await expectNoSeriousAxe(page)
+    await button(page, 'Continue').click()
+    await expect(page.getByRole('alert')).toContainText('honour code')
+    await expect(h1(page)).toHaveText('Honour code')
   })
 
   test('the device check lists coarse facts, measures the refresh rate and offers the RT input mode; axe passes', async ({ page }) => {
@@ -557,50 +559,62 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await page.clock.install()
   })
 
-  test('a break is suggested at 30 minutes at the next boundary; taking it pauses the clock (the time on it does not count)', async ({ page }) => {
+  /** From the reaction-time interstitial, skip Reaction Time, Matrix & Series and Spatial: the next part is Working Memory, the half-way one. */
+  async function skipToHalfWay(page: Page): Promise<void> {
+    for (const next of ['Up next: Matrix & Series', 'Up next: Spatial']) {
+      await skipPart(page)
+      await expect(h1(page)).toHaveText(next)
+    }
+    await skipPart(page)
+  }
+
+  test('the break is offered at the part boundary nearest half-way (before Working Memory); taking it holds the clock (the time on it does not count)', async ({ page }) => {
     await begin(page)
-    await page.clock.fastForward('31:00')
-    await skipPart(page) // a boundary
+    await skipToHalfWay(page)
     await expect(h1(page)).toHaveText('Time for a break?')
-    await expect(page.getByText('The clock pauses while you rest.')).toBeVisible()
+    await expect(page.getByText(BREAK_OFFER_TEXT)).toBeVisible()
     await expectNoSeriousAxe(page)
     await button(page, 'Take a break').click()
     await expect(h1(page)).toHaveText('Break')
     await expect(button(page, 'Finish early')).toHaveCount(0)
     await expectNoSeriousAxe(page)
-    // 40 minutes on a break: were it counted, the 57-minute hard stop would end the session.
-    await page.clock.fastForward('40:00')
+    // An hour on a break: were it counted, the 57-minute hard stop would end the session.
+    await page.clock.fastForward('01:00:00')
     await button(page, 'Resume').click()
-    await expect(h1(page)).toHaveText('Up next: Matrix & Series')
-    // Past the planned time with parts still to do: "Almost there" is for the last part only (UX-008).
-    await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuetext', 'Over the planned time')
+    await expect(h1(page)).toHaveText('Up next: Working Memory')
+    await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuenow', '0')
     await page.clock.runFor(2000)
-    await expect(h1(page)).toHaveText('Up next: Matrix & Series')
+    await expect(h1(page)).toHaveText('Up next: Working Memory')
   })
 
-  test('the suggestion is made once: declining it carries on, and it does not come back', async ({ page }) => {
+  test('the offer is made once: declining it carries on, and it does not come back', async ({ page }) => {
     await begin(page)
-    await page.clock.fastForward('30:30')
-    await skipPart(page)
+    await skipToHalfWay(page)
     await expect(h1(page)).toHaveText('Time for a break?')
     await button(page, 'Keep going').click()
-    await expect(h1(page)).toHaveText('Up next: Matrix & Series')
-    await page.clock.fastForward('02:00')
-    await skipPart(page)
-    await expect(h1(page)).toHaveText('Up next: Spatial')
+    await expect(h1(page)).toHaveText('Up next: Working Memory')
+    for (const next of ['Up next: Quantitative Reasoning', 'Up next: Processing & Reading Speed']) {
+      await skipPart(page)
+      await expect(h1(page)).toHaveText(next)
+    }
   })
 
-  test('the offer waits for the end of the item on screen', async ({ page }) => {
-    await begin(page)
-    await skipPart(page)
-    await page.clock.fastForward('29:00')
-    await button(page, 'Start').click()
-    await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
-    await page.clock.fastForward('01:30') // 30:30 in all, but the item has been up for 90 s of its 3-minute cap
+  test('the offer never comes in the middle of a part, however long it has run; past the planned time the ring says so', async ({ page }) => {
+    await toFirstItem(page)
+    // 31 minutes on the first Matrix & Series question: it runs past its cap, and the part's time budget is gone.
+    await page.clock.fastForward('31:00')
     await page.clock.runFor(1000)
-    await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
     await expect(h1(page)).not.toHaveText('Time for a break?')
-    await answerItem(page)
+    // The part keeps its coverage floor of 3 questions (the timed-out one counts), then the next part is announced.
+    for (let i = 0; i < 6 && !((await h1(page).textContent()) ?? '').startsWith('Up next'); i++) {
+      await expect(h1(page)).not.toHaveText('Time for a break?')
+      await answerItem(page)
+    }
+    await expect(h1(page)).toHaveText('Up next: Spatial')
+    // Past the planned time with parts still to do: "Almost there" is for the last part only (UX-008).
+    await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuetext', 'Over the planned time')
+    // The offer still comes where the plan put it: after Spatial, before Working Memory.
+    await skipPart(page)
     await expect(h1(page)).toHaveText('Time for a break?')
   })
 
@@ -636,18 +650,22 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
   })
 
   /**
-   * From the reaction-time interstitial: skip to Quantitative Reasoning, let the time budget be gone
-   * (long span blocks before it would have used it up: a jump past the 27.5-minute target), and answer
-   * what it serves. Returns the families of the answers saved for the session, in order.
+   * From the reaction-time interstitial: skip to Quantitative Reasoning (declining the break offer before Working
+   * Memory), start it, and let its time budget be gone on its first question (a jump past the 27.5-minute target:
+   * the clock waits on "Up next" screens, so the jump is made inside the part; the question runs past its cap and
+   * counts as not correct). Then answer what it serves. Returns the families of the answers saved for the session.
    */
   async function quantWithoutBudget(page: Page): Promise<string[]> {
-    for (const next of ['Up next: Matrix & Series', 'Up next: Spatial', 'Up next: Working Memory', 'Up next: Quantitative Reasoning']) {
-      await skipPart(page)
+    for (const next of ['Up next: Matrix & Series', 'Up next: Spatial', 'Time for a break?', 'Up next: Working Memory', 'Up next: Quantitative Reasoning']) {
+      if (next === 'Up next: Working Memory') await button(page, 'Keep going').click()
+      else await skipPart(page)
       await expect(h1(page)).toHaveText(next)
     }
-    await page.clock.fastForward('28:00')
     await button(page, 'Start').click()
-    for (let n = 1; n <= 3; n++) {
+    await expect(page.locator('form.entry')).toBeVisible()
+    await page.clock.fastForward('28:00')
+    await expect(page.getByRole('status').first()).toContainText('ran out of time', { timeout: 15_000 })
+    for (let n = 2; n <= 3; n++) {
       await answerItem(page)
       if (n < 3) await expect(page.locator('form.entry')).toBeVisible()
     }
@@ -695,8 +713,10 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     expect(await quantWithoutBudget(page)).toEqual(['quant', 'quant', 'quant'])
   })
 
-  test('the ring follows session time', async ({ page }) => {
-    await begin(page)
+  test('the ring follows session time once a part runs', async ({ page }) => {
+    // The clock waits on "Up next" screens (UX-066), so the time is spent inside Matrix & Series: each question
+    // runs past its 3-minute cap and the next one comes.
+    await toFirstItem(page)
     const ring = page.getByRole('progressbar', { name: 'Session time' })
     await page.clock.fastForward('10:00')
     await page.clock.runFor(1000)
@@ -750,6 +770,9 @@ test.describe('an item the browser cannot draw (§13)', () => {
     await expect(page.getByText('cannot be shown in your browser').first()).toBeVisible({ timeout: 20_000 })
     await expectNoSeriousAxe(page)
     await page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' }).click()
+    // Spatial ends the first half of the plan: the one break offer comes before Working Memory (UX-066, D5).
+    await expect(h1(page)).toHaveText('Time for a break?')
+    await button(page, 'Keep going').click()
     await expect(h1(page)).toHaveText('Up next: Working Memory')
   })
 })
@@ -767,13 +790,15 @@ test.describe('the ?fast=1 dev flag (M1.15)', () => {
     await button(page, 'Continue').click()
     await button(page, 'Begin').click()
     await expect(page.getByText('Fast mode (development only)')).toBeVisible()
-    // 20 times faster: a few real seconds are minutes of session time.
+    // The clock waits on the "Up next" screen (UX-066): start the part. 20 times faster: a few real seconds are minutes of session time.
+    await button(page, 'Start').click()
     await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuenow', /^([1-9]\d*)$/, { timeout: 15_000 })
   })
 
   test('without the parameter there is no banner and time runs at its own speed', async ({ page }) => {
     await begin(page)
     await expect(page.getByText('Fast mode (development only)')).toHaveCount(0)
+    await button(page, 'Start').click()
     await page.waitForTimeout(2500)
     await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuenow', '0')
   })

@@ -18,7 +18,7 @@ import { settle } from '../render/dom-testing'
 import { botSave } from '../reveal/test-support'
 import { autosaveKey, restoreAutosaves } from '../save/autosave'
 import { getFamily } from '../tasks/registry'
-import { CONSENT_KEY, SAVE_CTX, TERMS_VERSION_SERVER } from './constants'
+import { CONSENT_KEY, SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
 import { fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
 import { createResultsLoader, RESULTS_PENDING_HEADING, RESULTS_PREPARING, resultsLoader, type ResultsLoader, type ResultsModule } from './results-loader'
@@ -99,7 +99,7 @@ async function toReady(fake: FakeEnv<FakeDisplay>): Promise<void> {
 async function toServedPart(fake: FakeEnv<FakeDisplay>): Promise<void> {
   click(buttonByText(host, 'Begin'))
   await tick()
-  expect(h1()).toBe('Up next: Reaction time')
+  expect(h1()).toBe('Up next: Reaction Time')
   click(buttonByText(host, 'Skip this part'))
   click(buttonByText(host, 'Skip Reaction Time'))
   expect(h1()).toBe('Up next: Matrix & Series')
@@ -129,10 +129,38 @@ describe('what the screens say when answers go to a server', () => {
 
   it('does not honour a consent given to the static notice', () => {
     const { fake } = setup()
-    fake.storage.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms: 'terms-2026-09-draft', adult: true }))
+    fake.storage.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms: TERMS_VERSION, adult: true }))
     open(fake)
     click(buttonByText(host, 'Start'))
     expect(h1()).toBe('Before you start')
+  })
+})
+
+describe('the welcome row with a server (provisional default, UX-REVIEW D22)', () => {
+  /** An earlier save on this browser: the results of served sessions are scored by the server, so the ready screen does not offer them here, nor does the row. */
+  function seedEarlier(fake: FakeEnv<FakeDisplay>, terms: string): void {
+    fake.storage.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms, adult: true }))
+    const { save } = botSave('s_SERVEDROW0000001')
+    fake.storage.data.set(autosaveKey('s_SERVEDROW0000001'), JSON.stringify({ ...save, brief_prefs: { v: 1, topics: 'topics-v1', groups: 'g1', notes_as_of: '2026-11', contexts: [{ slot: 1, preset: 'reading', destination: 'chatgpt_instructions', tier: 'T1', mode: 'do', length: 'standard', topics: {}, lines_on: [], lines_off: [], rev: 1 }], fit_log: [] } }))
+  }
+
+  it('offers the notes page but not "See my results": the server scores those', () => {
+    const { fake } = setup()
+    seedEarlier(fake, TERMS_VERSION_SERVER)
+    open(fake)
+    expect([...host.querySelectorAll('main button')].map((b) => b.textContent?.trim())).toEqual(['Start'])
+    expect(host.querySelector('[data-testid="welcome-notes"]')?.textContent).toBe('Notes for your AI (opens in a new tab)')
+    expect(fake.storage.writes).toEqual([])
+  })
+
+  it('a record of the static notice is only a door here, as for the gate: Start still shows the gate', () => {
+    const { fake } = setup()
+    seedEarlier(fake, TERMS_VERSION)
+    open(fake)
+    expect(host.querySelector('[data-testid="welcome-notes"]')).not.toBeNull()
+    click(buttonByText(host, 'Start'))
+    expect(h1()).toBe('Before you start')
+    expect(host.textContent).toContain('sent to a server')
   })
 })
 
@@ -143,7 +171,7 @@ describe('opening the session', () => {
     click(buttonByText(host, 'Begin'))
     expect(h1()).toBe('Getting your session ready')
     await tick()
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     expect(t.callsOf('start_session')).toBe(1)
     expect(Object.keys(t.args('start_session'))).toEqual(['p_device'])
     expect(t.args('start_session').p_device).toMatchObject({ class: 'desktop', os_family: 'macOS' })
@@ -173,7 +201,7 @@ describe('opening the session', () => {
     await tick()
     expect(host.textContent).toContain('nothing is sent to the server')
     click(buttonByText(host, 'Use this device only'))
-    expect(h1()).toBe('Up next: Reaction time')
+    expect(h1()).toBe('Up next: Reaction Time')
     click(buttonByText(host, 'Skip this part'))
     click(buttonByText(host, 'Skip Reaction Time'))
     click(buttonByText(host, 'Start'))
@@ -207,6 +235,11 @@ describe('the served part', () => {
     flushSync()
     expect(host.querySelector('[role="slider"], input[type="range"]')).not.toBeNull()
     expect(host.textContent).not.toMatch(/correct|incorrect|wrong/i) // no verdict, ever
+    // The slider is moved before Continue: a rating left where it started is sent as no rating (UX-063).
+    const range = host.querySelector<HTMLInputElement>('input[type="range"]')!
+    range.value = '70'
+    range.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
     click(buttonByText(host, 'Continue'))
     await tick()
     await settle(2)
@@ -353,7 +386,8 @@ describe('closing and the results', () => {
     await tick(12)
     await settle(3)
     expect(h1()).toBe('Session complete')
-    expect(t.args('finish')).toEqual({ p_token: 'hbt_ABCDEFGHIJKLMNOPQRSTUV', p_flags: { visibility_hidden_s: 0, paste_events: 0, skipped_rt: true, finished_early: true } })
+    // The one answer was confirmed with the slider where it started: counted as not rated (UX-063).
+    expect(t.args('finish')).toEqual({ p_token: 'hbt_ABCDEFGHIJKLMNOPQRSTUV', p_flags: { visibility_hidden_s: 0, paste_events: 0, skipped_rt: true, finished_early: true, confidence_untouched_n: 1 } })
     // the server was asked for the scores of the signed session only, without notes settings
     const asked = t.args('rescore').p_save as { sessions: { session_id: string; sig?: unknown }[]; anon_id: string }
     expect(asked.sessions.map((s) => s.session_id)).toEqual([SESSION_ID])

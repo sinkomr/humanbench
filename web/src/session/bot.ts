@@ -35,10 +35,19 @@ export interface BotOptions {
   readonly confidenceS?: number
   /** Confidence to give: 'mid' (default), 'floor' or 'max'. */
   readonly confidence?: 'mid' | 'floor' | 'max'
+  /**
+   * Whether the slider is moved before Continue (UX-063): 'always' (default), 'never' (confirmed where
+   * it starts, recorded as not rated) or 'random' (each rating a coin flip from the bot's RNG).
+   */
+  readonly touch?: 'always' | 'never' | 'random'
   /** What to do when a break is offered (default 'decline'). */
   readonly onBreakOffer?: 'decline' | 'take'
   /** Seconds a break lasts when taken (default 300). */
   readonly breakS?: number
+  /** Seconds spent reading each "Up next" interstitial before Start (default 0). */
+  readonly interstitialS?: number
+  /** Seconds spent reading the break offer before answering it (default 0). */
+  readonly breakOfferS?: number
   readonly seed?: string
 }
 
@@ -101,6 +110,7 @@ export class Bot {
       case 'finished':
         return false
       case 'interstitial':
+        this.wait(this.opts.interstitialS ?? 0)
         this.run.startSegment()
         return true
       case 'block': {
@@ -126,14 +136,17 @@ export class Bot {
       case 'confidence': {
         const c = v.confidence!
         this.wait(this.opts.confidenceS ?? 2)
-        const pct = this.opts.confidence === 'floor' ? c.floorPct : this.opts.confidence === 'max' ? 100 : c.startPct
-        this.run.confirmConfidence(pct)
+        const touch = this.opts.touch ?? 'always'
+        const touched = touch === 'always' || (touch === 'random' && this.rng.next() < 0.5)
+        const pct = !touched ? c.startPct : this.opts.confidence === 'floor' ? c.floorPct : this.opts.confidence === 'max' ? 100 : c.startPct
+        this.run.confirmConfidence(pct, touched)
         return true
       }
       case 'loading':
         // Only a run with a server (`RunConfig.cat`, M2.7) waits; this bot plays the static version.
         throw new Error('the bot plays the static version: a run that waits for a server needs a test of its own')
       case 'break_offer':
+        this.wait(this.opts.breakOfferS ?? 0)
         if (this.opts.onBreakOffer === 'take') this.run.takeBreak()
         else this.run.declineBreak()
         return true

@@ -32,6 +32,7 @@
     "dump:language-terms": "tsx scripts/language-terms.ts",
     "sync:reading-render": "tsx scripts/sync-reading-render.ts",
     "sim:cat": "tsx scripts/sim-cat.ts",
+    "sim:session": "tsx scripts/sim-session.ts",
     "ux:build": "tsx ux-review/build.ts",
     "ux:review": "playwright test -c ux-review/playwright.ux.config.ts",
     "e2e:iso": "playwright test -c ux-review/playwright.iso.config.ts"

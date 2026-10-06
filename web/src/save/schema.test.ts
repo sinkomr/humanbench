@@ -71,6 +71,7 @@ const MUTATIONS: Mutation[] = [
   ['os_family with version', (d) => ((sessionsOf(d)[0]!.device as Doc).os_family = 'macOS 15.1 (24B83); build/xyz')],
   ['flag camelCase', (d) => ((sessionsOf(d)[0]!.flags as Doc).pasteEvents = 1)],
   ['flag paste fraction', (d) => ((sessionsOf(d)[0]!.flags as Doc).paste_events = 1.5)],
+  ['flag untouched-slider count fraction', (d) => ((sessionsOf(d)[0]!.flags as Doc).confidence_untouched_n = 0.5)],
   ['flag string value', (d) => ((sessionsOf(d)[0]!.flags as Doc).note = 'hi')],
   ['response 5 elements', (d) => ((sessionsOf(d)[0]!.responses as unknown[][])[0] = ['i:x', 0, 'A', 1, 10])],
   ['response 8 elements', (d) => ((sessionsOf(d)[0]!.responses as unknown[][])[0] = ['i:x', 0, 'A', 1, 10, null, null, null])],

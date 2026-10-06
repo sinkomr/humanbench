@@ -102,9 +102,15 @@ describe('no session copy claims a benefit (A22, R-5.6.4; UX-018a)', () => {
   /** What a claim of an effect sounds like: the break text said a break "can help you stay sharp". */
   const BENEFIT = /\b(?:helps?|helped|helpful|improves?|improved|boosts?|sharp(?:en|er)?|better results?|works better|more accurate|learn faster|proven|proves?|guarantee\w*|effective|performs? better|recharge\w*)\b/i
 
-  it('the break offer says what the break does to the clock and nothing about what it does to the person', () => {
-    expect(copy.BREAK_OFFER_TEXT).toBe('You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.')
+  it('the break offer says where in the session it is and what the clock does, names no time, and nothing about what it does to the person (D5)', () => {
+    expect(copy.BREAK_OFFER_TEXT).toBe('You are about half-way through the planned session. You can take a short break now if you like. The clock waits until you press Start on the next part.')
     expect(copy.BREAK_OFFER_TEXT).not.toMatch(BENEFIT)
+    expect(copy.BREAK_OFFER_TEXT).not.toMatch(/\d+\s*min/)
+  })
+
+  it('every "Up next" screen says that the clock waits there until Start (UX-066, D5)', () => {
+    expect(copy.INTERSTITIAL_CLOCK).toBe('The clock waits until you press Start.')
+    expect(copy.INTERSTITIAL_CLOCK).not.toMatch(BENEFIT)
   })
 
   it('no string of the session copy does', () => {
@@ -150,12 +156,6 @@ describe('the ready screen’s lines (UX-012a, UX-010)', () => {
     expect(copy.combinesLine(3)).toBe('This profile combines 3 sessions.')
   })
 
-  it('names the parts skipped in plain grammar', () => {
-    expect(copy.reachedEndLine(['Reaction Time'])).toBe('You reached the end of the session. You skipped 1 part: Reaction Time.')
-    expect(copy.reachedEndLine(['Reaction Time', 'Spatial'])).toBe('You reached the end of the session. You skipped 2 parts: Reaction Time and Spatial.')
-    expect(copy.reachedEndLine(['A', 'B', 'C'])).toBe('You reached the end of the session. You skipped 3 parts: A, B and C.')
-  })
-
   it('the offer to continue an unfinished session says what each button does, in plain words (UX-064, D6)', () => {
     expect(copy.READY_CONTINUE).toBe('Continue your unfinished session')
     expect(copy.continueLine('today at 14:03', 'Spatial')).toBe(
@@ -165,6 +165,12 @@ describe('the ready screen’s lines (UX-012a, UX-010)', () => {
       'Your last session was not finished. Continue it to go on from the start of Reaction Time and keep what you have done so far. Begin starts a new session instead.',
     )
     for (const text of [copy.READY_CONTINUE, copy.continueLine('yesterday at 09:30', 'Working Memory')]) expect(text).not.toMatch(/TODO|\{|\}|undefined/)
+  })
+
+  it('names the parts skipped in plain grammar', () => {
+    expect(copy.reachedEndLine(['Reaction Time'])).toBe('You reached the end of the session. You skipped 1 part: Reaction Time.')
+    expect(copy.reachedEndLine(['Reaction Time', 'Spatial'])).toBe('You reached the end of the session. You skipped 2 parts: Reaction Time and Spatial.')
+    expect(copy.reachedEndLine(['A', 'B', 'C'])).toBe('You reached the end of the session. You skipped 3 parts: A, B and C.')
   })
 
   it('the practice screens’ new buttons, and the verdict told to a screen reader, never repeat the visible sentences', () => {

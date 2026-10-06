@@ -54,15 +54,6 @@ export const BLOCKED_MISTAKE = 'I chose this by mistake'
 export const HONOUR_HEADING = 'Honour code'
 /** DESIGN §13 "Honour code (checkbox at start)", word for word. */
 export const HONOUR_TEXT = "No AI tools, search, calculators (except where provided), or help. Your blob is only meaningful if it's yours."
-export const HONOUR_AGREE = 'I agree to the honour code.'
-export const HONOUR_CONTINUE = 'Continue'
-export const HONOUR_UNCHECKED = 'Tick the box to agree to the honour code.'
-
-// ------------------------------------------------------------------------------ device
-
-export const DEVICE_HEADING = 'Check your device'
-export const DEVICE_INTRO =
-  'We look at your screen and how you will respond, so that response times can be compared fairly. This takes a few seconds. Sit somewhere quiet and keep this browser window open and in front of other windows.'
 /**
  * Before the honour sentence: says what "your blob" is, three screens before any blob is drawn
  * (provisional default, UX-REVIEW D26). HONOUR_TEXT itself stays word for word.
@@ -75,6 +66,15 @@ export const HONOUR_LEAD = 'At the end of the session, your results are drawn as
  */
 export const HONOUR_TOOLS =
   'You may want scratch paper and a pencil ready: writing things down is allowed. Please do not use a calculator or an AI chatbot. Screen readers, zoom and other accessibility settings are fine to use.'
+export const HONOUR_AGREE = 'I agree to the honour code.'
+export const HONOUR_CONTINUE = 'Continue'
+export const HONOUR_UNCHECKED = 'Tick the box to agree to the honour code.'
+
+// ------------------------------------------------------------------------------ device
+
+export const DEVICE_HEADING = 'Check your device'
+export const DEVICE_INTRO =
+  'We look at your screen and how you will respond, so that response times can be compared fairly. This takes a few seconds. Sit somewhere quiet and keep this browser window open and in front of other windows.'
 export const DEVICE_MEASURING = 'Checking your screen…'
 export const DEVICE_INPUT_LEGEND = 'How will you respond in the reaction tasks?'
 export const DEVICE_INPUT_KEYBOARD = 'Keyboard'
@@ -159,6 +159,8 @@ export const INTERSTITIAL_SKIP = 'Skip this part'
 export const upNext = (title: string): string => `Up next: ${title}`
 /** "About 6 minutes." */
 export const aboutMinutes = (n: number): string => `About ${n} ${n === 1 ? 'minute' : 'minutes'}.`
+/** Under "About N minutes." on every "Up next" screen: the session clock is held there until Start (UX-066; D5). */
+export const INTERSTITIAL_CLOCK = 'The clock waits until you press Start.'
 
 // -------------------------------------------------------------------------- confidence
 
@@ -235,7 +237,13 @@ export const OVER_PLANNED = 'Over the planned time'
 // ------------------------------------------------------------------------------- break
 
 export const BREAK_OFFER_HEADING = 'Time for a break?'
-export const BREAK_OFFER_TEXT = 'You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.'
+/**
+ * The one break offer, at the part boundary nearest half-way through the planned session (owner decision 2026-10-05,
+ * UX-REVIEW D5): where in the session it is and what the clock does; no time named, and no claim about what a break
+ * does for the person (UX-018a).
+ */
+export const BREAK_OFFER_TEXT =
+  'You are about half-way through the planned session. You can take a short break now if you like. The clock waits until you press Start on the next part.'
 export const BREAK_TAKE = 'Take a break'
 export const BREAK_DECLINE = 'Keep going'
 export const BREAK_HEADING = 'Break'
@@ -317,6 +325,7 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
     heading: 'Where it stays',
     paragraphs: [
       "In this version everything stays in your browser. It is saved in your browser's local storage as you go, so a crash does not lose your answers, and you can download it as a save file. Nothing is sent to a server.",
+      'The web host that serves these pages sees your network address when your browser loads them, as every web host does. It never receives your answers.',
       "If you clear your browser's site data, the saved copy is gone. Your downloaded save file is yours to keep or delete.",
     ],
   },
@@ -342,4 +351,3 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
     ],
   },
 ])
-      'The web host that serves these pages sees your network address when your browser loads them, as every web host does. It never receives your answers.',

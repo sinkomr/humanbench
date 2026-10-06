@@ -10,6 +10,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { ROTATION_UNAVAILABLE } from '../src/render/rotation/copy'
+import { BREAK_OFFER_TEXT, INTERSTITIAL_CLOCK } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { button, h1, loadSave, overflow, simulatedSave, toReady, unloadIsGuarded } from './flow'
 
@@ -748,14 +749,73 @@ test.describe('a question the browser cannot draw (UX-017a)', () => {
 
 // ====================================================================================== UX-018a
 
-test.describe('the break offer (UX-018a)', () => {
-  test('says what the break does to the clock and claims nothing about the person', async ({ page }) => {
+test.describe('the break offer (UX-018a, UX-066)', () => {
+  test('comes between two parts, at the half-way one, says what the break does to the clock and claims nothing about the person', async ({ page }) => {
     await page.clock.install()
     await begin(page)
-    await page.clock.fastForward('31:00')
+    // Reaction Time, Matrix & Series and Spatial skipped: the next part is Working Memory, the half-way one of the plan.
+    for (const next of ['Up next: Matrix & Series', 'Up next: Spatial']) {
+      await skipPart(page)
+      await expect(h1(page)).toHaveText(next)
+    }
     await skipPart(page)
     await expect(h1(page)).toHaveText('Time for a break?')
-    await expect(page.getByText('You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.')).toBeVisible()
-    await expect(page.getByText(/sharp|help you/i)).toHaveCount(0)
+    await expect(page.getByText(BREAK_OFFER_TEXT)).toBeVisible()
+    await expect(page.getByText(/30 minutes|sharp|help you/i)).toHaveCount(0)
+    await expectNoSeriousAxe(page)
+    await button(page, 'Keep going').click()
+    await expect(h1(page)).toHaveText('Up next: Working Memory')
+  })
+})
+
+test.describe('the clock waits on "Up next" screens (UX-066)', () => {
+  test('says so, and the ring does not move however long the screen is up; it moves once a part runs', async ({ page }) => {
+    await page.clock.install()
+    await begin(page)
+    await expect(page.getByText(INTERSTITIAL_CLOCK)).toBeVisible()
+    const ring = page.getByRole('progressbar', { name: 'Session time' })
+    await page.clock.fastForward('10:00')
+    await page.clock.runFor(1000)
+    await expect(ring).toHaveAttribute('aria-valuenow', '0')
+    await skipPart(page)
+    await expect(h1(page)).toHaveText('Up next: Matrix & Series')
+    await expect(page.getByText(INTERSTITIAL_CLOCK)).toBeVisible()
+    await page.clock.fastForward('05:00')
+    await page.clock.runFor(1000)
+    await expect(ring).toHaveAttribute('aria-valuenow', '0')
+    await button(page, 'Start').click()
+    await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
+    await expect(page.getByText(INTERSTITIAL_CLOCK)).toHaveCount(0)
+    await page.clock.fastForward('02:00')
+    await page.clock.runFor(1000)
+    await expect(ring).toHaveAttribute('aria-valuenow', '2')
+  })
+})
+
+// ====================================================================================== UX-063
+
+test.describe('an untouched confidence slider (UX-063)', () => {
+  test('Continue without moving it is allowed, and the answer is kept as not rated; a moved slider keeps its value', async ({ page }) => {
+    await toFirstItem(page)
+    await answerUntilSlider(page)
+    await button(page, 'Continue').click() // straight away: the start value, never moved
+    await expect(page.getByRole('slider')).toHaveCount(0)
+    await answerUntilSlider(page)
+    const slider = page.getByRole('slider')
+    await slider.focus()
+    await slider.press('ArrowRight')
+    await button(page, 'Continue').click()
+    await expect(page.getByRole('slider')).toHaveCount(0)
+    const saved = (): Promise<{ conf: unknown[]; untouched: unknown }> =>
+      page.evaluate(() => {
+        const key = Object.keys(localStorage).find((k) => k.startsWith('hb:save:v1:')) ?? ''
+        const s = (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][]; flags: Record<string, unknown> }[] }).sessions?.at(-1)
+        return { conf: (s?.responses ?? []).map((t) => t[5]), untouched: s?.flags.confidence_untouched_n }
+      })
+    await expect.poll(async () => (await saved()).conf.length).toBe(2)
+    const { conf, untouched } = await saved()
+    expect(conf[0]).toBeNull()
+    expect(typeof conf[1]).toBe('number')
+    expect(untouched).toBe(1)
   })
 })

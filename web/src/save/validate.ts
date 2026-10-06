@@ -189,7 +189,7 @@ class Checker {
       if (!FLAG_NAME_RE.test(k)) ok = this.fail(p, 'flag names are snake_case')
       if (k === 'visibility_hidden_s') {
         if (!(isNum(x) && x >= 0)) ok = this.fail(p, 'must be a number ≥ 0')
-      } else if (k === 'paste_events' || k === 'fast_guess_n') {
+      } else if (k === 'paste_events' || k === 'fast_guess_n' || k === 'confidence_untouched_n') {
         if (!(isInt(x) && x >= 0)) ok = this.fail(p, 'must be an integer ≥ 0')
       } else if (!(x === null || typeof x === 'boolean' || isNum(x))) {
         ok = this.fail(p, 'must be a number, boolean or null')
