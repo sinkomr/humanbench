@@ -1,0 +1,97 @@
+{
+  "package": "engine-retest",
+  "decisions": [
+    {
+      "id": "D6",
+      "status": "provisional-default (part 1 of 2: the retest model; package resume builds the flow on it)",
+      "option": "B: a new session marked as a continuation (finished parts skipped, no practice adjustment against it)",
+      "what_changed": "The §7.8 retest model now counts test numbers by sitting. A sitting is a session plus the continuation sessions that follow it in orderSessions order (started_utc, then session_id). A session with continuation === true continues the session just before it. On every axis it gets the test number of its sitting, so two parts of one sitting never practice-adjust each other. A continuation flag on the first session is ignored, and a non-boolean value is rejected (RangeError / ValueError). Without continuations every session is its own sitting, so results are exactly as before. Pub engine (web/src/engine/retest.ts): RetestSession.continuation?: boolean (input). SessionRetest.continuation?: true (output, present only when the session really continues a sitting). New export sessionSittings(ordered) gives the 0-based sitting index per session. sessionOrdinals counts sittings, and next_ordinals is now 1 + the number of sittings that took the axis. Pub save: CONTINUATION_FLAG = 'continuation' in save/types.ts next to TIMED_TASKS_ONLY_FLAG. save/rescore.ts passes flags.continuation === true through to RetestSession (any other value means not a continuation). schema/save-v1.json: the flags description names the timed_tasks_only and continuation session flags; it is a boolean flag, so the schema rules are unchanged. Bank twin (src/hb/calib/retest.py): RetestSession.continuation: bool = False, SessionRetest.continuation: bool = False, and session_sittings, mirrored exactly. src/hb/calib/rescore.py: RawSession.continuation: bool = False, passed on by build_session (so rescore_person and refit_and_rescore carry it). src/hb/calib/golden.py: retest_sessions_from_json reads inputs.sessions[].continuation, and outputs.sessions[] get \"continuation\": true only on continuation sessions. golden/retest_v1.json was extended in place. Cases 00-37 are byte-identical to the previous file (checked: the old cases text is a verbatim prefix of the new cases array). The conventions gained a 'continuation' entry and a revised 'test_number' text (sittings), and the top level gained continuation_seed (20261005). There are 14 new cases with ids 38-51. Six are hand-written: continuation_several_axes, continuation_exposed_axes (one continuation is exposure-only), continuation_with_skipped_axis, two_continuations_in_a_row, continuation_on_first_session_ignored and continuation_unsorted_and_tied. Eight are random sittings with continuations drawn from their own rng, so the earlier random cases are untouched. Synced to web/src/engine/__fixtures__/retest_v1.json with uv run hb sync golden. TS reproduces all 52 cases to 1e-9, including the continuation markers and the key order of the session output.",
+      "files": [
+        "humanbench: web/src/engine/retest.ts",
+        "humanbench: web/src/engine/retest.test.ts",
+        "humanbench: web/src/engine/__fixtures__/retest_v1.json",
+        "humanbench: web/src/save/types.ts",
+        "humanbench: web/src/save/rescore.ts",
+        "humanbench: web/src/save/rescore.test.ts",
+        "humanbench: schema/save-v1.json",
+        "humanbench-bank: src/hb/calib/retest.py",
+        "humanbench-bank: src/hb/calib/rescore.py",
+        "humanbench-bank: src/hb/calib/golden.py",
+        "humanbench-bank: golden/retest_v1.json",
+        "humanbench-bank: tests/test_retest.py",
+        "humanbench-bank: tests/test_rescore.py"
+      ],
+      "tests": [
+        "pub engine/retest.test.ts, 'continuation sessions' block (unit): a continuation shares its sitting's test numbers on every axis (no practice inside a sitting; unmarked, the parts are retests); a first-session mark is ignored whatever the listed order; the continuation follows time-then-id order; a non-boolean mark throws",
+        "pub fast-check: a save without continuation marks scores exactly as before (ordinals equal an independent session-count reference, sittings = 0..n-1, explicit false and a first-session-only mark give identical theta/cov/eap/sessions/next_ordinals)",
+        "pub fast-check: a continuation never raises a test number (nested mark sets: no marks ⊆ some ⊆ more; every session ordinal and next_ordinal non-increasing; the axes a session took unchanged)",
+        "pub fast-check: a sitting split into a session and its continuations scores exactly as the one session (theta, cov, eap, next_ordinals identical; each part numbered as the whole)",
+        "pub golden: every case compared including the continuation marker and the key order of the session output; coverage test (cases 38+ all marked, 0-37 none; two in a row, exposure, a continuation in a later sitting, a first-session mark dropped in the output)",
+        "pub save/rescore.test.ts: the flag passes through rescoreSessions (ordinals, rho 0 inside the sitting, the parts score exactly as one session holding both); only true marks a continuation (false, 1, null; first-session flag ignored); fast-check over random saves and flag values: non-true flags change nothing, true flags never raise a test number",
+        "bank tests/test_retest.py: the same unit cases; hypothesis: without marks scoring is as before (independent reference), a continuation never raises a test number (nested marks), a split sitting scores as one session; golden header (case count 38 + 14, continuation_seed), continuation coverage, and an independent sitting count of every recorded ordinal and continuation marker in test_outputs_are_consistent_with_the_model",
+        "bank tests/test_rescore.py: RawSession.continuation passes through build_session and rescore_person; the parts score exactly as one session; unflagged they are retests"
+      ],
+      "deviations": [
+        "Besides the input marker, both sides gained an output marker (SessionRetest.continuation) and an exported sitting helper (sessionSittings / session_sittings). The golden needs the marker to pin which sessions count as continuations, and the resume package needs both to count sittings.",
+        "Golden versioning: retest_v1.json was extended in place, keeping every existing case byte-identical, instead of a new retest_v2.json. The A17 sync lists (hb.crossrepo.GOLDEN_FIXTURES, web/scripts/sync-golden.sh, sync-golden.test.ts, tests/test_crossrepo.py) are outside this package. Nothing in the repo requires a new version when cases are added. The only other implementation (the SQL rescore) is not golden-tested against this file. RETEST_VERSION stays 'retest_v1'. See open_issues for the v2 alternative."
+      ],
+      "open_issues": [
+        "Server SQL rescore diverges and was not changed (as instructed). supabase/migrations/20261001000900_rpc_rescore.sql (lines 202-208), and its redefinition in supabase/migrations/20261004000100_response_archive.sql (lines 355-361), number tests with row_number() over every session that took the axis. They do not read flags.continuation and still report retest_version 'retest_v1'. The server variant is not live. Before it goes live, either port sittings or accept that the served rescore practice-adjusts a continuation against the session it continues. Porting sittings needs the server to know which sessions are continuations: today serverFlags() strips client-only flags, and the server reads sessions from its own rows.",
+        "If a version bump is preferred (the scoring_v1 to v2 precedent), the steps are: write retest_v2.json (identical content apart from version and generated_by), set RETEST_VERSION = 'retest_v2' on both sides, keep retest_v1 frozen (cases 0-37 of the current file), and add retest_v2.json to GOLDEN_FIXTURES, sync-golden.sh, the sync-golden.test.ts FILES list and the test_crossrepo.py CROSS_REPO_READS list. The server's 'retest_v1' label would then honestly mean 'without continuations'.",
+        "The model ignores the time between the parts of a sitting, so a continuation days later still shares the sitting's test numbers. The 24-hour window from the D6 question has to be enforced by the resume flow, which only offers a continuation for a recent unfinished session.",
+        "bank hb.calib.retest_fit (not owned): _table counts n_returning as persons with at least 2 observed sessions. A person whose single sitting is split into two sessions now counts as returning, which inflates the N >= 300 rule of §7.8 (see requests). The likelihood itself handles repeated test numbers: two rows at the same s with a gap of about 0 months."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "humanbench-bank: src/hb/calib/retest_fit.py",
+      "change": "In _table, count a person as returning when their observed sessions span at least 2 distinct test numbers (sittings), e.g. n_returning = sum(1 for s in kept if len({t for t, o in zip(s.tests, s.observations) if o}) >= 2). Optionally use the same rule in AxisSeries.n_observed, or add an n_sittings_observed property. Add a test with a split sitting.",
+      "why": "§7.8 'estimate ρ once N ≥ 300 returning users' should count sittings. With continuation sessions, one interrupted sitting is two sessions with the same test number."
+    },
+    {
+      "file": "humanbench-bank: README.md (retest paragraph near line 103)",
+      "change": "Say that test numbers count sittings: a session plus its continuation sessions (flags.continuation) share a test number.",
+      "why": "The docs should match hb.calib.retest."
+    },
+    {
+      "file": "humanbench: web/src/engine/index.test.ts",
+      "change": "Optionally add 'sessionSittings' to the retest.ts names in the barrel test.",
+      "why": "It is exported through export * from './retest'; the barrel test only checks presence, so nothing breaks without this."
+    }
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md §7.8 (Model)",
+      "what": "ρ_k(s) is indexed by the 'test number' without defining it. The implementation counts sittings: a session plus the continuation sessions that follow it share a test number, and a continuation is never practice-adjusted against the session it continues. Exposure without a score counts, as before. If D6 option B is confirmed, §7.8 should say so."
+    },
+    {
+      "where": "docs/DESIGN.md §8 (save file: flags, and the 'crash recovery' bullet at line 709)",
+      "what": "The §8 example flags do not list the session flag continuation (boolean, set on the new session that continues an interrupted one), and the crash-recovery bullet describes only the localStorage autosave. schema/save-v1.json's flags description now names continuation and timed_tasks_only."
+    },
+    {
+      "where": "docs/ROADMAP.md M1.Q",
+      "what": "The note 'retest_v1 golden parity 1e-9' still holds. The golden now has 52 cases, 14 of them continuation cases, and the server SQL rescore does not implement continuations (open issue)."
+    }
+  ],
+  "gates": [
+    { "cmd": "pub: cd web && npx vitest run src/engine src/save scripts/sync-golden.test.ts", "result": "pass: 27 files, 754 tests" },
+    { "cmd": "pub: cd web && npm run check", "result": "pass: svelte-check 1201 files, 0 errors, 0 warnings; tsc node + scripts clean" },
+    { "cmd": "pub: cd web && npm run lint:language", "result": "pass: 362 files clean" },
+    { "cmd": "bank: uv run ruff check && uv run ruff format --check", "result": "pass (318 files formatted)" },
+    { "cmd": "bank: uv run pytest -q tests/test_rescore.py", "result": "pass: 33 tests" },
+    { "cmd": "bank: uv run pytest -q tests/test_retest.py -k 'continuation or sitting'", "result": "pass: 8 tests" },
+    { "cmd": "bank: uv run pytest -q -n 8 (full suite, includes tests/test_crossrepo.py and the golden regeneration test)", "result": "pass: 6318 passed, 2 skipped (Ollama), 632 s under heavy machine load; includes tests/test_crossrepo.py (pub fixture byte-identical) and the retest golden regeneration" },
+    { "cmd": "bank: uv run hb golden retest && uv run hb sync golden", "result": "wrote 52 cases (retest_v1); copied retest_v1.json to the pub fixtures, other fixtures unchanged; cases 00-37 verified byte-identical to the previous file" }
+  ],
+  "api_for_resume": {
+    "save_flag": "CONTINUATION_FLAG from web/src/save/types.ts ('continuation'). Set flags[CONTINUATION_FLAG] = true on the NEW session that continues an interrupted one. The new session must come right after the interrupted one in time order: a later started_utc, with no other session of the save between them. A continuation continues whatever session is just before it. Only the value true counts. Decide whether serverFlags() (session/run.ts) sends it; the server SQL ignores it today.",
+    "engine_input": "RetestSession.continuation?: boolean (web/src/engine/retest.ts). rescoreSessions (save/rescore.ts) already sets it from the flag; nothing else is needed for scoring.",
+    "engine_output": "SaveRescore.sessions[i].continuation === true (type SessionRetest.continuation?: true) marks a session that continues the sitting before it. It is absent otherwise and never on the first session. sessions are in time order.",
+    "sittings_helper": "sessionSittings(ordered) from web/src/engine/retest.ts gives the 0-based sitting index for sessions already in time order. The number of sittings is the last index + 1. It takes anything with session_id and continuation?, so it works on rescore.sessions directly or, from a raw save, on orderSessions(save.sessions.map((s) => ({ session_id: s.session_id, started_utc: s.started_utc, continuation: s.flags[CONTINUATION_FLAG] === true }))).",
+    "counting_sittings_in_results": "reveal/results.ts scoredSessions counts sessions with n_observations > 0. To count sittings instead, count a sitting once when any of its sessions scored: const sit = sessionSittings(rescore.sessions); let n = 0, last = -1; rescore.sessions.forEach((s, i) => { if (s.n_observations > 0 && sit[i] !== last) { n++; last = sit[i]! } }). The existing pairing of timed_tasks_only device halves with served sessions is independent of this and needs the same per-sitting treatment if a continuation can be a device half.",
+    "next_ordinals": "RetestScore.next_ordinals already counts sittings: next_ordinals[k] - 1 = sittings that took axis k. reveal/next.ts typicalSessions needs no change. nextSessionPrior and next_ordinals describe a NEW sitting. A continuation's own test number on axis k is next_ordinals[k] - 1 if the last sitting took k, else next_ordinals[k]. The session flow does not use nextSessionPrior today.",
+    "bank": "hb.calib.retest.RetestSession(..., continuation=True), hb.calib.retest.session_sittings, SessionRetest.continuation (bool), hb.calib.rescore.RawSession(..., continuation=True)."
+  }
+}

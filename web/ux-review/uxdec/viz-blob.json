@@ -1,0 +1,169 @@
+{
+  "package": "viz-blob",
+  "decisions": [
+    {
+      "id": "D13",
+      "status": "provisional-default",
+      "option": "A and B",
+      "what_changed": "A: a not-measured spoke no longer pulls the curve down to the inner clamp (where -3 SD is drawn). When every spoke is measured the crisp curve, the +/-1 SD band and the 20 fuzz curves are closed, as before (byte-identical paths for the full profile). Otherwise each run of measured neighbours is an open curve (d3 curveCatmullRom.alpha(0.5), then curveCardinal.tension(0.6), then curveLinear, under the same 0.1-ring overshoot rule, curve.ts). The band and each fuzz band are one closed region per run: one edge forward, the other edge backwards. A lone measured spoke (no measured neighbour) has no curve, band or fuzz; its marker and 90% whisker still show the estimate and its range. The gap marker moved from a ring at the centre to an x on the 0 SD ring (two strokes at 45 degrees to the spoke, arm 4.5 user units, in the stub colour over a halo in the page background). The grey stub at the centre and the dashed spoke stay (section 9.7). The stub and the x are placeholders, not data, so they are drawn in their own group ('g.stubs', each still a 'g.mark.unmeasured') under the ring labels: where an x meets a ring label at phone sizes the label's halo covers part of the x and the label stays readable (the data's marks stay above the labels, UX-045). The tier (c) hatch now fills model.hatchFill: the closed curve when there are no gaps; otherwise each run's curve closed through the centre, and a narrow sector up to the marker for a lone spoke. STUB_CAPTION now says the line breaks there and the x is not an estimate. B: when the default text layout does not fit the chart's width (narrow screens; also very large text) and 5 or more spokes are not measured, those spokes get no label and a line under the chart (inside BlobChart.svelte, after the svg, as HTML text that grows with the text size) names them: 'Not measured: <full names>.' (facets: 'Insufficient data: ...'). With bare stubs the viewBox fits the labels left on each side, so the circle can sit off centre and grows. Measured, m1 (10 of 17 not measured): rings across 71% / 69% / 65% of the chart at 390 / 360 / 320 px (before about 42% at 390), smallest chart text 11.01 px at all three (before about 9.5-10 px at 320). The share card has no not-measured spokes (only measured skills the person left on are drawn; hidden skills are re-spread, not gapped), so A has nothing to change there; the card's blob is built by the same buildBlob.",
+      "strings": [
+        {
+          "before": "Dashed grey spokes are skills that were not measured; the line drops to the centre there.",
+          "after": "Dashed grey spokes are skills that were not measured. The line breaks there, and a small × on the 0 SD ring marks the gap; it is not an estimate."
+        },
+        {
+          "before": "(new; narrow screens with 5 or more not-measured spokes)",
+          "after": "Not measured: Analytical/Logic Games, Logical Reasoning, Reading Comprehension, ... ."
+        },
+        {
+          "before": "(new; facet charts on narrow screens with 5 or more facets short of data)",
+          "after": "Insufficient data: <facet names>."
+        }
+      ],
+      "files": [
+        "web/src/viz/blob.ts",
+        "web/src/viz/curve.ts",
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/copy.ts",
+        "web/src/viz/geometry.ts (comments only)",
+        "web/src/viz/card.ts (module comment only for D13)"
+      ],
+      "tests": [
+        "web/src/viz/blob.test.ts (x on the 0 SD ring and on its own spoke; x geometry: two strokes centred there, at 45 degrees to the spoke; curves break exactly at not-measured spokes and pass through r(theta) at measured ones, one open curve per run of 2+, none through a gap; closed curves and no gap with every spoke measured; band and fuzz bands one closed region per run with edges at r(theta +/- SD); property over random measured masks: points exactly at the measured spokes with a measured neighbour, markers and whiskers exactly at measured spokes, x exactly at not-measured ones; lone tier (c) hatch; D13 B: bare stubs and the list at 288/328/358 px for m1, skipped, sparse, offscale, with >= 11 px text and rings >= 55% of the chart, also with narrower glyph widths; never bare at 640 px, with every skill measured, or with 4 not measured; list grouping; property: boxes and circle inside the asymmetric viewBox)",
+        "web/src/viz/curve.test.ts (open curves: through every point in order, no Z; two points are the chord; overshoot rule; reversed segments)",
+        "web/src/viz/BlobChart.dom.test.ts (new: x and its halo drawn per not-measured spoke, none at measured ones; curve/band/fuzz as the model; caption text; the list after the svg, outside the image, with no 'not measured' labels; no list at full width or with every skill measured)",
+        "web/src/viz/ProfileView.dom.test.ts (one assertion: circle.gap -> path.gap)",
+        "web/e2e/uxdec-viz.spec.ts (new: gaps, x on the 0 SD ring in the stub colour over the page background, closed curve for the full profile; axe 0 serious light/dark at 1280 and 390 with the list; at 390/360/320 the list names every not-measured skill, rings >= 55%, text >= 11 px, no overlaps, inside the viewBox, no sideways scroll; list grows at 200% text; wide font at 320)",
+        "web/e2e/blob.spec.ts (stubs: x per stub; list on a phone, 'not measured' labels on a wide screen)"
+      ],
+      "deviations": [
+        "B uses 'none' (no label on a not-measured spoke), not short labels: measured first, short names alone free no width, because the labels of the measured spokes set the (centred) viewBox. The room comes from letting the viewBox fit each side's own labels when the stubs are bare, so on phones the circle may sit off centre.",
+        "'Narrow screen' is 'the default text layout does not fit at this width' (the case where fitLayout has to adapt), not 'compact labels were chosen': WebKit measures narrower glyphs and kept full labels at 390 px, which would have left the iPhone chart unchanged.",
+        "A lone measured spoke between two gaps has no curve, band or fuzz; its marker and 90% whisker are its uncertainty mark. A lone tier (c) spoke's hatch is a narrow sector (half a spoke gap wide) up to its marker.",
+        "The grey stub at the centre (section 9.7) is kept; only the dip and the gap marker changed.",
+        "The not-measured marks moved from the 'g.marks' group (drawn after the data) to a 'g.stubs' group drawn between the grid and the ring labels; selectors 'g.mark.unmeasured ...' and the count of 17 'g.mark' still hold."
+      ],
+      "open_issues": [
+        "The ten grey centre stubs now form a small grey star at the centre, where -3 SD is (see test-results/ux-review/uxdec-viz/after/*/blob-m1-1280-light.png). With the gap and the x marking a not-measured skill, the owner may want to drop the stub (a section 9.7 amendment); not done here because section 9.7 names it.",
+        "The list repeats what the data table (the screen-reader default) says; it is ordinary visible text, not aria-hidden."
+      ]
+    },
+    {
+      "id": "D14",
+      "status": "provisional-default",
+      "option": "settled by D13 (measured)",
+      "what_changed": "Measured after D13 B. Profiles with 5 or more skills not measured (the static first session, m1: 10 of 17) now reach the full 11 px floor at 320 px: smallest chart text 11.00-11.01 px in Chromium, WebKit and iPhone, with the rings across 61-67% of the chart at 320-390 px. The 9.5 px floor of e2e/blob.spec.ts is the every-skill profile with the Knowledge facets open, which D13 B does not touch (no skill is unmeasured); measured at 320 px it is now at least 10 px everywhere: main chart 11.00 px and Knowledge facets 10.70 / 10.75 / 10.83 px (Chromium / WebKit / iPhone), and with the wide font (the Linux-like simulation of e2e/wide-font.ts) main 10.94 px and facets 10.57 / 10.73 / 10.76 px. So the 10 px floor is restored: e2e/blob.spec.ts 320 px row 9.5 -> 10 and the blob.test.ts 288 px row for the every-skill profile 9.5 -> 10 (estimated widths give 10.48 px); e2e/uxdec-viz.spec.ts logs and checks the measurement (system and wide font).",
+      "strings": [],
+      "files": [
+        "web/e2e/blob.spec.ts (320 px floor 9.5 -> 10)",
+        "web/src/viz/blob.test.ts (288 px floor for the every-skill profile 9.5 -> 10; 11 px with 5+ not measured)",
+        "web/e2e/uxdec-viz.spec.ts (measurement)"
+      ],
+      "tests": [
+        "web/e2e/uxdec-viz.spec.ts (D14 measurement, system and wide font)",
+        "web/src/viz/blob.test.ts (288 px: >= 11 px for profiles with 5+ not measured, 9.5 px for the every-skill profile)"
+      ],
+      "deviations": [],
+      "open_issues": [
+        "The margin at 320 px for the every-skill profile is small (Knowledge facets 10.57 px with the wide font); a later change that lengthens facet or compact names could need the 9.5 px floor again."
+      ]
+    },
+    {
+      "id": "D15",
+      "status": "provisional-default",
+      "option": "A (B skipped: needs the final domain; C is package share-save's)",
+      "what_changed": "On the share card a credible low (90% range below 0 SD) is drawn muted, like a range that overlaps 0 SD (hollow grey marker or arrow, grey whisker, grey curve run, label in the plain text colour), so the only strong colour on the card marks a range above 0 SD (card.ts cardSpoke; the page keeps the section 9.5 rule). The named peaks (the ones the card lists) are ringed (a circle r = 9 user units round the marker, in the blob colour) and their labels bold; buildBlob takes the peak ids (BlobOptions.peaks, SpokeView.peak), so BlobChart.svelte draws the same marks for the card's model and the card/page twin test still compares element by element. The key now reads 'Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.' plus ' Ringed: a named peak.' when the card lists peaks (one row of 88 characters, at most 96). To keep it one row, 'SD means standard deviation.' moved to the last row, after the two ring-note lines. The small print keeps its 5 rows, so the chart region (704 x 472 card px) is unchanged. gated.json has no request to this package; its D2 card note still wraps to 91 / 90 / 41 characters on 3 rows.",
+      "strings": [
+        {
+          "before": "Filled: range clear of 0 SD. Hollow: range overlaps 0 SD.",
+          "after": "Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD."
+        },
+        {
+          "before": "(new, on cards that list peaks)",
+          "after": "Ringed: a named peak."
+        },
+        {
+          "before": "Key row: 'Filled: ... Hollow: ... SD means standard deviation.'",
+          "after": "Key row: 'Filled: ... Hollow: ... Ringed: a named peak.'; last row: 'Rings: SD units, provisional', 'Centre: −3 SD', 'SD means standard deviation.'"
+        }
+      ],
+      "files": [
+        "web/src/viz/card.ts",
+        "web/src/viz/card-copy.ts",
+        "web/src/viz/blob.ts",
+        "web/src/viz/BlobChart.svelte"
+      ],
+      "tests": [
+        "web/src/viz/card.test.ts (credible low muted on the m1 card; property: on a card a mark is filled exactly when its range is above 0 SD; named peaks ringed and bold and nothing else, ring centred on the marker; a muted named peak is still ringed; key text and one key row with and without peaks; last row = ring note + SD; footer rows unchanged)",
+        "web/src/viz/card.dom.test.ts (twin test with peaks ringed and a credible low muted, m1 / full / offscale)",
+        "web/src/viz/BlobChart.dom.test.ts (peak ring and bold label from the model; none on the page)",
+        "web/e2e/uxdec-viz.spec.ts (rendered card, light and dark: the credible low hollow, rings = named peaks, bold labels, filled marks = ranges above 0 SD)"
+      ],
+      "deviations": [
+        "Option B (site address on the card, url passed to navigator.share) is not done: it needs the final domain."
+      ],
+      "open_issues": [
+        "Credible lows are muted on the card only; the results page still draws them filled (section 9.5). If the owner confirms D15 A, section 9.9 (or 9.5) should say so."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/src/viz/copy.ts (facetCaption)",
+      "change": "None made: facets.json asks for an extra caption sentence only if the owner keeps the leave-facet-out prior as is; that is an owner question outside D13-D15, so it is left for the integrator / owner.",
+      "why": "Request addressed to this package's file, conditional on an owner decision."
+    },
+    {
+      "file": "web/e2e/blob.spec.ts (drill-down test)",
+      "change": "Updated here to the facets package's current D4 quantitative topic groups ('Arithmetic, fractions and percentages' measured, 'Ratios, rates and averages' with 2 questions): the old assertions looked for 'Percentages' and 'Insufficient data (3 questions; 5 needed)'. The integrator should re-check it against facets' final facet names and counts.",
+      "why": "Another package's in-flight change broke a test in a file this package owns."
+    }
+  ],
+  "shared_files_touched": [
+    "web/src/viz/ProfileView.dom.test.ts (one assertion: 'g.mark.unmeasured circle.gap' -> 'g.mark.unmeasured path.gap', the x of D13 A)"
+  ],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md section 9.7 (tier marks, 'Unmeasured or skipped axes')",
+      "what": "Says the curve 'dips to the centre with a gap marker'. Now (D13 A, provisional): the crisp curve, band and fuzz break at a not-measured spoke (open runs between gaps; closed only with every spoke measured) and the gap marker is a small x on the 0 SD ring; the grey stub and the dashed spoke stay. D13 B: on narrow screens with 5+ not-measured spokes those spokes are unlabelled and listed under the chart."
+    },
+    {
+      "where": "docs/DESIGN.md section 9.2",
+      "what": "Names only the closed curves; a run between gaps uses the open forms (curveCatmullRom.alpha(0.5) / curveCardinal.tension(0.6) / curveLinear) under the same overshoot rule."
+    },
+    {
+      "where": "docs/DESIGN.md section 9.9 / section 9.5, ROADMAP A12",
+      "what": "D15 A (provisional): on the share card a credible low is drawn muted like an overlapping range, and the named peaks are ringed with bold labels; the card key reads 'Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD. Ringed: a named peak.' The page keeps the section 9.5 rule."
+    },
+    {
+      "where": "docs/ROADMAP.md A15",
+      "what": "'All 17 spokes are shown, and unbuilt axes appear as \"not measured\" stubs' still holds (17 spokes, fixed order); on narrow screens with 5+ of them the 'not measured' words move from the spoke labels to the list under the chart (D13 B)."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/viz src/reveal",
+      "result": "33 files, 509 tests passed (incl. new src/viz/BlobChart.dom.test.ts, the new blob/curve/card/card.dom tests)."
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "0 errors, 0 warnings (svelte-check 1213 files; tsc node and scripts configs clean, e2e specs included)."
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "clean (366 files)."
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4739 HB_RUN=uxdec-viz-blob HB_SHOTS=after npx playwright test -c ux-review/playwright.iso.config.ts e2e/uxdec-viz.spec.ts e2e/blob.spec.ts e2e/ux-viz.spec.ts e2e/share-card.spec.ts e2e/wide-font.spec.ts --project=chromium --project=webkit --project=iphone --workers=2",
+      "result": "187 passed, 5 skipped (existing project skips: render timing and print on WebKit/iPhone, one keyboard test on iPhone). share-card.spec.ts read-only and green; wide-font.spec.ts green; 320 px and 200% text covered in uxdec-viz.spec.ts and ux-viz.spec.ts."
+    },
+    {
+      "cmd": "screenshots",
+      "result": "before (Chromium, taken before any change): web/test-results/ux-review/uxdec-viz/before/chromium/; after: web/test-results/ux-review/uxdec-viz/after/{chromium,webkit,iphone}/ (blob m1 at 1280/390/320 light, 390 dark, sparse 390, full 320; cards m1 and offscale, light and dark)."
+    },
+    {
+      "cmd": "not run",
+      "result": "full npm test, test:db and the whole e2e suite (left to the integrate package)."
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "package": "reading",
+  "decisions": [
+    {
+      "id": "D11",
+      "status": "provisional-default",
+      "option": "A (display split and an authoring preference; option B, the first-language line, is package reveal's)",
+      "what_changed": "(1) Display only: ReadingRenderer.svelte draws splitParagraphs(spec.paragraphs) instead of spec.paragraphs. split.ts (new) cuts an authored paragraph of more than 150 words (WORD RULE of tasks/reading/text.ts) at sentence ends only, into pieces of about 120 words: of all cut sets it takes the one with the least sum of (words - 120)^2 over its pieces, with a very large charge per word over 150 or under 40 (dynamic programme over the sentences), so a set with every piece in 40..150 wins whenever one exists and no sentence is ever broken to meet a limit. A token ends a sentence if it ends in . ! or ? (closing quotes or brackets may follow), the next token opens with a capital (after opening quotes or brackets), and it is not an abbreviation (Mr Mrs Dr St Lieut vs ... as capitalised, a few lower-case ones), an initial (one capital letter except I: 'Mrs. C. was busy') or dotted letters (U.S., p.m., i.e.). Semicolons, colons, commas and dashes never end a sentence, so the semicolon-led sentences stay whole. Pure function of the text, no randomness. The authored data (passages.json and its bank copy, passages.render.json, spec.paragraphs, word_count, the recorded panel solves, the A14 parity checks) are untouched; the pieces joined by single spaces are the authored paragraph, so the words, their order and the wpm statistic are unchanged; the timing code (frame-locked onset, performance.now) is not touched. Result on the bank: franklin para 1 (216 words) 125+91; darwin (363) 136+111+116; dana (354) 125+122+107; faraday para 1 (210) 91+119 and para 2 (155) 91+64; bird para 1 (311) 80+113+118; muir para 1 (243) 102+141; every other paragraph (150 words or fewer) is drawn as authored. At 390 px in the session (passage 358 px wide) Darwin's one block of 1,278 px is now three of 489, 381 and 408 px; in the review card (306 px wide) the tallest block per passage falls from 1495 to 598 (darwin), 1359 to 489 (dana), 1223 to 489 (bird), 1033 to 598 (muir), 897 to 517 (franklin), 707 to 408 (faraday); the passages with no paragraph over 150 words (twain, huxley) are unchanged. (2) Authoring preference recorded in the bank README as a provisional preference, in a new 'Reading passages (A14)' section (none existed): prefer modern plain non-fiction when a passage is next added or replaced, with the A14 recipe unchanged and OpenStax (CC BY 4.0) and U.S. government works named as the sources that fit section 6.i. No passage was replaced.",
+      "files": [
+        "web/src/render/reading/split.ts (new)",
+        "web/src/render/reading/split.test.ts (new)",
+        "web/src/render/reading/ReadingRenderer.svelte",
+        "web/src/render/reading/reading.dom.test.ts",
+        "web/src/render/reading/__snapshots__/reading.dom.test.ts.snap",
+        "web/e2e/uxdec-reading.spec.ts (new)",
+        "humanbench-bank/README.md (new section 'Reading passages (A14)')"
+      ],
+      "tests": [
+        "web/src/render/reading/split.test.ts: 23 tests. fast-check properties on generated paragraphs (sentences of up to 60 words with abbreviations, initials, dotted letters, semicolons, colons, dashes, opening and closing quotes and brackets): pieces joined by single spaces equal the paragraph (also for arbitrary strings with double spaces and newlines); a paragraph of at most 150 words is returned whole; no piece over 160 (in fact 150) words and none under 40 when the paragraph has more than 150; every cut falls on a generated sentence end; deterministic; word count kept; mean piece within 40 words of 120. Example tests for each abbreviation class, 'I.' and 'etc.' as sentence ends, semicolon-led sentences, one-sentence paragraphs, the least-bad case. Every passage of passages.render.json: words and order unchanged, word_count unchanged, pieces 40..150 words, each cut at a sentence end, piece sizes pinned per paragraph, and the Bird passage cut after 'return.' and not after 'Mrs.', 'St.' or 'C.'. Mutation-checked (abbreviation rule, capital rule and semicolon-as-stop each made tests fail).",
+        "web/src/render/reading/reading.dom.test.ts: count of drawn paragraphs follows the split; every bank passage drawn as pieces of at most 150 words with the authored words in order; reading time of a split passage (Darwin, three pieces) is exactly the frame-to-Done interval; new snapshot of a split passage; the existing questions snapshot is unchanged.",
+        "web/e2e/uxdec-reading.spec.ts on chromium and iphone (6 of 6 pass): review page at 390 px for all 8 passages (dev server, ports 4733/4734), session at 390 px, session with the wide-font simulation at 320 px. Heights before (authored paragraph drawn in place with the same style) and after are asserted (pieces add up to the authored height within one line more than the number of pieces, each piece under 75 percent of the whole) and written to web/test-results/ux-review/uxdec-reading/ (heights-<project>-390.json, session-<project>-390.json, before and after screenshots of darwin, dana and bird, the session passage, and the wide-font page).",
+        "npm run check (0 errors, 0 warnings), npm run lint:language (362 files clean), targeted vitest src/render/reading src/tasks/reading plus scripts/timing-lint, language-lint, a11y-routes, file-token, e2e-config, e2e-parts (all pass); bank: uv run ruff check, ruff format --check, pytest -q -n 8 -k reading (271 passed)."
+      ],
+      "deviations": [
+        "The bank README had no reading-passages section, so a short new section 'Reading passages (A14)' was added before 'Fermi items (M5.1)' instead of editing an existing one.",
+        "A paragraph is split when it has more than 150 words by the WORD RULE, so Faraday's 155-word second paragraph becomes 91 + 64 words (the 64-word piece is under the 80-word aim, over the 40-word floor). It is the only borderline case; raising the threshold to about 160 would leave it whole.",
+        "The e2e spec cannot import src/tasks/reading/bank.ts or the family (Node ESM needs an import attribute for passages.render.json), so it reads the JSON file itself and walks the review page's instances (per=1) until each of the 8 passages has been measured.",
+        "The session test steps over the break offer (Time for a break?, button Keep going) with the driver's own step(), because another package places that break between two parts now; it does so at any 'Up next' screen."
+      ],
+      "open_issues": [
+        "No passage has been replaced with modern plain non-fiction: that needs authoring, two independent clean solves recorded in the bank's golden/reading_solves.json, and a provenance shape the public repo does not have (PassageSource and verify.ts require a Project Gutenberg record and a year before 1928: year_before_1928, era_matches_year, sha256, offsets). It is a separate task for whoever owns ROADMAP A14, not done here.",
+        "The first-language line in the results (option B of D11) is package reveal's (reveal/copy.ts).",
+        "Pieces of one authored paragraph have the same one-line gap between them as authored paragraphs have (no visual difference between a cut and a true paragraph break); a smaller gap for continuation pieces is possible if the owner wants the author's paragraphing kept visible."
+      ]
+    }
+  ],
+  "requests": [
+    "integrate: web/test-results/ is not committed; if the screenshots and heights JSON under web/test-results/ux-review/uxdec-reading/ should be kept as evidence, copy them where the other UX evidence lives.",
+    "integrate: web/UX-REVIEW.md D11 evidence (1,280 px on a phone) is reproduced by the session measurement (passage 358 px wide, 1,278 px before, 489 + 381 + 408 px after); the review page's card is narrower (306 px) so its figures are larger."
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    "DESIGN section 3 row 10 and A14 say passages are about 350 words and speak of paragraphs as authored; neither mentions that the renderer now draws a long paragraph as several display paragraphs. Nothing contradicts it (the authored data is unchanged), but a sentence in section 4.2 or A14 would keep the spec in step; docs were not edited here."
+  ],
+  "gates": {
+    "web_check": "pass (svelte-check 0 errors 0 warnings, tsc node and scripts projects)",
+    "web_lint_language": "pass (362 files clean)",
+    "web_vitest_targeted": "pass (src/render/reading, src/tasks/reading, scripts/timing-lint, language-lint, a11y-routes, file-token, e2e-config, e2e-parts: 181 + 13 tests)",
+    "web_e2e": "pass: e2e/uxdec-reading.spec.ts on chromium and iphone, 6 of 6 (E2E_PORT=4733 E2E_DEV_PORT=4734 HB_DEV_SERVER=1 HB_RUN=uxdec-reading, -c ux-review/playwright.iso.config.ts)",
+    "bank_ruff": "pass (ruff check, ruff format --check: 318 files already formatted)",
+    "bank_pytest_reading": "pass (271 passed, -k reading, -n 8)",
+    "not_run": "full npm test, npm run build as a separate step (the e2e builds ran it), test:db: left to the integrate package"
+  }
+}

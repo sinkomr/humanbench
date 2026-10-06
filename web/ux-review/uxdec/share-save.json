@@ -1,0 +1,144 @@
+{
+  "package": "share-save",
+  "decisions": [
+    {
+      "id": "D15",
+      "status": "provisional-default",
+      "option": "C done. A (credible lows muted, peaks marked on the card) is the viz-blob package's. B (web address on the card, url passed to navigator.share) skipped and recorded: it waits for the final domain.",
+      "what_changed": "reveal/ShareCard.svelte. Where the browser can hand image files to its share sheet (canShareImage(): navigator.share and navigator.canShare both exist and canShare({files:[png]}) is true; the existing `canShare` prop and default are unchanged), 'Share image' is the one primary button and comes first, in its own row; 'Download image (PNG)' and 'Download vector image (SVG)' follow in a role=group labelled by a visible 'Save a copy' line (aria-labelledby), neither primary. Where file sharing does not work (no share sheet, a text-only sheet, canShare throwing or missing) the markup is today's: one row, PNG primary, SVG, no 'Share image', no label. The buttons are one set of Svelte snippets rendered in either layout, so disabled / aria-disabled / aria-describedby (the 'Preparing the PNG...' note, UX-032) behave the same in both. The 'Preparing' note, message line and sizes line stay below the buttons in both layouts. Scoped CSS for the group (no change to reveal.css).",
+      "strings": [
+        { "before": "(no group label; buttons in the order: Download image (PNG) [primary], Download vector image (SVG), Share image)", "after": "with a share sheet: Share image [primary]; label 'Save a copy'; Download image (PNG); Download vector image (SVG). Without one: unchanged." },
+        { "before": "(none)", "after": "Save a copy" }
+      ],
+      "files": [
+        "web/src/reveal/ShareCard.svelte",
+        "web/src/reveal/share-save-copy.ts (new: SHARE_SAVE_COPY)",
+        "web/scripts/share-card.test.ts (guard of ShareCard's imports; see shared_files_touched)"
+      ],
+      "tests": [
+        "web/src/reveal/ShareCard.dom.test.ts: 'the buttons where the browser can share image files, and where it cannot (D15 C)' (6 tests: share-first order and single primary, labelled group, today's order without a sheet, the default taken from navigator.canShare with files / text-only / canShare missing / canShare throwing, every button keeps its job in both layouts, the Preparing note describes both PNG buttons, Hide all disables all)",
+        "web/e2e/uxdec-share-save.spec.ts: D15 C (share-first layout; Share hands a real 2400x1260 PNG to the sheet; 44 px targets, axe light and dark, language lint and 320 px reflow in the grouped layout; downloads from the group; Tab order on chromium; no sheet and text-only sheet keep today's order)"
+      ],
+      "deviations": [
+        "Option B skipped as instructed (no web address on the card; navigator.share still gets only files and title). Recorded here for when the domain is final.",
+        "The card strings are in the new reveal/share-save-copy.ts, not reveal/copy.ts (other work is editing copy.ts), so scripts/share-card.test.ts's list of ShareCard imports gained './share-save-copy' (and a check that only SHARE_SAVE_COPY comes from it)."
+      ],
+      "open_issues": [
+        "In WebKit the Tab key follows the system setting for buttons, so the Tab-order e2e check runs on chromium only; the order itself is the DOM order and is asserted in the DOM test and by the e2e button-order check on all three projects.",
+        "When pngFailed is true and a share sheet exists, the (disabled) 'Share image' keeps the primary style, as the PNG button did before; the SVG still works. Not changed."
+      ]
+    },
+    {
+      "id": "D17",
+      "status": "provisional-default",
+      "option": "A",
+      "what_changed": "The save that the results page downloads, shares or copies as a code now holds the notes settings kept on this device, read when the button is pressed. save/io.ts: deviceBriefPrefs(storage = localStorage) reads every readable autosave on the device (hb:save:v1:*, the notes page's prefs-only autosave and the copy each session autosave carries) and joins their brief_prefs with mergeBriefPrefs, i.e. exactly what the notes page's store load() shows; withDeviceBriefPrefs(save, device) joins that into the save (save/brief-prefs.ts withBriefPrefs: higher rev wins per slot, fit notes a union, removals kept; merge rules unchanged), returns the save itself when the device adds nothing, and falls back to the save itself if the joined file would not pass validateSave. Same content rules as the notes page's save (R-17.12: enums, ids, versions and months only; nothing typed can be there, the schema admits none). The file-level sig and the sessions are untouched (brief_prefs is outside the signed part, R-17.1). reveal/SavePanel.svelte calls it at the click in doDownload, doShare and doCopy (all synchronous, before any await, so user activation holds), via a new injectable prop deviceNotes. After a download or share whose file holds notes settings, a muted line says so. A second device that loads the file gets the settings back through the notes page's existing 'Load my settings from a save' (restoreBriefPrefs), verified by a round trip into fresh storage. The server mirror is unchanged: it still gets makeSave() from Finished/ServedPanels, so the mirror holds no notes settings (R-17.1; MIRROR_NOTE stays true).",
+      "strings": [
+        { "before": "(results-page save had no brief_prefs unless the session had started from a save that carried them) => on the notes page of a second device: 'That save has no notes settings.'", "after": "the save holds them; the second device loads them ('loadDone')" },
+        { "before": "(none)", "after": "The file also holds the notes settings kept on this device: your choices, never text you typed. (shown under the 'Saved as ...' line, only after a download or share whose file holds notes settings; data-notes-included)" }
+      ],
+      "files": [
+        "web/src/save/io.ts (deviceBriefPrefs, withDeviceBriefPrefs)",
+        "web/src/save/brief-prefs.ts (withBriefPrefs)",
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/share-save-copy.ts (new: SAVE_HOLDS_NOTES)"
+      ],
+      "tests": [
+        "web/src/save/brief-prefs.test.ts: withBriefPrefs (identity when nothing to add, joins, higher rev wins per slot, property: holds both / validates / idempotent / only brief_prefs changes, restore of the file gives the device's settings back)",
+        "web/src/save/io.dom.test.ts: 'the notes settings kept on this device (D17)' (reads none from empty or blocked storage and never writes; reads the notes page's autosave; joins all autosaves and equals the notes store's load(); skips unreadable ones; the file as downloaded restores them via restoreBriefPrefs; identity cases; higher rev wins; removed sets; sig and sessions untouched; property: always valid)",
+        "web/src/reveal/share-save.dom.test.ts (new): SavePanel with the device's settings kept after mount (read at the click), follows the device press to press, share and copy code carry the same file, share reached before any await, untouched save without settings, join with settings already carried, the 'also holds' line, blocked storage, round trip into a fresh PrefsStore (importSave ok, fromStored shows both sets, nothing written there), the control that the file without them is what said 'That save has no notes settings.', no typed text",
+        "web/e2e/uxdec-share-save.spec.ts: D17 (notes kept in a second tab after the results were up; the downloaded file holds them, validates, has no typed words; a second browser context loads it on the notes page and shows them, writes nothing; share-sheet file and copy code hold them; nothing kept means no brief_prefs and no line)",
+        "web/e2e/session-save.spec.ts: one expectation changed (see deviations)"
+      ],
+      "deviations": [
+        "The copy save code and the share sheet's file carry the notes settings too, not only the download: it is the same save ('one file per person'), session-save.spec.ts already pins that the code decodes to the same save as the file, and a code without them would leave the 'no notes settings' message on the paste route. Strictly, D17 names only the download.",
+        "A small 'The file also holds the notes settings ...' line was added under the save panel (not asked for): the file now holds more than the person's answers, and the person may hand it on. Easy to drop (SavePanel.svelte, share-save-copy.ts).",
+        "Notes settings are treated as the device's, as on the notes page: the join takes every autosave on the device whatever its anon_id (an anon_id filter was tried and dropped because a person who only views results, with no autosave yet, and then keeps notes in another tab gets a different minted id on the notes page, so their own settings would have been left out).",
+        "Consequence for the ready screen's 'Add my new session to the earlier saves on this device' choice when it is cleared: e2e/session-save.spec.ts 'the file's notes settings win the same way when the new session is not added to the earlier saves on the device' expected the downloaded file to hold 'nothing of the device's second set'. With D17 the file holds the file's slot 1 (rev one above the device's) and the device's second set. I changed that one expectation to [{...fileFirst, rev: mineFirst.rev + 1}, mineSecond] with a comment. The choice still decides what sessions the save holds; it no longer keeps the device's notes settings out of the download."
+      ],
+      "open_issues": [
+        "OWNER VIEW NEEDED: should leaving earlier saves out also keep this device's notes settings out of the results-page save (e.g. two people on one device)? If yes, SessionApp must pass a flag down (ReadyState.includeFound false => deviceNotes: () => undefined) through Finished.svelte and Reveal.svelte to SavePanel; SavePanel already takes the injectable `deviceNotes` prop. See requests.",
+        "If the person removes their notes settings on the notes page in another tab while the results are open, the running session's in-memory base (session/persist.ts #base) may still carry them, and the join cannot tell removal from absence, so the file would still hold them. This was already so for the session's own autosave and download before D17; not changed.",
+        "Reading all autosaves at the click parses and validates each (a few ms for ten sessions). It only runs on the three buttons."
+      ]
+    },
+    {
+      "id": "D19",
+      "status": "provisional-default",
+      "option": "A",
+      "what_changed": "Local calendar date in both file names. save/io.ts: new localDateStamp(date) (YYYY-MM-DD from the Date's local getters; reads no clock; throws RangeError on an invalid Date) and saveFileName(save) now dates the file with the local day of save.created_utc (the moment the save was made: currentSave() stamps it with the wall clock at the press, so this is the day of the download), falling back to the UTC date text only when created_utc is not a real time. The section-8 shape humanbench-<shortid>-<YYYY-MM-DD>.hbsave.json is kept. viz/export.ts: cardFileName(kind, date, theme) now returns humanbench-card-<light|dark>-<local date>.<png|svg> (theme is a required third argument; ShareCard passes the colours chosen at the press, for the PNG download, the SVG download and the share sheet). The notes page's own download goes through the same saveFileName, so it is local too. created_utc inside the file stays UTC.",
+      "strings": [
+        { "before": "humanbench-<6 id chars>-<UTC date of created_utc>.hbsave.json (e.g. an 8:30 pm save in Los Angeles on 5 Oct: ...-2026-10-06.hbsave.json)", "after": "humanbench-<6 id chars>-<local date>.hbsave.json (...-2026-10-05.hbsave.json)" },
+        { "before": "humanbench-card-<local date>.png / .svg", "after": "humanbench-card-light-<local date>.png / .svg and humanbench-card-dark-<local date>.png / .svg" }
+      ],
+      "files": [
+        "web/src/save/io.ts (localDateStamp, saveFileName)",
+        "web/src/viz/export.ts (cardFileName)",
+        "web/src/reveal/ShareCard.svelte (passes the theme)"
+      ],
+      "tests": [
+        "web/src/save/local-date.test.ts (new): localDateStamp equals Intl's day in nine zones for any instant (property), padding, local midnight, DST repeats, invalid Date",
+        "web/src/save/io.dom.test.ts: 'the file name carries the person's local day (D19; §8)' (shape in any zone, 8:30 pm in LA / New York vs UTC, 09:30 in Auckland, one second either side of local midnight in LA, Auckland and Kolkata, same day as the card name, property against Intl, unreadable created_utc, downloadSave and shareSave use the local name); the older fixed-name tests are pinned to TZ=UTC with vi.stubEnv",
+        "web/src/viz/export.test.ts: names with colours, light/dark differ (property), local day and local midnight in three zones with vi.stubEnv('TZ')",
+        "web/src/reveal/ShareCard.dom.test.ts: light and dark names for PNG, SVG and the share sheet; with Date faked (vi.useFakeTimers toFake Date + vi.setSystemTime) and TZ stubbed, LA and Auckland one second either side of local midnight, and a card kept open across midnight gets the new day at the press",
+        "web/src/reveal/share-save.dom.test.ts: the save's name and the 'Saved as' line in LA (evening) and Auckland (morning), including a share that falls back to a download",
+        "web/e2e/uxdec-share-save.spec.ts: D19 (light and dark names on chromium, webkit, iphone; with timezoneId America/Los_Angeles and Pacific/Auckland and page.clock.setFixedTime one second either side of local midnight: SVG, PNG and save names and the 'Saved as' line carry the local day, created_utc stays UTC)",
+        "web/e2e/share-card.spec.ts: name patterns now humanbench-card-light-..."
+      ],
+      "deviations": [
+        "Option B (a session count in the save name) not done: two saves on one day still share a name (the browser adds its own '(1)').",
+        "Card file names for the same day and colour still repeat (a second PNG of the same colours): only light/dark are told apart, as D19 A says."
+      ],
+      "open_issues": []
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/src/session/SessionApp.svelte, web/src/session/Finished.svelte, web/src/reveal/Reveal.svelte",
+      "change": "Only if the owner wants 'Add my new session to the earlier saves on this device' (cleared) to also keep the device's notes settings out of the results-page save: pass a pass-through prop to SavePanel, deviceNotes={() => undefined} when ReadyState.includeFound is false. SavePanel already accepts `deviceNotes`.",
+      "why": "D17 as implemented joins the device's notes settings whatever the ready screen choice was (see D17 deviations); the owner has not been asked about that interaction."
+    },
+    {
+      "file": "web/src/reveal/copy.ts",
+      "change": "Optional, at integration: fold SHARE_SAVE_COPY and SAVE_HOLDS_NOTES from reveal/share-save-copy.ts into copy.ts (as SHARE_SAVE_COPY and SAVE_HOLDS_NOTES) and point ShareCard.svelte, SavePanel.svelte and e2e/uxdec-share-save.spec.ts at it; scripts/share-card.test.ts then drops './share-save-copy' from its import list again.",
+      "why": "Keeps one copy file; they are separate now only because copy.ts is edited by other packages."
+    },
+    {
+      "file": "docs/DESIGN.md, docs/ROADMAP.md",
+      "change": "Record the three answers once the owner confirms them (see spec_out_of_step).",
+      "why": "Docs were out of bounds for this package."
+    }
+  ],
+  "shared_files_touched": [
+    "web/scripts/share-card.test.ts: the 'panel takes no save, no notes and no copy from the reveal beyond its own share strings' import list gained './share-save-copy', plus a check that only SHARE_SAVE_COPY is taken from it",
+    "web/e2e/ux-reveal.spec.ts: one assertion (line ~269) card file-name pattern humanbench-card-light-<date>.png instead of humanbench-card-<date>.png"
+  ],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md section 8 (Format: humanbench-<shortid>-<date>.hbsave.json)",
+      "what": "<date> does not say which time zone. The code used the UTC date of created_utc; now it is the person's local calendar day (created_utc inside the file stays UTC). The pattern is unchanged. Suggest: '<date> is the local calendar day'."
+    },
+    {
+      "where": "docs/DESIGN.md section 9.9 Export / ROADMAP M1.18",
+      "what": "Neither gives the card file name (now humanbench-card-<light|dark>-<local date>.png|svg) nor the order of the card's buttons (now: Share image primary and first where file sharing works, downloads under 'Save a copy'; otherwise PNG primary then SVG)."
+    },
+    {
+      "where": "docs/DESIGN.md section 8 'Privacy' / R-17.1 / R-17.12 and the results-page save (section 10 required save)",
+      "what": "The save downloaded, shared or copied as a code from the results page now carries brief_prefs joined from the device (enums, ids, versions and months only). Section 8 lists the file's contents without brief_prefs; the notes-settings spec (proposal 5.5) says they ride in the save, but not that the results page adds the device's. The server mirror still excludes them (MIRROR_NOTE is still true)."
+    },
+    {
+      "where": "docs/ROADMAP.md owner decisions 2026-10-01 (AI.7): 'Add my new session to the earlier saves on this device'",
+      "what": "e2e/session-save.spec.ts documented that a session built without the earlier saves downloads a file with none of the device's other notes sets. With D17 it holds them (see D17 deviations). Not an ADR; flagged for the owner."
+    }
+  ],
+  "gates": [
+    { "cmd": "cd web && npx vitest run src/save src/viz/export src/reveal src/brief-store scripts/share-card.test.ts scripts/timing-lint.test.ts scripts/language-lint.test.ts scripts/bundle.test.ts", "result": "pass (34 files, 562 tests)" },
+    { "cmd": "cd web && npm run check (svelte-check; tsc -p tsconfig.node.json; tsc -p tsconfig.scripts.json)", "result": "pass (1207 files, 0 errors, 0 warnings; both tsc configs exit 0)" },
+    { "cmd": "cd web && npm run lint:language", "result": "pass (363 files clean)" },
+    { "cmd": "E2E_PORT=4731 HB_RUN=uxdec-share-save npx playwright test -c ux-review/playwright.iso.config.ts e2e/share-card.spec.ts e2e/session-save.spec.ts e2e/notes.spec.ts e2e/ux-notes.spec.ts e2e/uxdec-share-save.spec.ts --project=chromium --workers=2", "result": "83 passed, 1 failed, 18 did not run on the first pass: session-save.spec.ts 'the next visit adds its session...' timed out in session-driver toReady (Continue button, 20 s) at load average ~100-140; the same spec rerun alone on chromium: 19 passed. All other specs of the run passed (share-card, notes, ux-notes, uxdec-share-save)." },
+    { "cmd": "same specs, --project=webkit --workers=2", "result": "99 passed, 3 skipped" },
+    { "cmd": "same specs, --project=iphone --workers=2", "result": "96 passed, 6 skipped (keyboard-only tests are skipped on mobile by the specs)" },
+    { "cmd": "e2e/ux-reveal.spec.ts -g 'PNG button stays in the Tab order' on chromium, webkit, iphone (the spec whose card-name assertion was updated)", "result": "pass on all three" }
+  ],
+  "logs": "web/test-results/iso/uxdec-share-save/logs/"
+}

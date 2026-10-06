@@ -1,0 +1,2136 @@
+{
+ "package": "integrate",
+ "summary": "Applied the packages' requests (or said why not), folded two side copy files back into their copy modules, removed constants and helpers that had become unused, and fixed four real problems the combined branch had: an RT style token that broke the contrast test, the server's numeric-entry reader that did not read the decimal comma the app now accepts (new migration), the D5 time-rule e2e tests that still encoded the 30-minute break, and an a11y sweep with no route for two new screens. Reviewed the combined diff against the checklist; ran every gate of both repos on the branch head. Status words: D1, D2, D5 and D10 are owner decisions of 2026-10-05; D3 is not changed; every other D is a provisional default.",
+ "base": {
+  "pub": "wf10/uxdec worktree on 9f68f49 (dev when the workstream started). dev has since moved to baf3191 (M6.2 to M6.4 pub); this branch does not contain it.",
+  "bank": "wf10/uxdec worktree on 0d2a60e. bank dev has since moved to 6181a49 (M6.2 to M6.4 bank).",
+  "files_also_changed_on_dev": {
+   "pub": [
+    "README.md (different sections: dev adds the M6 layout and dev-route text and the m6_scoring_v1 sync sentence next to the refresh block this branch edits)",
+    "web/e2e/routes.ts (dev: M6 imports after the flow import, RENDERER_ROOTS rows, ...SJT/RAT/AUT_ROUTES at the end; this branch: imports after demoFermiItem, new routes in the start group)",
+    "web/package.json (dev: a dependency; this branch: the sim:session script)",
+    "web/scripts/a11y-routes.test.ts (dev: M6 imports and pins at the end of STATES; this branch: two pins at its start)",
+    "web/src/viz/facets.ts (dev: four M6 FACET_LABELS rows; this branch: D4 and D25 changes in other places)"
+   ],
+   "bank": [
+    "README.md"
+   ],
+   "note": "Hunks look separate; the lead's merge or rebase onto the new dev may still need a hand on README.md and routes.ts. Re-run the gates after it: the gates below are of this branch alone."
+  }
+ },
+ "requests": [
+  {
+   "from": "engine-retest",
+   "request": "bank src/hb/calib/retest_fit.py: count returning persons by sittings; test with a split sitting",
+   "done": "applied",
+   "how": "AxisSeries.n_sittings_observed (distinct test numbers of the observed sessions); _table.n_returning counts persons with n_sittings_observed >= 2; MIN_RETURNING and n_returning docstrings say sittings. New test tests/test_retest_fit.py::test_a_split_sitting_is_one_test_and_not_a_return (a session and its continuation: tests (1, 1), not a return; a later sitting makes one; without the flag the same sessions are two tests, as before)."
+  },
+  {
+   "from": "engine-retest",
+   "request": "bank README.md retest paragraph: test numbers count sittings",
+   "done": "applied",
+   "how": "One sentence after the model: a session and its continuation sessions share one test number and are not practice-adjusted against each other (session_sittings); the retest fit counts returning users by sittings too."
+  },
+  {
+   "from": "engine-retest",
+   "request": "pub web/src/engine/index.test.ts: sessionSittings in the barrel list",
+   "done": "applied",
+   "how": ""
+  },
+  {
+   "from": "facets",
+   "request": "web/src/viz/copy.ts facetCaption: one sentence on why facets sit on their skill, if the leave-facet-out prior stays",
+   "done": "applied",
+   "how": "The prior ships in this branch (D4 A, provisional default), so the caption says it: 'Each facet's range also draws on the rest of its skill, so for now a facet sits close to its skill.' The doc comment says to drop it with a model change (AI.20's tau). Pinned in web/src/viz/facets.test.ts. A13 lint clean. The modelling question itself stays the owner's (facets.json open issue 1)."
+  },
+  {
+   "from": "funnel",
+   "request": "web/e2e/ux2-session.spec.ts:398 after Skip Spatial",
+   "done": "applied",
+   "how": "Expects 'Time for a break?' (the parked renderer is already gone), then 'Keep going', then 'Up next: Working Memory'."
+  },
+  {
+   "from": "funnel",
+   "request": "web/src/session/env.ts: reword the SessionEnv.storage comment",
+   "done": "applied",
+   "how": "The consent record is read from the welcome screen on; only with an adult record are the autosaves read; nothing else is read and nothing is written before the gate."
+  },
+  {
+   "from": "funnel",
+   "request": "web/e2e/routes.ts: route welcome-returning",
+   "done": "applied",
+   "how": "prepare seeds an adult consent record for TERMS_VERSION and one simulated autosave before the first script (as uxdec-funnel.spec.ts holdEarlierUse does); open waits for the group 'Earlier results and notes on this device'. Pinned in scripts/a11y-routes.test.ts STATES."
+  },
+  {
+   "from": "gated",
+   "request": "web/src/reveal/slots.ts TALK_PREAMBLE_MAX_CHARS 340 -> 346 and the Reveal.dom.test.ts assertions",
+   "done": "applied",
+   "how": "Cap 346 with the comment 'proposal §3.3; 346 since wording version 2, UX-REVIEW D2'; the test checks length <= cap, cap = 346 and length = 346."
+  },
+  {
+   "from": "gated",
+   "request": "web/ux-review/personas/verify-viz.ux.ts overlapCaveatCount pattern",
+   "done": "applied",
+   "how": "Counts 'Where ranges overlap, a difference may not be real.'"
+  },
+  {
+   "from": "names",
+   "request": "web/UX-REVIEW.md D25 and UX-060 rows: built with the provisional default",
+   "done": "not applied",
+   "how": "UX-REVIEW.md is out of bounds for this package. For the lead: see for_lead."
+  },
+  {
+   "from": "names",
+   "request": "web/e2e/routes.ts break routes match the run package's intent",
+   "done": "checked",
+   "how": "toInterstitial declines the offer whenever it is the screen after a skip; break-offer and on-break open the offer by skipping Spatial (toBreakOffer), no fake clock. That is the run package's request (1) and (2) as written."
+  },
+  {
+   "from": "names / run",
+   "request": "web/e2e/session.spec.ts time rules and the WebGL and ?fast=1 tests; ux2-session.spec.ts:398",
+   "done": "applied",
+   "how": "Rewritten to D5 (see changes): the break before Working Memory with BREAK_OFFER_TEXT and a 60-minute break that does not count; offered once; never mid-part (31 minutes inside Matrix & Series: floor questions, then 'Up next: Spatial' with 'Over the planned time', then the offer after Spatial); quantWithoutBudget declines the offer and spends the 28 minutes on the first QR question (it times out and counts), then 2 more, then Processing & Reading Speed; the ring test starts Matrix & Series first; the WebGL test passes the offer; both ?fast=1 tests press Start first."
+  },
+  {
+   "from": "quant-entry",
+   "request": "web/src/tasks/family.ts Versions rule: the display-only exception, or bump quant to 1.4.0",
+   "done": "applied (exception documented)",
+   "how": "Documented as one narrow exception taken for the quant hints (UX-079; D8, a provisional default the owner may still revisit): display-only text that no scoring, selection or verification reads may change at the same version when every other field is byte-identical for every seed; hints.test.ts pins the content digest. A bump would drop every saved quant answer from local re-scoring. The owner may still prefer the literal rule (then: quant 1.4.0, bank 1.4.0+py, new dump, new digest pin)."
+  },
+  {
+   "from": "quant-entry",
+   "request": "pub README refresh block and bank README ts_dumps list: quant_entry.json",
+   "done": "applied",
+   "how": "Pub: the npx tsx line for entry-vectors.ts in the refresh block, and the ts-dumps-sync note names quant_entry.json. Bank: the parity-file list names quant_entry.json and tests/gen/test_quant_entry.py."
+  },
+  {
+   "from": "quant-entry",
+   "request": "bank src/hb/gen/quant/__init__.py: optional re-export of check_new_entry and is_thousands_entry",
+   "done": "not applied",
+   "how": "Optional; every user imports them from hb.gen.quant.entry."
+  },
+  {
+   "from": "quant-entry",
+   "request": "commit the bank dumps with the pub change",
+   "done": "in the commit split",
+   "how": "commit_split.together."
+  },
+  {
+   "from": "reading / reveal",
+   "request": "copy the screenshots and JSON under web/test-results/ux-review/uxdec-reading/ and uxdec-reveal/ to where the UX evidence lives",
+   "done": "not applied",
+   "how": "The repo keeps no UX screenshots: the review cites web/test-results paths and commits only the findings JSON (web/ux-review/findings). The measurements that matter are in the handoffs (reveal.json measurements_d16, reading.json). The files stay in the worktree's web/test-results for the lead."
+  },
+  {
+   "from": "reading",
+   "request": "web/UX-REVIEW.md D11 evidence note",
+   "done": "not applied",
+   "how": "Out of bounds; see for_lead."
+  },
+  {
+   "from": "render",
+   "request": "routes.ts skipPart/toInterstitial pass the break offer; then ux-render and ux2-render import intoSegment from routes.ts again and uxdec-render-flow.ts goes",
+   "done": "applied",
+   "how": "routes.ts already declines the offer (names package). ux-render.spec.ts, ux2-render.spec.ts, uxdec-render.spec.ts and uxdec-quant-entry.spec.ts import intoSegment from './routes'; e2e/uxdec-render-flow.ts deleted (never committed). ux2-render.spec.ts is now unchanged from dev."
+  },
+  {
+   "from": "render",
+   "request": "web/ux-review/findings/copy-inventory.json: regenerate",
+   "done": "not applied",
+   "how": "No generator in the repo: it is the copy reviewer's snapshot of the review state, kept as that record. It lists the old Spatial stem; a new review would write a new one."
+  },
+  {
+   "from": "resume",
+   "request": "web/e2e/routes.ts: route ready-continue",
+   "done": "applied",
+   "how": "Plays to one answer in Matrix & Series, waits for the autosave, reloads (the leave dialog accepted), goes Start, honour code, device check (the kept consent skips the gate) and waits for 'Continue your unfinished session'. Pinned in STATES."
+  },
+  {
+   "from": "resume",
+   "request": "schema/save-v1.json flags description: done_<part>, completed, focus_session",
+   "done": "applied",
+   "how": "One sentence in the flags description; they are booleans, so the rules are unchanged."
+  },
+  {
+   "from": "resume",
+   "request": "web/src/session/copy.test.ts: pin READY_CONTINUE and continueLine",
+   "done": "applied",
+   "how": "With and without a readable start time, Title Case part names, no placeholder."
+  },
+  {
+   "from": "reveal",
+   "request": "drop ProfileView's 48rem lift if BlobChart's 40rem cap goes",
+   "done": "no change needed",
+   "how": "viz-blob kept the 40rem cap in BlobChart.svelte, so the lift stays."
+  },
+  {
+   "from": "reveal",
+   "request": "a width option on Screen in place of the :has(> .hb-reveal) rule",
+   "done": "not applied",
+   "how": "Optional refactor of a shared component with no visible change; :has() works in every engine the suite runs (Chromium, WebKit and iOS Safari 15.4+), and without it the page keeps the plain 42rem column."
+  },
+  {
+   "from": "reveal",
+   "request": "shorter Finished lead lines on a 390 px phone",
+   "done": "not applied",
+   "how": "Needs new wording; no package proposed any. For the lead or a copy pass."
+  },
+  {
+   "from": "run",
+   "request": "web/src/session/constants.ts: remove BREAK_AT_S",
+   "done": "applied",
+   "how": ""
+  },
+  {
+   "from": "run",
+   "request": "web/src/session/copy.ts: remove the old BREAK_OFFER_TEXT and its pin",
+   "done": "applied (folded)",
+   "how": "run-copy.ts folded into copy.ts: the new BREAK_OFFER_TEXT replaces the old one in the break section, INTERSTITIAL_CLOCK sits after aboutMinutes; run-copy.ts and run-copy.test.ts deleted (never committed); their pins (text, no benefit claim, no minutes) moved to copy.test.ts; SessionScreen.svelte, SessionScreen.dom.test.ts and e2e/ux-session.spec.ts import from copy.ts."
+  },
+  {
+   "from": "run",
+   "request": "web/e2e/routes.ts break handling",
+   "done": "checked",
+   "how": "Done by the names package as requested."
+  },
+  {
+   "from": "run",
+   "request": "web/e2e/session-save.spec.ts: breakOffers 1 and breakBefore 'Working Memory'",
+   "done": "applied",
+   "how": ""
+  },
+  {
+   "from": "run",
+   "request": "web/src/sim/cat.ts: cap each CAT budget at its planned share; consider floorRemainingS",
+   "done": "not applied",
+   "how": "It changes the M1.4b acceptance simulation, not just a script: sim-cat.slow.test.ts asserts every simulated session at 25 to 30 minutes and the mean within 60 s of the target, and capping drops the unused CAT time, so sessions get shorter. Whether M1.4b should model the D5 budget (and whether that acceptance band still holds) is a question for the owner. scripts/sim-session.ts (npm run sim:session) already simulates the real run. test:slow was run on this branch: see gates."
+  },
+  {
+   "from": "run",
+   "request": "schema/save-v1.json and web/src/save/validate.ts: confidence_untouched_n",
+   "done": "applied",
+   "how": "Schema property (integer >= 0) and description; validate.ts checks it as an integer counter like paste_events and fast_guess_n; the response description says confidence_pct null also means 'slider not moved'; types.ts comment; schema.test.ts gained a mutation case (a fraction is refused by both)."
+  },
+  {
+   "from": "run",
+   "request": "web/package.json: sim:session",
+   "done": "applied",
+   "how": "\"sim:session\": \"tsx scripts/sim-session.ts\"; the script's usage line says npm run sim:session."
+  },
+  {
+   "from": "screen",
+   "request": "PracticeScreen re-focus",
+   "done": "not applied",
+   "how": "As the package says: D21 names the counted questions only."
+  },
+  {
+   "from": "screen",
+   "request": "web/UX-REVIEW.md D21, D27, UX-068, UX-083 rows",
+   "done": "not applied",
+   "how": "Out of bounds; see for_lead."
+  },
+  {
+   "from": "share-save",
+   "request": "keep the device's notes settings out of the results save when 'Add my new session ...' is unticked",
+   "done": "not applied",
+   "how": "Needs an owner answer the package did not have (D17 deviation). SavePanel already accepts deviceNotes."
+  },
+  {
+   "from": "share-save",
+   "request": "fold share-save-copy.ts into reveal/copy.ts",
+   "done": "applied",
+   "how": "SAVE_HOLDS_NOTES in the save section, SHARE_SAVE_COPY after SHARE_SHARE; ShareCard.svelte, SavePanel.svelte, share-save.dom.test.ts and e2e/uxdec-share-save.spec.ts import from copy.ts; share-save-copy.ts deleted (never committed); scripts/share-card.test.ts is back to the dev import list and checks that SHARE_SAVE_COPY is one of the card's share words."
+  },
+  {
+   "from": "share-save",
+   "request": "docs/DESIGN.md, docs/ROADMAP.md",
+   "done": "not applied",
+   "how": "Out of bounds; see for_lead."
+  },
+  {
+   "from": "start-copy",
+   "request": "SessionApp.served.dom.test.ts: TERMS_VERSION in place of the old literal",
+   "done": "already done",
+   "how": "Line 132 already uses TERMS_VERSION. The other 'terms-2026-09-draft' literals (gate, returning, SessionApp.dom, resume and funnel tests) test an older record on purpose."
+  },
+  {
+   "from": "start-copy",
+   "request": "web/src/backend/copy.ts DATA_DELETE_TEXT: name the backups and the archive",
+   "done": "applied",
+   "how": "'... from the database. It cannot be undone. Copies in the encrypted weekly backups are gone within eight weeks. Answers already copied, without your identifier, into the encrypted archive are not deleted. ...' Checked against supabase/README.md (backup.yml: eight weeks; the age-encrypted Parquet archive without anon_id). Same facts as the D1 server notice."
+  }
+ ],
+ "changes": [
+  {
+   "what": "RT fixation halo without a colour token of its own",
+   "why": "npm test failed in scripts/contrast.test.ts: the render package's .fixation declared --halo (var(--r-bg), var(--r-surface) on the four-position stage), a colour token no contrast pair reads. The text-shadow now names var(--r-bg) and var(--r-surface) directly; same pixels, no timing change (CSS only).",
+   "files": [
+    "web/src/render/rt/RtRenderer.svelte"
+   ],
+   "group": "render"
+  },
+  {
+   "what": "Decimal comma on the server: migration 20261007000200_parse_entry_decimal_comma.sql",
+   "why": "test:db failed: hb.parse_entry (the server's reader of a served quantitative answer) did not read '0,5' or '1,23', which the app's parseEntry reads since D8. A served answer typed with a decimal comma passed the entry box and was then scored as no number. The migration re-creates hb.parse_entry with one branch (digits, one comma, one or two digits) before the thousands form; every entry it read before reads the same. Tests: migrations.test.ts holds the body to the earlier one with exactly that edit; scoring.db.test.ts generates decimal commas and documents more examples; rescore.db.test.ts (response_fits) and session.db.test.ts (score_response) pinned '3,5' as no answer and now take it as 3.5; supabase/README.md migrations row.",
+   "files": [
+    "supabase/migrations/20261007000200_parse_entry_decimal_comma.sql",
+    "supabase/README.md",
+    "web/scripts/db/migrations.test.ts",
+    "web/scripts/db/scoring.db.test.ts",
+    "web/scripts/db/rescore.db.test.ts",
+    "web/scripts/db/session.db.test.ts"
+   ],
+   "group": "quant-entry"
+  },
+  {
+   "what": "D5 time-rule e2e tests rewritten",
+   "why": "Nine Chromium and iPhone failures reported by the run, names, screen and funnel packages: the tests still fast-forwarded on interstitials (the clock is held there now) and expected the break after 30 minutes. See requests.",
+   "files": [
+    "web/e2e/session.spec.ts",
+    "web/e2e/ux2-session.spec.ts",
+    "web/e2e/session-save.spec.ts"
+   ],
+   "group": "run"
+  },
+  {
+   "what": "run-copy.ts folded into session/copy.ts; BREAK_AT_S removed",
+   "why": "Run and start-copy requests; one copy file per area.",
+   "files": [
+    "web/src/session/copy.ts",
+    "web/src/session/copy.test.ts",
+    "web/src/session/constants.ts",
+    "web/src/session/SessionScreen.svelte",
+    "web/src/session/SessionScreen.dom.test.ts",
+    "web/e2e/ux-session.spec.ts"
+   ],
+   "group": "run"
+  },
+  {
+   "what": "share-save-copy.ts folded into reveal/copy.ts",
+   "why": "Share-save request.",
+   "files": [
+    "web/src/reveal/copy.ts",
+    "web/src/reveal/ShareCard.svelte",
+    "web/src/reveal/SavePanel.svelte",
+    "web/src/reveal/share-save.dom.test.ts",
+    "web/e2e/uxdec-share-save.spec.ts",
+    "web/scripts/share-card.test.ts"
+   ],
+   "group": "share-save"
+  },
+  {
+   "what": "uxdec-render-flow.ts removed; render and quant-entry specs use routes.ts intoSegment",
+   "why": "Render request: the duplicate walk existed only while routes.ts did not pass the break offer.",
+   "files": [
+    "web/e2e/ux-render.spec.ts",
+    "web/e2e/uxdec-render.spec.ts",
+    "web/e2e/uxdec-quant-entry.spec.ts",
+    "web/e2e/ux2-render.spec.ts (back to dev)"
+   ],
+   "group": "render / quant-entry"
+  },
+  {
+   "what": "Two a11y routes: welcome-returning and ready-continue",
+   "why": "Funnel and resume requests: the sweeps (axe in both schemes, 320 px, 200% text, text spacing, keyboard stops) now see the welcome row and the continue offer.",
+   "files": [
+    "web/e2e/routes.ts",
+    "web/scripts/a11y-routes.test.ts"
+   ],
+   "group": "funnel / D6"
+  },
+  {
+   "what": "Save schema and validator: confidence_untouched_n and the progress flags documented",
+   "why": "Run and resume requests.",
+   "files": [
+    "schema/save-v1.json",
+    "web/src/save/validate.ts",
+    "web/src/save/types.ts",
+    "web/src/save/schema.test.ts"
+   ],
+   "group": "run / D6"
+  },
+  {
+   "what": "Smaller request items",
+   "why": "See requests.",
+   "files": [
+    "web/src/reveal/slots.ts",
+    "web/src/reveal/Reveal.dom.test.ts",
+    "web/ux-review/personas/verify-viz.ux.ts",
+    "web/src/session/env.ts",
+    "web/src/engine/index.test.ts",
+    "web/src/viz/copy.ts",
+    "web/src/viz/facets.test.ts",
+    "web/src/tasks/family.ts",
+    "web/src/backend/copy.ts",
+    "web/package.json",
+    "web/scripts/sim-session.ts",
+    "README.md",
+    "bank README.md",
+    "bank src/hb/calib/retest_fit.py",
+    "bank tests/test_retest_fit.py"
+   ],
+   "group": "various"
+  },
+  {
+   "what": "Handoff wording",
+   "why": "funnel.json called a choice made inside the D22 provisional default a 'DECISION ON OLDER RECORDS'; it now reads 'CHOICE ON OLDER RECORDS (made by this package within the provisional default, open to the owner)'.",
+   "files": [
+    "web/ux-review/uxdec/funnel.json"
+   ],
+   "group": "handoffs"
+  }
+ ],
+ "review": {
+  "answer_keys_bank_items_paths_test_output": "none in pub: no added line names a local absolute path, item_keys data, an answer key or a service-role secret; the migrations name the item_keys table as the existing ones do. Nothing under web/test-results is tracked.",
+  "rendered_todo": "none: src/no-todo.test.ts and the privacy and honour e2e tests check it; no TODO( in the copy modules.",
+  "a13_language": "npm run lint:language: 367 files clean. The new strings (facet caption, DATA_DELETE_TEXT) are plain and describe no person.",
+  "timing": "Changes to timing code are the intended ones: D5 (clock.ts named holds; run.ts holds the clock between parts, the half-way break, capped CAT budgets), D12 (RtRenderer: the fixation cross moved in markup and CSS; the trial state machine, the rAF onset and the RT measurement are unchanged; this package's change is CSS only), and D23 (device.ts: the same measureHz on rAF and performance.now, started earlier as a RefreshProbe while the gate is shown). No Date.now() for RT anywhere in the diff.",
+  "no_total_area_or_single_score": "none added; the welcome tagline and meta description say the results are 'a profile with ranges, not ... a single score'.",
+  "provisional_vs_decision": "Code and copy call only D1, D2, D5 and D10 owner decisions (2026-10-05); every other D is marked a provisional default (HOUSE-STYLE.md says so at its top). One handoff phrase reworded (funnel.json).",
+  "d3_copy": "unchanged: no 0 SD sentence added anywhere; the only 0 SD copy that changed is the card key of D15 A ('Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.').",
+  "honour_sentence": "unchanged: HONOUR_TEXT is DESIGN §13 word for word (copy.test.ts reads it from DESIGN.md); D26 adds HONOUR_LEAD before it and D10 adds HONOUR_TOOLS after it."
+ },
+ "for_lead": [
+  "D10 wording: the owner asked for 'a reminder not to use assistive technology such as calculators or LLMs'. The start-copy package wrote 'Please do not use a calculator or an AI chatbot. Screen readers, zoom and other accessibility settings are fine to use.', because 'assistive technology' means screen readers and similar tools in accessibility; HOUSE-STYLE.md records why. Worth one line to the owner.",
+  "web/UX-REVIEW.md (out of bounds here): mark built, with their status, D21 and D27 with UX-068 and UX-083 (screen), D25 and UX-060 (names), and the D11 evidence note (reading). D3 stays open (d3-context.json explains it).",
+  "docs (out of bounds here): the packages' spec_out_of_step entries list every DESIGN and ROADMAP line now out of step (break at 30 min in §10 and M1.15, §7.4 / A15 budgets, §8 flags and file names, §7.8 sittings, §9.6 / A12 facets, §9.7 / §9.9 marks and card, §13 privacy and controller, §17.7 preamble v2 and 346 characters, §3 names). Record provisional defaults as such.",
+  "Owner questions left open by the packages: D4 facet model (facets repeat their axis until a person-by-facet variance exists); D8 version rule (the documented exception, or a quant 1.4.0 bump); D17 notes settings in a save made with the earlier saves unticked; whether M1.4b's sim/cat.ts should model the D5 budget cap; D3 (wording and the RT norm width).",
+  "dev has moved on in both repos (M6.2 to M6.4): merge or rebase, then re-run the gates. Overlapping files are listed under base.files_also_changed_on_dev.",
+  "A server variant does not offer to continue an unfinished session (D6): the server's rescore numbers tests per session, not per sitting. Recorded in resume.json; nothing to do before the server counts sittings."
+ ],
+ "gates": [
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run check",
+   "result": "pass (final run after the last edit): svelte-check 1218 files, 0 errors, 0 warnings; tsc -p tsconfig.node.json and tsc -p tsconfig.scripts.json clean (e2e specs included)",
+   "log": "web/test-results/iso/uxdec-integrate/logs/check-3.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm test (alone)",
+   "result": "baseline before integration: 277 files passed, 2 failed (1 test): scripts/contrast.test.ts (the RT fixation halo declared a colour token, --halo, that no contrast pair reads; render package, D12) and src/session/run-copy.test.ts (deleted mid-run by this package's fold). After the integration edits: 278 files passed, 1 skipped; 5008 tests passed, 7 skipped. Final run after the last edit (alone): 278 files passed, 1 skipped; 5009 tests passed, 7 skipped, 0 failed.",
+   "log": "web/test-results/iso/uxdec-integrate/logs/vitest-0.log, vitest-1.log, vitest-2.log (final)",
+   "failures": [
+    "scripts/contrast.test.ts > every colour token of src/ sits in a rule that a sheet above stands for (real: fixed in RtRenderer.svelte, the halo is written with var(--r-bg) / var(--r-surface), no token of its own)"
+   ],
+   "reruns": [
+    "npx vitest run scripts/contrast.test.ts src/render/rt: 2 files, 67 tests passed"
+   ]
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run lint:language",
+   "result": "pass: 367 files clean (also after the last edit)",
+   "log": "web/test-results/iso/uxdec-integrate/logs/lint-language.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run build -- --outDir test-results/iso/uxdec-integrate/dist-build",
+   "result": "pass (vite build; the static first-paint shell check of vite.config.ts included)",
+   "log": "web/test-results/iso/uxdec-integrate/logs/build.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run test:db",
+   "result": "first run: 19 of 20 files, 566 of 567 tests; the failure was real: scripts/db/scoring.db.test.ts 'hb.parse_entry reads every entry the way the app does' (\"0,5\" and \"1,23\": the app reads a decimal comma since D8, the server's SQL did not). Fixed with migration 20261007000200_parse_entry_decimal_comma.sql; two tests that pinned the old grammar ('3,5' is no answer / scores 0) updated in rescore.db.test.ts and session.db.test.ts. Final run: 20 files, 567 tests passed.",
+   "log": "web/test-results/iso/uxdec-integrate/logs/test-db.log, test-db-2.log, test-db-3.log, test-db-4.log",
+   "failures": [
+    "scripts/db/scoring.db.test.ts hb.parse_entry parity (real, fixed)",
+    "after the migration: rescore.db.test.ts hb.response_fits numeric keys and session.db.test.ts numeric entry pinned '3,5' as unreadable (tests of the old grammar, updated)"
+   ],
+   "reruns": [
+    "scripts/db/rescore.db.test.ts, session.db.test.ts, scoring.db.test.ts alone: 3 files, 86 tests passed",
+    "full test:db: 20 files, 567 tests passed"
+   ]
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run test:slow",
+   "result": "pass: scripts/sim-cat.slow.test.ts, 6 passed, 1 skipped (by its own condition), 327 s. Run because run.ts budgets changed (D5); src/sim/cat.ts does not import run.ts and is unchanged here, so this is the M1.4b record as before (see requests: sim/cat.ts budget cap not applied).",
+   "log": "web/test-results/iso/uxdec-integrate/logs/test-slow.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "pub",
+   "cmd": "cross-repo sync tests, pub side: npx vitest run scripts/sync-golden.test.ts scripts/ts-dumps-sync.test.ts scripts/sync-topics.test.ts scripts/language-terms.test.ts scripts/dump-families.test.ts src/tasks/quant/hints.test.ts",
+   "result": "pass: 6 files, 60 tests, none skipped (the bank worktree is the sibling checkout they read)",
+   "log": "web/test-results/iso/uxdec-integrate/logs/crossrepo-pub.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "bank",
+   "cmd": "uv run ruff check && uv run ruff format --check",
+   "result": "pass: all checks passed; 319 files already formatted",
+   "log": "(terminal)",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "bank",
+   "cmd": "uv run pytest -q -n 8",
+   "result": "pass: 6336 passed, 2 skipped (Ollama not running) in 172 s; includes tests/test_crossrepo.py against this pub worktree",
+   "log": "web/test-results/iso/uxdec-integrate/logs/bank-pytest-1.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "bank",
+   "cmd": "cross-repo sync tests, bank side: uv run pytest -q tests/test_crossrepo.py tests/gen/test_reading.py tests/gen/test_quant_entry.py tests/gen/test_registry.py -rs",
+   "result": "pass: 177 passed, none skipped (golden copies, passages, topics, quant_entry.json parity, family dumps)",
+   "log": "web/test-results/iso/uxdec-integrate/logs/crossrepo-bank.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && HB_DEV_SERVER=1 E2E_PORT=4751 E2E_DEV_PORT=4752 HB_RUN=uxdec-int-chromium npx playwright test -c ux-review/playwright.iso.config.ts --project=chromium --workers=4 (all 36 spec files, wide-font.spec.ts and the dev-server specs included)",
+   "result": "1067 tests: 973 passed, 93 skipped (the specs' own project and dev-only conditions), 1 failed. The failure was this package's: the rewritten break test called page.clock.fastForward('60:00'), which Playwright refuses (Invalid time 60:00); now '01:00:00'. New routes welcome-returning and ready-continue pass every sweep. 8.9 min.",
+   "log": "web/test-results/iso/uxdec-integrate/logs/e2e-chromium.log",
+   "failures": [
+    "e2e/session.spec.ts:571 'the break is offered at the part boundary nearest half-way ...' (real, a bad time format in the test; fixed)"
+   ],
+   "reruns": [
+    "e2e/session.spec.ts -g 'time rules' on chromium after the fix: 8 passed (logs/e2e-chromium-rerun.log)"
+   ]
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && HB_DEV_SERVER=1 E2E_PORT=4753 E2E_DEV_PORT=4754 HB_RUN=uxdec-int-webkit npx playwright test -c ux-review/playwright.iso.config.ts --project=webkit --workers=4",
+   "result": "1067 tests: 952 passed, 115 skipped (project conditions), 0 failed. 10.4 min. Run after the time-rule fix, so it includes the corrected break test.",
+   "log": "web/test-results/iso/uxdec-integrate/logs/e2e-webkit.log",
+   "failures": [],
+   "reruns": []
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && HB_DEV_SERVER=1 E2E_PORT=4755 E2E_DEV_PORT=4756 HB_RUN=uxdec-int-iphone npx playwright test -c ux-review/playwright.iso.config.ts --project=iphone --workers=4",
+   "result": "1067 tests: 866 passed, 201 skipped (desktop-only and keyboard-only tests skip on the phone), 0 failed. 8.8 min.",
+   "log": "web/test-results/iso/uxdec-integrate/logs/e2e-iphone.log",
+   "failures": [],
+   "reruns": []
+  }
+ ],
+ "commit_split": {
+  "how_to_read": "One commit per decision group, in the order below. \"pub\" and \"bank\" list the files to stage whole in that group. A file that holds hunks of several groups is listed once, in the last of its groups in this order (\"staged_whole_in\"), and again under \"shared_files\" with the groups of its hunks: \"hunks_by_group_new_line\" gives the first line (in the working-tree file) of each -U0 hunk, classified by keyword, and \"which_hunks\" says it in words where this package checked it by hand. For a commit that holds only its own hunks, stage those with git add -p; staged whole, a shared file lands in its last group and the earlier commits may not build on their own. Only the final head was gated.",
+  "order": [
+   "names",
+   "start-copy",
+   "funnel",
+   "D6",
+   "run",
+   "screen",
+   "gated",
+   "viz-blob",
+   "facets",
+   "share-save",
+   "reveal-reading",
+   "render",
+   "quant-entry",
+   "integration",
+   "handoffs"
+  ],
+  "groups": [
+   {
+    "group": "names",
+    "title": "D25 part and skill names (names); provisional default",
+    "pub": [
+     "web/e2e/flow.ts",
+     "web/e2e/parts.ts",
+     "web/e2e/server.spec.ts",
+     "web/e2e/uxdec-names.spec.ts",
+     "web/scripts/e2e-parts.test.ts",
+     "web/src/axis-names.dom.test.ts",
+     "web/src/axis-names.test.ts",
+     "web/src/axis-names.ts",
+     "web/src/reveal/norms.ts",
+     "web/src/reveal/peaks.ts",
+     "web/src/session/Checklist.svelte",
+     "web/src/session/SessionApp.coverage.dom.test.ts",
+     "web/src/session/SessionApp.flow.dom.test.ts",
+     "web/src/viz/BarTable.svelte",
+     "web/src/viz/profile.test.ts",
+     "web/src/viz/profile.ts",
+     "web/ux-review/lib/journey.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "start-copy",
+    "title": "D1 privacy notice, D10 tools rule (owner decisions 2026-10-05); D20 sight note, D26 house style (provisional defaults) (start-copy)",
+    "pub": [
+     "web/HOUSE-STYLE.md",
+     "web/e2e/smoke.spec.ts",
+     "web/index.html",
+     "web/src/App.dom.test.ts",
+     "web/src/App.served.dom.test.ts",
+     "web/src/backend/copy.ts",
+     "web/src/copy.test.ts",
+     "web/src/copy.ts",
+     "web/src/no-todo.test.ts",
+     "web/src/session/Honour.svelte",
+     "web/src/session/Privacy.svelte",
+     "web/src/session/segments.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "funnel",
+    "title": "D22 welcome row, D23 early refresh probe, D24 under-18 way back (funnel); provisional defaults",
+    "pub": [
+     "web/e2e/uxdec-funnel.spec.ts",
+     "web/src/session/ConsentGate.svelte",
+     "web/src/session/DeviceCheck.dom.test.ts",
+     "web/src/session/DeviceCheck.svelte",
+     "web/src/session/SessionApp.dom.test.ts",
+     "web/src/session/Welcome.svelte",
+     "web/src/session/device.test.ts",
+     "web/src/session/device.ts",
+     "web/src/session/env.ts",
+     "web/src/session/gate.test.ts",
+     "web/src/session/gate.ts",
+     "web/src/session/returning.test.ts",
+     "web/src/session/returning.ts",
+     "web/src/test-support/ResultsStub.svelte"
+    ],
+    "bank": []
+   },
+   {
+    "group": "D6",
+    "title": "D6 continue an unfinished session: retest model by sittings (engine-retest) and the flow (resume); provisional default",
+    "pub": [
+     "web/e2e/uxdec-resume.spec.ts",
+     "web/scripts/a11y-routes.test.ts",
+     "web/src/engine/__fixtures__/retest_v1.json",
+     "web/src/engine/index.test.ts",
+     "web/src/engine/retest.test.ts",
+     "web/src/engine/retest.ts",
+     "web/src/reveal/results.test.ts",
+     "web/src/reveal/results.ts",
+     "web/src/save/rescore.test.ts",
+     "web/src/save/rescore.ts",
+     "web/src/save/sittings.test.ts",
+     "web/src/save/sittings.ts",
+     "web/src/session/Ready.dom.test.ts",
+     "web/src/session/SessionApp.resume.dom.test.ts",
+     "web/src/session/SessionApp.svelte",
+     "web/src/session/resume.test.ts",
+     "web/src/session/resume.ts"
+    ],
+    "bank": [
+     "golden/retest_v1.json",
+     "src/hb/calib/golden.py",
+     "src/hb/calib/rescore.py",
+     "src/hb/calib/retest.py",
+     "src/hb/calib/retest_fit.py",
+     "tests/test_rescore.py",
+     "tests/test_retest.py",
+     "tests/test_retest_fit.py"
+    ]
+   },
+   {
+    "group": "run",
+    "title": "D5 session clock, break and part budgets (owner decision 2026-10-05); D7 untouched slider (provisional default) (run)",
+    "pub": [
+     "schema/save-v1.json",
+     "web/e2e/routes.ts",
+     "web/e2e/session-driver.ts",
+     "web/e2e/session.spec.ts",
+     "web/e2e/ux2-session.spec.ts",
+     "web/package.json",
+     "web/scripts/sim-session.test.ts",
+     "web/scripts/sim-session.ts",
+     "web/src/save/schema.test.ts",
+     "web/src/save/types.ts",
+     "web/src/save/validate.ts",
+     "web/src/session/Confidence.svelte",
+     "web/src/session/SessionApp.served.dom.test.ts",
+     "web/src/session/bot.ts",
+     "web/src/session/clock.test.ts",
+     "web/src/session/clock.ts",
+     "web/src/session/components.dom.test.ts",
+     "web/src/session/constants.ts",
+     "web/src/session/copy.test.ts",
+     "web/src/session/copy.ts",
+     "web/src/session/run.served.test.ts",
+     "web/src/session/run.test.ts",
+     "web/src/session/run.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "screen",
+    "title": "D21 focus on a later question, D27 one primary button (screen); provisional defaults",
+    "pub": [
+     "web/e2e/keyboard-session.spec.ts",
+     "web/e2e/keyboard.ts",
+     "web/e2e/ux-session.spec.ts",
+     "web/e2e/uxdec-screen.spec.ts",
+     "web/src/brief/ui/ResultsTalk.svelte",
+     "web/src/reveal/FocusPicker.dom.test.ts",
+     "web/src/reveal/FocusPicker.svelte",
+     "web/src/session/ConfirmPanel.dom.test.ts",
+     "web/src/session/ConfirmPanel.svelte",
+     "web/src/session/Ready.svelte",
+     "web/src/session/Screen.dom.test.ts",
+     "web/src/session/Screen.svelte",
+     "web/src/session/SessionScreen.dom.test.ts",
+     "web/src/session/SessionScreen.svelte",
+     "web/src/session/question-focus.test.ts",
+     "web/src/session/question-focus.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "gated",
+    "title": "D2 overlap sentence, results-talk preamble v2 (owner decision 2026-10-05); D18 (provisional default) (gated)",
+    "pub": [
+     "web/e2e/reveal-ai.spec.ts",
+     "web/scripts/dump-briefs.test.ts",
+     "web/src/brief/ResultsTalk.dom.test.ts",
+     "web/src/brief/__fixtures__/wording-pins.json",
+     "web/src/brief/brief-gates.json",
+     "web/src/brief/results-talk.test.ts",
+     "web/src/brief/results-talk.ts",
+     "web/src/reveal/slots.ts",
+     "web/ux-review/personas/verify-viz.ux.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "viz-blob",
+    "title": "D13 gaps at not-measured spokes, D14 label floor, D15 A card marks (viz-blob); provisional defaults",
+    "pub": [
+     "web/e2e/blob.spec.ts",
+     "web/e2e/uxdec-viz.spec.ts",
+     "web/src/viz/BlobChart.dom.test.ts",
+     "web/src/viz/BlobChart.svelte",
+     "web/src/viz/blob.ts",
+     "web/src/viz/card-copy.ts",
+     "web/src/viz/card.dom.test.ts",
+     "web/src/viz/card.test.ts",
+     "web/src/viz/card.ts",
+     "web/src/viz/curve.test.ts",
+     "web/src/viz/curve.ts",
+     "web/src/viz/geometry.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "facets",
+    "title": "D4 leave-facet-out prior and quant topic groups, client and server (facets); provisional default",
+    "pub": [
+     "supabase/migrations/20261007000100_rescore_facets.sql",
+     "web/scripts/db/facets.test.ts",
+     "web/src/viz/ProfileView.ux.dom.test.ts",
+     "web/src/viz/blob.test.ts",
+     "web/src/viz/copy.ts",
+     "web/src/viz/facets-groups.test.ts",
+     "web/src/viz/facets-prior.test.ts",
+     "web/src/viz/facets.test.ts",
+     "web/src/viz/facets.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "share-save",
+    "title": "D15 C share sheet first, D17 notes settings in the results save, D19 local-date file names (share-save); provisional defaults",
+    "pub": [
+     "web/e2e/session-save.spec.ts",
+     "web/e2e/share-card.spec.ts",
+     "web/e2e/uxdec-share-save.spec.ts",
+     "web/scripts/share-card.test.ts",
+     "web/src/reveal/SavePanel.svelte",
+     "web/src/reveal/ShareCard.dom.test.ts",
+     "web/src/reveal/ShareCard.svelte",
+     "web/src/reveal/share-save.dom.test.ts",
+     "web/src/save/brief-prefs.test.ts",
+     "web/src/save/brief-prefs.ts",
+     "web/src/save/io.dom.test.ts",
+     "web/src/save/io.ts",
+     "web/src/save/local-date.test.ts",
+     "web/src/viz/export.dom.test.ts",
+     "web/src/viz/export.test.ts",
+     "web/src/viz/export.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "reveal-reading",
+    "title": "D16 compact top of the results, D11 B first-language note (reveal) with D11 A display paragraphs (reading); provisional defaults",
+    "pub": [
+     "web/e2e/reveal.spec.ts",
+     "web/e2e/ux-reveal.spec.ts",
+     "web/e2e/uxdec-reading.spec.ts",
+     "web/e2e/uxdec-reveal.spec.ts",
+     "web/e2e/uxdec-reveal.ts",
+     "web/src/render/reading/ReadingRenderer.svelte",
+     "web/src/render/reading/__snapshots__/reading.dom.test.ts.snap",
+     "web/src/render/reading/reading.dom.test.ts",
+     "web/src/render/reading/split.test.ts",
+     "web/src/render/reading/split.ts",
+     "web/src/reveal/Reveal.dom.test.ts",
+     "web/src/reveal/Reveal.svelte",
+     "web/src/reveal/RevealProfile.svelte",
+     "web/src/reveal/copy.test.ts",
+     "web/src/reveal/copy.ts",
+     "web/src/reveal/reveal.css",
+     "web/src/session/Finished.dom.test.ts",
+     "web/src/session/Finished.svelte",
+     "web/src/viz/ProfileView.dom.test.ts",
+     "web/src/viz/ProfileView.svelte"
+    ],
+    "bank": []
+   },
+   {
+    "group": "render",
+    "title": "D9 coding keypad, D12 fixation cross (markup and style only), D28 rotation stem (render); provisional defaults",
+    "pub": [
+     "web/e2e/ux-render.spec.ts",
+     "web/e2e/uxdec-render.spec.ts",
+     "web/src/render/coding/CodingRenderer.svelte",
+     "web/src/render/coding/__snapshots__/coding.dom.test.ts.snap",
+     "web/src/render/coding/coding.dom.test.ts",
+     "web/src/render/common/Keypad.svelte",
+     "web/src/render/rotation/__snapshots__/RotationRenderer.dom.test.ts.snap",
+     "web/src/render/rotation/copy.ts",
+     "web/src/render/rt/RtRenderer.svelte",
+     "web/src/render/rt/__snapshots__/rt.dom.test.ts.snap",
+     "web/src/render/rt/rt.dom.test.ts",
+     "web/src/render/span/span.dom.test.ts",
+     "web/src/tasks/rotation/index.ts"
+    ],
+    "bank": []
+   },
+   {
+    "group": "quant-entry",
+    "title": "D8 decimal comma and whole-number hints, app, bank and server (quant-entry); provisional default",
+    "pub": [
+     "README.md",
+     "supabase/README.md",
+     "supabase/migrations/20261007000200_parse_entry_decimal_comma.sql",
+     "web/e2e/uxdec-quant-entry.spec.ts",
+     "web/scripts/bundle.test.ts",
+     "web/scripts/db/migrations.test.ts",
+     "web/scripts/db/rescore.db.test.ts",
+     "web/scripts/db/scoring.db.test.ts",
+     "web/scripts/db/session.db.test.ts",
+     "web/scripts/ts-dumps-sync.test.ts",
+     "web/src/render/common/NumericEntry.svelte",
+     "web/src/render/common/entry-copy.ts",
+     "web/src/render/quant/QuantRenderer.svelte",
+     "web/src/render/quant/__snapshots__/quant.dom.test.ts.snap",
+     "web/src/render/quant/entry-grammar.dom.test.ts",
+     "web/src/render/quant/quant.dom.test.ts",
+     "web/src/render/series/SeriesRenderer.svelte",
+     "web/src/tasks/family.ts",
+     "web/src/tasks/quant/entry-vectors.ts",
+     "web/src/tasks/quant/hints.test.ts",
+     "web/src/tasks/quant/numeric.test.ts",
+     "web/src/tasks/quant/numeric.ts",
+     "web/src/tasks/quant/templates.ts"
+    ],
+    "bank": [
+     "README.md",
+     "golden/ts_dumps/quant.json",
+     "golden/ts_dumps/quant_entry.json",
+     "src/hb/gen/quant/entry.py",
+     "src/hb/gen/quant/spec.py",
+     "tests/gen/test_quant.py",
+     "tests/gen/test_quant_entry.py"
+    ]
+   },
+   {
+    "group": "integration",
+    "title": "Integration fixes",
+    "pub": [],
+    "bank": []
+   },
+   {
+    "group": "handoffs",
+    "title": "The uxdec handoff JSONs (web/ux-review/uxdec/)",
+    "pub": [
+     "web/ux-review/uxdec/d3-context.json",
+     "web/ux-review/uxdec/engine-retest.json",
+     "web/ux-review/uxdec/facets.json",
+     "web/ux-review/uxdec/funnel.json",
+     "web/ux-review/uxdec/gated.json",
+     "web/ux-review/uxdec/integrate.json",
+     "web/ux-review/uxdec/names.json",
+     "web/ux-review/uxdec/quant-entry.json",
+     "web/ux-review/uxdec/reading.json",
+     "web/ux-review/uxdec/render.json",
+     "web/ux-review/uxdec/resume.json",
+     "web/ux-review/uxdec/reveal.json",
+     "web/ux-review/uxdec/run.json",
+     "web/ux-review/uxdec/screen.json",
+     "web/ux-review/uxdec/share-save.json",
+     "web/ux-review/uxdec/start-copy.json",
+     "web/ux-review/uxdec/viz-blob.json"
+    ],
+    "bank": []
+   }
+  ],
+  "shared_files": [
+   {
+    "repo": "bank",
+    "file": "README.md",
+    "groups": [
+     "D6",
+     "reveal-reading",
+     "quant-entry"
+    ],
+    "staged_whole_in": "quant-entry",
+    "hunks_by_group_new_line": {
+     "reveal-reading": [
+      103,
+      142
+     ],
+     "quant-entry": [
+      372
+     ]
+    },
+    "which_hunks": "bank README: D6 (retest paragraph: test numbers count sittings, this package); reveal-reading (the new section \"Reading passages (A14)\", reading package); quant-entry (quant_entry.json in the ts_dumps parity list, this package)."
+   },
+   {
+    "repo": "pub",
+    "file": "schema/save-v1.json",
+    "groups": [
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      116,
+      122,
+      128
+     ]
+    },
+    "which_hunks": "D6: the continuation sentence of the flags description (engine-retest) and the done_<part>/completed/focus_session sentence (this package, resume request); run: confidence_untouched_n (property and description) and the confidence_pct null sentence of the response description (this package, run request). The flags description is one line holding both."
+   },
+   {
+    "repo": "pub",
+    "file": "supabase/README.md",
+    "groups": [
+     "facets",
+     "quant-entry"
+    ],
+    "staged_whole_in": "quant-entry",
+    "hunks_by_group_new_line": {
+     "quant-entry": [
+      319
+     ],
+     "facets": [
+      426,
+      451
+     ]
+    },
+    "which_hunks": "facets: the 20261007000100_rescore_facets row, the rescore facet paragraph and the min_facet_items row; quant-entry: the 20261007000200_parse_entry_decimal_comma row (this package). The table hunk (+319) holds both rows."
+   },
+   {
+    "repo": "pub",
+    "file": "web/HOUSE-STYLE.md",
+    "groups": [
+     "names",
+     "start-copy"
+    ],
+    "staged_whole_in": "start-copy",
+    "which_hunks": "new file: start-copy wrote it (D26); names added the \"Part and skill names\" bullet under Fixed points."
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/keyboard-session.spec.ts",
+    "groups": [
+     "names",
+     "screen"
+    ],
+    "staged_whole_in": "screen",
+    "hunks_by_group_new_line": {
+     "screen": [
+      23,
+      47,
+      84,
+      98,
+      187,
+      235,
+      250,
+      581
+     ],
+     "names": [
+      287,
+      501
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/routes.ts",
+    "groups": [
+     "names",
+     "funnel",
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "D6": [
+      24,
+      386
+     ],
+     "names": [
+      99
+     ],
+     "run": [
+      129,
+      140,
+      146,
+      287,
+      632,
+      634,
+      640,
+      642
+     ]
+    },
+    "which_hunks": "names: SEGMENT_TITLES \"Reaction Time\"; run: toInterstitial declines the break offer, toBreakOffer, break-offer and on-break routes (written by the names package for D5); funnel: route welcome-returning; D6: route ready-continue (both added by this package); imports at +24 serve funnel and D6."
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/session-driver.ts",
+    "groups": [
+     "names",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      54,
+      72,
+      77,
+      129,
+      138,
+      210,
+      221
+     ],
+     "names": [
+      126,
+      313
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/session-save.spec.ts",
+    "groups": [
+     "run",
+     "share-save"
+    ],
+    "staged_whole_in": "share-save",
+    "hunks_by_group_new_line": {
+     "run": [
+      306
+     ],
+     "share-save": [
+      651
+     ]
+    },
+    "which_hunks": "run: breakOffers 1 and breakBefore Working Memory in the whole-session test (this package); share-save: the D17 notes-settings assertion (+651)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/session.spec.ts",
+    "groups": [
+     "names",
+     "start-copy",
+     "funnel",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      4,
+      7,
+      18,
+      235,
+      562,
+      573,
+      575,
+      581,
+      584,
+      587,
+      590,
+      592,
+      595,
+      602,
+      606,
+      608,
+      653,
+      659,
+      663,
+      665,
+      716,
+      773,
+      793,
+      801
+     ],
+     "names": [
+      63,
+      383,
+      528,
+      711,
+      826
+     ],
+     "funnel": [
+      191
+     ],
+     "start-copy": [
+      242,
+      273
+     ]
+    },
+    "which_hunks": "names: \"Reaction Time\" literals; start-copy: privacy and honour tests (D1, D10, D26); funnel: the under-18 screen has one button (D24); run: file comment, BREAK_OFFER_TEXT import and the time-rule tests rewritten by this package for D5 (break before Working Memory, offered once, never mid-part, QR floor without budget, ring after Start, WebGL skip passes the offer, ?fast=1 after Start)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/ux-render.spec.ts",
+    "groups": [
+     "names",
+     "render"
+    ],
+    "staged_whole_in": "render",
+    "hunks_by_group_new_line": {
+     "render": [
+      88,
+      95
+     ],
+     "names": [
+      116,
+      127
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/ux-reveal.spec.ts",
+    "groups": [
+     "share-save",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "share-save": [
+      269
+     ],
+     "reveal-reading": [
+      400
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/ux-session.spec.ts",
+    "groups": [
+     "names",
+     "run",
+     "screen"
+    ],
+    "staged_whole_in": "screen",
+    "hunks_by_group_new_line": {
+     "run": [
+      13,
+      753,
+      757
+     ],
+     "names": [
+      24,
+      272,
+      300,
+      524,
+      594
+     ],
+     "screen": [
+      94,
+      764
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/ux2-session.spec.ts",
+    "groups": [
+     "names",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "names": [
+      94,
+      199,
+      260
+     ],
+     "run": [
+      401
+     ]
+    },
+    "which_hunks": "names: \"Reaction Time\" literals; run: Skip Spatial meets the break offer first (this package, D5)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/e2e/uxdec-screen.spec.ts",
+    "groups": [
+     "names",
+     "screen"
+    ],
+    "staged_whole_in": "screen",
+    "which_hunks": "new file of the screen package; names changed one literal (\"Up next: Reaction Time\")."
+   },
+   {
+    "repo": "pub",
+    "file": "web/scripts/a11y-routes.test.ts",
+    "groups": [
+     "funnel",
+     "D6"
+    ],
+    "staged_whole_in": "D6",
+    "hunks_by_group_new_line": {
+     "funnel": [
+      119
+     ],
+     "D6": [
+      125
+     ]
+    },
+    "which_hunks": "funnel: welcome-returning in STATES; D6: ready-continue in STATES (both added by this package)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/scripts/db/migrations.test.ts",
+    "groups": [
+     "facets",
+     "quant-entry"
+    ],
+    "staged_whole_in": "quant-entry",
+    "hunks_by_group_new_line": {
+     "quant-entry": [
+      56,
+      147
+     ]
+    },
+    "which_hunks": "facets: list entry 20261007000100_rescore_facets.sql and the readers comment; quant-entry: list entry 20261007000200_parse_entry_decimal_comma.sql and the describe \"the decimal comma in hb.parse_entry\" (this package). The list hunk (+56) holds both entries."
+   },
+   {
+    "repo": "pub",
+    "file": "web/scripts/db/rescore.db.test.ts",
+    "groups": [
+     "facets",
+     "quant-entry"
+    ],
+    "staged_whole_in": "quant-entry",
+    "hunks_by_group_new_line": {
+     "quant-entry": [
+      4,
+      16,
+      184,
+      188,
+      202,
+      986
+     ],
+     "facets": [
+      20,
+      136,
+      175,
+      192,
+      998
+     ]
+    },
+    "which_hunks": "facets: the parity reference with the leave-facet-out prior and the D4 describe; quant-entry: the response_fits numeric-keys cases (+986, a decimal comma is an answer; this package)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/backend/copy.ts",
+    "groups": [
+     "names",
+     "start-copy"
+    ],
+    "staged_whole_in": "start-copy",
+    "hunks_by_group_new_line": {
+     "start-copy": [
+      8,
+      166,
+      168,
+      193,
+      202,
+      204,
+      239
+     ],
+     "names": [
+      217
+     ]
+    },
+    "which_hunks": "start-copy: the module comment, the server privacy sections (D1) and DATA_DELETE_TEXT (aligned with them by this package); names: the two sentences that name parts in Title Case (+217)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/brief/ResultsTalk.dom.test.ts",
+    "groups": [
+     "screen",
+     "gated"
+    ],
+    "staged_whole_in": "gated",
+    "hunks_by_group_new_line": {
+     "gated": [
+      43,
+      104
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/reveal/Reveal.dom.test.ts",
+    "groups": [
+     "gated",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "reveal-reading": [
+      111,
+      116,
+      409,
+      415,
+      849,
+      909
+     ],
+     "gated": [
+      148,
+      556,
+      558
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/reveal/ShareCard.dom.test.ts",
+    "groups": [
+     "names",
+     "share-save"
+    ],
+    "staged_whole_in": "share-save",
+    "hunks_by_group_new_line": {
+     "names": [
+      11,
+      106,
+      155
+     ],
+     "share-save": [
+      13,
+      337,
+      346,
+      646
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/reveal/copy.test.ts",
+    "groups": [
+     "gated",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "gated": [
+      59
+     ],
+     "reveal-reading": [
+      103,
+      107
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/reveal/copy.ts",
+    "groups": [
+     "gated",
+     "share-save",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "reveal-reading": [
+      23,
+      177,
+      188
+     ],
+     "gated": [
+      37
+     ],
+     "share-save": [
+      56,
+      116
+     ]
+    },
+    "which_hunks": "gated: PEAKS_NONE (D2); reveal-reading: practice-adjusted note, SPACING_TEXT, reading line (D16, D11 B); share-save: SAVE_HOLDS_NOTES and SHARE_SAVE_COPY (folded here from the deleted share-save-copy.ts by this package)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/save/types.ts",
+    "groups": [
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      55
+     ],
+     "D6": [
+      71
+     ]
+    },
+    "which_hunks": "D6: CONTINUATION_FLAG (engine-retest); run: the SessionFlags comment names confidence_untouched_n (this package)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/Finished.dom.test.ts",
+    "groups": [
+     "D6",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "reveal-reading": [
+      138,
+      141
+     ],
+     "D6": [
+      162
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/Finished.svelte",
+    "groups": [
+     "D6",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "D6": [
+      10,
+      25,
+      104,
+      136,
+      145,
+      148
+     ],
+     "reveal-reading": [
+      140
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/Ready.dom.test.ts",
+    "groups": [
+     "names",
+     "D6"
+    ],
+    "staged_whole_in": "D6",
+    "hunks_by_group_new_line": {
+     "D6": [
+      10,
+      337
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/Ready.svelte",
+    "groups": [
+     "D6",
+     "screen"
+    ],
+    "staged_whole_in": "screen",
+    "hunks_by_group_new_line": {
+     "screen": [
+      17,
+      45,
+      94,
+      218,
+      267
+     ],
+     "D6": [
+      38,
+      43,
+      48,
+      64,
+      88,
+      114,
+      179,
+      210,
+      249,
+      263,
+      281,
+      300
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/SessionApp.dom.test.ts",
+    "groups": [
+     "names",
+     "funnel"
+    ],
+    "staged_whole_in": "funnel",
+    "hunks_by_group_new_line": {
+     "funnel": [
+      2,
+      6,
+      14,
+      25,
+      31,
+      38,
+      40,
+      103,
+      289
+     ],
+     "names": [
+      224,
+      252,
+      274
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/SessionApp.served.dom.test.ts",
+    "groups": [
+     "names",
+     "start-copy",
+     "funnel",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "start-copy": [
+      21
+     ],
+     "names": [
+      102,
+      174,
+      204
+     ],
+     "run": [
+      132,
+      139,
+      238,
+      389
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/SessionApp.svelte",
+    "groups": [
+     "funnel",
+     "D6"
+    ],
+    "staged_whole_in": "D6",
+    "hunks_by_group_new_line": {
+     "D6": [
+      10,
+      37,
+      71,
+      126,
+      267,
+      316,
+      350,
+      355,
+      368,
+      444,
+      520,
+      540
+     ],
+     "funnel": [
+      62,
+      113,
+      169,
+      218,
+      235,
+      238,
+      269,
+      278,
+      283,
+      292,
+      441,
+      452,
+      516,
+      525,
+      527,
+      531
+     ]
+    },
+    "which_hunks": "funnel: welcome row (returning, refreshReturning, seeResults, afterGate), refresh probe (startProbe/dropProbe/onDestroy), mistake(); D6: askedConsent, unfinished derivation, continueRun, launch(..., continues), continuationStartMs, the Ready prop. Hunks at +10 and +71 (module comment, imports) carry both."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/SessionScreen.dom.test.ts",
+    "groups": [
+     "names",
+     "run",
+     "screen"
+    ],
+    "staged_whole_in": "screen",
+    "hunks_by_group_new_line": {
+     "screen": [
+      2,
+      252,
+      474,
+      500,
+      505
+     ],
+     "run": [
+      8,
+      96,
+      246,
+      250,
+      255,
+      270,
+      290,
+      322,
+      489,
+      497
+     ],
+     "names": [
+      44,
+      51
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/SessionScreen.svelte",
+    "groups": [
+     "run",
+     "screen"
+    ],
+    "staged_whole_in": "screen",
+    "hunks_by_group_new_line": {
+     "run": [
+      4,
+      50,
+      245
+     ],
+     "screen": [
+      14,
+      68,
+      93,
+      149,
+      156,
+      241,
+      264,
+      274,
+      290,
+      296,
+      322,
+      325,
+      415
+     ]
+    },
+    "which_hunks": "run: INTERSTITIAL_CLOCK note, clock-held module comment; screen: D21 question region and focus plan, D27 Keep going primary in the Skip and Finish panels."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/bot.ts",
+    "groups": [
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      38,
+      47,
+      113,
+      139,
+      149
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/components.dom.test.ts",
+    "groups": [
+     "names",
+     "start-copy",
+     "funnel",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      13,
+      17,
+      197,
+      507,
+      517,
+      546
+     ],
+     "names": [
+      144
+     ],
+     "start-copy": [
+      510,
+      514
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/constants.ts",
+    "groups": [
+     "start-copy",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      7,
+      14,
+      21
+     ],
+     "start-copy": [
+      16,
+      24
+     ]
+    },
+    "which_hunks": "start-copy: TERMS_VERSION and TERMS_VERSION_SERVER bumps; run: BREAK_AT_S removed (unused since D5)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/copy.test.ts",
+    "groups": [
+     "start-copy",
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      21,
+      28,
+      105,
+      108,
+      189
+     ],
+     "D6": [
+      159
+     ],
+     "start-copy": [
+      203
+     ]
+    },
+    "which_hunks": "start-copy: the privacy, honour, welcome and interstitial (D10, D20) pins; run: the BREAK_OFFER_TEXT and INTERSTITIAL_CLOCK pins (moved here from the deleted run-copy.test.ts); D6: the READY_CONTINUE / continueLine pin."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/copy.ts",
+    "groups": [
+     "start-copy",
+     "funnel",
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "start-copy": [
+      13,
+      57,
+      303,
+      311,
+      313,
+      335
+     ],
+     "run": [
+      21,
+      24,
+      115,
+      162,
+      240,
+      328
+     ],
+     "funnel": [
+      49
+     ],
+     "D6": [
+      113
+     ]
+    },
+    "which_hunks": "start-copy: WELCOME_TAGLINE/INTRO, HONOUR_LEAD/HONOUR_TOOLS, PRIVACY_SECTIONS and its doc comment; funnel: WELCOME_RETURNING_LABEL, WELCOME_NOTES, BLOCKED_MISTAKE; D6: the addedToLine comment, READY_CONTINUE, continueLine; run: INTERSTITIAL_CLOCK (after aboutMinutes) and the new BREAK_OFFER_TEXT (folded here from the deleted run-copy.ts by this package)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/run.test.ts",
+    "groups": [
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      3,
+      5,
+      12,
+      74,
+      108,
+      145,
+      147,
+      166,
+      221,
+      253,
+      383,
+      389,
+      420,
+      446,
+      481,
+      582,
+      586,
+      589,
+      593,
+      604,
+      608,
+      617,
+      621,
+      627,
+      630,
+      632,
+      666,
+      682,
+      903,
+      1109,
+      1229,
+      1242,
+      1248,
+      1250,
+      1253,
+      1255,
+      1352
+     ],
+     "D6": [
+      15
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/run.ts",
+    "groups": [
+     "D6",
+     "run"
+    ],
+    "staged_whole_in": "run",
+    "hunks_by_group_new_line": {
+     "run": [
+      22,
+      38,
+      120,
+      126,
+      144,
+      217,
+      219,
+      278,
+      320,
+      332,
+      429,
+      450,
+      469,
+      493,
+      504,
+      536,
+      538,
+      668,
+      708,
+      710,
+      729,
+      754,
+      760,
+      798,
+      809,
+      811,
+      898,
+      936,
+      1061,
+      1072,
+      1295,
+      1362,
+      1387,
+      1445
+     ],
+     "D6": [
+      68,
+      268,
+      506,
+      740,
+      778,
+      940,
+      1292,
+      1305,
+      1365,
+      1382
+     ]
+    },
+    "which_hunks": "run: clock holds, half-way break, capped budgets, untouched slider; D6: continuation (RunConfig.continues, done_<part>/completed/focus_session flags, #nextLive over done parts, serverFlags leaving progress flags out). Hunks +493 to +538 (constructor) mix both."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/session/segments.ts",
+    "groups": [
+     "names",
+     "start-copy"
+    ],
+    "staged_whole_in": "start-copy",
+    "hunks_by_group_new_line": {
+     "names": [
+      3,
+      9,
+      28,
+      35,
+      50,
+      52
+     ],
+     "start-copy": [
+      12,
+      31,
+      41
+     ]
+    },
+    "which_hunks": "names: titles from axisName, skipTargetName, info() signature, module comment; start-copy: the blurbs (D10 Quantitative tools sentence, D20 needsSight for Reaction Time and Spatial) and the INTERSTITIAL_SKIP import."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/ProfileView.dom.test.ts",
+    "groups": [
+     "viz-blob",
+     "facets",
+     "reveal-reading"
+    ],
+    "staged_whole_in": "reveal-reading",
+    "hunks_by_group_new_line": {
+     "viz-blob": [
+      102
+     ],
+     "facets": [
+      286,
+      288,
+      297
+     ],
+     "reveal-reading": [
+      299,
+      343
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/blob.test.ts",
+    "groups": [
+     "viz-blob",
+     "facets"
+    ],
+    "staged_whole_in": "facets",
+    "hunks_by_group_new_line": {
+     "viz-blob": [
+      17,
+      27,
+      127,
+      136,
+      140,
+      152,
+      214,
+      253,
+      314,
+      353,
+      393,
+      402,
+      548,
+      618
+     ],
+     "facets": [
+      46,
+      64,
+      73,
+      77,
+      238,
+      309,
+      311,
+      317,
+      356,
+      360,
+      405,
+      409,
+      553,
+      612
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/card-copy.ts",
+    "groups": [
+     "gated",
+     "viz-blob"
+    ],
+    "staged_whole_in": "viz-blob",
+    "hunks_by_group_new_line": {
+     "gated": [
+      33
+     ],
+     "viz-blob": [
+      37,
+      42
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/card.test.ts",
+    "groups": [
+     "names",
+     "gated",
+     "viz-blob"
+    ],
+    "staged_whole_in": "viz-blob",
+    "hunks_by_group_new_line": {
+     "names": [
+      12,
+      200,
+      323,
+      350,
+      411
+     ],
+     "viz-blob": [
+      31,
+      47,
+      409,
+      413,
+      638,
+      644,
+      676,
+      681,
+      715
+     ],
+     "gated": [
+      364,
+      669
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/card.ts",
+    "groups": [
+     "names",
+     "viz-blob"
+    ],
+    "staged_whole_in": "viz-blob",
+    "hunks_by_group_new_line": {
+     "viz-blob": [
+      28,
+      51,
+      136,
+      229,
+      233,
+      235,
+      240,
+      243,
+      250,
+      275,
+      298,
+      338,
+      345,
+      382,
+      390,
+      393,
+      407,
+      458,
+      463
+     ],
+     "names": [
+      45,
+      130,
+      149,
+      186,
+      188
+     ]
+    }
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/copy.ts",
+    "groups": [
+     "viz-blob",
+     "facets"
+    ],
+    "staged_whole_in": "facets",
+    "hunks_by_group_new_line": {
+     "viz-blob": [
+      35
+     ],
+     "facets": [
+      121,
+      127
+     ]
+    },
+    "which_hunks": "viz-blob: D13 stub list / gap copy (+35); facets: facetCaption sentence (this package, D4)."
+   },
+   {
+    "repo": "pub",
+    "file": "web/src/viz/facets.ts",
+    "groups": [
+     "names",
+     "facets"
+    ],
+    "staged_whole_in": "facets",
+    "hunks_by_group_new_line": {
+     "facets": [
+      3,
+      5,
+      9,
+      59,
+      84,
+      96,
+      130,
+      141,
+      163,
+      191,
+      252,
+      263,
+      270,
+      298
+     ],
+     "names": [
+      54,
+      275
+     ]
+    }
+   }
+  ],
+  "together": [
+   "D6 in one commit per repo, landed together: bank golden/retest_v1.json and pub web/src/engine/__fixtures__/retest_v1.json are byte copies (tests/test_crossrepo.py, scripts/sync-golden.test.ts).",
+   "D8 in one commit per repo, landed together: bank golden/ts_dumps/quant.json (spec.hint only) and the new golden/ts_dumps/quant_entry.json go with the pub generator and entry-vectors.ts, or ts-dumps-sync.test.ts and the bank's hint and entry parity checks fail on a mismatched pair. The server migration 20261007000200 goes with them (scoring.db.test.ts compares it with the app's parseEntry).",
+   "The deleted helper files of this branch (web/src/session/run-copy.ts and run-copy.test.ts, web/src/reveal/share-save-copy.ts, web/e2e/uxdec-render-flow.ts) were never committed: nothing to remove.",
+   "integration: empty. Every integration change completes one group's work and is listed under that group (and in \"changes\" below). Kept as a group name only so the lead can move items into it."
+  ]
+ }
+}

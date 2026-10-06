@@ -1,0 +1,390 @@
+{
+ "package": "facets",
+ "decisions": [
+  {
+   "id": "D4",
+   "status": "provisional-default",
+   "option": "A: leave-facet-out facet prior; Quantitative facets are the six QUANT_GROUPS topics (option B, hide/caption, not done)",
+   "what_changed": "Client (web/src/viz/facets.ts). (1) A facet's prior is now the axis posterior WITHOUT that facet's own observations, and its items are added once (eapAxis on the facet items, as before, with the new prior). The facet's information is taken out of the posterior the blob shows with a Laplace cavity (new export leaveOutPrior): 1/v = 1/cov_kk - I_f(theta_k) and m = theta_k - v * s_f(theta_k), with I_f the expected information and s_f the score of the facet's items at the MAP. In the scorer's Laplace Gaussian, taking I_f off axis k changes P_kk only, so the marginal precision drops by exactly I_f (Schur complement); the mean is one Newton step of the leave-out log posterior. It is exact for Gaussian terms (tested against an exact re-score with mapTheta) and the leave-out of the scorer's own Laplace approximation for 2PL/3PL/GRM/testlet. An exact re-score was not used because the page does not hold everything the posterior holds (the per-session CAL observation, server-scored answers, server-overlaid axes); the cavity works on exactly what the blob shows. A facet that holds every observation of its axis shows the axis estimate itself (theta_k, sqrt(cov_kk)). If inputs do not agree (a cavity less precise than the population prior N(0, Sigma_kk)), the population prior is used. FACET_MIN_ITEMS (5), the block-count rule and the precomputed (server) path are unchanged. (2) New export drillFacet(axis, facet): on QR a quant template maps to its topic group (quantGroupOfTemplate, tasks/quant/topics.ts; unchanged), used for observations, the catalog and precomputed keys, so counting, estimation and labels go by group; QR facets are listed in QUANT_GROUPS display order. FACET_LABELS gains the six group ids with the groups' own labels. A precomputed reply keyed by template (older server) maps a lone template to its group; two templates of one group give no server estimate (cannot be combined). Facet chart labels longer than 22 characters (FACET_LINE_CHARS, the longest single-facet label) are drawn on two lines, split at the space nearest the middle, same words (facetLabelLines). Server (new migration supabase/migrations/20261007000100_rescore_facets.sql): hb.drill_facet(axis, facet) mirrors drillFacet (18 templates -> 6 groups); rescore re-created with exactly two edits to its body: every counted answer is keyed by hb.drill_facet (also for the per-session min_facet_items partition and withheld.facets), and the facet estimate uses the leave-facet-out prior, which on rescore's own-axis grid is exact, so a facet's mean and sd are its axis's to the last digit and only n is its own (no facet grid is computed any more). Same signature, owner and grants; no new grant or revoke on rescore. supabase/README.md facet rows updated.",
+   "strings": [
+    {
+     "before": "Quantitative drill-down rows: one per template, e.g. 'Percentages', 'Arithmetic', 'Fractions', 'Fractions of amounts', 'Ratios', 'Rates', 'Averages', 'Linear equations', 'Simultaneous equations', 'Powers', 'Quadratics', 'Probability', 'Counting', 'Arithmetic sequences', 'Geometric sequences', 'Remainders', 'Reciprocals', 'Symmetric expressions' (up to 18 rows)",
+     "after": "Quantitative drill-down rows: one per topic group present, in this order: 'Arithmetic, fractions and percentages', 'Ratios, rates and averages', 'Linear equations and systems', 'Powers and quadratics', 'Probability and counting', 'Series and number puzzles' (labels are QUANT_GROUPS[].label; at most 6 rows)"
+    },
+    {
+     "before": "facet chart label: one line, the full name",
+     "after": "names over 22 characters on two lines at the space nearest the middle, e.g. 'Arithmetic, fractions' / 'and percentages'; 'Ratios, rates' / 'and averages'; 'Linear equations' / 'and systems'; 'Probability' / 'and counting'; 'Series and' / 'number puzzles'; 'Powers and quadratics' stays one line"
+    }
+   ],
+   "files": [
+    "web/src/viz/facets.ts",
+    "web/src/viz/facets.test.ts",
+    "web/src/viz/facets-prior.test.ts (new)",
+    "web/src/viz/facets-groups.test.ts (new)",
+    "supabase/migrations/20261007000100_rescore_facets.sql (new)",
+    "web/scripts/db/facets.test.ts (new, SQL text checks, runs in npm test)",
+    "web/scripts/db/rescore.db.test.ts (parity reference now computes the leave-facet-out prior on the grid, keyed by drillFacet; new describe for D4)",
+    "supabase/README.md (the rescore facet rows and the migrations table row)"
+   ],
+   "tests": [
+    "src/viz/facets-prior.test.ts: fast-check — a facet that holds its whole axis equals the axis estimate within MAP_TOL (1e-8) and has the axis's relation, over 2PL/3PL/Gaussian items with other axes present (MAT and SPA)",
+    "src/viz/facets-prior.test.ts: fast-check — no double counting: facet precision <= leave-out prior precision + max over the EAP grid of the facet's information (2PL; Cramer-Rao for a location); and on the 'full' dev profile the old A12 prior breaks that bound (worst case found in exploration: old rule 1.74x the bound, new 0.996x)",
+    "src/viz/facets-prior.test.ts: fast-check — for Gaussian terms leaveOutPrior equals an exact re-score without the facet (mapTheta; mean < 1e-7, variance < 1e-9), and the facet then equals its axis (< 1e-5)",
+    "src/viz/facets-prior.test.ts: fast-check (seeded) — facet SD / axis SD > 0.9 for every facet and median > 0.98; the old prior had every ratio < 1 and median < 0.9",
+    "src/viz/facets-prior.test.ts: leaveOutPrior is the posterior with nothing removed, removes exactly I_f, throws on another axis, falls back to N(0, Sigma_kk) on inputs that do not agree",
+    "src/viz/facets-prior.test.ts: the UX-review evidence profiles (e2e-save 1 and 2 sessions, dev 'full'): a facet that holds its axis repeats it exactly; every other facet within 0.15 SD of its axis and SD ratio > 0.9",
+    "src/viz/facets-groups.test.ts: mapping total over QUANT_TEMPLATES and every registered QR family's facets (fails if a template has no group); idempotent; other axes untouched; group labels and two-line chart labels",
+    "src/viz/facets-groups.test.ts: fast-check — QR rows are the groups present in display order with n = sum of their templates, measured iff n >= 5; catalog of templates lists the six groups once; precomputed by group / lone template / clash",
+    "src/viz/facets.test.ts: the A12 property test now checks the leave-facet-out prior (and the axis estimate for a facet that holds the axis); QR names are the groups",
+    "scripts/db/facets.test.ts (no DB): the new migration's rescore is the archive one with exactly the two edits; hb.drill_facet lists every template once under drillFacet's group",
+    "scripts/db/rescore.db.test.ts (test:db): parity reference = leave-facet-out grid EAP keyed by drillFacet (asserts it equals the axis EAP to 1e-9); hb.drill_facet == drillFacet for every template, group id, other axes and NULL; relabelled QR families (percent, arith, ratio): reply keyed by group, every facet mean/sd == the axis's, and PUBLISHED counts 3 + 3 answers as one group of 6 (returned) and 3 ratio answers withheld under 'quant/ratios_rates_averages'",
+    "existing drill-down DOM tests (ProfileView.dom.test.ts, ProfileView.ux.dom.test.ts) and e2e/ux-viz.spec.ts (chromium, 23 passed) still render the drill-down"
+   ],
+   "deviations": [
+    "'A one-facet axis shows the axis estimate' is implemented on the data, not the catalog: a facet that holds every observation of its axis (e.g. Spatial's 3d_rotation; MAT when only matrices were answered) shows (theta_k, sqrt(cov_kk)) exactly. With other facets present the facet is the EAP on its items with the Laplace-cavity prior.",
+    "Server: the leave-facet-out prior is exact on rescore's own-axis grid, so the SQL does not compute a facet grid at all: a facet's mean and sd are the axis's, n is the facet's. The client's cavity on the correlated MAP is approximate, so client facets with siblings land within about 0.05 SD of their axis rather than on it.",
+    "QR facets are sorted in QUANT_GROUPS display order (catalog/appearance order otherwise unchanged).",
+    "Facet chart labels over 22 characters take two lines (needed for the long group labels; no existing non-quant facet label is that long).",
+    "An older server reply keyed by template is mapped to its group when it is the only one of its group; two templates of one group give no server estimate."
+   ],
+   "open_issues": [
+    "IMPORTANT for the owner: with a leave-facet-out prior, prior x facet likelihood IS the axis posterior, so every facet now repeats (about) its axis, whichever facet it is: e.g. 'full' STEM Knowledge +1.74 (SD 0.39) -> Physics +1.75 (0.39), Chemistry +1.75 (0.39), Computing +1.75 (0.40); e2e-save 2 sessions Matrix & Series +1.42 (0.51) -> Sequences +1.43 (0.51), Matrices +1.43 (0.51). The double counting and the Spatial flip are gone, but the drill-down now shows no facet-specific information. Facets can only differ from their axis once the model has a person-by-facet variance (the tau of AI.20 / F13): prior N(m, v + tau^2), a one-line change in leaveOutPrior and in the SQL. The alternative 'leave-AXIS-out' prior (population + correlated axes only, the facet's own items once) differentiates facets but pulls every facet toward 0 relative to its axis (exploration in this package, not shipped: 'full' STEM +1.74 with its facets at +1.05 to +1.16; e2e-save 2 sessions, in an earlier state of this worktree, MAT +1.26 with facets +0.67 and +0.96). This is a modelling choice for the owner (keep as is, add tau when AI.20 estimates it, or show facet counts without numbers until then); it was not decided here.",
+    "If the owner keeps this, the facet caption could say why facets sit on their skill (a copy change in viz/copy.ts, see requests).",
+    "Pre-existing, unchanged: local facet observations on an axis whose estimate the server replaced (reveal/results.ts overlayServed) are not in that posterior; the cavity then usually falls back to the population prior N(0, 1). Same inconsistency as before under A12.",
+    "Pre-existing, unchanged: the EAP grid step (0.133 SD) is coarse for block facets with a small SE (RT, PS); five blocks of one facet are rare in a session.",
+    "The e2e-save evidence profiles in this worktree differ from the UX review's (one session: MAT +1.14 here vs +0.88 in the review) because of other packages' in-flight engine/retest and bot changes; the Spatial case of DATA-02 reproduces (axis -0.89 (0.57) overlaps; facet before -1.31 (0.46) below, after -0.89 (0.57) overlaps).",
+    "The bot sessions of e2e-save still give no measured quant group (their QR answers spread over 3 to 4 groups of 1 to 3 answers each). In the dev 'm1' and 'full' profiles the group 'Arithmetic, fractions and percentages' (14 answers) replaces the template rows Percentages (6) and Arithmetic (5).",
+    "Full npm run test:db ran under a load average of about 200 (parallel workstreams): 12 timing failures (statement timeouts, 60 s test timeouts, perf budgets) in signing, selection, acceptance, seen-lists and rescore. Re-run alone: rescore.db + schema.db 65/65 passed (the D4 tests and 'rescore: cost' included); acceptance, seen-lists, selection, signing 129/130, the one failure a signing perf budget (hb.jcs, 11,000 numbers: 2,829 ms against 2,000 ms at load ~136), in code this package does not touch."
+   ]
+  }
+ ],
+ "requests": [
+  {
+   "file": "web/src/viz/copy.ts (facetCaption)",
+   "change": "Only if the owner keeps the leave-facet-out prior as is: add one plain sentence to the facet caption, e.g. 'Each facet's range also draws on the rest of the skill, so facets sit close to it until there is much more data.'",
+   "why": "Facets now land on (about) their axis (open issue 1); without a word a person may read identical numbers as a coincidence or an error. Copy is not this package's file; A13-safe wording to be checked by the copy owner."
+  }
+ ],
+ "shared_files_touched": [
+  "web/src/viz/ProfileView.dom.test.ts (drill-down test: QR rows are the two groups of m1, 14 and 2 answers; row names; comment)",
+  "web/src/viz/ProfileView.ux.dom.test.ts (m1 Quantitative table has 2 rows, not 4)",
+  "web/src/viz/blob.test.ts (the insufficient QR facet is 'quant/ratios_rates_averages', not 'ratio')",
+  "web/scripts/db/migrations.test.ts (the new migration in the list; the readers of hb.responses_of are compared as a set, since rescore is re-created again)"
+ ],
+ "spec_out_of_step": [
+  {
+   "where": "docs/ROADMAP.md A12",
+   "what": "Says 'Facet scores are a unidimensional EAP on facet items with the axis posterior as prior'. Now (UX review D4, provisional default): the prior is the axis posterior without the facet's own items (leave-facet-out; a Laplace cavity on the client, exact on the server's grid), and a facet that holds its whole axis shows the axis estimate. A12 is not amended here."
+  },
+  {
+   "where": "docs/ROADMAP.md A7 / A23 and DESIGN §9.6 (drill-down)",
+   "what": "Quantitative's drill-down facets are the six topic groups of tasks/quant/topics.ts (A23), not the item facet (template); A7 names the Knowledge facets only, A23 places the groups above the template facets for notes."
+  },
+  {
+   "where": "DESIGN §9.6 item 6 ('from the same posterior using facet-level items')",
+   "what": "Still true in spirit; with the leave-facet-out prior a facet estimate is (about) the axis posterior until a person-by-facet variance (AI.20) exists."
+  },
+  {
+   "where": "supabase/migrations/20261001000900_rpc_rescore.sql header (facets[axis][facet] with the axis posterior as prior)",
+   "what": "Superseded by 20261007000100_rescore_facets.sql; the old migration is history and was not edited."
+  }
+ ],
+ "gates": [
+  {
+   "cmd": "cd web && npm run check",
+   "result": "pass (svelte-check 1204 files, 0 errors, 0 warnings; tsc node and scripts clean)"
+  },
+  {
+   "cmd": "cd web && npm run lint:language",
+   "result": "pass (362 files clean)"
+  },
+  {
+   "cmd": "cd web && npx vitest run src/viz src/reveal src/tasks/quant scripts/db/facets.test.ts scripts/db/migrations.test.ts scripts/db/wiring.test.ts",
+   "result": "pass (42 files, 712 tests)"
+  },
+  {
+   "cmd": "cd web && npm run test:db (full, load average ~200)",
+   "result": "15/20 files, 555/567 tests; the 12 failures are timing only (see open issues)"
+  },
+  {
+   "cmd": "cd web && npx vitest run -c vitest.db.config.ts scripts/db/rescore.db.test.ts scripts/db/schema.db.test.ts --reporter=verbose",
+   "result": "pass (65/65, incl. the D4 describe and the parity tests)"
+  },
+  {
+   "cmd": "cd web && npx vitest run -c vitest.db.config.ts scripts/db/acceptance.db.test.ts scripts/db/seen-lists.db.test.ts scripts/db/selection.db.test.ts scripts/db/signing.db.test.ts",
+   "result": "129/130; 1 perf-budget failure in signing (hb.jcs, 2829 ms > 2000 ms under load), unrelated to this package"
+  },
+  {
+   "cmd": "cd web && E2E_PORT=4729 HB_RUN=uxdec-facets npx playwright test -c ux-review/playwright.iso.config.ts e2e/ux-viz.spec.ts --project=chromium --workers=2",
+   "result": "pass (23 passed)"
+  }
+ ],
+ "before_after": [
+  {
+   "profile": "results1 (e2e-save --sessions 1)",
+   "axes": [
+    {
+     "axis": "QR",
+     "estimate": "+0.78 (SD 0.66) overlaps 0 SD",
+     "before": {
+      "ratio": "insufficient (1)",
+      "probability": "insufficient (1)",
+      "exponent": "insufficient (1)",
+      "rate": "insufficient (1)",
+      "quadratic": "insufficient (1)"
+     },
+     "after": {
+      "quant/ratios_rates_averages": "insufficient (2)",
+      "quant/powers_quadratics": "insufficient (2)",
+      "quant/probability_counting": "insufficient (1)"
+     }
+    },
+    {
+     "axis": "SPA",
+     "estimate": "-0.89 (SD 0.57) overlaps 0 SD",
+     "before": {
+      "3d_rotation": "-1.31 (SD 0.46) below 0 SD"
+     },
+     "after": {
+      "3d_rotation": "-0.89 (SD 0.57) overlaps 0 SD"
+     }
+    }
+   ]
+  },
+  {
+   "profile": "results2 (e2e-save --sessions 2)",
+   "axes": [
+    {
+     "axis": "MAT",
+     "estimate": "+1.42 (SD 0.51) above 0 SD",
+     "before": {
+      "series": "+1.77 (SD 0.46) above 0 SD",
+      "matrix": "+1.57 (SD 0.45) above 0 SD"
+     },
+     "after": {
+      "series": "+1.43 (SD 0.51) above 0 SD",
+      "matrix": "+1.43 (SD 0.51) above 0 SD"
+     }
+    },
+    {
+     "axis": "QR",
+     "estimate": "+0.86 (SD 0.56) overlaps 0 SD",
+     "before": {
+      "ratio": "insufficient (1)",
+      "probability": "insufficient (2)",
+      "exponent": "insufficient (2)",
+      "rate": "insufficient (2)",
+      "quadratic": "insufficient (1)",
+      "linear_eq": "insufficient (1)",
+      "system": "insufficient (1)"
+     },
+     "after": {
+      "quant/ratios_rates_averages": "insufficient (3)",
+      "quant/linear": "insufficient (2)",
+      "quant/powers_quadratics": "insufficient (3)",
+      "quant/probability_counting": "insufficient (2)"
+     }
+    },
+    {
+     "axis": "SPA",
+     "estimate": "-0.55 (SD 0.45) overlaps 0 SD",
+     "before": {
+      "3d_rotation": "-0.71 (SD 0.34) below 0 SD"
+     },
+     "after": {
+      "3d_rotation": "-0.55 (SD 0.45) overlaps 0 SD"
+     }
+    }
+   ]
+  },
+  {
+   "profile": "#/dev/blob?profile=full",
+   "axes": [
+    {
+     "axis": "MAT",
+     "estimate": "+1.13 (SD 0.36) above 0 SD",
+     "before": {
+      "matrix": "+1.10 (SD 0.30) above 0 SD",
+      "series": "+1.24 (SD 0.31) above 0 SD"
+     },
+     "after": {
+      "matrix": "+1.15 (SD 0.36) above 0 SD",
+      "series": "+1.14 (SD 0.36) above 0 SD"
+     }
+    },
+    {
+     "axis": "LR",
+     "estimate": "+1.17 (SD 0.42) above 0 SD",
+     "before": {
+      "flaw": "+1.33 (SD 0.36) above 0 SD",
+      "assumption": "+1.15 (SD 0.38) above 0 SD"
+     },
+     "after": {
+      "flaw": "+1.18 (SD 0.42) above 0 SD",
+      "assumption": "+1.18 (SD 0.42) above 0 SD"
+     }
+    },
+    {
+     "axis": "LG",
+     "estimate": "+1.39 (SD 0.48) above 0 SD",
+     "before": {
+      "ordering": "+1.64 (SD 0.40) above 0 SD"
+     },
+     "after": {
+      "ordering": "+1.39 (SD 0.48) above 0 SD"
+     }
+    },
+    {
+     "axis": "RC",
+     "estimate": "+0.56 (SD 0.42) overlaps 0 SD",
+     "before": {
+      "passage": "+0.56 (SD 0.33) above 0 SD"
+     },
+     "after": {
+      "passage": "+0.56 (SD 0.42) overlaps 0 SD"
+     }
+    },
+    {
+     "axis": "VOC",
+     "estimate": "+0.18 (SD 0.44) overlaps 0 SD",
+     "before": {
+      "synonyms": "+0.36 (SD 0.36) overlaps 0 SD",
+      "analogies": "+0.05 (SD 0.40) overlaps 0 SD"
+     },
+     "after": {
+      "synonyms": "+0.20 (SD 0.44) overlaps 0 SD",
+      "analogies": "+0.19 (SD 0.44) overlaps 0 SD"
+     }
+    },
+    {
+     "axis": "QR",
+     "estimate": "+1.23 (SD 0.45) above 0 SD",
+     "before": {
+      "percent": "+1.43 (SD 0.39) above 0 SD",
+      "arith": "+1.01 (SD 0.42) above 0 SD",
+      "fraction": "insufficient (3)",
+      "ratio": "insufficient (2)"
+     },
+     "after": {
+      "quant/arith_fractions_percent": "+1.27 (SD 0.46) above 0 SD",
+      "quant/ratios_rates_averages": "insufficient (2)"
+     }
+    },
+    {
+     "axis": "SPA",
+     "estimate": "-0.16 (SD 0.46) overlaps 0 SD",
+     "before": {
+      "3d_rotation": "-0.31 (SD 0.35) overlaps 0 SD"
+     },
+     "after": {
+      "3d_rotation": "-0.16 (SD 0.46) overlaps 0 SD"
+     }
+    },
+    {
+     "axis": "KST",
+     "estimate": "+1.74 (SD 0.39) above 0 SD",
+     "before": {
+      "physics": "+1.87 (SD 0.37) above 0 SD",
+      "chemistry": "+1.85 (SD 0.37) above 0 SD",
+      "biology": "insufficient (4)",
+      "computing": "+1.85 (SD 0.35) above 0 SD"
+     },
+     "after": {
+      "physics": "+1.75 (SD 0.39) above 0 SD",
+      "chemistry": "+1.75 (SD 0.39) above 0 SD",
+      "biology": "insufficient (4)",
+      "computing": "+1.75 (SD 0.40) above 0 SD"
+     }
+    },
+    {
+     "axis": "KHU",
+     "estimate": "-0.49 (SD 0.39) overlaps 0 SD",
+     "before": {
+      "history": "-0.65 (SD 0.34) below 0 SD",
+      "geography": "-0.40 (SD 0.35) overlaps 0 SD",
+      "literature": "insufficient (3)"
+     },
+     "after": {
+      "history": "-0.50 (SD 0.39) overlaps 0 SD",
+      "geography": "-0.50 (SD 0.39) overlaps 0 SD",
+      "literature": "insufficient (3)"
+     }
+    },
+    {
+     "axis": "KAP",
+     "estimate": "-0.57 (SD 0.42) overlaps 0 SD",
+     "before": {
+      "music": "-0.90 (SD 0.38) below 0 SD",
+      "personal_finance": "-0.58 (SD 0.36) overlaps 0 SD"
+     },
+     "after": {
+      "music": "-0.57 (SD 0.43) overlaps 0 SD",
+      "personal_finance": "-0.59 (SD 0.43) overlaps 0 SD"
+     }
+    },
+    {
+     "axis": "EMO",
+     "estimate": "+0.10 (SD 0.45) overlaps 0 SD",
+     "before": {
+      "appraisal": "+0.09 (SD 0.35) overlaps 0 SD"
+     },
+     "after": {
+      "appraisal": "+0.10 (SD 0.45) overlaps 0 SD"
+     }
+    },
+    {
+     "axis": "CRE",
+     "estimate": "+0.11 (SD 0.49) overlaps 0 SD",
+     "before": {
+      "remote_associates": "+0.09 (SD 0.38) overlaps 0 SD"
+     },
+     "after": {
+      "remote_associates": "+0.11 (SD 0.49) overlaps 0 SD"
+     }
+    }
+   ]
+  },
+  {
+   "profile": "#/dev/blob?profile=m1",
+   "axes": [
+    {
+     "axis": "MAT",
+     "estimate": "+1.11 (SD 0.36) above 0 SD",
+     "before": {
+      "matrix": "+1.16 (SD 0.30) above 0 SD",
+      "series": "+1.29 (SD 0.32) above 0 SD"
+     },
+     "after": {
+      "matrix": "+1.13 (SD 0.36) above 0 SD",
+      "series": "+1.13 (SD 0.36) above 0 SD"
+     }
+    },
+    {
+     "axis": "QR",
+     "estimate": "+0.70 (SD 0.38) above 0 SD",
+     "before": {
+      "percent": "+0.86 (SD 0.33) above 0 SD",
+      "arith": "+0.43 (SD 0.32) overlaps 0 SD",
+      "fraction": "insufficient (3)",
+      "ratio": "insufficient (2)"
+     },
+     "after": {
+      "quant/arith_fractions_percent": "+0.73 (SD 0.38) above 0 SD",
+      "quant/ratios_rates_averages": "insufficient (2)"
+     }
+    },
+    {
+     "axis": "SPA",
+     "estimate": "-0.42 (SD 0.49) overlaps 0 SD",
+     "before": {
+      "3d_rotation": "-0.68 (SD 0.38) below 0 SD"
+     },
+     "after": {
+      "3d_rotation": "-0.42 (SD 0.49) overlaps 0 SD"
+     }
+    }
+   ]
+  }
+ ],
+ "logs": "web/test-results/iso/uxdec-facets/logs/"
+}

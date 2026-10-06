@@ -1,0 +1,241 @@
+{
+  "package": "start-copy",
+  "decisions": [
+    {
+      "id": "D1",
+      "status": "owner-decision",
+      "option": "Owner answer 2026-10-05: the privacy page states plainly that no personally identifiable information is collected and all responses are anonymous; no controller name or contact shown.",
+      "what_changed": "Both privacy notices (static PRIVACY_SECTIONS, server SERVER_PRIVACY_SECTIONS) lose every TODO(user) placeholder and the 'Who runs this site' section; a new first section 'In short' says it plainly. Static: adds a true line about what the web host sees; the online-version section no longer carries draft terms. Server: retention, legal basis, region and deletion are written as facts true of the server as built (24 months is stated as the plan; backups and archive named). TERMS_VERSION and TERMS_VERSION_SERVER bumped (no SQL names a terms version), so consent is asked again. Comments in Privacy.svelte and both copy files no longer mention TODO(user). New tests fail on 'TODO' in any exported copy string and in rendered pages (static and server).",
+      "strings": [
+        {
+          "before": "[section heading] Who runs this site",
+          "after": "[section heading] In short"
+        },
+        {
+          "before": "Controller: TODO(user): name of the person or organisation responsible for this site.",
+          "after": "(static) HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts."
+        },
+        {
+          "before": "Contact: TODO(user): an email address for questions and requests about your data.",
+          "after": "(static) In this version your answers stay on your device. They leave it only if you share them yourself, for example by sending someone your save file."
+        },
+        {
+          "before": "(static 'Where it stays', new paragraph)",
+          "after": "The web host that serves these pages sees your network address when your browser loads them, as every web host does. It never receives your answers."
+        },
+        {
+          "before": "An online version may send your answers to a server to improve the questions. It would ask for your consent again and this notice would be updated first.",
+          "after": "An online version may send your answers to a server to improve the questions. Before it does, this notice will be updated and you will be asked for your consent again."
+        },
+        {
+          "before": "Draft terms for that version, to be confirmed: TODO(user): retention period (draft: 24 months), legal basis (draft: consent), and where the data is held.",
+          "after": "The plan for that version is the same: no name and no email address, answers stored only under a random identifier, and answers kept for at most 24 months."
+        },
+        {
+          "before": "(server) Controller: TODO(user): name of the person or organisation responsible for this site. / Contact: TODO(user): an email address for questions and requests about your data.",
+          "after": "(server, one paragraph) HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts. Your answers are stored under a random identifier, not under who you are."
+        },
+        {
+          "before": "(server) Draft terms, to be confirmed: TODO(user): retention period (draft: 24 months), legal basis (draft: consent), and where the data is held (draft: a region the user chooses, in the EU or the US).",
+          "after": "Your answers are kept because you agreed to it on the first screen: your consent is the basis. The plan is to keep them for at most 24 months and then delete them. They are held by a database hosting provider in the European Union or the United States."
+        },
+        {
+          "before": "(server) You can ask for everything stored for your identifier to be deleted at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. Deleting from the server does not touch the save files you downloaded or what this browser holds.",
+          "after": "You can delete everything stored on the server for your identifier at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. It is removed from the database at once, and from the encrypted weekly backups within eight weeks. Answers of sessions older than 30 days are also copied, without your identifier, into an encrypted archive used to improve the questions, and deleting does not reach that archive. Deleting from the server does not touch the save files you downloaded or what this browser holds."
+        },
+        {
+          "before": "TERMS_VERSION = 'terms-2026-09-draft'",
+          "after": "TERMS_VERSION = 'terms-2026-10-05'"
+        },
+        {
+          "before": "TERMS_VERSION_SERVER = 'terms-2026-10-draft-server'",
+          "after": "TERMS_VERSION_SERVER = 'terms-2026-10-05-server'"
+        }
+      ],
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/backend/copy.ts",
+        "web/src/session/constants.ts",
+        "web/src/session/Privacy.svelte"
+      ],
+      "tests": [
+        "web/src/no-todo.test.ts (new: every exported string of src/**/copy.ts, src/**/*-copy.ts, session/segments.ts, brief/results-talk.ts, engine/axes.ts, session/title.ts; mutation-checked)",
+        "web/src/session/copy.test.ts",
+        "web/src/App.dom.test.ts (new: walks welcome, gate, honour, device, ready, #/privacy, #/data asserting no 'TODO')",
+        "web/src/App.served.dom.test.ts (new: no 'TODO' with a server on welcome, gate, privacy, data)",
+        "web/src/session/components.dom.test.ts (privacy part; new server-notice render test)",
+        "web/e2e/session.spec.ts (privacy test asserts the sentence and no 'TODO')",
+        "web/e2e/smoke.spec.ts (no 'TODO' on the start page)"
+      ],
+      "deviations": [
+        "DESIGN §13 asks the notice to name the controller ('controller = you'); by the owner's answer it names none. Purpose, retention (24 months), legal basis (consent) and deletion are still covered."
+      ],
+      "open_issues": [
+        "'No personally identifiable information' and 'anonymous' are true in the everyday sense, not in the strict GDPR sense DESIGN §13 itself cites (Recital 26: a random id linked to responses is pseudonymous personal data). The server variant also keeps, for about two days, a salted hash of the network address for rate limits, and its hosting provider logs network addresses; the notice says both right after, so no sentence is false, but a plain claim without them would be untrue for the server variant. The static notice now says the web host (GitHub Pages) sees the network address on page load.",
+        "Server notice states 24-month retention as 'the plan': supabase/README.md says the 24-month purge of database rows is not built and the archive expiry (hb db nightly --expire-archive-days 730) is off unless the owner turns it on. Build/turn these on before any data-collecting deploy (M2.6), then the sentence can drop 'The plan is'.",
+        "The server's 'Report a problem' note is free text; a person could type personal details into it despite the request not to.",
+        "DATA_DELETE_TEXT on the data page ('This deletes every session and the backup stored for an identifier') does not mention the backups and the archive the notice now names; see requests."
+      ]
+    },
+    {
+      "id": "D10",
+      "status": "owner-decision",
+      "option": "Owner answer 2026-10-05: tell the person in advance to have scratch paper and a pencil ready, and not to use calculators or LLMs.",
+      "what_changed": "Honour screen: HONOUR_TEXT kept word for word; a new paragraph under it (HONOUR_TOOLS) allows paper and pencil, rules out a calculator or an AI chatbot, and says screen readers, zoom and other accessibility settings are fine (the owner's 'assistive technology' is not used, since in accessibility it means screen readers). The Quantitative interstitial blurb no longer contradicts it.",
+      "strings": [
+        {
+          "before": "(new, under the honour sentence)",
+          "after": "You may want scratch paper and a pencil ready: writing things down is allowed. Please do not use a calculator or an AI chatbot. Screen readers, zoom and other accessibility settings are fine to use."
+        },
+        {
+          "before": "Solve short number problems and type your answer. Keep paper and a calculator out of reach.",
+          "after": "Solve short number problems and type your answer. Scratch paper and a pencil are fine; please do not use a calculator or an AI chatbot."
+        }
+      ],
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/session/Honour.svelte",
+        "web/src/session/segments.ts"
+      ],
+      "tests": [
+        "web/src/session/copy.test.ts",
+        "web/src/App.dom.test.ts (order: lead-in, §13 sentence, tools paragraph)",
+        "web/e2e/session.spec.ts (honour test)"
+      ],
+      "deviations": [
+        "Wording says 'AI chatbot' rather than 'LLM' (plainer; same meaning) and adds that accessibility tools are fine, so 'no AI tools' is not read as 'no screen reader'."
+      ],
+      "open_issues": []
+    },
+    {
+      "id": "D20",
+      "status": "provisional-default",
+      "option": "A: one sentence on the Reaction Time and Spatial interstitials pointing to Skip.",
+      "what_changed": "segments.ts gains needsSight(what), built from INTERSTITIAL_SKIP so it names the interstitial's own button, appended to the RT and Spatial blurbs. Option B (an 'assistive' RT input type) skipped: it needs its own norms (§13 'the mode is stored and normed separately'), which wait for the norming work.",
+      "strings": [
+        {
+          "before": "A target appears on the screen. Respond as fast as you can once you see it. A few practice trials come first.",
+          "after": "A target appears on the screen. Respond as fast as you can once you see it. A few practice trials come first. This part needs you to see the screen. If you use a screen reader or cannot see the target, choose “Skip this part”: it will show as not measured."
+        },
+        {
+          "before": "Turn objects in your mind. Decide which option is the same object as the target, rotated.",
+          "after": "Turn objects in your mind. Decide which option is the same object as the target, rotated. This part needs you to see the screen. If you use a screen reader or cannot see the figures, choose “Skip this part”: it will show as not measured."
+        }
+      ],
+      "files": [
+        "web/src/session/segments.ts"
+      ],
+      "tests": [
+        "web/src/session/copy.test.ts (exact Spatial blurb; RT and Spatial and only they carry the sentence; quotes INTERSTITIAL_SKIP)"
+      ],
+      "deviations": [
+        "'choose Skip' became 'choose “Skip this part”' (the button's exact label)."
+      ],
+      "open_issues": [
+        "Option B (assistive RT input type) left for the norming work."
+      ]
+    },
+    {
+      "id": "D26",
+      "status": "provisional-default",
+      "option": "A: new tagline, meta description and intro wording, and a lead-in to the honour sentence; headings unchanged; register split documented.",
+      "what_changed": "Plain, literal welcome tagline and intro (what the session is, how long, what you get, what you keep); meta description now a constant META_DESCRIPTION in src/copy.ts pinned to index.html by a test (so the language lint covers it); a lead-in (HONOUR_LEAD) before the honour sentence explains 'blob'. 'Ready when you are' and other headings kept. New web/HOUSE-STYLE.md documents product voice vs instructions, headed as provisional default from UX-REVIEW D26. The static shell is filled from the same constants (no vite.config change needed).",
+      "strings": [
+        {
+          "before": "A jagged profile of how you think: short tasks, one honest picture.",
+          "after": "Short tasks of reasoning, memory and speed. Your results are shown as a profile with ranges, not as a single score."
+        },
+        {
+          "before": "The session takes about 30 minutes and has six short parts. You can skip any part you cannot do, and finish early at any time. Nothing is scored as pass or fail.",
+          "after": "The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep."
+        },
+        {
+          "before": "HumanBench: a jagged-blob cognitive profile.",
+          "after": "HumanBench: short tasks of reasoning, memory and speed, about 30 minutes. Your results are shown as a profile with ranges, not as a single score."
+        },
+        {
+          "before": "(new, before the honour sentence)",
+          "after": "At the end of the session, your results are drawn as a shape we call your blob. Before you start, please agree to the following."
+        }
+      ],
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/session/Honour.svelte",
+        "web/src/copy.ts",
+        "web/index.html",
+        "web/HOUSE-STYLE.md"
+      ],
+      "tests": [
+        "web/src/session/copy.test.ts",
+        "web/src/copy.test.ts (meta description = META_DESCRIPTION)",
+        "web/scripts/static-shell.test.ts",
+        "web/scripts/results-split.test.ts",
+        "web/e2e/smoke.spec.ts",
+        "web/e2e/ux2-perf.spec.ts"
+      ],
+      "deviations": [],
+      "open_issues": []
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/src/session/SessionApp.served.dom.test.ts",
+      "change": "Line ~132 ('does not honour a consent given to the static notice'): replace the literal 'terms-2026-09-draft' with the imported TERMS_VERSION.",
+      "why": "TERMS_VERSION was bumped to 'terms-2026-10-05' (D1). The test still passes, but now tests an outdated version instead of a consent to the current static notice."
+    },
+    {
+      "file": "web/src/backend/copy.ts (DATA_DELETE_TEXT, outside the privacy sections this package owns)",
+      "change": "Consider: 'This deletes every session and the backup stored for an identifier from the database. It cannot be undone. Copies in the encrypted weekly backups are gone within eight weeks; answers already copied, without your identifier, into the encrypted archive are not deleted. Save files you downloaded stay with you, and so does anything in this browser.'",
+      "why": "Matches the server privacy notice (D1), which now names the backups and the archive that deleting does not reach at once (supabase/README.md)."
+    }
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md §13 GDPR/CCPA basics",
+      "what": "'publish a privacy notice (controller = you, purpose, retention 24 months, legal basis = consent)': by owner decision 2026-10-05 (D1) the notice names no controller and no contact, and says no personally identifiable information is collected and responses are anonymous. Also §13 itself calls the random id 'pseudonymous personal data' (Recital 26), which is in tension with 'anonymous'."
+    },
+    {
+      "where": "docs/ROADMAP.md M1.15 (and PROGRESS 'Needs you')",
+      "what": "Mentions the TODO(user) controller/contact placeholders and the user's sign-off on retention/legal basis; the placeholders are gone (D1)."
+    },
+    {
+      "where": "supabase/README.md (nightly job / archive section)",
+      "what": "Says 'The privacy notice (M2.6) must say that archived answers are kept until then' and that backups hold deleted data up to eight weeks: the server notice now says both; the 24-month purge is still not built."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npm run check",
+      "result": "pass: svelte-check 1201 files, 0 errors, 0 warnings; tsc node and scripts clean"
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "pass: 362 files clean"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/session/copy.test.ts src/session/components.dom.test.ts src/App.dom.test.ts src/App.served.dom.test.ts src/copy.test.ts src/backend src/no-todo.test.ts scripts/static-shell.test.ts scripts/results-split.test.ts",
+      "result": "238/239 pass. The 1 failure is components.dom.test.ts > Confidence > 'puts the whole form in view…' (spy called 2 times, not 1): Confidence.svelte is being edited by another package; it passed earlier in this run before that edit. The privacy part of that file passes."
+    },
+    {
+      "cmd": "cd web && npx vitest run src/session (full directory)",
+      "result": "fails only in src/session/run.test.ts and src/session/SessionScreen.dom.test.ts (clock and break timing: elapsedS 0 after wait(90), break offered early), from the run package's in-flight edits to run.ts, clock.ts, save/clock.ts and bot.ts; not from this package (copy-only changes)."
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4721 HB_RUN=uxdec-start-copy npx playwright test -c ux-review/playwright.iso.config.ts e2e/smoke.spec.ts e2e/session.spec.ts e2e/ux2-perf.spec.ts --project=chromium --workers=2",
+      "result": "47 passed, 8 failed. All of smoke.spec.ts and ux2-perf.spec.ts pass, and so do the privacy, honour, gate and 320 px reflow tests in session.spec.ts. The 8 failures are the fake-clock time rules (break at 30 min, QR floor, the ring, the ?fast=1 timeline) and the WebGL skip test, which fails because 'Time for a break?' appears too early. All of them come from the run package's in-flight clock and run.ts work."
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4721 HB_RUN=uxdec-start-copy npx playwright test -c ux-review/playwright.iso.config.ts e2e/smoke.spec.ts e2e/session.spec.ts e2e/ux2-perf.spec.ts --project=iphone --workers=2",
+      "result": "44 passed, 8 failed, the same 8 clock-related tests as on chromium. The privacy, honour, smoke and ux2-perf tests pass."
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4721 HB_RUN=uxdec-start-copy npx playwright test -c ux-review/playwright.iso.config.ts e2e/wide-font.spec.ts --project=chromium",
+      "result": "pass (2)"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4721 HB_RUN=uxdec-start-copy npx playwright test -c ux-review/playwright.iso.config.ts e2e/a11y.spec.ts --grep 'welcome|privacy|honour' --project=chromium --project=iphone",
+      "result": "pass (39): axe, 320 px reflow, 200% zoom and 200% text on the welcome, privacy and honour routes"
+    }
+  ]
+}

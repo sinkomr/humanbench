@@ -1,0 +1,549 @@
+{
+  "package": "run",
+  "decisions": [
+    {
+      "id": "D5",
+      "status": "owner-decision",
+      "option": "C (A and B): the clock waits on 'Up next' screens, the break is offered at the part boundary nearest half-way, and each CAT part is capped at its planned share.",
+      "what_changed": "(a) SessionClock gets named holds (hold/release by reason: between_parts, break, loading, pause), so overlapping pauses never double-pause or restart a clock another reason still holds; a held reading is computed from the moment of the hold, so it is exact. SessionRun holds the clock from the end of a part (and from Begin) until Start on the next interstitial: Skip on an interstitial and the break offer stay inside the hold. The served 'loading' wait and a taken break hold for reasons of their own. Hard stop, item cap and integrity logs read the same timelines as before (the hard stop cannot fall on a held screen). Every interstitial says 'The clock waits until you press Start.'. (b) From the plan, the boundary between two parts whose planned cumulative time (block E[T], CAT budget_s) is nearest half the target (A15 27.5 min -> before Working Memory in every A15 plan sampled; 20-minute focus sessions use their own half) gets the one break offer, before that part's interstitial; when that part was skipped, the offer comes before the next interstitial shown after it; a one-part plan has no break. The 30-active-minute rule is gone (RunConfig.breakAtS now means the planned second the boundary is chosen nearest to; default target/2). New view fields: breakBefore, clockHeld; RunResult.budgets. (c) A CAT part's budget is min(planned share, (target - elapsed - blocks still to run) / CAT parts left): slow parts still shorten later ones, but a skip or unused time never grows them; the coverage floor (floorRemainingS) is unchanged; the interstitial's 'About N min' shows the capped figure.",
+      "strings": [
+        {
+          "before": "You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.",
+          "after": "You are about half-way through the planned session. You can take a short break now if you like. The clock waits until you press Start on the next part."
+        },
+        {
+          "before": "(none on the interstitial)",
+          "after": "The clock waits until you press Start."
+        }
+      ],
+      "files": [
+        "web/src/session/clock.ts",
+        "web/src/session/run.ts",
+        "web/src/session/run-copy.ts (new)",
+        "web/src/session/SessionScreen.svelte",
+        "web/src/session/bot.ts",
+        "web/scripts/sim-session.ts (new)",
+        "web/e2e/session-driver.ts",
+        "web/e2e/ux-session.spec.ts"
+      ],
+      "tests": [
+        "web/src/session/clock.test.ts: overlapping holds, idempotent hold/release, exact held reading, property over random hold/release sequences",
+        "web/src/session/run.test.ts 'the clock waits between parts': every interstitial (first included) excluded from active time, Skip keeps the hold, hard stop cannot fall on a held screen",
+        "web/src/session/run.test.ts 'the break, at the part boundary nearest half-way': half-way part from the plan (Working Memory in A15), offered once before that interstitial with the clock held, break holds until Start, never mid-part, skipped half-way part moves the offer, none in a one-part plan / after an earlier hard stop / when every later part is skipped, focus session gets its own half-way",
+        "web/src/session/run.test.ts properties (fast-check, random plans incl. focus and pre-skipped skills, skip patterns, waits, slow items, time-outs): clock held and active time unchanged on every interstitial and break offer; at most one offer and never an interstitial at/after the half-way part before it; every CAT budget <= planned share; coverage floor holds for any skip pattern",
+        "web/src/session/run.test.ts: skipping RT/MAT/SPA never raises a later CAT part's 'About N min' above the plan, QR keeps 3 items, and the session gets shorter",
+        "web/src/session/run.served.test.ts: the interstitial hold and the served 'loading' hold are independent (a skip during loading, Start into loading), a part ended by the server holds the clock on the next interstitial",
+        "web/src/session/SessionScreen.dom.test.ts: clock note on every interstitial, break offer text, break and resume",
+        "web/src/session/run-copy.test.ts: the two strings, no benefit claims, no minutes named",
+        "web/scripts/sim-session.test.ts",
+        "web/e2e/ux-session.spec.ts: break offer before Working Memory (chromium, iphone), clock waits on interstitials and the ring moves only inside a part"
+      ],
+      "deviations": [
+        "The clock is held from the end of a part, so the break offer screen (which now always sits between two parts) is not session time either; the decision text names only the interstitial.",
+        "The break is offered at the half-way boundary even when every part before it was skipped (zero active minutes); see open_issues."
+      ],
+      "open_issues": [
+        "A person who skips every part before the half-way one is still offered the break there (literal rule; one 'Keep going'). A guard such as 'only after a part has run' is easy if the owner prefers it.",
+        "Simulation (scripts/sim-session.ts, the real SessionRun + bot, 300 simulees each, theta ~ N(0, I), block times 1-1.6x model, test-results/iso/uxdec-run/sim/*.json): QR coverage-floor misses 0/300 in every scenario before and after. No skip: mean session 29.22 -> 28.94 min (max 36.53 both), parts RT 4.40, MAT 4.69, SPA 4.70, WM 6.56, QR 4.02 -> 3.74, PS 4.80 -> 4.85 min. 20 s on each interstitial: 30.05 -> 28.94 min (now identical to no wait). Skip SPA: 28.48 -> 25.34 min, QR part 7.99 -> 4.84 min ('About' 8.19 -> 4.88). Skip MAT: 28.65 -> 25.53 min, SPA 7.05 -> 4.95, QR 5.79 -> 4.78. Skip RT: 28.76 -> 26.13 min, MAT 6.16 -> 5.03, SPA 6.16 -> 4.96, QR 5.03 -> 4.74. Skip QR: 25.20 both. 20-minute target (all parts): 23.19 -> 22.99. Break: before, offered only in sessions running past 30 active minutes (mean 31.3 min when offered); after, offered in 300/300 sessions, always before Working Memory, mean 13.8 active minutes (9-10 with a skip). Mean/max are dominated by slow blocks (WM 6.56 min vs 5 planned), as before.",
+        "npm run sim:cat (part b, n = 300) is unchanged by this package (src/sim/cat.ts models the A15 budget on its own, with unused CAT time carried to the next part, and has no floorRemainingS): before and after identical, QR under the floor 5.0%, session 26.3 / 27.4 / 29.0 min, acceptance PASS. See requests.",
+        "Max session length (36.5 min with block times up to 1.6x) is unchanged: the budgets only bound the CAT parts."
+      ],
+      "simulation": {
+        "none-0": {
+          "before": {
+            "meanDurationMin": 29.22,
+            "maxDurationMin": 36.53,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "spatial": 4.7,
+              "memory": 6.56,
+              "quant": 4.02,
+              "coding_reading": 4.8
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 3.9,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 297,
+              "coding_reading": 3
+            },
+            "meanBreakAtMin": 31.31
+          },
+          "after": {
+            "meanDurationMin": 28.94,
+            "maxDurationMin": 36.53,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "spatial": 4.7,
+              "memory": 6.56,
+              "quant": 3.74,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 3.59,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 13.79
+          }
+        },
+        "none-20": {
+          "before": {
+            "meanDurationMin": 30.05,
+            "maxDurationMin": 38.01,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.45,
+              "spatial": 4.31,
+              "memory": 6.56,
+              "quant": 3.47,
+              "coding_reading": 4.63
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.79,
+              "spatial": 4.69,
+              "memory": 5,
+              "quant": 3.38,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 297,
+              "coding_reading": 3
+            },
+            "meanBreakAtMin": 31.63
+          },
+          "after": {
+            "meanDurationMin": 28.94,
+            "maxDurationMin": 36.53,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "spatial": 4.7,
+              "memory": 6.56,
+              "quant": 3.74,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 3.59,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 13.79
+          }
+        },
+        "SPA-0": {
+          "before": {
+            "meanDurationMin": 28.48,
+            "maxDurationMin": 33.3,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "memory": 6.56,
+              "quant": 7.99,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 8.19,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 300
+            },
+            "meanBreakAtMin": 30.83
+          },
+          "after": {
+            "meanDurationMin": 25.34,
+            "maxDurationMin": 32.52,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "memory": 6.56,
+              "quant": 4.84,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 4.88,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 9.08
+          }
+        },
+        "MAT-0": {
+          "before": {
+            "meanDurationMin": 28.65,
+            "maxDurationMin": 34.37,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "spatial": 7.05,
+              "memory": 6.56,
+              "quant": 5.79,
+              "coding_reading": 4.84
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 7.24,
+              "memory": 5,
+              "quant": 5.87,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 300
+            },
+            "meanBreakAtMin": 30.87
+          },
+          "after": {
+            "meanDurationMin": 25.53,
+            "maxDurationMin": 32.54,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "spatial": 4.95,
+              "memory": 6.56,
+              "quant": 4.78,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 5,
+              "memory": 5,
+              "quant": 4.83,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 9.35
+          }
+        },
+        "RT-0": {
+          "before": {
+            "meanDurationMin": 28.76,
+            "maxDurationMin": 34.35,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "matrix_series": 6.16,
+              "spatial": 6.16,
+              "memory": 6.56,
+              "quant": 5.03,
+              "coding_reading": 4.8
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 6,
+              "spatial": 6,
+              "memory": 5,
+              "quant": 5.04,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 300
+            },
+            "meanBreakAtMin": 30.81
+          },
+          "after": {
+            "meanDurationMin": 26.13,
+            "maxDurationMin": 32.51,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "matrix_series": 5.03,
+              "spatial": 4.96,
+              "memory": 6.56,
+              "quant": 4.74,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 5,
+              "spatial": 5,
+              "memory": 5,
+              "quant": 4.79,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 9.98
+          }
+        },
+        "QR-0": {
+          "before": {
+            "meanDurationMin": 25.2,
+            "maxDurationMin": 33.6,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "spatial": 4.7,
+              "memory": 6.56,
+              "coding_reading": 4.84
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 3.9,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 300
+            },
+            "meanBreakAtMin": 31.25
+          },
+          "after": {
+            "meanDurationMin": 25.2,
+            "maxDurationMin": 33.6,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 4.69,
+              "spatial": 4.7,
+              "memory": 6.56,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 4.94,
+              "spatial": 4.96,
+              "memory": 5,
+              "quant": 3.59,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 13.79
+          }
+        },
+        "focus20": {
+          "before": {
+            "meanDurationMin": 23.19,
+            "maxDurationMin": 31.28,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 2.2,
+              "spatial": 2.21,
+              "memory": 6.56,
+              "quant": 2.97,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 2.24,
+              "spatial": 2.34,
+              "memory": 5,
+              "quant": 2.47,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "none": 300
+            },
+            "meanBreakAtMin": 30.66
+          },
+          "after": {
+            "meanDurationMin": 22.99,
+            "maxDurationMin": 31.28,
+            "qrFloorMisses": 0,
+            "reachedQuant": 300,
+            "meanPartMin": {
+              "rt": 4.4,
+              "matrix_series": 2.2,
+              "spatial": 2.21,
+              "memory": 6.56,
+              "quant": 2.77,
+              "coding_reading": 4.85
+            },
+            "meanAboutMin": {
+              "rt": 3.03,
+              "matrix_series": 2.24,
+              "spatial": 2.34,
+              "memory": 5,
+              "quant": 2.3,
+              "coding_reading": 4
+            },
+            "breakBefore": {
+              "memory": 300
+            },
+            "meanBreakAtMin": 8.81
+          }
+        }
+      }
+    },
+    {
+      "id": "D7",
+      "status": "provisional-default",
+      "option": "B (provisional default, no save-format change): an untouched slider is recorded as not rated (confidence_pct null) and counted in the session flag confidence_untouched_n; the default stays allowed (A not chosen).",
+      "what_changed": "Confidence.svelte reports whether the slider was moved (any input event, even back to the start) with onconfirm(pct, touched). SessionRun.confirmConfidence(pct, touched = true): untouched records confidence_pct null in the section-8 tuple (static) and sends confidence null to the server (served; the API and SQL already accept null: p_confidence integer default null, check 0-100 only when not null; responses.confidence nullable), keeps it out of the in-session calibrationSummary/observation (save/rescore.ts already skips null, so the re-score matches), and counts it in flags.confidence_untouched_n (a number; hb.valid_flags and save/validate.ts accept it). UX-111 (slider step) unchanged.",
+      "strings": [],
+      "files": [
+        "web/src/session/Confidence.svelte",
+        "web/src/session/SessionScreen.svelte",
+        "web/src/session/run.ts",
+        "web/src/session/bot.ts"
+      ],
+      "tests": [
+        "web/src/session/run.test.ts: untouched -> null + flag count, touched keeps its value, calibration n and mean exclude untouched, save re-score gives the same CAL; no untouched -> no flag; all untouched -> no calibration; property over random touched/untouched sequences; invalid percentages refused either way",
+        "web/src/session/run.served.test.ts: untouched sent as confidence null, flag in serverFlags and catSessionState",
+        "web/src/session/components.dom.test.ts (Confidence): Continue straight away -> untouched; a move (even back) -> touched; Enter (form submit) untouched",
+        "web/src/session/SessionScreen.dom.test.ts: Continue on an unmoved slider -> tuple null, flag 1, no calibration",
+        "web/e2e/ux-session.spec.ts 'an untouched confidence slider (UX-063)': saved tuple null and flag 1; an arrow-key move keeps the value (chromium, iphone)"
+      ],
+      "deviations": [],
+      "open_issues": [
+        "A rating left at the start value on purpose is now indistinguishable from a skimmed one and counts as not rated; option A (require a move) would avoid that, at a UI cost.",
+        "The practice slider (PracticeScreen) ignores the touched flag (practice is not counted)."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/src/session/constants.ts",
+      "change": "Remove BREAK_AT_S (and its §10 '30 min' comment); nothing imports it any more.",
+      "why": "D5: the break is placed by the plan's half-way boundary (run.ts RunConfig.breakAtS defaults to target/2)."
+    },
+    {
+      "file": "web/src/session/copy.ts",
+      "change": "Remove BREAK_OFFER_TEXT (now unused; the reworded text is run-copy.ts BREAK_OFFER_TEXT), and its pin in web/src/session/copy.test.ts ('the break offer says what the break does to the clock...'); run-copy.test.ts carries the BENEFIT check for the new text.",
+      "why": "D5 rewording; copy.ts belongs to start-copy."
+    },
+    {
+      "file": "web/e2e/routes.ts",
+      "change": "(1) toInterstitial(): after each skipPart(page) in the loop, wait for h1 /^(Up next: .+|Time for a break\\?)$/ and, when it is the break offer, click 'Keep going' (skipping into Working Memory, index 3, now brings the one break offer first). This fixes intoSegment(page, >= 3) for routes.ts, ux-render.spec.ts, uxdec-render.spec.ts and every other user. (2) Routes 'break-offer' and 'on-break': replace `toInterstitial(page, 0); page.clock.fastForward('31:00'); skipPart(page)` with `toInterstitial(page, 2); skipPart(page)` (skipping Spatial reaches the half-way boundary; no clock needed), state text 'the offer of a break at the part boundary nearest half-way'.",
+      "why": "D5: the break now comes before the Working Memory interstitial, not after 30 active minutes; time on an interstitial no longer counts."
+    },
+    {
+      "file": "web/e2e/session.spec.ts",
+      "change": "Time-rule tests: (a) 'a break is suggested at 30 minutes...' -> reach the offer by skipping Reaction time, Matrix & Series and Spatial; check page.getByText(BREAK_OFFER_TEXT from src/session/run-copy) instead of 'The clock pauses while you rest.'; after Take a break + 40:00 + Resume expect 'Up next: Working Memory' and the ring still at its value. (b) 'the suggestion is made once' -> same route, Keep going -> 'Up next: Working Memory', skip on -> 'Up next: Quantitative Reasoning' (no second offer). (c) 'the offer waits for the end of the item on screen' -> replace with 'never mid-part': Start Matrix & Series, fastForward 31:00 on an item, the next screen is a question or 'Up next: Spatial', never 'Time for a break?'. (d) quantWithoutBudget(): fastForward on the Quant interstitial no longer uses up the budget (the clock waits); instead Start, then fastForward('28:00') on the first item (it times out, counted) and expect 2 more items before 'Up next: Processing & Reading Speed' (families still ['quant','quant','quant']); and the skip loop passes the break offer after Spatial ('Time for a break?' -> 'Keep going' -> 'Up next: Working Memory'). (e) 'the ring follows session time' -> Start a part first (e.g. skip RT, Start Matrix & Series) before fastForward; an item times out at 3 min and the next one comes, the ring reads 10 then 15. (f) 'without WebGL ... skipping is safe' -> after 'Skip Spatial' expect 'Time for a break?', click 'Keep going', then 'Up next: Working Memory'. (g) '?fast=1 dev flag' -> click Start on the Reaction time interstitial before expecting aria-valuenow > 0. Optionally add a check that the interstitial shows INTERSTITIAL_CLOCK.",
+      "why": "D5 (a) and (b): failures seen on chromium and iphone in this package's run, all from the new rules."
+    },
+    {
+      "file": "web/e2e/session-save.spec.ts",
+      "change": "Optional: in the whole-session test (line ~289) assert driver.breakOffers === 1 and driver.breakBefore === 'Working Memory' (new SessionDriver fields).",
+      "why": "D5: proves the half-way break in a whole session."
+    },
+    {
+      "file": "web/src/sim/cat.ts",
+      "change": "Cap each CAT segment's budget at its planned budget_s (drop the carry of unused time to the next part) so the M1.4b simulation models the app's A15 budget; consider passing floorRemainingS as run.ts does (sim:cat still reports QR under the floor in 5.0% of sessions because it has no floor protection).",
+      "why": "D5 (c): sim:cat no longer matches session/run.ts."
+    },
+    {
+      "file": "schema/save-v1.json and web/src/save/validate.ts",
+      "change": "Document confidence_untouched_n beside fast_guess_n as an integer >= 0 counter (the schema already admits any snake_case number flag, so nothing breaks without it); mention in the response description that confidence_pct null also means 'slider not moved'.",
+      "why": "D7: new session flag."
+    },
+    {
+      "file": "web/package.json",
+      "change": "Optional: add \"sim:session\": \"tsx scripts/sim-session.ts\".",
+      "why": "D5: whole-session simulation of the real run (clock, break, budgets, floor)."
+    }
+  ],
+  "shared_files_touched": [
+    "web/src/session/SessionApp.served.dom.test.ts (two assertions about D7 only: the served test now moves the slider before Continue so p_confidence stays a number, and the finish flags include confidence_untouched_n: 1 for the closing test's unmoved slider)"
+  ],
+  "spec_out_of_step": [
+    {
+      "where": "DESIGN §10 'UX and engagement' ('A break is suggested at 30 min.')",
+      "what": "The break is offered once, before the 'Up next' screen of the part whose planned start is nearest half the session target (before Working Memory in the A15 plan), not at 30 active minutes."
+    },
+    {
+      "where": "DESIGN §10 ('6-10 minute blocks with a 1-screen interstitial')",
+      "what": "The session clock is held on every interstitial and the break offer, from the end of a part (and from Begin) until Start; the screen says so."
+    },
+    {
+      "where": "DESIGN §7.4 Session composition / ROADMAP A15 ('Blocks loop until SD < 0.3 or the time runs out')",
+      "what": "A CAT part's time is at most its planned share of the A15 target; a skipped part or unused time shortens the session instead of lengthening later parts (the >= 3-item floor still overrides)."
+    },
+    {
+      "where": "ROADMAP M1.15 ('break at 30 min')",
+      "what": "Superseded by the half-way boundary rule (UX-066)."
+    },
+    {
+      "where": "DESIGN §8 flags / response tuple; §3 row 12 / §7.1 Calibration",
+      "what": "New counter flag confidence_untouched_n; confidence_pct null also records a slider confirmed without being moved, and such answers are not part of the calibration (provisional default for D7)."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/session scripts/sim-session.test.ts src/sim scripts/sim-cat.test.ts",
+      "result": "src/session + sim: 503 tests, 3 failures in the first run all fixed and re-run green (components.dom Confidence, SessionApp.served.dom x2); run.test 84 + fuzz, clock 11, run.served 30, SessionScreen.dom 26, components.dom 33, run-copy 3, sim-session 3: all pass"
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "0 errors, 0 warnings (svelte-check 1202 files, tsc node, tsc scripts)"
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "362 files clean"
+    },
+    {
+      "cmd": "E2E_PORT=4725 HB_RUN=uxdec-run npx playwright test -c ux-review/playwright.iso.config.ts e2e/ux-session.spec.ts e2e/session.spec.ts e2e/session-save.spec.ts e2e/keyboard-session.spec.ts --project=chromium --workers=2",
+      "result": "78 passed, 9 failed: 8 in session.spec.ts (time rules, WebGL skip, fast flag: all the new D5 rules; requested above) and session-save.spec.ts:631 (notes settings in the save: another package's in-flight work, not this one). New ux-session tests (break offer, clock waits, untouched slider) pass; whole-session flows (session-save:289, keyboard-session:497) pass."
+    },
+    {
+      "cmd": "same, --project=iphone",
+      "result": "57 passed, 9 failed: the same 8 session.spec.ts tests, and session-save.spec.ts:289 once on RT valid trials (10 of 30) under load average ~237; re-run alone on iphone and chromium: passed."
+    },
+    {
+      "cmd": "E2E_PORT=4725 HB_RUN=uxdec-run npx playwright test -c ux-review/playwright.iso.config.ts e2e/ux2-render.spec.ts:113 --project=chromium --project=iphone",
+      "result": "4 passed (SessionDriver.skipPart passes the half-way break offer on the way to Working Memory)"
+    },
+    {
+      "cmd": "npx tsx scripts/sim-session.ts --n 300 ... (before/after, 7 scenarios each) and npm run sim:cat -- --part b --n 300 --fixed 0 (before/after)",
+      "result": "see D5 open_issues and decisions[0].simulation"
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "package": "screen",
+  "decisions": [
+    {
+      "id": "D21",
+      "status": "provisional-default",
+      "option": "B",
+      "what_changed": "The part's heading (h1) takes focus on the first question of a part and on every screen that is not a question (Up next, block, break offer, break, end), as before. On a later question of the same part focus goes to the question's own labelled region: a div.item-region (role=group, aria-label \"Question N\", tabindex -1, so a script target and not a tab stop) that SessionScreen now wraps around the question screen: the \"cannot be shown\" panel, the (possibly parked) renderer wrapper, the confidence slider and the report-a-problem control. The region is a real block box (the old .stage-host stays display: contents inside it) and is never inside a hidden subtree, so focus is not lost when a later question turns out not to be drawable. New src/session/question-focus.ts: QuestionFocus.enter(screenKey, {phase, segmentIndex, problem}) decides 'heading' | 'item' | 'none' once per screen key (same key, same answer: the confidence slider is the same screen as its question) and numbers the questions of a part from 1; itemRegionName(n) is the one place the region's name is made. Screen.svelte gets a focusId prop: focus goes to that element when it is inside the screen and takes focus, else to the heading; the scroll-to-top frame (UX-001) and the tab title (UX-006) are unchanged and run for both targets. Timed blocks, the block keys and render/common/focus.ts are untouched (a block is a non-question screen: heading as before). Focus order: Tab from the heading or from the region reaches the answer field in one press (measured: every counted question of a whole keyboard session on Chromium and WebKit, 1 Tab each), so the number of Tabs per question is what it was; what changes is what a screen-reader user hears (a numbered group per question, the part's name once).",
+      "strings": [
+        {
+          "before": "(no region)",
+          "after": "aria-label \"Question 1\", \"Question 2\", ... on the group that holds a counted question (screen-reader only; the number counts the questions shown in the part so far, there is no total)"
+        }
+      ],
+      "files": [
+        "web/src/session/question-focus.ts (new)",
+        "web/src/session/Screen.svelte",
+        "web/src/session/SessionScreen.svelte",
+        "web/e2e/keyboard.ts",
+        "web/e2e/keyboard-session.spec.ts",
+        "web/e2e/uxdec-screen.spec.ts (new)",
+        "web/e2e/ux-session.spec.ts (one assertion, see shared_files_touched)"
+      ],
+      "tests": [
+        "web/src/session/question-focus.test.ts (new; 11 tests incl. 3 fast-check properties: one heading per part, numbering 1..m, same key same plan, a screen that is not a question always takes the heading)",
+        "web/src/session/SessionScreen.dom.test.ts: first question has the heading and a labelled region that is not a tab stop; later questions take 'Question 2/3' while the heading text and the tab title stay; after the confidence panel; after a skip straight to the next Up next; after a skip into a break offer; after the break offer and a taken break; a block / Up next have no region; a later question that cannot be drawn keeps its region and the panel inside it; a region that cannot take focus falls back to the heading; served parts: the wait between two questions takes no focus, a failed wait takes the heading, and after Try again the question goes to its region",
+        "web/src/session/Screen.dom.test.ts: focusId takes the region without scroll, keeps the scroll-to-top frame and the tab title, falls back to the heading when the region is missing, cannot take focus or is outside the screen, no focus when focus is off",
+        "web/e2e/uxdec-screen.spec.ts (chromium, webkit, iphone): heading then 'Question 2' and 'Question 3' with tab title and heading kept; one Tab from heading and from the region to the field with keys only (desktop engines); iPhone 13 and SE: after Continue at the bottom of the page the next question opens at scrollY 0 with its group focused and h1 in view; after a skip and a break offer the next part's first question has the heading and numbers from 1; axe",
+        "web/e2e/keyboard-session.spec.ts (chromium, webkit): the whole-session test now records every counted question's focus on arrival and its Tab count: heading on the first of each part, a group named 'Question N' (N increasing) on every later one, 1 Tab to the field each; practice and block cases unchanged and green",
+        "web/e2e/ux-session.spec.ts: the UX-001 phone test now expects the second question's group, not the heading, to hold focus"
+      ],
+      "deviations": [
+        "The region's name is 'Question N' (N = the question's place among those shown in the part), as the task text suggests ('e.g. the question number'). Finding SR-06 asked for a cue 'without an item count (progress is time, DESIGN section 10)'. N is spoken only to screen-reader users and has no total, but if the owner prefers no number, itemRegionName in question-focus.ts is the single place to change (e.g. 'Next question'); the DOM, unit and e2e tests name the number and would need the same edit.",
+        "The wait between two questions of a served part ('loading', no error) takes no focus of its own, and a failed wait takes the heading: the task text says every non-question screen keeps the heading, but a served part would otherwise read the part's name again at every wait, which is the repetition D21 is about. For this the loading screen's key is now 'loading' or 'loading:problem' (the failed state remounts the screen so its heading takes focus). The first wait of a part (nothing of it shown yet) still takes the heading.",
+        "Practice (PracticeScreen.svelte, not part of this package) still re-focuses its heading for each of its four practice questions; D21 speaks of the counted questions of a part. See requests.",
+        "D21 option B does not reduce Tab presses (KBD-12's '96 of 165 Tabs'): from the region one Tab still reaches the field. It removes the repeated part name for screen-reader users. Focusing the field directly (KBD-12's other suggestion) was not asked for."
+      ],
+      "open_issues": [
+        "Safari with a mouse: after a click on 'Start' (the previous screen's button, removed from the page) WebKit started Tab from before the header on the first question of a part (3 Alt+Tab presses to the field instead of 1) while a later question's region and a keyboard-only start (the three parts with questions in the whole keyboard session on WebKit) took 1. This is the heading's behaviour as before (not changed here); uxdec-screen.spec.ts therefore starts the part by keys in the Tab-count test.",
+        "No focus ring is drawn on the region (outline none, like the h1): it marks where the reader is, not a control. e2e/keyboard.ts focusIsOnPlainTarget already exempts a tabindex -1 container."
+      ]
+    },
+    {
+      "id": "D27",
+      "status": "provisional-default",
+      "option": "A",
+      "what_changed": "One primary action per screen. (1) FocusPicker's 'Start a 20-minute focus session' is a plain hb-btn (type submit unchanged), on the results and on the returning person's ready screen. (2) The Skip and Finish confirm panels of the running session are built with primary=\"no\": 'Keep going' comes first and is the only primary, the skip or finish is the plain button; Escape still means 'Keep going' (ConfirmPanel's existing keydown handler, same as the leave panel of UX-005b; no code change in ConfirmPanel.svelte, its header comment now names the three users). (3) ResultsTalk's copy button lost both 'primary' and 'hb-primary' (now plain hb-btn). The leave panel and the after-save download are as they were, and so is the 'cannot be shown' panel's own primary (Skip), since that question has no other way on.",
+      "strings": [
+        {
+          "before": "Skip panel buttons: [Skip Spatial (primary)] [Keep going]",
+          "after": "[Keep going (primary)] [Skip Spatial]"
+        },
+        {
+          "before": "Finish panel buttons: [Finish now (primary)] [Keep going]",
+          "after": "[Keep going (primary)] [Finish now]"
+        }
+      ],
+      "files": [
+        "web/src/reveal/FocusPicker.svelte",
+        "web/src/brief/ui/ResultsTalk.svelte",
+        "web/src/session/SessionScreen.svelte",
+        "web/src/session/ConfirmPanel.svelte (comment only)",
+        "web/e2e/uxdec-screen.spec.ts (new)"
+      ],
+      "tests": [
+        "web/src/session/SessionScreen.dom.test.ts: Skip panel on a question and on an Up next screen, Finish panel: order, exactly one primary, the plain button still skips or finishes; Escape and the primary both keep going; the 'cannot be shown' panel keeps its primary",
+        "web/src/session/ConfirmPanel.dom.test.ts: primary=\"no\" order, single primary and focus; Escape means 'Keep going'; the double-tap guard with the reversed order",
+        "web/src/reveal/FocusPicker.dom.test.ts: plain button, still submits; no primary inside the retest section",
+        "web/src/brief/ResultsTalk.dom.test.ts: plain button in the helper (ready and still being checked) and inside the reveal card; still copies",
+        "web/e2e/uxdec-screen.spec.ts (chromium, webkit, iphone): Skip panel on a question (light and dark, axe, no sideways scroll), on Up next, Finish panel, Escape, plain buttons still skip/finish, 320 px panel fits and has 44 px targets; results after the save: focus-session start and copy button are plain buttons and still work; returning person's ready screen: focus start plain, Begin primary"
+      ],
+      "deviations": [],
+      "open_issues": [
+        "While a Skip or Finish panel is open there are still primaries elsewhere on the screen (the interstitial's Start, a renderer's Confirm, the confidence Continue, a block's own Start). Only the panels' own buttons were changed, as D27 says; demoting those while a panel is open was not done (it would touch the renderers and the confidence form).",
+        "The dev demo route #/dev/reveal-ai (src/dev/RevealAiDemo.svelte, not mine) still has its own primary 'Download my save (demo)' beside the helper."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/src/session/PracticeScreen.svelte",
+      "change": "Only if the owner wants D21 in practice too: it still re-focuses its heading for each of the four practice questions (keyboard-session.spec.ts 'practice by keyboard alone' pins that). No change was made: D21 names the counted questions of a part.",
+      "why": "Left as it was; not in this package's files."
+    },
+    {
+      "file": "web/UX-REVIEW.md",
+      "change": "At integration: D21 and D27 rows (section 2) and the UX-068 / UX-083 rows (section 3) can be marked as built with the provisional default (option B and option A). Name the region 'Question N' in the D21 text if it is kept (see deviations).",
+      "why": "The lead owns the review document."
+    }
+  ],
+  "shared_files_touched": [
+    "web/e2e/ux-session.spec.ts: one assertion only (line ~95, the UX-001 phone test 'after Continue on the confidence panel the next question has its heading in view'): await expect(h1(page)).toBeFocused() became await expect(page.getByRole('group', { name: 'Question 2' })).toBeFocused(), because that question is the second of its part and now takes its region. The h1-in-viewport and scrollY 0 checks beside it are unchanged and pass on iPhone 13 and SE."
+  ],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md section 10: 'A progress ring shows time, not items, because adaptive item counts vary.'",
+      "what": "The accessible name 'Question N' puts a running question number (no total) in front of screen-reader users only; nothing is drawn. Not a conflict with the ring, but SR-06 asked for no item count: the owner may want to decide it (see D21 deviations)."
+    },
+    {
+      "where": "docs/DESIGN.md section 13 and ROADMAP M1.15 ('keyboard navigation for everything; screen-reader labels')",
+      "what": "Neither says where focus goes on a new screen; the old rule ('each new screen moves focus to its heading') lived only in the header comment of Screen.svelte, which now says what D21 changes. Nothing to correct in the spec; if the owner confirms D21, section 13 could say it in one line."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/session src/reveal/FocusPicker src/brief/ResultsTalk",
+      "result": "34 files, 519 tests passed (the others than mine are tests added by the other packages in the same worktree). Also npx vitest run src/reveal src/brief: 47 files, 774 passed."
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "clean (svelte-check 0 errors, 0 warnings; tsc node and scripts clean). An earlier run showed one error in src/viz/__scratch/order.test.ts, another package's scratch file, since gone."
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "clean (366 files)"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4743 HB_RUN=uxdec-screen npx playwright test -c ux-review/playwright.iso.config.ts e2e/uxdec-screen.spec.ts --project=chromium --project=webkit --project=iphone --workers=2",
+      "result": "31 passed, 8 skipped (the phone-only tests on desktop engines and the key-only ones on the phone), 0 failed; axe 0 serious or critical in the Skip panel (light and dark), the Finish panel, the later-question screen, the results and the ready screen."
+    },
+    {
+      "cmd": "same, e2e/keyboard-session.spec.ts --project=chromium --project=webkit",
+      "result": "12 passed, including the whole keyboard-only session with the new focus-on-arrival and Tab-count assertions (43 s and 48 s)."
+    },
+    {
+      "cmd": "same, e2e/ux-session.spec.ts e2e/ux2-session.spec.ts e2e/session.spec.ts e2e/reveal.spec.ts e2e/ux-reveal.spec.ts --project=chromium --workers=3 (regression sweep)",
+      "result": "114 passed, 11 skipped, 11 failed; none from this package: session.spec.ts time rules, 'without WebGL ... skip', 'the ?fast=1 dev flag' and ux2-session 'Skip leaves for the next part' fail on the break offer before Working Memory and the clock that waits on Up next screens (package run; its handoff already asks for these tests to be updated); session.spec.ts 'the under-18 path writes nothing' finds a button where it expects none (package start-copy, D24); reveal.spec.ts 'draws the blob skill by skill ... can be skipped' does not find 'Skip animation' (not touched by this package)."
+    },
+    {
+      "cmd": "same, e2e/ux-session.spec.ts --project=webkit --project=iphone --workers=3",
+      "result": "54 passed, 20 skipped (desktop-only or phone-only), 0 failed, including the edited UX-001 phone test on iPhone 13 and SE."
+    }
+  ]
+}

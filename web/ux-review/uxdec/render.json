@@ -1,0 +1,169 @@
+{
+  "package": "render",
+  "decisions": [
+    {
+      "id": "D9",
+      "status": "provisional-default",
+      "option": "A (the review's recommended option, not yet confirmed by the owner): two rows of five and four where the nine coding keys would be under about 40 px wide, as a CSS container query on the keypad.",
+      "what_changed": "Keypad.svelte gets an optional `narrowColumns` prop (used only with `columns`). With it the keypad is a wrapping flex row that is its own query container (`container-type: inline-size`): nine keys share the row (flex 1 1 0) until the keypad is narrower than 24.49rem (nine keys of 40 px and their 4 px gaps = 392 px), then each key takes one fifth of the width (less 1 px, so rounding never drops the fifth key) and the other four wrap to a second row, centred. The query follows the keypad's own width, so it also reacts to text size (rem) and to narrow windows, not only to phones; a browser without container queries keeps the old one row. CodingRenderer passes narrowColumns=ceil(9/2)=5. The gap of the coding keypad on phones is 0.25rem (was 0.125rem): the folded rows need a gap a finger can aim at, and the 412 px Pixel's keys would be 38.7 px with it, so that phone folds too. The coding response path is unchanged: same nine <button>s in the same order, same `press` handler, `responseTimestampFromEvent` and block clock (section 11.6); only the layout differs. The digit span keypad (no `columns`) is byte-for-byte the same markup, classes and style attributes as before; NumericEntry does not use the Keypad.",
+      "strings": [],
+      "files": [
+        "web/src/render/common/Keypad.svelte",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/coding/coding.dom.test.ts",
+        "web/src/render/coding/__snapshots__/coding.dom.test.ts.snap",
+        "web/src/render/span/span.dom.test.ts",
+        "web/e2e/ux-render.spec.ts",
+        "web/e2e/ux2-render.spec.ts",
+        "web/e2e/uxdec-render.spec.ts",
+        "web/e2e/uxdec-render-flow.ts"
+      ],
+      "tests": [
+        "coding.dom.test: the keypad carries `split` and --cols-narrow: 5, the same nine buttons in order (new); snapshot (running) updated",
+        "span.dom.test: the digit span keypad has no `fixed`, no `split`, no --cols / --cols-narrow (new)",
+        "e2e/uxdec-render.spec.ts (new): key sizes and rows at 320, 390, 412, 430, 768 px; centred second row and gaps; every key is what a tap on its middle reaches; table, shape and keypad on one screen within the 468 px budget; a tap on a key of each row answers the shape; digit span keypad still a grid of >= 43.5 px keys at 320; 200% text at 320 and 390 px (still folds, keys >= 43.5 px, no sideways scroll); axe 0 serious/critical at 320 and 390 px, light and dark",
+        "e2e/ux-render.spec.ts coding test: 'one row of nine' changed to 'rows of five and four, keys >= 43.5 px wide' (320 and 390 px)"
+      ],
+      "key_sizes_px": {
+        "note": "Measured in Chromium, WebKit and the iPhone 13 emulation (same numbers; 768 px is 51.5 px in Chromium, 51.6 in WebKit). 'before' is the one-row keypad measured in this worktree before the change; block = table top to last key bottom, in the session at the coding start.",
+        "320": {
+          "before": "30.2 x 50, one row of 9, block 248",
+          "after": "53.4 x 50, rows 5+4, block 302"
+        },
+        "390": {
+          "before": "38.0 x 50, one row of 9, block 248",
+          "after": "67.4 x 50, rows 5+4, block 302"
+        },
+        "412": {
+          "before": "40.4 x 50, one row of 9, block 248",
+          "after": "71.8 x 50, rows 5+4, block 302"
+        },
+        "430": {
+          "before": "not measured (about 42)",
+          "after": "40.7 x 50, one row of 9, block 248 (not folded: keys are 40 px or more)"
+        },
+        "768": {
+          "before": "not measured",
+          "after": "51.5 x 50, one row of 9, block 321 (not folded)"
+        },
+        "320_text_200": "folded, keys >= 43.5 x 43.5 px, no sideways scroll; 390_text_200 the same"
+      },
+      "deviations": [
+        "The fold threshold is stated as 'keys under about 40 px'; with the 4 px phone gap it falls at a keypad width of 392 px (viewport about 424 px), so a 412 px phone (keys would be 38.7 px) is folded, where with the old 2 px gap it had 40.4 px keys. 430 px and wider phones keep one row of 40.7 px keys.",
+        "The coding keypad's phone gap went from 2 px to 4 px (also unfolded, on 424 to 480 px viewports). Keys unfolded at 430 px are 40.7 px wide, as before to within a pixel.",
+        "The second row (four keys) is centred, not left-aligned: 6 sits between 1 and 2. A left-aligned row is a one-line change (justify-content) if the owner prefers digits to line up in columns.",
+        "The folded keypad adds 54 px of height (block 302 px against 248 px). The 320 x 568 and 390 x 664 screens fit it with room to spare (the test budget is 468 px); the shortest phone's visible Safari area is not measured here."
+      ],
+      "open_issues": [
+        "Browsers without container queries (Safari before 16.0, about 1 percent) keep the one row, which is today's layout.",
+        "Layout only: the response path was not re-timed on a device. The block's timing code (CodingRenderer script) is unchanged; section 11.6 recommends a re-check on a real phone for any change to a timed block."
+      ]
+    },
+    {
+      "id": "D12",
+      "status": "provisional-default",
+      "option": "A (the review's recommended option, since no norms are collected yet; not yet confirmed by the owner): the fixation '+' is drawn centred in the pad and the separate fixation row is gone.",
+      "what_changed": "RtRenderer markup and CSS only. The `.fixation` <p> moved from a row above the pads into `.pads` (now position: relative) and is drawn absolutely over it (inset 0, grid, place-items centre, z-index 1, pointer-events: none), still aria-hidden, still '+' only while the trial is in its fixation state and '' otherwise; its 2.5rem row height and the stage's 0.75rem gap are gone, so the stage is 52 px (3.25rem) shorter: 228 px high with one position (was 280). One position: the cross is in the middle of the one pad (measured offset 0 to 0.5 px from the pad's middle at 320 and 390 px in all three engines). Four positions: the cross is in the middle of the row of pads, which is the gap between pads 2 and 3 (the four pads are exactly as before, equal and in one row). The script section is unchanged: trial state machine, rAF onset scheduler, performance.now(), response stamping, the practice/main stages. The target replaces the cross in the same flush as before (the pad box does not move: tested). A tap on the cross reaches the pad (elementFromPoint at the cross is the pad; pointer-events none).",
+      "strings": [],
+      "files": [
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/rt/rt.dom.test.ts",
+        "web/src/render/rt/__snapshots__/rt.dom.test.ts.snap",
+        "web/e2e/uxdec-render.spec.ts"
+      ],
+      "tests": [
+        "rt.dom.test: the cross is a child of .pads, aria-hidden, the stage has no row above the pads (children pads [+ keys]), and the target frame empties it (new); snapshot 2 (choice4 fixation) updated",
+        "e2e/uxdec-render.spec.ts: one position at 390 and 320 px (cross within 1.5 px of the pad's middle horizontally and 2.5 px vertically, the pad starts at the top of the stage, pointer-events none, a tap on the cross reaches the pad, the stage fits the screen, the pad does not move when the target appears); four positions on the dev-only review page (needs HB_DEV_SERVER=1); axe at 390 px, light and dark",
+        "RT self-test checks, see gates: e2e/rt-selftest.spec.ts (8 tests per engine) and src/selftest unit tests, all green"
+      ],
+      "deviations": [
+        "With four positions 'centred in the pad' has no single pad: the cross is centred on the row, in the gap between the middle two pads, and overlaps their inner borders by about 4 to 7 px. A halo in the stage's own colour (text-shadow, 2 px) keeps it legible over the borders. A cleaner option would be an extra middle slot that moves pads 2 and 3 apart (changes the stimulus spacing, so it was not done)."
+      ],
+      "open_issues": [
+        "The RT self-test page (rt-selftest.html, src/selftest) measures the device (frames, timers, key and tap latency) and does not mount RtRenderer, so its green result shows that the device checks are unaffected, not that the renderer's timing was re-measured. The renderer's timing path (script) is unchanged and rt.dom.test (onset frame, RT from the onset frame, anticipations, event timestamps) passes.",
+        "Pre-existing, not changed: the four pads wrap 3+1 when the stage is narrower than 4 x 3rem plus gaps (on the dev review page at 320 px, and at 200% text between about 460 and 530 px viewport width). The cross then sits at the middle of the whole pad grid, which is over a pad edge in the 3+1 case. At 200% text on phones the pads wrap 2+2 and the cross is at the crossing of the four pads."
+      ]
+    },
+    {
+      "id": "D28",
+      "status": "provisional-default",
+      "option": "A (the review's recommended option; not yet confirmed by the owner): the Spatial stem reads 'Which option shows the same object as the target, rotated? A mirror image does not count.'",
+      "what_changed": "ROTATION_STEM in render/rotation/copy.ts (its comment says why: the rare verb form 'mirror-imaged' for second-language readers). The doc comment of tasks/rotation/index.ts quotes the new stem and notes that the DESIGN section 12 example still has the older wording. The RotationRenderer DOM snapshot is updated. No other code reads the stem (the rotation fallback shows no stem).",
+      "strings": [
+        {
+          "before": "Which option is the same object as the target, rotated? (Not mirror-imaged.)",
+          "after": "Which option shows the same object as the target, rotated? A mirror image does not count."
+        }
+      ],
+      "files": [
+        "web/src/render/rotation/copy.ts",
+        "web/src/tasks/rotation/index.ts",
+        "web/src/render/rotation/__snapshots__/RotationRenderer.dom.test.ts.snap",
+        "web/e2e/uxdec-render.spec.ts"
+      ],
+      "tests": [
+        "RotationRenderer.dom.test: reads ROTATION_STEM from copy.ts (unchanged assertion) and its snapshot now holds the new sentence; RotationFallback.dom.test unchanged and green",
+        "e2e/uxdec-render.spec.ts: the session's Spatial item shows the new stem and never 'mirror-imaged' (skipped in a browser without WebGL, as the other rotation checks)"
+      ],
+      "deviations": [],
+      "open_issues": []
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/e2e/routes.ts (toInterstitial, skipPart)",
+      "change": "Let skipPart/toInterstitial decline the break offer ('Time for a break?' then 'Keep going') the way SessionDriver.skipPart does, and say in the doc comment that the offer comes before the Working Memory part.",
+      "why": "The run package's D5 work (break offered before the plan's half-way part) makes routes.ts intoSegment(page, 3 | 4 | 5) fail here with 'Time for a break?' instead of 'Up next: Working Memory'. That breaks every a11y.spec.ts route that plays into Working Memory, Quantitative or Processing Speed (item-quant routes, coding-intro, coding-running, ...) and the old intoSegment users in ux-render/ux2-render. This package routed its own specs through the new e2e/uxdec-render-flow.ts (same walk, answers the offer); when routes.ts is fixed, the ux-render/ux2-render imports can go back to './routes' and uxdec-render-flow.ts can be deleted."
+    },
+    {
+      "file": "web/ux-review/findings/copy-inventory.json (generated)",
+      "change": "Regenerate when the review inventory is next built.",
+      "why": "It still lists the old Spatial stem."
+    }
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md section 12 (example item, stem) and the bank's hb/items/examples.py",
+      "what": "Both say 'Which figure is the same object as the one on the left, rotated? (Not mirror-imaged.)'. The renderer's stem (and before this change its own, third wording 'Which option is the same object as the target, rotated? (Not mirror-imaged.)') now reads 'Which option shows the same object as the target, rotated? A mirror image does not count.' Left as they are, per the package brief."
+    },
+    {
+      "where": "docs/DESIGN.md section 11.6 / section 3 row 9 (reaction time)",
+      "what": "Neither describes where the fixation cross is drawn; if the spec is meant to pin the stimulus layout, add: the cross is drawn in the middle of the pad (of the row of pads with four positions) and is replaced by the target in the same frame."
+    },
+    {
+      "where": "web/src/render/common/render.css header and CLAUDE.md (44 px touch targets)",
+      "what": "The shared renderer styles aim for 44 px targets, and DESIGN does not state a target size (no match for 44 px, touch target or 2.5.8). The unfolded coding keypad is still under that on a 430 px phone (40.7 px wide, 50 px tall) and on no phone narrower than 424 px; only the folded rows give keys of 44 px or more. That follows the review's 'about 40 px' threshold for option A."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npm run check",
+      "result": "pass: svelte-check 1207 files, 0 errors, 0 warnings; tsc node and scripts clean"
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "pass: 363 files clean"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/render src/selftest",
+      "result": "pass: 26 files, 318 tests (includes the new coding, span and rt DOM tests and the three updated snapshots); an earlier full-suite run of the whole web workspace (268 files, 4780 tests) was green too, before the fixation halo was added"
+    },
+    {
+      "cmd": "E2E_PORT=4735 HB_RUN=uxdec-render npx playwright test -c ux-review/playwright.iso.config.ts e2e/ux-render.spec.ts e2e/ux2-render.spec.ts e2e/rt-selftest.spec.ts e2e/wide-font.spec.ts e2e/uxdec-render.spec.ts --project=chromium",
+      "result": "43 passed, 2 skipped (the touch-only double-tap test on desktop; the dev-server-only four-position test)"
+    },
+    {
+      "cmd": "the same specs with --project=webkit --project=iphone",
+      "result": "85 passed, 5 skipped (the same two, plus the WebKit focus-ring test that skips there by design and the dev-server-only test)"
+    },
+    {
+      "cmd": "E2E_PORT=4735 E2E_DEV_PORT=4736 HB_DEV_SERVER=1 HB_RUN=uxdec-render npx playwright test -c ux-review/playwright.iso.config.ts e2e/gallery.spec.ts e2e/render-visual.spec.ts e2e/uxdec-render.spec.ts (all three projects)",
+      "result": "125 passed, 16 skipped (the chromium-only gallery blocks and the Tab-order checks on WebKit and iPhone, all skipped as before); no baseline image needed updating (coding-legend, corsi-board and matrices baselines do not show the keypad, the RT stage or the stem); the gallery's axe checks of coding, rt_simple and rt_choice4 pass"
+    },
+    {
+      "cmd": "e2e/uxdec-render.spec.ts with HB_DEV_SERVER=1, all three projects, after the last edit",
+      "result": "57 passed (19 tests x chromium, webkit, iphone), including axe 0 serious or critical on the folded coding block at 320 and 390 px and on the RT stage, light and dark"
+    }
+  ]
+}

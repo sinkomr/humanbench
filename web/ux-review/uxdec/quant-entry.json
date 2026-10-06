@@ -1,0 +1,98 @@
+{
+  "package": "quant-entry",
+  "decisions": [
+    {
+      "id": "D8",
+      "status": "provisional-default",
+      "option": "A (one pub and bank change: decimal comma read, thousands form refused in the entry box with the given note, hints say whole number)",
+      "what_changed": "Grammar (pub web/src/tasks/quant/numeric.ts, bank hb.gen.quant.entry, same in both): digits, one comma, then one or two digits is a decimal comma ('3,5' = 3.5, '0,25' = 0.25, '-1,5' = -1.5, also with sign, '$' and '%' as before; ',5', '3,', '3,14159', '1,5,0' stay unreadable). Two readers of one grammar: parseEntry / parse_entry (scoring) still reads the thousands form d,ddd ('1,500' = 1500, '12,345.5', '0,500' = 500) exactly as before, because results are always re-scored from raw responses (section 7.8) and the old entry box accepted and stored such answers; checkNewEntry / check_new_entry (new, the entry box's check) returns 'ok' | 'thousands' | 'unreadable' and refuses the thousands form. isThousandsEntry / is_thousands_entry is the shared predicate. Why old saves re-score unchanged: the decimal-comma pattern is disjoint from every form the old grammar read (it needs 1-2 digits after the comma, the thousands form exactly 3), so for every string the old parser read the new one returns the same value (property-tested against a frozen verbatim copy of the old parser, fast-check and hypothesis), and the only strings read now and not before are decimal commas, which the old box refused, so no stored response can contain one; time-outs store null. Entry box (NumericEntry.svelte): the prop accepts:(text)=>boolean became check:(text)=>EntryVerdict ('ok' | 'format' | 'thousands'); 'thousands' shows THOUSANDS_NOTE (entry-copy.ts) with aria-invalid, the entry is not submitted and typing clears the note, like the UX-024 notes. QuantRenderer maps checkNewEntry plus its whole-number rule onto that verdict ('3,5' on a whole-number item is 3.5, so it gets the whole-number note; '35,0' is 35 and goes through). SeriesRenderer only adapts to the new prop: its own grammar and notes are unchanged ('1,500' and '3,5' get the whole-number note there, as before). Hints: quant HINTS (templates.ts) and the bank twin spec.HINTS now say 'whole number' and equal the entry box's FORMAT_HINTS for all three formats (series already said whole number; no series string changed). Generator version and item ids: the hint is part of every generated quant spec, and family.ts says to bump generatorVersion whenever generate output changes. A bump (1.3.0 -> 1.4.0, bank 1.4.0+py) would make resolveItem (exact version match, A18) return null for every saved i:quant:1.3.0:<seed> id, so registryObservation skips each saved quant answer as 'unresolved' and QR drops out of local re-scoring of every existing save (M1 has no server or kept payload). So the version stays 1.3.0 and only the display hint changes in place, in both twins and the TS dump: I regenerated golden/ts_dumps/quant.json (npm run dump:families -- --family quant --n 1000 --bank) and compared it with the previous copy, 1000 of 1000 items identical in every field except spec.hint (958 hint lines changed, the 42 decimal items unchanged). The bank twin keeps 1.3.0+py, its verifier's hint_matches check passes on the new dump, and no stored record anywhere (bank items/, panels/, pub fixtures, supabase) carries the old hint text. A new pub test (hints.test.ts) pins it: ids i:quant:1.3.0:saved-0..299 resolve through resolveItem, and a structuralHash of their content without spec.hint is pinned (2b07f5d0355e), so any change to what a 1.3.0 item is fails until the version moves. This deviates from the literal family.ts wording; see requests and spec_out_of_step. Shared vectors: web/src/tasks/quant/entry-vectors.ts (85 hand-written cases: raw, value, before = the old grammar's value, new_entry) serialised to bank golden/ts_dumps/quant_entry.json, a new parity file listed in ts-dumps-sync.test.ts PARITY_FILES with its own staleness check; the bank's tests/gen/test_quant_entry.py checks parse_entry, check_new_entry and the frozen old parser against every case.",
+      "strings": [
+        {
+          "before": "Enter an integer, such as 42 or -7.",
+          "after": "Enter a whole number, such as 42 or -7."
+        },
+        {
+          "before": "Enter a fraction such as 3/8, or an integer.",
+          "after": "Enter a fraction such as 3/8, or a whole number."
+        },
+        {
+          "before": "(none: '1,500' was submitted silently and scored as 1500)",
+          "after": "Write thousands without a comma (1500) and decimals with a point (1.5)."
+        },
+        {
+          "before": "(format note for '3,5', e.g. 'That entry could not be read as a number. Use only the digits 0 to 9 and a point (.) for decimals, with no spaces or commas, for example 12.5.')",
+          "after": "(none: '3,5' is accepted as 3.5 on decimal and fraction items; on a whole-number item it gets the unchanged whole-number note)"
+        }
+      ],
+      "files": [
+        "web/src/tasks/quant/numeric.ts",
+        "web/src/tasks/quant/numeric.test.ts",
+        "web/src/tasks/quant/entry-vectors.ts (new)",
+        "web/src/tasks/quant/hints.test.ts (new)",
+        "web/src/tasks/quant/templates.ts (HINTS and its doc comment only)",
+        "web/src/render/common/entry-copy.ts",
+        "web/src/render/common/NumericEntry.svelte",
+        "web/src/render/quant/QuantRenderer.svelte",
+        "web/src/render/quant/entry-grammar.dom.test.ts (new)",
+        "web/src/render/quant/__snapshots__/quant.dom.test.ts.snap (hint text only)",
+        "web/src/render/series/SeriesRenderer.svelte (prop adapter only)",
+        "web/scripts/ts-dumps-sync.test.ts (PARITY_FILES + quant_entry.json check)",
+        "web/scripts/bundle.test.ts (hint pin text)",
+        "web/e2e/uxdec-quant-entry.spec.ts (new)",
+        "web/ux-review/uxdec/quant-entry.json (this handoff)",
+        "bank src/hb/gen/quant/entry.py",
+        "bank src/hb/gen/quant/spec.py (HINTS)",
+        "bank golden/ts_dumps/quant.json (regenerated: spec.hint only)",
+        "bank golden/ts_dumps/quant_entry.json (new parity file)",
+        "bank tests/gen/test_quant.py (ACCEPTED/REJECTED lists)",
+        "bank tests/gen/test_quant_entry.py (new)"
+      ],
+      "tests": [
+        "web/src/tasks/quant/numeric.test.ts: cases incl. decimal comma and thousands; fast-check: comma before 1-2 digits equals the point form; every entry the frozen old parser read keeps its value and the only new readings are decimal commas (3000 runs over a grammar alphabet); thousands-grouped integers keep their value and are 'thousands'; checkNewEntry is 'unreadable' iff parseEntry is null and 'thousands' iff isThousandsEntry; every shared vector",
+        "web/src/tasks/quant/hints.test.ts: hints say whole number, never integer, equal FORMAT_HINTS; every generated item carries its format's hint; saved i:quant:1.3.0 ids resolve and their content (without hint) matches the pinned digest",
+        "web/src/render/quant/entry-grammar.dom.test.ts: decimal comma accepted and scored on decimal/fraction items; '3,5' on whole-number item gets the whole-number note, '35,0' accepted; '1,500', '12,345.5', '-1,500', '1,500%', '$1,234.50', '0,500' get THOUSANDS_NOTE on all formats, nothing sent, aria-invalid, then '1500' goes; saved '1,500' scores 1500; hints; series unchanged",
+        "web/src/render/quant/quant.dom.test.ts: existing property test now expects the thousands note for the thousands form (assertion fix)",
+        "web/scripts/ts-dumps-sync.test.ts: quant.json in sync, quant_entry.json current",
+        "bank tests/gen/test_quant_entry.py: shared vectors (value, new_entry, before); hypothesis: old-grammar values kept, only decimal commas new; grouped integers; decimal comma equals point; box check consistency; saved '1,500' scores",
+        "bank tests/gen/test_quant.py: entry ACCEPTED/REJECTED updated; A1 cross-check of the regenerated quant.json (hint_matches)",
+        "web/e2e/uxdec-quant-entry.spec.ts (chromium, iphone): in the session, first whole-number or fraction quant item: hint says whole number, '1,500' and '12,345.5' get the thousands note and are not submitted, a decimal comma is accepted; on the review page (dev server): '3,5' accepted on a decimal or fraction item, '1,500' refused then '1500' accepted on a whole-number item"
+      ],
+      "deviations": [
+        "The quant generator version stays 1.3.0 although spec.hint (part of generate output) changed, against the literal family.ts rule ('bump whenever generate output changes for any seed'), so that saved ids still regenerate and re-score; verified that every other field of 1,000 dumped items is byte-identical, and pinned by hints.test.ts.",
+        "The NumericEntry prop changed from accepts:(text)=>boolean to check:(text)=>EntryVerdict (both renderers updated; no other users)."
+      ],
+      "open_issues": [
+        "Series keeps its own integer grammar: '1,500' there gets the whole-number note ('...with no spaces or commas...'), not the thousands note. If the same note is wanted in series, SeriesRenderer's check can return 'thousands' for a d,ddd entry (one line).",
+        "normalize-digits.ts compacts spaces only in a plain number with a point, so a space-grouped decimal comma ('1 000,5') is still refused with the format note; extending the compaction to a comma would read it as 1000.5 (normalize-digits.test.ts pins today's behaviour). Left as is.",
+        "FORMAT_NOTES.decimal still says 'a point (.) for decimals, with no spaces or commas'. It is still correct advice, since the point is the asked form, but a comma decimal is now read too. Left unchanged (pinned in quant.dom.test.ts).",
+        "Fermi has its own magnitude grammar with the opposite convention (commas group thousands as in 31,557,600; a decimal comma is refused). It does not share this grammar and was not changed; the owner may want one convention across boxes.",
+        "Bank consumers of parse_entry outside scoring (hb.verify.solvers _entry_candidate, hb.verify.answers _number) now also read a decimal comma. A grep of panels/ and items/ found no answer or value of the d,dd form, so no recorded verdict changes when recomputed."
+      ]
+    }
+  ],
+  "requests": [
+    "owner of web/src/tasks/family.ts (Versions rule) and ids.ts/registry.ts docs: add that display-only copy no scoring, selection or verification reads apart from its own equality check (quant spec.hint) may change at the same generator version when every other field is byte-identical for every seed (checked by comparing the dumps), because a bump makes resolveItem drop every saved answer of the family from local re-scoring. If the owner prefers the literal rule instead, bump quant to 1.4.0 (bank 1.4.0+py), regenerate the dump, and update the SAVED_VERSION/digest pin in hints.test.ts; saved 1.3.0 quant answers would then be skipped as 'unresolved'.",
+    "integrate: pub README.md, the 'refresh every bank fixture' block: add npx tsx -e \"import('./src/tasks/quant/entry-vectors.ts').then((m) => process.stdout.write(m.serializeEntryVectors()))\" > ../../humanbench-bank/golden/ts_dumps/quant_entry.json and mention that ts-dumps-sync.test.ts checks it; bank README.md (golden/ts_dumps section): list quant_entry.json as a parity file checked by tests/gen/test_quant_entry.py.",
+    "integrate: bank src/hb/gen/quant/__init__.py re-exports only parse_entry and within_tolerance; check_new_entry and is_thousands_entry are importable from hb.gen.quant.entry (a re-export is optional).",
+    "integrate: the quant.json dump change (958 hint lines) and the new quant_entry.json must be committed in the bank together with the pub change, or ts-dumps-sync.test.ts and the bank's hint_matches cross-check fail on a mismatched pair."
+  ],
+  "shared_files_touched": [
+    "web/src/render/quant/quant.dom.test.ts: the property test 'accepts exactly what parseEntry reads' now expects the thousands note for the thousands form (it fed '1,533'); title, two imports and three assertion lines changed, nothing else"
+  ],
+  "spec_out_of_step": [
+    "DESIGN section 4.2 'Math' and ROADMAP A18 (numeric key shape) do not describe the entry grammar at all: the decimal comma, the thousands form read for saved answers but refused by the entry box, and the 'whole number' hints. A sentence in section 4.2 (or an A18 amendment) would record the grammar and the scoring/entry-box split; docs not edited here.",
+    "web/src/tasks/family.ts 'Versions' contract text ('bump it whenever generate output changes for any seed') does not allow the in-place hint change made here (see requests).",
+    "ROADMAP A1 (cross-check) and A17 (pub -> bank parity files): a new parity file golden/ts_dumps/quant_entry.json (shared grammar vectors) now exists; A17 lists only the dump direction in general terms, so nothing contradicts it, but the READMEs list the parity files by name (see requests).",
+    "web/UX-REVIEW.md D8 names A14 among the touched sections; A14 is the reading-passages ADR and has no text about the entry grammar or hints, so nothing there is out of step."
+  ],
+  "gates": {
+    "web_vitest_targeted": "pass: src/tasks/quant src/tasks/series src/render/common src/render/quant src/render/series scripts/ts-dumps-sync.test.ts scripts/bundle.test.ts, 17 files, 322 tests (re-run of hints.test.ts + ts-dumps-sync.test.ts after the bank files were final: 19 of 19)",
+    "web_check": "pass (svelte-check 1207 files 0 errors 0 warnings; tsc node and scripts projects; tsc -p tsconfig.scripts.json re-run after the e2e spec was final)",
+    "web_lint_language": "pass (363 files clean)",
+    "web_dumps_in_sync": "pass: bank golden/ts_dumps/quant.json regenerated (npm run dump:families -- --family quant --n 1000 --bank; only spec.hint differs from the previous copy in 1000 of 1000 items) and golden/ts_dumps/quant_entry.json current (ts-dumps-sync.test.ts)",
+    "web_e2e": "pass: e2e/uxdec-quant-entry.spec.ts + e2e/ux-render.spec.ts (read-only) on chromium 21 passed 1 skipped and on iphone 21 passed 1 skipped (the skip is ux-render's existing double-tap test); E2E_PORT=4737 E2E_DEV_PORT=4738 HB_DEV_SERVER=1 HB_RUN=uxdec-quant-entry, -c ux-review/playwright.iso.config.ts --workers=2",
+    "bank_ruff": "pass (uv run ruff check; uv run ruff format --check)",
+    "bank_pytest": "pass: uv run pytest -q -n 8, 6335 passed 2 skipped in 462 s (the bank worktree also held other packages' in-flight calib changes at the time)",
+    "web_npm_test_full": "not run (left to the integrate package as instructed)"
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "package": "names",
+  "decisions": [
+    {
+      "id": "D25",
+      "status": "provisional-default",
+      "option": "A plus option C's display names (in Title Case)",
+      "what_changed": "One form for part and skill names everywhere: Title Case, the DESIGN section 3 names, with plain display names for the two research names. A new display-name layer, web/src/axis-names.ts (AXIS_NAMES, axisName(code), PLAIN_AXIS_NAMES), gives every screen its skill names: LG 'Logic Games', CAL 'Confidence Calibration', every other axis its registry name (already Title Case; EMO keeps its R-5.6.2 name word for word, '(text scenarios)' included). The engine registry (web/src/engine/axes.ts) and its bank twin (src/hb/axes.py) are unchanged: they keep the section 3 names as the shared axis spec, so nothing in the bank, the golden files or the save format moves. Session: segments.ts now derives each part's title from axisName of its axis (so 'Reaction time' became 'Reaction Time': the interstitial 'Up next: Reaction Time', the part h1 and page title 'Reaction Time · HumanBench', the ready screen's resume line, the focus picker), and skipTargetName (checklist, 'Skip Reaction Time', the skipped/unavailable notices, the Finished list) returns axisName. Results: viz/profile.ts axisEstimates names (bar table rows, blob, peaks list, 'Not measured: ...' list, reveal 'now drawing' line, share card toggles), viz/card.ts (card skill names, peaks, alt text), viz/facets.ts (a facet's group), reveal/peaks.ts and reveal/norms.ts (pace lines) all take axisName. Chart labels: CAL's two-line label is the whole display name ('Confidence' / 'Calibration'); the one-line phone labels are Title Case cuts ('Logic Games', 'Reading Comp.', 'Working Mem.', 'Arts & Practical'), and CAL's stays 'Calibration'. The served privacy notice names the parts in Title Case. web/HOUSE-STYLE.md has a fixed point for names. e2e drivers and specs, DOM tests and scripts/e2e-parts.test.ts now match 'Reaction Time'.",
+      "strings": [
+        {
+          "before": "Up next: Reaction time",
+          "after": "Up next: Reaction Time"
+        },
+        {
+          "before": "Reaction time (part h1)",
+          "after": "Reaction Time"
+        },
+        {
+          "before": "Reaction time · HumanBench (page title)",
+          "after": "Reaction Time · HumanBench"
+        },
+        {
+          "before": "Your last session was not finished. Continue it to go on from the start of Reaction time and keep what you have done so far.",
+          "after": "Your last session was not finished. Continue it to go on from the start of Reaction Time and keep what you have done so far."
+        },
+        {
+          "before": "Reaction time (focus picker option)",
+          "after": "Reaction Time"
+        },
+        {
+          "before": "Calibration/Metacognition (checklist row 'Estimation', results table, share card toggle and alt, peaks, pace and retest lines)",
+          "after": "Confidence Calibration"
+        },
+        {
+          "before": "Analytical/Logic Games (results table, 'Not measured: ...' list, share card)",
+          "after": "Logic Games"
+        },
+        {
+          "before": "chart label CAL: Calibration",
+          "after": "Confidence / Calibration (two lines)"
+        },
+        {
+          "before": "phone chart label LG: Logic games",
+          "after": "Logic Games"
+        },
+        {
+          "before": "phone chart label RC: Reading comp.",
+          "after": "Reading Comp."
+        },
+        {
+          "before": "phone chart label WM: Working mem.",
+          "after": "Working Mem."
+        },
+        {
+          "before": "phone chart label KAP: Arts & practical",
+          "after": "Arts & Practical"
+        },
+        {
+          "before": "Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative are sent to the server ...",
+          "after": "Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative Reasoning are sent to the server ..."
+        },
+        {
+          "before": "The timed tasks (reaction time, working memory, coding and reading) stay on your device.",
+          "after": "The timed tasks of the parts Reaction Time, Working Memory and Processing & Reading Speed stay on your device."
+        }
+      ],
+      "files": [
+        "web/src/axis-names.ts (new: the display-name layer)",
+        "web/src/session/segments.ts (titles from axisName; skipTargetName returns axisName; info() no longer takes a title)",
+        "web/src/session/Checklist.svelte (comments only: the slash example and the longest-word note no longer name 'Metacognition')",
+        "web/src/viz/profile.ts (estimate name from axisName; SHORT_LABELS CAL; COMPACT_LABELS Title Case; comments)",
+        "web/src/viz/card.ts (card names and peakName from axisName; comments)",
+        "web/src/viz/facets.ts (facet group from axisName)",
+        "web/src/viz/BarTable.svelte (comment only)",
+        "web/src/reveal/peaks.ts (peak name from axisName)",
+        "web/src/reveal/norms.ts (pace line name from axisName)",
+        "web/src/backend/copy.ts (served privacy notice: two sentences name the parts in Title Case)",
+        "web/HOUSE-STYLE.md (fixed point: part and skill names)"
+      ],
+      "tests": [
+        "web/src/axis-names.test.ts (new: LG and CAL display names, every other name the registry's, EMO the R-5.6.2 text; all names Title Case, unique, no slash or research word; the registry keeps the section 3 names; chart labels Title Case cuts; segment titles are axisName of their axis and equal the six Title Case names; skipTargetName = axisName; source scan: the research names are spelled only in engine/axes.ts and axis-names.ts, and no UI file (session, reveal, viz, backend, brief, render, dev) that imports the registry reads axis(...).name, def.name or a.name. Mutation-checked: putting a.name back in reveal/norms.ts fails the scan)",
+        "web/src/axis-names.dom.test.ts (new: session interstitial h1 'Up next: Reaction Time' and checklist with 'Confidence Calibration'; ProfileView table rows and blob labels; ShareCard toggles and card SVG; no research name in text or in aria-label/alt/title)",
+        "web/e2e/uxdec-names.spec.ts (new: ten routes (interstitial, rt-intro, item-matrix-series, confirm-skip, results, results-bars, results-drilldown, share-card-dark, dev-blob, dev-blob-m1) show no research name and no old sentence-case name in text, names, alt texts or the card picture; interstitial, checklist, 'Skip Reaction Time', part h1 and page title; results table rows Title Case with 'Confidence Calibration' and 'Logic Games'; every-skill chart labels at 1280 and 320 px are Title Case)",
+        "web/src/viz/profile.test.ts (COMPACT_LABELS pin)",
+        "web/src/viz/card.test.ts, web/src/reveal/ShareCard.dom.test.ts (names compared with axisName instead of the registry name)",
+        "web/src/session/SessionScreen.dom.test.ts, SessionApp.dom.test.ts, SessionApp.coverage.dom.test.ts, SessionApp.flow.dom.test.ts, SessionApp.served.dom.test.ts, SessionApp.resume.dom.test.ts, Ready.dom.test.ts, components.dom.test.ts ('Reaction time' -> 'Reaction Time')",
+        "web/scripts/e2e-parts.test.ts ('Reaction Time')",
+        "web/e2e/routes.ts (SEGMENT_TITLES), parts.ts, session-driver.ts, flow.ts, keyboard-session.spec.ts, session.spec.ts, server.spec.ts, ux-render.spec.ts, ux-session.spec.ts, ux2-session.spec.ts, uxdec-screen.spec.ts ('Reaction Time'); web/ux-review/lib/journey.ts (comment)",
+        "web/e2e/routes.ts, outside the rename: toInterstitial now declines the break offer that the D5 run package moved to the boundary before Working Memory (it appears when a route skips into that part), and the 'break-offer' and 'on-break' routes reach the offer by skipping Reaction Time, Matrix & Series and Spatial instead of fast-forwarding 31 minutes (the 30-active-minute rule is gone). Without it 7 a11y routes (memory-intro, memory-entry, quant-item, coding-intro, coding-running, break-offer, on-break) failed all their a11y.spec.ts tests on 'Time for a break?' (42 failures in shard 1/3); with it the 49 tests of those routes pass.",
+        "web/e2e/session.spec.ts, outside the rename: 'the under-18 path writes nothing' expected no button on the under-18 screen; the funnel package's D24 put 'I chose this by mistake' there, so it now expects that one button (it goes back to the gate, not further). Passes on Chromium."
+      ],
+      "deviations": [
+        "Display-name layer instead of new engine names: the registry names are the shared axis spec with bank hb.axes and the DESIGN section 3 names (engine/axes.test.ts 'matches the shared axis spec row by row', bank tests/test_axes.py), so they stay; only the pub UI shows the display names. The bank is untouched.",
+        "CAL's one-line phone label stays 'Calibration' (a cut of 'Confidence Calibration', the thing measured), not 'Confidence' as COPY-19 suggested (ux-review/findings/copy.json): 'Confidence' alone reads as how confident the person is, and a higher estimate does not mean that.",
+        "The renderers' block titles ('One position', 'Four positions', 'Digits, same order', 'Block sequence', 'Shape to digit', 'Reading') are left in sentence case: they name a block inside a part, not a part or a skill, and ux-render.spec.ts pins that they differ from the part's h1.",
+        "Drill-down facet labels ('Simple reaction time', 'Choice reaction time', 'Odd one out', ...) are left in sentence case: they are sub-facets, not part or skill names.",
+        "Running text that speaks of a measure in general stays lower case ('your typical simple reaction time', 'reaction times use the time stamp ...'); HOUSE-STYLE.md says so.",
+        "e2e/routes.ts also got a fix that has nothing to do with names (toInterstitial and the two break routes, see tests): the D5 run package changed when the break is offered but left these a11y drivers as they were, and they are the drivers this package had to edit for the titles anyway."
+      ],
+      "open_issues": [
+        "Facet labels and block titles are sentence case while part and skill names are Title Case (see deviations); if the owner wants every label in one case, that is a further change of viz/facets.ts FACET_LABELS and the renderer titles.",
+        "Worked-example titles on the results page are 'Example n: Matrix', 'Sequence', 'Quantitative' (question kinds, not part names); 'Quantitative' could become 'Quantitative Reasoning' if the owner reads them as part names.",
+        "The Title Case phone labels are a little wider than before ('Reading Comp.', 'Working Mem.', 'Arts & Practical', 'Logic Games'). Re-measured at 320 px for the every-skill profile (e2e/uxdec-viz.spec.ts D14 log): main chart 11.00 px with the system font and 10.77 px with the wide font (10.94 px before this package), Knowledge facets 10.70 px; the 10 px floor of e2e/blob.spec.ts holds with less margin than before."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/UX-REVIEW.md",
+      "change": "At integration: the D25 row (section 2) and the UX-060 row (section 3) can be marked as built with the provisional default (option A plus option C's display names, Title Case).",
+      "why": "This package may not edit UX-REVIEW.md."
+    },
+    {
+      "file": "web/e2e/routes.ts",
+      "change": "Integrate: check that the break routes now match what the run package intends (the offer before the half-way part, declined with 'Keep going' on the way to a later part). Done here because 42 a11y.spec.ts tests failed on it.",
+      "why": "The run package (D5) did not update the a11y route drivers; this package touched routes.ts for the titles."
+    },
+    {
+      "file": "web/e2e/session.spec.ts (lines ~560-780), web/e2e/ux2-session.spec.ts:398",
+      "change": "Integrate (or the run package): 9 Chromium tests fail on the run package's D5, not on names, and need rewriting to the new break and clock rules. (1) 'a break is suggested at 30 minutes at the next boundary', (2) 'the suggestion is made once', (3) 'the offer waits for the end of the item on screen': they fast-forward 30 minutes and expect 'Time for a break?' after the first skip; the offer now comes only before the half-way part (Working Memory), whatever the time, and never mid-part, so (3)'s premise is gone and (1)/(2) should reach it by skipping RT, MAT and SPA (ux-session.spec.ts already covers the new rule). (4) 'QR keeps its coverage floor of 3 items when the time budget is gone', (5) 'a start that was abandoned before any answer ...': quantWithoutBudget expects 'Up next: Working Memory' after skipping Spatial and gets the break offer; it must decline it ('Keep going'), and its 28-minute jump on the QR interstitial no longer uses the budget (the clock is held on interstitials), so the 'time budget is gone' premise needs a jump inside a part. (6) 'the ring follows session time' and (8) 'the ?fast=1 dev flag ... the timeline runs faster': they fast-forward on an interstitial and expect the ring to move; it is held there now ('The clock waits until you press Start'), so they must Start a part first. (7) session.spec.ts:736 'without WebGL the Spatial item offers the skip' and (9) ux2-session.spec.ts:398 'Skip leaves for the next part': after skipping Spatial the break offer comes before 'Up next: Working Memory'; decline it or expect it. The funnel package's handoff already reported (9).",
+      "why": "Not part of D25; they encode D5's rules, which the run package owns. Left unchanged here."
+    }
+  ],
+  "shared_files_touched": [
+    "web/src/backend/copy.ts (privacy package D1): two sentences of the served notice, part names only; the D1 sentence is untouched",
+    "web/HOUSE-STYLE.md (start-copy package D26): one new bullet under 'Fixed points'",
+    "web/src/session/segments.ts (D10/D20 packages): titles and skipTargetName only; blurbs untouched",
+    "web/src/viz/profile.ts, web/src/viz/card.ts, web/src/viz/facets.ts (viz packages): names and labels only",
+    "web/e2e/uxdec-screen.spec.ts (screen package): one literal 'Up next: Reaction Time'",
+    "e2e drivers shared by all packages (routes.ts, parts.ts, session-driver.ts, flow.ts): the 'Reaction Time' literal only",
+    "web/e2e/routes.ts (all packages, a11y sweep): SEGMENT_TITLES 'Reaction Time'; toInterstitial declines the break offer; 'break-offer' and 'on-break' open the offer before Working Memory (follow-up of the run package's D5)",
+    "web/e2e/session.spec.ts (session, all packages): 'Reaction Time' literals, and the under-18 test's button count (follow-up of the funnel package's D24)"
+  ],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md section 3 rows 3 and 12, and ROADMAP A7",
+      "what": "The screens show 'Logic Games' and 'Confidence Calibration' where section 3 names 'Analytical/Logic Games' and 'Calibration/Metacognition'. A7 names a user-facing name only for EMO. If the owner confirms D25, A7 could list the two display names beside EMO's (the registry and the bank keep the section 3 names)."
+    },
+    {
+      "where": "docs/DESIGN.md section 3 rows 13 to 15",
+      "what": "Section 3 writes 'STEM knowledge', 'Humanities knowledge' and 'Arts & Practical/Life'; the registry, and so every screen, already says 'STEM Knowledge', 'Humanities Knowledge' and 'Arts & Practical Knowledge' (unchanged here)."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/viz src/reveal src/engine/axes.test.ts src/copy.test.ts scripts/e2e-parts.test.ts src/axis-names",
+      "result": "pass: 38 files, 611 tests"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/session src/backend src/App.dom.test.ts src/App.served.dom.test.ts src/no-todo.test.ts scripts/e2e-parts.test.ts scripts/static-shell.test.ts scripts/a11y-routes.test.ts",
+      "result": "pass: 49 files, 740 tests (static shell unaffected)"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/axis-names scripts/a11y-routes.test.ts scripts/e2e-parts.test.ts (after the last edit)",
+      "result": "pass: 4 files, 29 tests; the source scan was mutation-checked (a.name put back in reveal/norms.ts fails it)"
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "pass: svelte-check 1221 files, 0 errors, 0 warnings; tsc node and scripts (e2e included) clean"
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "pass: 369 files clean"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4747 HB_RUN=uxdec-names npx playwright test -c ux-review/playwright.iso.config.ts --project=chromium --workers=3 e2e/uxdec-names.spec.ts",
+      "result": "pass: 15 of 15"
+    },
+    {
+      "cmd": "same, --project=chromium --workers=3 --shard=1/3",
+      "result": "250 passed, 47 skipped, 42 failed: every failure was one of 7 a11y routes (memory-intro, memory-entry, quant-item, coding-intro, coding-running, break-offer, on-break) stopping at 'Time for a break?' (the run package's D5). After the e2e/routes.ts fix: e2e/a11y.spec.ts --grep for those 7 routes, 49 passed, 0 failed."
+    },
+    {
+      "cmd": "same, --shard=2/3",
+      "result": "309 passed, 29 skipped, 1 failed: session.spec.ts:181 under-18 screen expected no button (the funnel package's D24 added 'I chose this by mistake'). After the fix: 1 passed."
+    },
+    {
+      "cmd": "same, --shard=3/3",
+      "result": "290 passed, 39 skipped, 9 failed, all from the run package's D5 break and clock rules, none from names: session.spec.ts:560, 581, 593, 669, 674, 698, 736, 760 and ux2-session.spec.ts:398 (see requests). blob.spec.ts, uxdec-viz.spec.ts, share-card.spec.ts, wide-font.spec.ts and every spec that matches a part title pass."
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4747 HB_RUN=uxdec-names npx playwright test -c ux-review/playwright.iso.config.ts --project=iphone --workers=3 e2e/session.spec.ts e2e/session-save.spec.ts e2e/ux-session.spec.ts e2e/ux2-session.spec.ts e2e/uxdec-screen.spec.ts e2e/uxdec-names.spec.ts e2e/server.spec.ts e2e/keyboard-session.spec.ts",
+      "result": "128 passed, 20 skipped, 9 failed: the same 9 D5 tests as Chromium shard 3; uxdec-names.spec.ts 15 of 15 on iPhone"
+    },
+    {
+      "cmd": "bank gates",
+      "result": "not run: the bank was not touched (engine names unchanged)"
+    }
+  ]
+}
