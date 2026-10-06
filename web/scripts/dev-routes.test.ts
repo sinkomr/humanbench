@@ -65,7 +65,7 @@ async function builtSessionTimeScale(devRoutes: boolean): Promise<(search: strin
  * "production builds ignore it"): `sessionTimeScale` folds to 1 where `__HB_DEV_ROUTES__` is false,
  * and the banner text goes with it.
  */
-const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)', 'Fast mode (development only)', 'Estimation entry demo (development only)', 'demo:fermi:', 'Emotion reading entry demo (development only)', 'demo:emotion:']
+const DEV_MARKERS = ['Blob demo (development only)', 'Synthetic profiles scored by the engine', '#/dev/', 'Typical first session', 'Reveal screens demo (development only)', 'Fast mode (development only)', 'Estimation entry demo (development only)', 'demo:fermi:', 'Emotion reading entry demo (development only)', 'demo:emotion:', 'Situational judgment entry demo (development only)', 'demo:sjt:', 'Word links entry demo (development only)', 'demo:rat:', 'Unusual uses entry demo (development only)', 'demo:aut:']
 
 describe('dev-only routes (M1.16)', () => {
   it('are on in dev and tests, off in production unless VITE_HB_DEV_ROUTES=1', () => {
@@ -79,7 +79,7 @@ describe('dev-only routes (M1.16)', () => {
   it('a plain production build ships no dev route, demo page or synthetic profile', async () => {
     const { files, text } = await appBuild(undefined)
     expect(text).toContain('HumanBench')
-    expect(files.filter((f) => /BlobDemo|RevealAiDemo|FermiDemo|EmotionDemo|routes|synthetic/i.test(f))).toEqual([])
+    expect(files.filter((f) => /BlobDemo|RevealAiDemo|FermiDemo|EmotionDemo|SjtDemo|RatDemo|AutDemo|routes|synthetic/i.test(f))).toEqual([])
     for (const m of DEV_MARKERS) expect(text, m).not.toContain(m)
   }, 60_000)
 
@@ -106,6 +106,9 @@ describe('dev-only routes (M1.16)', () => {
     expect(files.some((f) => /RevealAiDemo/.test(f))).toBe(true)
     expect(files.some((f) => /FermiDemo/.test(f))).toBe(true)
     expect(files.some((f) => /EmotionDemo/.test(f))).toBe(true)
+    expect(files.some((f) => /SjtDemo/.test(f))).toBe(true)
+    expect(files.some((f) => /RatDemo/.test(f))).toBe(true)
+    expect(files.some((f) => /AutDemo/.test(f))).toBe(true)
     for (const m of DEV_MARKERS) expect(text, m).toContain(m)
   }, 60_000)
 

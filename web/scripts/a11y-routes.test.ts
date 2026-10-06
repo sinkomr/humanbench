@@ -23,6 +23,9 @@ import { ENTRY_RENDERERS } from '../src/render/entry'
 import { SEGMENT_INFO } from '../src/session/segments'
 import { DEV_ONLY_PAGES, PAGES } from '../vite.config'
 import { DEV_SERVER_ROUTES, PREVIEW_ROUTES, RENDERER_ROOTS, ROUTES, SEGMENT_TITLES } from '../e2e/routes'
+import { AUT_PINNED_STATES } from '../e2e/routes-aut'
+import { RAT_PINNED_STATES } from '../e2e/routes-rat'
+import { SJT_PINNED_STATES } from '../e2e/routes-sjt'
 
 const WEB = fileURLToPath(new URL('..', import.meta.url))
 const SRC = join(WEB, 'src')
@@ -168,6 +171,10 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
     'dev-emotion',
     'dev-emotion-tip',
     'dev-emotion-feedback',
+    // the tier (c) entries (M6.2-M6.4): each feature keeps its pins in its own e2e/routes-<x>.ts
+    ...SJT_PINNED_STATES,
+    ...RAT_PINNED_STATES,
+    ...AUT_PINNED_STATES,
   ]
 
   it('keeps the routes for the states of a screen that its component alone does not show (an error, a notice, a second look)', () => {
