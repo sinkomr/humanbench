@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MAD_TO_SD,
   RT_NORMS_VERSION,
+  RT_TOUCH_NORMS,
   RT_WEB_NORMS,
   SE_MEDIAN_FACTOR,
   classifyTrial,
@@ -167,7 +168,30 @@ describe('scoreRtResponse → Gaussian observation (A10)', () => {
     const r = score('simple', uniform('simple', 300), { device_class: 'phone', input_type: 'touch', refresh_hz_est: 120 })
     expect(r.meta).toMatchObject({ device_class: 'phone', input_type: 'touch', refresh_hz_est: 120, norms_version: RT_NORMS_VERSION, mode: 'simple', n_trials: 30 })
     expect('input_type' in score('simple', uniform('simple', 300)).meta).toBe(false)
-    expect(rtNorm('simple', 'phone')).toBe(RT_WEB_NORMS.simple) // one provisional web norm for every class, for now
+    expect(rtNorm('simple', 'phone')).toBe(RT_WEB_NORMS.simple) // device class alone does not pick a norm
+  })
+
+  it('the input type picks the norm: touch uses the touch norms, keyboard, mouse and unknown the web norms', () => {
+    expect(rtNorm('simple', 'phone', 'touch')).toBe(RT_TOUCH_NORMS.simple)
+    expect(rtNorm('choice4', 'phone', 'touch')).toBe(RT_TOUCH_NORMS.choice4)
+    for (const t of ['keyboard', 'mouse', undefined]) expect(rtNorm('simple', 'desktop', t)).toBe(RT_WEB_NORMS.simple)
+    expect(RT_TOUCH_NORMS.simple.median_rt_ms).toBeGreaterThanOrEqual(450)
+    expect(RT_TOUCH_NORMS.simple.median_rt_ms).toBeLessThanOrEqual(500)
+    expect(RT_TOUCH_NORMS.simple.s).toBeGreaterThanOrEqual(RT_WEB_NORMS.simple.s)
+  })
+
+  it('a typical touch median (470 ms simple) is near 0 SD on touch and no longer an extreme low', () => {
+    const theta = (r: Extract<RtBlockResult, { status: 'ok' }>): number => (r.observation.d - r.observation.x) / -r.observation.lam
+    const touch = ok(score('simple', uniform('simple', 470), { device_class: 'phone', input_type: 'touch' }))
+    expect(touch.observation).toMatchObject({ lam: -0.2, d: Math.log(470) })
+    expect(Math.abs(theta(touch))).toBeLessThan(1e-12)
+    expect(ok(score('choice4', uniform('choice4', 620), { device_class: 'phone', input_type: 'touch' })).observation.d).toBe(Math.log(620))
+    for (const input_type of ['keyboard', 'mouse']) {
+      const r = ok(score('simple', uniform('simple', 300), { device_class: 'desktop', input_type }))
+      expect(r.observation).toMatchObject({ lam: -0.15, d: Math.log(300) })
+    }
+    const kb470 = ok(score('simple', uniform('simple', 470), { device_class: 'desktop', input_type: 'keyboard' }))
+    expect(theta(kb470)).toBeLessThan(-2.9) // unchanged for keyboard and mouse
   })
 
   it('rtBlockObservation scores against the item key', () => {

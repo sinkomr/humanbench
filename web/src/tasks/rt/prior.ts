@@ -16,7 +16,7 @@ import type { Stratum } from '../ids'
 import { RT_MODE_CONFIG, RT_PRACTICE_TRIALS, type RtMode, type RtSpec } from './types'
 
 /** Version tag of the norm table below, stored with every observation. */
-export const RT_NORMS_VERSION = 'rt-web-v0'
+export const RT_NORMS_VERSION = 'rt-web-v1'
 
 /** One norm row: β = ln(median RT), slope s (log-RT per θ SD) and residual τ_res. */
 export interface RtNorm {
@@ -28,9 +28,9 @@ export interface RtNorm {
 }
 
 /**
- * [SPEC, provisional] web norms (A10): simple β = ln 300, choice β = ln 450, s = 0.15,
- * τ_res = 0.05. Web RTs include device lag (§7.3), hence the medians above lab values
- * (≈ 200–250 ms simple). One table for every device class until M4.8 fits per-class norms.
+ * [SPEC, provisional] web norms (A10) for keyboard and mouse (and an unknown input type): simple
+ * β = ln 300, choice β = ln 450, s = 0.15, τ_res = 0.05. Web RTs include device lag (§7.3), hence
+ * the medians above lab values (≈ 200–250 ms simple).
  */
 export const RT_WEB_NORMS: Readonly<Record<RtMode, RtNorm>> = Object.freeze({
   simple: Object.freeze({ median_rt_ms: 300, beta: Math.log(300), s: 0.15, tau_res: 0.05 }),
@@ -38,11 +38,30 @@ export const RT_WEB_NORMS: Readonly<Record<RtMode, RtNorm>> = Object.freeze({
 })
 
 /**
- * The norm for a mode and device class (§11.6: norm within device class). Every class gets the
- * provisional web norm for now; the parameter is here so per-class tables slot in later.
+ * [SPEC, provisional until M4.8] touch norms (owner decision 2026-10-06, UX-REVIEW D3): simple
+ * β = ln 470, choice β = ln 620, s = 0.20, τ_res = 0.05. A typical touch-screen median simple RT
+ * (about 450–500 ms) must not read as an extreme low (under s = 0.15 and β = ln 300, 470 ms was
+ * −3 SD). Basis: the touch values add about 170 ms of touch-event and screen-pipeline delay to
+ * the keyboard/mouse web norms (touch events reach the page roughly 50–100+ ms after contact on
+ * phones; display and browser latency add more, and vary widely between devices, cf. Anwyl-Irvine
+ * et al. 2021, Behav Res Methods, "Realistic precision and accuracy of online experiment
+ * platforms, web browsers, and devices"). [SPEC]: no figure could be re-checked at the time of
+ * writing, so no number here is [EST]. s = 0.20 is wider because touch device lag differs between
+ * handsets on top of the usual spread between people (a population simple-RT SD of about 15–20%
+ * of the median is typical of age-mixed samples). Revisit with real touch blocks at M4.8 (§11.6).
  */
-export function rtNorm(mode: RtMode, _deviceClass?: string): RtNorm {
-  return RT_WEB_NORMS[mode] // per-device-class norms arrive with M4.8
+export const RT_TOUCH_NORMS: Readonly<Record<RtMode, RtNorm>> = Object.freeze({
+  simple: Object.freeze({ median_rt_ms: 470, beta: Math.log(470), s: 0.2, tau_res: 0.05 }),
+  choice4: Object.freeze({ median_rt_ms: 620, beta: Math.log(620), s: 0.2, tau_res: 0.05 }),
+})
+
+/**
+ * The norm for a mode and input type (§11.6: normed separately by input). 'touch' uses
+ * {@link RT_TOUCH_NORMS}; keyboard, mouse and an unknown input type use {@link RT_WEB_NORMS}.
+ * Device class does not change the norm yet (M4.8).
+ */
+export function rtNorm(mode: RtMode, _deviceClass?: string, inputType?: string): RtNorm {
+  return inputType === 'touch' ? RT_TOUCH_NORMS[mode] : RT_WEB_NORMS[mode]
 }
 
 /** The A10 Gaussian parameters of a norm row: lam = −s, d = β, sigma = τ_res. */

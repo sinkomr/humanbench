@@ -61,7 +61,7 @@ describe.each(RT_FAMILY_LIST.map((f) => [f.name, f] as const))('%s scoring parit
   it('each case is the TS result of its own responses on its own block', () => {
     for (const [i, c] of dump.cases.entries()) {
       const item = family.generate(`${RT_SCORE_DUMP_SEED_PREFIX}${i}`)
-      expect(c.expected).toEqual(expectedOf(scoreRtResponse(item.spec.mode, item.key.positions, c.response, { device_class: c.device_class })))
+      expect(c.expected).toEqual(expectedOf(scoreRtResponse(item.spec.mode, item.key.positions, c.response, { device_class: c.device_class, input_type: c.input_type })))
       expect(c.response.rt_ms).toHaveLength(item.key.positions.length)
     }
   }, 60_000)

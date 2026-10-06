@@ -189,6 +189,7 @@
   }
   .ring.reference {
     stroke: var(--hb-stub);
+    stroke-width: 1.75; /* REFERENCE_RING_STROKE_WIDTH (geometry.ts): a slightly heavier 0 SD ring, no label of its own */
     stroke-dasharray: 5 4;
   }
   .spoke {

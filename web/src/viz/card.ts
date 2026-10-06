@@ -63,7 +63,7 @@ import {
   cardSessions,
 } from './card-copy'
 import { RING_NOTE } from './copy'
-import { formatTheta } from './geometry'
+import { formatTheta, REFERENCE_RING_STROKE_WIDTH, RING_STROKE_WIDTH } from './geometry'
 import { THEMES, type ThemeName, type VizTheme } from './palette'
 import { COMPACT_LABELS, SHORT_LABELS, type AxisEstimate, type SpokeEstimate } from './profile'
 
@@ -320,8 +320,8 @@ export function esc(s: string): string {
 function styleSheet(t: VizTheme): string {
   return [
     `.blob text{paint-order:stroke fill;stroke:${t.bg};stroke-linejoin:round}`,
-    `.ring{fill:none;stroke:${t.grid};stroke-width:1}`,
-    `.ring.reference{stroke:${t.stub};stroke-dasharray:5 4}`,
+    `.ring{fill:none;stroke:${t.grid};stroke-width:${RING_STROKE_WIDTH}}`,
+    `.ring.reference{stroke:${t.stub};stroke-width:${REFERENCE_RING_STROKE_WIDTH};stroke-dasharray:5 4}`,
     `.spoke{stroke:${t.grid};stroke-width:1}`,
     `.band{fill:${t.band};fill-opacity:.12;stroke:${t.band};stroke-opacity:${t.bandEdgeOpacity};stroke-width:1}`,
     `.fuzz path{fill:${t.band};stroke:none}`,

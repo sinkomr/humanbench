@@ -21,6 +21,15 @@ export const R_MIN_FRACTION = 0.04
 export const THETA_CLAMP_LOW = THETA_MIN + (THETA_MAX - THETA_MIN) * R_MIN_FRACTION
 /** Ring positions in θ (§9.1); θ = 0 is the dashed reference ring. */
 export const RING_THETAS = [-2, -1, 0, 1, 2] as const
+
+/**
+ * Stroke widths of the rings, in chart px. The 0 SD ring, the provisional reference (owner
+ * decision 2026-10-06, UX-REVIEW D3), is slightly heavier than the other rings, as well as dashed
+ * and darker; it carries no number, label or caption of its own. `BlobChart.svelte` and the share
+ * card's stylesheet (`card.ts`) both use these values (a test pins the component's CSS to them).
+ */
+export const RING_STROKE_WIDTH = 1
+export const REFERENCE_RING_STROKE_WIDTH = 1.75
 /** z of a central 90% normal interval, Φ⁻¹(0.95): the muting rule (§9.5, A12) and whiskers. */
 export const Z90 = 1.6448536269514722
 
