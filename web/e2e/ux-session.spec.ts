@@ -91,7 +91,8 @@ test.describe('a new question opens at its heading, and its Continue is in reach
         await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
         await expect(h1(page)).toBeInViewport()
         await expect.poll(() => scrollY(page)).toBe(0)
-        await expect(h1(page)).toBeFocused()
+        // The second question of the part: focus is on its own region, not on the heading (UX-REVIEW D21, provisional default).
+        await expect(page.getByRole('group', { name: 'Question 2' })).toBeFocused()
       })
 
       test('the Spatial interstitial’s Start opens the part at its heading', async ({ page, isMobile }) => {

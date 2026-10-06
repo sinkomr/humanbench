@@ -110,4 +110,44 @@ describe('ConfirmPanel (M1.15)', () => {
     expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Skip Spatial', 'Keep going'])
     expect(buttons[0]!.classList.contains('hb-primary')).toBe(true)
   })
+
+  describe('the Skip and Finish panels of the session: "Keep going" is the primary (UX-REVIEW D27, provisional default)', () => {
+    it('with primary="no" the safe answer is first and the only primary, and the heading still takes focus', () => {
+      const { c, yes, no } = open({ primary: 'no' })
+      const buttons = [...c.querySelectorAll('button')]
+      expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Keep going', 'Skip Spatial'])
+      expect(c.querySelectorAll('button.hb-primary')).toHaveLength(1)
+      expect(buttons[0]!.classList.contains('hb-primary')).toBe(true)
+      expect(document.activeElement).toBe(c.querySelector('h2'))
+      click(buttons[1]!)
+      expect(yes).toHaveBeenCalledTimes(1)
+      click(buttons[0]!)
+      expect(no).toHaveBeenCalledTimes(1)
+    })
+
+    it('Escape keeps meaning "Keep going" there: onno, not onyes', () => {
+      const { c, yes, no } = open({ primary: 'no' })
+      const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      c.querySelector('h2')!.dispatchEvent(esc)
+      expect(no).toHaveBeenCalledTimes(1)
+      expect(yes).not.toHaveBeenCalled()
+      expect(esc.defaultPrevented).toBe(true)
+    })
+
+    it('the double-tap guard holds back the second tap on the primary "Keep going" as it does with the other order, and a later press is a decision', () => {
+      let now = 10_000
+      vi.spyOn(performance, 'now').mockImplementation(() => now)
+      const { c, yes, no } = open({ primary: 'no' })
+      press(document.body, 'touch', [200, 90])
+      now += 80
+      const keep = buttonByText(c, 'Keep going')
+      press(keep, 'touch', [201, 91])
+      click(keep)
+      expect(no).not.toHaveBeenCalled()
+      expect(yes).not.toHaveBeenCalled()
+      now += 1000
+      click(keep)
+      expect(no).toHaveBeenCalledTimes(1)
+    })
+  })
 })

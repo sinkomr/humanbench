@@ -4,7 +4,9 @@
   ranges ticked to begin with; the person chooses, and starting with none ticked asks for a choice.
   Used on the results and on the start screen of a returning person. Each row is one label around
   its checkbox, so the whole row (44 px tall) is the target, and the rows keep their own spacing
-  whatever the host screen's `.check` rule says (UX-033).
+  whatever the host screen's `.check` rule says (UX-033). The start button is a secondary one: the
+  host screens have their own primary action (the save, "Begin"), and a screen has one (UX-REVIEW D27,
+  a provisional default).
 -->
 <script lang="ts">
   import { untrack } from 'svelte'
@@ -59,7 +61,7 @@
     <p class="error" id="{uid}-problem" role="alert">{problem}</p>
   {/if}
   <div class="hb-actions">
-    <button type="submit" class="hb-btn hb-primary">{FOCUS_START}</button>
+    <button type="submit" class="hb-btn">{FOCUS_START}</button>
   </div>
 </form>
 

@@ -1,8 +1,9 @@
 <!--
   The running session (ROADMAP M1.15; DESIGN §7.4, §10, §13; A15): the time-based progress ring and
   the per-cluster checklist around whatever the run is showing: an interstitial ("Up next: Spatial.
-  About 6 min."), a fixed block, a power item with its confidence slider, the break suggestion, or the
-  break itself. "Skip <axis>" and "Finish early" are always at hand. This component only shows
+  About 6 min.", and that the clock waits there until Start, UX-066), a fixed block, a power item with
+  its confidence slider (which reports whether it was moved, UX-063), the break suggestion at the part
+  boundary nearest half-way, or the break itself. "Skip <axis>" and "Finish early" are always at hand. This component only shows
   `SessionRun.view()` and forwards the renderers' events; the rules live in `run.ts`.
   The header is small on a phone (UX-003); "Keep going" in a confirmation hands focus back to the running
   block's own input surface, so the next response key counts (UX-005a); the browser's Back button opens
@@ -10,6 +11,14 @@
   and its Skip button first, and says it once: the renderer that reported the condition stays mounted but
   parked in a `hidden` wrapper, out of sight and out of the accessibility tree, so its own note and its
   empty frames are neither drawn nor read, and the panel's role=status line is the one announcement (UX-017a).
+  Focus on a new screen (UX-REVIEW D21, a provisional default): the heading takes it on the first question of
+  a part and on every screen that is not a question; on a later question of the same part it goes to the
+  question's own region, named "Question 3" (`question-focus.ts`), so the part's name is not read again for
+  every question. The region holds the question, its confidence slider and the notes about it, so it stays
+  on screen when the renderer is parked. The wait between two questions of a served part takes no focus of
+  its own (the question that follows does); a wait that failed takes the heading, as a screen to be told about.
+  One primary button per screen (D27, a provisional default): in the Skip and Finish panels "Keep going" is
+  the primary and comes first.
 -->
 <script lang="ts">
   import { onMount, tick as svelteTick } from 'svelte'
@@ -38,6 +47,7 @@
     FINISH_EARLY,
     FINISH_EARLY_HEAD,
     FINISH_EARLY_TAIL,
+    INTERSTITIAL_CLOCK,
     INTERSTITIAL_SKIP,
     INTERSTITIAL_START,
     NOTICE_MALFORMED,
@@ -55,6 +65,7 @@
     skipButton,
     upNext,
   } from './copy'
+  import { QuestionFocus, itemRegionName } from './question-focus'
   import type { SessionEnv } from './env'
   import type { AutosaveStatus } from './persist'
   import type { RunView, SessionRun } from './run'
@@ -79,6 +90,10 @@
   let view: RunView = $state.raw(run.view())
   // svelte-ignore state_referenced_locally
   let elapsedS = $state(run.elapsedS())
+  const uid = $props.id()
+  /** The id of the region a later question hands focus to (`Screen` `focusId`). */
+  const regionId = `${uid}-item`
+  const questions = new QuestionFocus()
   let confirm: 'skip' | 'finish' | null = $state(null)
   let opener: HTMLElement | null = null
   let finishButton: HTMLButtonElement | undefined = $state()
@@ -131,10 +146,15 @@
       case 'item':
       case 'confidence':
         return `q:${view.item?.item_id ?? ''}`
+      case 'loading':
+        // A wait that failed is a screen of its own to be told about (focus on its heading); the wait itself is not.
+        return view.problem === null ? 'loading' : 'loading:problem'
       default:
         return view.phase
     }
   })
+  /** Where focus goes on this screen, and the number of its question: asked once per screen key. */
+  const plan = $derived(questions.enter(screenKey, { phase: view.phase, segmentIndex: view.segmentIndex, problem: view.problem !== null }))
   const notice = $derived.by(() => {
     const n = view.notice
     if (n === null) return ''
@@ -218,10 +238,11 @@
 
   <div class="body">
     {#key screenKey}
-      <Screen {title} wide>
+      <Screen {title} wide focus={plan.target !== 'none'} focusId={plan.target === 'item' ? regionId : undefined}>
         {#if view.phase === 'interstitial' && segment !== null}
           <p class="lead">{aboutMinutes(segment.minutes)}</p>
           <p>{SEGMENT_INFO[segment.id].blurb}</p>
+          <p class="clock-note" data-clock-note>{INTERSTITIAL_CLOCK}</p>
           <div class="hb-actions">
             <button type="button" class="hb-btn hb-primary" onclick={() => run.startSegment()}>{INTERSTITIAL_START}</button>
             <button type="button" class="hb-btn" onclick={(e) => ask('skip', e)}>{INTERSTITIAL_SKIP}</button>
@@ -240,36 +261,39 @@
             ontimestampsource={(s, reason) => run.blockTimestampSource(s, reason)}
           />
         {:else if (view.phase === 'item' || view.phase === 'confidence') && view.item !== null}
-          {#if view.unavailable}
-            <div class="unavailable" role="group" aria-label="This question cannot be shown">
-              <p role="status">{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
-              <div class="hb-actions">
-                <button type="button" class="hb-btn hb-primary" onclick={() => run.skipAxis()}>{skipButton(skipName)}</button>
-                <button type="button" class="hb-btn" onclick={(e) => ask('finish', e)}>{FINISH_EARLY}</button>
+          <!-- The question's own region: a script target for a later question of the part (D21), not a tab stop. -->
+          <div class="item-region" id={regionId} role="group" aria-label={itemRegionName(plan.number)} tabindex="-1">
+            {#if view.unavailable}
+              <div class="unavailable" role="group" aria-label="This question cannot be shown">
+                <p role="status">{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
+                <div class="hb-actions">
+                  <button type="button" class="hb-btn hb-primary" onclick={() => run.skipAxis()}>{skipButton(skipName)}</button>
+                  <button type="button" class="hb-btn" onclick={(e) => ask('finish', e)}>{FINISH_EARLY}</button>
+                </div>
               </div>
+            {/if}
+            <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
+            <div class="stage-host" hidden={view.unavailable}>
+              <Stage
+                family={view.item.family}
+                itemId={view.item.item_id}
+                spec={view.item.spec}
+                scale={env.scale}
+                timing={env.timing}
+                disabled={view.phase === 'confidence' || view.unavailable}
+                onrespond={(r) => run.itemResponded(r)}
+                onshown={(ms) => run.itemShown(ms)}
+                onunavailable={() => run.itemUnavailable()}
+                onpaste={(id) => run.notePaste(id)}
+              />
             </div>
-          {/if}
-          <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
-          <div class="stage-host" hidden={view.unavailable}>
-            <Stage
-              family={view.item.family}
-              itemId={view.item.item_id}
-              spec={view.item.spec}
-              scale={env.scale}
-              timing={env.timing}
-              disabled={view.phase === 'confidence' || view.unavailable}
-              onrespond={(r) => run.itemResponded(r)}
-              onshown={(ms) => run.itemShown(ms)}
-              onunavailable={() => run.itemUnavailable()}
-              onpaste={(id) => run.notePaste(id)}
-            />
+            {#if view.phase === 'confidence' && view.confidence !== null}
+              <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct, touched) => run.confirmConfidence(pct, touched)} />
+            {/if}
+            {#if view.reportable !== null && report !== undefined}
+              <ReportProblem itemId={view.reportable} {report} />
+            {/if}
           </div>
-          {#if view.phase === 'confidence' && view.confidence !== null}
-            <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct) => run.confirmConfidence(pct)} />
-          {/if}
-          {#if view.reportable !== null && report !== undefined}
-            <ReportProblem itemId={view.reportable} {report} />
-          {/if}
         {:else if view.phase === 'loading'}
           {#if view.problem === null}
             <p role="status" data-loading>{LOADING_TEXT}</p>
@@ -295,9 +319,10 @@
         {/if}
 
         {#if confirm === 'skip'}
-          <ConfirmPanel heading={SKIP_CONFIRM_HEADING(skipName)} text={SKIP_CONFIRM_TEXT} yes={SKIP_CONFIRM_YES(skipName)} no={SKIP_CONFIRM_NO} onyes={confirmSkip} onno={cancel} />
+          <!-- "Keep going" is the primary and first (D27); Escape means it too. -->
+          <ConfirmPanel heading={SKIP_CONFIRM_HEADING(skipName)} text={SKIP_CONFIRM_TEXT} yes={SKIP_CONFIRM_YES(skipName)} no={SKIP_CONFIRM_NO} primary="no" onyes={confirmSkip} onno={cancel} />
         {:else if confirm === 'finish'}
-          <ConfirmPanel heading={FINISH_CONFIRM_HEADING} text={FINISH_CONFIRM_TEXT} yes={FINISH_CONFIRM_YES} no={FINISH_CONFIRM_NO} onyes={confirmFinish} onno={cancel} />
+          <ConfirmPanel heading={FINISH_CONFIRM_HEADING} text={FINISH_CONFIRM_TEXT} yes={FINISH_CONFIRM_YES} no={FINISH_CONFIRM_NO} primary="no" onyes={confirmFinish} onno={cancel} />
         {/if}
       </Screen>
     {/key}
@@ -385,6 +410,11 @@
   /* The wrapper is not a box of its own, so the renderer lays out as if it were a direct child; parked (hidden), it is display: none. */
   .stage-host:not([hidden]) {
     display: contents;
+  }
+
+  /* A box of its own (a focus target needs one), with nothing of its own to draw: focus on it is a position, not a control. */
+  .item-region:focus {
+    outline: none;
   }
 
   .unavailable {

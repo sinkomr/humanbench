@@ -7,7 +7,9 @@
   buttons: a tap on the panel that comes within a third of a second of another tap on the same spot is
   ignored (WCAG 2.5.2, UX-005a). A click from a mouse or the keyboard, and a tap somewhere else, never is.
   `primary="no"` puts the safe answer first and in the primary style, for a panel whose "yes" throws
-  something away.
+  something away: the leave panel of the results (UX-005b) and, since UX-REVIEW D27 (a provisional
+  default, "one primary action per screen"), the Skip and Finish panels of the running session, where
+  "Keep going" is the primary and the way that ends the part or the session is the plain button.
 -->
 <script module lang="ts">
   /** A press of a finger, a pen or a mouse anywhere on the page. */
