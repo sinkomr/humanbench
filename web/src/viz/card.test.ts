@@ -56,7 +56,7 @@ import {
   cardSessions,
 } from './card-copy'
 import { RING_NOTE } from './copy'
-import { formatTheta, radiusScale, RING_THETAS, ringLabel } from './geometry'
+import { formatTheta, radiusScale, REFERENCE_RING_STROKE_WIDTH, RING_STROKE_WIDTH, RING_THETAS, ringLabel } from './geometry'
 import { THEMES } from './palette'
 import { axisEstimates, measuredFields, type AxisEstimate } from './profile'
 import { syntheticProfile } from './synthetic'
@@ -799,5 +799,22 @@ describe('an estimate beyond the scale is marked on the card too (UX-037)', () =
     const card = buildCard({ estimates: estimatesOf('m1'), sessions: 1 })
     expect(card.svg).not.toContain('class="arrow"')
     expect(textsOf(card.svg)).not.toContain('off scale')
+  })
+})
+
+describe('the 0 SD reference ring on the card and in the exported SVG (owner decision 2026-10-06, D3)', () => {
+  it.each(['light', 'dark'] as const)('is dashed and slightly heavier than the other rings in the %s scheme, with no label of its own', (theme) => {
+    const t = THEMES[theme]
+    const { svg } = buildCard({ estimates: FULL, peaks: FULL_PEAKS, sessions: 2, theme })
+    expect(svg).toContain(`.ring{fill:none;stroke:${t.grid};stroke-width:${RING_STROKE_WIDTH}}`)
+    expect(svg).toContain(`.ring.reference{stroke:${t.stub};stroke-width:${REFERENCE_RING_STROKE_WIDTH};stroke-dasharray:5 4}`)
+    expect(REFERENCE_RING_STROKE_WIDTH).toBeGreaterThan(RING_STROKE_WIDTH)
+    expect(svg.match(/<circle class="ring reference"/g)).toHaveLength(1)
+    expect(svg.match(/<circle class="ring"/g)).toHaveLength(RING_THETAS.length - 1)
+    // No text, title or caption inside the ring element, and the texts are the same known set as before.
+    expect(svg).toMatch(/<circle class="ring reference"[^>]*\/>/)
+    const texts = textsOf(svg)
+    expect(texts.filter((x) => x === ringLabel(0)).length).toBeLessThanOrEqual(1) // the scale label the card already had
+    expect(texts.filter((x) => /reference|typical|average|norm\b|middle/i.test(x))).toEqual([])
   })
 })

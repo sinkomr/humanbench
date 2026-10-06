@@ -6,11 +6,13 @@
  * geometry is tested in `blob.test.ts`; this checks that the chart draws what the model says.
  */
 
+import { readFileSync } from 'node:fs'
 import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, describe, expect, it } from 'vitest'
 import BlobChart from './BlobChart.svelte'
 import { buildBlob, fitLayout, type BlobModel } from './blob'
 import { STUB_CAPTION, stubListText } from './copy'
+import { REFERENCE_RING_STROKE_WIDTH, RING_STROKE_WIDTH, ringLabel } from './geometry'
 import { axisEstimates, type AxisEstimate } from './profile'
 import { syntheticProfile } from './synthetic'
 
@@ -127,5 +129,37 @@ describe('named peaks of a share card are ringed and bold (D15 A)', () => {
     document.body.innerHTML = ''
     const page = draw(buildBlob(est))
     expect(page.querySelector('circle.peak-ring, .peak')).toBeNull()
+  })
+})
+
+describe('the 0 SD reference ring is visually distinct and says nothing (owner decision 2026-10-06, D3)', () => {
+  const css = readFileSync('src/viz/BlobChart.svelte', 'utf8')
+  const widthOf = (selector: string): number => {
+    const m = css.match(new RegExp(`\\n  ${selector.replace(/\./g, '\\.')} \\{[^}]*?stroke-width: ([0-9.]+)`))
+    expect(m, selector).not.toBeNull()
+    return Number(m![1])
+  }
+
+  it('has a heavier stroke than the other rings (the same constants as the share card), kept dashed', () => {
+    expect(widthOf('.ring')).toBe(RING_STROKE_WIDTH)
+    expect(widthOf('.ring.reference')).toBe(REFERENCE_RING_STROKE_WIDTH)
+    expect(REFERENCE_RING_STROKE_WIDTH).toBeGreaterThan(RING_STROKE_WIDTH)
+    expect(REFERENCE_RING_STROKE_WIDTH).toBeLessThan(2.5) // slightly heavier, not the data line's weight
+    expect(css).toMatch(/\.ring\.reference \{[^}]*stroke-dasharray/)
+  })
+
+  it('is exactly one ring at the middle radius, with no text, title or caption of its own', () => {
+    const model = buildBlob(estimatesOf('full'))
+    const root = draw(model)
+    const refs = root.querySelectorAll('circle.ring.reference')
+    expect(refs).toHaveLength(1)
+    expect(root.querySelectorAll('circle.ring')).toHaveLength(5)
+    expect(refs[0]!.querySelector('title, desc, text')).toBeNull()
+    expect(refs[0]!.getAttribute('aria-label')).toBeNull()
+    expect(root.querySelector('g.grid')!.querySelector('text, title, desc')).toBeNull()
+    // The only "0 SD" text of its own is the scale label the chart already had; nothing new is said about the ring.
+    const texts = [...root.querySelectorAll('svg text')].map((t) => t.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+    expect(texts.filter((t) => t === ringLabel(0))).toHaveLength(model.rings.filter((r) => r.reference && r.showLabel).length)
+    expect(texts.filter((t) => /reference|typical|average|norm|middle/i.test(t))).toEqual([])
   })
 })

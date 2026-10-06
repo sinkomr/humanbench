@@ -28,9 +28,14 @@ import { RT_MODE_CONFIG, type RtExpected, type RtKey, type RtMode, type RtRespon
 /** Device classes the synthetic responses are attributed to. */
 export const SYNTHETIC_DEVICE_CLASSES: readonly string[] = Object.freeze(['desktop', 'tablet', 'phone'])
 
+/** Input types the parity cases are attributed to (touch uses the touch norms, the others the web norms). */
+export const SYNTHETIC_INPUT_TYPES: readonly string[] = Object.freeze(['keyboard', 'mouse', 'touch'])
+
 /** A full synthetic response set (practice included) and the device class it is attributed to. */
 export interface RtSyntheticResponses {
   readonly device_class: string
+  /** Drawn after everything else, so the trial draws do not depend on it. */
+  readonly input_type: string
   readonly practice_rt_ms: readonly (number | null)[]
   readonly practice_choice: readonly (number | null)[]
   readonly rt_ms: readonly (number | null)[]
@@ -103,8 +108,10 @@ export function drawSyntheticResponses(rng: Rng, spec: RtSpec): RtSyntheticRespo
   const deviceClass = rng.pick(SYNTHETIC_DEVICE_CLASSES)
   const practice = drawTrials(rng, spec.mode, spec.practice_positions, profile)
   const scored = drawTrials(rng, spec.mode, spec.positions, profile)
+  const inputType = rng.pick(SYNTHETIC_INPUT_TYPES)
   return {
     device_class: deviceClass,
+    input_type: inputType,
     practice_rt_ms: practice.rt,
     practice_choice: practice.choice,
     rt_ms: scored.rt,
@@ -116,6 +123,7 @@ export function drawSyntheticResponses(rng: Rng, spec: RtSpec): RtSyntheticRespo
 export interface RtScoreCase {
   readonly item_id: string
   readonly device_class: string
+  readonly input_type: string
   readonly response: {
     readonly practice_rt_ms: readonly (number | null)[]
     readonly practice_choice: readonly (number | null)[]
@@ -147,9 +155,9 @@ export const responseRng = (item: RtItem): Rng => createRng(`rt-responses:${item
 
 /** The parity case of `item`: synthetic responses from {@link responseRng} and their TS result. */
 export function rtScoreCase(item: RtItem): RtScoreCase {
-  const { device_class, ...response } = drawSyntheticResponses(responseRng(item), item.spec)
-  const expected = expectedOf(scoreRtResponse(item.spec.mode, item.key.positions, response, { device_class }))
-  return { item_id: item.item_id, device_class, response, expected }
+  const { device_class, input_type, ...response } = drawSyntheticResponses(responseRng(item), item.spec)
+  const expected = expectedOf(scoreRtResponse(item.spec.mode, item.key.positions, response, { device_class, input_type }))
+  return { item_id: item.item_id, device_class, input_type, response, expected }
 }
 
 /** Build a family's parity dump for its blocks `dump-0 … dump-(n−1)`, one case per block. */

@@ -92,7 +92,11 @@ describe('RT families: identity and modes (M1.F2: one block family per sub-task)
         expect(s.flags).toEqual([])
         if (c.expected.status === 'ok') {
           ok++
-          expect(s).toEqual({ correct: null, observation: c.expected.observation, flags: [], reasons: [] })
+          // family.score() has no input type, so it uses the keyboard/mouse norm: a touch case
+          // agrees on x and sigma but not on d and lam (rtBlockObservation takes the device)
+          if (c.input_type === 'touch') {
+            expect(s.observation).toMatchObject({ x: c.expected.observation!.x, sigma: c.expected.observation!.sigma })
+          } else expect(s).toEqual({ correct: null, observation: c.expected.observation, flags: [], reasons: [] })
         } else {
           none++
           expect(s).toEqual({ correct: null, flags: [], reasons: ['too_few_valid_trials'] })

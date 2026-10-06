@@ -67,6 +67,7 @@ export {
   RT_PROVENANCE,
   RT_STRATUM,
   RT_TIME_MODEL,
+  RT_TOUCH_NORMS,
   RT_WEB_NORMS,
   rtDifficulty,
   rtExpectedTimeS,

@@ -145,7 +145,7 @@ export function scoreRtResponse(mode: RtMode, keyPositions: readonly number[], r
     n_too_fast: counts.too_fast,
     n_too_slow: counts.too_slow,
   }
-  const norm = rtNorm(mode, device.device_class)
+  const norm = rtNorm(mode, device.device_class, device.input_type)
   const meta: RtObservationMeta = {
     mode,
     n_trials: cfg.n_trials,
@@ -184,7 +184,8 @@ export function rtBlockObservation(item: ItemInstance<RtSpec, RtKey>, response: 
  * `score()` of an RT block family (M1.F2 {@link BlockScore}): the Gaussian observation, or none
  * with the reason (`too_few_valid_trials`). No integrity flags yet (anticipations and misses are
  * counted in {@link rtBlockObservation}'s `meta`). The device class only annotates the
- * observation, which does not depend on it while `rtNorm` has one norm per mode.
+ * observation, which does not depend on it; the input type picks the norm (touch vs keyboard/mouse),
+ * and this context-free path has none, so it uses the keyboard/mouse norm.
  *
  * The block `score(item, response)` contract has no device or input mode, so once the norms are
  * per device (§11.6, §13 "normed separately", M4.8) this function cannot pick the right one: the
