@@ -11,6 +11,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { expectNoSeriousAxe } from './axe'
 import { expectNoSidewaysScroll, useTextZoom } from './layout'
+import { useWideFont } from './wide-font'
 
 async function open(page: Page, profile: string): Promise<void> {
   await page.goto(`./#/dev/blob?profile=${profile}`)
@@ -171,18 +172,22 @@ test.describe('chart text follows the page text size (UX-044)', () => {
     await expect(page.locator('[data-large-text-hint]')).toHaveCount(0)
   })
 
-  test('on a phone at 200% text the page points to the bar view, beside the toggle, and the bar view fits', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 })
-    await useTextZoom(page, 200)
-    await open(page, 'full')
-    const hint = page.locator('[data-large-text-hint]')
-    await expect(hint).toBeVisible()
-    await expect(hint).toHaveText('Large text: the bar view shows the same data in text.')
-    await page.getByRole('button', { name: 'Bar view' }).click()
-    await expect(hint).toHaveCount(0)
-    await expect(table(page)).toBeVisible()
-    await expectNoSidewaysScroll(page, 'bar view at 200% text, 390 px')
-  })
+  // The second run is set in a wide face (Verdana; the Linux CI fonts are wider than macOS's), so a layout that fits only narrow fonts fails anywhere.
+  for (const wide of [false, true]) {
+    test(`on a phone at 200% text the page points to the bar view, beside the toggle, and the bar view fits${wide ? ' (wide font)' : ''}`, async ({ page }) => {
+      if (wide) await useWideFont(page)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await useTextZoom(page, 200)
+      await open(page, 'full')
+      const hint = page.locator('[data-large-text-hint]')
+      await expect(hint).toBeVisible()
+      await expect(hint).toHaveText('Large text: the bar view shows the same data in text.')
+      await page.getByRole('button', { name: 'Bar view' }).click()
+      await expect(hint).toHaveCount(0)
+      await expect(table(page)).toBeVisible()
+      await expectNoSidewaysScroll(page, `bar view at 200% text, 390 px${wide ? ', wide font' : ''}`)
+    })
+  }
 
   test('at the default text size there is no such hint, even on the narrowest phone', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 700 })

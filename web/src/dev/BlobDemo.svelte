@@ -70,6 +70,8 @@
     margin: 0;
     font-size: 1.75rem;
     color: var(--text-strong);
+    /* At 200% text in a wide font "(development" is wider than a phone: it breaks rather than scrolls the page (WCAG 1.4.10). */
+    overflow-wrap: anywhere;
   }
   .intro {
     margin: 0;

@@ -139,26 +139,61 @@ test.describe('a new question opens at its heading, and its Continue is in reach
     })
     expect(prevented).toBe(true)
     await expect(slider).toBeVisible()
-    // The track has a border of at least 3:1 against the page (WCAG 1.4.11).
+    // The track has a border of at least 3:1 against the page (WCAG 1.4.11). The track is a pseudo-element, and the browsers do
+    // not report its computed style (Chromium answers with its defaults: a black "none" border), so the check reads the
+    // author rule for the track from the style sheets, resolves its colour variable on the slider as the scheme has it, and
+    // compares that with the page colour behind the slider. Reading the pseudo's computed style passed by accident on macOS.
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      const ratio = await slider.evaluate((el) => {
-        const track = getComputedStyle(el, '::-webkit-slider-runnable-track')
-        const parse = (c: string): number[] => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
-        const lum = (rgb: number[]): number => {
-          const [r, g, b] = rgb.map((v) => {
-            const s = (v ?? 0) / 255
-            return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-          })
-          return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0)
+      const edge = await slider.evaluate((el) => {
+        const rules: CSSStyleRule[] = []
+        const visit = (list: CSSRuleList): void => {
+          for (const rule of Array.from(list)) {
+            if (rule instanceof CSSStyleRule && /slider-runnable-track/.test(rule.selectorText) && el.matches(rule.selectorText.replace(/::[\w-]+$/, ''))) rules.push(rule)
+            else if ('cssRules' in rule) visit((rule as CSSGroupingRule).cssRules)
+          }
         }
-        const edge = parse(track.borderTopColor || getComputedStyle(el).accentColor)
-        const page = parse(getComputedStyle(document.querySelector('.confidence')!).backgroundColor === 'rgba(0, 0, 0, 0)' ? getComputedStyle(document.body).backgroundColor : getComputedStyle(document.querySelector('.confidence')!).backgroundColor)
-        const [a, b] = [lum(edge), lum(page)]
-        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+        for (const sheet of Array.from(document.styleSheets)) visit(sheet.cssRules)
+        const own = getComputedStyle(el)
+        const css = rules.at(-1)?.style
+        // `border: 1px solid var(--r-border)`: with a variable in it the browser keeps the shorthand whole, so read it as text.
+        const border = (css?.getPropertyValue('border') || css?.getPropertyValue('border-top') || '').trim()
+        const parts = /^(\S+)\s+(\S+)\s+(.+)$/.exec(border)
+        const width = parts?.[1] ?? css?.getPropertyValue('border-top-width') ?? ''
+        const style = parts?.[2] ?? css?.getPropertyValue('border-top-style') ?? ''
+        let color = parts?.[3] ?? css?.getPropertyValue('border-top-color') ?? ''
+        const variable = /^var\((--[\w-]+)/.exec(color)
+        if (variable !== null) color = own.getPropertyValue(variable[1]!).trim()
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = 1
+        const ctx = canvas.getContext('2d')!
+        const rgb = (c: string): number[] => {
+          ctx.clearRect(0, 0, 1, 1)
+          ctx.fillStyle = '#000'
+          ctx.fillStyle = c
+          ctx.fillRect(0, 0, 1, 1)
+          return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3)
+        }
+        const lum = (c: number[]): number => {
+          const [r, g, b] = c.map((v) => {
+            const x = v / 255
+            return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
+          })
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+        }
+        let behind: Element | null = el
+        let bg = 'rgba(0, 0, 0, 0)'
+        while (behind !== null && /rgba\(.*,\s*0\)$|transparent/.test(bg)) {
+          bg = getComputedStyle(behind).backgroundColor
+          behind = behind.parentElement
+        }
+        const [a, b] = [lum(rgb(color)), lum(rgb(bg))]
+        return { found: rules.length, width, style, color, bg, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) }
       })
-      // Chromium reports the pseudo-element's style; where it does not (a colour that cannot be read) the check is skipped.
-      if (Number.isFinite(ratio) && ratio > 1) expect(ratio, `track edge in ${scheme}`).toBeGreaterThanOrEqual(3)
+      expect(edge.found, 'the author rule for the slider track is in the style sheets').toBeGreaterThan(0)
+      expect(edge.style, 'the track has a drawn edge').toBe('solid')
+      expect(Number.parseFloat(edge.width), 'the track edge is at least 1 px').toBeGreaterThanOrEqual(1)
+      expect(edge.ratio, `track edge ${edge.color} against the page ${edge.bg} in ${scheme}`).toBeGreaterThanOrEqual(3)
     }
   })
 })
