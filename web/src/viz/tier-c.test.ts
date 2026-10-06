@@ -202,9 +202,16 @@ describe('the ◇ glyph is on the label of every tier (c) spoke (§9.7)', () => 
       for (const code of TIER_C) {
         const s = spokeOf(model, code)
         expect(s.glyph).toBe(GLYPH_C)
-        expect(s.lines.filter((l) => l.glyph)).toHaveLength(1)
+        // UX review D13 B: on a narrow screen with 5 or more skills not measured (M1), a not-measured spoke has no
+        // label; the line under the chart names it ("Not measured: ..."). Every label that is drawn carries the glyph once.
+        if (!s.measured && model.stubList.length > 0) {
+          expect(s.lines).toEqual([])
+          expect(model.stubList.flatMap((g) => g.names)).toContain(axisName(code))
+        } else expect(s.lines.filter((l) => l.glyph)).toHaveLength(1)
       }
     }
+    // The full profile (every skill measured) keeps every label, so both tier (c) labels carry the glyph.
+    expect(buildBlob(FULL, { layout: fitLayout(FULL, 320) }).stubList).toEqual([])
   })
 
   it('spokeLines puts the glyph on a main line, never on the stub note', () => {
