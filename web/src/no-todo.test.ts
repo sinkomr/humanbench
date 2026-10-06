@@ -48,7 +48,8 @@ function strings(module: string, exports: Record<string, unknown>): [string, str
 describe('no placeholder in the copy (UX-REVIEW D1)', () => {
   it('finds the copy modules', () => {
     const names = Object.keys(MODULES)
-    for (const m of ['./copy.ts', './session/copy.ts', './backend/copy.ts', './viz/card-copy.ts', './render/common/entry-copy.ts', './session/segments.ts', './brief/results-talk.ts']) {
+    // ... and the M6 entries' copy (dev routes: situational judgment, word links, unusual uses).
+    for (const m of ['./copy.ts', './session/copy.ts', './backend/copy.ts', './viz/card-copy.ts', './render/common/entry-copy.ts', './session/segments.ts', './brief/results-talk.ts', './tasks/sjt/copy.ts', './tasks/rat/copy.ts', './tasks/aut/copy.ts']) {
       expect(names).toContain(m)
     }
     expect(names.some((n) => n.endsWith('.test.ts'))).toBe(false)
