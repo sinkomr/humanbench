@@ -1,0 +1,561 @@
+{
+  "package": "verify",
+  "run": "uxdec-verify",
+  "date": "2026-10-06",
+  "summary": "Independent replay of every decision the uxdec handoffs mark as applied, on a fresh production build (ux:build of the integrated working tree, base 9f68f49), on Chromium, desktop WebKit and the iPhone 13 emulation, plus a regression sweep of every e2e/routes.ts route. Verdicts: 25 verified, 1 partly (D22), 5 unchanged as required (D3, D14 outcome, D29, D30, D31), 0 not, 0 regressed. Six observations recorded as new findings; none is a regression of this branch: two are pre-existing target sizes, the others are by-design limits worth one owner line each.",
+  "how": {
+    "build": "UX_DIST=test-results/ux-review/uxdec-verify/_dist npx tsx ux-review/build.ts (log web/test-results/ux-review/uxdec-verify/logs/build.log)",
+    "harness": [
+      "web/ux-review/personas/uxdec-verify-shared.ux.ts (fact recorder, helpers, share-sheet stubs; no tests)",
+      "web/ux-review/personas/uxdec-verify-owner.ux.ts (D1 static and server, D2 with D18 and D19, D3, D5 replay and two whole-session journeys, D10)",
+      "web/ux-review/personas/uxdec-verify-defaults.ux.ts (D4, D6, D7, D8, D9, D11, D12, D13/D14, D15 C, D16, D17/D19, D20, D21, D22, D23, D24, D25/D26, D27, D28, D29/D30, D31)",
+      "web/ux-review/personas/uxdec-verify-sweep.ux.ts (tours of every product route at 390 and 1280 px light and dark with metrics and axe, the preview dev routes, 17 layout routes at 320 px and at 200% text, the RT self-test quick run)"
+    ],
+    "runs": [
+      "chromium: UX_PORT=4761/4762/4763, logs web/test-results/ux-review/uxdec-verify/logs/owner-chromium*.log, defaults-chromium*.log, sweep-chromium.log",
+      "webkit (Desktop Safari): UX_PORT=4764/4766, logs decisions-webkit.log, defaults-webkit-2.log, defaults-webkit-3.log, sweep-webkit.log",
+      "iphone (iPhone 13): UX_PORT=4765/4763, logs decisions-iphone.log, defaults-iphone-2.log, sweep-iphone.log",
+      "Tests that were corrected after a first pass (a harness mistake, never product code) were re-run and their facts.json rewritten: D1 static, D5, D5 journeys, D10, D4, D8, D20, D21 (webkit), D22, D23, D25/D26."
+    ],
+    "facts": "web/test-results/ux-review/uxdec-verify/<item>/<project>/facts.json holds every check (ok / failed / measured), its value and the evidence paths; screenshots, page text and accessibility trees sit beside it.",
+    "gates": {
+      "lint:language": "clean, 367 files (web/test-results/ux-review/uxdec-verify/logs/lint-language.log)",
+      "tsc -p tsconfig.scripts.json (covers ux-review/**)": "clean (logs/tsc-scripts-2.log)",
+      "dist scan": "no 'Ranges that overlap are not real differences' and no 'TODO(' in test-results/ux-review/uxdec-verify/_dist/assets/*.js or *.html",
+      "playwright": "owner + defaults: 29 tests per project, all green after the harness corrections; sweep: 9 tests per project, all green (dev routes skipped on the phone by design)"
+    },
+    "not_run": [
+      "The 'pixel' (Pixel 7) project: D9's 412 px case was measured at a 412 px viewport in all three engines instead; the Android user agent itself was not exercised.",
+      "The 'iphone-se' project: 320 x 568 was covered by viewport resizing in the three engines (D9, D13/D14, D16, the 320 px layout tour)."
+    ]
+  },
+  "decisions": [
+    {
+      "id": "D1",
+      "status": "owner decision 2026-10-05",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D1/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D1/chromium/001-privacy-light.png",
+        "web/test-results/ux-review/uxdec-verify/D1/chromium/002-privacy-dark.png",
+        "web/test-results/ux-review/uxdec-verify/D1/chromium/003-privacy-320.png",
+        "web/test-results/ux-review/uxdec-verify/D1/chromium/004-privacy-200pct.png",
+        "web/test-results/ux-review/uxdec-verify/D1/iphone/001-privacy-light.png",
+        "web/test-results/ux-review/uxdec-verify/D1/webkit/001-privacy-light.png",
+        "web/test-results/ux-review/uxdec-verify/D1-server/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D1-server/chromium/001-privacy-server.png",
+        "web/test-results/ux-review/uxdec-verify/D1-server/chromium/002-data-page-server.png",
+        "web/test-results/ux-review/uxdec-verify/D1-server/chromium/003-gate-server.png"
+      ],
+      "notes": "Owner's words checked on the rendered page in all three engines: #/privacy says 'HumanBench collects no personally identifiable information, and all responses are anonymous.' (first section, 'In short'); 'TODO' appears nowhere in the rendered text or the title of the static privacy page, the server privacy page (?hb_backend=...#/privacy), the server data page (#/data), the welcome and the gate; no 'Controller:' / 'Contact:' / 'draft terms' placeholder. Static-build truth: during welcome -> gate -> honour -> device -> ready -> Begin -> skip -> one answer, every http(s) request went to the page's own host only (hosts recorded in facts.json), and the autosave appeared in localStorage as the notice says; the notice states 'Nothing is sent to a server', what the web host sees, and the online version as a plan with consent asked again first; no retention or legal-basis claim is made as a present fact. Server variant: random identifier, consent as the basis, 24 months as the plan, deletion naming the weekly backups (eight weeks) and the archive, the two-day hashed network address. Axe: 0 serious light and dark; 320 px and 200% text: no overflow, no clipped text. Observation (pre-existing, app.css .hb-standalone-link min-height 24 px by design, file unchanged on this branch): the 'Back' and 'Privacy and terms' links are 24 px tall (WCAG 2.5.8 met; under the 44 px phone comfort size)."
+    },
+    {
+      "id": "D2",
+      "status": "owner decision 2026-10-05 (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/001-results-peaks.png",
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/002-share-card-panel.png",
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/003-results-talk.png",
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/004-dev-reveal-ai-share.png",
+        "web/test-results/ux-review/uxdec-verify/D2/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D2/iphone/facts.json"
+      ],
+      "notes": "Share card: the downloaded SVG (Chromium and WebKit) carries 'Rough estimates on a provisional scale. Where ranges overlap, a difference may not be real.' and not the old sentence; the PNG preview's alt text has no old sentence (all three engines). Results-talk preamble on the results page after the save and on #/dev/reveal-ai?screen=share: the new sentence, 346 characters, old sentence absent; D18's 'Paste this first. Then describe your results in your own words, or attach your share card picture.' is on the helper. The old sentence appears nowhere on the results page text, in the card, in the helper, or in the built bundle (grep of _dist). No-peaks note: both simulated saves list a peak (Matrix & Series), so the note is not rendered in these runs; its exported wording (reveal/copy.ts PEAKS_NONE) is the owner's option A word for word and Reveal.dom.test.ts renders it; recorded as a measured limit of the replay, not a doubt. Card file names: humanbench-card-light-2026-10-06.svg, -dark-...svg, -dark-...png (D19)."
+    },
+    {
+      "id": "D3",
+      "status": "unchanged by owner instruction",
+      "verdict": "unchanged",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D3/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D3/chromium/001-results-ring-caption.png",
+        "web/test-results/ux-review/uxdec-verify/D3/chromium/002-results-bars-note.png"
+      ],
+      "notes": "RING_CAPTION and BARS_NOTE in web/src/viz/copy.ts are character-identical to the base commit's (git show 9f68f49:web/src/viz/copy.ts, read by the test), and both are rendered verbatim on the results page (ring caption) and in the bar view; no '0 SD marks where we expect' / 'provisional reference point' / 'typical adult' sentence anywhere on the page. git diff --stat 9f68f49 -- web/src/tasks/rt/prior.ts is empty; s = 0.15 for simple and choice. The only viz/copy.ts changes on the branch are STUB_CAPTION, stubListLead/stubListText (D13) and facetCaption (D4)."
+    },
+    {
+      "id": "D4",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D4/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D4/chromium/001-facets-reasoning.png",
+        "web/test-results/ux-review/uxdec-verify/D4/chromium/004-facets-spatial-memory.png",
+        "web/test-results/ux-review/uxdec-verify/D4/chromium/008-facets-quantitative.png",
+        "web/test-results/ux-review/uxdec-verify/D4/iphone/facts.json"
+      ],
+      "notes": "What a browser can show: on the two-session simulated save the Reasoning and Spatial/Memory facet panels render the caption 'Each facet's range also draws on the rest of its skill, so for now a facet sits close to its skill.' (chart description and table caption); the other six clusters show the UX-041 'no facets measured / none has enough data' line, where no caption belongs. Quantitative facets are listed as topic groups ('Ratios, rates and averages', 'Powers and quadratics', 'Probability and counting' on the one-session save; four groups on the two-session save), never one row per template. The leave-facet-out numbers themselves are a unit-test matter (facets-prior.test.ts, scripts/db/facets.test.ts); the open modelling question in facets.json (facets repeat their axis) stays the owner's."
+    },
+    {
+      "id": "D5",
+      "status": "owner decision 2026-10-05 (option C: A and B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/001-up-next-rt-held.png",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/002-inside-rt-clock-runs.png",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/004-break-offer.png",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/005-on-break.png",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/006-up-next-qr-after-skips.png",
+        "web/test-results/ux-review/uxdec-verify/D5/iphone/004-break-offer.png",
+        "web/test-results/ux-review/uxdec-verify/D5/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D5-journeys/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D5-journeys/chromium/no-skip/journey.json",
+        "web/test-results/ux-review/uxdec-verify/D5-journeys/chromium/skip-spatial/journey.json",
+        "web/test-results/ux-review/uxdec-verify/D5-journeys/iphone/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D5-journeys/webkit/facts.json"
+      ],
+      "notes": "Clock: on the first 'Up next' screen the ring read '0 of about 30 min' before and after 6 s of real time under ?fast=1 (2 session minutes); every 'Up next' screen shows 'The clock waits until you press Start.'; after Start the ring moved to '1 of about 30 min' within 2 session minutes; on the next 'Up next' screen and on the break offer the reading was held again. Break: skipping Reaction Time (from inside the part), Matrix & Series and Spatial brought 'Time for a break?' before 'Up next: Working Memory' with the new text ('about half-way ... The clock waits until you press Start on the next part.'), no '30 minutes'; taking it and resuming led to Working Memory with no second offer; no offer after Working Memory or Quantitative Reasoning. Budgets: with four parts skipped the Quantitative Reasoning screen said 'About 5 minutes' (the finding had 'About 14 min'). Two whole ?fast=1 sessions per engine, one without skips and one skipping Spatial, read 'About N minutes' as RT 3, MAT 5, SPA 5, WM 5, QR 5, PS 4 in both, so a skip made no later part longer; both journeys completed (49 to 51 s of real time) with the one break before Working Memory. Measured, not a defect: the ring's total stays 'about 30 min' (the planned target) after skips. Owner line (run.json open issue, seen here): the offer still comes before Working Memory when every earlier part was skipped."
+    },
+    {
+      "id": "D6",
+      "status": "provisional default (option B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D6/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D6/chromium/001-ready-continue.png",
+        "web/test-results/ux-review/uxdec-verify/D6/chromium/002-after-continue.png",
+        "web/test-results/ux-review/uxdec-verify/D6/iphone/001-ready-continue.png"
+      ],
+      "notes": "After one answer in Matrix & Series and a reload, the ready screen shows 'Continue your unfinished session' (primary, 44 px) beside a plain 'Begin' and the line 'Your session from today at HH:MM was not finished. Continue it to go on from the start of Matrix & Series and keep what you have done so far. Begin starts a new session instead.' (Title Case part name, D25); Continue leads to 'Up next: Matrix & Series'. Axe: 0 serious. The sitting model (no practice adjustment between a session and its continuation) is a unit and golden matter (engine-retest.json); the server variant offers nothing, as resume.json says."
+    },
+    {
+      "id": "D7",
+      "status": "provisional default (option B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D7/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D7/chromium/001-after-untouched-continue.png",
+        "web/test-results/ux-review/uxdec-verify/D7/iphone/facts.json"
+      ],
+      "notes": "Continue with the slider where it started: the autosave's response tuple holds confidence_pct null (e.g. ['i:series:1.3.0:...', 0, '1', 0, 150, null]) and flags.confidence_untouched_n is 1; the next item with the slider moved to 70 records 70 and the counter stays 1. Same in all three engines."
+    },
+    {
+      "id": "D8",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D8/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D8/chromium/001-entry-1500-refused.png",
+        "web/test-results/ux-review/uxdec-verify/D8/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D8/iphone/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D8/iphone/001-entry-1500-refused.png"
+      ],
+      "notes": "In the Quantitative part: '1,500' is refused with 'Write thousands without a comma (1500) and decimals with a point (1.5).' on whole-number, fraction and decimal items; '3,5' is accepted as an answer on fraction items (Chromium, iPhone: 'Enter a fraction such as 3/8, or a whole number.') and decimal items (WebKit: 'Enter a number; decimals are fine, such as 12.5.'), and on a whole-number item gets the unchanged whole-number note; no hint says 'integer'. The bank twin and the server reader are unit and db-test matters (quant-entry.json, integrate.json)."
+    },
+    {
+      "id": "D9",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D9/iphone/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D9/iphone/001-coding-320.png",
+        "web/test-results/ux-review/uxdec-verify/D9/iphone/002-coding-390.png",
+        "web/test-results/ux-review/uxdec-verify/D9/iphone/003-coding-412.png",
+        "web/test-results/ux-review/uxdec-verify/D9/iphone/004-coding-430.png",
+        "web/test-results/ux-review/uxdec-verify/D9/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D9/webkit/facts.json"
+      ],
+      "notes": "Coding block running, nine keys measured: 320 x 568 two rows, keys 53.4 x 50 px; 390 x 664 two rows, 67.4 px; 412 x 840 (the Pixel 7 width) two rows, 71.8 px; 430 x 932 one row, 40.7 px (as before); no sideways overflow; block height 345 px folded (table top to last key), 291 px in one row. Same in Chromium, WebKit and iPhone. The timed response path was not re-timed on a device (render.json says so too)."
+    },
+    {
+      "id": "D10",
+      "status": "owner decision 2026-10-05",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D10/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D10/chromium/001-honour.png",
+        "web/test-results/ux-review/uxdec-verify/D10/chromium/002-honour-320.png",
+        "web/test-results/ux-review/uxdec-verify/D10/chromium/003-up-next-quant.png",
+        "web/test-results/ux-review/uxdec-verify/D10/iphone/001-honour.png",
+        "web/test-results/ux-review/uxdec-verify/D10/iphone/003-up-next-quant.png"
+      ],
+      "notes": "Honour screen (before the session): the DESIGN section 13 sentence, read from docs/DESIGN.md by the test, is on screen word for word, followed by 'You may want scratch paper and a pencil ready: writing things down is allowed. Please do not use a calculator or an AI chatbot. Screen readers, zoom and other accessibility settings are fine to use.'; nothing tells screen-reader users to stop using one. Quantitative 'Up next' screen: 'Scratch paper and a pencil are fine; please do not use a calculator or an AI chatbot.'; the old 'Keep paper and a calculator out of reach' is gone. Axe 0 serious on both screens; 320 px no overflow. As integrate.json's for_lead says, the owner's phrase 'assistive technology' is not used (it names screen readers in accessibility); 'AI chatbot' stands for 'LLM'. Observation (pre-existing): the honour checkbox input is 26 px tall inside its 44 px label row."
+    },
+    {
+      "id": "D11",
+      "status": "provisional default (options A display split and B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D11/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D11/chromium/001-reading-passage.png",
+        "web/test-results/ux-review/uxdec-verify/D11/chromium/002-results-numbers-open.png",
+        "web/test-results/ux-review/uxdec-verify/D11/iphone/facts.json"
+      ],
+      "notes": "The passage served in the session was drawn as paragraphs of 92, 61, 61, 108 and 39 words (Chromium; other engines drew their own passage, all pieces at most 150 words, none under 40 but a last one), 856 px tall at 1280. The results' reading line ends with 'One passage is a rough guide. The comparison figures are for people reading in their first language.' No passage was replaced by modern non-fiction (reading.json says why)."
+    },
+    {
+      "id": "D12",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D12/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D12/chromium/001-rt-fixation.png",
+        "web/test-results/ux-review/uxdec-verify/D12/iphone/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D12/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D29-D30/chromium/facts.json"
+      ],
+      "notes": "During the practice trials the '+' is inside the pads box (no row above: pads top minus cross bottom = -192 px), centred on the one pad within 0 to 0.5 px in all three engines, pointer-events none, aria-hidden; the stage is 228 px tall (280 with the row). The renderer's script block (state machine, rAF onset, performance.now stamping) is byte-identical to the base commit's. The four-position stage was not reached in the replay (the handoff measured it)."
+    },
+    {
+      "id": "D13",
+      "status": "provisional default (options A and B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D13-D14/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/chromium/001-blob-390.png",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/chromium/002-results-top-390.png",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/chromium/003-blob-320.png",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/iphone/001-blob-390.png",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/webkit/facts.json"
+      ],
+      "notes": "Static one-session profile (10 of 17 skills not measured) at 390 and 320 px: ten path.gap markers for ten stubs, the visible 'Not measured: Logic Games, Logical Reasoning, Reading Comprehension, ...' list under the chart, the caption 'Dashed grey spokes are skills that were not measured. The line breaks there, and a small x on the 0 SD ring marks the gap; it is not an estimate.', the old 'drops to the centre' sentence gone. The measured spokes are drawn as open runs (band and curve paths without a closing Z)."
+    },
+    {
+      "id": "D14",
+      "status": "settled by measurement after D13 (no product change)",
+      "verdict": "unchanged",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D13-D14/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/iphone/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D13-D14/webkit/facts.json"
+      ],
+      "notes": "Smallest chart text on the static profile: 11.00 px at 320 px and 11.01 px at 390 px in Chromium, WebKit and iPhone (D13 B freed the room). No product code changed for D14; the viz-blob package restored the e2e floor in blob.spec.ts from 9.5 to 10 px for the every-skill profile, a test-side change the owner may accept with D13."
+    },
+    {
+      "id": "D15",
+      "status": "A and C provisional defaults; B skipped",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D15C/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D15C/chromium/001-share-card-with-sheet.png",
+        "web/test-results/ux-review/uxdec-verify/D15C/iphone/001-share-card-with-sheet.png",
+        "web/test-results/ux-review/uxdec-verify/D15C-none/chromium/001-share-card-without-sheet.png",
+        "web/test-results/ux-review/uxdec-verify/D15C-none/webkit/facts.json"
+      ],
+      "notes": "A: the card SVG's key reads 'Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.' plus 'Ringed: a named peak.' on a card that lists a peak, and 'SD means standard deviation.' is kept. C: with a share sheet that takes files (stubbed navigator.canShare/share), 'Share image' is first and the only primary (130 x 44), 'Download image (PNG)' and 'Download vector image (SVG)' sit plain in a group labelled 'Save a copy'; pressing Share image hands one image/png (humanbench-card-light-2026-10-06.png, 533 kB) to the sheet. Without a sheet: PNG first and primary, SVG plain, no Share image, no group. B: no web address on the card panel, as skipped."
+    },
+    {
+      "id": "D16",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D16/iphone/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D16/iphone/001-results-390-first-screen.png",
+        "web/test-results/ux-review/uxdec-verify/D16/iphone/002-results-320-first-screen.png",
+        "web/test-results/ux-review/uxdec-verify/D16/iphone/003-results-390-200pct.png",
+        "web/test-results/ux-review/uxdec-verify/D16/chromium/001-results-1280-first-screen.png",
+        "web/test-results/ux-review/uxdec-verify/D16/chromium/facts.json"
+      ],
+      "notes": "measureResults (e2e/uxdec-reveal.ts) on the built profile: at 390 x 664 the chart starts in the first screen with 232.7 px (66%) of it visible, the practice note is one line of 22.5 px ('Practice-adjusted. Nothing to adjust yet.'), 'Your profile is ready.' is a 1 x 1 clipped status still in the tree, and the h1, lead, pointer, note, profile heading, toolbar, caption and save panel share x = 16; at 320 px 181.7 px (65%) of the chart; at 1280 x 800 406 px (63%), one left edge at x = 224. At 200% text on the 390 px phone the chart is below the first screen (reveal.json lists this as open). No sideways overflow anywhere."
+    },
+    {
+      "id": "D17",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D17/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D17/chromium/001-save-panel-notes-line.png",
+        "web/test-results/ux-review/uxdec-verify/D17/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D17/iphone/facts.json"
+      ],
+      "notes": "With notes settings kept on the notes page (coding context, Programming known well), the save downloaded from the results page holds brief_prefs with that context and none of the typed text (Chromium and WebKit; the iPhone emulation exposes no download event), and the save panel shows 'The file also holds the notes settings kept on this device: your choices, never text you typed.' in all three. The D17 question in share-save.json (a save made with the earlier sessions unticked) is still the owner's."
+    },
+    {
+      "id": "D18",
+      "status": "provisional default (option A, gated with D2)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/003-results-talk.png",
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D2/iphone/facts.json"
+      ],
+      "notes": "The results-talk helper reads 'Paste this first. Then describe your results in your own words, or attach your share card picture.' on the results page after the save, in all three engines."
+    },
+    {
+      "id": "D19",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D2/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D17/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D2/webkit/facts.json"
+      ],
+      "notes": "On the run day (2026-10-06, local): save humanbench-<6 chars>-2026-10-06.hbsave.json; cards humanbench-card-light-2026-10-06.svg, humanbench-card-dark-2026-10-06.svg and .png (Chromium and WebKit downloads). A UTC/local divergence was not provoked (the machine's evening would be needed); the local-date function is pinned by save/local-date.test.ts."
+    },
+    {
+      "id": "D20",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D20/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D20/chromium/001-up-next-rt.png",
+        "web/test-results/ux-review/uxdec-verify/D20/chromium/002-up-next-spatial.png",
+        "web/test-results/ux-review/uxdec-verify/D20/iphone/002-up-next-spatial.png"
+      ],
+      "notes": "The Reaction Time and Spatial 'Up next' screens end with 'This part needs you to see the screen. If you use a screen reader or cannot see the target / the figures, choose \"Skip this part\": it will show as not measured.', naming the button that is on the screen. Axe 0 serious."
+    },
+    {
+      "id": "D21",
+      "status": "provisional default (option B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D21/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D21/chromium/001-second-question.png",
+        "web/test-results/ux-review/uxdec-verify/D21/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D21/iphone/facts.json"
+      ],
+      "notes": "First question of Matrix & Series: focus on the h1; second question: focus on div.item-region, role group, aria-label 'Question 2', tabindex -1, no outline (all three engines). From there one Tab reaches the first option in Chromium. In headless desktop WebKit the same Tab lands on nothing (body): WebKit's Tab-to-controls setting, which the screen package also noted; recorded as a measurement."
+    },
+    {
+      "id": "D22",
+      "status": "provisional default (option B)",
+      "verdict": "partly",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/001-welcome-first-visit.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/002-welcome-returning-notes.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/003-welcome-returning-both.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/004-welcome-returning-session.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/005-welcome-returning-320.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/006-see-my-results.png",
+        "web/test-results/ux-review/uxdec-verify/D22/iphone/facts.json"
+      ],
+      "notes": "Verified: a first visit shows no row and Start is the only primary; with an adult consent record and one earlier session the row 'Earlier results and notes on this device' shows a plain 'See my results' (142 x 44) and no notes link, Start stays the only primary, no overflow at 320 px, axe 0 serious, and 'See my results' opens 'Your results' straight away; with kept notes beside a consent record the row carries 'Notes for your AI (opens in a new tab)' (notes.html, target _blank). Not met by design: a browser that only kept notes on the notes page (no session consent record yet) shows no row at all, because the welcome reads nothing without an adult record of the session flow (funnel.json). D22's wording ('when saves or kept notes exist') promises the link in that case; see UXDEC-VER-01."
+    },
+    {
+      "id": "D23",
+      "status": "provisional default (option B)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D23/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D23/chromium/001-device-check.png",
+        "web/test-results/ux-review/uxdec-verify/D23/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D23/iphone/facts.json"
+      ],
+      "notes": "With 1.5 s spent on the honour screen (a person's pace) the device screen's Continue is enabled within 2 ms of the screen and 'Checking your screen' never shows; the refresh rate ('60 Hz (screen updates per second)') is on the screen at once. At script pace (gate and honour in well under a second) the screen still waits about 850 to 870 ms for the rest of the measurement that began on the gate, with 'Checking your screen' shown: the handoff's 'waits for what is left of it, once'. Before the change the wait was about 1.3 s in every case."
+    },
+    {
+      "id": "D24",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D24/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D24/chromium/001-under-18.png",
+        "web/test-results/ux-review/uxdec-verify/D24/chromium/002-gate-after-way-back.png",
+        "web/test-results/ux-review/uxdec-verify/D24/iphone/001-under-18.png"
+      ],
+      "notes": "The under-18 screen has a link-styled 'I chose this by mistake' (164 x 44, not primary); pressing it returns to 'Before you start' with the 18+ box unticked, nothing in localStorage or sessionStorage, and the choice can be made and taken back again. Axe 0 serious."
+    },
+    {
+      "id": "D25",
+      "status": "provisional default (option A plus C's display names)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D25-D26/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D25-D26/chromium/002-up-next-rt-names.png",
+        "web/test-results/ux-review/uxdec-verify/D25-D26/chromium/003-results-bars-names.png",
+        "web/test-results/ux-review/uxdec-verify/D6/chromium/001-ready-continue.png"
+      ],
+      "notes": "'Up next: Reaction Time', part h1 'Reaction Time' with the tab title 'Reaction Time · HumanBench'; the checklist and the results table say 'Confidence Calibration' and 'Logic Games'; no heading, cell, button or label on the results reads 'Calibration/Metacognition', 'Analytical/Logic Games' or sentence-case 'Reaction time'; the continue line (D6) names 'Matrix & Series'."
+    },
+    {
+      "id": "D26",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D25-D26/chromium/001-welcome.png",
+        "web/test-results/ux-review/uxdec-verify/D25-D26/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D10/chromium/001-honour.png"
+      ],
+      "notes": "Welcome: 'Short tasks of reasoning, memory and speed. Your results are shown as a profile with ranges, not as a single score.' and 'The session has six parts and takes about 30 minutes. ... download a save file of your answers to keep.'; no 'jagged' anywhere; the meta description equals src/copy.ts META_DESCRIPTION with no 'jagged-blob'. Honour: 'At the end of the session, your results are drawn as a shape we call your blob. Before you start, please agree to the following.' precedes the section 13 sentence."
+    },
+    {
+      "id": "D27",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D27/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D27/chromium/001-finish-panel.png",
+        "web/test-results/ux-review/uxdec-verify/D27/chromium/002-results-saved-primaries.png",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/003-skip-panel-in-rt.png"
+      ],
+      "notes": "Skip panel: 'Keep going' first and the only primary, 'Skip Reaction Time' plain; Finish panel: 'Keep going' primary, 'Finish now' plain; 'Start a 20-minute focus session' and the results-talk copy button are plain hb-btn; on the results page after the save the one visible primary is 'Download image (PNG)' (or 'Share image' with a share sheet, D15 C)."
+    },
+    {
+      "id": "D28",
+      "status": "provisional default (option A)",
+      "verdict": "verified",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D28/chromium/001-item-spatial.png",
+        "web/test-results/ux-review/uxdec-verify/D28/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D28/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D28/iphone/facts.json"
+      ],
+      "notes": "All three engines drew the figures; the stem reads 'Which option shows the same object as the target, rotated? A mirror image does not count.' and 'mirror-imaged' is gone."
+    },
+    {
+      "id": "D29",
+      "status": "skipped (owner view pending)",
+      "verdict": "unchanged",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D29-D30/chromium/facts.json"
+      ],
+      "notes": "git diff --stat 9f68f49 -- web/src/render/choice/OptionGroup.svelte is empty: the option-card focus ring is as it was."
+    },
+    {
+      "id": "D30",
+      "status": "skipped (owner view pending)",
+      "verdict": "unchanged",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D29-D30/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D29-D30/chromium/001-rt-panel-open.png",
+        "web/test-results/ux-review/uxdec-verify/D29-D30/iphone/facts.json"
+      ],
+      "notes": "The RT renderer's script block is byte-identical to the base commit's (only markup and CSS moved for D12), and with the Skip panel open over a running practice block the block's text went on changing over 3 s in all three engines: option B (keep running) is what ships."
+    },
+    {
+      "id": "D31",
+      "status": "skipped (owner view pending)",
+      "verdict": "unchanged",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D31/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D31/chromium/001-ready-file-and-code.png",
+        "web/test-results/ux-review/uxdec-verify/D31/webkit/facts.json"
+      ],
+      "notes": "A one-session file loaded ('Loaded 1 earlier session. Your new session will be added to it.'), then a two-session save pasted as the code and Load pressed: the status is unchanged and nothing says the code was ignored; Ready.svelte still reads 'The file first; when there is none, or it is not a save, the pasted code.'"
+    }
+  ],
+  "sweep": {
+    "what": "tour() of e2e/routes.ts: the 53 product routes (start, session, results, notes, selftest) at 390 and 1280 px in light and dark on Chromium and desktop WebKit (4 states each) and at 390 px on the iPhone 13 (2 states each), each state measured (sideways overflow, clipped text, targets under 24 and 44 px, console) and scanned with axe (WCAG 2.x A/AA and best practice); the 10 preview dev routes at 1280 px light and dark (Chromium, WebKit); 17 layout routes at 320 px light (three engines) and with the text at 200% (1280 and 390 px desktop, 390 px phone); the RT self-test quick run in each engine; every saved page text scanned for 'TODO' and for a total, overall or single score.",
+    "routes": 281,
+    "states": 706,
+    "routes_failed_to_open": 0,
+    "sideways_overflow": 0,
+    "clipped_text": 0,
+    "axe_serious_or_critical": 0,
+    "todo_rendered": 0,
+    "score_wording": 0,
+    "console": "the only console entries are three.js's 'Error creating WebGL context' on item-spatial-no-webgl, the route that disables WebGL on purpose (pre-existing, the panel says so once); no page errors, no failed requests on any route in any engine",
+    "rt_selftest": "pass in Chromium (60 Hz), WebKit and iPhone; report rt_selftest_v3; no console errors; axe 0 serious on the results",
+    "evidence": [
+      "web/test-results/ux-review/uxdec-verify/sweep/chromium/summary.json",
+      "web/test-results/ux-review/uxdec-verify/sweep/webkit/summary.json",
+      "web/test-results/ux-review/uxdec-verify/sweep/iphone/summary.json",
+      "web/test-results/ux-review/uxdec-verify/dev/chromium/summary.json",
+      "web/test-results/ux-review/uxdec-verify/dev/webkit/summary.json",
+      "web/test-results/ux-review/uxdec-verify/layout-320/chromium/summary.json",
+      "web/test-results/ux-review/uxdec-verify/layout-320/iphone/summary.json",
+      "web/test-results/ux-review/uxdec-verify/layout-320/webkit/summary.json",
+      "web/test-results/ux-review/uxdec-verify/layout-200/chromium/summary.json",
+      "web/test-results/ux-review/uxdec-verify/layout-200/iphone/summary.json",
+      "web/test-results/ux-review/uxdec-verify/layout-200/webkit/summary.json",
+      "web/test-results/ux-review/uxdec-verify/selftest/chromium/facts.json",
+      "web/test-results/ux-review/uxdec-verify/selftest/webkit/facts.json",
+      "web/test-results/ux-review/uxdec-verify/selftest/iphone/facts.json"
+    ],
+    "issues": [
+      {
+        "kind": "small-target (pre-existing, no file of theirs changed on this branch)",
+        "detail": "Targets under the 44 px phone comfort size, all over WCAG 2.5.8's 24 px except one: the standalone links 'Privacy and terms' (24 px, on 22 states per engine), 'Privacy and terms (opens in a new tab)' (24 px, every session screen), 'Back' on the privacy page (24 px), 'Read the full privacy notice and terms' on the gate (24 px); the checkbox inputs of the gate (26 px), the honour code (26 px) and 'Add my new session to the ...' on ready-continue (26 px) inside their 44 px label rows; the notes page's 'Show all topics' and 'Why this line?' (40 px); and the notes card's 'Make notes for your AI (opens in a new tab)' link on results-saved and share-card-dark, 18 px tall at 1280 px (38 px at 200% text, 42 px at 320 px). app.css gives standalone links min-height 24 px on purpose. Listed per state in each summary.json under metrics.<state>.smallTargets.",
+        "regression": false
+      },
+      {
+        "kind": "console (by design)",
+        "detail": "item-spatial-no-webgl: 'THREE.WebGLRenderer: Error creating WebGL context.' logged once by three.js in each engine; the route stubs WebGL out to show the skip panel.",
+        "regression": false
+      }
+    ]
+  },
+  "new_findings": [
+    {
+      "id": "UXDEC-VER-01",
+      "severity": "minor",
+      "category": "flow",
+      "decision": "D22",
+      "summary": "A browser that only kept notes settings on the notes page (no session consent record yet) gets no 'Earlier results and notes on this device' row and so no 'Notes for your AI' link on the welcome, although D22 says the link shows when kept notes exist. By design in funnel.json (nothing is read before the gate: the row needs an adult consent record of the session flow, and the notes page keeps its own 18+ tick). With a consent record present the link shows, even when the notes and the session sit under different identifiers (then 'See my results' is withheld and the ready screen asks which).",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/002-welcome-returning-notes.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/003-welcome-returning-both.png",
+        "web/test-results/ux-review/uxdec-verify/D22/chromium/facts.json"
+      ],
+      "suggestion": "An owner line: either accept (and say so in D22's record) or let the notes page's 18+ tick count as the adult record for the welcome row.",
+      "confidence": "high"
+    },
+    {
+      "id": "UXDEC-VER-02",
+      "severity": "polish",
+      "category": "a11y",
+      "decision": "sweep (pre-existing)",
+      "summary": "The notes card's 'Make notes for your AI (opens in a new tab)' link on the results page after the save is 18 px tall at 1280 px (a link alone in its paragraph: WCAG 2.5.8 asks 24 px unless the target is in a line of text), 38 px at 200% text and 42 px at 320 px. RevealCard.svelte is unchanged on this branch; wave 2's VER-02 looked at the privacy links, not this one.",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/sweep/chromium/results-saved/1280-light.png",
+        "web/test-results/ux-review/uxdec-verify/sweep/chromium/summary.json"
+      ],
+      "suggestion": "Give the link the .hb-standalone-link treatment (min-height 24 px) or a 44 px row like the welcome's notes link.",
+      "confidence": "medium"
+    },
+    {
+      "id": "UXDEC-VER-03",
+      "severity": "polish",
+      "category": "flow",
+      "decision": "D5",
+      "summary": "The break is offered before Working Memory even when Reaction Time, Matrix & Series and Spatial were all skipped (zero active minutes): the literal half-way rule, as run.json's open issue says. Seen in the D5 replay in all three engines.",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/004-break-offer.png",
+        "web/test-results/ux-review/uxdec-verify/D5/chromium/facts.json"
+      ],
+      "suggestion": "Owner choice: keep the literal rule or offer the break only after a part has run.",
+      "confidence": "high"
+    },
+    {
+      "id": "UXDEC-VER-04",
+      "severity": "polish",
+      "category": "performance",
+      "decision": "D23",
+      "summary": "At script pace (gate and honour code passed in well under a second) the device screen still shows 'Checking your screen' for about 850 to 870 ms while the measurement that started on the gate finishes; at a person's pace (1.5 s on the honour screen) Continue is enabled within 2 ms and the text never shows. Expected from the handoff ('the screen waits for what is left of it, once'); recorded so the number is on file.",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D23/chromium/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D23/iphone/facts.json"
+      ],
+      "suggestion": "None needed.",
+      "confidence": "high"
+    },
+    {
+      "id": "UXDEC-VER-05",
+      "severity": "polish",
+      "category": "a11y",
+      "decision": "D21",
+      "summary": "In headless desktop WebKit, after a later question's region ('Question 2') takes the focus, one Tab lands on nothing (document body) instead of the first option; Chromium reaches the option. Likely WebKit's Tab-to-controls setting (the screen package noted a related WebKit Tab quirk after a mouse click); the region itself is focused as designed in every engine.",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D21/webkit/facts.json",
+        "web/test-results/ux-review/uxdec-verify/D21/chromium/facts.json"
+      ],
+      "suggestion": "Worth a check in real Safari with 'Press Tab to highlight each item' on; no change proposed from an emulation alone.",
+      "confidence": "low"
+    },
+    {
+      "id": "UXDEC-VER-06",
+      "severity": "polish",
+      "category": "layout",
+      "decision": "D16",
+      "summary": "At 200% text on a 390 px phone no part of the chart is in the first screen (the h1, lead line and save pointer take it); at 100% text 66% of the chart is. reveal.json lists this as open; recorded with the measurement.",
+      "evidence": [
+        "web/test-results/ux-review/uxdec-verify/D16/iphone/003-results-390-200pct.png",
+        "web/test-results/ux-review/uxdec-verify/D16/iphone/facts.json"
+      ],
+      "suggestion": "Shorter Finished lead lines on phones (integrate.json's open request) would help most.",
+      "confidence": "high"
+    }
+  ],
+  "files_owned_by_this_package": [
+    "web/ux-review/personas/uxdec-verify-shared.ux.ts",
+    "web/ux-review/personas/uxdec-verify-owner.ux.ts",
+    "web/ux-review/personas/uxdec-verify-defaults.ux.ts",
+    "web/ux-review/personas/uxdec-verify-sweep.ux.ts",
+    "web/ux-review/uxdec/verification.json"
+  ]
+}
