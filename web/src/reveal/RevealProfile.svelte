@@ -160,6 +160,19 @@
     font-size: 0.9375rem;
     line-height: 1.5;
   }
+  /*
+   * On a narrow row (a phone: the column is 24rem or less) the note is a size smaller. The first-session wording is 41
+   * characters; the Linux fonts (DejaVu Sans) are about 10% wider than macOS's, so at 15 px it fits one line from about
+   * 20rem on macOS and about 23rem on Linux. A smaller size and a tighter line cost less of the first screen than
+   * the second line would, and the chart still starts in view. The wording itself is not cut: a line that wraps is
+   * still all there, and nothing below moves while the profile builds (the note is static).
+   */
+  @container (max-width: 24rem) {
+    .badge {
+      font-size: 0.875rem;
+      line-height: 1.4;
+    }
+  }
   .badge strong {
     color: var(--r-fg);
   }
