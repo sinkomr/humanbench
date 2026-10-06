@@ -17,6 +17,10 @@ Status: static MVP in progress (milestone M1). The design spec is in
   - `web/src/session/`: the session flow (consent and 18+ gate, honour code, device check, practice, the A15 blocks and items with their clock, break, hard stop and confidence slider, results and save)
   - `web/src/tasks/`: task families; `tasks/fermi/` (M5.1) is the Fermi scoring library (units, log error, 80% interval, truth weight, Brier summary; a TS mirror of the bank's `hb.fermi`, held to `golden/fermi_scoring_v1.json`), the magnitude reader and the entry's check. It holds no Fermi item or truth value: the only truths are the synthetic demo question's (`demo.ts`) and the golden file's synthetic ones; `tasks/emotion/` (M6.1) is the emotion vignette's render spec and copy plus a synthetic practice situation for the demo (`demo.ts`): it holds no vignette, appraisal profile or key, which stay in the private bank
   - `web/src/render/`: the item and block renderers (what the taker sees), by family; `render/fermi/` is the magnitude + unit entry with an 80% range (demo at `#/dev/fermi`, dev builds only; it is wired into the session when the server serves Fermi items, M2); `render/emotion/` (M6.1) is the "Emotion Reading (text scenarios)" vignette entry: a situation, five feelings, and the skill's R-5.6.2 tooltip behind a button (demo at `#/dev/emotion`, dev builds only; wired in with the server, M2)
+  - `web/src/render/sjt/` and `web/src/tasks/sjt/` (M6.2, DESIGN §5.3): the situational judgment entry: a situation and four responses, answered by rating each response 1 to 4 (the default) or by choosing the one that would work best and the one that would work least well (`mode: 'most_least'`). `tasks/sjt/` has the spec, the copy and the scoring (closeness to a key profile, from 0 to 1; a TS mirror of the bank's `hb.sjt.scoring`, held to `golden/m6_scoring_v1.json`). The demo, on a synthetic practice situation, is at `#/dev/sjt` (`?mode=most_least` for the second way to answer; dev builds only). It holds no bank item and no key: the effectiveness ratings stay in the private bank, and the demo's own ratings live in the demo page, never in the spec the renderer gets
+  - `web/src/render/rat/` and `web/src/tasks/rat/` (M6.3, DESIGN §5.4): the "Word links" entry: three cue words and one typed word that makes a common word or phrase with each of them. `tasks/rat/answers.ts` is the answer check (it keeps the letters a to z, so case, spaces, hyphens and accents do not matter; a plural is another word; a mirror of the bank's `hb.rat.answers`, held to the same golden file). The demo, on three classic public practice puzzles, is at `#/dev/rat` (dev builds only). It holds no bank puzzle and no solution
+  - `web/src/render/aut/` and `web/src/tasks/aut/` (M6.4, DESIGN §5.4, §8): "Unusual uses (experimental)": an everyday object and a 90 s round (`AUT_DEFAULT_SECONDS`; a spec's `seconds` can change it) in which the person adds ideas one at a time. The entry shows "Don't type personal info" before any typing and keeps it in view; an idea that looks like contact details (an email, phone number, address or web link) is not added (`text.ts`). Scoring runs on the device and sends nothing: all-MiniLM-L6-v2 (8-bit) through `@huggingface/transformers`, a lazy chunk and model of about 25 MB that are fetched only when the person presses "Load the scorer (about 25 MB)", and kept by the browser after that. The model files come from the Hugging Face hub; `VITE_HB_EMBED_MODEL_BASE` at build time serves them from somewhere else (see below). Originality is the mean of the top 3 distances of the ideas from the object (1 minus the cosine); flexibility is the number of idea clusters (average linkage, cosine 0.40). Filters keep an idea out of the count: a duplicate (cosine of 0.85 or more with an earlier idea), too long (more than 12 words) and a plausibility floor (its cosine with "a use for X" must exceed −0.05), besides the empty and contact-detail cases. Every value is provisional (`params.ts`, version `aut-v0`), and the results carry the experimental note and no total. The outside scoring service (Ocsai) is a stub that is off: `OCSAI_ENABLED` is the constant `false`, `ocsai.ts` has no network code (`ocsai.test.ts` scans for any), and while it is off the page shows one short notice (its opt-in flow sits behind a prop that no page passes). The demo is at `#/dev/aut` (`?embedder=mock` uses a test scorer with no download; `?seconds=N` shortens the round; dev builds only)
+  - None of these three is wired into the session. The M1 session plans no part for them, so the Emotion Reading (EMO) and Creative Thinking (CRE) axes show as not measured ("not offered yet" in the results, `OFFERED_AXES` in `web/src/reveal/results.ts`), and the entries appear only where the dev routes are on: `VITE_HB_DEV_ROUTES=1` builds (the Playwright build), the dev server and the tests; a plain production build drops `web/src/dev/`. The facet labels ("Situational judgment", "Word links", "Unusual uses (experimental)", and "Emotion scenarios" for M6.1) are in `web/src/viz/facets.ts`
   - `web/src/review/`: the dev-only procedural review page (G7), never in a production build
   - `web/src/selftest/`: the RT timing self-test page (`web/rt-selftest.html`)
   - `web/src/brief/`: "Notes for your AI" (Phase AI): a pure, deterministic generator of short notes a person pastes into their own assistant. Closed grammar `hb-brief/1`, lint, parser, checker (`check.ts`: paste any notes, see what they say and what is foreign, edited, out of date or switched off), `surfaces.json` (install and removal steps), no network; storage only when the person says they are 18 or older and asks to keep their settings, as the optional `brief_prefs` of a prefs-only save (`web/src/brief-store/`, `hb:save:v1:prefs`; settings and fit notes only, never what was typed); the builder page is `web/notes.html`; `npm run dump:briefs -- --as-of YYYY-MM` writes the notes (and the results-talk preamble) the bank's behaviour harness reads; `reveal.ts` is the light barrel the reveal and share-card screens import for the "Working with AI" card and the "Talking about your results with an AI" helper (demo at `#/dev/reveal-ai`, dev builds only)
@@ -379,6 +383,49 @@ tap's `pointerType`), for the RT observation's `input_type` (DESIGN §11.6 norms
 renders hundreds of generated instances and fails if the key, or anything that tells the keyed
 option apart, reaches the DOM.
 
+### Situational judgment, word links and unusual uses (ROADMAP M6.2 to M6.4)
+
+These three entries (DESIGN §5.2 to §5.4) are tier (c) work whose keys and items live in the private bank:
+this repo holds the renderers, the scoring arithmetic and made-up demo content only, and none of them is in
+the session yet (the layout above says where they show). To try them, start the dev server (`npm run dev`)
+and open one of the dev routes:
+
+- http://localhost:5173/humanbench/#/dev/sjt (`?mode=most_least` asks for the best and the least effective response)
+- http://localhost:5173/humanbench/#/dev/rat
+- http://localhost:5173/humanbench/#/dev/aut (add `?embedder=mock` to skip the model download)
+
+Of the three, only the unusual-uses scorer reaches the network, and only after a press of its load button.
+The model files (`config.json`, `tokenizer.json`, `tokenizer_config.json` and `onnx/model_quantized.onnx`,
+about 23.7 MB) come from the Hugging Face hub: a request for public files, never an answer or a score. A deploy
+that does not want even that serves them itself and names the folder at build time, with the repository layout
+kept under it (`<folder>/Xenova/all-MiniLM-L6-v2/onnx/model_quantized.onnx`, and so on):
+
+```zsh
+cd web
+VITE_HB_EMBED_MODEL_BASE=/humanbench/models/ npm run build
+```
+
+The value is an `https` URL, or a path on the same site (`http` only for the same site or localhost); a value that does
+not fit stops the load with a message, rather than falling back to the hub (`resolveModelBase` in
+`web/src/tasks/aut/minilm.ts`). The ONNX Runtime wasm (about 14 MB) is not part of the model: it is an asset of
+this site's own build, which the scorer points the runtime at, so the library's default of fetching it from a CDN
+is never used. The browser's Cache API keeps the model and the wasm after the first load. Until the entry joins
+the session, only a build with the dev routes on contains the scorer at all (a plain production build has none of
+it), so the variable matters only there.
+
+Dependency note: `@huggingface/transformers` is pinned to the exact version 4.3.0 in `web/package.json`, with no
+caret. The scoring parameters in `web/src/tasks/aut/params.ts` were chosen from a probe that ran under that
+version, and `minilm.ts` uses the library through a small structural type (its `env` settings and progress
+events), so a new version is a reviewed change, not something `npm install` picks up. `web/vite.config.ts` also
+aliases `onnxruntime-web/webgpu` to `onnxruntime-web/wasm`. Transformers.js imports ONNX Runtime's WebGPU entry,
+whose bundle names a 27 MB "asyncify" wasm file; Vite would copy it into `dist/` although nothing ever loads it,
+because the scorer runs on the plain wasm backend (`device: 'wasm'`, one thread) and is pointed at the 14 MB plain
+wasm instead. The wasm-only entry of ONNX Runtime is the same API without the WebGPU build and that file.
+`onnxruntime-web` is not listed in `web/package.json`; it comes with Transformers.js.
+`web/scripts/aut-bundle.test.ts` builds the scorer and checks that the library sits in a lazily loaded chunk, that
+the plain wasm and its loader are shipped, that the 27 MB file is not, and that a plain production build contains
+none of it.
+
 ### Procedural review page (G7)
 
 DESIGN §4.4 asks for a human spot audit of 30 instances per procedural family and generator
@@ -489,7 +536,12 @@ npx tsx -e "import('./src/tasks/quant/entry-vectors.ts').then((m) => process.std
 ```
 
 The other direction, the bank's golden scoring files into `web/src/engine/__fixtures__/`, is
-`npm run sync:golden` (ROADMAP A17; `uv run hb sync golden` in the bank does the same copy).
+`npm run sync:golden` (ROADMAP A17; `uv run hb sync golden` in the bank does the same copy). The files are
+`sigma_v2.json`, `scoring_v1.json`, `scoring_v2.json`, `retest_v1.json`, `sim_m14a_v1.json`,
+`fermi_scoring_v1.json` and `m6_scoring_v1.json`; the last, which the bank's `hb.m6golden` writes
+(`uv run python -m hb.m6golden --write`), holds made-up numbers and strings only and pins the situational
+judgment scoring and the word-links answer check (`web/src/tasks/m6-golden.test.ts`). The script copies all of
+them or none, and fails when the bank is on an older branch that lacks one.
 When the bank checkout is present, `npm test` fails if any of these copies is stale:
 `web/scripts/ts-dumps-sync.test.ts` requires a dump of every registered family (and the toy
 family), checks each dump's header, item count, seed order, items and bytes, checks the series

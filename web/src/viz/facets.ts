@@ -129,6 +129,12 @@ export const FACET_LABELS: Readonly<Record<string, string>> = Object.freeze({
   confidence: 'Confidence ratings',
   // What the Quantitative drill-down shows (DATA-14): the topic groups, by their own labels.
   ...Object.fromEntries(QUANT_GROUPS.map((g) => [g.id, g.label])),
+  // M6 tier (c) facets (DESIGN §5.2-§5.4): the alternative-uses facet carries its "experimental" label (§5.4: the
+  // in-browser distance score is noisy).
+  situational_judgment: 'Situational judgment',
+  remote_associates: 'Word links',
+  alternative_uses: 'Unusual uses (experimental)',
+  appraisal_vignettes: 'Emotion scenarios',
 })
 
 /** The on-screen name of a facet id: {@link FACET_LABELS}, else the id as words ("odd_one_out" → "Odd one out"). */

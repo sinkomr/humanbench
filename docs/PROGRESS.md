@@ -36,7 +36,7 @@ The user's Claude plan has a rolling 5-hour usage limit. Work continues across l
   - **Small re-runs still open:** G6 re-review of 3 fixed KAP items (run 5); G4 re-solve of kap-b6-036 and fer-b3-003 (run 9; fer-b3-003 must use the *Fermi* prompt).
   - **Owner question:** 108 RC items have 4 options while the RC model expects 5.
   - `wf10/ux` (pub): persona findings, no fixes yet. 13 of 25 agents done.
-  - `wf10/m6` (both repos): SJT, AUT and RAT partial; the SJT ratings were not done. 16 of 40 agents done.
+  - `wf10/m6` **finished and merged (2026-10-06, squashed).** SJT (57 of 60 keyed), RAT engine (corpus pending) and AUT (in-browser MiniLM), all on dev routes only. **Owner:** choose the RAT corpus; rewrite 3 SJT items; expert ratings; where the model files are served from; Ocsai stays off.
 - Also landed this session: the RT event-timestamp guard, and M1.23 ticked.
 
 - **wf9 done** (2026-10-03 02:30). Merged and pushed:

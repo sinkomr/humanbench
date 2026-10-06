@@ -26,6 +26,9 @@ import { READY_CONTINUE, WELCOME_RETURNING_LABEL } from '../src/session/copy'
 import { CONSENT_KEY, TERMS_VERSION } from '../src/session/constants'
 import { REVIEW_URL, visualGalleryUrl } from './dev-server'
 import { agreeGate, answerItem, button, h1, loadSave, simulatedSave, toReady, toResults } from './flow'
+import { AUT_ROUTES } from './routes-aut'
+import { RAT_ROUTES } from './routes-rat'
+import { SJT_ROUTES } from './routes-sjt'
 import { SessionDriver, type Screen } from './session-driver'
 
 export type RouteGroup = 'start' | 'session' | 'results' | 'notes' | 'selftest' | 'dev'
@@ -63,15 +66,18 @@ export interface Route {
  * requires an entry for every renderer file and checks that the class names are in the file.
  */
 export const RENDERER_ROOTS: Readonly<Record<string, string>> = {
+  'render/aut/AutRenderer.svelte': 'section.hb-render.aut',
   'render/coding/CodingRenderer.svelte': 'section.hb-render.coding',
   'render/emotion/EmotionRenderer.svelte': 'section.hb-render.emotion',
   'render/fermi/FermiRenderer.svelte': 'section.hb-render.fermi',
   'render/matrices/MatrixRenderer.svelte': 'div.matrix',
   'render/quant/QuantRenderer.svelte': 'section.hb-render.quant',
+  'render/rat/RatRenderer.svelte': 'section.hb-render.rat',
   'render/reading/ReadingRenderer.svelte': 'section.hb-render.reading',
   'render/rotation/RotationRenderer.svelte': 'div.rotation',
   'render/rt/RtRenderer.svelte': 'section.hb-render.rt',
   'render/series/SeriesRenderer.svelte': 'section.hb-render.series',
+  'render/sjt/SjtRenderer.svelte': 'section.hb-render.sjt',
   'render/span/CorsiRenderer.svelte': 'section.hb-render.corsi',
   'render/span/DigitSpanRenderer.svelte': 'section.hb-render.span',
   // The two parts that draw a multiple-choice item and a typed one.
@@ -1044,6 +1050,10 @@ export const ROUTES: readonly Route[] = [
       await expect(page.getByTestId('emotion-feedback')).toBeVisible()
     },
   },
+  // The tier (c) entries of M6.2-M6.4 keep their routes in their own files (`routes-sjt.ts`, `routes-rat.ts`, `routes-aut.ts`).
+  ...SJT_ROUTES,
+  ...RAT_ROUTES,
+  ...AUT_ROUTES,
   {
     id: 'dev-visual-gallery',
     group: 'dev',

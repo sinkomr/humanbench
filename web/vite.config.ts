@@ -180,6 +180,11 @@ export default defineConfig(({ mode }) => {
   return {
     base,
     plugins: [svelte(), schemaAssets(), surfacesStaleness(), staticShell()],
+    // The AUT sentence embedder (src/tasks/aut/minilm.ts, ROADMAP M6.4) runs Transformers.js on ONNX Runtime's plain
+    // wasm backend only. Transformers.js imports ORT's WebGPU entry, whose bundle names a 27 MB "asyncify" wasm that
+    // Vite would copy into dist/ although nothing ever loads it (the page is pointed at the 14 MB plain wasm instead).
+    // ORT's own wasm-only entry (a documented export) is the same API without the WebGPU build and that file.
+    resolve: { alias: [{ find: /^onnxruntime-web\/webgpu$/, replacement: 'onnxruntime-web/wasm' }] },
     // Dev-only routes (src/dev/, e.g. the M1.16 blob demo): on in dev and tests, and in a build
     // with VITE_HB_DEV_ROUTES=1 (the Playwright e2e build); a plain production build drops them.
     define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)), __HB_BACKEND__: JSON.stringify(backendCompiledIn(mode, env)) },
