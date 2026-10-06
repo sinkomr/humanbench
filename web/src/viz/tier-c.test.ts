@@ -271,12 +271,14 @@ describe('M6 facet labels (DESIGN §5.4: "Label this axis experimental")', () =>
     const est = axisEstimates({ score: M6_SCORE })
     expect(est.filter((e) => e.measured).map((e) => e.code).sort()).toEqual([...TIER_C].sort())
     const rows = clusterRows(est)
-    expect(rows.map((r) => [r.id, r.shortLabel[0]])).toEqual([
+    expect(rows.map((r) => [r.id, r.shortLabel.join(' ')])).toEqual([
       ['EMO:appraisal_vignettes', 'Emotion scenarios'],
       ['EMO:situational_judgment', 'Situational judgment'],
       ['CRE:remote_associates', 'Word links'],
       ['CRE:alternative_uses', 'Unusual uses (experimental)'],
     ])
+    // A facet name longer than FACET_LINE_CHARS takes two chart lines (`facetLabelLines`, UX review D4), "(experimental)" whole on the second.
+    expect(rows.find((r) => r.facet === 'alternative_uses')!.shortLabel).toEqual(['Unusual uses', '(experimental)'])
     // UX-040: a facet row is named by its label alone; the skill it belongs to is its group (the table's next column).
     expect(rows.map((r) => r.name)).toEqual(['Emotion scenarios', 'Situational judgment', 'Word links', 'Unusual uses (experimental)'])
     expect(rows.map((r) => r.group)).toEqual([axisName('EMO'), axisName('EMO'), axisName('CRE'), axisName('CRE')])
@@ -326,7 +328,7 @@ describe('M6 facet labels (DESIGN §5.4: "Label this axis experimental")', () =>
       expect(r.theta).toBeUndefined()
     }
     // Even the facet name that carries a label of its own gives no number on an unmeasured axis.
-    expect(rows.find((r) => r.facet === 'alternative_uses')!.shortLabel).toEqual(['Unusual uses (experimental)'])
+    expect(rows.find((r) => r.facet === 'alternative_uses')!.shortLabel.join(' ')).toBe('Unusual uses (experimental)')
     const model = buildBlob(rows)
     expect(model.hatch).toEqual([])
     for (const s of model.spokes) expect(s.lines.at(-1)).toEqual({ text: 'not measured', note: true, glyph: false })
