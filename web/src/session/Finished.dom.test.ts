@@ -135,10 +135,15 @@ describe('Finished: nothing measured offers the way back, and keeps the file out
     expect(c.querySelector('h1')?.textContent).toBe('Session ended')
   })
 
-  it('a profile on screen keeps the wide page', () => {
+  it('a profile on screen is one column, not the wide page: the reveal is a direct child of the main block, under its h1 and lines (D16)', () => {
     const bot = new Bot({ sessionId: 's_FINISHEDWIDE001' }, { theta: new Array<number>(17).fill(0.5) })
     bot.finish()
-    expect(show(bot, null).querySelector('main')?.classList.contains('wide')).toBe(true)
+    const main = show(bot, null).querySelector('main')!
+    // The 52rem column is `.hb-screen:has(> .hb-reveal)` in reveal.css (a real browser measures it, e2e/uxdec-reveal.spec.ts): its two parts are these.
+    expect(main.classList.contains('wide')).toBe(false)
+    expect(main.querySelector(':scope > .hb-reveal')).not.toBeNull()
+    expect(main.querySelector(':scope > h1')).not.toBeNull()
+    expect(main.querySelector(':scope > p.lead')).not.toBeNull()
   })
 })
 

@@ -123,13 +123,13 @@ test.describe('the flow: peaks → drill-down → save → the rest (§10)', () 
     await still(page)
     await toResults(page, 1)
     await expect(page.locator('[data-practice-adjusted]')).toContainText('Practice-adjusted')
-    await expect(page.locator('[data-practice-adjusted]')).toContainText('nothing to adjust yet')
+    await expect(page.locator('[data-practice-adjusted]')).toContainText('Nothing to adjust yet')
   })
 
   test('a returning person with two sessions sees the later wording and all 17 skills of the merged re-score', async ({ page }) => {
     await still(page)
     await toResults(page, 2)
-    await expect(page.locator('[data-practice-adjusted]')).toContainText('each later session is credited for the typical gain from practice')
+    await expect(page.locator('[data-practice-adjusted]')).toContainText('Each later session is credited for the typical gain from practice')
     await expect(page.locator('table.hb-bars tbody tr')).toHaveCount(17)
   })
 })
@@ -336,7 +336,7 @@ test.describe('coming back for more (§10, §7.6)', () => {
     await expect(h1(page)).toHaveText('Session complete')
     // Two sessions with data now: practice-adjusted. The focus session covered one part, so most skills have had one session:
     // the line speaks for the profile as a whole, and the next full session is a second one for most of it.
-    await expect(page.locator('[data-practice-adjusted]')).toContainText('each later session is credited')
+    await expect(page.locator('[data-practice-adjusted]')).toContainText('Each later session is credited')
     await expect(section(page, 'retest').locator('[data-shrinkage]')).toHaveText('A second session would typically tighten the ranges in your profile by about 25%.')
     // Nothing was marked skipped: the parts left out of a focus session are not "declined".
     await expect(page.locator('table.hb-bars tbody tr.unmeasured')).toHaveCount(17 - simulatedSave().measured.length)

@@ -108,12 +108,12 @@ describe('the order of the reveal (§10)', () => {
     const one = mountFinished(bot('s_REVEALDOM0000002'))
     const badge = one.c.querySelector('[data-practice-adjusted]')!
     expect(badge.textContent).toContain('Practice-adjusted')
-    expect(badge.textContent).toContain('nothing to adjust yet')
+    expect(badge.textContent).toContain('Nothing to adjust yet')
     cleanup?.()
     const a = bot('s_REVEALDOM0000003')
     const b = botSave('s_REVEALDOM0000004', { base: a.save, startedMs: T0_MS + 8 * DAY_MS })
     const two = mountFinished(b)
-    expect(two.c.querySelector('[data-practice-adjusted]')!.textContent).toContain('each later session is credited')
+    expect(two.c.querySelector('[data-practice-adjusted]')!.textContent).toContain('Each later session is credited')
   })
 
   it('shows all sessions of the save, not only the last (M1.Q): the returning person’s table covers both', () => {
@@ -406,9 +406,13 @@ describe('the unsaved results point to the save (UX-029)', () => {
     const pointer = m.c.querySelector<HTMLElement>('[data-save-pointer]')!
     expect(pointer.getAttribute('data-ready')).toBe('false')
     expect(pointer.querySelector('a')).toBeNull()
+    // The room of the link is kept (a hidden copy of its words, out of the tree), so the chart does not move when the link comes (D16).
+    expect(pointer.querySelector('.link-room')?.getAttribute('aria-hidden')).toBe('true')
+    expect(pointer.querySelector('.link-room')?.textContent).toBe('Go to the save file')
     click(buttonByText(m.c, 'Skip animation'))
     expect(m.c.querySelector('[data-save-pointer]')!.getAttribute('data-ready')).toBe('true')
     expect(m.c.querySelector('[data-save-pointer] a')).not.toBeNull()
+    expect(m.c.querySelector('[data-save-pointer] .link-room')).toBeNull()
   })
 
   it('the save panel has the unsaved look until the file is saved (the styles key on data-saved)', () => {
@@ -549,12 +553,12 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     click(buttonByText(m.c, 'Download save file'))
     const after = section(m.c, 'after-save')!
     expect(after.textContent).not.toContain(RESOURCE_LINE)
+    // Wording version 2 of the preamble (owner decision 2026-10-05, UX-071) is 346 characters; the proposal's 340 was version 1.
     expect(TALK_PREAMBLE.length).toBeLessThanOrEqual(TALK_PREAMBLE_MAX_CHARS)
     expect(TALK_PREAMBLE_MAX_CHARS).toBe(346)
     expect(TALK_PREAMBLE.length).toBe(346)
     expect(/\d/.test(TALK_PREAMBLE)).toBe(false)
   })
-    // Wording version 2 of the preamble (owner decision 2026-10-05, UX-071) is 346 characters; the proposal's 340 was version 1.
 })
 
 describe('the share card in the reveal (M1.18)', () => {
@@ -842,6 +846,17 @@ describe('about these numbers (§7.3, §7.1)', () => {
     expect(r.container.querySelector('[data-norm="rt"]')).toBeNull()
   })
 
+  it('the reading line ends by saying the comparison figures are for people reading in their first language (D11 B)', () => {
+    const facts = { readingWpm: 250, digitsForward: null, digitsBackward: null, simpleRtMs: null }
+    const r = render(NumbersSection, { facts, pace: [] })
+    cleanup = r.destroy
+    const reading = r.container.querySelector('[data-norm="reading"]')!.textContent ?? ''
+    expect(reading.endsWith('The comparison figures are for people reading in their first language.')).toBe(true)
+    // After the sentence that says one passage is a rough guide, and in this line only.
+    expect(reading).toContain('One passage is a rough guide. The comparison figures')
+    expect((r.container.textContent ?? '').split('first language').length - 1).toBe(1)
+  })
+
   it('the "vs other HumanBench takers" wording exists, and shows only when asked (A12 allows percentiles after M4 with N ≥ 500)', () => {
     const facts = { readingWpm: null, digitsForward: null, digitsBackward: null, simpleRtMs: null }
     const hidden = render(NumbersSection, { facts, pace: [] })
@@ -888,6 +903,73 @@ describe('a session that measured nothing', () => {
     expect(m.restarts).toHaveLength(1)
     // Nothing was measured: no results to lose, no leave-guard.
     expect(unloadPrevented()).toBe(false)
+  })
+})
+
+describe('the compact top of the results (UX-REVIEW D16, option A)', () => {
+  const text = (el: Element | null): string => (el?.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+  it('the practice note is one line: one paragraph, the label and one short sentence, with no break, list or disclosure in it', () => {
+    const one = mountFinished(bot('s_REVEALDOM0000061'))
+    const note = one.c.querySelector('[data-practice-adjusted]')!
+    expect(note.tagName).toBe('P')
+    expect(text(note)).toBe('Practice-adjusted. Nothing to adjust yet.')
+    expect(note.querySelectorAll('br, ul, ol, details, button, a')).toHaveLength(0)
+    // Before the chart: the label stays where the profile starts (§7.8).
+    expect(before(note, one.c.querySelector('svg.hb-blob')!)).toBe(true)
+    cleanup?.()
+    const a = bot('s_REVEALDOM0000062')
+    const b = botSave('s_REVEALDOM0000063', { base: a.save, startedMs: T0_MS + 8 * DAY_MS })
+    const later = mountFinished(b).c.querySelector('[data-practice-adjusted]')!
+    expect(text(later)).toBe('Practice-adjusted. Each later session is credited for the typical gain from practice (a provisional figure).')
+    expect(text(later).length).toBeLessThanOrEqual(110)
+    expect(later.querySelectorAll('br, ul, ol, details, button, a')).toHaveLength(0)
+  })
+
+  it('"Your profile is ready." is a status that is hidden from the eye and not from the accessibility tree', async () => {
+    const display = fakeDisplay()
+    const m = mountFinished(bot('s_REVEALDOM0000064'), { motion: 'full', timing: display })
+    const status = m.c.querySelector<HTMLElement>('.reveal [role="status"]')!
+    // The region is the first status of the reveal, in the page from the start (empty), and visually hidden by the shared class.
+    expect(status.classList.contains('hb-sr-only')).toBe(true)
+    await vi.waitFor(() => expect(text(status)).toBe('Building your profile, one skill at a time.'))
+    click(buttonByText(m.c, 'Skip animation'))
+    expect(text(status)).toBe('Your profile is ready.')
+    // Not taken out of the tree: no hidden attribute, no aria-hidden, no display: none or visibility: hidden, on it or above it.
+    for (let el: HTMLElement | null = status; el !== null && el !== m.c; el = el.parentElement) {
+      expect(el.hasAttribute('hidden'), el.tagName).toBe(false)
+      expect(el.getAttribute('aria-hidden'), el.tagName).toBeNull()
+      const style = getComputedStyle(el)
+      expect(style.display, el.tagName).not.toBe('none')
+      expect(style.visibility, el.tagName).not.toBe('hidden')
+    }
+    expect(status.getAttribute('role')).toBe('status')
+    // The only other words of the controls are the note, the button and (while it builds) the caption of the skill drawn: the sentence is said once, in the status.
+    expect((m.c.textContent ?? '').split('Your profile is ready.').length - 1).toBe(1)
+  })
+
+  it('the animation row exists only while there is a button in it: Skip while it builds, Replay once it is built, nothing with the motion off', async () => {
+    const display = fakeDisplay()
+    const m = mountFinished(bot('s_REVEALDOM0000065'), { motion: 'full', timing: display })
+    const row = (): Element | null => m.c.querySelector('.reveal .anim')
+    expect(row()?.querySelectorAll('button')).toHaveLength(1)
+    expect(text(row()!.querySelector('button'))).toBe('Skip animation')
+    display.advance(60)
+    expect(text(row()!.querySelector('.now'))).toMatch(/^Now showing: .+ \(1 of \d+\)$/)
+    click(buttonByText(m.c, 'Skip animation'))
+    await vi.waitFor(() => expect(text(row()!.querySelector('button'))).toBe('Replay animation'))
+    expect(row()!.querySelector('.now')).toBeNull()
+    cleanup?.()
+    const still = mountFinished(bot('s_REVEALDOM0000066'), { motion: 'reduce' })
+    expect(still.c.querySelector('.reveal .anim')).toBeNull()
+  })
+
+  it('the results page is one column: the main block is not the wide screen and the reveal is its direct child, so the h1 and the panels share a left edge', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000067'))
+    const main = m.c.querySelector('main')!
+    expect(main.classList.contains('wide')).toBe(false)
+    expect(main.querySelector(':scope > .hb-reveal')).not.toBeNull()
+    expect(main.querySelector(':scope > h1')).not.toBeNull()
   })
 })
 

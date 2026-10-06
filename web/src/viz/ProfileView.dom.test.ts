@@ -340,6 +340,27 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
   })
 })
 
+describe('layout: the profile chart may grow to 48rem, the facet chart does not (UX-REVIEW D16)', () => {
+  it('the profile chart box is in the blob figure (the CSS that widens it is scoped to it) and the facet chart box is not', () => {
+    const root = render(syntheticProfile('full')!)
+    click(button(root, 'Knowledge'))
+    const main = root.querySelector('figure.blob-figure .chart-box')
+    const facet = root.querySelector('.facet-panel .chart-box')
+    expect(main).not.toBeNull()
+    expect(main!.querySelector('svg.hb-blob')).not.toBeNull()
+    expect(facet).not.toBeNull()
+    expect(facet!.closest('figure.blob-figure')).toBeNull()
+    expect(root.querySelectorAll('.chart-box')).toHaveLength(2)
+  })
+
+  it('the caption under the chart and the heading above it are direct children of the same section, so they share the column edge', () => {
+    const root = render(syntheticProfile('full')!)
+    const section = root.querySelector('section.hb-profile')!
+    expect(section.querySelector(':scope > h2')).not.toBeNull()
+    expect(section.querySelector(':scope > figure.blob-figure > figcaption')).not.toBeNull()
+  })
+})
+
 describe('no area, total or single score anywhere (§9.5 a, CLAUDE.md blob rule, A12)', () => {
   for (const p of SYNTHETIC_PROFILES) {
     it(`${p.id}: every view and drill-down shows only per-skill numbers and no aggregate words`, () => {

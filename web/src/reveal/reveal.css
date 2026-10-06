@@ -5,6 +5,16 @@
  * nothing unless the person allows it.
  */
 
+/*
+ * One column for the whole results page (UX-REVIEW D16): the h1 and the lines under it (session.css, .hb-screen) and every
+ * panel of the reveal share one left edge, and one width. The column is 52rem of content, the width the panels
+ * have always had; the page's own 1rem padding on both sides is on top of it, so the box is 54rem. Without `:has`
+ * the page keeps the plain screen column (42rem), which holds the same panels.
+ */
+.hb-screen:has(> .hb-reveal) {
+  max-width: 54rem;
+}
+
 .hb-reveal-panel {
   /* width: 100% keeps a flex item with auto side margins from shrinking to its content (which
      overflowed at 320 px with the worked matrix's option grid). */

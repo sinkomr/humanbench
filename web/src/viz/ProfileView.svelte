@@ -379,10 +379,19 @@
     max-width: 40rem;
     margin: 0 auto;
   }
+  /* The profile's chart grows with the column up to 48rem (UX-REVIEW D16); the facet chart under a cluster stays at 40rem. */
+  .blob-figure .chart-box {
+    max-width: 48rem;
+  }
+  /* The chart itself stops at 40rem in BlobChart; inside the profile's box it follows the box. */
+  .blob-figure .chart-box :global(.hb-blob) {
+    max-width: 48rem;
+  }
+  /* On the column's left edge, with the heading and the other text (one left edge for the results page, D16). */
   figcaption {
     font-size: 0.875rem;
     max-width: 44rem;
-    margin: 0.5rem auto 0;
+    margin: 0.5rem 0 0;
   }
   figcaption p,
   .note {

@@ -7,6 +7,10 @@
   question, null if left blank). The source is credited after the block. The spec has no evidence
   spans or rationales (A14), and nothing here marks a keyed option.
 
+  Display paragraphs (web/UX-REVIEW.md D11 option A, a provisional default): an authored paragraph
+  of more than 150 words is drawn as several paragraphs of about 120 words, cut only between
+  sentences (`split.ts`). Display only: the spec, its word count and the reading time are as authored.
+
   Questions: Enter on an option moves on to the next question (and from the last to Submit answers)
   and never submits; Submit answers with questions left blank asks once, in an alert, and a second
   press submits anyway (WCAG 3.2.2, 3.3.4). The count line is mounted empty and filled a moment
@@ -17,6 +21,7 @@
   import '../common/render.css'
   import { browserTiming, type RendererProps } from '../common/props'
   import type { ReadingResponse, ReadingSpec } from '../../tasks/reading/types'
+  import { splitParagraphs } from './split'
 
   let { spec, onrespond, timing }: RendererProps<ReadingSpec, ReadingResponse> = $props()
 
@@ -45,6 +50,8 @@
   const unanswered = $derived(choices.filter((c) => c === null).length)
   const warning = $derived(warnedFor !== null && warnedFor === unanswered && unanswered > 0)
   const noun = $derived(unanswered === 1 ? 'question' : 'questions')
+  /** The paragraphs as drawn: a long authored paragraph in pieces (the words and their order are the spec's). */
+  const shown = $derived(splitParagraphs(spec.paragraphs))
 
   function reveal(): void {
     phase = 'reading'
@@ -119,7 +126,7 @@
     <button type="button" class="hb-btn hb-primary" onclick={() => reveal()}>Show the passage</button>
   {:else if phase === 'reading'}
     <article class="passage" tabindex="-1" aria-label="Passage">
-      {#each spec.paragraphs as para, i (i)}
+      {#each shown as para, i (i)}
         <p>{para}</p>
       {/each}
     </article>

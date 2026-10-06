@@ -100,10 +100,30 @@ describe('the results copy', () => {
   })
 
   it('describes the practice adjustment as a provisional population figure, not as something about the person', () => {
-    expect(copy.PRACTICE_ADJUSTED_LATER).toContain('each later session is credited')
+    expect(copy.PRACTICE_ADJUSTED_LATER).toContain('Each later session is credited')
     expect(copy.PRACTICE_ADJUSTED_LATER).toContain('typical gain from practice')
     expect(copy.PRACTICE_ADJUSTED_LATER).toContain('provisional')
     for (const text of [copy.PRACTICE_ADJUSTED_FIRST, copy.PRACTICE_ADJUSTED_LATER]) expect(text).not.toMatch(/describe you|you gained/)
+    // A person with one session finds the same in the advice on when to come back, where they decide on a second one.
+    expect(copy.SPACING_TEXT).toContain('Each later session is credited for the typical gain from practice (a provisional figure).')
+  })
+
+  it('keeps the practice note to one line: the label and one short sentence, no second sentence and no semicolon (D16)', () => {
+    expect(copy.PRACTICE_ADJUSTED_LABEL).toBe('Practice-adjusted')
+    expect(copy.PRACTICE_ADJUSTED_FIRST).toBe('Nothing to adjust yet.')
+    for (const text of [copy.PRACTICE_ADJUSTED_FIRST, copy.PRACTICE_ADJUSTED_LATER]) {
+      expect(text.match(/[.!?]/g), text).toHaveLength(1)
+      expect(text, text).not.toContain(';')
+      expect(`${copy.PRACTICE_ADJUSTED_LABEL}. ${text}`.length, text).toBeLessThanOrEqual(110)
+    }
+  })
+
+  it('says the reading comparison is for people reading in their first language, as the last sentence of the reading line (D11 B)', () => {
+    const line = copy.readingNorm(214)
+    expect(line.startsWith('You read a passage at about 214 words per minute.')).toBe(true)
+    expect(line.endsWith(' The comparison figures are for people reading in their first language.')).toBe(true)
+    // The sentence before it is still there: one passage is a rough guide.
+    expect(line).toContain('One passage is a rough guide. The comparison figures')
   })
 
   it('compares peaks with the profile as a whole and points at shapes, not colours', () => {

@@ -137,7 +137,8 @@
   let saved = $state(false)
 </script>
 
-<Screen title={result === null ? FINISHED_VIEW_HEADING : results === null ? FINISHED_EMPTY_HEADING : FINISHED_HEADING} wide={results !== null}>
+<!-- Not `wide`: the results page is one 52rem column, set in reveal.css from what it holds (D16); the h1 and the lines under it share its left edge. -->
+<Screen title={result === null ? FINISHED_VIEW_HEADING : results === null ? FINISHED_EMPTY_HEADING : FINISHED_HEADING}>
   {#if result === null}
     <p class="lead">{viewLine(earlier)}</p>
   {:else if nothingNew}
