@@ -116,7 +116,16 @@ test.describe('blob demo route (M1.16)', () => {
     await expect(blob.locator('g.mark')).toHaveCount(17)
     const stubs = await blob.locator('g.mark.unmeasured').count()
     expect(stubs).toBeGreaterThanOrEqual(10)
-    await expect(blob.locator('text.label', { hasText: 'not measured' })).toHaveCount(stubs)
+    // Each stub has an × on the 0 SD ring (UX review D13 A). On a phone their labels give way to one
+    // line under the chart that names them (D13 B); on a wide screen each says "not measured".
+    await expect(blob.locator('g.mark.unmeasured path.gap')).toHaveCount(stubs)
+    if ((page.viewportSize()?.width ?? 1280) < 600) {
+      await expect(blob.locator('text.label', { hasText: 'not measured' })).toHaveCount(0)
+      await expect(page.locator('figure p.stub-list')).toHaveText(/^Not measured: .+\.$/)
+    } else {
+      await expect(blob.locator('text.label', { hasText: 'not measured' })).toHaveCount(stubs)
+      await expect(page.locator('figure p.stub-list')).toHaveCount(0)
+    }
     // Blob view: the table is visually hidden yet exposed to assistive tech, with row headers.
     await expect(table(page)).toBeAttached()
     await expect(table(page).getByRole('rowheader')).toHaveCount(17)
@@ -141,11 +150,11 @@ test.describe('blob demo route (M1.16)', () => {
     await btn.click()
     await expect(btn).toHaveAttribute('aria-expanded', 'true')
     const panel = page.locator('.facet-panel')
-    await expect(panel.getByRole('cell', { name: 'Insufficient data (3 questions; 5 needed)' })).toBeVisible()
+    // The quantitative topic groups (UX review D4): one has enough questions, the other not yet.
     await expect(panel.getByRole('cell', { name: 'Insufficient data (2 questions; 5 needed)' })).toBeVisible()
-    await expect(panel.getByRole('rowheader', { name: /^Percentages/ })).toBeVisible()
-    await expect(panel.locator('tr[data-row="QR:percent"] td').nth(1)).toHaveText(/^[+−]?\d\.\d\d/)
-    // Two of the four facets are measured: too few for a chart of their own, so the table stands alone.
+    await expect(panel.getByRole('rowheader', { name: /^Arithmetic, fractions and percentages/ })).toBeVisible()
+    await expect(panel.locator('tr[data-row="QR:quant/arith_fractions_percent"] td').nth(1)).toHaveText(/^[+−]?\d\.\d\d/)
+    // One of the two facets is measured: too few for a chart of their own, so the table stands alone.
     await expect(panel.getByRole('img', { name: 'Quantitative: facets' })).toHaveCount(0)
     await btn.click()
     await expect(panel).toHaveCount(0)
@@ -195,8 +204,9 @@ test.describe('blob demo route (M1.16)', () => {
       for (const [width, minPx] of [
         [1280, 11],
         [360, 11],
-        // The narrow-screen labels are cuts of the table names (UX-042), a little longer than the old ones.
-        [320, 9.5],
+        // The narrow-screen labels are cuts of the table names (UX-042), a little longer than the old ones:
+        // 10 px at 320 px (UX review D14; measured 10.57-11.00 px in Chromium, WebKit and iPhone, wide font included).
+        [320, 10],
       ] as const) {
         await page.setViewportSize({ width, height: 900 })
         // A fresh load each time: a hash-only goto would keep the open drill-down.

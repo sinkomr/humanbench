@@ -13,9 +13,14 @@
  * the straight chord A–B spans, [min(|A|, |B|, dist(centre, chord)), max(|A|, |B|)]: a bulge past
  * the larger endpoint suggests ability between spokes that no spoke measured, and a dip below the
  * chord suggests a gap that is not there. Measured in rings (1 ring = 1 SD = R/6).
+ *
+ * Open curves (UX review D13 A, a provisional default): where a spoke is not measured the blob
+ * breaks, so each run of measured neighbours is an open curve through its own points
+ * (`d3.curveCatmullRom.alpha(0.5)`, then `curveCardinal.tension(0.6)`, then `curveLinear`), under
+ * the same overshoot rule. A run of two points is the straight chord.
  */
 
-import { curveCardinalClosed, curveCatmullRomClosed, curveLinearClosed, line, type CurveFactory } from 'd3-shape'
+import { curveCardinal, curveCardinalClosed, curveCatmullRom, curveCatmullRomClosed, curveLinear, curveLinearClosed, line, type CurveFactory } from 'd3-shape'
 import type { Point } from './geometry'
 
 /** §9.2: the most a curve may leave a segment's radial band, in rings. */
@@ -38,9 +43,16 @@ const FACTORIES: Readonly<Record<CurveKind, CurveFactory>> = {
   linear: curveLinearClosed,
 }
 
-/** The d3 curve factory of a kind. */
-export function curveFactory(kind: CurveKind): CurveFactory {
-  return FACTORIES[kind]
+/** The same chain for an open curve (a run of measured spokes between two gaps). */
+const OPEN_FACTORIES: Readonly<Record<CurveKind, CurveFactory>> = {
+  catmullRom: curveCatmullRom.alpha(CATMULL_ROM_ALPHA),
+  cardinal: curveCardinal.tension(CARDINAL_TENSION),
+  linear: curveLinear,
+}
+
+/** The d3 curve factory of a kind, closed (the default) or open. */
+export function curveFactory(kind: CurveKind, closed = true): CurveFactory {
+  return (closed ? FACTORIES : OPEN_FACTORIES)[kind]
 }
 
 /** One cubic Bézier segment (a straight segment is stored with its control points at thirds). */
@@ -51,10 +63,12 @@ export interface Cubic {
   readonly p3: Point
 }
 
-/** A closed path as d3 drew it: the start point and its cubic segments in drawing order. */
+/** A path as d3 drew it: the start point and its cubic segments in drawing order. */
 export interface RecordedPath {
   readonly start: Point
   readonly segments: readonly Cubic[]
+  /** A closed curve ends where it started (path data ends with Z); an open one does not. */
+  readonly closed?: boolean
 }
 
 function lineCubic(a: Point, b: Point): Cubic {
@@ -73,7 +87,7 @@ class Recorder {
   readonly segments: Cubic[] = []
 
   moveTo(x: number, y: number): void {
-    if (this.start !== null) throw new Error('blob curves are a single closed subpath')
+    if (this.start !== null) throw new Error('each blob curve is a single subpath')
     this.start = [x, y]
     this.cur = [x, y]
   }
@@ -103,17 +117,26 @@ class Recorder {
   }
 }
 
-/** Generate the closed curve of `kind` through `points` (in order) and record what d3 draws. */
-export function recordCurve(points: readonly Point[], kind: CurveKind): RecordedPath {
-  if (points.length < 3) throw new RangeError('a closed blob curve needs at least 3 points')
+/**
+ * Generate the curve of `kind` through `points` (in order) and record what d3 draws: closed (the
+ * default, at least 3 points) or open (at least 2 points).
+ */
+export function recordCurve(points: readonly Point[], kind: CurveKind, closed = true): RecordedPath {
+  if (closed && points.length < 3) throw new RangeError('a closed blob curve needs at least 3 points')
+  if (!closed && points.length < 2) throw new RangeError('an open blob curve needs at least 2 points')
   const rec = new Recorder()
   line<Point>()
     .x((p) => p[0])
     .y((p) => p[1])
-    .curve(FACTORIES[kind])
+    .curve(curveFactory(kind, closed))
     .context(rec as unknown as CanvasRenderingContext2D)(points as Point[])
   if (rec.start === null) throw new Error('d3 drew nothing')
-  return { start: rec.start, segments: rec.segments }
+  return closed ? { start: rec.start, segments: rec.segments } : { start: rec.start, segments: rec.segments, closed: false }
+}
+
+/** The last on-curve point of a recorded path (its start when it has no segment). */
+export function pathEnd(path: RecordedPath): Point {
+  return path.segments.at(-1)?.p3 ?? path.start
 }
 
 /** Point of a cubic at parameter t ∈ [0, 1]. */
@@ -195,12 +218,26 @@ export function fmt(v: number, digits = 2): string {
   return s === `-${(0).toFixed(digits)}` ? (0).toFixed(digits) : s
 }
 
-/** SVG path data of a recorded path (absolute M/C commands, closed with Z). */
+/** SVG path data of a recorded path (absolute M/C commands; a closed one ends with Z). */
 export function pathData(path: RecordedPath, digits = 2): string {
   const f = (p: Point): string => `${fmt(p[0], digits)},${fmt(p[1], digits)}`
   let d = `M${f(path.start)}`
   for (const s of path.segments) d += `C${f(s.p1)} ${f(s.p2)} ${f(s.p3)}`
-  return `${d}Z`
+  return path.closed === false ? d : `${d}Z`
+}
+
+/**
+ * The C commands that trace a recorded path backwards, from its end to its start (no M, no Z): the
+ * second edge of a band between two open curves.
+ */
+export function reversedSegmentsData(path: RecordedPath, digits = 2): string {
+  const f = (p: Point): string => `${fmt(p[0], digits)},${fmt(p[1], digits)}`
+  let d = ''
+  for (let i = path.segments.length - 1; i >= 0; i--) {
+    const s = path.segments[i]!
+    d += `C${f(s.p2)} ${f(s.p1)} ${f(s.p0)}`
+  }
+  return d
 }
 
 export interface ChosenCurve {
@@ -212,13 +249,14 @@ export interface ChosenCurve {
 }
 
 /**
- * The §9.2 choice for one closed curve: Catmull-Rom (α = 0.5) if its overshoot is ≤ 0.1 ring,
- * else cardinal (tension 0.6) if that passes, else the straight polygon (always passes).
+ * The §9.2 choice for one curve: Catmull-Rom (α = 0.5) if its overshoot is ≤ 0.1 ring, else
+ * cardinal (tension 0.6) if that passes, else the straight polygon (always passes). Closed by
+ * default; `closed = false` for a run of measured spokes between gaps (module comment).
  */
-export function chooseCurve(points: readonly Point[], ring: number, limitRings = OVERSHOOT_LIMIT_RINGS): ChosenCurve {
+export function chooseCurve(points: readonly Point[], ring: number, limitRings = OVERSHOOT_LIMIT_RINGS, closed = true): ChosenCurve {
   if (!(ring > 0)) throw new RangeError('ring spacing must be positive')
   for (const kind of CURVE_CHAIN) {
-    const path = recordCurve(points, kind)
+    const path = recordCurve(points, kind, closed)
     const overshootRings = pathOvershoot(path) / ring
     if (overshootRings <= limitRings || kind === 'linear') return { kind, overshootRings, path, d: pathData(path) }
   }

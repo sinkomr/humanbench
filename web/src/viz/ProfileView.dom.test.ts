@@ -99,7 +99,8 @@ describe('ProfileView structure (§9, A15)', () => {
     expect(unmeasured.length).toBeGreaterThan(5)
     expect(svg.querySelectorAll('g.mark.unmeasured')).toHaveLength(unmeasured.length)
     expect(svg.querySelectorAll('g.mark.unmeasured line.stub')).toHaveLength(unmeasured.length)
-    expect(svg.querySelectorAll('g.mark.unmeasured circle.gap')).toHaveLength(unmeasured.length)
+    // UX review D13 A: the gap marker is an × (a path) on the 0 SD ring.
+    expect(svg.querySelectorAll('g.mark.unmeasured path.gap')).toHaveLength(unmeasured.length)
     expect(svg.querySelectorAll('line.spoke.unmeasured')).toHaveLength(unmeasured.length)
     expect([...svg.querySelectorAll('text.label.unmeasured')].every((t) => t.textContent?.includes('not measured'))).toBe(true)
     const fuzz = [...svg.querySelectorAll('.fuzz path')]

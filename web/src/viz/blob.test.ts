@@ -14,6 +14,8 @@ import {
   FUZZ_MAX_OPACITY,
   FUZZ_Z,
   fuzzOpacity,
+  GAP_MARK_ARM,
+  gapMarkPath,
   LABEL_FONT,
   MAX_LABEL_FONT,
   MIN_TEXT_PX,
@@ -22,6 +24,8 @@ import {
   renderedSizes,
   sectorPath,
   spokeLines,
+  STUB_LIST_MIN,
+  stubList,
   WRAP_CHARS,
   wrapLine,
   type BlobModel,
@@ -39,22 +43,64 @@ function modelOf(id: string): { est: AxisEstimate[]; model: BlobModel } {
   return { est, model: buildBlob(est) }
 }
 
-/** The on-curve points of path data (the endpoint of each C segment). */
-function curveEnds(d: string): [number, number][] {
-  return [...d.matchAll(/C[-\d.]+,[-\d.]+ [-\d.]+,[-\d.]+ (-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])])
+/** The subpaths of path data, each with its on-curve points (its M point, each L point, each C end) and whether it is closed. */
+function subpaths(d: string): { points: [number, number][]; closed: boolean }[] {
+  return d
+    .split('M')
+    .filter((x) => x !== '')
+    .map((sub) => {
+      const points = [...`M${sub}`.matchAll(/([MLC])([^MLCZ]*)/g)].map((m) => {
+        const pairs = m[2]!.trim().split(' ')
+        const [x, y] = pairs.at(-1)!.split(',').map(Number) as [number, number]
+        return [x, y] as [number, number]
+      })
+      return { points, closed: sub.endsWith('Z') }
+    })
 }
 
 const R = DEFAULT_R
 const r = radiusScale(R)
 
-/** Radius of a closed curve at each spoke (from its on-curve points), by spoke index. */
+/** The spoke index nearest to a point's direction, of k spokes. */
+function spokeOf([x, y]: readonly [number, number], k: number): number {
+  const ang = (Math.atan2(x, -y) + 2 * Math.PI) % (2 * Math.PI)
+  return Math.round((ang / (2 * Math.PI)) * k) % k
+}
+
+/** Radius of a curve at each spoke it passes (from its on-curve points, M points included), by spoke index. */
 function radiiAtSpokes(d: string, k: number): Map<number, number> {
   const out = new Map<number, number>()
-  for (const [x, y] of curveEnds(d)) {
-    const ang = (Math.atan2(x, -y) + 2 * Math.PI) % (2 * Math.PI)
-    out.set(Math.round((ang / (2 * Math.PI)) * k) % k, Math.hypot(x, y))
-  }
+  for (const sub of subpaths(d)) for (const p of sub.points) out.set(spokeOf(p, k), Math.hypot(...p))
   return out
+}
+
+/** The runs of measured spokes around the cycle (first index, length), or null when every spoke is measured. */
+function measuredRuns(measured: readonly boolean[]): { start: number; len: number }[] | null {
+  const k = measured.length
+  if (measured.every(Boolean)) return null
+  const runs: { start: number; len: number }[] = []
+  const first = measured.findIndex((m, i) => m && !measured[(i - 1 + k) % k])
+  if (first < 0) return runs
+  for (let n = 0, i = first; n < k; ) {
+    if (!measured[i % k]) {
+      i++
+      n++
+      continue
+    }
+    const start = i % k
+    let len = 0
+    while (n < k && measured[i % k]) (i++, n++, len++)
+    runs.push({ start, len })
+  }
+  return runs
+}
+
+/** Spokes that lie on a drawn curve: every measured spoke with a measured neighbour (all of them without gaps). */
+function onCurve(measured: readonly boolean[]): Set<number> {
+  const k = measured.length
+  const runs = measuredRuns(measured)
+  if (runs === null) return new Set(measured.map((_, i) => i))
+  return new Set(runs.filter((x) => x.len >= 2).flatMap((x) => Array.from({ length: x.len }, (_, j) => (x.start + j) % k)))
 }
 
 /** Is the direction of `angle` inside the sector path from `sectorPath` (its two arc ends)? */
@@ -78,7 +124,7 @@ function viewBoxOf(model: BlobModel): Box {
 }
 
 describe('blob render model (§9)', () => {
-  it('draws all 17 spokes; unmeasured ones as dashed stubs with a gap marker, never interpolated (§9.7, A15)', () => {
+  it('draws all 17 spokes; unmeasured ones as dashed stubs with a gap marker on the 0 SD ring, never interpolated (§9.7, A15, D13 A)', () => {
     for (const p of SYNTHETIC_PROFILES) {
       const { est, model } = modelOf(p.id)
       expect(model.spokes).toHaveLength(17)
@@ -87,34 +133,164 @@ describe('blob render model (§9)', () => {
         if (est[i]!.measured) {
           expect(s.marker && s.whisker).toBeTruthy()
           expect(s.stub).toBeUndefined()
+          expect(s.gap).toBeUndefined()
+          expect(s.gapMark).toBeUndefined()
         } else {
           expect(s.marker).toBeUndefined()
-          expect(s.stub && s.gap).toBeTruthy()
-          expect(Math.hypot(...s.gap!)).toBeCloseTo(R_MIN_FRACTION * R, 9)
+          expect(s.whisker).toBeUndefined()
+          expect(s.stub && s.gap && s.gapMark).toBeTruthy()
+          // D13 A: on the 0 SD ring (R/2), on its own spoke; not at the centre, where −3 SD is drawn.
+          expect(Math.hypot(...s.gap!)).toBeCloseTo(r(0), 9)
+          expect(Math.hypot(...s.gap!)).toBeCloseTo(R / 2, 9)
+          expect(spokeOf(s.gap!, 17)).toBe(i)
           expect(s.lines.at(-1)).toEqual({ text: 'not measured', note: true, glyph: false })
         }
       })
     }
   })
 
-  it('every curve dips to the inner clamp at an unmeasured spoke and passes through r(θ) at a measured one', () => {
-    const { est, model } = modelOf('m1')
-    const ends = curveEnds(model.crisp.d)
-    expect(ends).toHaveLength(17)
-    for (const [x, y] of ends) {
-      const rad = Math.hypot(x, y)
-      const ang = (Math.atan2(x, -y) + 2 * Math.PI) % (2 * Math.PI)
-      const i = Math.round((ang / (2 * Math.PI)) * 17) % 17
-      const e = est[i]!
-      expect(rad).toBeCloseTo(e.measured ? r(e.theta!) : R_MIN_FRACTION * R, 1)
-    }
-    for (const c of [model.crisp, model.band.outer, model.band.inner, ...model.fuzz]) {
-      for (const [x, y] of curveEnds(c.d)) {
-        const ang = (Math.atan2(x, -y) + 2 * Math.PI) % (2 * Math.PI)
-        const i = Math.round((ang / (2 * Math.PI)) * 17) % 17
-        if (!est[i]!.measured) expect(Math.hypot(x, y)).toBeCloseTo(R_MIN_FRACTION * R, 1)
+  it('draws the gap marker as an × of two strokes crossing on the 0 SD ring, its arms at 45° to the spoke (D13 A)', () => {
+    const { model } = modelOf('m1')
+    for (const s of model.spokes.filter((x) => !x.measured)) {
+      expect(s.gapMark).toBe(gapMarkPath(s.gap!, s.angle))
+      const pts = [...s.gapMark!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const)
+      expect(s.gapMark).toMatch(/^M[^ML]+L[^ML]+M[^ML]+L[^ML]+$/)
+      expect(pts).toHaveLength(4)
+      const radial: readonly [number, number] = [Math.sin(s.angle), -Math.cos(s.angle)]
+      for (const [a, b] of [
+        [pts[0]!, pts[1]!],
+        [pts[2]!, pts[3]!],
+      ] as const) {
+        // Each stroke is centred on the gap marker, 2·GAP_MARK_ARM long, at 45° to the spoke.
+        expect((a[0] + b[0]) / 2).toBeCloseTo(s.gap![0], 1)
+        expect((a[1] + b[1]) / 2).toBeCloseTo(s.gap![1], 1)
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+        expect(len).toBeCloseTo(2 * GAP_MARK_ARM, 1)
+        const cos = Math.abs(((b[0] - a[0]) * radial[0] + (b[1] - a[1]) * radial[1]) / len)
+        expect(cos).toBeCloseTo(Math.SQRT1_2, 2)
       }
     }
+  })
+
+  it('breaks every curve at an unmeasured spoke (a gap) and passes through r(θ) at the measured ones (D13 A)', () => {
+    for (const p of SYNTHETIC_PROFILES) {
+      const { est, model } = modelOf(p.id)
+      const measured = est.map((e) => e.measured)
+      const runs = measuredRuns(measured)
+      const drawn = onCurve(measured)
+      for (const c of [model.crisp, model.band.outer, model.band.inner, ...model.fuzz]) {
+        const subs = subpaths(c.d)
+        if (runs === null) {
+          // Every spoke measured: one closed curve, as before.
+          expect(subs, p.id).toHaveLength(1)
+          expect(subs[0]!.closed).toBe(true)
+        } else {
+          // One open curve per run of two or more measured spokes; none through a not-measured spoke.
+          expect(subs, p.id).toHaveLength(runs.filter((x) => x.len >= 2).length)
+          for (const sub of subs) expect(sub.closed, p.id).toBe(false)
+        }
+        for (const sub of subs) for (const pt of sub.points) expect(measured[spokeOf(pt, 17)], `${p.id}: a point on an unmeasured spoke`).toBe(true)
+        // Each spoke on a curve appears once per curve (none twice, none missing).
+        const seen = subs.flatMap((sub) => (sub.closed ? sub.points.slice(1) : sub.points)).map((pt) => spokeOf(pt, 17))
+        expect([...seen].sort((a, b) => a - b), p.id).toEqual([...drawn].sort((a, b) => a - b))
+      }
+      const crisp = radiiAtSpokes(model.crisp.d, 17)
+      est.forEach((e, i) => {
+        if (drawn.has(i)) expect(crisp.get(i), `${p.id} ${e.code}`).toBeCloseTo(r(e.theta!), 1)
+        else expect(crisp.has(i), `${p.id} ${e.code}`).toBe(false)
+      })
+    }
+    // The static first session has gaps and two-spoke runs; a lone measured spoke has no curve at all.
+    const m1 = modelOf('m1')
+    expect(measuredRuns(m1.est.map((e) => e.measured))!.map((x) => x.len).sort()).toEqual([2, 2, 3])
+    const sparse = modelOf('sparse')
+    const lone = measuredRuns(sparse.est.map((e) => e.measured))!.filter((x) => x.len === 1)
+    expect(lone.length).toBeGreaterThan(0)
+    for (const x of lone) {
+      const s = sparse.model.spokes[x.start]!
+      expect(s.marker && s.whisker, `${s.id} keeps its marker and 90% whisker`).toBeTruthy()
+      expect(radiiAtSpokes(sparse.model.crisp.d, 17).has(x.start)).toBe(false)
+    }
+  })
+
+  it('has no gap at a measured spoke: with every spoke measured every curve is closed and the band is two closed curves', () => {
+    const { model } = modelOf('full')
+    for (const c of [model.crisp, model.band.outer, model.band.inner, ...model.fuzz]) expect(c.d).toMatch(/^M[^M]*Z$/)
+    expect(model.band.d).toBe(model.band.outer.d + model.band.inner.d)
+    expect(model.hatchFill).toBe(model.crisp.d)
+    for (const s of model.spokes) expect(s.gap).toBeUndefined()
+  })
+
+  it('fills the band and each fuzz band run by run, each a closed region between its two edges (D13 A)', () => {
+    for (const id of ['m1', 'skipped', 'sparse', 'offscale']) {
+      const { est, model } = modelOf(id)
+      const runs = measuredRuns(est.map((e) => e.measured))!.filter((x) => x.len >= 2)
+      for (const band of [model.band.d, ...model.fuzz.map((c) => c.band)]) {
+        const subs = subpaths(band)
+        expect(subs, id).toHaveLength(runs.length)
+        for (const sub of subs) expect(sub.closed, id).toBe(true)
+        // Each region goes out along one edge and back along the other: every spoke of its run twice.
+        subs.forEach((sub) => {
+          const ids = sub.points.map((pt) => spokeOf(pt, 17))
+          expect(ids).toEqual([...ids.slice(0, ids.length / 2), ...ids.slice(0, ids.length / 2).reverse()])
+        })
+      }
+      // The ±1 SD band's two edges are r(θ ± SD) at every spoke of a run.
+      const band = subpaths(model.band.d)
+      band.forEach((sub, j) => {
+        const n = sub.points.length / 2
+        for (let q = 0; q < n; q++) {
+          const i = spokeOf(sub.points[q]!, 17)
+          const e = est[i]!
+          expect(Math.hypot(...sub.points[q]!), `${id} ${e.code} outer`).toBeCloseTo(r(e.theta! + e.sd!), 1)
+          expect(Math.hypot(...sub.points[2 * n - 1 - q]!), `${id} ${e.code} inner`).toBeCloseTo(r(e.theta! - e.sd!), 1)
+        }
+        expect(n).toBe(runs[j]!.len)
+      })
+    }
+  })
+
+  it('property: with any mix of measured spokes, gaps fall exactly at the unmeasured ones, markers and whiskers exactly at the measured ones', () => {
+    fc.assert(
+      fc.property(fc.array(fc.record({ measured: fc.boolean(), theta: fc.double({ min: -2.5, max: 2.5, noNaN: true }) }), { minLength: 3, maxLength: 17 }), (raw) => {
+        const spokes: SpokeEstimate[] = raw.map((x, i) => ({
+          id: `s${i}`,
+          name: `Skill ${i}`,
+          shortLabel: [`S${i}`],
+          group: 'g',
+          tier: 'a',
+          glyph: '',
+          ...(x.measured ? measuredFields(x.theta, 0.4) : { measured: false, reason: 'no_data' as const, muted: false }),
+        }))
+        const k = spokes.length
+        const model = buildBlob(spokes)
+        const measured = spokes.map((s) => s.measured)
+        const drawn = onCurve(measured)
+        for (const c of [model.crisp, model.band.outer, model.band.inner, ...model.fuzz]) {
+          const at = new Set(subpaths(c.d).flatMap((sub) => sub.points.map((pt) => spokeOf(pt, k))))
+          expect([...at].sort((a, b) => a - b)).toEqual([...drawn].sort((a, b) => a - b))
+          expect(c.overshootRings).toBeLessThanOrEqual(OVERSHOOT_LIMIT_RINGS)
+        }
+        model.spokes.forEach((s, i) => {
+          expect(Boolean(s.marker && s.whisker)).toBe(measured[i])
+          expect(Boolean(s.stub && s.gap && s.gapMark)).toBe(!measured[i])
+          if (!measured[i]) expect(Math.hypot(...s.gap!)).toBeCloseTo(R / 2, 6)
+        })
+      }),
+      { numRuns: 120 },
+    )
+  })
+
+  it('hatches a lone or run-end tier (c) spoke from the centre (D13 A)', () => {
+    const tierC = (i: number, theta: number): SpokeEstimate => ({ ...spokeAt(i, theta), tier: 'c', glyph: '◇' })
+    const stub = (i: number): SpokeEstimate => ({ id: `s${i}`, name: `Skill ${i}`, shortLabel: [`Skill ${i}`], group: 'g', tier: 'a', glyph: '', measured: false, reason: 'no_data', muted: false })
+    const lone = buildBlob([tierC(0, 0.5), stub(1), spokeAt(2, 0.2), spokeAt(3, -0.1), stub(4)])
+    expect(lone.hatch.map((h) => h.id)).toEqual(['s0'])
+    // A lone spoke: a narrow sector up to its marker; a run: its curve closed through the centre.
+    const parts = lone.hatchFill.split('M').filter(Boolean)
+    expect(parts).toHaveLength(2)
+    for (const part of parts) expect(part).toMatch(/^0,0L.*Z$/)
+    expect(lone.hatchFill).toContain(sectorPath(-Math.PI / 5 / 2, Math.PI / 5 / 2, r(0.5)))
   })
 
   it('puts markers at r(θ) and whiskers over the 90% interval, radius linear in θ', () => {
@@ -130,13 +306,15 @@ describe('blob render model (§9)', () => {
 
   it('has a crisp curve, a ±1 SD band and 20 fuzz curves, none overshooting by > 0.1 ring (§9.2, §9.3)', () => {
     for (const p of SYNTHETIC_PROFILES) {
-      const { model } = modelOf(p.id)
+      const { est, model } = modelOf(p.id)
       expect(model.fuzz).toHaveLength(N_FUZZ)
+      const closed = est.every((e) => e.measured)
       for (const c of [model.crisp, model.band.outer, model.band.inner, ...model.fuzz]) {
         expect(c.overshootRings).toBeLessThanOrEqual(OVERSHOOT_LIMIT_RINGS)
-        expect(c.d).toMatch(/^M.*Z$/)
+        // Closed with every spoke measured; open runs with gaps (D13 A).
+        expect(c.d).toMatch(closed ? /^M.*Z$/ : /^M[^Z]*$/)
       }
-      expect(model.band.d).toBe(model.band.outer.d + model.band.inner.d)
+      if (closed) expect(model.band.d).toBe(model.band.outer.d + model.band.inner.d)
       expect(new Set(model.fuzz.map((c) => c.d)).size).toBe(N_FUZZ)
     }
   })
@@ -172,14 +350,15 @@ describe('blob render model (§9)', () => {
     expect(Math.max(...model.fuzz.map((c) => c.opacity))).toBeLessThanOrEqual(FUZZ_MAX_OPACITY)
   })
 
-  it('draws fuzz curve j at r(θ + z_j·SD) at every measured spoke and at the inner clamp elsewhere (§9.3)', () => {
+  it('draws fuzz curve j at r(θ + z_j·SD) at every measured spoke on a curve and nowhere else (§9.3, D13 A)', () => {
     for (const p of SYNTHETIC_PROFILES) {
       const { est, model } = modelOf(p.id)
+      const drawn = onCurve(est.map((e) => e.measured))
       model.fuzz.forEach((c) => {
         const radii = radiiAtSpokes(c.d, 17)
         est.forEach((e, i) => {
-          const want = e.measured ? r(e.theta! + c.z * e.sd!) : R_MIN_FRACTION * R
-          expect(radii.get(i), `${p.id} z ${c.z.toFixed(3)} spoke ${e.code}`).toBeCloseTo(want, 1)
+          if (drawn.has(i)) expect(radii.get(i), `${p.id} z ${c.z.toFixed(3)} spoke ${e.code}`).toBeCloseTo(r(e.theta! + c.z * e.sd!), 1)
+          else expect(radii.has(i), `${p.id} z ${c.z.toFixed(3)} spoke ${e.code}`).toBe(false)
         })
       })
     }
@@ -211,6 +390,7 @@ describe('blob render model (§9)', () => {
         const radii = model.fuzz.map((c) => radiiAtSpokes(c.d, spokes.length))
         const crisp = radiiAtSpokes(model.crisp.d, spokes.length)
         spokes.forEach((_, i) => {
+          if (!crisp.has(i)) return // a gap (D13 A): no curve at this spoke
           const seq = [...radii.slice(0, N_FUZZ / 2).map((m) => m.get(i)!), crisp.get(i)!, ...radii.slice(N_FUZZ / 2).map((m) => m.get(i)!)]
           for (let j = 1; j < seq.length; j++) expect(seq[j]!).toBeGreaterThanOrEqual(seq[j - 1]! - 0.011)
         })
@@ -219,14 +399,19 @@ describe('blob render model (§9)', () => {
     )
   })
 
-  it('bounds the ±1 SD band by r(θ + SD) outside and r(θ − SD) inside (§9.3)', () => {
+  it('bounds the ±1 SD band by r(θ + SD) outside and r(θ − SD) inside, with no band at a gap (§9.3, D13 A)', () => {
     for (const p of SYNTHETIC_PROFILES) {
       const { est, model } = modelOf(p.id)
+      const drawn = onCurve(est.map((e) => e.measured))
       const outer = radiiAtSpokes(model.band.outer.d, 17)
       const inner = radiiAtSpokes(model.band.inner.d, 17)
       est.forEach((e, i) => {
-        expect(outer.get(i), `${p.id} ${e.code} outer`).toBeCloseTo(e.measured ? r(e.theta! + e.sd!) : R_MIN_FRACTION * R, 1)
-        expect(inner.get(i), `${p.id} ${e.code} inner`).toBeCloseTo(e.measured ? r(e.theta! - e.sd!) : R_MIN_FRACTION * R, 1)
+        if (!drawn.has(i)) {
+          expect(outer.has(i) || inner.has(i), `${p.id} ${e.code}`).toBe(false)
+          return
+        }
+        expect(outer.get(i), `${p.id} ${e.code} outer`).toBeCloseTo(r(e.theta! + e.sd!), 1)
+        expect(inner.get(i), `${p.id} ${e.code} inner`).toBeCloseTo(r(e.theta! - e.sd!), 1)
       })
     }
   })
@@ -360,12 +545,14 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
   it('gives the 17-spoke blob ≥ 11 px text, no overlaps and a usable circle on a 360–390 px phone', () => {
     for (const p of SYNTHETIC_PROFILES) {
       const { est } = modelOf(p.id)
-      // The chart's width on 360 and 390 px phones (1 rem page margins), and at 320 px (≥ 9.5 px: the
-      // compact labels are cuts of the table names, UX-042, a little longer than the old ones).
+      // With many skills not measured their labels give way to a list (D13 B): ≥ 11 px even at 320 px,
+      // and the rings span ≥ 55% of the chart (VIS2-23). With every skill measured: ≥ 10 px at 320 px
+      // (the compact labels are cuts of the table names, UX-042, a little longer than the old ones; D14).
+      const bare = est.filter((e) => !e.measured).length >= STUB_LIST_MIN
       for (const [width, minPx, minCircle] of [
-        [288, 9.5, 1 / 4],
-        [328, MIN_TEXT_PX, 1 / 3],
-        [358, MIN_TEXT_PX, 1 / 3],
+        [288, bare ? MIN_TEXT_PX : 10, bare ? 0.55 : 1 / 4],
+        [328, MIN_TEXT_PX, bare ? 0.55 : 1 / 3],
+        [358, MIN_TEXT_PX, bare ? 0.55 : 1 / 3],
       ] as const) {
         const layout = fitLayout(est, width)
         const { smallPx, rPx, collides } = renderedSizes(est, width, layout)
@@ -425,6 +612,92 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
     const ratio = qr.find((f) => f.facet === 'ratio')!
     expect(spokeLines(ratio, true).filter((l) => l.note).map((l) => l.text)).toEqual(['insufficient', 'data'])
     expect(spokeLines(ratio, false).filter((l) => l.note).map((l) => l.text)).toEqual(['insufficient data'])
+  })
+})
+
+// ------------------------------------------------------- D13 B: narrow screens, many stubs
+
+describe('on a narrow screen many not-measured spokes give their labels to a list (D13 B)', () => {
+  const unmeasuredOf = (est: readonly SpokeEstimate[]): SpokeEstimate[] => est.filter((e) => !e.measured)
+
+  it('drops the labels of the not-measured spokes and lists them, so the measured ones and the circle get the room', () => {
+    // Narrower glyphs (as WebKit measures them) may let full labels fit: the list still replaces the stub labels.
+    const narrowGlyphs: TextMeasure = (t, size) => t.length * 0.5 * size
+    for (const measure of [estimateTextWidth, narrowGlyphs]) {
+      const est = modelOf('m1').est
+      expect(fitLayout(est, 358, { measure }).stubLabels).toBe('none')
+      expect(fitLayout(est, 640, { measure }).stubLabels).toBeUndefined()
+    }
+    for (const id of ['m1', 'skipped', 'sparse', 'offscale']) {
+      const { est } = modelOf(id)
+      expect(unmeasuredOf(est).length, id).toBeGreaterThanOrEqual(STUB_LIST_MIN)
+      for (const width of [288, 328, 358]) {
+        const fit = fitLayoutDetailed(est, width)
+        expect(fit.layout.stubLabels, `${id} ${width}`).toBe('none')
+        expect(fit.legible, `${id} ${width}`).toBe(true)
+        const got = renderedSizes(est, width, fit.layout)
+        expect(got.smallPx, `${id} ${width}`).toBeGreaterThanOrEqual(MIN_TEXT_PX - 1e-6)
+        expect(got.collides).toBe(false)
+        expect((2 * got.rPx) / width, `${id} ${width}: rings across the chart`).toBeGreaterThanOrEqual(0.55)
+        // Larger than with every spoke labelled at the same text size.
+        const labelled = renderedSizes(est, width, { fontSize: fit.layout.fontSize, compact: fit.layout.compact })
+        expect(got.rPx, `${id} ${width}`).toBeGreaterThan(labelled.rPx)
+        const model = buildBlob(est, { layout: fit.layout })
+        model.spokes.forEach((s, i) => expect(s.lines.length > 0, `${id} ${s.id}`).toBe(est[i]!.measured))
+        expect(model.stubList).toEqual([{ lead: 'Not measured', names: unmeasuredOf(est).map((e) => e.name) }])
+        // Every label still inside the viewBox; the circle too, though no longer centred.
+        const vb = viewBoxOf(model)
+        for (const b of [...model.labelBoxes, model.noteBox]) expect(within(b, vb)).toBe(true)
+        expect(within({ x0: -R - 4, x1: R + 4, y0: -R - 4, y1: R + 4 }, vb)).toBe(true)
+      }
+    }
+  })
+
+  it('keeps every label at full width, with every spoke measured, and with fewer than five not measured', () => {
+    for (const p of SYNTHETIC_PROFILES) {
+      const { est, model } = modelOf(p.id)
+      expect(fitLayout(est, 640).stubLabels, `${p.id} 640`).toBeUndefined()
+      expect(model.stubList).toEqual([])
+      expect(model.spokes.every((s) => s.lines.length > 0)).toBe(true)
+    }
+    const full = modelOf('full').est
+    for (const width of [288, 328, 358]) expect(fitLayout(full, width).stubLabels, `full ${width}`).toBeUndefined()
+    // Four not measured: under the threshold, so each keeps its label and its note.
+    const four = full.map((e, i) => (i % 4 === 1 && i < 16 ? { ...e, measured: false, reason: 'no_data' as const, muted: false, theta: undefined, sd: undefined, lo90: undefined, hi90: undefined, relation: undefined, offScale: undefined } : e))
+    expect(four.filter((e) => !e.measured)).toHaveLength(4)
+    for (const width of [288, 358]) {
+      const layout = fitLayout(four, width)
+      expect(layout.stubLabels).toBeUndefined()
+      expect(buildBlob(four, { layout }).stubList).toEqual([])
+    }
+  })
+
+  it('a bare spoke has no label lines; a measured one keeps its own; the list groups by what the note would say', () => {
+    const { est } = modelOf('m1')
+    for (const e of est) {
+      if (e.measured) expect(spokeLines(e, true, 'none')).toEqual(spokeLines(e, true))
+      else expect(spokeLines(e, true, 'none')).toEqual([])
+    }
+    const facet = (i: number, reason: 'insufficient_data' | 'skipped'): SpokeEstimate => ({ id: `f${i}`, name: `Facet ${i}`, shortLabel: [`Facet ${i}`], group: 'g', tier: 'a', glyph: '', measured: false, reason, muted: false })
+    const spokes = [spokeAt(0, 0.2), facet(1, 'insufficient_data'), facet(2, 'skipped'), facet(3, 'insufficient_data'), spokeAt(4, -0.3)]
+    expect(stubList(spokes, { fontSize: 20, compact: true, stubLabels: 'none' })).toEqual([
+      { lead: 'Insufficient data', names: ['Facet 1', 'Facet 3'] },
+      { lead: 'Not measured', names: ['Facet 2'] },
+    ])
+    expect(stubList(spokes, { fontSize: 20, compact: true })).toEqual([])
+  })
+
+  it('property: with bare stubs every label box stays inside the viewBox and the circle with it', () => {
+    fc.assert(
+      fc.property(spokesArb(), fc.double({ min: LABEL_FONT, max: MAX_LABEL_FONT, noNaN: true }), (spokes, fontSize) => {
+        const model = buildBlob(spokes, { layout: { fontSize, compact: true, stubLabels: 'none' } })
+        const vb = viewBoxOf(model)
+        for (const b of [...model.labelBoxes, model.noteBox]) expect(within(b, vb)).toBe(true)
+        expect(within({ x0: -R - 4, x1: R + 4, y0: -R - 4, y1: R + 4 }, vb)).toBe(true)
+        model.spokes.forEach((s, i) => expect(s.lines.length === 0).toBe(!spokes[i]!.measured))
+      }),
+      { numRuns: 100 },
+    )
   })
 })
 

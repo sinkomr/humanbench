@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { createRng } from '../engine/prng'
-import { chooseCurve, CURVE_CHAIN, OVERSHOOT_LIMIT_RINGS, pathData, recordCurve, type Cubic, type CurveKind, type RecordedPath } from './curve'
+import { chooseCurve, CURVE_CHAIN, OVERSHOOT_LIMIT_RINGS, pathData, pathEnd, recordCurve, reversedSegmentsData, type Cubic, type CurveKind, type RecordedPath } from './curve'
 import { polar, R_MIN_FRACTION, radiusScale, ringSpacing, spokeAngle, type Point } from './geometry'
 
 const R = 180
@@ -180,5 +180,75 @@ describe('overshoot rule (§9.2: ≤ 0.1 ring, else cardinal(0.6))', () => {
     const chosen = chooseCurve(pts, RING)
     expect(chosen.kind).not.toBe('catmullRom')
     expect(chosen.overshootRings).toBeLessThanOrEqual(OVERSHOOT_LIMIT_RINGS)
+  })
+})
+
+/** A run of measured spokes: θ per spoke (no gaps inside a run). */
+const runArb = fc.array(fc.double({ min: -4, max: 4, noNaN: true }), { minLength: 2, maxLength: 12 })
+
+/** Points of a run of `n` measured spokes out of `k`, starting at spoke `start`. */
+function runPoints(thetas: readonly number[], k = 17, start = 3): Point[] {
+  return thetas.map((t, j) => polar(r(t), spokeAngle(start + j, k)))
+}
+
+describe('open curves: a run of measured spokes between gaps (UX review D13 A)', () => {
+  it('passes through every point of the run, in order, from the first to the last, and does not close', () => {
+    fc.assert(
+      fc.property(runArb, fc.constantFrom<CurveKind>(...CURVE_CHAIN), (thetas, kind) => {
+        const pts = runPoints(thetas)
+        const path = recordCurve(pts, kind, false)
+        expect(path.closed).toBe(false)
+        expect(path.start).toEqual(pts[0])
+        expect(path.segments).toHaveLength(pts.length - 1)
+        path.segments.forEach((sgm, j) => {
+          expect(Math.hypot(sgm.p0[0] - pts[j]![0], sgm.p0[1] - pts[j]![1])).toBeLessThan(1e-9)
+          expect(Math.hypot(sgm.p3[0] - pts[j + 1]![0], sgm.p3[1] - pts[j + 1]![1])).toBeLessThan(1e-9)
+        })
+        expect(pathEnd(path)).toEqual(path.segments.at(-1)!.p3)
+        const d = pathData(path)
+        expect(d).not.toContain('Z')
+        expect(d.match(/C/g)).toHaveLength(pts.length - 1)
+      }),
+      { numRuns: 150 },
+    )
+  })
+
+  it('is the straight chord for two points, and needs at least two', () => {
+    const pts = runPoints([0.5, -1])
+    for (const kind of CURVE_CHAIN) expect(denseOvershootRings(recordCurve(pts, kind, false))).toBeLessThan(1e-9)
+    expect(() => recordCurve(runPoints([0.5]), 'catmullRom', false)).toThrow(RangeError)
+    expect(() => recordCurve(runPoints([0.5, 1]), 'catmullRom')).toThrow(RangeError) // a closed curve still needs three
+  })
+
+  it('obeys the overshoot rule like a closed curve: ≤ 0.1 ring, Catmull-Rom first', () => {
+    fc.assert(
+      fc.property(runArb, (thetas) => {
+        const pts = runPoints(thetas)
+        const chosen = chooseCurve(pts, RING, OVERSHOOT_LIMIT_RINGS, false)
+        expect(chosen.path.closed).toBe(false)
+        expect(chosen.overshootRings).toBeLessThanOrEqual(OVERSHOOT_LIMIT_RINGS)
+        expect(denseOvershootRings(chosen.path)).toBeLessThanOrEqual(OVERSHOOT_LIMIT_RINGS + 1e-3)
+        if (chosen.kind !== 'catmullRom') expect(denseOvershootRings(recordCurve(pts, 'catmullRom', false), 256)).toBeGreaterThan(OVERSHOOT_LIMIT_RINGS - 1e-3)
+      }),
+      { numRuns: 200 },
+    )
+    expect(chooseCurve(runPoints([0.5, 0.5, 0.5, 0.5]), RING, OVERSHOOT_LIMIT_RINGS, false).kind).toBe('catmullRom')
+  })
+
+  it('traces a path backwards: the reversed segments visit the same points from the end to the start', () => {
+    fc.assert(
+      fc.property(runArb, (thetas) => {
+        const path = recordCurve(runPoints(thetas), 'catmullRom', false)
+        const back = reversedSegmentsData(path)
+        const ends = [...back.matchAll(/C[-\d.]+,[-\d.]+ [-\d.]+,[-\d.]+ (-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])])
+        const want = [...path.segments].reverse().map((sgm) => sgm.p0)
+        expect(ends).toHaveLength(want.length)
+        ends.forEach((e, j) => expect(Math.hypot(e[0]! - want[j]![0], e[1]! - want[j]![1])).toBeLessThan(0.01))
+        // The same control points, swapped: the same curve, drawn the other way.
+        const first = path.segments.at(-1)!
+        expect(back.startsWith(`C${first.p2[0].toFixed(2)},`) || back.startsWith(`C${first.p2[0].toFixed(2).replace(/^-0\.00$/, '0.00')},`)).toBe(true)
+      }),
+      { numRuns: 100 },
+    )
   })
 })
