@@ -1,8 +1,8 @@
 /// <reference lib="dom" />
 /**
  * The M1 session flow in real browsers (ROADMAP M1.15; DESIGN §7.4, §10, §13; A15, A18): consent
- * and the 18+ gate (the under-18 path writes nothing to any storage), the privacy notice with its
- * TODO(user) placeholders, the honour code, the device check and RT input mode, practice mode, the
+ * and the 18+ gate (the under-18 path writes nothing to any storage), the privacy notice (no
+ * placeholder: UX-REVIEW D1), the honour code, the device check and RT input mode, practice mode, the
  * interstitials, the time-based progress ring and per-cluster checklist, skip axis, finish early,
  * the break at 30 minutes, the hard stop at 57, the ≥ 3-item coverage floor when the time budget is
  * gone (the known QR issue), the per-axis early stop, the confidence slider, autosave through the
@@ -228,15 +228,17 @@ test.describe('consent and the 18+ gate (§13)', () => {
 })
 
 test.describe('privacy and terms (§13)', () => {
-  test('the notice has TODO(user) placeholders for the controller and contact, passes axe and the language lint', async ({ page }) => {
+  test('the notice says no personally identifiable information is collected, has no placeholder, passes axe and the language lint', async ({ page }) => {
     for (const colorScheme of ['light', 'dark'] as const) {
       await scheme(page, colorScheme)
       await page.goto('./#/privacy')
       await expect(h1(page)).toHaveText('Privacy and terms')
       await expectNoSeriousAxe(page)
     }
-    await expect(page.getByText('Controller: TODO(user)')).toBeVisible()
-    await expect(page.getByText('Contact: TODO(user)')).toBeVisible()
+    // Owner decision 2026-10-05 (UX-REVIEW D1): said plainly, with no controller or contact named and no "TODO" anywhere.
+    await expect(page.getByText('HumanBench collects no personally identifiable information, and all responses are anonymous.')).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('TODO')
+    await expect(page.locator('body')).not.toContainText('Controller:')
     await expect(page.getByText('Nothing is sent to a server')).toBeVisible()
     await expect(page.locator('footer .disclaimer')).toHaveText(DISCLAIMER)
     await languageClean(page)
@@ -268,6 +270,10 @@ test.describe('honour code and device check (§13)', () => {
     await button(page, 'Continue').click()
     await expect(page.getByRole('alert')).toContainText('honour code')
     await expect(h1(page)).toHaveText('Honour code')
+    // A lead-in that says what the blob is (UX-REVIEW D26), and paper yes, calculators and AI chatbots no (owner decision, D10).
+    await expect(page.getByText(/your results are drawn as a shape we call your blob/)).toBeVisible()
+    await expect(page.getByText(/scratch paper and a pencil ready.*calculator or an AI chatbot/)).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('TODO')
   })
 
   test('the device check lists coarse facts, measures the refresh rate and offers the RT input mode; axe passes', async ({ page }) => {

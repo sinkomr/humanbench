@@ -5,9 +5,9 @@
  * words (`session/copy.ts`) say that nothing is uploaded, which is false here, so the screens that
  * say it take their words from this file when the app has a server.
  *
- * The controller's name and contact, the retention period and the legal basis are the user's to
- * confirm before any data-collecting deploy (PROGRESS "Needs you"); the placeholders are marked
- * `TODO(user)` as in the static notice.
+ * The privacy notice below says that no personally identifiable information is collected and that
+ * responses are anonymous (owner decision 2026-10-05, UX-REVIEW D1), and names no controller and no
+ * contact, as the static notice does.
  */
 
 import type { LoadProblem } from './errors'
@@ -163,8 +163,9 @@ export const DATA_RESTORE_FOUND = 'Found your backup. Download it, then press St
 export const DATA_RESTORE_DOWNLOAD = 'Download the backup'
 export const DATA_RESTORE_NONE = 'Nothing matched that identifier and phrase.'
 export const DATA_DELETE_HEADING = 'Delete my data from the server'
+/** As the server privacy notice says (UX-REVIEW D1): the database at once, the weekly backups within eight weeks, never the archive. */
 export const DATA_DELETE_TEXT =
-  'This deletes every session and the backup stored for an identifier. It cannot be undone. Save files you downloaded stay with you, and so does anything in this browser.'
+  'This deletes every session and the backup stored for an identifier from the database. It cannot be undone. Copies in the encrypted weekly backups are gone within eight weeks. Answers already copied, without your identifier, into the encrypted archive are not deleted. Save files you downloaded stay with you, and so does anything in this browser.'
 export const DATA_DELETE_WITH_PHRASE = 'With my identifier and recovery phrase'
 export const DATA_DELETE_WITH_FILE = 'With a save file'
 export const DATA_FILE_LABEL = 'Save file'
@@ -189,16 +190,18 @@ export interface PrivacySectionText {
 
 /**
  * The privacy notice and terms of the online version (DESIGN §13 "GDPR/CCPA basics"). It replaces
- * the static notice's "What this version keeps / Where it stays / When there is an online version".
- * The controller, contact, retention and legal basis are the user's to confirm (`TODO(user)`) before
- * any deploy that collects data (PROGRESS "Needs you").
+ * the static notice's "In short / What this version keeps / Where it stays / When there is an online
+ * version". It says plainly that HumanBench collects no personally identifiable information and that
+ * responses are anonymous (owner decision 2026-10-05, UX-REVIEW D1), and keeps every sentence true of
+ * the server as built (supabase/migrations, supabase/README.md): what the hosting provider sees, the
+ * hashed address of the rate limits, the backups and the archive that deleting does not reach at once.
+ * A change of substance here bumps `TERMS_VERSION_SERVER` (`session/constants.ts`).
  */
 export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.freeze([
   {
-    heading: 'Who runs this site',
+    heading: 'In short',
     paragraphs: [
-      'Controller: TODO(user): name of the person or organisation responsible for this site.',
-      'Contact: TODO(user): an email address for questions and requests about your data.',
+      'HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts. Your answers are stored under a random identifier, not under who you are.',
     ],
   },
   {
@@ -233,8 +236,8 @@ export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.fre
   {
     heading: 'How long it is kept, and your rights',
     paragraphs: [
-      'Draft terms, to be confirmed: TODO(user): retention period (draft: 24 months), legal basis (draft: consent), and where the data is held (draft: a region the user chooses, in the EU or the US).',
-      'You can ask for everything stored for your identifier to be deleted at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. Deleting from the server does not touch the save files you downloaded or what this browser holds.',
+      'Your answers are kept because you agreed to it on the first screen: your consent is the basis. The plan is to keep them for at most 24 months and then delete them. They are held by a database hosting provider in the European Union or the United States.',
+      'You can delete everything stored on the server for your identifier at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. It is removed from the database at once, and from the encrypted weekly backups within eight weeks. Answers of sessions older than 30 days are also copied, without your identifier, into an encrypted archive used to improve the questions, and deleting does not reach that archive. Deleting from the server does not touch the save files you downloaded or what this browser holds.',
     ],
   },
   {

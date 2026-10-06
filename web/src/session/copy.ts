@@ -10,9 +10,15 @@ import { HEADING } from '../copy'
 // ---------------------------------------------------------------------------- welcome
 
 export const WELCOME_HEADING = HEADING
-export const WELCOME_TAGLINE = 'A jagged profile of how you think: short tasks, one honest picture.'
+/**
+ * The tagline and the intro say what the session is, in plain words (provisional default, UX-REVIEW D26):
+ * what you do, how long it takes, what you get and what you keep. They never describe the person and
+ * claim no benefit (A13, R-5.6.x; web/HOUSE-STYLE.md). index.html's static shell is filled with both at
+ * build time (UX-100), so they stay plain text: no markup and no "&" or "<".
+ */
+export const WELCOME_TAGLINE = 'Short tasks of reasoning, memory and speed. Your results are shown as a profile with ranges, not as a single score.'
 export const WELCOME_INTRO =
-  'The session takes about 30 minutes and has six short parts. You can skip any part you cannot do, and finish early at any time. Nothing is scored as pass or fail.'
+  'The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.'
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
 /** After a link that opens a new tab, shown as the notes page and the results show it (UX-011). */
@@ -48,6 +54,18 @@ export const HONOUR_UNCHECKED = 'Tick the box to agree to the honour code.'
 export const DEVICE_HEADING = 'Check your device'
 export const DEVICE_INTRO =
   'We look at your screen and how you will respond, so that response times can be compared fairly. This takes a few seconds. Sit somewhere quiet and keep this browser window open and in front of other windows.'
+/**
+ * Before the honour sentence: says what "your blob" is, three screens before any blob is drawn
+ * (provisional default, UX-REVIEW D26). HONOUR_TEXT itself stays word for word.
+ */
+export const HONOUR_LEAD = 'At the end of the session, your results are drawn as a shape we call your blob. Before you start, please agree to the following.'
+/**
+ * Under the honour sentence (owner decision 2026-10-05, UX-REVIEW D10): paper and pencil are fine;
+ * calculators and AI chatbots are not. Screen readers and other accessibility settings are named as
+ * fine, so that "no AI tools" is never read as "no screen reader".
+ */
+export const HONOUR_TOOLS =
+  'You may want scratch paper and a pencil ready: writing things down is allowed. Please do not use a calculator or an AI chatbot. Screen readers, zoom and other accessibility settings are fine to use.'
 export const DEVICE_MEASURING = 'Checking your screen…'
 export const DEVICE_INPUT_LEGEND = 'How will you respond in the reaction tasks?'
 export const DEVICE_INPUT_KEYBOARD = 'Keyboard'
@@ -257,17 +275,18 @@ export interface PrivacySection {
 }
 
 /**
- * The M1 privacy notice and terms (DESIGN §13). The controller's name and contact are the user's
- * to fill in (`TODO(user)`, ROADMAP M1.15), and so is the sign-off on retention and the legal
- * basis before any online, data-collecting version. In this static version nothing leaves the
- * device, and the text says exactly that.
+ * The M1 privacy notice and terms (DESIGN §13). It says plainly that no personally identifiable
+ * information is collected and that all responses are anonymous (owner decision 2026-10-05, UX-REVIEW
+ * D1); by the owner's choice it names no controller and no contact. In this static version nothing
+ * leaves the device unless the person shares their own save file, and the text says exactly that.
+ * A change of substance here bumps `TERMS_VERSION` (`constants.ts`), so consent is asked again.
  */
 export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
-    heading: 'Who runs this site',
+    heading: 'In short',
     paragraphs: [
-      'Controller: TODO(user): name of the person or organisation responsible for this site.',
-      'Contact: TODO(user): an email address for questions and requests about your data.',
+      'HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts.',
+      'In this version your answers stay on your device. They leave it only if you share them yourself, for example by sending someone your save file.',
     ],
   },
   {
@@ -287,8 +306,8 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
     heading: 'When there is an online version',
     paragraphs: [
-      'An online version may send your answers to a server to improve the questions. It would ask for your consent again and this notice would be updated first.',
-      'Draft terms for that version, to be confirmed: TODO(user): retention period (draft: 24 months), legal basis (draft: consent), and where the data is held.',
+      'An online version may send your answers to a server to improve the questions. Before it does, this notice will be updated and you will be asked for your consent again.',
+      'The plan for that version is the same: no name and no email address, answers stored only under a random identifier, and answers kept for at most 24 months.',
     ],
   },
   {
@@ -306,3 +325,4 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
     ],
   },
 ])
+      'The web host that serves these pages sees your network address when your browser loads them, as every web host does. It never receives your answers.',

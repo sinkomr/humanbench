@@ -11,17 +11,20 @@ export const BREAK_AT_S = 30 * 60
 /** Hard stop, in active seconds: the session ends and the person sees their results (§7.4 "hard stop at 57 min"). */
 export const HARD_STOP_S = 57 * 60
 
+ * 2026-10-05: the notice without placeholders (UX-REVIEW D1); was 'terms-2026-09-draft'.
 /**
  * Version of the terms and privacy notice that the consent covers. Bump it when `PRIVACY_SECTIONS`
  * (`copy.ts`) changes in substance: a stored consent for another version is not honoured.
  */
-export const TERMS_VERSION = 'terms-2026-09-draft'
+export const TERMS_VERSION = 'terms-2026-10-05'
 
+ * 2026-10-05: the notice without placeholders (UX-REVIEW D1); was 'terms-2026-10-draft-server'. No SQL
+ * names a terms version (supabase/), so nothing on the server needs the old value.
 /**
  * The terms version of the online version (ROADMAP M2.7): its notice says that answers are sent to a
  * server, so a consent given to the static notice does not cover it (and the other way round).
  */
-export const TERMS_VERSION_SERVER = 'terms-2026-10-draft-server'
+export const TERMS_VERSION_SERVER = 'terms-2026-10-05-server'
 
 /** localStorage key of the stored consent (written only after the 18+ gate is passed, §13). */
 export const CONSENT_KEY = 'hb:consent:v1'

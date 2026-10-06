@@ -3,7 +3,7 @@ import design from '../../docs/DESIGN.md?raw'
 import indexHtml from '../index.html?raw'
 import { AXES } from './engine/axes'
 import { SHORT_LABELS } from './viz/profile'
-import { DISCLAIMER, EMO_AXIS_NAME, EMO_TOOLTIP, HEADING, RESOURCE_LINE } from './copy'
+import { DISCLAIMER, EMO_AXIS_NAME, EMO_TOOLTIP, HEADING, META_DESCRIPTION, RESOURCE_LINE } from './copy'
 
 /** Extracts the quoted §13 "Non-diagnostic disclaimer" sentence from DESIGN.md. */
 function designDisclaimer(md: string): string {
@@ -64,5 +64,14 @@ describe('copy', () => {
 
   it('index.html carries the §13 disclaimer word for word without JavaScript too (M1.20)', () => {
     expect(noscriptText()).toContain(DISCLAIMER)
+  })
+
+  it('index.html’s meta description is META_DESCRIPTION, plain and literal (provisional default, UX-REVIEW D26)', () => {
+    expect(/<meta name="description" content="([^"]*)"/.exec(indexHtml)?.[1]).toBe(META_DESCRIPTION)
+    expect(META_DESCRIPTION).toContain('about 30 minutes')
+    expect(META_DESCRIPTION).toContain('not as a single score')
+    // The old line was figurative and named a kind of profile of the person (UX-080).
+    expect(META_DESCRIPTION).not.toMatch(/jagged|cognitive|how you think/i)
+    expect(META_DESCRIPTION).not.toMatch(/[&<>"]/)
   })
 })

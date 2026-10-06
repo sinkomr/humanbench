@@ -18,11 +18,37 @@ describe('session copy (M1.15; DESIGN §13)', () => {
     expect(copy.GATE_AGREE).toContain('18 or older')
     expect(copy.GATE_POINTS).toHaveLength(3) // "a terms/privacy summary (3 bullets + link)"
     const notice = copy.PRIVACY_SECTIONS.flatMap((s) => [s.heading, ...s.paragraphs]).join('\n')
-    expect(notice).toContain('Controller: TODO(user)')
-    expect(notice).toContain('Contact: TODO(user)')
-    expect(notice).toMatch(/24 months/) // the retention DESIGN §13 drafts
+    // Owner decision 2026-10-05 (UX-REVIEW D1): no personally identifiable information, all responses anonymous,
+    // no controller or contact named, and no placeholder left.
+    expect(notice).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(notice).not.toMatch(/TODO|Controller:|Contact:|to be confirmed|draft/i)
+    expect(notice).toMatch(/24 months/) // the retention of DESIGN §13 (purpose, retention and consent; the controller is left out by the owner)
     expect(notice).toMatch(/consent/)
     expect(notice).toMatch(/18 or older/)
+    expect(notice).toContain('Nothing is sent to a server.')
+    expect(notice).toContain('They leave it only if you share them yourself')
+  })
+
+  it('the honour screen keeps the §13 sentence and adds, apart from it, a lead-in and the paper and tools rule (UX-REVIEW D10, D26)', () => {
+    expect(copy.HONOUR_LEAD).toContain('blob')
+    expect(copy.HONOUR_LEAD).not.toContain(copy.HONOUR_TEXT)
+    // Owner decision 2026-10-05 (D10): paper and pencil yes; calculators and AI chatbots no.
+    expect(copy.HONOUR_TOOLS).toMatch(/scratch paper and a pencil/)
+    expect(copy.HONOUR_TOOLS).toMatch(/calculator/)
+    expect(copy.HONOUR_TOOLS).toMatch(/AI chatbot/)
+    // "Assistive technology" means screen readers, which people must keep using: it is never what is banned.
+    expect(copy.HONOUR_TOOLS).not.toMatch(/assistive/i)
+    expect(copy.HONOUR_TOOLS).toMatch(/Screen readers, zoom and other accessibility settings are fine/)
+  })
+
+  it('the welcome says what the session is in plain words, not what it says about the person (UX-REVIEW D26)', () => {
+    for (const t of [copy.WELCOME_TAGLINE, copy.WELCOME_INTRO]) {
+      expect(t).not.toMatch(/jagged|how you think|honest picture|cannot do/i)
+      expect(t).not.toMatch(/[&<>"]/) // the static shell of index.html holds them as plain text (UX-100)
+    }
+    expect(copy.WELCOME_TAGLINE).toMatch(/not as a single score/)
+    expect(copy.WELCOME_TAGLINE).toMatch(/ranges/)
+    expect(copy.WELCOME_INTRO).toMatch(/save file/)
   })
 
   it('gives every skip and finish confirmation a way to keep going, and explains what skipping does', () => {
@@ -143,7 +169,9 @@ describe('the interstitials use the nouns of the questions (UX-016)', () => {
   it('the blurbs speak of cells, objects, blocks and shapes, as the items do', async () => {
     const { SEGMENT_INFO } = await import('./segments')
     expect(SEGMENT_INFO.matrix_series.blurb).toBe('Find the pattern. Pick the cell that completes a grid, or type the next term of a sequence.')
-    expect(SEGMENT_INFO.spatial.blurb).toBe('Turn objects in your mind. Decide which option is the same object as the target, rotated.')
+    expect(SEGMENT_INFO.spatial.blurb).toBe(
+      'Turn objects in your mind. Decide which option is the same object as the target, rotated. This part needs you to see the screen. If you use a screen reader or cannot see the figures, choose “Skip this part”: it will show as not measured.',
+    )
     expect(SEGMENT_INFO.memory.blurb).toBe('Repeat short sequences of digits forwards and backwards, then the order in which blocks light up.')
     expect(SEGMENT_INFO.coding_reading.blurb).toBe('Match shapes to digits against the clock, then read a short passage and answer a few questions about it.')
   })
@@ -155,3 +183,20 @@ describe('the interstitials use the nouns of the questions (UX-016)', () => {
   })
 })
 
+describe('the interstitials say what is allowed and which parts need sight (UX-REVIEW D10, D20)', () => {
+  it('Quantitative allows paper and a pencil and rules out a calculator and an AI chatbot, as the honour screen does', async () => {
+    const { SEGMENT_INFO } = await import('./segments')
+    expect(SEGMENT_INFO.quant.blurb).toBe('Solve short number problems and type your answer. Scratch paper and a pencil are fine; please do not use a calculator or an AI chatbot.')
+    expect(SEGMENT_INFO.quant.blurb).not.toMatch(/out of reach/)
+  })
+
+  it('Reaction Time and Spatial, and only they, point to the Skip button of their interstitial', async () => {
+    const { SEGMENT_INFO } = await import('./segments')
+    const sight = /This part needs you to see the screen\. If you use a screen reader or cannot see [^,]+, choose “Skip this part”: it will show as not measured\.$/
+    expect(copy.INTERSTITIAL_SKIP).toBe('Skip this part')
+    expect(SEGMENT_INFO.rt.blurb).toMatch(sight)
+    expect(SEGMENT_INFO.rt.blurb).toMatch(/^A target appears on the screen\. /)
+    expect(SEGMENT_INFO.spatial.blurb).toMatch(sight)
+    for (const id of ['matrix_series', 'memory', 'quant', 'coding_reading'] as const) expect(SEGMENT_INFO[id].blurb).not.toMatch(/see the screen/)
+  })
+})

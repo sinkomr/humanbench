@@ -1,7 +1,11 @@
-<!-- The honour code (ROADMAP M1.15; DESIGN §13 "Honour code (checkbox at start)"). -->
+<!--
+  The honour code (ROADMAP M1.15; DESIGN §13 "Honour code (checkbox at start)"): a lead-in that says what
+  "your blob" is (provisional default, UX-REVIEW D26), the §13 sentence word for word, then what is and is
+  not allowed beside it, said up front (owner decision 2026-10-05, UX-REVIEW D10).
+-->
 <script lang="ts">
   import Screen from './Screen.svelte'
-  import { HONOUR_AGREE, HONOUR_CONTINUE, HONOUR_HEADING, HONOUR_TEXT, HONOUR_UNCHECKED } from './copy'
+  import { HONOUR_AGREE, HONOUR_CONTINUE, HONOUR_HEADING, HONOUR_LEAD, HONOUR_TEXT, HONOUR_TOOLS, HONOUR_UNCHECKED } from './copy'
 
   interface Props {
     readonly onagree: () => void
@@ -24,7 +28,9 @@
 </script>
 
 <Screen title={HONOUR_HEADING}>
+  <p>{HONOUR_LEAD}</p>
   <p class="lead">{HONOUR_TEXT}</p>
+  <p>{HONOUR_TOOLS}</p>
   <form onsubmit={submit} novalidate>
     <div class="check">
       <input id="{uid}-agree" type="checkbox" bind:checked={agreed} aria-describedby={showError && !agreed ? `${uid}-err` : undefined} aria-invalid={showError && !agreed ? 'true' : undefined} />
