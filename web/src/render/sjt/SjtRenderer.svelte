@@ -1,6 +1,6 @@
 <!--
   Situational judgment renderer (ROADMAP M6.2; DESIGN §3 row 16, §5.2, §5.3, §13, R-5.6.2): a short situation, a question,
-  and four responses (A to D) to rate. The skill is named "Emotion Reading (text scenarios)" (`EMO_AXIS_NAME`), and its
+  and four responses (A to D) to rate. The skill is named "Emotion Reading (text scenarios)" (`axisName('EMO')`, UX review D25), and its
   tooltip is the R-5.6.2 sentence word for word followed by the note of this facet (`FACET_NOTE`: it measures agreement
   with typical and expert judgments, rewards conventional choices and overlaps with reading and vocabulary skills, which
   §5.2 and §5.3 say the page must say), opened from a button (`../emotion/SkillTip.svelte`, imported as it is).
@@ -26,10 +26,14 @@
   import '../common/render.css'
   import { optionIndexForKey, optionLetter } from '../choice/keys'
   import { browserTiming, type RendererProps } from '../common/props'
-  import { EMO_AXIS_NAME, EMO_TOOLTIP } from '../../copy'
+  import { axisName } from '../../axis-names'
+  import { EMO_TOOLTIP } from '../../copy'
   import { ENTRY_COPY, FACET_NOTE, SCALE_LABELS, progressText } from '../../tasks/sjt/copy'
   import { RATING_LEVELS, type SjtMode, type SjtResponse, type SjtSpec } from '../../tasks/sjt/spec'
   import SkillTip from '../emotion/SkillTip.svelte'
+
+  /** The skill's on-screen name, from the display-name layer every screen uses (UX review D25). */
+  const SKILL_NAME = axisName('EMO')
 
   interface Props extends RendererProps<SjtSpec, SjtResponse> {
     /** rAF timestamp (ms, performance.now() clock) of the first frame showing the item. */
@@ -120,8 +124,8 @@
 
 <section class="hb-render sjt" aria-labelledby="{uid}-title">
   <div class="head">
-    <p class="title" id="{uid}-title">{EMO_AXIS_NAME}</p>
-    <SkillTip name={EMO_AXIS_NAME} text="{EMO_TOOLTIP} {FACET_NOTE}" label={ENTRY_COPY.tipButton} hint={ENTRY_COPY.tipClose} />
+    <p class="title" id="{uid}-title">{SKILL_NAME}</p>
+    <SkillTip name={SKILL_NAME} text="{EMO_TOOLTIP} {FACET_NOTE}" label={ENTRY_COPY.tipButton} hint={ENTRY_COPY.tipClose} />
   </div>
   <p class="hb-instructions">{mode === 'rate' ? ENTRY_COPY.instructions : ENTRY_COPY.instructionsMostLeast}</p>
   <!-- The label sits on a group, not on the paragraph: a paragraph has no role that may be named (ARIA 1.2). -->

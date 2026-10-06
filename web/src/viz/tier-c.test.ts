@@ -11,6 +11,7 @@
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { axisName } from '../axis-names'
 import { AXES, AXIS_CODES, axis, type AxisCode } from '../engine/axes'
 import { scoreAll, type ScoreResult } from '../engine/scorer'
 import type { Observation } from '../engine/types'
@@ -271,7 +272,7 @@ describe('M6 facet labels (DESIGN §5.4: "Label this axis experimental")', () =>
     ])
     // UX-040: a facet row is named by its label alone; the skill it belongs to is its group (the table's next column).
     expect(rows.map((r) => r.name)).toEqual(['Emotion scenarios', 'Situational judgment', 'Word links', 'Unusual uses (experimental)'])
-    expect(rows.map((r) => r.group)).toEqual([axis('EMO').name, axis('EMO').name, axis('CRE').name, axis('CRE').name])
+    expect(rows.map((r) => r.group)).toEqual([axisName('EMO'), axisName('EMO'), axisName('CRE'), axisName('CRE')])
     for (const r of rows) expect(r).toMatchObject({ tier: 'c', glyph: GLYPH_C })
     // Counts and thresholds are as ever: 6, 3, 5 and 5 items, the 3-item facet short of the ≥ 5 bar.
     expect(rows.map((r) => [r.nItems, r.measured])).toEqual([
