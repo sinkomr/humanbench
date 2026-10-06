@@ -24,6 +24,7 @@ import { button, h1, simulatedSave, toReady, toResults } from './flow'
 import { expectNoSidewaysScroll, setTextZoomNow } from './layout'
 import { ROUTES, skipPart } from './routes'
 import { SessionDriver } from './session-driver'
+import { useWideFont } from './wide-font'
 
 const SE = { width: 320, height: 568 } as const
 const PHONE = { width: 390, height: 664 } as const
@@ -358,18 +359,22 @@ test.describe('a question the browser cannot draw says so once (UX-017a)', () =>
   test.describe('with the text at 200% on a small screen', () => {
     test.use({ viewport: SE })
 
-    test('the message and its way out still fit the width, and are said once', async ({ page }) => {
-      await noWebGlSpatial(page)
-      await setTextZoomNow(page, 200)
-      await settle(page)
-      await expectNoSidewaysScroll(page, 'the question the browser cannot draw, text at 200%')
-      const skip = page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' })
-      await expect(skip).toBeVisible()
-      await skip.scrollIntoViewIfNeeded()
-      await expect(skip).toBeInViewport()
-      expect(occurrences(await page.locator('body').innerText(), 'cannot be shown in your browser')).toBe(1)
-      expect(occurrences(await page.locator('body').ariaSnapshot(), 'cannot be shown in your browser')).toBe(1)
-    })
+    // The second run is set in a wide face (Verdana; the Linux CI fonts are wider than macOS's), so a layout that fits only narrow fonts fails anywhere.
+    for (const wide of [false, true]) {
+      test(`the message and its way out still fit the width, and are said once${wide ? ' (wide font)' : ''}`, async ({ page }) => {
+        if (wide) await useWideFont(page)
+        await noWebGlSpatial(page)
+        await setTextZoomNow(page, 200)
+        await settle(page)
+        await expectNoSidewaysScroll(page, `the question the browser cannot draw, text at 200%${wide ? ', wide font' : ''}`)
+        const skip = page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' })
+        await expect(skip).toBeVisible()
+        await skip.scrollIntoViewIfNeeded()
+        await expect(skip).toBeInViewport()
+        expect(occurrences(await page.locator('body').innerText(), 'cannot be shown in your browser')).toBe(1)
+        expect(occurrences(await page.locator('body').ariaSnapshot(), 'cannot be shown in your browser')).toBe(1)
+      })
+    }
   })
 
   test('the keyboard reaches Skip and Finish early, and nothing of the parked question', async ({ page, isMobile, browserName }) => {

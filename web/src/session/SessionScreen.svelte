@@ -402,8 +402,10 @@
       padding: 0.5rem 0.75rem;
     }
 
+    /* One row while the text is small; with large text or a wide font the buttons wrap rather than run past the edge (WCAG 1.4.10). */
     .actions {
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 0.375rem;
       margin-left: auto;
     }
