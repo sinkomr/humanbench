@@ -456,6 +456,26 @@ describe('RtRenderer', () => {
     expect([...(progress?.querySelectorAll('span') ?? [])].map((x) => x.getAttribute('translate'))).toEqual(['no', 'no'])
   })
 
+  it('draws the fixation cross over the pads, not in a row of its own, and the target replaces it in the same frame (D12)', () => {
+    for (const [item, mode] of [[rtSimple.generate('render-rt-fix'), 'keyboard'], [rtChoice4.generate('render-rt-fix'), 'touch']] as const) {
+      const m = mountRt(item, mode)
+      click(buttonByText(m.container, 'Start practice'))
+      until(m.display, () => fixationOn(m.container))
+      const fixation = m.container.querySelector('.fixation') as HTMLElement
+      // A child of the pads (positioned over them by the style), so the stage has no row above the pads; nothing to hear or tap.
+      expect(fixation.parentElement?.classList.contains('pads')).toBe(true)
+      expect(fixation.getAttribute('aria-hidden')).toBe('true')
+      expect([...(m.container.querySelector('.stage')?.children ?? [])].map((c) => c.className.replace(/\s*svelte-\w+/g, '').trim())).toEqual(
+        mode === 'touch' ? ['pads'] : item.spec.mode === 'choice4' ? ['pads', 'keys'] : ['pads'],
+      )
+      expect(m.container.querySelectorAll('.pad')).toHaveLength(item.spec.n_positions)
+      // In the frame that draws the target the cross is gone: they are never on screen together.
+      until(m.display, () => stimulusOn(m.container))
+      expect(fixation.textContent).toBe('')
+      expect(fixationOn(m.container)).toBe(false)
+    }
+  })
+
   it('matches its snapshots (intro, choice4 fixation)', () => {
     const simple = mountRt(rtSimple.generate('render-rt-snap'))
     expect(normalizeIds(simple.container)).toMatchSnapshot()

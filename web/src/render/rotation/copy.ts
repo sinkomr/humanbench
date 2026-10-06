@@ -7,8 +7,11 @@
  * which would halve the choice.
  */
 
-/** The item stem (§12 example stem, with "target" for the figure above the options). */
-export const ROTATION_STEM = 'Which option is the same object as the target, rotated? (Not mirror-imaged.)'
+/**
+ * The item stem: "target" is the figure above the options (the §12 example stem says "the one on the left"), and the
+ * mirror image gets plain words, not the rare verb form "mirror-imaged", for readers in a second language (UX-085).
+ */
+export const ROTATION_STEM = 'Which option shows the same object as the target, rotated? A mirror image does not count.'
 
 /** Legend of the option group. */
 export const ROTATION_OPTIONS_LEGEND = 'Options'

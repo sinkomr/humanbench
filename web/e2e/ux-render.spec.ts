@@ -85,11 +85,14 @@ test.describe('the coding block (UX-002, UX-022, UX-025)', () => {
       const keys = await boxes(page, '.coding .keypad button')
       expect(stage!.top, 'the shape is on screen').toBeGreaterThanOrEqual(-0.5)
       expect(stage!.bottom).toBeLessThanOrEqual(h + 0.5)
-      // One row of nine keys, each at least a finger tall and wide enough for WCAG 2.5.8.
-      expect(Math.max(...keys.map((k) => k.top)) - Math.min(...keys.map((k) => k.top))).toBeLessThan(2)
+      // Nine keys that would be under about 40 px wide in one row fold into rows of five and four (D9, `uxdec-render.spec.ts`
+      // measures the sizes), each key at least a finger tall and, where five fit, wide.
+      const rows = [...new Set(keys.map((k) => Math.round(k.top)))]
+      expect(rows, 'two rows of keys').toHaveLength(2)
+      expect(keys.filter((k) => Math.round(k.top) === rows[0])).toHaveLength(5)
       for (const k of keys) {
         expect(k.height).toBeGreaterThanOrEqual(43.5)
-        expect(k.width).toBeGreaterThanOrEqual(24)
+        expect(k.width).toBeGreaterThanOrEqual(43.5)
       }
       // Key, shape and keypad together stay within the budget that fits the shortest phone.
       expect(keys.at(-1)!.bottom - legend!.top).toBeLessThan(468)

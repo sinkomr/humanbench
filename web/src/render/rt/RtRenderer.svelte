@@ -2,7 +2,10 @@
   Reaction-time stimuli, simple and 4-choice (ROADMAP M1.10, M1.13, A10; DESIGN §3 row 9, §7.1,
   §11.6, §13, §14.6 ex. 12). 3 practice trials with feedback, then the scored trials. Each trial
   shows a fixation cross, then the target after the spec's foreperiod, drawn in the first animation
-  frame at or after the onset time (the rAF onset scheduler of `tasks/rt/timing.ts`); RT is the
+  frame at or after the onset time (the rAF onset scheduler of `tasks/rt/timing.ts`); the cross is
+  drawn in the middle of the pad (of the row of pads, with four positions) and is gone in the frame
+  that draws the target, so the gaze does not have to drop to it (UX-084; markup and style only, the
+  trial state machine and its timing are unchanged); RT is the
   input event's own timestamp (`event.timeStamp`, else `performance.now()` in the handler) minus that frame's timestamp (`responseRtMs`, §11.6), so a press
   before the target is drawn is an anticipation. Keyboard mode: Space (simple) or D F J K / 1–4
   (choice); touch mode: tap or click the position. The response is the family's `RtResponse`
@@ -261,8 +264,9 @@
   {:else if phase === 'running'}
     <p class="progress">{stage === 'practice' ? 'Practice' : 'Trial'} <span translate="no">{trialIdx + 1}</span> of <span translate="no">{nTrials}</span></p>
     <div class="stage" class:choice4 role="group" aria-label={stageLabel} bind:this={stageEl} tabindex="-1">
-      <p class="fixation" aria-hidden="true">{trialState === 'fixation' ? '+' : ''}</p>
       <div class="pads">
+        <!-- Drawn over the middle of the pads (the one pad, or between the middle two of four), never in a row of its own. -->
+        <p class="fixation" aria-hidden="true">{trialState === 'fixation' ? '+' : ''}</p>
         {#each positions as i (i)}
           {#if mode === 'touch'}
             <button
@@ -345,15 +349,48 @@
     touch-action: manipulation;
   }
 
+  /* The fixation cross: in the middle of the pads, where the target will be (UX-084), above them in the stack, and no target for a tap. */
   .fixation {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
     margin: 0;
-    height: 2.5rem;
     font-size: 2.5rem;
     line-height: 1;
     font-weight: 700;
+    pointer-events: none;
+    /*
+      With four positions the middle of the row is the gap between the middle two pads: a halo of the stage's own colour
+      keeps the cross clear of their borders. Written out (no colour token of its own, so scripts/contrast.test.ts has
+      no new token to pair): the page colour here, the surface colour of the four-position stage below.
+    */
+    text-shadow:
+      -2px 0 var(--r-bg),
+      2px 0 var(--r-bg),
+      0 -2px var(--r-bg),
+      0 2px var(--r-bg),
+      -2px -2px var(--r-bg),
+      2px -2px var(--r-bg),
+      -2px 2px var(--r-bg),
+      2px 2px var(--r-bg);
+  }
+
+  .choice4 .fixation {
+    text-shadow:
+      -2px 0 var(--r-surface),
+      2px 0 var(--r-surface),
+      0 -2px var(--r-surface),
+      0 2px var(--r-surface),
+      -2px -2px var(--r-surface),
+      2px -2px var(--r-surface),
+      -2px 2px var(--r-surface),
+      2px 2px var(--r-surface);
   }
 
   .pads {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(3rem, 1fr));
     gap: 0.5rem;
