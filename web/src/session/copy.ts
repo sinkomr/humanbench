@@ -300,11 +300,31 @@ export interface PrivacySection {
 }
 
 /**
+ * The credits for the word resources the Remote Associates items were checked against (owner decision
+ * of 2026-10-06 on those resources). The app has no page of its own for credits, so they are the last
+ * section of the privacy notice, in the static version and in the online one (`backend/copy.ts`
+ * appends this same constant). Paragraph 1 is the memo's credits line word for word. Paragraph 2
+ * credits wordfreq, the secondary signal the owner also approved (data CC BY-SA 4.0), and names the
+ * sources it draws on as its licence text lists them (Google Books Ngram Viewer, Wikipedia, the Leeds
+ * Internet Corpus, ParaCrawl, OpenSubtitles and the SUBTLEX word lists), with the conditions of that
+ * text kept clear: SUBTLEX is freely available data, and OpenSubtitles is credited by name. The section
+ * says nothing about what the site keeps or sends, so it does not change `TERMS_VERSION`.
+ */
+export const CREDITS_SECTION: PrivacySection = Object.freeze({
+  heading: 'Credits',
+  paragraphs: Object.freeze([
+    'Remote-associates items are original to HumanBench. They were checked against Google Books Ngram Viewer data (https://books.google.com/ngrams, CC BY 3.0), Open English WordNet (CC BY 4.0, based on Princeton WordNet), the Moby Word Lists by Grady Ward (public domain) and VarCon by Kevin Atkinson.',
+    'Word frequencies were also checked with wordfreq by Robyn Speer (data CC BY-SA 4.0), which draws on Google Books Ngram Viewer data, Wikipedia, the Leeds Internet Corpus, ParaCrawl, OpenSubtitles and the SUBTLEX word lists by Marc Brysbaert, Boris New and colleagues (SUBTLEX is freely available data).',
+  ]),
+})
+
+/**
  * The M1 privacy notice and terms (DESIGN §13). It says plainly that no personally identifiable
  * information is collected and that all responses are anonymous (owner decision 2026-10-05, UX-REVIEW
  * D1); by the owner's choice it names no controller and no contact. In this static version nothing
  * leaves the device unless the person shares their own save file, and the text says exactly that.
  * A change of substance here bumps `TERMS_VERSION` (`constants.ts`), so consent is asked again.
+ * The credits are the last section.
  */
 export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
@@ -350,4 +370,5 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
       'The honour code applies: no AI tools, search, calculators (except where provided), or help, so that your profile is yours.',
     ],
   },
+  CREDITS_SECTION,
 ])
