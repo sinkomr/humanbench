@@ -10,6 +10,7 @@
  * `TODO(user)` as in the static notice.
  */
 
+import { CREDITS_SECTION } from '../session/copy'
 import type { LoadProblem } from './errors'
 
 // ------------------------------------------------------------------------- gate and ready
@@ -251,4 +252,6 @@ export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.fre
       'The honour code applies: no AI tools, search, calculators (except where provided), or help, so that your profile is yours.',
     ],
   },
+  // The word-resource credits, the same section as the static notice's (session/copy.ts).
+  CREDITS_SECTION,
 ])
