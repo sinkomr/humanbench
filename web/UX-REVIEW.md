@@ -822,6 +822,7 @@ document. Each package wrote its own handoff; the integration and the verificati
 | commit | all | The round committed one commit per decision group, hunks split by reading (not by the integration's keyword map) | pub, bank | [commit.json](ux-review/uxdec/commit.json) |
 | merge-dev | — | `dev` (M6.2 to M6.4) merged into the branch, one conflict settled, four reconciliations, every gate | pub, bank | [merge-dev.json](ux-review/uxdec/merge-dev.json) |
 | verify-merged | all | Verification 4 on the merged head: the replay again, the sweep with the M6 dev routes, the dist scan; this document brought up to date | pub (harness, docs) | [verification-merged.json](ux-review/uxdec/verification-merged.json) |
+| final integration | all | Verification 4's records committed, the `sim:session` README section, every gate re-run on the final head | pub | appendix B (this document) |
 
 The handoffs do not record which model ran each package, so the table names none; the decisions-round update of this
 document (docs) was written by Opus 5.5, and the verification 4 update (verify-merged) by Fable 5.1.
@@ -1109,3 +1110,20 @@ fresh build of the merged head (`cd07fdf`, the head after the handoffs; product 
 | Replay (owner 7 + defaults 22 tests per engine) | green on Chromium, WebKit and iPhone at the first pass; 92 facts files, 676 facts ok, 63 measured, 11 failed (the six pre-existing D1 link sizes, the three pre-existing D10 checkbox sizes, D23 on WebKit and iPhone: UXDEC-VER4-01) |
 | Sweep (11 tests per desktop engine, 8 + 3 skipped on the phone) | green after one harness fix (the M6-names test, re-run on Chromium and WebKit); 335 routes, 874 states, 0 failed to open, 0 overflow, 0 clipped, 0 serious axe, 0 rendered "TODO", 0 score wording |
 | D23 control against verification 3's build (WebKit, iPhone) | the same 3 Hz and the same failure today, so not a change of the merged head |
+
+**Final integration.** Verification 4's records were committed (`18eeaa8`), the root README gained a section for
+`npm run sim:session` (D5), and every gate was run again on the final head; the product code is the same as in
+`abdd9a6`, and the bank is unchanged at `5fb088f`.
+
+| Gate | Result |
+| --- | --- |
+| `npm run check` | pass: svelte-check 1,888 files, 0 errors, 0 warnings; tsc node and scripts clean |
+| `npm test` | 308 files passed, 1 skipped; 5,626 tests passed, 7 skipped, 0 failed (cross-repo sync included) |
+| `npm run build` | pass (chunk-size warning only); the dist holds no `TODO(` and no `#/dev/` route |
+| Language lint | pass: 395 files clean |
+| `test:db` | pass: 20 files, 567 of 567 (the load-related `signing.db.test.ts` failures did not recur) |
+| e2e chromium (isolated, the ten `uxdec-*` specs, session, ux-session, smoke, session-save) | 193 passed, 38 skipped, 0 failed |
+| e2e webkit and iphone (session-save, uxdec-share-save, uxdec-resume, uxdec-funnel) | 94 passed, 2 skipped, 0 failed |
+| `npm run sim:session` (the README examples, small n) | runs; `--json` writes its file |
+| Bank `uv run ruff check && uv run ruff format --check` | pass: 372 files already formatted |
+| Bank `uv run pytest -q -n 8` | pass: 6,944 passed, 2 skipped (Ollama not running), 192 s |
