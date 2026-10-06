@@ -474,8 +474,9 @@ Use `--all` in place of `--family <name>` to dump every registered family,
 `web/src/tasks/registry.ts` yet, or `--out <file>` in place of `--bank` to write elsewhere.
 
 After changing a generator, refresh every bank fixture that comes from this repo: the family
-dumps, the toy family dump, the coding and rt scoring parity dumps and the series analysis fixture
-(then update `ANALYSIS_FIXTURE_DIGEST` in `series.test.ts` if it changed):
+dumps, the toy family dump, the coding and rt scoring parity dumps, the series analysis fixture
+(then update `ANALYSIS_FIXTURE_DIGEST` in `series.test.ts` if it changed) and the quant answer-entry
+vectors (UX-079):
 
 ```zsh
 cd web
@@ -484,6 +485,7 @@ npm run dump:families -- --module src/tasks/_example/index.ts --family example -
 npm run dump:coding-scores -- --n 1000 --bank
 npm run dump:rt-scores -- --n 1000 --bank
 npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ../../humanbench-bank/golden/ts_dumps/series.analysis.json
+npx tsx -e "import('./src/tasks/quant/entry-vectors.ts').then((m) => process.stdout.write(m.serializeEntryVectors()))" > ../../humanbench-bank/golden/ts_dumps/quant_entry.json
 ```
 
 The other direction, the bank's golden scoring files into `web/src/engine/__fixtures__/`, is
@@ -491,7 +493,9 @@ The other direction, the bank's golden scoring files into `web/src/engine/__fixt
 When the bank checkout is present, `npm test` fails if any of these copies is stale:
 `web/scripts/ts-dumps-sync.test.ts` requires a dump of every registered family (and the toy
 family), checks each dump's header, item count, seed order, items and bytes, checks the series
-analysis fixture, and fails on any file in `golden/ts_dumps/` that nothing here checks;
+analysis fixture and the quant answer-entry vectors (`quant_entry.json`, which the bank's
+`tests/gen/test_quant_entry.py` reads), and fails on any file in `golden/ts_dumps/` that nothing
+here checks;
 `web/scripts/coding-scores-dump.test.ts` and `web/scripts/rt-scores-dump.test.ts` check the
 coding and RT parity dumps (`coding_scores.json`, `rt_simple_scores.json`,
 `rt_choice4_scores.json`), and

@@ -53,6 +53,8 @@ describe('migrations: the set', () => {
       '20261004000100_response_archive.sql',
       '20261005000100_server_seen_lists.sql',
       '20261006000100_jcs_fast.sql',
+      '20261007000100_rescore_facets.sql',
+      '20261007000200_parse_entry_decimal_comma.sql',
     ])
   })
 
@@ -142,7 +144,35 @@ describe('migrations: the readers of old answers (M2.5)', () => {
     const users = migrations
       .flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\n\$\$;/g)].filter((x) => /\bhb\.responses_of\(/.test(x[0])).map((x) => x[1]!))
       .filter((name) => name !== 'hb.responses_of')
-    expect(users.sort()).toEqual(['hb.is_eligible', 'public.rescore'])
+    // (rescore is re-created again by 20261007000100_rescore_facets.sql, still a reader of old answers)
+    expect([...new Set(users)].sort()).toEqual(['hb.is_eligible', 'public.rescore'])
+  })
+})
+
+describe('migrations: the decimal comma in hb.parse_entry (UX-079; UX review D8, a provisional default)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4).replace(/create\s+or\s+replace\s+function/, 'create function')
+  }
+
+  it('re-creates hb.parse_entry exactly as before, with one branch for a decimal comma before the thousands form', () => {
+    const now = functionText(byName('_parse_entry_decimal_comma.sql'), 'hb.parse_entry')
+    const then = functionText(byName('_private_functions.sql'), 'hb.parse_entry')
+    const thousands = "      m := pg_catalog.regexp_match(s, '^([0-9]{1,3}(?:,[0-9]{3})+)(?:\\.([0-9]*))?$');"
+    const comma = [
+      "      m := pg_catalog.regexp_match(s, '^([0-9]+),([0-9]{1,2})$');",
+      '      if m is not null then',
+      '        o_num := (m[1] || m[2])::numeric;',
+      '        o_den := hb.pow10(pg_catalog.char_length(m[2]));',
+      '      else',
+    ].join('\n')
+    expect(then).toContain(thousands)
+    const closing = '        end if;\n      end if;\n    end if;\n  end if;\n  if o_num is not null and v_neg then'
+    expect(then).toContain(closing)
+    // (replacer functions: the SQL holds "$'", which a replacement string would read as a pattern)
+    expect(now).toBe(then.replace(thousands, () => `${comma}\n${thousands}`).replace(closing, () => closing.replace('      end if;\n', '      end if;\n      end if;\n')))
   })
 })
 

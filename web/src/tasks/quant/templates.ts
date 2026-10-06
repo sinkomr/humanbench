@@ -68,11 +68,18 @@ export const TOL_EXACT = Object.freeze({ abs: 0 })
 /** Half a hundredth: the key has ≤ 2 decimal places, so this accepts the entries that round to it. */
 export const TOL_DECIMAL = Object.freeze({ abs: 0.005 })
 
-/** Input hints shown under the entry box, by format. */
+/**
+ * Input hints shown under the entry box, by format, in the words of every entry box ("whole
+ * number", as series says; UX-079). Display copy only: the stem, given, key, params and every other
+ * field of an item stay the same for each seed, so a wording change here keeps the generator
+ * version, and saved `i:quant:<version>:<seed>` ids still regenerate and re-score (`resolveItem`
+ * needs the exact version; §7.8). The bank twin `hb.gen.quant.spec.HINTS` has the same strings
+ * (its verifier checks them on the TS dump).
+ */
 export const HINTS: Readonly<Record<InputFormat, string>> = Object.freeze({
-  integer: 'Enter an integer, such as 42 or -7.',
+  integer: 'Enter a whole number, such as 42 or -7.',
   decimal: 'Enter a number; decimals are fine, such as 12.5.',
-  fraction: 'Enter a fraction such as 3/8, or an integer.',
+  fraction: 'Enter a fraction such as 3/8, or a whole number.',
 })
 
 export const THINGS = Object.freeze(['jacket', 'lamp', 'backpack', 'board game', 'toaster', 'desk chair', 'kettle', 'tent'])

@@ -93,6 +93,12 @@
  * - **Versions.** `generatorVersion` has no `+` build tag; bump it whenever `generate` output
  *   changes for any seed (old ids then no longer regenerate), and bump the bank twin to
  *   `<new>+py`. A twin's items carry `+py` because its content per seed differs (A11).
+ *   One narrow exception, taken for the quant entry hints (UX-079; UX-REVIEW D8, a provisional
+ *   default the owner may still revisit): display-only text that no scoring, selection or
+ *   verification reads (quant `spec.hint`) may change at the same version when every other
+ *   field is byte-identical for every seed (compare the dumps; `quant/hints.test.ts` pins the
+ *   content digest). A bump would make `resolveItem` (`registry.ts`) drop every saved answer of the family
+ *   from local re-scoring.
  * - **params (A9, A10).** Items: options k ≤ 4 → 3PL with c = 1/k; k ≥ 5 or numeric entry →
  *   2PL; with b = `difficulty.b_prior` and a = the family's default discrimination. Blocks use
  *   the A10 models (GRM for span, Gaussian for RT/PS), returned by `build()`, and omit

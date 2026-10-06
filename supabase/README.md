@@ -316,6 +316,8 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.2 20261002000300_selection` | `hb.rank_live`, `hb.thompson_pick`, `hb.pick_item`, `hb.serve_next` |
 | `…M2.2 20261005000100_server_seen_lists` | `hb.save_proved_anons`, `hb.seen_for_session` and `start_session` re-created: the seen lists of a session are the server's own rows plus the procedural families a save names (post-merge audit fix, below) |
 | `…M2.3 20261006000100_jcs_fast` | `hb.jcs` re-created as one set-based walk (no call per node), a fast path for decimals in `hb.jcs`, and `verify_save` re-created so that it asks `hb.session_verdict` once per session instead of three times (performance fix, see Limits and costs). Same output, signature, owner and grants |
+| `…M2.1 20261007000100_rescore_facets` | `hb.drill_facet` (a quant template's topic group, as the app's `drillFacet`) and `rescore` re-created with the facets of the app's drill-down (UX review D4, a provisional default): quant answers count under their topic group, and a facet's prior leaves its own answers out, so its mean and sd are its axis's. Same signature, owner and grants |
+| `…M2.1 20261007000200_parse_entry_decimal_comma` | `hb.parse_entry` re-created with the decimal comma (`3,5` is 3.5; UX-079, UX review D8, a provisional default), as the app's `parseEntry` and the bank's `hb.gen.quant.entry` read it; the thousands form (`1,533`) and every other form read as before. Same signature, owner and grants |
 | `…M2.3 20261003000100_save_signing` | `hb.mac_sign` (owned by `postgres`), RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, `hb.signing_check`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` and `verify.*` settings. (The work estimate `hb.json_work` and its checks live with `hb.check_save` in `…500`.) |
 
 ### Who can do what (R-11.1, R-12.1)
@@ -421,7 +423,11 @@ screenshot may show it. Nothing is done for an `anon_id` on its name alone.
 `anon_id` of the save** (the caller's; a `sig.anon_id` on a session may only repeat it, exactly as in `hb.session_owned`)
 and finished, it reads the responses from the database and returns, per axis, the own-axis, practice-adjusted EAP
 `{mean, sd, n}` (61 equal-weight grid points on [-4, 4], prior N(0, 1); *not* the correlated MAP) and, per facet, the
-EAP on the facet's items with the axis posterior as its prior (viz/facets.ts, A12). Only sessions that are eligible
+EAP on the facet's items with the leave-facet-out prior: the axis posterior without the facet's own answers (viz/facets.ts,
+A12; UX review D4, a provisional default, `…20261007000100_rescore_facets`). On the grid that is exact, and the prior
+times the facet's likelihood is the axis posterior itself, so a facet's `mean` and `sd` are its axis's and only its `n` is
+its own. A quant answer counts under its template's topic group (`hb.drill_facet`, the six groups of
+`tasks/quant/topics.ts`), which is also the key of `facets.QR` and `withheld.facets.QR`. Only sessions that are eligible
 *blind* are scored (`hb.is_eligible(session, true)`, below: the eligibility without the checks that read the key); a
 session that is not still counts as a test of the axis (practice, `ordinals`, `rho`). Pretest
 responses and responses on quarantined items (DESIGN §4.5) are left out; block observations (RT, span, coding,
@@ -442,7 +448,7 @@ its answers: a posterior mean from one answer *is* that answer (right moves it u
 | Rule | Setting | Value | Why this value |
 |---|---|---|---|
 | a session's answers on an axis count only if **that session** holds this many scored answers on the axis; an axis is returned if one session counts | `rescore.min_axis_items` | 5 | the count at which the app itself shows a facet (A12; `FACET_MIN_ITEMS`, checked by a test); the posterior sd is still 0.7 there, so one answer is one of five terms and no longer the whole of the value. What any session adds to a published number is a sum of at least five of its answers, never one: a count over the whole save would let a script add a session of one answer and read it out of the difference. The answers of a shorter session are practice only (`ordinals`, `rho`) and are counted under `skipped.not_counted`. An axis nobody counts: the call returns the count of valid answers under `withheld.eap` and nothing else |
-| the same for a facet, and a facet is returned only under an axis that is returned | `rescore.min_facet_items` | 5 | A12 |
+| the same for a facet (a quant topic group for QR answers, `hb.drill_facet`), and a facet is returned only under an axis that is returned | `rescore.min_facet_items` | 5 | A12; UX review D4 (the groups) |
 | the mean is rounded to a multiple of | `rescore.mean_step` | 0.1 | a tenth of an SD unit, well under the posterior sd of a finished session (0.3 to 0.7), so what the blob shows does not change |
 | the sd is rounded **up** to a multiple of | `rescore.sd_step` | 0.05 | rounding up never understates the uncertainty (a "show uncertainty" rule of the blob) |
 | calls per client address a day | `rate.rescores_per_day` | 20 | 5 sessions a day and a few views of each result fit with room to spare (it was 200) |

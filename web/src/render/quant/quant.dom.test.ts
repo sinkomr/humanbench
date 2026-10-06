@@ -7,9 +7,9 @@
 import fc from 'fast-check'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quant, type QuantItem } from '../../tasks/quant'
-import { parseEntry } from '../../tasks/quant/numeric'
+import { checkNewEntry, parseEntry } from '../../tasks/quant/numeric'
 import type { QuantResponse } from '../../tasks/quant/score'
-import { FORMAT_NOTES } from '../common/entry-copy'
+import { FORMAT_NOTES, THOUSANDS_NOTE } from '../common/entry-copy'
 import { normalizeEntry } from '../common/normalize-digits'
 import { normalizeIds } from '../common/leak'
 import { buttonByText, click, fakeDisplay, render, typeInto } from '../common/testing'
@@ -90,7 +90,7 @@ describe('QuantRenderer', () => {
     }
   })
 
-  it('accepts exactly what parseEntry reads (property), with a neutral format note otherwise', () => {
+  it('accepts exactly what checkNewEntry takes (property), with a neutral format or thousands note otherwise', () => {
     const item = quant.generate('render-quant-parse')
     fc.assert(
       fc.property(
@@ -101,11 +101,13 @@ describe('QuantRenderer', () => {
           m.submit()
           // The box sends the typed text normalised (UX-024); a whole-number item takes whole numbers only.
           const sent = normalizeEntry(text, item.spec.input_format)
+          // A number with thousands commas is refused with its own note although parseEntry reads it (UX-079).
           const value = parseEntry(sent)
-          const ok = value !== null && (item.spec.input_format !== 'integer' || value.isInteger())
+          const thousands = checkNewEntry(sent) === 'thousands'
+          const ok = value !== null && !thousands && (item.spec.input_format !== 'integer' || value.isInteger())
           expect(m.responses.length).toBe(ok ? 1 : 0)
           if (ok) expect(m.responses[0]).toBe(sent)
-          if (!ok && text.trim() !== '') expect(m.container.querySelector('.hb-note')?.textContent).toBe(FORMAT_NOTES[item.spec.input_format])
+          if (!ok && text.trim() !== '') expect(m.container.querySelector('.hb-note')?.textContent).toBe(thousands ? THOUSANDS_NOTE : FORMAT_NOTES[item.spec.input_format])
           m.destroy()
         },
       ),

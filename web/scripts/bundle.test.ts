@@ -107,7 +107,7 @@ describe('production bundles (A14)', () => {
     expect(text).toContain('Chemical equilibrium')
     expect(text).toContain('Series and number puzzles')
     expect(text.length).toBeLessThan(60_000)
-    expect(text).not.toContain('Enter an integer, such as 42')
+    expect(text).not.toContain('Enter a whole number, such as 42')
     for (const s of PASSAGE_OPENINGS) expect(text).not.toContain(s)
     expect(text).not.toMatch(/mc_image_spec|reading_block|coding_block/)
   }, 60_000)

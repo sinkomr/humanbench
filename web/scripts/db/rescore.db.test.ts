@@ -983,7 +983,9 @@ describe('hb.response_fits: the answer space of an item (what counts as an answe
     const keys = [{ value: '7/2', tol: { abs: 0.05 } }, { value: '-3', tol: { abs: 0 } }, { value: '1500', tol: { rel: 0.01 } }]
     await table(keys, 0, [
       ['3.5', true], ['7/2', true], ['3 1/2', true], ['$3.50', true], ['1,500', true], ['12%', true], [3.5, true], [-2, true], ['  4 ', true],
-      ['x', false], ['', false], [' ', false], ['1/0', false], ['3,5', false], ['1e3', false], [null, false], [true, false], [[], false], [{ v: 1 }, false], [undefined, false],
+      // a decimal comma is an answer since UX-079 (20261007000200_parse_entry_decimal_comma.sql); three digits after the comma are the thousands form
+      ['3,5', true], ['0,25', true],
+      ['x', false], ['', false], [' ', false], ['1/0', false], ['1,2345', false], [',5', false], ['1e3', false], [null, false], [true, false], [[], false], [{ v: 1 }, false], [undefined, false],
       // the residual (README, "What `rescore` does not tell", "What is left"; an accepted risk, ROADMAP A24-sec): the server cannot tell a number far off the key from a plausible wrong one without the key
       [99999999, true], ['99999999999', true],
     ])
