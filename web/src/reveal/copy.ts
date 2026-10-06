@@ -53,6 +53,12 @@ export const SAVE_SHARE_CANCELLED = 'Sharing was cancelled. Nothing was saved ye
 export const SAVE_DONE = 'Your results are saved in your file. You can leave this page safely. Your share card and notes for your AI are just below.'
 /** The file name returned by the download, and where to look for it (the status line stays "Save file downloaded."). */
 export const savedAs = (name: string): string => `Saved as ${name}. Look in your Downloads folder (on an iPhone, the Files app) and keep it.`
+/**
+ * Said under the save panel after a download or a share whose file holds the notes settings kept on this
+ * device (UX-REVIEW D17 A, a provisional default; R-17.12: choices only, never typed text). It tells the
+ * person what else is in the file they may hand on.
+ */
+export const SAVE_HOLDS_NOTES = 'The file also holds the notes settings kept on this device: your choices, never text you typed.'
 /** The code is for a note to yourself; the "Ready when you are" screen is where it is pasted (session copy READY_HEADING, READY_LOAD_CODE). */
 export const SAVE_COPIED_NOT_SAVED =
   'Save code copied. Keep it in a note to yourself and paste it under "Or paste a save code" on the "Ready when you are" screen. Downloading the file is still the safest way to keep your results.'
@@ -107,6 +113,12 @@ export const SHARE_SHARE = 'Share image'
 export const SHARE_PREPARING = 'Preparing the PNG…'
 export const SHARE_SIZES = 'The PNG is 2400 × 1260 pixels (twice the card size, for sharp screens). The SVG is 1200 × 630 pixels and stays sharp at any size.'
 /** A link to the card itself (the SVG) at full size: the preview is too small to read on a phone. */
+/**
+ * The label of the downloads (PNG and SVG) when "Share image" is the primary button, that is where the browser
+ * can hand image files to its share sheet (UX-REVIEW D15 C, a provisional default). Where it cannot, the
+ * downloads stay the first buttons and carry no group label.
+ */
+export const SHARE_SAVE_COPY = 'Save a copy'
 export const SHARE_FULLSIZE = 'View the card full size (opens in a new tab)'
 export const sharePngDone = (w: number, h: number): string => `Image saved: ${w} × ${h} pixels.`
 export const SHARE_SVG_DONE = 'Vector image saved.'

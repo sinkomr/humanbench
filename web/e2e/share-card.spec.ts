@@ -127,7 +127,7 @@ test.describe('the exports', () => {
     const download = page.waitForEvent('download')
     await button(page, 'Download image (PNG)').click()
     const file = await download
-    expect(file.suggestedFilename()).toMatch(/^humanbench-card-\d{4}-\d{2}-\d{2}\.png$/)
+    expect(file.suggestedFilename()).toMatch(/^humanbench-card-light-\d{4}-\d{2}-\d{2}\.png$/)
     const bytes = readFileSync((await file.path())!)
     expect(pngSize(bytes)).toEqual({ width: 2400, height: 1260 })
     // Decode it: the corner is the card's white, and the blob colour (Okabe–Ito blue) is drawn.
@@ -155,7 +155,7 @@ test.describe('the exports', () => {
     const download = page.waitForEvent('download')
     await button(page, 'Download vector image (SVG)').click()
     const file = await download
-    expect(file.suggestedFilename()).toMatch(/^humanbench-card-\d{4}-\d{2}-\d{2}\.svg$/)
+    expect(file.suggestedFilename()).toMatch(/^humanbench-card-light-\d{4}-\d{2}-\d{2}\.svg$/)
     const svg = readFileSync((await file.path())!, 'utf8')
     expect(svg).toBe(shown)
     expect(svg).toMatch(/^<\?xml version="1\.0" encoding="UTF-8"\?>\n<svg [^>]*width="1200" height="630" viewBox="0 0 1200 630"/)

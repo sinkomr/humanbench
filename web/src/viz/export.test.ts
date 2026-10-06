@@ -5,6 +5,7 @@
  * canvas, so the browser objects are fakes here; the real rasterisation is checked in the browsers (`e2e/share-card.spec.ts`).
  */
 
+import fc from 'fast-check'
 import { describe, expect, it, vi } from 'vitest'
 import { buildCard, cardSvg, CARD_H, CARD_W, PNG_SCALE } from './card'
 import { canShareImage, cardFileName, PNG_H, PNG_MIME, PNG_W, shareImage, svgBlob, svgDataUrl, svgToPng, SVG_MIME, type RasterEnv } from './export'
@@ -19,11 +20,27 @@ describe('sizes and names', () => {
     expect([PNG_W, PNG_H]).toEqual([2400, 1260])
   })
 
-  it('names files humanbench-card-<date>.<ext>, with no id in them', () => {
+  it('names files humanbench-card-<light|dark>-<date>.<ext>, with no id in them (D19)', () => {
     const d = new Date(2026, 8, 30, 23, 59)
-    expect(cardFileName('png', d)).toBe('humanbench-card-2026-09-30.png')
-    expect(cardFileName('svg', d)).toBe('humanbench-card-2026-09-30.svg')
-    expect(cardFileName('png', new Date(2027, 0, 5, 0, 0))).toBe('humanbench-card-2027-01-05.png')
+    expect(cardFileName('png', d, 'light')).toBe('humanbench-card-light-2026-09-30.png')
+    expect(cardFileName('svg', d, 'light')).toBe('humanbench-card-light-2026-09-30.svg')
+    expect(cardFileName('png', d, 'dark')).toBe('humanbench-card-dark-2026-09-30.png')
+    expect(cardFileName('svg', d, 'dark')).toBe('humanbench-card-dark-2026-09-30.svg')
+    expect(cardFileName('png', new Date(2027, 0, 5, 0, 0), 'dark')).toBe('humanbench-card-dark-2027-01-05.png')
+  })
+
+  it('gives the light and the dark card of one day different names, and the same colours the same name', () => {
+    fc.assert(
+      fc.property(fc.date({ min: new Date(1971, 0, 2), max: new Date(9998, 0, 2), noInvalidDate: true }), fc.constantFrom('png' as const, 'svg' as const), (d, kind) => {
+        const light = cardFileName(kind, d, 'light')
+        const dark = cardFileName(kind, d, 'dark')
+        expect(light).not.toBe(dark)
+        expect(light).toMatch(new RegExp(`^humanbench-card-light-\\d{4}-\\d{2}-\\d{2}\\.${kind}$`))
+        expect(dark).toMatch(new RegExp(`^humanbench-card-dark-\\d{4}-\\d{2}-\\d{2}\\.${kind}$`))
+        expect(light.replace('-light-', '-dark-')).toBe(dark)
+        expect(cardFileName(kind, new Date(d.getTime()), 'light')).toBe(light)
+      }),
+    )
   })
 
   it('dates the file with the person\'s own day, not the UTC one, in any time zone', () => {
@@ -31,11 +48,29 @@ describe('sizes and names', () => {
       // 2026-10-01 03:00 UTC is still 30 September in California and already 1 October in Auckland.
       const instant = new Date(Date.UTC(2026, 9, 1, 3, 0))
       vi.stubEnv('TZ', 'America/Los_Angeles')
-      expect(cardFileName('png', instant)).toBe('humanbench-card-2026-09-30.png')
+      expect(cardFileName('png', instant, 'light')).toBe('humanbench-card-light-2026-09-30.png')
       vi.stubEnv('TZ', 'Pacific/Auckland')
-      expect(cardFileName('png', instant)).toBe('humanbench-card-2026-10-01.png')
+      expect(cardFileName('png', instant, 'dark')).toBe('humanbench-card-dark-2026-10-01.png')
       vi.stubEnv('TZ', 'UTC')
-      expect(cardFileName('svg', instant)).toBe('humanbench-card-2026-10-01.svg')
+      expect(cardFileName('svg', instant, 'dark')).toBe('humanbench-card-dark-2026-10-01.svg')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('changes day exactly at the person\'s local midnight, in zones on both sides of UTC (D19)', () => {
+    try {
+      // Local midnight of 6 October 2026: 07:00 UTC in Los Angeles (PDT, UTC-7), 11:00 UTC the day before in Auckland (NZDT, UTC+13).
+      const cases: readonly [string, number][] = [
+        ['America/Los_Angeles', Date.UTC(2026, 9, 6, 7, 0, 0)],
+        ['Pacific/Auckland', Date.UTC(2026, 9, 5, 11, 0, 0)],
+        ['Asia/Kolkata', Date.UTC(2026, 9, 5, 18, 30, 0)],
+      ]
+      for (const [tz, midnight] of cases) {
+        vi.stubEnv('TZ', tz)
+        expect(cardFileName('png', new Date(midnight - 1000), 'light'), `${tz} one second before`).toBe('humanbench-card-light-2026-10-05.png')
+        expect(cardFileName('png', new Date(midnight), 'light'), `${tz} at midnight`).toBe('humanbench-card-light-2026-10-06.png')
+      }
     } finally {
       vi.unstubAllEnvs()
     }

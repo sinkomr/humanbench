@@ -648,8 +648,9 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
     await driver.finishEarly()
     await driver.resultsReady()
     const after = await downloadSave(page, driver)
-    // The session was built from the file alone: its own set, one rev above the device's, and nothing of the device's second set.
-    expect(after.file.brief_prefs!.contexts).toEqual([{ ...fileFirst, rev: mineFirst.rev + 1 }])
+    // The session was built from the file alone: its own set, one rev above the device's. The download also takes in the notes
+    // settings kept on this device under the same identifier, read at the click (D17): the device's second set comes with it.
+    expect(after.file.brief_prefs!.contexts).toEqual([{ ...fileFirst, rev: mineFirst.rev + 1 }, mineSecond])
 
     // The device keeps its own save of the second set, and the session's save holds the file's first set at the higher rev.
     // Joined, the device has the file's settings in slot 1 and still its own second set.

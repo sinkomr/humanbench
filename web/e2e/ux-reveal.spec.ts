@@ -266,7 +266,7 @@ test.describe('the share card (UX-032)', () => {
     await expect(png).not.toHaveAttribute('aria-disabled', 'true')
     await expect(png).toBeFocused()
     const [download] = await Promise.all([page.waitForEvent('download'), png.press('Enter')])
-    expect(download.suggestedFilename()).toMatch(/^humanbench-card-\d{4}-\d{2}-\d{2}\.png$/)
+    expect(download.suggestedFilename()).toMatch(/^humanbench-card-light-\d{4}-\d{2}-\d{2}\.png$/)
     await expect(card.locator('[data-message]')).toHaveText('Image saved: 2400 × 1260 pixels.')
   })
 
