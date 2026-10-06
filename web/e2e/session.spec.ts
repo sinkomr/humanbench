@@ -15,6 +15,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER } from '../src/copy'
 import { expectNoSeriousAxe } from './axe'
+import { FINISHED_HEADINGS } from './flow'
 import { useWideFont } from './wide-font'
 
 const h1 = (page: Page): Locator => page.getByRole('heading', { level: 1 })
@@ -151,13 +152,22 @@ test.describe('consent and the 18+ gate (§13)', () => {
     await languageClean(page)
   })
 
-  test('shows the three points and a privacy link that opens the notice in a new tab', async ({ page }) => {
+  test('shows the three points and a privacy link that opens the notice in this tab, and Back returns to the gate as it was (UX-011)', async ({ page }) => {
     await toGate(page)
     const link = page.getByRole('link', { name: /privacy notice and terms/ })
     await expect(link).toHaveAttribute('href', '#/privacy')
-    await expect(link).toHaveAttribute('target', '_blank')
-    await expect(link).toHaveAttribute('rel', /noopener/)
+    await expect(link).not.toHaveAttribute('target', /.+/)
     await expect(page.getByText('You must be 18 or older to take part.')).toBeVisible()
+    await page.getByRole('checkbox', { name: /18 or older/ }).check()
+    await link.click()
+    await expect(h1(page)).toHaveText('Privacy and terms')
+    expect(page.context().pages()).toHaveLength(1)
+    await expect(page).toHaveTitle('Privacy and terms · HumanBench')
+    await page.getByRole('link', { name: 'Back' }).click()
+    await expect(h1(page)).toHaveText('Before you start')
+    await expect(h1(page)).toBeFocused()
+    await expect(page.getByRole('checkbox', { name: /18 or older/ })).toBeChecked()
+    await expect(page).toHaveTitle('Before you start · HumanBench')
   })
 
   test('does not go on without agreeing, and says so', async ({ page }) => {
@@ -228,7 +238,7 @@ test.describe('privacy and terms (§13)', () => {
     await expect(page.getByText('Controller: TODO(user)')).toBeVisible()
     await expect(page.getByText('Contact: TODO(user)')).toBeVisible()
     await expect(page.getByText('Nothing is sent to a server')).toBeVisible()
-    await expect(page.getByRole('contentinfo')).toHaveText(DISCLAIMER)
+    await expect(page.locator('footer .disclaimer')).toHaveText(DISCLAIMER)
     await languageClean(page)
   })
 
@@ -311,12 +321,25 @@ test.describe('ready and practice (§10)', () => {
     await expectNoSeriousAxe(page)
     await button(page, 'Next practice question').click()
     await expect(page.getByText('Practice question 2 of 4')).toBeVisible()
-    await button(page, 'Back').first().click()
-    await expect(h1(page)).toHaveText('Practice complete')
-    await expectNoSeriousAxe(page)
-    await button(page, 'Back').click()
+    // "Stop practice" leaves at once (UX-004): there is no second "Back" to press.
+    await button(page, 'Stop practice').click()
     await expect(h1(page)).toHaveText('Ready when you are')
     expect(await page.evaluate(() => Object.keys(localStorage))).toEqual(['hb:consent:v1'])
+  })
+
+  test('practice to its end: "Practice complete" goes on to the ready screen with "Continue"', async ({ page }) => {
+    await toReady(page)
+    await button(page, 'Try practice questions first').click()
+    for (let n = 1; n <= 4; n++) {
+      await expect(page.getByText(`Practice question ${n} of 4`)).toBeVisible()
+      await answerItem(page)
+      await expect(page.getByText(/That was (not )?correct\./)).toBeVisible()
+      await button(page, n < 4 ? 'Next practice question' : 'Finish practice').click()
+    }
+    await expect(h1(page)).toHaveText('Practice complete')
+    await expectNoSeriousAxe(page)
+    await button(page, 'Continue').click()
+    await expect(h1(page)).toHaveText('Ready when you are')
   })
 })
 
@@ -325,10 +348,10 @@ test.describe('ready and practice (§10)', () => {
 test.describe('the session: interstitials, ring, checklist, controls (§10, A15)', () => {
   test('starts with the interstitial for reaction time, the progress ring at 0 and the cluster checklist', async ({ page }) => {
     await begin(page)
-    await expect(page.getByText(/About \d+ min\./)).toBeVisible()
+    await expect(page.getByText(/About \d+ minutes?\./)).toBeVisible()
     const ring = page.getByRole('progressbar', { name: 'Session time' })
-    await expect(ring).toHaveAttribute('aria-valuetext', '0 of about 28 min')
-    const list = page.getByRole('navigation', { name: 'Session checklist' })
+    await expect(ring).toHaveAttribute('aria-valuetext', '0 of about 30 min')
+    const list = page.getByRole('region', { name: 'Session checklist' })
     await expect(list.getByRole('listitem')).toHaveCount(5)
     await expect(list.getByRole('listitem').nth(1)).toContainText('Reasoning')
     // Estimation is measured by the confidence slider, so it has a row and is not listed as missing.
@@ -336,7 +359,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await expect(list.getByRole('listitem').nth(4)).toContainText('With each answer')
     await expect(list).toContainText('Not in this version')
     await expect(list.locator('.later')).not.toContainText('Estimation')
-    await expect(page.getByRole('contentinfo')).toHaveText(DISCLAIMER)
+    await expect(page.locator('footer .disclaimer')).toHaveText(DISCLAIMER)
     for (const colorScheme of ['light', 'dark'] as const) {
       await scheme(page, colorScheme)
       await expectNoSeriousAxe(page)
@@ -356,9 +379,12 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await begin(page)
     await skipPart(page)
     await expect(h1(page)).toHaveText('Up next: Matrix & Series')
-    const list = page.getByRole('navigation', { name: 'Session checklist' })
-    await expect(list.getByRole('listitem').nth(0)).toContainText('Up next') // Speed still has processing and reading speed
+    const list = page.getByRole('region', { name: 'Session checklist' })
+    // Speed still has processing and reading speed ahead, but that is not what comes next: Spatial/Memory is (UX-007a).
+    await expect(list.getByRole('listitem').nth(0)).toContainText('Later')
     await expect(list.getByRole('listitem').nth(1)).toContainText('Now')
+    await expect(list.getByRole('listitem').nth(2)).toContainText('Up next')
+    await expect(list.getByText('Up next', { exact: true })).toHaveCount(1)
     await expect(page.getByRole('status').first()).toContainText('Reaction Time skipped')
   })
 
@@ -508,7 +534,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await begin(page)
     await button(page, 'Finish early').click()
     await button(page, 'Finish now').click()
-    await expect(h1(page)).toHaveText('Session complete')
+    await expect(h1(page)).toHaveText('Session ended')
     await expect(page.getByText('Nothing was measured')).toBeVisible()
     await expectNoSeriousAxe(page)
     await button(page, 'Back to the start').click()
@@ -538,7 +564,8 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await page.clock.fastForward('40:00')
     await button(page, 'Resume').click()
     await expect(h1(page)).toHaveText('Up next: Matrix & Series')
-    await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuetext', 'Almost there')
+    // Past the planned time with parts still to do: "Almost there" is for the last part only (UX-008).
+    await expect(page.getByRole('progressbar', { name: 'Session time' })).toHaveAttribute('aria-valuetext', 'Over the planned time')
     await page.clock.runFor(2000)
     await expect(h1(page)).toHaveText('Up next: Matrix & Series')
   })
@@ -575,9 +602,11 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await page.clock.fastForward('56:00')
     await page.clock.runFor(1000)
     await expect(page.getByText('The session reached its time limit')).toHaveCount(0)
-    await expect(h1(page)).not.toHaveText('Session complete')
+    await expect(h1(page)).not.toHaveText(FINISHED_HEADINGS)
     await page.clock.fastForward('01:01')
-    await expect(h1(page)).toHaveText('Session complete', { timeout: 15_000 })
+    // Either end heading (UX-009b): the 56-minute jump runs the open question past its cap and records it as timed out
+    // (§7.4), so there is usually a profile ("Session complete"); what is tested here is when the stop comes.
+    await expect(h1(page)).toHaveText(FINISHED_HEADINGS, { timeout: 15_000 })
     await expect(page.getByText('The session reached its time limit')).toBeVisible()
     await expectNoSeriousAxe(page)
   })
@@ -663,10 +692,10 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     const ring = page.getByRole('progressbar', { name: 'Session time' })
     await page.clock.fastForward('10:00')
     await page.clock.runFor(1000)
-    await expect(ring).toHaveAttribute('aria-valuetext', '10 of about 28 min')
+    await expect(ring).toHaveAttribute('aria-valuetext', '10 of about 30 min')
     await page.clock.fastForward('05:00')
     await page.clock.runFor(1000)
-    await expect(ring).toHaveAttribute('aria-valuetext', '15 of about 28 min')
+    await expect(ring).toHaveAttribute('aria-valuetext', '15 of about 30 min')
   })
 })
 

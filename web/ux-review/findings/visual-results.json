@@ -1,0 +1,485 @@
+{
+  "reviewer": "visual-results",
+  "model": "opus",
+  "summary": "The results experience follows the blob rules on screen: the blob, band, muted spokes, not-measured stubs, tier glyphs and the bar view all draw as specified. The Okabe-Ito pairing still separates credible from muted marks under simulated protanopia, deuteranopia, tritanopia and greyscale (filled versus hollow markers carry it). Dark-mode axe found nothing serious on any results, notes or self-test route, and no route scrolls sideways or clips text at 320 px or at 200% text. The weak spots are around the edges of the screen design. Printing is broken: the disclaimer prints over the results footer, and with the system in dark mode the text prints at 1.1-1.7:1. The share card is drawn too small for a feed thumbnail, so its honesty caveats become unreadable at 600 px. The RT self-test table stacks digits one per line on an iPhone. The blob's text stays at 11-12.5 px on phones when the person raises their text size. On the page itself, headings, cards, buttons and focus colours come from four token sets and do not agree, a stray note sits outside the results column, and the required save step looks like every optional section two to three screens down. The notes builder is a clean single column but very long on desktop; a sticky preview would help.",
+  "coverage": [
+    "Chromium desktop tour at 320, 390, 768, 1024, 1280, 1440 px in light and dark, with metrics: results-building, results, results-drilldown, results-bars, results-open, results-leave, results-saved, share-card-dark, share-card-too-few, notes, notes-filled, notes-checker, notes-fit, notes-keep-error, notes-kept, notes-returning, rt-selftest, rt-selftest-keys, rt-selftest-results, dev-blob (profile=full), dev-blob-m1 (results-saved 1440-light screenshot timed out in the tour; 1440 was covered by details-results2 instead)",
+    "iPhone 13 (WebKit) tour at device width in light and dark: every results, notes and self-test route above",
+    "200% text zoom (root font) at 390 and 1280, light: every results, notes and self-test route; chart text sizes measured at 320/390/768/1280 at 100% and 200%",
+    "axe (WCAG A/AA) in dark at 1280 on every results, notes and self-test route: no violations",
+    "toResults(page, 2) with openDetails at 390, 1280, 1440 in light and dark, plus computed styles of headings, cards, buttons and notes",
+    "Chart close-ups at 2x: blob at 320/390/768/1280 light and dark, bar view at 320/390/1280, Speed drill-down at 390/1280, #/dev/blob full and m1 at 320/390/1280",
+    "Colour-vision simulation (Machado 2009 protanopia, deuteranopia, tritanopia, plus greyscale) of the results blob and the full synthetic profile, light and dark",
+    "Motion allowed: build-up frames, Skip animation, the drill-down scale animation frozen and stepped at 0/55/110/165/220 ms, wedge hover and click",
+    "Share card: downloaded PNG (2400x1260) and SVG in light and dark, viewed at 1200x630 and at a 600x315 thumbnail; panel at 390 and 1280 in both page schemes",
+    "Print: Chromium print-media screenshots, A4 PDFs (before and after save, light and dark OS, with and without background graphics) rasterised with Ghostscript, and a candidate fix for the footer overlap",
+    "Not covered: WebKit desktop and Pixel; Safari's and Firefox's own print engines; a real social-network crop of the card; the notes builder and self-test print"
+  ],
+  "findings": [
+    {
+      "id": "VIS2-01",
+      "severity": "major",
+      "category": "bug",
+      "title": "Printed results: the page disclaimer prints on top of the results footer",
+      "route": "results-saved",
+      "env": "chromium, page.pdf A4, print media, light and dark scheme, with and without background graphics",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/print-a4-light-last-page-overlap.png",
+        "web/test-results/ux-review/visual-results/crops/print-a4-footer-overlap-vs-block-shell.png",
+        "web/test-results/ux-review/visual-results/details-print/pdf-results-after-save-a4-dark-os-p07.png"
+      ],
+      "observed": "On the last A4 page, the app footer's §13 disclaimer is drawn over the R-5.6.5 resource line of the results footer. In the run without background graphics it lands over the 'Back to the start' button. Both texts become illegible. This happens in every PDF made (before save, after save, light and dark). The 1280 px print-media screenshot does not overlap, so only the paged layout is affected. The app shell is `#app { min-height: 100svh; display: flex; flex-direction: column }` (app.css:45-49). Injecting `@media print { #app { display: block; min-height: 0 } }` removes the overlap: the right half of the comparison crop, light-shell-block.pdf.",
+      "expected": "The disclaimer and the resource line each print once and stay legible, below the content (§13 disclaimer on every screen; A13 allow-listed resource sentence).",
+      "suggestion": "Add to web/src/app.css: `@media print { #app { display: block; min-height: 0; } footer { break-inside: avoid; } }`. This was checked with the candidate PDF in details-print2/light-shell-block.pdf.",
+      "files": ["web/src/app.css", "web/src/App.svelte"],
+      "spec_refs": ["§13", "A13", "R-5.6.5"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-02",
+      "severity": "major",
+      "category": "a11y",
+      "title": "Printing with the system in dark mode gives near-invisible text and black-haloed chart labels",
+      "route": "results-saved",
+      "env": "chromium, page.pdf A4, prefers-color-scheme: dark, background graphics off (Chrome's default) and on",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/print-a4-dark-os-no-backgrounds-p1.png",
+        "web/test-results/ux-review/visual-results/details-print/pdf-results-after-save-a4-dark-os-sheet.png"
+      ],
+      "observed": "There is no `@media print` rule anywhere in web/src, so the dark tokens apply to paper. With background graphics off, body text is --text #c9c7cf on white (1.67:1), headings are --r-fg #f1f0f4 (1.13:1) and #f4f3f6 (1.11:1), and the h1 and 'Profile by skill' nearly vanish. Every chart label keeps its halo in --hb-bg #15151a (paint-order: stroke), so each label prints as a black smudge with pale text inside. With background graphics on, all 7 pages print solid #15151a.",
+      "expected": "Printed results are readable (text >= 4.5:1 on paper) whatever the screen scheme, and the chart prints in its light palette.",
+      "suggestion": "Make the dark schemes screen-only. Change `@media (prefers-color-scheme: dark)` to `@media screen and (prefers-color-scheme: dark)` in app.css, render/common/render.css, brief/notes.css and brief/ui/ResultsTalk.svelte. In ProfileView.svelte, query `matchMedia('screen and (prefers-color-scheme: dark)')`: its existing change listener then flips the chart to THEMES.light when Chrome lays out for print. Add `@media print { :root { color-scheme: light; } }`.",
+      "files": ["web/src/app.css", "web/src/render/common/render.css", "web/src/brief/notes.css", "web/src/brief/ui/ResultsTalk.svelte", "web/src/viz/ProfileView.svelte"],
+      "spec_refs": ["§13", "§9.8"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-03",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "Share card is drawn too small: at a 600 px thumbnail its caveats and 'provisional' marking are unreadable",
+      "route": "share-card-dark",
+      "env": "downloaded PNG 2400x1260 (light and dark) viewed at 1200x630 and at 600x315; in-page preview on iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-share/downloads/card-1x-light.png",
+        "web/test-results/ux-review/visual-results/details-share/downloads/thumb-600-light.png",
+        "web/test-results/ux-review/visual-results/details-share/downloads/thumb-600-dark.png",
+        "web/test-results/ux-review/visual-results/tour-iphone/results-saved/390-light.png"
+      ],
+      "observed": "On the 1200x630 card, the footnotes are 13 px, the ring labels about 14 px, the spoke labels 16.5-18.7 px and the peak text 16-18 px. The blob's outer ring is about 290 px across, 46% of the card height. The right column leaves about 180 px empty between the peak and the footnotes. At 600x315, a common feed or chat preview size, the footnotes render at about 6.5 px and the ring labels at about 7 px. 'Rough estimates on a provisional scale. Ranges that overlap are not real differences.' and 'Rings: SD units, provisional' cannot be read, so the card travels without its honesty caveats. The in-page preview on an iPhone (about 320 px wide) is just as unreadable.",
+      "expected": "The caveats and the SD/provisional marking (A12) can be read where the card is usually seen, about 500-600 px wide.",
+      "suggestion": "Design for a 600 px read. Footnotes >= 20 px, cut to one sentence (for example 'Rough estimates on a provisional scale; overlapping ranges are not real differences.'). Ring labels >= 20 px, showing only 0 SD and +/-2 SD. Spoke labels >= 24 px, title 44 px. Grow the blob to fill the height (outer ring about 440 px across, centre near x=330). Move 'Rings: SD units, provisional · Centre −3 SD' into the right column's empty band at 20 px, where it no longer competes with the spoke labels.",
+      "files": ["web/src/viz/card.ts", "web/src/viz/card-copy.ts"],
+      "spec_refs": ["§9.9", "A12", "R-5.6.1"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-04",
+      "severity": "major",
+      "category": "layout",
+      "title": "RT self-test results table stacks digits one per line on phones",
+      "route": "rt-selftest-results",
+      "env": "iPhone 13 (WebKit, 390) light and dark; chromium 320 light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/rt-selftest-results-iphone-table.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/rt-selftest-results/320-light.png",
+        "web/test-results/ux-review/visual-results/tour-iphone/rt-selftest-results/390-light.png"
+      ],
+      "observed": "`table { overflow-wrap: anywhere }` lets the numeric columns shrink to one character while the long check names take the width. On an iPhone 13, '17.0' reads as 1 / 7 / . / 0 stacked vertically, 'p50' as p / 5 / 0, 'Max' as M / a / x, 'Result' as 'Resul / t' and 'Skipped' as 'Skipp / ed'. At 320 the result text breaks as 'For / infor / mati / on'. At 768 px and up the table is fine.",
+      "expected": "Each number stays on one line at 320-390 px, and only the check name wraps.",
+      "suggestion": "In RtSelfTest.svelte, set `th.num, td.num { white-space: nowrap; overflow-wrap: normal; }` and keep `overflow-wrap: anywhere` only on the first column. At max-width 30rem, either drop the n column or turn each row into two lines: the check name, then 'p50 16.7 · p95 16.7 · max 16.8 · Pass' (`display: grid` on tr).",
+      "files": ["web/src/selftest/RtSelfTest.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-05",
+      "severity": "major",
+      "category": "a11y",
+      "title": "Blob chart text does not grow with the browser text size on phones",
+      "route": "results",
+      "env": "chromium 320 and 390, text zoom 200% (root 32 px), light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-chart-text/002-blob-390-zoom200.png",
+        "web/test-results/ux-review/visual-results/details-chart-text/001-blob-390-zoom100.png",
+        "web/test-results/ux-review/visual-results/tour-zoom200-chromium/results/390-light.png"
+      ],
+      "observed": "Measured in details-chart-text/003-chart-text.json. At 100% the spoke labels render at 12.5 px and the ring labels and ring note at 11 px. At 200% text zoom, with body text at 32 px, they stay at 11.4-12.5 px (labels) and 10-11 px (ring labels) at 320 and 390. fitLayout aims at fixed CSS pixels (MIN_TEXT_PX = 11, LABEL_FONT = 12.5 in blob.ts) and never reads the root font size. At 1280 the labels do scale (25.7 px), but only because the chart box is 40rem wide.",
+      "expected": "Chart text follows the person's text size up to 200% (WCAG 1.4.4), or the page switches to the bar view, which does scale.",
+      "suggestion": "Pass the root font size into fitLayout and scale both floors by it: `rootPx / 16` times MIN_TEXT_PX and LABEL_FONT. ProfileView can read `parseFloat(getComputedStyle(document.documentElement).fontSize)` when it measures the width. When no layout keeps labels at that size, open in the bar view, or show a line such as 'Text is large: the bar view shows the same data' beside the toggle.",
+      "files": ["web/src/viz/blob.ts", "web/src/viz/ProfileView.svelte"],
+      "spec_refs": ["§13", "§9.5"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-06",
+      "severity": "minor",
+      "category": "bug",
+      "title": "'Save your file first to see the next steps' sits outside the results column, in the wrong style",
+      "route": "results",
+      "env": "chromium 768-1440 light and dark (at 1280: x=80 against x=224 for every other panel)",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/results-1280-light-pending-note.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1440-light.png"
+      ],
+      "observed": "The element is `<p class=\"hb-reveal-panel note\" data-pending>`. `.hb-screen p { margin: 0 0 1rem; max-width: 38rem }` (session.css, specificity 0,1,1) beats `.hb-reveal-panel { margin: 1.5rem auto 0 }` (0,1,0), so the auto margins are lost and the note starts at the screen's left edge. `.hb-reveal-panel .note` is a descendant selector, so the note style never applies either. It renders at 16 px #1f1d24 (computed) instead of the 15 px #4a4652 of the other notes.",
+      "expected": "The note is aligned with the panels and styled like the other notes.",
+      "suggestion": "In Reveal.svelte, wrap it: `<div class=\"hb-reveal-panel\"><p class=\"note\" data-pending>{SAVE_PENDING}</p></div>`. Alternatively, add `.hb-reveal-panel.note { margin-inline: auto; max-width: 52rem; font-size: 0.9375rem; color: var(--r-muted); }` to reveal.css.",
+      "files": ["web/src/reveal/Reveal.svelte", "web/src/reveal/reveal.css", "web/src/session/session.css"],
+      "spec_refs": ["§10"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-07",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Results headings use three colours and two sizes",
+      "route": "results-saved",
+      "env": "chromium 1280 light and dark (computed styles in details-styles/001 and 002 JSON)",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/tour-chromium/results-saved/1280-dark.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1280-light.png"
+      ],
+      "observed": "The h2 'Profile by skill' is 22 px #0b0a0f (dark #f4f3f6). The h2 'Your most distinctive peaks' is 20 px #3d3a44 (dark #c9c7cf): it renders inside .hb-profile through the `between` snippet and inherits the body text colour. Every other h2 is 20 px #1f1d24 (dark #f1f0f4). The h3 'Working with AI' is #3d3a44 while the other h3s are #1f1d24. In dark mode the peaks heading is visibly greyer than the headings around it.",
+      "expected": "All h2s on the page share one size and colour, and so do all h3s.",
+      "suggestion": "Use one rule: h2 1.25rem in var(--r-fg). Give PeaksSection's h2 `color: var(--r-fg)` (or reset the colour on the `between` wrapper in ProfileView), set ProfileView's h2 to 1.25rem, and give RevealCard's heading `color: var(--text-strong)` when it sits on the reveal.",
+      "files": ["web/src/viz/ProfileView.svelte", "web/src/reveal/PeaksSection.svelte", "web/src/reveal/reveal.css", "web/src/brief/ui/RevealCard.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-08",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Results disclosures ('Pace', 'Show the worked solution') have no open/closed marker",
+      "route": "results",
+      "env": "chromium 1280 and iPhone 13 (WebKit), light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/results-iphone-pace-summary.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1280-light.png"
+      ],
+      "observed": "`.hb-reveal-panel details > summary { display: flex }` removes the summary's list-item marker in both Chromium and WebKit. 'Pace' and the three 'Show the worked solution' rows look like plain bordered boxes, and 'Pace' alone in a box gives no hint that it opens. The notes builder's disclosures keep their triangle markers, so the two pages disagree.",
+      "expected": "Every disclosure shows that it opens and whether it is open.",
+      "suggestion": "In reveal.css: `summary { list-style: none; gap: 0.5rem; }`, `summary::-webkit-details-marker { display: none; }` and `summary::before { content: ''; width: 0.5rem; height: 0.5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }`. Then `details[open] > summary::before { transform: rotate(45deg); }`, animated only under `prefers-reduced-motion: no-preference`. Optionally rename 'Pace' to 'Show your pace'.",
+      "files": ["web/src/reveal/reveal.css", "web/src/reveal/NumbersSection.svelte", "web/src/reveal/WorkedSection.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-09",
+      "severity": "minor",
+      "category": "layout",
+      "title": "Bar view on phones breaks words mid-word, splits units from numbers and squeezes the lollipop to 60-80 px",
+      "route": "results-bars",
+      "env": "chromium 320 and 390 light (2x close-ups); facet table at 390",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/bars-320-light-top.png",
+        "web/test-results/ux-review/visual-results/details-charts/011-bars-390-light.png",
+        "web/test-results/ux-review/visual-results/details-charts/015-facets-speed-390-light.png"
+      ],
+      "observed": "Below 40rem the table uses `overflow-wrap: anywhere` and `word-break: break-word`. At 320 the headers read 'Estimat|e (SD)' and 'Compar|ed with 0 SD', and a row reads 'Comprehensi|on'. At 390 the facet table header reads 'Compare|d with 0 SD'. Values split across lines: '+0.88 (SD | 0.60)' and 'Overlaps 0 | SD'. The lollipop track for −3 to +3 SD is about 62 px at 320 and about 80 px at 390, so the dot, range and 0 tick blur together.",
+      "expected": "Whole words, numbers kept with their units, and a lollipop wide enough to read.",
+      "suggestion": "At max-width 40rem, lay each row out on two lines: the name and the relation, then the estimate, the interval and a full-width lollipop (svg width 100%, about 16rem). Show short headers at that width ('Est.', '90% range', 'vs 0 SD') and keep the full header text visually hidden. Use U+00A0 in '0 SD' and in '(SD 0.60)'. Replace `overflow-wrap: anywhere` with `hyphens: auto` on a `lang=\"en-GB\"` page.",
+      "files": ["web/src/viz/BarTable.svelte", "web/src/viz/copy.ts"],
+      "spec_refs": ["§9.5", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-10",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Ring labels are placed without regard to the data and cut through the curve and whiskers",
+      "route": "results",
+      "env": "chromium 1280 light 2x (results and #/dev/blob?profile=full); share card PNG",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-devblob/005-blob-full-1280-light.png",
+        "web/test-results/ux-review/visual-results/details-share/downloads/card-1x-light.png",
+        "web/test-results/ux-review/visual-results/details-charts/007-blob-1280-light.png"
+      ],
+      "observed": "Ring labels always sit on the top bisector (ringLabelAngle in blob.ts) with a halo in the page colour. When the profile passes there, the halo erases part of the data. In the full profile, '+1 SD' sits on the mean curve and the Logic Games marker. On the share card, '−1 SD' erases a piece of the curve between Matrix & Series and Spatial. On the results chart, '+2 SD' and '+1 SD' sit on the Logic Games spoke.",
+      "expected": "Ring labels never hide the mean curve, a marker or a whisker.",
+      "suggestion": "Choose the bisector with the most clearance between the ring radii and the crisp curve or whiskers of its two spokes, scored over the label boxes. Alternatively, draw the ring labels under the band, fuzz and curve with the halo knocking out only the grid. The same change applies to card.ts.",
+      "files": ["web/src/viz/blob.ts", "web/src/viz/BlobChart.svelte", "web/src/viz/card.ts"],
+      "spec_refs": ["§9.1", "A12"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-11",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Drill-down draws a full, empty sub-blob when no facet has enough data",
+      "route": "results-drilldown",
+      "env": "chromium 1280 and 390 light 2x",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-charts/017-facets-speed-1280-light.png",
+        "web/test-results/ux-review/visual-results/details-charts/015-facets-speed-390-light.png"
+      ],
+      "observed": "All four Speed facets show 'insufficient data (1 block; 5 needed)'. The panel still draws a 4-spoke chart, about 470 px tall at 1280 and 300 px at 390, with only stubs at the centre, then a table that repeats 'Insufficient data' four times. A facet needs 5 items, so after one session this empty chart is the usual case. The facet labels read 'Simple rt' and 'Choice rt' in lower case.",
+      "expected": "When nothing can be drawn, the panel says so in one line instead of showing an empty chart.",
+      "suggestion": "In ProfileView, build facetModel only when at least 3 facets are measured. When none are, show 'None of the 4 facets of Speed has enough data yet: each needs 5 scored items or blocks.' followed by the facet list. With 1-2 measured, show the table alone. Rename the facets 'Simple reaction time' and 'Choice reaction time'.",
+      "files": ["web/src/viz/ProfileView.svelte", "web/src/viz/facets.ts", "web/src/viz/copy.ts"],
+      "spec_refs": ["§9.6", "A12"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-12",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Clicking a wedge of the blob opens the facet panel off screen",
+      "route": "results",
+      "env": "chromium 1280x900 light, motion allowed",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-motion/016-wedge-click.png",
+        "web/test-results/ux-review/visual-results/details-motion/015-wedge-hover.png"
+      ],
+      "observed": "A click on a wedge (the mouse shortcut, §9.6) tints the wedge, but the facet panel opens below the peaks and the cluster buttons, about 700 px further down. Nothing else in view changes, so the click looks like it did almost nothing.",
+      "expected": "After a wedge click, the drill-down is visible.",
+      "suggestion": "In toggleCluster, after the panel renders when the click came from the chart: `panel.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest' })`. Then move focus to the facet heading (tabindex=-1). Alternatively, place the facet panel directly under the figure.",
+      "files": ["web/src/viz/ProfileView.svelte", "web/src/viz/BlobChart.svelte"],
+      "spec_refs": ["§9.6", "§10"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-13",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "The only strongly coloured spoke is the person's credible low, while the named peak is grey",
+      "route": "results",
+      "env": "chromium 1280 light; share card PNG; bar view 390",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1280-light.png",
+        "web/test-results/ux-review/visual-results/details-share/downloads/card-1x-light.png",
+        "web/test-results/ux-review/visual-results/details-charts/011-bars-390-light.png"
+      ],
+      "observed": "For the one-session save, Calibration (−0.86 SD, 90% range −1.70 to −0.02, 'Below 0 SD') is the only spoke in the blob colour, with a filled marker and a blue curve segment. Matrix & Series, the only distinctive peak named just below, is muted grey because its range overlaps 0 SD. The emphasis colour means 'the interval excludes 0' in either direction, so the eye goes first to the person's lowest skill, on the share card as well. This follows the §9.5 rule exactly, which makes it a matter for the owner.",
+      "expected": "Emphasis that does not read as 'look here, this is you', or that at least shows the direction.",
+      "suggestion": "Keep the §9.5 muting but show the direction without adding a hue. Draw credible-above spokes as now. Draw credible-below spokes with the 2 px stroke instead of 2.5 px and a hollow marker ringed in the blob colour, or add '(below 0 SD)' to their label. On the share card, draw credible lows in the muted style (the card already keeps Emotion lows off, R-5.6.4).",
+      "files": ["web/src/viz/BlobChart.svelte", "web/src/viz/blob.ts", "web/src/viz/card.ts"],
+      "spec_refs": ["§9.5", "A12", "R-5.6.4"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-14",
+      "severity": "minor",
+      "category": "visual",
+      "title": "No print stylesheet: controls print, primary buttons print white-on-nothing, cards split across pages",
+      "route": "results-saved",
+      "env": "chromium, page.pdf A4, light, background graphics off",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/print-a4-light-no-backgrounds-p2-p3.png",
+        "web/test-results/ux-review/visual-results/details-print/pdf-results-after-save-a4-sheet.png"
+      ],
+      "observed": "The results print to 7-8 A4 pages. The view toggle, the cluster buttons, the save, copy and share buttons, the share-card checkboxes and Show all/Hide all, and the focus-session form all print. With backgrounds off, 'Download save file' and 'Download image (PNG)' print as white text with no fill, close to invisible. The share-card preview, the blob caption and the worked-example cards break across pages.",
+      "expected": "A deliberate printout of the profile: the chart, the peaks and the numbers, without controls, and with no figure split across a page break.",
+      "suggestion": "Add a print block: `.toolbar, .drill, .hb-actions, [data-share-card] fieldset, [data-focus-form], .leave { display: none }`; `figure, .hb-reveal-card, details, .facet-panel, .preview { break-inside: avoid }`; `h2, h3 { break-after: avoid }`. Optionally open the worked solutions on beforeprint. The owner decides what a printout is for: a keepsake of the profile, or the whole page.",
+      "files": ["web/src/reveal/reveal.css", "web/src/viz/ProfileView.svelte", "web/src/app.css"],
+      "spec_refs": ["§10", "§13"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-15",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The required save step is two to three screens down and looks like every optional section",
+      "route": "results",
+      "env": "chromium 1280x900 light; iPhone 13 390x664 light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1280-light.png",
+        "web/test-results/ux-review/visual-results/tour-iphone/results/390-light.png"
+      ],
+      "observed": "The 'Save your results' h2 is at y≈1718 at 1280, 1.9 screens of 900. At 390 it is at y≈1810, 2.7 screens on an iPhone 13. It comes after the chart, a six-paragraph caption, the peaks and the cluster buttons. It has the same heading and no surface, like the optional sections around it. Until the person saves, the sections below only say 'Save your file first'.",
+      "expected": "A step that §10 calls 'prominent, and required before leaving' stands out from the optional sections and is visible from the top.",
+      "suggestion": "Give the unsaved panel a surface: `.hb-reveal-panel.save:not([data-saved='true']) { padding: 1rem 1.25rem; background: var(--r-surface); border: 2px solid var(--r-accent); border-radius: 0.75rem; }`. Under the practice badge, add one line, 'Your results stay only in this browser until you download the save file' with a link to #save, and remove it once saved.",
+      "files": ["web/src/reveal/SavePanel.svelte", "web/src/reveal/reveal.css", "web/src/reveal/Reveal.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-16",
+      "severity": "minor",
+      "category": "layout",
+      "title": "The results page has two left edges and a weak hero",
+      "route": "results",
+      "env": "chromium 1280 and 1440, light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/results-1280-light-header-gap.png",
+        "web/test-results/ux-review/visual-results/details-results2/005-results2-1440-light.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1440-light.png"
+      ],
+      "observed": "The h1 'Session complete' and the two summary lines follow the 72rem .hb-screen.wide column (x=80 at 1280, about 160 at 1440). Everything in the reveal is centred in 52rem (x=224 and 304). The h1 describes the session. The profile, which is the real hero, starts below a badge, then an empty 44 px row (the .anim row when motion is reduced and no button shows), then a stray status line 'Your profile is ready.', all under a 22 px h2. The chart is capped at 40rem, so its rings are about 300 px across even on a 1440 screen.",
+      "expected": "One content column, with the profile clearly the main thing on the page.",
+      "suggestion": "Add `.hb-screen.wide > h1, .hb-screen.wide > p { max-width: 52rem; margin-inline: auto; width: 100%; }`. Render .anim only when a button shows. Visually hide the status line (it stays a live region). Move the practice-adjusted badge under the chart as a note. Let .chart-box grow to 48rem at min-width 64rem.",
+      "files": ["web/src/session/session.css", "web/src/session/Finished.svelte", "web/src/reveal/RevealProfile.svelte", "web/src/viz/ProfileView.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-17",
+      "severity": "polish",
+      "category": "visual",
+      "title": "'Working with AI' card is styled differently from the share card above it",
+      "route": "results-saved",
+      "env": "chromium 1280 light and dark; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/results-saved-1280-light-cards.png",
+        "web/test-results/ux-review/visual-results/tour-iphone/results-saved/390-light.png"
+      ],
+      "observed": "The share-card article has a #f3f2f6 surface, a 1 px #75707f border and its h3 at margin-top 0. The 'Working with AI' card (RevealCard) is white with a 1 px #e3e2e6 border (1.29:1). Its h3 is #3d3a44 and gets `.hb-reveal-panel h3 { margin-top: 1rem }` on top of 0.75rem padding, so there are about 28 px above the heading against 12 px in the share card. Its warning box is narrower than the card (944 px against 1038 px at 1280).",
+      "expected": "The two after-save cards look like siblings.",
+      "suggestion": "On the reveal, render RevealCard inside .hb-reveal-card (or give it a `variant=\"reveal\"`): background var(--r-surface), border 1px solid var(--r-border), heading margin-top 0, warning box at full width.",
+      "files": ["web/src/brief/ui/RevealCard.svelte", "web/src/reveal/AfterSave.svelte", "web/src/brief/ui/ResultsTalk.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-18",
+      "severity": "polish",
+      "category": "visual",
+      "title": "Four token sets: three accent blues, three focus-ring colours, two dark backgrounds",
+      "route": "results",
+      "env": "chromium 1280 light and dark; rt-selftest-results 1280 dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1280-light.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/rt-selftest-results/1280-dark.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/notes/1280-light.png"
+      ],
+      "observed": "The page draws on four token sets. app.css: --bg #15151a dark. render.css: --r-bg #16151b, accent #1d4ed8/#8fb0ff, focus #b45309/#fbbf24. notes.css: accent #1d4ed8/#7aa2ff, focus #1d4ed8/#9db8ff. palette.ts: --hb-*, with the chart toolbar's focus and pressed state in #0072B2/#56B4E9. On one results page, the save buttons get an amber focus ring and the Blob/Bar view buttons a blue one, and the pressed toggle is #0072B2 while the primary buttons are #1d4ed8. The RT self-test uses its own solid buttons: #0b0a0f in light, #f4f3f6 (light-on-dark inverted) in dark.",
+      "expected": "One accent, one focus colour and one background per scheme across the app; Okabe-Ito reserved for data marks.",
+      "suggestion": "Add src/tokens.css with --hb-accent #1d4ed8 (dark #8fb0ff), --hb-focus #b45309 (dark #fbbf24) and --hb-bg #fff / #15151a. Point render.css, notes.css and app.css at it. Restyle the ProfileView toolbar and drill buttons as .hb-btn, and the self-test buttons as .hb-btn and .hb-primary.",
+      "files": ["web/src/app.css", "web/src/render/common/render.css", "web/src/brief/notes.css", "web/src/viz/palette.ts", "web/src/viz/ProfileView.svelte", "web/src/selftest/RtSelfTest.svelte"],
+      "spec_refs": ["§9.8", "§13"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-19",
+      "severity": "polish",
+      "category": "visual",
+      "title": "After the save, four filled primary buttons compete",
+      "route": "results-saved",
+      "env": "chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/crops/results-saved-1280-light-cards.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/results-saved/1280-light.png"
+      ],
+      "observed": "Four buttons are filled #1d4ed8 within about 3000 px of each other: 'Download save file' (still primary after the save is done), 'Download image (PNG)', 'Copy the text to paste first' and 'Start a 20-minute focus session'.",
+      "expected": "One primary action per section, and none for a step that is already done.",
+      "suggestion": "Once data-saved is true, drop .hb-primary from 'Download save file'. Make the results-talk copy button secondary. Keep primary for the PNG download and the focus-session start.",
+      "files": ["web/src/reveal/SavePanel.svelte", "web/src/brief/ui/ResultsTalk.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-20",
+      "severity": "polish",
+      "category": "layout",
+      "title": "Notes builder on desktop: one 44rem column, with the live preview two screens from the pickers",
+      "route": "notes-filled",
+      "env": "chromium 1280 and 1440 light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/tour-chromium/notes/1280-light.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/notes-filled/1440-light.png"
+      ],
+      "observed": "The page is 10,575 px tall at 1280 (14,529 px in the filled state), all in a column about 704 px wide. The preview, '4. Your notes', starts at y≈3140, two screens below the topic picker at y≈1300, so a change cannot be seen together with its effect. At 1440 more than half the width is empty.",
+      "expected": "On a wide screen, the choices and their effect are visible together.",
+      "suggestion": "At min-width 64rem: `.builder { display: grid; grid-template-columns: minmax(0, 40rem) minmax(0, 30rem); gap: 2.5rem; }`. Sections 1-3 go on the left. The preview box goes on the right with `position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto`. The line-by-line list stays on the left below.",
+      "files": ["web/src/brief/NotesBuilder.svelte", "web/src/brief/notes.css"],
+      "spec_refs": ["§17"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-21",
+      "severity": "polish",
+      "category": "content",
+      "title": "Share card has no address, so a card seen out of context gives no way to find the test",
+      "route": "share-card-dark",
+      "env": "downloaded PNG light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-share/downloads/card-1x-light.png",
+        "web/test-results/ux-review/visual-results/details-share/downloads/thumb-600-dark.png"
+      ],
+      "observed": "The only brand element is the word 'HumanBench' at 22 px in #0072B2 (light) or #56B4E9 (dark). There is no address and no mark.",
+      "expected": "A shared card says where it comes from.",
+      "suggestion": "Put the site address (the Pages or custom domain) at 18 px in textMuted at the bottom right of the right column, and add a 20 px blob glyph before the name. The owner chooses the domain.",
+      "files": ["web/src/viz/card.ts", "web/src/viz/card-copy.ts"],
+      "spec_refs": ["§9.9"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-22",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Focus-session checkboxes have 24 px targets; the share card's have 44 px rows",
+      "route": "results-saved",
+      "env": "iPhone 13 light and dark (metrics: 6 labels 24 px tall)",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/tour-iphone/results-saved/390-light.png"
+      ],
+      "observed": "In FocusPicker the label is a sibling of the 24 px checkbox and only as tall as its text (24 px), so the 44 px row is not clickable. In ShareCard the label wraps the input and is 44 px tall. The fieldset borders differ too: 2px #75707f in FocusPicker, 1px in ShareCard.",
+      "expected": "The same checkbox pattern everywhere, with 44 px rows on touch screens.",
+      "suggestion": "In FocusPicker: `.check label { flex: 1; min-height: 2.75rem; display: flex; align-items: center; }` and a 1px fieldset border.",
+      "files": ["web/src/reveal/FocusPicker.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS2-23",
+      "severity": "polish",
+      "category": "visual",
+      "title": "On a phone the plot fills only about 42% of the chart width, because 'not measured' labels take as much room as measured ones",
+      "route": "results",
+      "env": "chromium 320 and 390 light and dark, 2x",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-charts/001-blob-320-light.png",
+        "web/test-results/ux-review/visual-results/details-charts/004-blob-390-dark.png"
+      ],
+      "observed": "At 390 the rings are about 150 px across in a 358 px chart; at 320, about 120 px in 288 px. Ten of the 17 spokes are not measured, and each carries a two-line label ('Arguments / not measured'). The measured data shrinks to a small star of markers and whiskers.",
+      "expected": "On a phone, the measured data gets most of the space.",
+      "suggestion": "At max-width 40rem with 5 or more unmeasured spokes, label unmeasured spokes with the short name only: the dashed spoke and the caption already say 'not measured', and the table lists them. Alternatively, leave them unlabelled and add 'Not measured: Logic games, Arguments, …' under the chart. Aim for rings at least 55% of the chart width.",
+      "files": ["web/src/viz/blob.ts", "web/src/viz/ProfileView.svelte"],
+      "spec_refs": ["§9.7"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS2-24",
+      "severity": "polish",
+      "category": "visual",
+      "title": "Worked examples: the quantitative question is all bold, and the cards nest boxes in boxes",
+      "route": "results-open",
+      "env": "chromium 1280 and 1440 light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-results/details-results2/005-results2-1440-light.png",
+        "web/test-results/ux-review/visual-results/tour-chromium/results/1280-light.png"
+      ],
+      "observed": "The quantitative stem renders inside <strong> (WorkedSection.svelte:80), so the whole word problem is bold, while the matrix and series prompts are regular with only the terms bold. Each example card (a bordered surface) holds a second bordered surface, the details, so there are two borders 16 px apart.",
+      "expected": "The same question style in all three examples, and a single level of container.",
+      "suggestion": "Render the quant stem as a plain <p> (bold only the numbers if wanted). Inside .hb-reveal-card, give details `border: 0; border-top: 1px solid var(--r-border); border-radius: 0; padding-inline: 0`.",
+      "files": ["web/src/reveal/WorkedSection.svelte", "web/src/reveal/reveal.css"],
+      "spec_refs": ["§10"],
+      "confidence": "high",
+      "owner_decision": false
+    }
+  ]
+}

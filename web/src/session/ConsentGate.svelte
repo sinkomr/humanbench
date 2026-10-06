@@ -1,7 +1,9 @@
 <!--
   Consent and the 18+ gate (ROADMAP M1.15; DESIGN §13 "Consent and age gate"): "I am 18 or older" and
   a terms and privacy summary (three points and a link). Under-18s are blocked and nothing is stored:
-  this component never touches storage; the flow records the consent only after `onagree`.
+  this component never touches storage; the flow records the consent only after `onagree`. The notice link opens
+  in this tab: the flow stays mounted under the notice, and "Back" there returns to this screen with the box as
+  it was (UX-011).
 -->
 <script lang="ts">
   import Screen from './Screen.svelte'
@@ -45,10 +47,10 @@
         <li>{point}</li>
       {/each}
     </ul>
-    <p><a class="hb-standalone-link" href="#/privacy" target="_blank" rel="noopener">{GATE_LINK}</a></p>
+    <p><a class="hb-standalone-link" href="#/privacy">{GATE_LINK}</a></p>
     <form onsubmit={submit} novalidate>
       <div class="check">
-        <input id="{uid}-agree" type="checkbox" bind:checked={agreed} aria-describedby={showError ? `${uid}-err` : undefined} />
+        <input id="{uid}-agree" type="checkbox" bind:checked={agreed} aria-describedby={showError && !agreed ? `${uid}-err` : undefined} aria-invalid={showError && !agreed ? 'true' : undefined} />
         <label for="{uid}-agree">{GATE_AGREE}</label>
       </div>
       {#if showError && !agreed}

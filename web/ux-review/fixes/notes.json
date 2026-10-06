@@ -1,0 +1,170 @@
+{
+  "area": "notes",
+  "model": "claude-sonnet-5-5",
+  "items": [
+    {
+      "id": "UX-049",
+      "outcome": "fixed",
+      "summary": "The notes page now has a 'HumanBench' link home (header, BASE_URL), a 'Privacy and terms (opens in a new tab)' link to index.html#/privacy in the footer (own tab, so nothing typed is lost), and a first-in-page skip link 'Skip to copying your notes' that is off screen until focused and moves focus (by script too, for Safari) to a new tabindex=-1 group around the provider warning, anti-coercion, placement, 'What to look for' and the copy/download buttons. Focus lands on the warnings, not past them, and 'Copy the notes' is the next Tab stop (second if the destination is a coding-agent file, where Download comes first). Copy/download behaviour is unchanged. main's top padding went from 1.5rem to 0.5rem so the new header does not push the first screen down.",
+      "files": [
+        "web/src/brief/NotesBuilder.svelte",
+        "web/src/brief/ui/Paste.svelte",
+        "web/src/brief/copy.ts"
+      ],
+      "tests_added": [
+        "src/brief/NotesBuilder.dom.test.ts: describe 'the way around the page (UX-049)' (5 tests: skip link first and targets the group; click moves focus and the warnings are inside the target, Copy is the first stop; download-first order for a coding agent; home and privacy links and their attributes; frame outside main)",
+        "e2e/ux-notes.spec.ts: UX-049 (5 tests): skip link first Tab stop, off screen until focused, Enter lands on #copy-notes, Copy the notes within 3 presses and works; click path leaves the address alone; home link and privacy link in a new tab; axe light/dark with the skip link focused; 320 px reflow"
+      ],
+      "tests_changed": [
+        "src/brief/NotesBuilder.dom.test.ts 'offers no send button, no pre-filled chat link and no external link': asserted no <a>/[href] at all; now asserts the only links are the three frame links (skip link, home, privacy), all same-site and outside <main>, plus the unchanged no src/action/form-method checks",
+        "src/brief/NotesBuilder.dom.test.ts 'offers the control-word card, the data-free snippet and for-ai.md': asserted no a[href] anywhere; now 'main a[href]' (the notes still never link to for-ai.md; the frame's links are outside main)"
+      ],
+      "notes": "The skip link lands on the warnings on purpose (the provider warning is required reading before copying, R-17.10); it does not jump straight to the button. COPY_TARGET_ID ('copy-notes') lives in copy.ts. The privacy link text carries ' (opens in a new tab)' like the reveal card's link."
+    },
+    {
+      "id": "UX-050",
+      "outcome": "fixed",
+      "summary": "SaveSettings: after 'Keep my settings' succeeds, focus moves (after tick) to the 'Download a save file with my settings' button that replaces it (not to the kept paragraph: the live region already announces 'now kept', and focusing the paragraph would make a screen reader read the same sentence twice). The 18+ checkbox gets aria-invalid=\"true\" while its error shows (with the existing aria-describedby), in both the keep and the download-only form. A refused keep (no tick) leaves focus on the button.",
+      "files": [
+        "web/src/brief/ui/SaveSettings.svelte"
+      ],
+      "tests_added": [
+        "src/brief/NotesBuilder.keep.dom.test.ts: describe 'focus, errors and the top of the page around keeping (UX-050, UX-052)' (focus on download button after keep, also with adultKnown; focus unchanged when refused; aria-invalid set and cleared, also in the download-only case)",
+        "e2e/ux-notes.spec.ts: UX-050 (3 tests): focus on download-settings after keep; aria-invalid + accessible description when unticked; axe"
+      ],
+      "tests_changed": [],
+      "notes": "The triage test text said 'document.activeElement is the kept paragraph'; it allowed 'or the Download settings button' in the fix text, and the button is what the dom/e2e tests assert."
+    },
+    {
+      "id": "UX-051",
+      "outcome": "fixed",
+      "summary": "WherePicker: each preset radio is named by its short label (aria-labelledby on a label span) and described by the longer line (aria-describedby on the hint span); the hint stays inside the <label>, so a tap anywhere in the block still picks the radio. Ids come from $props.id() so they are unique per component.",
+      "files": [
+        "web/src/brief/ui/WherePicker.svelte"
+      ],
+      "tests_added": [
+        "src/brief/NotesBuilder.dom.test.ts: describe 'where to use the notes: radios named by their short label (UX-051)' (2 tests: names are the six short labels and descriptions the hints; ids unique and a click on the long line picks the radio)",
+        "e2e/ux-notes.spec.ts: UX-051 (2 tests): getByRole('radio', {name, exact}) + toHaveAccessibleDescription for all six; tapping the long line picks it and axe is clean"
+      ],
+      "tests_changed": [],
+      "notes": "Preview.svelte's two 'Which topics to include' radios nest their hints the same way; SR-14 named only WherePicker, so they were left alone (NotesBuilder.dom.test.ts:288 finds one by its label text). Candidate for a later pass."
+    },
+    {
+      "id": "UX-052",
+      "outcome": "partial",
+      "summary": "Done: Checker flag lines read '(line 14)' / '(lines 14 and 15)' / '(lines 14, 15 and 16)' (new ui/format.ts: sayList, lineRef); Preview form name 'skill' (lower case beside 'short'); topic group 'Maths and numbers' (AREAS label only, id unchanged, not part of any note line); topics hint '...how to adjust its explanations.'; review-by sentence 'The notes you made in {month} may need another look. Check that they still say what you want, and copy them again if you change anything.'; notes.html noscript 'Notes for your AI needs JavaScript. Turn it on to continue.'; at the top of the page the 'keeps nothing' paragraph is replaced once settings are kept: 'Your settings from last time are here. Only your choices are kept, never what you typed.' when they came back from an earlier visit, 'Your settings are kept on this device. Only your choices are kept, never what you typed.' when kept in this visit (only while the browser actually keeps them; back to the 'keeps nothing' text after 'Remove my notes settings'). The duplicate 'Your settings are now kept on this device.' line is no longer drawn (visually-hidden class once the state line says it) but the same element, testid keep-status, role=status text is still announced, because e2e/routes.ts:212 and e2e/session-save.spec.ts:148,578 match keep-status text word for word. NOT done: the month in words ('January 2025') in the review-by sentence: e2e/routes.ts:814 (notes-returning open) asserts toContainText('2025-01') and the a11y/keyboard specs open that route, so changing it would break them (every notes-returning a11y test failed when it was tried); the approved withdrawal sentence (ui-copy.txt:13, returning.test.ts:26-28) pins an ISO month word for word, so withdrawn/outdated sentences keep it too. monthName() (table, no Date: scripts/brief-source.test.ts bans `new Date` in returning.ts) is exported and tested, ready for a one-word switch. See integration_requests.",
+      "files": [
+        "web/src/brief/ui/Checker.svelte",
+        "web/src/brief/ui/format.ts (new)",
+        "web/src/brief/returning.ts",
+        "web/src/brief/ui/Preview.svelte",
+        "web/src/brief/topics.ts",
+        "web/src/brief/copy.ts",
+        "web/src/brief/NotesBuilder.svelte",
+        "web/src/brief/ui/SaveSettings.svelte",
+        "web/notes.html"
+      ],
+      "tests_added": [
+        "src/brief/ui/format.test.ts (new): sayList and lineRef, with fast-check properties (order kept, no comma before the last 'and', singular exactly when one line)",
+        "src/brief/returning.test.ts: describe 'the month in words (UX-052)' (monthName table and fast-check over 1900-2199 x 12 months; review-by wording; withdrawal sentence untouched)",
+        "src/brief/Checker.dom.test.ts: 'names the lines a warning is about with the right plural'",
+        "src/brief/NotesBuilder.dom.test.ts: describe 'copy polish (UX-052)' (Maths heading, hint wording, '(short form)' then '(skill form)')",
+        "src/brief/NotesBuilder.keep.dom.test.ts: top-of-page text before keeping, after keeping, after removal, restored on a returning visit, not claimed when the browser would not keep; 'now kept' still announced but visually hidden, other messages shown",
+        "e2e/ux-notes.spec.ts: UX-052 (3 tests: checker plural in a real browser; Maths heading and '(skill form)' and hint; noscript text in the served page) and UX-050 returning-visit test (top text, keep-state, empty keep-status after reload)"
+      ],
+      "tests_changed": [
+        "src/brief/Checker.dom.test.ts 'says when the review-by month has passed': asserted toContain('due for another look'); now asserts the whole new sentence (with the stored month)"
+      ],
+      "notes": "Gated/pinned text untouched: no grammar/render/profiles/contexts/interests text, no preamble, no CLAIM, no look.ts/forai.ts text (their 'pitches' wording is note-line help text, not the topics hint). surfaces.json and contexts.ts blurbs are out of scope as the triage says."
+    },
+    {
+      "id": "UX-053",
+      "outcome": "fixed",
+      "summary": "RevealCard: on the reveal it now wears the share card's look: background var(--r-surface), border 1px var(--r-border), text var(--r-fg), heading var(--r-fg) with margin-top 0 (the reveal's '.hb-reveal-panel h3 { margin-top: 1rem }' no longer adds 28 px), margin 0 0 1rem and padding 0.75rem 1rem like the sibling; app tokens stand in where the --r-* ones are undefined (dev demo). ResultsTalk: the 'never paste' warning box spans the card (max-width: none over the reveal's 44rem paragraph cap). notes.css and ResultsTalk.svelte use '@media screen and (prefers-color-scheme: dark)', so paper keeps the light colours. Gated texts untouched.",
+      "files": [
+        "web/src/brief/ui/RevealCard.svelte",
+        "web/src/brief/ui/ResultsTalk.svelte",
+        "web/src/brief/notes.css"
+      ],
+      "tests_added": [
+        "e2e/ux-notes.spec.ts: UX-053 (4 tests): on the real reveal (toResults + save download) the reveal-card and the share-card article have the same background, border, radius and heading colour, heading gap 0, warning box as wide as the card, axe; card colours change with the scheme on the dev demo; print media + dark scheme keeps notes.css's light --surface and ResultsTalk's light --rt-note-bg while screen + dark keeps the dark ones"
+      ],
+      "tests_changed": [],
+      "notes": "The 'screen and' form of the dark media query is what the triage prescribes for app.css (UX-015), render.css (UX-027) and the chart (UX-047) too. scripts/contrast.test.ts:212 (`const DARK = '@media (prefers-color-scheme: dark)'`, compared with !== in the 'no colour token is declared where the sheets above do not read it' test) matches the old string, so that one test is red for every file that switched (app.css, render.css, notes.css, ResultsTalk.svelte): see integration_requests."
+    }
+  ],
+  "integration_requests": [
+    {
+      "id": "UX-052",
+      "file": "web/e2e/routes.ts",
+      "change": "Line 814 (notes-returning open): `toContainText('2025-01')` -> `toContainText('January 2025')`. Apply together with the next three edits (they must land in one commit, or notes-returning and the a11y/keyboard specs that open it go red)."
+    },
+    {
+      "id": "UX-052",
+      "file": "web/src/brief/returning.ts",
+      "change": "reviewByMessage: `The notes you made in ${month} may need another look.` -> `The notes you made in ${monthName(month)} may need another look.` (monthName is already exported above it). Leave withdrawnMessage/outdatedMessage on the stored month: the approved withdrawal draft (src/brief/__fixtures__/proposal/ui-copy.txt:13) is pinned word for word; changing it is an owner decision."
+    },
+    {
+      "id": "UX-052",
+      "file": "web/src/brief/returning.test.ts",
+      "change": "In 'words the review-by sentence plainly, on the stored month for now...' expect reviewByMessage('2025-01') to be 'The notes you made in January 2025 may need another look. Check that they still say what you want, and copy them again if you change anything.' and rename the test (drop 'on the stored month for now')."
+    },
+    {
+      "id": "UX-052",
+      "file": "web/src/brief/Checker.dom.test.ts",
+      "change": "In 'says when the review-by month has passed' expect 'The notes you made in January 2026 may need another look. Check that they still say what you want, and copy them again if you change anything.' (visit(['F1'], '2026-01'))."
+    },
+    {
+      "id": "UX-053",
+      "file": "web/scripts/contrast.test.ts",
+      "change": "Line 212: `const DARK = '@media (prefers-color-scheme: dark)'` must also accept '@media screen and (prefers-color-scheme: dark)' (e.g. `const DARK = new Set([...both])` and `!DARK.has(t.media)` in the stray-token test at ~224). app.css, render.css, notes.css and ResultsTalk.svelte now use the screen-only form; the failing test is 'every colour token of src/ sits in a rule that a sheet above stands for, at the top level or under prefers-color-scheme: dark' (30 strays, all that one string). scripts/css-tokens.ts matches /prefers-color-scheme:\\s*dark/ as a substring, so the SHEETS pairs themselves still resolve."
+    }
+  ],
+  "gates": {
+    "check": "svelte-check --tsconfig tsconfig.app.json --fail-on-warnings: 0 errors, 0 warnings (1192 files, last run after all edits; it was red twice earlier for files of other packages mid-edit); tsc -p tsconfig.node.json and tsc -p tsconfig.scripts.json: exit 0 (the latter includes e2e/ux-notes.spec.ts).",
+    "unit": "vitest run src/brief src/brief-store scripts/brief-source.test.ts scripts/pages.test.ts scripts/a11y-static.test.ts scripts/language-lint.test.ts scripts/contrast.test.ts (final run): 626 passed, 1 failed = scripts/contrast.test.ts 'every colour token of src/ sits in a rule that a sheet above stands for...' (the DARK string; integration request UX-053; also red for app.css and render.css of the session and render packages). Full `npm test` earlier in the work: 30 failures in 11 files, all in files of other packages mid-edit (SessionScreen, components, ProfileView, blob, card, facets, session/copy, App.served, timing-lint on src/session/Ready.svelte:76) plus that contrast test; scripts/brief-source.test.ts failed once from my first monthName (`new Date`) and passes now.",
+    "build": "npm run build -- --outDir test-results/iso/fix-notes/dist-gate: ok (run again after the last edit)",
+    "e2e": [
+      {
+        "spec": "e2e/ux-notes.spec.ts",
+        "project": "chromium",
+        "result": "17 passed (twice, the second time after the last source edit)"
+      },
+      {
+        "spec": "e2e/ux-notes.spec.ts",
+        "project": "iphone",
+        "result": "17 passed"
+      },
+      {
+        "spec": "e2e/ux-notes.spec.ts",
+        "project": "webkit",
+        "result": "17 passed"
+      },
+      {
+        "spec": "e2e/notes.spec.ts",
+        "project": "chromium",
+        "result": "39 passed (twice)"
+      },
+      {
+        "spec": "e2e/notes.spec.ts",
+        "project": "iphone",
+        "result": "35 passed, 4 skipped (desktop-only tests)"
+      },
+      {
+        "spec": "e2e/notes.spec.ts",
+        "project": "webkit",
+        "result": "37 passed, 2 skipped"
+      },
+      {
+        "spec": "e2e/a11y.spec.ts --grep notes",
+        "project": "chromium",
+        "result": "56 passed, 0 failed (final run). An earlier run with the month in words showed 7 failures, all notes-returning, because e2e/routes.ts:814 expects '2025-01'; that change was reverted and is an integration request"
+      },
+      {
+        "spec": "e2e/a11y.spec.ts --grep notes",
+        "project": "iphone",
+        "result": "47 passed, 16 skipped, 0 failed (final run; same earlier notes-returning failures, same cause)"
+      }
+    ]
+  }
+}

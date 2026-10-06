@@ -65,6 +65,9 @@ describe('the data page (M2.7; DESIGN §8, §13)', () => {
       await tick()
       expect(t.args('mirror_get')).toEqual({ p_anon_id: ANON, p_phrase: PHRASE })
       expect(root.textContent).toContain('Found your backup')
+      // It names the screen that has the load control, not the start screen, which has none (UX-056).
+      expect(root.textContent).toContain('load it on the "Ready when you are" screen')
+      expect(root.textContent).not.toContain('start screen')
       click(buttonByText(root, 'Download the backup'))
       expect(download).toHaveBeenCalledTimes(1)
       expect(jcs(download.mock.calls[0]![0])).toBe(jcs(got))

@@ -383,17 +383,24 @@ function gated(summary: Summary | null, note: string | undefined, thresholdMs: n
   return summary === null ? { summary: null, pass: null, note: note ?? 'not measured' } : { summary, pass: passes(summary, thresholdMs) }
 }
 
-/** The note on the informational input-latency metrics (§11.6: RT uses the event timestamp). */
-export const INPUT_LATENCY_NOTE = 'Informational: RT responses use the input event timestamp, so this dispatch delay is excluded from RT.'
+/** The note on the informational input-latency metrics (§11.6: RT uses the event timestamp). Plain words: a person can read the copied report. */
+export const INPUT_LATENCY_NOTE = 'For information only: reaction times use the time stamp of the key press or tap itself, so this delay is not part of them.'
 
-/** The note when the event clock is offset from performance.now() and RT uses the handler clock. */
-export const EVENT_OFFSET_NOTE = 'event timestamps are offset from performance.now() in this browser; RT falls back to the handler clock'
+/** The note when event time stamps are not on the performance.now() timeline (§11.6: RT then falls back to the clock read in the handler). */
+export const EVENT_CLOCK_NOTE = "This browser's event time stamps use a different clock, so reaction times are timed when the page handles the press, which is less precise."
+
+/**
+ * The note when the event clock is offset from performance.now() by more than {@link MAX_EVENT_LAG_MS} (p50 lag) and RT
+ * uses the handler clock, so the lag is gated like the other timing checks. Not {@link EVENT_CLOCK_NOTE}: there the
+ * time stamps are not on the performance.now() timeline at all. Plain words: a person can read the copied report.
+ */
+export const EVENT_OFFSET_NOTE = `This browser's press time stamps are offset from its timer by more than ${MAX_EVENT_LAG_MS} ms. So reaction times are timed when the page handles the press, and this delay is checked like the other timing checks.`
 
 function inputReport(samples: readonly InputSample[] | null, thresholdMs: number): MetricReport {
   if (samples === null) return { summary: null, pass: null, note: 'skipped' }
   if (samples.length === 0) return { summary: null, pass: null, note: 'no events' }
   const s = inputLatency(samples)
-  if (s === null) return { summary: null, pass: null, note: 'event.timeStamp is not on the performance.now() timeline; RT falls back to performance.now() in the handler' }
+  if (s === null) return { summary: null, pass: null, note: EVENT_CLOCK_NOTE }
   // The handler clock is what RT would use: its dispatch delay counts, so gate it like the rest.
   if (rtSourceForLag(s) === 'handler') return { summary: s, pass: passes(s, thresholdMs), note: EVENT_OFFSET_NOTE }
   return { summary: s, pass: null, note: INPUT_LATENCY_NOTE }

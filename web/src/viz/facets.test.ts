@@ -4,7 +4,8 @@ import { AXIS_INDEX } from '../engine/axes'
 import { eapAxis, scoreAll } from '../engine/scorer'
 import type { Observation } from '../engine/types'
 import { countText, notMeasuredText } from './copy'
-import { clusterFacets, FACET_MIN_ITEMS, facetLabel, unmeasuredReasons, type FacetObservation } from './facets'
+import { FAMILIES } from '../tasks/registry'
+import { clusterFacets, FACET_LABELS, FACET_MIN_ITEMS, facetLabel, unmeasuredReasons, type FacetObservation } from './facets'
 import { Z90 } from './geometry'
 import { axisEstimates } from './profile'
 import { syntheticProfile } from './synthetic'
@@ -77,7 +78,7 @@ describe('facet drill-down (§9.6, A12)', () => {
     const rows = clusterFacets(p.input.score, p.facetObservations, 'Spatial/Memory', { catalog: p.catalog, unmeasured: unmeasuredReasons(axisEstimates(p.input)) })
     const fwd = rows.find((r) => r.id === 'WM:digits_forward')!
     expect(fwd).toMatchObject({ measured: false, reason: 'insufficient_data', nItems: 1, unit: 'block' })
-    expect(notMeasuredText(fwd.reason, fwd.nItems, fwd.unit)).toBe('Insufficient data (1 block; 5 needed)')
+    expect(notMeasuredText(fwd.reason, fwd.nItems, fwd.unit)).toBe('Insufficient data (1 timed task; 5 needed)')
     expect(rows.find((r) => r.id === 'SPA:3d_rotation')).toMatchObject({ measured: true, unit: 'item' })
     // Five blocks reach the threshold like five items.
     const blocks: FacetObservation[] = Array.from({ length: FACET_MIN_ITEMS }, (_, i) => ({
@@ -89,18 +90,46 @@ describe('facet drill-down (§9.6, A12)', () => {
     expect(five.find((r) => r.id === 'WM:corsi')).toMatchObject({ measured: true, nItems: 5, unit: 'block' })
   })
 
-  it('pluralises counts', () => {
-    expect(countText(1)).toBe('1 item')
-    expect(countText(0)).toBe('0 items')
-    expect(countText(3, 'block')).toBe('3 blocks')
-    expect(notMeasuredText('insufficient_data', 1)).toBe('Insufficient data (1 item; 5 needed)')
-    expect(notMeasuredText('insufficient_data', 2, 'block')).toBe('Insufficient data (2 blocks; 5 needed)')
+  it('pluralises counts in the person\'s words: questions and timed tasks (UX-040)', () => {
+    expect(countText(1)).toBe('1 question')
+    expect(countText(0)).toBe('0 questions')
+    expect(countText(3, 'block')).toBe('3 timed tasks')
+    expect(notMeasuredText('insufficient_data', 1)).toBe('Insufficient data (1 question; 5 needed)')
+    expect(notMeasuredText('insufficient_data', 2, 'block')).toBe('Insufficient data (2 timed tasks; 5 needed)')
   })
 
-  it('names facets readably', () => {
-    expect(facetLabel('3d_rotation')).toBe('3d rotation')
-    expect(facetLabel('percent')).toBe('Percent')
-    expect(facetLabel('digits_forward')).toBe('Digits forward')
+  it('names facets in plain words, never the generator code (UX-040)', () => {
+    expect(facetLabel('3d_rotation')).toBe('Mental rotation (3D)')
+    expect(facetLabel('percent')).toBe('Percentages')
+    expect(facetLabel('digits_forward')).toBe('Digits, same order')
+    expect(facetLabel('simple_rt')).toBe('Simple reaction time')
+    expect(facetLabel('linear_eq')).toBe('Linear equations')
+    // An id nobody mapped falls back to the id as words.
+    expect(facetLabel('odd_one_out')).toBe('Odd one out')
+    expect(facetLabel('constructor')).toBe('Constructor')
+  })
+
+  it('has a plain name for every facet the registered task families declare', () => {
+    const ids = [...new Set(Object.values(FAMILIES).flatMap((f) => [...f.facets]))]
+    expect(ids.length).toBeGreaterThan(25)
+    for (const id of ids) {
+      expect(Object.hasOwn(FACET_LABELS, id), `${id} has an entry in FACET_LABELS`).toBe(true)
+      // Words, not a code: no underscore, no digit-first id, and a capital letter to start.
+      expect(facetLabel(id), id).toMatch(/^[A-Z]/)
+      expect(facetLabel(id), id).not.toMatch(/_/)
+    }
+    // No two facets of one axis share a name (they sit side by side in one table).
+    for (const f of Object.values(FAMILIES)) expect(new Set(f.facets.map(facetLabel)).size).toBe(f.facets.length)
+    const all = Object.values(FACET_LABELS)
+    expect(new Set(all).size).toBe(all.length)
+  })
+
+  it('names a facet row by its label alone: the skill is the next column', () => {
+    const p = syntheticProfile('m1')!
+    const rows = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: unmeasuredReasons(axisEstimates(p.input)) })
+    expect(rows.map((r) => r.name)).toEqual(['Percentages', 'Arithmetic', 'Fractions', 'Ratios'])
+    expect(rows.every((r) => !r.name.includes('('))).toBe(true)
+    expect(rows.map((r) => r.shortLabel[0])).toEqual(rows.map((r) => r.name))
   })
 })
 

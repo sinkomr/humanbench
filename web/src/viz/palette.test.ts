@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contrastRatio, MARK_TOKENS, MIN_MARK_CONTRAST, MIN_TEXT_CONTRAST, MUTED_GREY, OKABE_ITO, relativeLuminance, TEXT_TOKENS, themeVars, THEMES } from './palette'
+import { blend, contrastRatio, MARK_TOKENS, MIN_BAND_CONTRAST, MIN_MARK_CONTRAST, MIN_TEXT_CONTRAST, MUTED_GREY, OKABE_ITO, relativeLuminance, TEXT_TOKENS, themeVars, THEMES } from './palette'
 
 describe('WCAG contrast maths', () => {
   it('matches known values', () => {
@@ -21,6 +21,14 @@ describe('WCAG contrast maths', () => {
   })
 })
 
+describe('blend', () => {
+  it('lays a colour over another at an opacity', () => {
+    expect(blend('#000000', '#ffffff', 0)).toBe('#ffffff')
+    expect(blend('#000000', '#ffffff', 1)).toBe('#000000')
+    expect(blend('#ff0000', '#0000ff', 0.5)).toBe('#800080')
+  })
+})
+
 describe('blob palette (§9.8, §13)', () => {
   for (const [name, theme] of Object.entries(THEMES)) {
     it(`${name}: every text token has ≥ 4.5:1 contrast on the background (§9.8)`, () => {
@@ -29,6 +37,15 @@ describe('blob palette (§9.8, §13)', () => {
 
     it(`${name}: meaningful marks have ≥ 3:1 non-text contrast (WCAG 1.4.11)`, () => {
       for (const t of MARK_TOKENS) expect(contrastRatio(theme[t], theme.bg), t).toBeGreaterThanOrEqual(MIN_MARK_CONTRAST)
+    })
+
+    it(`${name}: the band's outline shows against the page (≥ 1.5:1), while its hue stays the Okabe–Ito band colour (UX-047, §9.8)`, () => {
+      const edge = blend(theme.band, theme.bg, theme.bandEdgeOpacity)
+      expect(contrastRatio(edge, theme.bg)).toBeGreaterThanOrEqual(MIN_BAND_CONTRAST)
+      // The translucent fill alone is far weaker: that is why the edge is drawn.
+      expect(contrastRatio(blend(theme.band, theme.bg, 0.12), theme.bg)).toBeLessThan(MIN_BAND_CONTRAST)
+      expect(theme.bandEdgeOpacity).toBeGreaterThan(0)
+      expect(theme.bandEdgeOpacity).toBeLessThanOrEqual(1)
     })
 
     it(`${name}: blob, band and hatch are Okabe–Ito colours (§9.8)`, () => {
@@ -56,6 +73,7 @@ describe('blob palette (§9.8, §13)', () => {
     const vars = themeVars(THEMES.light)
     expect(vars['--hb-blob']).toBe('#0072B2')
     expect(vars['--hb-text-muted']).toBe(THEMES.light.textMuted)
+    expect(vars['--hb-band-edge-opacity']).toBe(String(THEMES.light.bandEdgeOpacity))
     expect(Object.keys(vars)).toHaveLength(Object.keys(THEMES.light).length)
   })
 })

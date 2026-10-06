@@ -6,13 +6,148 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="HumanBench: a jagged-blob cognitive profile." />
     <title>HumanBench</title>
+    <!-- The static welcome shell (UX-100): filled in and checked by vite.config.ts (humanbench-static-shell) and scripts/static-shell.test.ts. -->
+    <script>
+      document.documentElement.classList.add('hb-shell-js')
+      if (!/^(#\/?)?$/.test(location.hash)) document.documentElement.classList.add('hb-shell-deep')
+    </script>
+    <style>
+      :root {
+        --text: #3d3a44;
+        --text-strong: #0b0a0f;
+        --bg: #ffffff;
+        --border: #e3e2e6;
+
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        font-size: 100%;
+        line-height: 1.5;
+        color-scheme: light dark;
+        color: var(--text);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      @media screen and (prefers-color-scheme: dark) {
+        :root {
+          --text: #c9c7cf;
+          --text-strong: #f4f3f6;
+          --bg: #15151a;
+          --border: #2d2c34;
+        }
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+      }
+
+      #app {
+        min-height: 100svh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .hb-shell {
+        --r-fg: #1f1d24;
+        --r-muted: #4a4652;
+        --r-bg: #ffffff;
+
+        color: var(--r-fg);
+        background: var(--r-bg);
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 42rem;
+        min-width: 0;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+        flex: 1;
+        font-size: 1rem;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+
+      @media screen and (prefers-color-scheme: dark) {
+        .hb-shell {
+          --r-fg: #f1f0f4;
+          --r-muted: #c9c6d1;
+          --r-bg: #16151b;
+        }
+      }
+
+      @media (max-width: 30rem) {
+        .hb-shell {
+          padding: 1.25rem 1rem;
+        }
+      }
+
+      .hb-shell h1 {
+        margin: 0 0 1rem;
+        font-size: clamp(1.5rem, 5vw, 2.25rem);
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+      }
+
+      .hb-shell p {
+        margin: 0 0 1rem;
+        max-width: 38rem;
+      }
+
+      .hb-shell .lead {
+        font-size: 1.125rem;
+      }
+
+      /* In place of Start: the same height as the row of the button (2.75rem), and nothing to press. */
+      .hb-shell .hb-shell-wait {
+        display: none;
+        align-items: center;
+        min-height: 2.75rem;
+        margin: 1rem 0;
+        color: var(--r-muted);
+      }
+
+      .hb-shell-foot {
+        display: none;
+        border-top: 1px solid var(--border);
+        padding: 1rem;
+        text-align: center;
+      }
+
+      .hb-shell-foot p {
+        margin: 0 auto;
+        max-width: 40rem;
+        font-size: 0.875rem;
+      }
+
+      .hb-shell-js .hb-shell .hb-shell-wait {
+        display: flex;
+      }
+
+      .hb-shell-js .hb-shell-foot {
+        display: block;
+      }
+
+      .hb-shell-deep .hb-shell-welcome {
+        display: none;
+      }
+    </style>
   </head>
   <body>
-    <noscript>
-      <p>HumanBench needs JavaScript. Please turn it on to continue.</p>
-      <p>For curiosity and self-reflection. Not an IQ test, a clinical assessment, or a basis for decisions about education, employment, or health.</p>
-    </noscript>
-    <div id="app"></div>
+    <div id="app">
+      <main id="hb-shell" class="hb-shell" aria-labelledby="hb-shell-h">
+        <h1 id="hb-shell-h" class="hb-shell-welcome" translate="no"><!--hb-shell:WELCOME_HEADING--></h1>
+        <p class="lead hb-shell-welcome"><!--hb-shell:WELCOME_TAGLINE--></p>
+        <p class="hb-shell-welcome"><!--hb-shell:WELCOME_INTRO--></p>
+        <p class="hb-shell-wait">Loading…</p>
+        <noscript>
+          <p>HumanBench needs JavaScript. Turn it on to continue.</p>
+          <p>For curiosity and self-reflection. Not an IQ test, a clinical assessment, or a basis for decisions about education, employment, or health.</p>
+        </noscript>
+      </main>
+      <footer class="hb-shell-foot">
+        <p><!--hb-shell:DISCLAIMER--></p>
+      </footer>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

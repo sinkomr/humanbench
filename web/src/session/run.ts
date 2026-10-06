@@ -409,6 +409,8 @@ export class SessionRun {
   #afterBreak: (() => void) | null = null
   #noticeSeq = 0
   #notice: Notice | null = null
+  /** New screens since the notice was raised (see {@link SessionRun.#raise}). */
+  #noticeScreens = 0
 
   readonly #obs: Observation[] = []
   readonly #responses: ResponseTuple[] = []
@@ -487,6 +489,21 @@ export class SessionRun {
     if (this.#booting) return
     for (const fn of [...this.#listeners]) fn(kind)
     this.#cfg.onChange?.(kind)
+  }
+
+  /**
+   * Show a notice. It lives for the screen it was raised on and the next one (a skip is told on the
+   * interstitial that follows, a time-out on the next question), and is gone after that: "Reaction Time
+   * skipped" does not stay on screen half an hour later (UX-003).
+   */
+  #raise(notice: Omit<Notice, 'seq'>): void {
+    this.#notice = { ...notice, seq: ++this.#noticeSeq }
+    this.#noticeScreens = 0
+  }
+
+  /** A new screen is up (an interstitial, a block, a question, the break offer or the break): ages the notice. */
+  #newScreen(): void {
+    if (this.#notice !== null && ++this.#noticeScreens > 1) this.#notice = null
   }
 
   #segmentView(s: Segment): SegmentView {
@@ -617,6 +634,7 @@ export class SessionRun {
       this.#breakOffered = true
       this.#afterBreak = next
       this.#phase = 'break_offer'
+      this.#newScreen()
       this.#emit('phase')
       return
     }
@@ -669,6 +687,7 @@ export class SessionRun {
       s.status = 'current'
       this.#blockIdx = 0
       this.#phase = 'interstitial'
+      this.#newScreen()
       this.#emit('phase')
       return
     }
@@ -711,6 +730,7 @@ export class SessionRun {
     }
     this.#currentBlock = { step, startedMs: this.#cfg.now(), inputType: null, timestampSource: null, timestampReason: null }
     this.#phase = 'block'
+    this.#newScreen()
     this.#emit('phase')
   }
 
@@ -744,6 +764,7 @@ export class SessionRun {
     }
     this.#current = { item: sel.item, served: null, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
     this.#phase = 'item'
+    this.#newScreen()
     this.#emit('phase')
   }
 
@@ -823,9 +844,10 @@ export class SessionRun {
     if (!item.supported) {
       // A renderer this build does not have: the item cannot be shown, so the skip of §13 is offered.
       cur.unavailable = true
-      this.#notice = { kind: 'unsupported', seq: ++this.#noticeSeq, axis: this.#servedAxis(item) }
+      this.#raise({ kind: 'unsupported', axis: this.#servedAxis(item) })
     }
     this.#phase = 'item'
+    this.#newScreen()
     this.#emit('phase')
   }
 
@@ -892,7 +914,7 @@ export class SessionRun {
     const cur = this.#current
     if (this.#limitsHit() || this.#phase !== 'item' || cur === null || cur.unavailable) return
     cur.unavailable = true
-    this.#notice = { kind: 'unavailable', seq: ++this.#noticeSeq, axis: this.#facts(cur).axis }
+    this.#raise({ kind: 'unavailable', axis: this.#facts(cur).axis })
     this.#emit('phase')
   }
 
@@ -908,7 +930,7 @@ export class SessionRun {
     if (cur.served !== null) {
       // The server holds the key: nothing here can say whether the answer was right (R-11.1).
       if (!servedResponseFits(cur.served, response)) {
-        this.#notice = { kind: 'malformed', seq: ++this.#noticeSeq }
+        this.#raise({ kind: 'malformed' })
         this.#emit('phase')
         return
       }
@@ -923,7 +945,7 @@ export class SessionRun {
       correct = (familyOf(cur.item!.family).score(cur.item as never, response as never) as { correct: 0 | 1 | null }).correct
     } catch (e) {
       if (!(e instanceof MalformedResponseError)) throw e
-      this.#notice = { kind: 'malformed', seq: ++this.#noticeSeq }
+      this.#raise({ kind: 'malformed' })
       this.#emit('phase')
       return
     }
@@ -952,7 +974,7 @@ export class SessionRun {
     if (cur.served !== null) this.#recordServed(cur, null, limitMs, null, start + limitMs)
     else this.#recordItem(cur, null, 0, limitMs, null, start + limitMs)
     this.#current = null
-    this.#notice = { kind: 'timeout', seq: ++this.#noticeSeq, ...(cur.served === null ? {} : { served: true }) }
+    this.#raise({ kind: 'timeout', ...(cur.served === null ? {} : { served: true }) })
     this.#emit('response')
     this.#boundary(() => this.#present())
   }
@@ -1102,7 +1124,7 @@ export class SessionRun {
     const target = axis ?? this.view().skippable
     if (target === null || !isAxisCode(target) || this.#skipped.has(target)) return
     this.#markSkipped(target)
-    this.#notice = { kind: 'skipped', seq: ++this.#noticeSeq, axis: target }
+    this.#raise({ kind: 'skipped', axis: target })
     const seg = this.#segments[this.#segIdx]
     const onScreen = this.#phase === 'interstitial' || this.#phase === 'block' || this.#phase === 'item' || this.#phase === 'confidence' || this.#phase === 'loading'
     const inSegment = seg !== undefined && onScreen && seg.axes.includes(target)
@@ -1163,6 +1185,7 @@ export class SessionRun {
     this.#clock.pause()
     this.#breaks++
     this.#phase = 'on_break'
+    this.#newScreen()
     this.#emit('break')
   }
 

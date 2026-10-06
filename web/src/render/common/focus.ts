@@ -22,6 +22,17 @@ export function isControlTarget(event: KeyboardEvent): boolean {
   return t instanceof HTMLElement && t.closest('button, a[href], input, select, textarea, [role="radio"]') !== null
 }
 
+/**
+ * Moves focus to a block's stage without letting the browser's own scroll decide where the page
+ * lands (it can leave the keypad or the answer area off screen on a phone), then scrolls the stage
+ * into view only if it is not in view already (UX-002).
+ */
+export function focusStage(el: HTMLElement | null | undefined): void {
+  if (!el) return
+  el.focus({ preventScroll: true })
+  el.scrollIntoView?.({ block: 'nearest' })
+}
+
 /** The digit 0–9 a key stands for (top row or numeric keypad), or null. */
 export function digitOfKey(event: KeyboardEvent): number | null {
   return /^[0-9]$/.test(event.key) ? Number(event.key) : null

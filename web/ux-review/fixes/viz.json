@@ -1,0 +1,256 @@
+{
+  "area": "viz",
+  "model": "claude-sonnet-5-5",
+  "items": [
+    {
+      "id": "UX-037",
+      "outcome": "fixed",
+      "summary": "An estimate below -2.76 SD (the 0.04R inner clamp) or above +3 SD is now marked as off scale and is never drawn like a stub. geometry.ts: THETA_CLAMP_LOW and offScaleOf(theta) -> 'none' | 'low' | 'high'. profile.ts: SpokeEstimate.offScale, set by measuredFields. blob.ts: SpokeView.offScale + arrow (an arrowhead path whose tip is on the clamp radius, pointing towards the centre for low and out of the rim for high, 12 x 13 user units), the marker stays at the clamped radius, the whisker keeps whatever part of the range lies inside the scale, and the spoke label gets an italic 'off scale' note line like a stub gets 'not measured'. The radius map is untouched (linear in theta, clamped to [0.04R, R]). BlobChart.svelte draws the arrow instead of the dot (hollow when muted). BarTable.svelte draws an arrowhead at the track end instead of the dot, skips a range with no drawn length, and puts '(off scale)' after the estimate. copy.ts: OFF_SCALE_LABEL, OFF_SCALE_CAPTION (blob figcaption) and OFF_SCALE_BARS_NOTE (bar view), each shown only when a drawn spoke is off scale (also under a facet chart). card.ts mirrors the arrow, the note line and its italic style (card.dom.test.ts compares the card with the page chart element by element). synthetic.ts has a fifth demo profile 'offscale' (PS far below, RT above the scale) for #/dev/blob?profile=offscale. ProfileView overrides a build-up frame's off-scale mark with the final estimate's, so spokes still to be revealed (growing from -3 SD) do not flash arrows.",
+      "files": [
+        "web/src/viz/geometry.ts",
+        "web/src/viz/profile.ts",
+        "web/src/viz/blob.ts",
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/BarTable.svelte",
+        "web/src/viz/ProfileView.svelte",
+        "web/src/viz/copy.ts",
+        "web/src/viz/card.ts",
+        "web/src/viz/synthetic.ts"
+      ],
+      "tests_added": [
+        "geometry.test.ts: offScaleOf is 'low'/'high' exactly where the clamp changes the radius (fast-check over theta in [-8, 8]); THETA_CLAMP_LOW = -3 + 6 * 0.04",
+        "blob.test.ts 'estimates beyond the scale...' (fast-check, theta in [-6, 6]): theta below the clamp -> offScale 'low', marker and arrow tip on 0.04R; above +3 -> 'high' on R; in between the marker is at R(theta + 3)/6 within 0.15 px and has no arrow; a measured spoke never has a stub or gap; arrow direction; whisker keeps its inside part; 'off scale' label line",
+        "profile.test.ts: every measured estimate records offScale, a stub has none",
+        "card.test.ts: arrowheads on the card instead of dots, 'off scale' labels, marker radii match r(theta); no arrow for in-range cards",
+        "card.dom.test.ts: card and BlobChart agree element by element for a model with two off-scale spokes",
+        "ProfileView.ux.dom.test.ts: arrow, no stub, caption sentence only when needed; bar view arrow, '(off scale)' cell, bar note; far-off range not drawn as a dot",
+        "e2e/ux-viz.spec.ts (chromium, iphone, webkit): #/dev/blob?profile=offscale shows two arrows ('low' at 0.04R, 'high' at R, measured from the path), no stub, 'off scale' labels, the caption; bar view arrows and '(off scale)'; axe clean"
+      ],
+      "tests_changed": [],
+      "notes": "Wording differs slightly from the triage: the arrow sentence says 'at or past the end of the scale (-3 or +3 SD)' because an estimate between -3 and -2.76 SD is also drawn on the clamp. The note is two constants (blob view / bar view) so each says only what is on screen. The label note line makes labels one line taller for off-scale spokes (fitLayout sees them, it works from the final estimates)."
+    },
+    {
+      "id": "UX-038",
+      "outcome": "fixed",
+      "summary": "The share card is designed for a 600 px read (every text >= 20 card px = 10 px at 600 wide). card.ts: the chart's own text (spoke labels ~24 px, ring labels ~21 px, only -2/0/+2 SD labelled via the new BlobOptions.ringStep) comes from a new placeBlob that searches every collision-free layout (full or one-line labels, fonts 12.5-48) with layoutExtent, takes the first TEXT_TARGETS value (21.2, 20.5, 20, 18 ... 11) that some layout reaches and, among the layouts that reach it, the one with the largest circle; this now reaches 21 px text for 3 to 17 skills (the old fit managed 11-16 px). Column: brand 28, title 44, sessions 22, peaks heading 24, peak names 22, numbers 20. New full-width small print (footerTexts): the three caveat sentences and the purpose line as one wrapped paragraph, the key 'Filled: range clear of 0 SD. Hollow: range overlaps 0 SD.' + 'SD means standard deviation.', and the ring note ('Rings: SD units, provisional' / 'Centre: -3 SD') as its own texts at 20 px; the in-chart ring note is left out of the card's blob (BlobOptions.note = false, BlobModel.showNote, BlobChart honours it). Every existing caveat sentence is kept word for word ('Ranges that overlap are not real differences.' still appears exactly once).",
+      "files": [
+        "web/src/viz/card.ts",
+        "web/src/viz/card-copy.ts",
+        "web/src/viz/blob.ts",
+        "web/src/viz/BlobChart.svelte"
+      ],
+      "tests_added": [
+        "card.test.ts: no text under 20 card px (column, small print, chart text after scale) for 3..17 skills and any subset; small print runs full width, rows do not overlap, last baseline 24 px from the edge; column fits its width for three long-named peaks and ends above the small print; circle > 340 px for 5-7 skills; key sentence, SD meaning, ring note texts and the overlap sentence exactly once; the key matches the drawn hollow/filled marks; ring labels only -2, 0, +2 SD; band outline in the card stylesheet",
+        "blob.test.ts: BlobOptions.note = false drops the note from the viewBox; ringStep = 2 labels only -2/0/+2"
+      ],
+      "tests_changed": [
+        "card.test.ts: allowed-text check now accepts runs of the wrapped small print and the new lines; markerRadii also reads arrow tips; the palette check skips the numeric bandEdgeOpacity; the layout/frame checks use the new chart region and the 20 px floor (they asserted the old 11 px floor and the old 448 px column / 700 px chart edge)"
+      ],
+      "notes": "Deviations from the triage text: (1) the card keeps the string 'Rings: SD units, provisional' (e2e/share-card.spec.ts, reveal-owned, matches that text node exactly) and spells SD out in the key line instead of renaming it; the footnotes are one flowing paragraph rather than 'one or two lines' (the caveats do not fit in two lines at 20 px). (2) The ring ('outer ring') is about 300-400 card px across, not 440: with 24 px labels on a 704 x 472 chart region the text size wins over circle size (the old card was 316 px with 14 px text). Card circle size varies with label lengths. share-card.spec.ts passes on chromium and iphone."
+    },
+    {
+      "id": "UX-039",
+      "outcome": "fixed",
+      "summary": "Copy: the 90% quantity is 'range' everywhere (TABLE_INTERVAL '90% range (SD)', TABLE_ESTIMATE 'Estimate (SD units)', BLOB_DESCRIPTION, BARS_NOTE, TABLE_CAPTION 'Estimates by skill, in standard-deviation (SD) units on a provisional scale, each +/- its uncertainty, with 90% ranges.'); the estimate cell reads '+0.88 +/- 0.60' (NBSP around the +/-, no more '(SD 0.60)'); UNCERTAINTY_CAPTION rewritten as in the triage; TIER_TEXT b/c, TIER_LEGEND and HATCH_CAPTION in plain words; READING_CAPTION reworded and now the first figcaption paragraph. RING_CAPTION (A12) unchanged.",
+      "files": [
+        "web/src/viz/copy.ts",
+        "web/src/viz/BarTable.svelte",
+        "web/src/viz/ProfileView.svelte"
+      ],
+      "tests_added": [
+        "ProfileView.ux.dom.test.ts: headers, no visible 'interval', every estimate cell matches +/- with NBSP and none matches /\\(SD \\d/, first caption paragraph contains 'means nothing on its own', exact UNCERTAINTY_CAPTION and RING_CAPTION, no research jargon in the captions",
+        "e2e/ux-viz.spec.ts: copy checks on the rendered page (no 'interval'/'consensus-keyed'/'provisional norms'/'whisker', '90% range (SD)' header, tier legend words)"
+      ],
+      "tests_changed": [
+        "ProfileView.dom.test.ts: 'provisional norms' -> 'compared with provisional typical values' (and the tier c text)",
+        "ProfileView.dom.test.ts: relation text is compared with NBSP normalised (see UX-043)"
+      ],
+      "notes": "RELATION_TEXT strings are unchanged; BarTable renders '0 SD' with non-breaking spaces (UX-043)."
+    },
+    {
+      "id": "UX-040",
+      "outcome": "fixed",
+      "summary": "facets.ts: FACET_LABELS (plain names for every facet id the registered families declare, incl. the 18 quant templates, RT and span modes, plus 'confidence') used by facetLabel(), with the old transform as the fallback; the facet row name is the label alone (the skill is the next column). copy.ts: COUNT_UNIT_TEXT, countText says 'question(s)' and 'timed task(s)', facetCaption says '5 scored questions or timed tasks'. The FACET_LABELS map lives in facets.ts, not copy.ts (copy.ts imports facets.ts, so the other way round would be a cycle).",
+      "files": [
+        "web/src/viz/facets.ts",
+        "web/src/viz/copy.ts"
+      ],
+      "tests_added": [
+        "facets.test.ts: every facet declared by src/tasks/registry FAMILIES has an entry, starts with a capital, has no underscore; names unique; row names are the label alone; fallback for unknown ids"
+      ],
+      "tests_changed": [
+        "facets.test.ts: facetLabel and count wording expectations (3d rotation -> Mental rotation (3D), 1 block -> 1 timed task, items -> questions)",
+        "ProfileView.dom.test.ts: stub text '(n questions; 5 needed)', plain row names, no generator code in the panel",
+        "e2e/blob.spec.ts: 'Insufficient data (3 questions; 5 needed)', /^Percentages/"
+      ],
+      "notes": "Keeps the '<Cluster>: facets' h3 (e2e/routes.ts:876, wide-font.spec.ts)."
+    },
+    {
+      "id": "UX-041",
+      "outcome": "fixed",
+      "summary": "ProfileView.svelte: the facet chart is drawn only from 3 measured facets; with 1-2 measured the table stands alone; when every facet is 'insufficient data' the panel shows facetNone(): 'None of the N facets of <cluster> has enough data yet: each needs 5 scored questions or timed tasks. Facets fill in over several sessions.' (singular/dual forms for N = 1, 2) and a compact list of the facet names, with no chart and no table. Mixed reasons (a skipped or not-offered skill) keep the table so the reason per facet stays visible. The '<Cluster>: facets' h3 is kept.",
+      "files": [
+        "web/src/viz/ProfileView.svelte",
+        "web/src/viz/copy.ts"
+      ],
+      "tests_added": [
+        "ProfileView.ux.dom.test.ts: chart only from 3 measured facets (m1 Quantitative: none; full Knowledge: chart with 9 spokes); Speed panel is the one-line message and the names, no table or svg",
+        "e2e/ux-viz.spec.ts: same on #/dev/blob, axe clean"
+      ],
+      "tests_changed": [
+        "ProfileView.dom.test.ts: Quantitative (2 of 4 measured) no longer has a sub-chart; the Speed wedge test expects the message; the aggregate-number scan allows the count of facets",
+        "e2e/blob.spec.ts: the sub-chart img assertion moved to the full profile's Knowledge cluster; Quantitative in m1 asserts no img"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "UX-042",
+      "outcome": "partial",
+      "summary": "COMPACT_LABELS are cuts of the table names (MAT 'Matrix & Series', LR 'Logical', LG 'Logic games', RC 'Reading comp.', VOC 'Vocabulary', QR 'Quantitative', SPA 'Spatial', WM 'Working mem.', RT 'Reaction', FER 'Fermi', CAL 'Calibration', KST 'STEM', KHU 'Humanities', KAP 'Arts & practical', EMO 'Emotion', CRE 'Creative'), so 'Estimation' and 'Speed' no longer double as cluster names beside a skill. blob.ts: labels keep a clear gap above one another, whole boxes with the note line counted (LABEL_CLEAR_Y_EM, applied in the placement and in the collision test; labelsCollide gained padY).",
+      "files": [
+        "web/src/viz/profile.ts",
+        "web/src/viz/blob.ts"
+      ],
+      "tests_added": [
+        "blob.test.ts: every compact label is made of words of its table name or a documented abbreviation; no two labels share a first word and none repeats a cluster name; fast-check over random measured/not-measured masks at 288 and 358 px: fitLayout leaves no collision and the model's boxes (notes included) do not touch",
+        "profile.test.ts: the exact label set"
+      ],
+      "tests_changed": [
+        "blob.test.ts: the 288 px legibility floor is 9.5 px (was 10) and the PS compact label is 'Processing'",
+        "e2e/blob.spec.ts: the 320 px chart-text floor is 9.5 px (was 10)"
+      ],
+      "notes": "Two deviations, both because of the existing phone legibility floors: (1) PS is 'Processing' (the first word of 'Processing & Reading Speed'), not 'Reading speed': 'Reading speed' is the widest label (it sits at 9 o'clock) and took the 17-spoke chart at 288 px to 8.3 px text, and it also starts with the word 'Reading' that 'Reading comp.' uses. (2) The vertical clearance between neighbouring labels is 0.2 em of the label size, not a full line: 0.5 em already took the m1 chart at 328 px below 11 px, a full line would take it below 9 px at 288. The remaining ambiguity (labels stacked above one another) is addressed by the names, not the gap."
+    },
+    {
+      "id": "UX-043",
+      "outcome": "fixed",
+      "summary": "BarTable.svelte: overflow-wrap/word-break normal and hyphens manual on cells (no more 'Quantitativ/e', 'Estimat/e'), td.group-col min-width 12ch, '0 SD' held together with NBSP at render time, the estimate cell number+/- held together. When the table is narrow (container query on .hb-bars-wrap, max-width 40rem of the PAGE's rem so large text also gets it) each row is a grid card with auto-fit columns: name and comparison, estimate and '90% range ...', then the lollipop on its own line up to 15 rem wide; the cluster column is dropped, thead is clipped but kept for assistive technology. The table keeps its roles: role=table/rowgroup/row/columnheader/rowheader/cell are set explicitly (spread attributes, so the Svelte redundant-role lint does not fire). The range cell uses display: contents on phones.",
+      "files": [
+        "web/src/viz/BarTable.svelte"
+      ],
+      "tests_added": [
+        "e2e/ux-viz.spec.ts (chromium, iphone, webkit): at 320, 390 and 1280 px no word of the visible table is set across two lines (per-word Range client rects; hyphens and zero-width spaces are break points), no sideways scroll, every lollipop >= 200 px on a phone (>= 72 px on a desktop), axe clean; 320 px roles: 18 rows, 17 row headers, 4 column headers, 3 cells per row, parts inside the window; the estimate number stays on one line",
+        "ProfileView.ux.dom.test.ts: explicit table roles"
+      ],
+      "tests_changed": [],
+      "notes": "A media query would not follow the text size (its rem is the browser's 16 px), which made a11y.spec.ts 'results-bars: works with the text alone at 200%' overflow by 113 px; the container query fixes that (a11y.spec.ts results|dev-blob passes on chromium and iphone). e2e/blob.spec.ts still expects 4 column headers below 640 px viewport (the container is ~50 px narrower than the viewport, so the two agree except in a 640-672 px window)."
+    },
+    {
+      "id": "UX-044",
+      "outcome": "fixed",
+      "summary": "blob.ts: FitOptions.rootPx, textScale(), defaultLayout(), fitLayoutDetailed() -> { layout, smallPx, legible } (fitLayout is its layout): MIN_TEXT_PX, LABEL_FONT, MAX_LABEL_FONT and the step scale with rootPx/16 (never below 1, at most 4). ProfileView.svelte measures the page's root font size with a 1rem probe observed by the existing widthOf helper (so a text-only zoom, which does not change the chart's width, is noticed), passes rootPx to the main and facet charts, and shows 'Large text: the bar view shows the same data in text.' beside the view toggle when the root is above 16.5 px, the chart has a width and the labels cannot reach the scaled floor.",
+      "files": [
+        "web/src/viz/blob.ts",
+        "web/src/viz/ProfileView.svelte",
+        "web/src/viz/copy.ts"
+      ],
+      "tests_added": [
+        "blob.test.ts: textScale/defaultLayout; at rootPx 32 the labels are >= 2x the rootPx 16 size or fitLayoutDetailed says legible = false (358 px reports false, >= 900 px true); defaults unchanged at 16 / unknown width; property: a larger root never gives smaller text",
+        "ProfileView.ux.dom.test.ts (controllable ResizeObserver): label font doubles at 200% text; hint on a phone at 200%, none at 100% even at 288 px, none in the bar view",
+        "e2e/ux-viz.spec.ts: 200% text on a 1440 px window gives >= 21.5 px chart text; on a 390 px phone the hint shows and the bar view fits"
+      ],
+      "tests_changed": [],
+      "notes": ""
+    },
+    {
+      "id": "UX-045",
+      "outcome": "fixed",
+      "summary": "The ring labels are painted right after the grid and before the band, fuzz, curve, markers and whiskers, in BlobChart.svelte and in card.ts blobMarkup (twins), so their halo knocks out the grid only.",
+      "files": [
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/card.ts"
+      ],
+      "tests_added": [
+        "card.dom.test.ts: on the page chart the ring-labels group follows the grid and precedes band, fuzz, crisp, marks, labels",
+        "card.test.ts: the same order in the card SVG",
+        "e2e/ux-viz.spec.ts: the same order in the real DOM"
+      ],
+      "tests_changed": [],
+      "notes": "The optional choice of the bisector with the most clearance (blob.ts) was not done: the labels are now under the data, so a marker can sit on top of a ring label (readable in the screenshots I checked, but not clear of it)."
+    },
+    {
+      "id": "UX-046",
+      "outcome": "fixed",
+      "summary": "ProfileView.svelte toggleCluster(c, fromChart): a wedge click (passed as fromChart) waits a tick, focuses the facet h3 (tabindex -1, preventScroll) and calls panel.scrollIntoView({ behavior: 'smooth' or 'auto' when prefers-reduced-motion, block: 'nearest' }); the cluster buttons behave as before.",
+      "files": [
+        "web/src/viz/ProfileView.svelte"
+      ],
+      "tests_added": [
+        "ProfileView.ux.dom.test.ts: wedge click scrolls the .facet-panel and focuses the h3; reduced motion -> 'auto'; closing scrolls nothing; the button leaves focus and scroll alone",
+        "e2e/ux-viz.spec.ts: wedge click on #/dev/blob focuses the heading and brings it into the window; button opening does not focus the heading"
+      ],
+      "tests_changed": [],
+      "notes": "The e2e clicks the wedge with dispatchEvent('click'): a wedge is a thin slice and a centre click may land on a neighbour."
+    },
+    {
+      "id": "UX-047",
+      "outcome": "fixed",
+      "summary": "BlobChart: aria-labelledby is the title only, the description is aria-describedby; ProfileView: the figure has aria-label 'Skill profile blob' (the figcaption is content), h2 is 1.25rem in var(--r-fg, var(--hb-text-strong)), the dark-scheme query is 'screen and (prefers-color-scheme: dark)' so a printed chart takes THEMES.light; palette.ts: a new theme token bandEdgeOpacity (0.6 light, 0.5 dark) and MIN_BAND_CONTRAST = 1.5; the +/-1 SD band gets a 1 px outline in the band colour at that opacity (BlobChart CSS and the card stylesheet), which reaches 1.6:1 (light) and 1.8:1 (dark) against the page, where the 0.12 fill alone is 1.1:1; blend() helper; themeVars stringifies numbers. CARD_PEAKS_SUB is 'Compared with this card's skills as a whole'.",
+      "files": [
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/ProfileView.svelte",
+        "web/src/viz/palette.ts",
+        "web/src/viz/card.ts",
+        "web/src/viz/card-copy.ts"
+      ],
+      "tests_added": [
+        "palette.test.ts: band edge >= 1.5:1 in both schemes while the fill alone is below; blend(); --hb-band-edge-opacity is exported",
+        "ProfileView.dom.test.ts / ProfileView.ux.dom.test.ts: img name is 'Skill profile blob' alone, description by aria-describedby, figure aria-label, print query (screen-only) and the palette flip",
+        "card.test.ts: CARD_PEAKS_SUB, band outline in the card style",
+        "e2e/ux-viz.spec.ts: names, h2 is 20 px, band stroke is drawn, printed (emulated) chart is white in a dark scheme (chromium)"
+      ],
+      "tests_changed": [
+        "ProfileView.dom.test.ts: the aria-labelledby test now expects the title only plus aria-describedby"
+      ],
+      "notes": "The triage offered the band fill or a 1 px outline; I took the outline because a fill dense enough for 1.6:1 (about 0.6 opacity) would bury the fuzz it sits under. Other sheets' print/dark rules (app.css, render.css, notes.css, ResultsTalk.svelte) are other packages'."
+    },
+    {
+      "id": "UX-048a",
+      "outcome": "fixed",
+      "summary": "profile.ts: ProfileInput.offered?: ReadonlySet<AxisCode>. An axis that is not observed, not skipped and not in `offered` gets reason 'not_yet_available' (label 'Not measured (not offered yet)'); skipped wins; observed axes stay measured; without `offered` nothing changes.",
+      "files": [
+        "web/src/viz/profile.ts"
+      ],
+      "tests_added": [
+        "profile.test.ts: with offered = {RT, MAT, SPA, WM, QR, PS, CAL}: LR, LG, RC, VOC, FER, KST, KHU, KAP, EMO, CRE are not_yet_available; an offered axis with no data stays no_data; skipped stays skipped; observed axes outside `offered` stay measured; unchanged without `offered`"
+      ],
+      "tests_changed": [],
+      "notes": "Wiring from the results (UX-048b) is integration."
+    }
+  ],
+  "integration_requests": [
+    {
+      "id": "UX-048b",
+      "file": "web/src/reveal/RevealProfile.svelte and web/src/reveal/results.ts (and web/src/session/Ready.svelte if it builds a profile)",
+      "change": "Pass `offered: new Set<AxisCode>([...])` of the axes the static session plan puts in front of the person (RT, MAT, SPA, WM, QR, PS, CAL, from the plan the session actually runs) in the ProfileInput given to axisEstimates / ProfileView. Optional field, no other change needed."
+    },
+    {
+      "id": "UX-038-note",
+      "file": "web/e2e/share-card.spec.ts (reveal-owned)",
+      "change": "No change needed: it still matches the card's 'Rings: SD units, provisional' text node, which the card keeps. If the owner decides (UX-071/UX-074) to rename the ring note or the overlap sentence, the card's footerTexts() in web/src/viz/card.ts and CARD_NOTE_SCALE in card-copy.ts are the places."
+    },
+    {
+      "id": "persona-harness",
+      "file": "web/ux-review/personas/data.ux.ts (review harness, not a gate)",
+      "change": "It compares table text with 'Overlaps 0 SD' / 'Above 0 SD' / 'Below 0 SD' using a plain space; the cell now holds non-breaking spaces ('0 SD'), so normalise \\u00a0 before comparing if the harness is run again."
+    }
+  ],
+  "gates": {
+    "check": "npm run check: pass (svelte-check --fail-on-warnings, tsc node and scripts; 0 errors, 0 warnings) with all viz and e2e changes",
+    "unit": "npx vitest run src/viz: 16 files, 212 tests pass. Full npm test: 4522 pass, 1 fails outside my files: scripts/contrast.test.ts 'every colour token of src/ sits in a rule that a sheet above stands for' (the other packages' 'screen and (prefers-color-scheme: dark)' rules in src/brief/notes.css, src/brief/ui/ResultsTalk.svelte, src/render/common/render.css are not in its SHEETS; none from src/viz). An earlier full run also showed session-package failures (src/session/Screen.dom.test.ts, components.dom.test.ts UX-001/UX-014, scripts/timing-lint.test.ts Date.now in src/session/Ready.svelte and saved-at.test.ts) that were gone by the second run.",
+    "build": "npm run build -- --outDir test-results/iso/fix-viz/dist-gate: pass",
+    "e2e": [
+      { "spec": "e2e/ux-viz.spec.ts", "project": "chromium", "result": "22 passed" },
+      { "spec": "e2e/ux-viz.spec.ts", "project": "iphone", "result": "21 passed, 1 skipped (print emulation is chromium-only)" },
+      { "spec": "e2e/ux-viz.spec.ts", "project": "webkit", "result": "21 passed, 1 skipped (print emulation is chromium-only)" },
+      { "spec": "e2e/blob.spec.ts", "project": "chromium", "result": "13 passed" },
+      { "spec": "e2e/blob.spec.ts", "project": "iphone", "result": "12 passed, 1 skipped (render timing is chromium-only)" },
+      { "spec": "e2e/blob.spec.ts", "project": "webkit", "result": "12 passed, 1 skipped (render timing is chromium-only)" },
+      { "spec": "e2e/a11y.spec.ts --grep 'results|dev-blob'", "project": "chromium", "result": "68 passed, 8 skipped" },
+      { "spec": "e2e/a11y.spec.ts --grep 'results|dev-blob'", "project": "iphone", "result": "57 passed, 19 skipped" },
+      { "spec": "e2e/share-card.spec.ts (reveal-owned, run only)", "project": "chromium", "result": "14 passed" },
+      { "spec": "e2e/share-card.spec.ts (reveal-owned, run only)", "project": "iphone", "result": "13 passed, 1 skipped" },
+      { "spec": "e2e/wide-font.spec.ts (integration-owned, run only)", "project": "chromium", "result": "2 passed" }
+    ]
+  }
+}

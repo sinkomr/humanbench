@@ -275,7 +275,7 @@ const BUILDERS: Readonly<Record<string, Builder>> = {
     const value = frac(d - b, a - c)
     return {
       steps: [
-        `Collect the x terms on one side: subtract ${c}x from both sides, which gives ${lin([[a - c, 'x'], [b, '']])} = ${num(d)}.`,
+        `Collect the x terms on one side: subtract ${lin([[c, 'x']])} from both sides, which gives ${lin([[a - c, 'x'], [b, '']])} = ${num(d)}.`,
         `Move the number across: ${bothSides(b)}, which gives ${lin([[a - c, 'x']])} = ${minus(d, b)} = ${num(d - b)}.`,
         `Divide both sides by ${num(a - c)}: x = ${num(d - b)} \u00f7 ${paren(a - c)} = ${fmt(value)}.`,
       ],
@@ -288,7 +288,7 @@ const BUILDERS: Readonly<Record<string, Builder>> = {
     return {
       steps: [
         `Expand the bracket: ${a}(x ${withSign(b)}) is ${lin([[a, 'x'], [a * b, '']])}, so the equation reads ${lin([[a, 'x'], [a * b, '']])} = ${lin([[c, 'x'], [d, '']])}.`,
-        `Subtract ${c}x from both sides, and ${bothSides(a * b)}: ${lin([[a - c, 'x']])} = ${minus(d, a * b)} = ${num(d - a * b)}.`,
+        `Subtract ${lin([[c, 'x']])} from both sides, and ${bothSides(a * b)}: ${lin([[a - c, 'x']])} = ${minus(d, a * b)} = ${num(d - a * b)}.`,
         `Divide both sides by ${num(a - c)}: x = ${num(d - a * b)} \u00f7 ${paren(a - c)} = ${fmt(value)}.`,
       ],
       value,

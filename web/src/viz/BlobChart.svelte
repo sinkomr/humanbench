@@ -1,8 +1,9 @@
 <script lang="ts">
   /**
    * The jagged blob as SVG (DESIGN §9; ROADMAP M1.16). A pure view of a {@link BlobModel}
-   * (`blob.ts` computes every path). The chart is one `role="img"` with a title and description;
-   * its data is in the table `ProfileView` always renders (the screen-reader default, §9.5 c).
+   * (`blob.ts` computes every path). The chart is one `role="img"` named by its title and described
+   * by its description (the name stays short, UX-047); its data is in the table `ProfileView` always
+   * renders (the screen-reader default, §9.5 c).
    * Colours come from the `--hb-*` custom properties of `palette.ts` set by the parent. Font
    * sizes come from the model (`fitLayout`), and every text has a halo in the page background, so
    * it keeps the palette's ≥ 4.5:1 text contrast over the band, fuzz and curve (§9.8).
@@ -28,7 +29,7 @@
   const credibleRuns = $derived(model.muteRuns.filter((r) => !r.muted))
 </script>
 
-<svg class="hb-blob" viewBox={model.viewBox} role="img" aria-labelledby="{uid}-title {uid}-desc" data-spokes={model.spokes.length}>
+<svg class="hb-blob" viewBox={model.viewBox} role="img" aria-labelledby="{uid}-title" aria-describedby="{uid}-desc" data-spokes={model.spokes.length}>
   <title id="{uid}-title">{title}</title>
   <desc id="{uid}-desc">{description}</desc>
   <defs>
@@ -67,6 +68,13 @@
     {/each}
   </g>
 
+  <!-- Under the data (UX-045): a ring label's halo knocks out the grid only, never the curve, a marker or a whisker. -->
+  <g class="ring-labels" font-size={f(model.text.small)} stroke-width={f(model.text.halo)}>
+    {#each model.rings.filter((x) => x.showLabel) as ring (ring.theta)}
+      <text class="ring-label" class:reference={ring.reference} x={f(ring.labelAt[0])} y={f(ring.labelAt[1])}>{ring.label}</text>
+    {/each}
+  </g>
+
   <path class="band" d={model.band.d} fill-rule="evenodd" />
   <!-- §9.3: 20 nested curves at θ + z·SD, each filling the band toward the mean, opacity ∝ φ(z). -->
   <g class="fuzz">
@@ -87,7 +95,12 @@
       <g class="mark" class:muted={s.muted} class:unmeasured={!s.measured} data-spoke={s.id} data-tier={s.tier}>
         {#if s.whisker && s.marker}
           <line class="whisker" x1={f(s.whisker[0][0])} y1={f(s.whisker[0][1])} x2={f(s.whisker[1][0])} y2={f(s.whisker[1][1])} />
-          <circle class="marker" cx={f(s.marker[0])} cy={f(s.marker[1])} r="4.5" />
+          {#if s.arrow}
+            <!-- UX-037: beyond the scale, an arrowhead on the clamp instead of the dot (never the grey stub). -->
+            <path class="arrow" d={s.arrow} data-off-scale={s.offScale} />
+          {:else}
+            <circle class="marker" cx={f(s.marker[0])} cy={f(s.marker[1])} r="4.5" />
+          {/if}
         {:else if s.stub && s.gap}
           <line class="stub" x1="0" y1="0" x2={f(s.stub[0])} y2={f(s.stub[1])} />
           <circle class="gap" cx={f(s.gap[0])} cy={f(s.gap[1])} r="3" />
@@ -96,17 +109,13 @@
     {/each}
   </g>
 
-  <g class="ring-labels" font-size={f(model.text.small)} stroke-width={f(model.text.halo)}>
-    {#each model.rings.filter((x) => x.showLabel) as ring (ring.theta)}
-      <text class="ring-label" class:reference={ring.reference} x={f(ring.labelAt[0])} y={f(ring.labelAt[1])}>{ring.label}</text>
-    {/each}
-  </g>
-
-  <text class="ring-note" x={f(model.noteAt[0])} y={f(model.noteAt[1])} font-size={f(model.text.small)} stroke-width={f(model.text.halo)}>
-    {#each RING_NOTE as line, li (li)}
-      <tspan x={f(model.noteAt[0])} dy={li === 0 ? '0' : `${NOTE_LINE_EM}em`}>{line}</tspan>
-    {/each}
-  </text>
+  {#if model.showNote}
+    <text class="ring-note" x={f(model.noteAt[0])} y={f(model.noteAt[1])} font-size={f(model.text.small)} stroke-width={f(model.text.halo)}>
+      {#each RING_NOTE as line, li (li)}
+        <tspan x={f(model.noteAt[0])} dy={li === 0 ? '0' : `${NOTE_LINE_EM}em`}>{line}</tspan>
+      {/each}
+    </text>
+  {/if}
 
   <g class="labels" font-size={f(model.text.label)} stroke-width={f(model.text.halo)}>
     {#each model.spokes as s (s.id)}
@@ -168,7 +177,10 @@
   .band {
     fill: var(--hb-band);
     fill-opacity: 0.12;
-    stroke: none;
+    /* The ±1 SD edge, outlined so the band shows against the page (UX-047; palette.ts keeps it ≥ 1.5:1). */
+    stroke: var(--hb-band);
+    stroke-opacity: var(--hb-band-edge-opacity, 0.6);
+    stroke-width: 1;
     pointer-events: none;
   }
   .fuzz path {
@@ -212,8 +224,19 @@
     stroke: var(--hb-bg);
     stroke-width: 1.5;
   }
+  .arrow {
+    fill: var(--hb-blob);
+    stroke: var(--hb-bg);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
   .muted .whisker {
     stroke: var(--hb-muted);
+  }
+  .muted .arrow {
+    fill: var(--hb-bg);
+    stroke: var(--hb-muted);
+    stroke-width: 2;
   }
   .muted .marker {
     fill: var(--hb-bg);

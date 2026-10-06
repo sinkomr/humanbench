@@ -7,7 +7,7 @@
  */
 
 import fc from 'fast-check'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { rtChoice4, rtResponseProblems, rtSimple, type RtItem } from '../../tasks/rt'
 import type { RtResponse } from '../../tasks/rt/types'
 import { normalizeIds } from '../common/leak'
@@ -399,6 +399,61 @@ describe('RtRenderer', () => {
 
   it('waits longer after an early press than after a response', () => {
     expect(RT_EARLY_ITI_MS).toBeGreaterThan(RT_ITI_MS)
+  })
+
+  it('titles the block by what is different about it, not by the session heading again (UX-026)', () => {
+    expect(mountRt(rtSimple.generate('render-rt-title')).container.querySelector('.title')?.textContent).toBe('One position')
+    expect(mountRt(rtChoice4.generate('render-rt-title')).container.querySelector('.title')?.textContent).toBe('Four positions')
+  })
+
+  it('the stage that takes focus when the block starts is a named group, in each input mode (UX-022)', () => {
+    const cases: [RtItem, RtInputMode, string][] = [
+      [rtSimple.generate('render-rt-name-1'), 'keyboard', 'Reaction stage: press Space when the target appears'],
+      [rtSimple.generate('render-rt-name-2'), 'touch', 'Reaction stage: tap the target when it appears'],
+      [rtChoice4.generate('render-rt-name-3'), 'keyboard', 'Reaction stage: press D, F, J or K to match the position of the target'],
+      [rtChoice4.generate('render-rt-name-4'), 'touch', 'Reaction stage: tap the position where the target appears'],
+    ]
+    for (const [item, mode, name] of cases) {
+      const m = mountRt(item, mode)
+      click(buttonByText(m.container, 'Start practice'))
+      const stage = m.container.querySelector('.stage')
+      expect(stage?.getAttribute('role'), name).toBe('group')
+      expect(stage?.getAttribute('aria-label')).toBe(name)
+      expect(document.activeElement).toBe(stage)
+      m.destroy()
+    }
+  })
+
+  it('focuses the stage without scrolling and then brings it into view only if needed (UX-002)', () => {
+    const scrolled = vi.fn()
+    const had = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrolled, configurable: true, writable: true })
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      const m = mountRt(rtSimple.generate('render-rt-scroll'), 'keyboard')
+      click(buttonByText(m.container, 'Start practice'))
+      const stage = m.container.querySelector('.stage')
+      expect(focus.mock.calls[focus.mock.contexts.indexOf(stage as HTMLElement)]?.[0]).toEqual({ preventScroll: true })
+      expect(scrolled).toHaveBeenCalledWith({ block: 'nearest' })
+      expect(scrolled.mock.contexts.at(-1)).toBe(stage)
+    } finally {
+      focus.mockRestore()
+      if (had) Object.defineProperty(Element.prototype, 'scrollIntoView', had)
+      else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+
+  it('key names and trial counters are marked as not to be translated (UX-022), and the texts they sit in are unchanged', () => {
+    const simple = mountRt(rtSimple.generate('render-rt-translate'), 'keyboard')
+    expect([...simple.container.querySelectorAll('.hb-instructions kbd')].map((k) => [k.textContent, k.getAttribute('translate')])).toEqual([['Space', 'no']])
+    expect(simple.container.querySelector('.hb-instructions')?.textContent?.replace(/\s+/g, ' ')).toContain('press the Space bar.')
+    const four = mountRt(rtChoice4.generate('render-rt-translate'), 'keyboard')
+    expect([...four.container.querySelectorAll('.hb-instructions kbd')].map((k) => k.textContent)).toEqual(['D', 'F', 'J', 'K', '1', '4'])
+    expect(four.container.querySelector('.hb-instructions')?.textContent?.replace(/\s+/g, ' ')).toContain('press D, F, J or K (or 1 to 4) for the positions from left to right.')
+    click(buttonByText(simple.container, 'Start practice'))
+    const progress = simple.container.querySelector('.progress')
+    expect(progress?.textContent).toBe('Practice 1 of 3')
+    expect([...(progress?.querySelectorAll('span') ?? [])].map((x) => x.getAttribute('translate'))).toEqual(['no', 'no'])
   })
 
   it('matches its snapshots (intro, choice4 fixation)', () => {

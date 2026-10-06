@@ -142,6 +142,7 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
     'results-drilldown',
     'results-bars',
     'results-open',
+    'results-view',
     'results-leave',
     'results-saved',
     'share-card-dark',

@@ -27,7 +27,7 @@
   <p class="lead">{HONOUR_TEXT}</p>
   <form onsubmit={submit} novalidate>
     <div class="check">
-      <input id="{uid}-agree" type="checkbox" bind:checked={agreed} aria-describedby={showError ? `${uid}-err` : undefined} />
+      <input id="{uid}-agree" type="checkbox" bind:checked={agreed} aria-describedby={showError && !agreed ? `${uid}-err` : undefined} aria-invalid={showError && !agreed ? 'true' : undefined} />
       <label for="{uid}-agree">{HONOUR_AGREE}</label>
     </div>
     {#if showError && !agreed}

@@ -5,7 +5,7 @@
  * the response; the glyph drawings are distinct and none is text; plus a snapshot.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { coding, codingOutcome } from '../../tasks/coding'
 import { CODING_SYMBOLS, type CodingItem, type CodingResponses, type CodingSymbol } from '../../tasks/coding/config'
 import { normalizeIds } from '../common/leak'
@@ -152,6 +152,59 @@ describe('CodingRenderer', () => {
     expect(done?.textContent).toBe('You answered every shape. Thank you.')
     expect(document.activeElement).toBe(done)
     expect(all.container.contains(document.activeElement)).toBe(true)
+  })
+
+  it('names the table and the shapes in one noun and shows the table as a reference strip, not as keys (UX-002, UX-025)', () => {
+    const m = mountCoding(coding.generate('render-coding-names'))
+    expect(m.container.querySelector('.title')?.textContent).toBe('Shape to digit')
+    const legend = m.container.querySelector('ul.legend')
+    expect(legend?.getAttribute('aria-label')).toBe('Shape-to-digit table')
+    expect(legend?.querySelectorAll('li')).toHaveLength(9)
+    // Nothing in the table can be pressed or mistaken for an answer key.
+    expect(legend?.querySelector('button, [role="button"], [tabindex]')).toBeNull()
+    const intro = m.container.querySelector('.hb-instructions')?.textContent?.replace(/\s+/g, ' ') ?? ''
+    expect(intro).toContain('Each shape in the table above has a digit.')
+    expect(intro).toContain('on-screen keypad or the number keys on your keyboard')
+    expect(intro).not.toContain('key above')
+  })
+
+  it('scrolls the table to the top of the screen when the block starts, then focuses the stage without scrolling (UX-002)', () => {
+    const scrolled = vi.fn()
+    const had = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrolled, configurable: true, writable: true })
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      const m = mountCoding(coding.generate('render-coding-scroll'))
+      expect(scrolled).not.toHaveBeenCalled()
+      click(buttonByText(m.container, 'Start'))
+      expect(scrolled).toHaveBeenCalledTimes(1)
+      expect(scrolled).toHaveBeenCalledWith({ block: 'start' })
+      expect(scrolled.mock.contexts[0]).toBe(m.container.querySelector('ul.legend'))
+      const stage = m.container.querySelector('.stage')
+      expect(document.activeElement).toBe(stage)
+      const call = focus.mock.calls.findIndex((_, k) => focus.mock.contexts[k] === stage)
+      expect(focus.mock.calls[call]?.[0]).toEqual({ preventScroll: true })
+      // The table is scrolled to before the stage takes focus.
+      expect(scrolled.mock.invocationCallOrder[0]).toBeLessThan(focus.mock.invocationCallOrder[call] as number)
+    } finally {
+      focus.mockRestore()
+      if (had) Object.defineProperty(Element.prototype, 'scrollIntoView', had)
+      else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
+
+  it('the stage that holds focus is a named group, the keypad is one row of nine, and the countdown is not translated (UX-002, UX-022)', () => {
+    const m = mountCoding(coding.generate('render-coding-a11y'))
+    click(buttonByText(m.container, 'Start'))
+    const stage = m.container.querySelector('.stage')
+    expect(stage?.getAttribute('role')).toBe('group')
+    expect(stage?.getAttribute('aria-label')).toBe('Shapes: type the digit for each shape')
+    expect(m.container.querySelector('[role="timer"]')?.getAttribute('translate')).toBe('no')
+    const keypad = m.container.querySelector('.keypad') as HTMLElement
+    expect(keypad.getAttribute('aria-label')).toBe('Digit keypad')
+    expect(keypad.classList.contains('fixed')).toBe(true)
+    expect(keypad.style.getPropertyValue('--cols')).toBe('9')
+    expect(keypad.querySelectorAll('button')).toHaveLength(9)
   })
 
   it('matches its snapshots (intro and running)', () => {

@@ -1,0 +1,444 @@
+{
+  "reviewer": "flow",
+  "model": "opus",
+  "summary": "Journey map (static MVP, ?fast=1 preview build, Chromium 1280 px and iPhone 13). (1) index.html welcome: heading, tagline, one paragraph, Start, 'Privacy and terms' (same-tab #/privacy, whose 'Back' link pushes #/). This is the only entry point: notes.html and rt-selftest.html have no links in or out, the notes builder is linked only from the results after the save (new tab) and the self-test from nowhere. (2) Gate 'Before you start': three points, the notice link opens a second tab, the 18+ checkbox, Continue / 'I am under 18'; unticked gives an inline alert; under 18 gives 'HumanBench is for adults', a dead end with no controls (reload returns to the welcome; nothing stored, verified). (3) Honour code (checkbox). (4) Device check (about 1.3 s of measuring, then the input mode). (5) Ready: Begin, practice, and 'Continue from a save file'; a returning person also gets 'Earlier saves on this device' and a focus-session picker. Consent is remembered, so a return visit is welcome, honour, device, ready. (6) Practice: four questions; 'Back' goes to 'Practice complete', then a second 'Back' to the ready screen. (7) The session: six parts, each behind an 'Up next: <part>. About N min.' screen with Start / 'Skip this part'; a time ring ('N of about 28 min', then 'Almost there'); a per-cluster checklist; 'Skip <part>' and 'Finish early' always on screen; a break offered after 30 active minutes; a hard stop at 57. (8) 'Session complete' and the reveal: build-up, peaks, 'Explore a cluster', 'Save your results' (beforeunload guard; 'Back to the start' asks first), then after the save: share card, notes card, results-talk text; then worked examples, 'Coming back for more' (shrinkage, widest ranges, focus session, 7 days), 'About these numbers', 'Back to the start', resource line. The page is 4,530 px before the save and 6,819 px after it at 1280 px (5,420 / 8,167 px on an iPhone). (9) 'Back to the start' goes to the welcome; the results are gone until a file is loaded into a new session. Overall the first-visit funnel is short, kind and in the right order, and the reveal follows DESIGN §10 exactly. The weak points are around it: nothing serves a returning person (no way to see results again, no way back to the notes builder, 'load on the start screen' points to the wrong screen), the session is easy to lose and resting costs measurement time, and the in-session orientation (checklist words, stale notices, 'Almost there' with every part to go) contradicts itself in places.",
+  "coverage": [
+    "Entry points and links: index.html, #/privacy (from the welcome, direct, gate new tab), #/data and an unknown hash in the static build, notes.html, rt-selftest.html (Chromium 1280; iPhone 13)",
+    "Start funnel: welcome, gate, gate error, under 18 plus reload, honour, device check, first-visit ready, bad file / foreign JSON / empty load, practice and back, reload at ready, return visit (Chromium; iPhone 13)",
+    "Session orientation: a full ?fast=1 journey with Spatial skipped (every new screen photographed), a slower journey with timings, an idle run (time-outs, notices), break offer and break via fake clock (Chromium)",
+    "End sequence: loaded save plus finish early, results before and after the save, the leave question, both downloads read back, 'Back to the start', the ready screen afterwards, seeing the results again (Chromium; iPhone 13)",
+    "Edge paths: refresh mid-session, browser Back mid-session (plain, and after opening the notice), two tabs, every part skipped, leaving unsaved and coming back (Chromium; Back also on iPhone 13)",
+    "Tour states: break-offer, on-break, ready-returning, results-leave, notes-returning, notes-kept (Chromium 1280 light)",
+    "Not covered: WebKit desktop, iphone-se, pixel; the real-time (non-fast) hard stop; the online (backend) variant; a real touch Back-swipe on iOS Safari (emulated goBack only)"
+  ],
+  "findings": [
+    {
+      "id": "FLOW-01",
+      "severity": "major",
+      "category": "flow",
+      "title": "A returning person cannot see their results again without starting a new session, and each look adds an empty session to the file",
+      "route": "ready / results",
+      "env": "Chromium 1280, light; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/end-chromium/008-after-back-to-start.png",
+        "web/test-results/ux-review/flow/end-chromium/009-ready-after-results.png",
+        "web/test-results/ux-review/flow/end-chromium/011-ready-reloaded-file.png",
+        "web/test-results/ux-review/flow/end-chromium/012-results-again-top.png",
+        "web/test-results/ux-review/flow/end-iphone/009-ready-after-results.png"
+      ],
+      "observed": "After 'Back to the start' (results saved), the profile is gone. The ready screen shows neither the file loaded earlier nor earlier saves, and a session with no answers wrote no autosave. Nothing on the welcome or the ready screen says 'see my results'. The only way back is Start, honour code, device check, load the file, Begin, Finish early, Finish now: about 9 actions. That makes a new session. The file downloaded afterwards holds one more session with no answers: sessions [33, 0] after the first look and [33, 0, 0] after the second (end.json).",
+      "expected": "Someone with a save file can open their profile straight away, as often as they like, without a new session and without changing the file.",
+      "suggestion": "Add 'See my results' to the welcome screen (and to the ready screen). It takes a save file or code, or the autosaves on this device, and opens Finished/Reveal read-only from `buildResults(save)`, with no SessionRun, no gate, honour code or device check, and no session appended. Until then, never append a session with zero responses to the save (`SessionPersister.currentSave`), so the workaround does not grow the file.",
+      "files": [
+        "web/src/session/SessionApp.svelte",
+        "web/src/session/Welcome.svelte",
+        "web/src/session/Ready.svelte",
+        "web/src/session/Finished.svelte",
+        "web/src/session/persist.ts"
+      ],
+      "spec_refs": ["§10", "§8", "R-8.1"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-02",
+      "severity": "major",
+      "category": "flow",
+      "title": "Back, refresh or closing the tab mid-session leaves without a warning, and the session cannot be resumed",
+      "route": "item-matrix-series",
+      "env": "Chromium 1280; iPhone 13 (emulated goBack)",
+      "screenshots": [
+        "web/test-results/ux-review/flow/edge-refresh-chromium/001-mid-session-before-reload.png",
+        "web/test-results/ux-review/flow/edge-refresh-chromium/002-mid-session-after-reload.png",
+        "web/test-results/ux-review/flow/edge-refresh-chromium/003-ready-after-mid-session-reload.png",
+        "web/test-results/ux-review/flow/edge-history-plain-chromium/001-after-back-from-session.png",
+        "web/test-results/ux-review/flow/edge-history-plain-iphone/001-after-back-from-session.png"
+      ],
+      "observed": "During a session no beforeunload guard is installed (`unloadIsGuarded` false). The flow adds no history entries, so browser Back (a mouse back button, or an iOS edge swipe) leaves the site at once (about:blank in the test). A refresh lands on the welcome screen. After Start, honour code and device check, the ready screen only says 'Add my new session to the 1 earlier session saved on this device.' The interrupted session is quietly counted as a finished earlier session. The person is not told what happened and must begin a new 30-minute session. The answers survive in the autosave (§8), but the session does not.",
+      "expected": "Leaving mid-session asks first. On return the person is told plainly that an unfinished session from earlier is kept, and ideally offered to carry on with it.",
+      "suggestion": "Install the existing `installUnloadGuard()` (reveal/guard.ts) while phase is 'run' (and 'practice' if wanted). Push one history entry when the run starts and handle `popstate` as 'Finish early?', so Back opens the existing confirm panel instead of leaving. On the ready screen, when the newest autosave has no end, say 'You have an unfinished session from today (N answers). It is kept, and your new session will be added to it.' True resume (restoring SessionRun state) is the owner's call.",
+      "files": [
+        "web/src/session/SessionApp.svelte",
+        "web/src/session/SessionScreen.svelte",
+        "web/src/reveal/guard.ts",
+        "web/src/session/Ready.svelte",
+        "web/src/save/autosave.ts"
+      ],
+      "spec_refs": ["§8", "§10"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-03",
+      "severity": "major",
+      "category": "flow",
+      "title": "Waiting on an 'Up next' screen uses up the session: the clock runs there, the break comes after 30 minutes, and the ring says 'Almost there' with every part still to do",
+      "route": "interstitial / break-offer",
+      "env": "Chromium 1280 (?fast=1 and the fake-clock route)",
+      "screenshots": [
+        "web/test-results/ux-review/flow/break-chromium/001-interstitial-up-next-reaction-time.png",
+        "web/test-results/ux-review/flow/tour-chromium/break-offer/1280-light.png",
+        "web/test-results/ux-review/flow/break-chromium/007-finished.png"
+      ],
+      "observed": "The interstitial looks like the natural place to rest, but the session clock keeps running there: 6 s of real time on the first 'Up next' screen moved the ring from '0 of about 28 min' to '2 of about 28 min' (break.json). After 31 minutes on that screen (the break-offer route) the ring reads 'Almost there' and is full, while every cluster in the checklist is still 'Up next'. `#budgetFor` (run.ts) then gives each remaining part (target - elapsed - blocks) / parts = 0 s, so they shrink to the 3-item floor. The explicit break comes only after 30 active minutes, in a session whose target is 28. A slower-paced run that finished every part in 24 minutes was never offered one.",
+      "expected": "Resting between parts costs nothing. The ring never says 'Almost there' before the parts are done. A break is offered at a point most people actually reach.",
+      "suggestion": "Pause the session clock while an interstitial is up (no item timer runs there), or count only time inside parts towards the ring and the budgets. Add one line to every interstitial: 'Take a break here if you like: the clock waits until you press Start.' Offer the explicit break at the interstitial nearest half-way (about 14 minutes), not at 30 active minutes. Show 'Almost there' only when the last part is current.",
+      "files": [
+        "web/src/session/run.ts",
+        "web/src/session/clock.ts",
+        "web/src/session/ProgressRing.svelte",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": ["§10", "§7.4", "A15"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-04",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "The results header describes only the last session, above a profile built from all of them",
+      "route": "results",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/end-chromium/004-results-top.png",
+        "web/test-results/ux-review/flow/end-chromium/012-results-again-top.png",
+        "web/test-results/ux-review/flow/end-iphone/004-results-top.png"
+      ],
+      "observed": "A person loaded a file with one earlier session (33 answers) and finished at once, which is also the only way to see results again (FLOW-01). The page opens with 'Session complete', 'You finished early, so some parts are not measured.' and 'You answered 0 questions and completed 0 timed tasks in about 1 min.' A full profile with seven measured skills follows. Nothing says the profile is the earlier session's, or how many sessions and answers it rests on. The h1 stays 'Session complete' for the whole 4,500 to 8,000 px page.",
+      "expected": "The top of the results says what the profile is built from ('Your profile, from 2 sessions and 33 answers'). When this session added nothing, it says so instead of 'some parts are not measured'.",
+      "suggestion": "In Finished.svelte, when the save holds more than this session, add a line from `scoredSessions(results)` and the response counts: 'This profile combines N sessions (M answers). This session added X.' Replace the reason line with 'This session added no answers; the profile is from your earlier sessions' when the run has no responses. Consider the h1 'Your profile' once a profile exists, keeping 'Session complete' as the lead line.",
+      "files": ["web/src/session/Finished.svelte", "web/src/session/copy.ts", "web/src/reveal/results.ts"],
+      "spec_refs": ["§10", "§7.8", "R-8.1"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-05",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Checklist status words contradict the 'Up next' heading, and a skipped part disappears from it",
+      "route": "interstitial",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/session-chromium/004-matrix-series-interstitial.png",
+        "web/test-results/ux-review/flow/idle-chromium/004-idle-up-next-spatial-that-question-ran-out-of-time.png",
+        "web/test-results/ux-review/flow/idle-chromium/003-idle-matrix-series-that-question-ran-out-of-time.png"
+      ],
+      "observed": "On 'Up next: Matrix & Series' the checklist marks Reasoning 'Now'. Two other rows are also 'Up next', and the top row (Speed) is 'Partly done': it holds the first part and the last. After Reaction time was skipped, the Speed row reads 'Up next' above 'Reasoning: Done', so the skip is not visible and the order looks reversed. Nothing says 'part 2 of 6', although the welcome promises six parts. Part names also differ between the screens ('Reaction time' in the heading, 'Reaction Time' in the checklist and the notices).",
+      "expected": "Where am I and what comes next can be read at a glance and agree everywhere: one 'next' item, skipped parts shown as skipped, and a part count.",
+      "suggestion": "Change the 'upcoming' status to 'Later', and show 'Next' only on the row of the next part. Show a skipped part inside a cluster row ('Reaction time: skipped'). Add 'Part 2 of 6' to the interstitial lead ('Part 2 of 6 · About 5 min.'). Use one spelling of each part name (the interstitial titles in segments.ts) in the checklist and the notices.",
+      "files": ["web/src/session/Checklist.svelte", "web/src/session/copy.ts", "web/src/session/segments.ts", "web/src/session/SessionScreen.svelte"],
+      "spec_refs": ["§10", "A7", "A15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-06",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "Skipping every part ends with 'You finished every part.' and asks the person to save an empty file",
+      "route": "finished-nothing",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/edge-nothing-chromium/001-last-interstitial.png",
+        "web/test-results/ux-review/flow/edge-nothing-chromium/002-finished-nothing.png"
+      ],
+      "observed": "After skipping all six parts from their interstitials, the page reads 'Session complete', 'You finished every part.' and 'You answered 0 questions and completed 0 timed tasks in about 1 min.' Then comes 'Save your results: Download your save file before you leave this page. It holds your answers, so it is your copy of the results.' There are no answers and no results. The baseline finished-nothing route (finish early with nothing) says 'You finished early, so some parts are not measured.' above 'Nothing was measured'.",
+      "expected": "The page says that every part was skipped and nothing was measured, offers a way to try again (or the practice questions), and does not push a file with nothing in it.",
+      "suggestion": "Give the run an 'all skipped' reason, or derive it in Finished.svelte (no responses, every segment skipped), with copy such as 'You skipped every part, so nothing was measured this time.' When the save holds no responses at all, hide SavePanel or show it as an optional quiet link. Keep 'Back to the start' as the primary action.",
+      "files": ["web/src/session/Finished.svelte", "web/src/session/copy.ts", "web/src/session/run.ts"],
+      "spec_refs": ["§10", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-07",
+      "severity": "minor",
+      "category": "copy",
+      "title": "'Load your save file on the start screen' points to the wrong screen",
+      "route": "results",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/end-chromium/007-results-full-after-save.png",
+        "web/test-results/ux-review/flow/funnel-chromium/001-welcome.png",
+        "web/test-results/ux-review/flow/funnel-chromium/009-ready-first-visit.png"
+      ],
+      "observed": "'When to come back' ends with 'To add a session later, load your save file on the start screen.' The start screen (welcome) has no load control. The form is on 'Ready when you are', reached after Start, the honour code and the device check, and listed last there. backend/copy.ts DATA_RESTORE_FOUND says the same. A returning person who looks at the welcome finds only 'Start'.",
+      "expected": "The instruction names the screen where loading actually happens, or the welcome offers it.",
+      "suggestion": "Short term: 'To add a session later, press Start and load your save file on the “Ready when you are” screen.' Better: add 'I have a save file' to the welcome (see FLOW-01), and keep the copy as it is.",
+      "files": ["web/src/reveal/copy.ts", "web/src/backend/copy.ts", "web/src/session/Welcome.svelte"],
+      "spec_refs": ["§10", "§8"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-08",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The privacy notice can come up mid-session from browser Back while the session keeps running behind it",
+      "route": "item-matrix-series / privacy",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/edge-history-chromium/001-in-session.png",
+        "web/test-results/ux-review/flow/edge-history-chromium/002-after-browser-back-1.png",
+        "web/test-results/ux-review/flow/edge-history-chromium/003-after-browser-back-2.png"
+      ],
+      "observed": "The person opens 'Privacy and terms' from the welcome and returns with its 'Back' link (which pushes #/ and does not go back), then starts a session. Browser Back during an item then shows the full privacy notice, including 'Delete the data this site keeps in this browser'. The session stays mounted but hidden and its clock keeps running: the ring went from 0 to 2 min (8 s of real time under ?fast=1), and the item timer runs too. A second Back returns to the item with that time gone. Nothing is flagged, because the document stayed visible.",
+      "expected": "Back during a session never shows another page while the clock runs. The notice's own Back returns without adding history.",
+      "suggestion": "In Privacy.svelte, make 'Back' call `history.back()` when the app pushed the #/privacy entry, so the history does not grow. While a run is in progress, either pause it like a break whenever `privacy || data` is true in App.svelte, or answer the hashchange with the 'Finish early?' panel instead of hiding the session (see FLOW-02).",
+      "files": ["web/src/App.svelte", "web/src/session/Privacy.svelte", "web/src/session/SessionScreen.svelte", "web/src/session/run.ts"],
+      "spec_refs": ["§13", "§11.6"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-09",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The welcome screen does not say what you get, what you need or what it is not, and offers nothing to a returning visitor",
+      "route": "welcome",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/map-chromium/001-index-welcome.png",
+        "web/test-results/ux-review/flow/funnel-iphone/001-welcome.png"
+      ],
+      "observed": "The welcome is a heading, a tagline ('A jagged profile of how you think: short tasks, one honest picture.'), one paragraph (30 minutes, six parts, skip or finish early) and Start. It does not show or describe the profile you get (a shape with ranges, no single score), what the six parts are, or what you need (a keyboard or touch, a quiet place, a phone is fine or not). It does not say that you will be asked to download a file to keep the results, and the 'not an IQ test' line is only in the footer. There is no about page. A returning person gets the same screen, with no 'add a session', 'see my results' or 'notes for your AI'.",
+      "expected": "Before the gate a first-time visitor knows what the 30 minutes buy and what is asked of them. A returning visitor has a door of their own.",
+      "suggestion": "Add a small 'What you get' block (a static thumbnail of a sample profile with its ranges, three bullets: no single score, a file you keep, nothing uploaded) and a 'What you need' line. Add a secondary row: 'I have a save file' (see FLOW-01) and 'Notes for your AI'. Add an 'About HumanBench' page (#/about: what it measures, what it does not, how the profile is built, who runs it), linked from the welcome and the footer.",
+      "files": ["web/src/session/Welcome.svelte", "web/src/session/copy.ts", "web/src/App.svelte"],
+      "spec_refs": ["§10", "§13", "D1", "A13"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-10",
+      "severity": "minor",
+      "category": "flow",
+      "title": "notes.html and rt-selftest.html are islands: no way back to HumanBench, and no way in for a returning person",
+      "route": "notes / notes-returning / rt-selftest",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/map-chromium/004-notes-direct.png",
+        "web/test-results/ux-review/flow/map-chromium/005-rt-selftest-direct.png",
+        "web/test-results/ux-review/flow/tour-chromium/notes-returning/1280-light.png",
+        "web/test-results/ux-review/flow/map-iphone/004-notes-direct.png"
+      ],
+      "observed": "notes.html (10,575 px tall) and rt-selftest.html contain no links at all: no HumanBench home link, no privacy link (map.json: links []). The notes builder is linked only from the results, after the save, in a new tab. A returning visitor told in notes-returning that their notes 'are due for another look' has no way to reach the page except a bookmark or a whole new session. The self-test is linked from nowhere; the device check could point to it.",
+      "expected": "Every page links back to the app and to the privacy notice. The notes builder can be reached without taking a session.",
+      "suggestion": "Give notes.html and rt-selftest.html a one-line header link 'HumanBench' to the app's index.html (import.meta.env.BASE_URL) and the same footer as the app with 'Privacy and terms' (index.html#/privacy). Add a 'Notes for your AI' link to the welcome or ready screen for returning visitors. Optionally add 'Check this device's timing' under the device-check facts, linking rt-selftest.html.",
+      "files": ["web/src/brief/NotesBuilder.svelte", "web/src/selftest/RtSelfTest.svelte", "web/src/session/Welcome.svelte", "web/src/session/DeviceCheck.svelte"],
+      "spec_refs": ["D13", "§11.6", "§13"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-11",
+      "severity": "minor",
+      "category": "flow",
+      "title": "In the static build the privacy notice is unreachable after the gate, including on the results page",
+      "route": "results / interstitial",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/end-chromium/007-results-full-after-save.png",
+        "web/test-results/ux-review/flow/session-chromium/004-matrix-series-interstitial.png"
+      ],
+      "observed": "App.svelte shows the footer links only when a backend exists (`{#if backend !== null}`). In the default static build the only 'Privacy and terms' links are on the welcome and the gate. During the session and on the results, the footer has the disclaimer only, so the notice and its 'Delete the data this site keeps in this browser' button cannot be reached by clicking. That is just where a person decides what to keep.",
+      "expected": "The privacy notice and terms are one click away on every screen (§13: 'publish a privacy notice').",
+      "suggestion": "Always render 'Privacy and terms' in the footer, and keep the #/data link conditional on the backend. Pair this with FLOW-08: while a run is in progress, open the notice without hiding a running session (pause, or open it in a new tab during the run only).",
+      "files": ["web/src/App.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-12",
+      "severity": "minor",
+      "category": "layout",
+      "title": "The results page is very long and its one exit is at the very bottom; the save button sits three screens down",
+      "route": "results / results-saved",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/end-chromium/005-results-full-before-save.png",
+        "web/test-results/ux-review/flow/end-chromium/007-results-full-after-save.png",
+        "web/test-results/ux-review/flow/end-iphone/005-results-full-before-save.png",
+        "web/test-results/ux-review/flow/end-iphone/007-results-full-after-save.png"
+      ],
+      "observed": "Before the save the page is 4,530 px at 1280 px and 5,420 px on an iPhone 13 (8 screens). After it, the page is 6,819 px and 8,167 px (12 screens). 'Download save file' starts 1,881 px down (2,052 px on the phone), below the chart, five paragraphs of chart notes, the peaks and the cluster buttons. 'Save your file first to see the next steps.' sits outside the content column at the left edge (1280 px). The headings do not map the page well: 'Explore a cluster:' is not a heading, and 'After you save' is a container label. 'Back to the start', the only way out, is below everything. The order itself matches §10.",
+      "expected": "The reveal keeps the §10 order but is easy to scan. The person always knows the save is waiting and how much is left.",
+      "suggestion": "Keep the order. After 'Your profile is ready.' add a one-line pointer: 'Your save file is below the peaks; download it before you leave' (an in-page link to the save panel). Fold the five chart-reading paragraphs into a 'How to read this chart' disclosure. Make 'Explore a cluster' an h3. Rename 'After you save' to 'Share and use your results'. Put the pending note inside the column (class hb-reveal-panel). Moving the save panel itself above the peaks would change §10 and needs the owner.",
+      "files": ["web/src/reveal/Reveal.svelte", "web/src/reveal/RevealProfile.svelte", "web/src/reveal/AfterSave.svelte", "web/src/reveal/copy.ts", "web/src/reveal/reveal.css"],
+      "spec_refs": ["§10", "§9"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-13",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Stale notices: 'Reaction Time skipped' and 'That question ran out of time' stay up on later screens",
+      "route": "interstitial / item-matrix-series / break-offer",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/idle-chromium/002-idle-matrix-series-reaction-time-skipped-it-will.png",
+        "web/test-results/ux-review/flow/idle-chromium/004-idle-up-next-spatial-that-question-ran-out-of-time.png",
+        "web/test-results/ux-review/flow/tour-chromium/break-offer/1280-light.png"
+      ],
+      "observed": "The notice after skipping Reaction time is still shown on the next interstitial, on the first Matrix & Series item, and 31 minutes later on 'Time for a break?'. The time-out notice for the last Matrix & Series item is still shown on 'Up next: Spatial', so it seems to be about a question of a part that has not started.",
+      "expected": "A notice speaks about what just happened and goes when the person moves on (the next item or the next part).",
+      "suggestion": "Clear `view.notice` in run.ts when the next screen after the one it was raised on is shown (or on Start of an interstitial). Keep each notice for exactly one screen. e2e/session.spec.ts:585-590 and SessionScreen.dom.test.ts:161 expect the time-out notice while the next item is up, which a one-screen lifetime keeps.",
+      "files": ["web/src/session/run.ts", "web/src/session/SessionScreen.svelte"],
+      "spec_refs": ["§10", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-14",
+      "severity": "minor",
+      "category": "content",
+      "title": "'Three worked examples' shows two after a long session",
+      "route": "results",
+      "env": "Chromium 1280 (full ?fast=1 session, 100 answers)",
+      "screenshots": ["web/test-results/ux-review/flow/session-chromium/020-results.png"],
+      "observed": "After a full session (Spatial skipped, 100 answers by the driver) the section heading says 'Three worked examples' but shows only 'Example 1: Matrix' and 'Example 2: Series'. `pickWorkedItems` drops a kind when every attempt hits a family the person already saw, which happened for Quantitative. A typical person answers fewer questions, but the heading is fixed text either way.",
+      "expected": "The heading matches what is shown, and three examples are shown whenever possible (§10: '3 procedural items with worked solutions').",
+      "suggestion": "Make the heading count-aware ('Worked examples', or 'Two worked examples'). In worked/index.ts, retry the missing kind at a neighbouring stratum, or raise WORKED_ATTEMPTS, before giving up.",
+      "files": ["web/src/reveal/WorkedSection.svelte", "web/src/reveal/copy.ts", "web/src/reveal/worked/index.ts"],
+      "spec_refs": ["§10", "§7.7"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-15",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Ready screen: Begin comes before loading a save, and only one file can be loaded",
+      "route": "ready / ready-returning",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/funnel-chromium/009-ready-first-visit.png",
+        "web/test-results/ux-review/flow/end-chromium/001-ready-loaded.png",
+        "web/test-results/ux-review/flow/funnel-iphone/009-ready-first-visit.png"
+      ],
+      "observed": "The primary 'Begin' is at the top. 'Continue from a save file' is the last block, under the practice note and the focus picker. A returning person who presses Begin first starts an unconnected session, and once it has begun the file cannot be added. A second 'Load' replaces the first file (`onchoices({ ...choices, loaded: r.save })`), so two files from two devices can never be combined, although merging is defined (R-8.1). Begin keeps its label after a load; the 'Loaded 1 earlier session' status line far below is the only sign.",
+      "expected": "A returning person loads first, then begins, and can see that the new session will be added. Several files can be combined.",
+      "suggestion": "When a save is loaded or found, relabel the button 'Begin (adds to your N earlier sessions)'. Move 'Continue from a save file' above Begin when the welcome's 'I have a save file' route was taken. Let Load add to what is loaded (`mergeAll([...loaded, r.save])`), and list what is loaded, each entry with a remove button.",
+      "files": ["web/src/session/Ready.svelte", "web/src/session/ready-state.ts", "web/src/session/copy.ts"],
+      "spec_refs": ["R-8.1", "§8"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-16",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Skipping a part does not shorten the session: its minutes go to the parts after it (Quantitative showed 'About 14 min.')",
+      "route": "interstitial",
+      "env": "Chromium 1280 (?fast=1 journey, Spatial skipped)",
+      "screenshots": [
+        "web/test-results/ux-review/flow/session-chromium/010-spatial-interstitial.png",
+        "web/test-results/ux-review/flow/session-chromium/014-quantitative-reasoning-interstitial.png"
+      ],
+      "observed": "The welcome says 'six short parts'. The interstitials said About 3, 5, 5, 5, 14 and 4 minutes. After Spatial was skipped (and earlier parts ended early), `#budgetFor` gave all the remaining target time to Quantitative Reasoning: 'Up next: Quantitative Reasoning. About 14 min.', against the 6 to 10 minute blocks of §10. A person who skips a part they cannot do expects a shorter session, not a longer next part. (The driver answers fast, so the size of the effect is overstated here.)",
+      "expected": "Skipping a part shortens the session, or the person is told the time moves to other parts. No part runs far beyond §10's 6 to 10 minutes.",
+      "suggestion": "Cap a CAT part's budget at its planned share (about 5 to 8 min, or §10's 10 min) and let the session end sooner when parts are skipped. Or say on the skip confirmation: 'Its time goes to the other parts.' This is a policy choice (A15 target time).",
+      "files": ["web/src/session/run.ts", "web/src/session/copy.ts"],
+      "spec_refs": ["§10", "§7.4", "A15"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-17",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The gate's notice link opens a second copy of the app in a new tab",
+      "route": "gate / privacy",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/funnel-chromium/002-gate.png",
+        "web/test-results/ux-review/flow/funnel-chromium-popup/001-gate-privacy-new-tab.png"
+      ],
+      "observed": "'Read the full privacy notice and terms' has target=_blank. The new tab is a whole app at #/privacy. Its 'Back' link leads to a second welcome screen (funnel.json gatePrivacyTabBack), so the person now has two app tabs and can start two sessions. App.svelte already keeps the flow mounted under #/privacy, so that a person who reads the notice mid-way comes back to where they were. The gate does not use that.",
+      "expected": "Reading the notice from the gate returns to the gate, in one tab.",
+      "suggestion": "Drop target=_blank from the gate link (the hidden flow keeps the gate state). Make the notice's 'Back' a `history.back()` when there is app history (see FLOW-08). If a new tab is kept, label its back link 'Close this tab to return' instead of 'Back'.",
+      "files": ["web/src/session/ConsentGate.svelte", "web/src/session/Privacy.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-18",
+      "severity": "polish",
+      "category": "flow",
+      "title": "Practice: 'Back' mid-way leads to 'Practice complete' and a second 'Back', and the end screen does not offer Begin",
+      "route": "practice",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/funnel-chromium/011-practice.png",
+        "web/test-results/ux-review/flow/funnel-chromium/012-practice-back.png"
+      ],
+      "observed": "Pressing 'Back' on the first practice question, before any answer, shows 'Practice complete' ('The real session is the same…') with one button, 'Back'. A second 'Back' reaches the ready screen. Neither label says where it goes, and the person who finished practice has to go back before Begin. e2e/session.spec.ts:314-318 and SessionApp.dom.test.ts:192 assert this two-step path, so a fix updates them.",
+      "expected": "Leaving practice early goes straight to the ready screen. Finishing practice offers the next step directly.",
+      "suggestion": "Rename the mid-practice button 'Stop practice' and send it to the ready screen. On 'Practice complete', show 'Begin the session' (primary) and 'Back to the ready screen'.",
+      "files": ["web/src/session/PracticeScreen.svelte", "web/src/session/copy.ts", "web/e2e/session.spec.ts", "web/src/session/SessionApp.dom.test.ts"],
+      "spec_refs": ["§10"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-19",
+      "severity": "polish",
+      "category": "visual",
+      "title": "'Leave without saving?' makes 'Leave anyway' the primary button",
+      "route": "results-leave",
+      "env": "Chromium 1280",
+      "screenshots": [
+        "web/test-results/ux-review/flow/end-chromium/006-leave-confirm.png",
+        "web/test-results/ux-review/flow/tour-chromium/results-leave/1280-light.png"
+      ],
+      "observed": "The shared ConfirmPanel always styles the 'yes' answer as primary. In the leave question that is 'Leave anyway' (solid blue, first), and 'Stay and save' is the secondary outline button. The safe choice the page wants (the save is 'required before leaving', §10) looks like the lesser one.",
+      "expected": "'Stay and save' is the primary, first button; 'Leave anyway' is secondary.",
+      "suggestion": "Give ConfirmPanel a `primary: 'yes' | 'no'` prop (default 'yes'), and pass 'no' from Reveal.svelte for the leave question. Focus stays on 'Stay and save'.",
+      "files": ["web/src/session/ConfirmPanel.svelte", "web/src/reveal/Reveal.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "FLOW-20",
+      "severity": "polish",
+      "category": "flow",
+      "title": "Under 18 is a dead end with no way back from a mis-tap",
+      "route": "gate-under-18",
+      "env": "Chromium 1280; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/flow/funnel-chromium/003-gate-error.png",
+        "web/test-results/ux-review/flow/funnel-chromium/004-under-18.png",
+        "web/test-results/ux-review/flow/funnel-iphone/004-under-18.png"
+      ],
+      "observed": "'I am under 18' sits right next to 'Continue' (and below it on a phone). The blocked screen ('HumanBench is for adults … Nothing has been stored on this device. You can close this page.') is kind and stores nothing (verified: storage {}), but it has no control at all. An adult who tapped it by mistake must know to reload, which then works (reload returns to the welcome).",
+      "expected": "The block stays firm for under-18s, and an adult's mis-tap is recoverable without guessing.",
+      "suggestion": "Add a quiet text link under the message, 'I chose this by mistake', back to the gate with the checkbox unticked. Or put a little distance between the two buttons. This touches the §13 block, so the owner decides.",
+      "files": ["web/src/session/ConsentGate.svelte", "web/src/session/copy.ts"],
+      "spec_refs": ["§13"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "FLOW-21",
+      "severity": "polish",
+      "category": "flow",
+      "title": "A second tab counts the session running in the first tab as an 'earlier session' and lets another start",
+      "route": "ready-returning",
+      "env": "Chromium 1280 (two pages, one context)",
+      "screenshots": ["web/test-results/ux-review/flow/edge-tabs-chromium-b/001-second-tab-ready.png"],
+      "observed": "With a session in progress in tab A (one answer given), tab B opened at the welcome went straight past the gate and showed 'Add my new session to the 1 earlier session saved on this device.' on the ready screen, offering a focus session and Begin. Nothing mentions that a session is running in another tab, so two sessions can run side by side and fold into each other's saves.",
+      "expected": "The second tab says that a session is in progress elsewhere and offers to continue there or start anyway.",
+      "suggestion": "Write a heartbeat key (or use BroadcastChannel) while phase is 'run'. On the ready screen, if a fresh heartbeat exists, show 'A session is running in another tab of this browser.' above Begin.",
+      "files": ["web/src/session/SessionApp.svelte", "web/src/session/Ready.svelte", "web/src/session/persist.ts"],
+      "spec_refs": ["§8"],
+      "confidence": "medium",
+      "owner_decision": false
+    }
+  ]
+}

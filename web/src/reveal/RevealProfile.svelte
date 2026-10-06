@@ -52,15 +52,21 @@
   let handle: RevealHandle | null = null
   let skipButton: HTMLButtonElement | undefined = $state()
   let replayButton: HTMLButtonElement | undefined = $state()
-  let announced = $state(untrack(() => (!reduced && count > 0 ? REVEAL_BUILDING : REVEAL_READY)))
+  // The status line is mounted with its ready text when nothing is built up. When something is, it is mounted EMPTY
+  // and the build-up is announced a moment later: a live region that appears with its text is not announced by most
+  // screen readers (UX-036), and the start of the build-up is the sentence that matters.
+  let announced = $state(untrack(() => (!reduced && count > 0 ? '' : REVEAL_READY)))
+  /** How long after mount the build-up is announced (the region has to be in the page, empty, first). */
+  const ANNOUNCE_AFTER_MS = 100
 
-  function run(): void {
+  /** `announce`: say that the build-up has started now (false at mount, where the region is still empty and the announcement waits). */
+  function run(announce = true): void {
     // "Replay animation" is replaced by "Skip animation": keep keyboard focus on the button in its place.
     const replayHadFocus = replayButton !== undefined && document.activeElement === replayButton
     handle?.stop()
     building = true
     progress = 0
-    announced = REVEAL_BUILDING
+    if (announce) announced = REVEAL_BUILDING
     if (replayHadFocus) void tick().then(() => skipButton?.focus())
     handle = startReveal({
       count,
@@ -79,9 +85,15 @@
   }
 
   onMount(() => {
-    if (building) run()
+    if (building) run(false)
     else onbuilt()
-    return () => handle?.stop()
+    const timer = setTimeout(() => {
+      if (building && announced === '') announced = REVEAL_BUILDING
+    }, ANNOUNCE_AFTER_MS)
+    return () => {
+      clearTimeout(timer)
+      handle?.stop()
+    }
   })
 
   const now = $derived(building ? revealingNow(estimates, progress) : null)
@@ -97,7 +109,7 @@
       {#if building}
         <button type="button" class="hb-btn" bind:this={skipButton} onclick={() => handle?.skip()}>{REVEAL_SKIP}</button>
       {:else if !reduced && count > 0}
-        <button type="button" class="hb-btn" bind:this={replayButton} onclick={run}>{REVEAL_REPLAY}</button>
+        <button type="button" class="hb-btn" bind:this={replayButton} onclick={() => run()}>{REVEAL_REPLAY}</button>
       {/if}
       <p class="now" aria-hidden="true">{now === null ? '' : revealNow(now.name, now.index, now.count)}</p>
     </div>

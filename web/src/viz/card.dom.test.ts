@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../engine/axes'
 import BlobChart from './BlobChart.svelte'
 import { buildCard, CARD_H, CARD_W, cardSvg, PNG_SCALE } from './card'
-import { axisEstimates, type AxisEstimate } from './profile'
+import { axisEstimates, measuredFields, type AxisEstimate } from './profile'
 import { syntheticProfile } from './synthetic'
 
 let app: ReturnType<typeof mount> | undefined
@@ -120,6 +120,29 @@ describe('the blob on the card is the blob on the page', () => {
 
     expect(cardNodes).toEqual(pageNodes)
     expect(cardNodes.length).toBeGreaterThan(5)
+  })
+
+  it('off-scale arrowheads, the outlined band and the ring labels under the data are the same on both (UX-037, UX-045, UX-047)', () => {
+    const base = estimatesOf('full')
+    const est = base.map((e) => (e.code === 'RT' ? { ...e, ...measuredFields(-4.6, 0.3) } : e.code === 'MAT' ? { ...e, ...measuredFields(3.7, 0.3) } : e))
+    const card = buildCard({ estimates: est, sessions: 1 })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    app = mount(BlobChart, { target, props: { model: card.placement.model, uid: 'page-chart', title: 't', description: 'd' } })
+    flushSync()
+    const page = target.querySelector('svg.hb-blob')!
+    const pageNodes = [...page.children].filter((c) => !['title', 'desc'].includes(c.localName)).map((c) => describe_(c, 'page-chart'))
+    const cardNodes = [...parse(card.svg).querySelector('g.blob')!.children].map((c) => describe_(c, 'hb-card'))
+    expect(cardNodes).toEqual(pageNodes)
+    expect(page.querySelectorAll('path.arrow')).toHaveLength(2)
+    expect(page.querySelectorAll('g.mark circle.marker')).toHaveLength(card.shown.length - 2)
+    // Order: the grid, then the ring labels, then the data (band, fuzz, curve), then the marks, then the labels.
+    const order = [...page.children].map((c) => (c.getAttribute('class') ?? c.localName).split(' ')[0]!)
+    const idx = (c: string): number => order.indexOf(c)
+    expect(idx('ring-labels')).toBe(idx('grid') + 1)
+    for (const later of ['band', 'fuzz', 'crisp', 'marks', 'labels']) expect(idx('ring-labels'), later).toBeLessThan(idx(later))
+    // A card has no in-chart ring note (it sets the words itself), so neither does the chart of its model.
+    expect(page.querySelector('text.ring-note')).toBeNull()
   })
 
   it('a hidden skill\'s spoke is gone from the card\'s blob, and the rest are re-spread', () => {

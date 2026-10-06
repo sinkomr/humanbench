@@ -42,13 +42,27 @@
 {/if}
 
 <style>
+  /*
+   * On the reveal this sits beside the share card, so it wears the same surface, border and heading
+   * colour (the renderer tokens `--r-*`, which the reveal defines) and the same space above the heading.
+   * Where those tokens are not defined (the dev demo) the app-wide ones stand in.
+   */
   .card {
-    border: 1px solid var(--border);
+    border: 1px solid var(--r-border, var(--border));
     border-radius: 0.5rem;
-    padding: 0.75rem 1rem 1rem;
-    margin: 1.5rem 0;
-    background: var(--bg);
-    color: var(--text);
+    padding: 0.75rem 1rem;
+    margin: 0 0 1rem;
+    background: var(--r-surface, var(--bg));
+    color: var(--r-fg, var(--text));
     overflow-wrap: anywhere;
+  }
+  /* The reveal gives its own h3 a top margin; the card's first line sits at the card's padding, like the share card's. */
+  .card > :global(h2),
+  .card > :global(h3) {
+    margin-top: 0;
+    color: var(--r-fg, var(--text-strong));
+  }
+  .card > :global(:last-child) {
+    margin-bottom: 0;
   }
 </style>

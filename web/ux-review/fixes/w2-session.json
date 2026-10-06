@@ -1,0 +1,152 @@
+{
+  "area": "w2-session",
+  "model": "sonnet",
+  "items": [
+    {
+      "id": "VER-01",
+      "outcome": "fixed",
+      "summary": "Checklist rows no longer break a word. The list is a CSS container (container: checklist / inline-size) and a row lays out by the width of the list: under 12rem the name has the whole width and the mark sits beside the status on the line below; from 12rem (the 16rem sidebar has 15rem of list) mark | name with the status under the name; from 20rem one row, mark | name | status, status max 7rem and right-aligned as before. The status no longer squeezes the name, which was the cause (name column minmax(0,1fr) between a 1.25rem mark and an auto status of up to 7rem). .name keeps overflow-wrap: break-word as a last resort for a word wider than the whole list, and has hyphens: none (hyphens: auto splits a word at the end of a line, which is the defect). The <wbr> after '/' is unchanged, DOM order stays mark, name, status (reading order and the 'Speed: Reaction Time, ... . Now' sentence are unchanged), 'Up next' is still said once and the list is still a named region.",
+      "files": [
+        "web/src/session/Checklist.svelte"
+      ],
+      "tests_added": [
+        "web/e2e/ux2-session.spec.ts 'the checklist does not break a word (VER-01)': three states (first interstitial, after a skip, inside a part) x eight sizes (320/390/768/1024/1280/1440 px at 100%, 320 and 390 px with the text at 200%); every word of every text node under .checklist is measured with Range.getClientRects and none may be on two lines; the <wbr> after '/' is kept; no row reaches past the window; at 320/390 px with 200% text no row is taller than 8 lines of its name's font (measured: the worst row is about 6). Mutation-checked: with the wave 1 Checklist.svelte the test fails on 'Metacognition' at 1024 px.",
+        "web/e2e/ux2-session.spec.ts ''Up next' is still said once ...': one 'Up next', named region, no nav, every row reads as 'Name: axes.' at 320 px",
+        "web/src/session/components.dom.test.ts: every row is mark, name, status in that order (the layout only moves them by grid areas); named region, no nav; mark aria-hidden"
+      ],
+      "tests_changed": [],
+      "deviations": [
+        "The name column does not get a fixed 9ch minimum. 'Metacognition' alone is about 7.2rem in bold (more than 9ch), so a minimum on a column shared with the mark and the status could not hold at 320 px with 200% text (the list is 8rem wide there). The name gets the full width of the list when the list is narrow instead (width-driven layouts above).",
+        "The status moves under the name in the 16rem sidebar as well (15rem of list), not only on a phone: next to the mark and a name it left the name under 8rem. Rows are one line taller there; they are not taller than before at 320 px with 200% text (about 6 lines for the worst row, against one row of 1,530 px).",
+        "hyphens: auto became hyphens: none (the spec said nothing about it; hyphenation is itself a split inside a word)."
+      ]
+    },
+    {
+      "id": "VER-02",
+      "outcome": "fixed",
+      "summary": "App.svelte does not render the footer's privacy link while the welcome screen is up (flowPhase === 'welcome' with neither the notice nor the data page open); the welcome's own 44 px link under Start (UX-016) is the only one. The footer's links paragraph is not rendered at all when it would be empty (no server, welcome). With a server the data link stays. Every other screen keeps the footer link, including the 'opens in a new tab' variant during a run; with the notice open on the welcome the footer link is there (the notice hides the flow), and goes again when it closes. On a narrow screen (max-width 40rem) the footer links get padding 0.625rem 0 around their 24px line: 44 px high, the font stays 0.875rem.",
+      "files": [
+        "web/src/App.svelte"
+      ],
+      "tests_added": [
+        "web/src/App.dom.test.ts: the welcome has no footer link and exactly one link named 'Privacy and terms' (inside main); the gate has the footer link, in this tab; the notice open on the welcome shows the footer link and closing it takes it away",
+        "web/e2e/ux2-session.spec.ts 'one privacy link on the welcome ...': getByRole('link', {name: 'Privacy and terms'}) resolves to exactly one on the welcome and the contentinfo has no link; the footer link is on gate, honour code, device check, ready, the run (new-tab variant, accessible name 'Privacy and terms (opens in a new tab)', target _blank), the end, and the results of a loaded save; 'Back to the start' puts the welcome's link back and the footer's goes; on a 390 x 664 screen every footer link box is 43.9 px or taller on all those screens with a font of 16 px or less, and the page does not scroll sideways"
+      ],
+      "tests_changed": [
+        "web/src/App.dom.test.ts: 'the footer links the privacy notice from every screen' now starts on the welcome (none) and moves to the gate",
+        "web/e2e/smoke.spec.ts: the footer on the welcome holds the disclaimer and no link; one link of that name on the page",
+        "web/e2e/ux-session.spec.ts: the footer test (welcome has one link, the footer has none; gate has the footer link; run opens a new tab) and the 44 px phone test (the only link of that name on the page)"
+      ],
+      "deviations": [
+        "web/e2e/session.spec.ts needed no change: its privacy-link tests use the gate's own 'privacy notice and terms' link, which the footer link's name does not match."
+      ]
+    },
+    {
+      "id": "UX-017a",
+      "outcome": "fixed",
+      "summary": "SessionScreen.svelte keeps the Stage mounted while view.unavailable (the renderer reported the condition and stays alive) but inside an always-present wrapper <div class='stage-host' hidden={view.unavailable}> (display: contents when shown, so layout is as before; display: none when parked). The parked renderer is out of sight and out of the accessibility tree, so its own role=status note (ROTATION_UNAVAILABLE) and its empty frames are neither drawn nor read, and for an unsupported family Stage's own 'This question type is not available' alert is parked too. The session panel's message paragraph is now role='status', which makes the panel the one announcement (the header status line is still blanked for this case). The panel (role=group) still sits under the heading with Skip <part> as the primary button and Finish early.",
+      "files": [
+        "web/src/session/SessionScreen.svelte"
+      ],
+      "tests_added": [
+        "web/src/session/SessionScreen.dom.test.ts 'a question the browser cannot draw says so once (UX-017a)': the wrapper is the same node before and after, hidden when unavailable, the renderer node is never remounted; the message is in the text outside hidden subtrees once and the renderer's note zero times; exactly one live region outside a hidden subtree has text (the panel's); Skip is hb-primary and Finish early is not; a drawable question is not parked; Skip drops the screen with the parked renderer. Mutation-checked (without the hidden attribute three of them fail).",
+        "web/e2e/ux2-session.spec.ts 'a question the browser cannot draw says so once (UX-017a)' on the item-spatial-no-webgl route: at the default size of each project (chromium, iphone, webkit), at 320 x 568, and at 320 x 568 with the text at 200%: the message once in body innerText, once in body ariaSnapshot, the renderer's note in neither; a requestAnimationFrame log of live regions that are on screen with text has exactly one entry about the message, and it is the panel's; div.rotation is attached but hidden, no canvas/img/radio/Confirm; Skip <part> is hb-primary and fully inside the first screen at 320 x 568 and the page is at scrollY 0; no sideways scroll at 200% text; Tab from the heading goes Skip, Finish early, footer link and never to an input or canvas; Skip leaves for the next part; axe has no serious issue."
+      ],
+      "tests_changed": [
+        "web/e2e/ux-session.spec.ts 'its message and its way out are the first things on a 320 x 568 screen, said once': it passed while the text showed twice (the other text did not contain 'cannot be shown in your browser'). It now also reads body innerText and ariaSnapshot (the message once, ROTATION_UNAVAILABLE and 'could not be drawn' in neither), and that div.rotation is attached and hidden.",
+        "web/src/session/SessionScreen.dom.test.ts: the existing panel test's comment (the renderer is parked)"
+      ],
+      "deviations": [
+        "Because the renderer's note is now parked, three tests that live in files this package does not own cannot see it any more: see integration_requests (routes.ts item-spatial-no-webgl claims RotationRenderer as visible; ux-render.spec.ts:412 reads the note by getByRole('status')).",
+        "The panel message got role='status' (not in the item text): without it the panel (role=group) would be silent and the only announcement of the condition would be the renderer's note that is now parked. It is inserted with its text, as the renderer's note was; a screen reader that ignores a live region inserted with content gets the message on reading the panel, which follows the heading."
+      ]
+    },
+    {
+      "id": "UX-012a",
+      "outcome": "fixed",
+      "summary": "Ready.svelte: success and info messages stay in the one always-mounted role=status paragraph ('Loaded 1 earlier session...'); a failure is a separate role=alert paragraph (class error, id {uid}-problem) rendered only while there is one. No element changes its role at run time. The file field and the code box point at the alert with aria-describedby and aria-invalid exactly as they did at the status line ('both' when nothing was chosen). Editing or clearing the field, or typing in the box, removes the alert. The same split for the server backup ('Nothing matched...', 'The server could not be reached...') in the details block: status for 'Loaded your backup...', alert for the two failures. The 'Last saved today at ...' note is untouched (a plain paragraph tied to the checkbox).",
+      "files": [
+        "web/src/session/Ready.svelte"
+      ],
+      "tests_added": [
+        "web/src/session/Ready.dom.test.ts: a bad file and a bad code are each exactly one alert tied to their field with the status line empty; the status element keeps its role and identity through a failure then a success; Load with nothing chosen is one alert both fields point at; at rest one status and no alert; the server backup splits the same way (found: status, none/unreachable: alert)",
+        "web/e2e/ux-session.spec.ts: a bad file and a bad code are one alert each, tied to the field, taken away by typing; a good code is a status with no alert",
+        "web/e2e/ux2-session.spec.ts 'the ready screen says why a save did not load (UX-012a)': one alert per failure, the status empty, aria-describedby/invalid on the right field, the message once in the accessibility tree; 'Last saved today at ..., 1 question answered.' shows after an autosave on a second visit with no alert, and a loaded code is a status with no alert"
+      ],
+      "tests_changed": [
+        "web/src/session/Ready.dom.test.ts and web/src/session/components.dom.test.ts: failures are read from p[role=alert], successes still from p[role=status]",
+        "web/e2e/session-save.spec.ts 'says so for a file that is not a save ...': failures from getByRole('alert') (one at a time, status empty). Lines 598-661 read success lines from getByRole('status') and needed no change."
+      ],
+      "deviations": []
+    },
+    {
+      "id": "PARSE-PASTE",
+      "outcome": "fixed",
+      "summary": "save/parse.ts: a ParseSource ('file' | 'paste') is threaded through loadSaveDocument (new fourth argument, default 'file' so autosave.ts, migrate.test.ts and every other caller keep today's wording), parseJson, fromGzip and fromText. parseSaveText and a pasted DataTransfer text are 'paste'; parseSaveBytes, readSaveFile and a dropped file are 'file'. The messages that name the input have a file and a paste form: not a save ('This file is not a HumanBench save. ...' / 'This text is not a HumanBench save or save code. Choose your downloaded save file, or paste the save code you copied.'), cut off ('This save file looks cut off or damaged ...' / 'This pasted save looks cut off or damaged, so it cannot be read. Copy it again in full, or choose your downloaded save file.'), damaged ('This pasted save is damaged or was edited into an unreadable form. Copy it again from your results, or choose your downloaded save file.') and cannot be opened ('... the pasted text may be damaged.'). Every error code is unchanged; messages still contain 'not a HumanBench save' and 'cut off or damaged', so the wave 1 and session-save assertions hold. The pasted not-a-save sentence for random words is now 'This text is not ...' (was 'This is not ...'), one wording for every pasted not-a-save case.",
+      "files": [
+        "web/src/save/parse.ts"
+      ],
+      "tests_added": [
+        "web/src/save/parse.test.ts 'the wording follows where the input came from': raw JSON that is not a save, a JSON object, base64 of plain JSON and a gzip code are worded as text when pasted and as a file when chosen; cut-off raw JSON (pasted: 'This pasted save looks cut off or damaged', chosen: 'This save file looks cut off or damaged', both code not_a_save); a pasted save that fails the schema or has an unreadable version (codes invalid / unknown_version, no format terms, a next step); loadSaveDocument defaults to the file wording and takes 'paste'; DataTransfer text vs an attached file; a property over random text: a pasted failure never says 'This file / This save file / the file', a chosen one never says 'This text / pasted'.",
+        "web/e2e/ux2-session.spec.ts and web/e2e/session-save.spec.ts: pasted raw JSON that is not a save / cut off through the Ready screen, and a chosen cut-off file keeps the file wording"
+      ],
+      "tests_changed": [
+        "web/src/save/parse.test.ts: 'This is not a HumanBench save or save code' -> 'This text is not ...' (two expectations)"
+      ],
+      "deviations": [
+        "Callers grepped (src and e2e): Ready.svelte (readSaveFile, parseSaveText), backend/DataPage.svelte (readSaveFile / parseSaveText), brief-store/persist.ts (readSaveFile / parseSaveText), save/autosave.ts (loadSaveDocument with the default), tests. src/brief/** has its own parse.ts (notes parsing) that does not use save/parse. No caller needed a change."
+      ]
+    },
+    {
+      "id": "PRACTICE-END",
+      "outcome": "fixed",
+      "summary": "PracticeRun.end() removed from session/practice.ts. grep over web/src and web/e2e: the only caller was practice.test.ts (PracticeScreen's 'Stop practice' calls ondone directly, UX-004; SessionApp.coverage.dom.test.ts subclasses PracticeRun but never calls end). The test 'can be left at any time, and notifies its listeners' became a test of subscribe/unsubscribe through itemUnavailable() and next().",
+      "files": [
+        "web/src/session/practice.ts"
+      ],
+      "tests_added": [
+        "web/src/session/practice.test.ts: listeners are notified once per change and not after unsubscribing"
+      ],
+      "tests_changed": [
+        "web/src/session/practice.test.ts: the end() test replaced as above"
+      ],
+      "deviations": []
+    }
+  ],
+  "integration_requests": [
+    {
+      "id": "VER-02",
+      "file": "web/src/App.served.dom.test.ts",
+      "change": "Lines 61-69, 'with a server the footer links the notice and the data page; without one only the notice' (fails now, caused by VER-02, not a flake). On the welcome screen the footer has no privacy link. Change the first expectation to `toEqual(['#/data'])` (with a server) and the second to `toEqual([])` (without), then add a click on 'Start' and expect `['#/privacy', '#/data']` / `['#/privacy']` on the gate (click(buttonByText(document.body, 'Start')) + flushSync()). I could not edit it: it is not in this package's file list."
+    },
+    {
+      "id": "UX-017a",
+      "file": "web/e2e/routes.ts",
+      "change": "Route 'item-spatial-no-webgl' (line ~451): `covers: ['render/rotation/RotationRenderer.svelte']` makes openRoute() wait for `div.rotation` to be visible, and the renderer is now parked (hidden) on purpose, so all 7 a11y.spec.ts tests of that route fail (chromium; 6 on iphone): 'item-spatial-no-webgl claims render/rotation/RotationRenderer.svelte, which draws div.rotation ... Received: hidden'. Change `covers` to `['session/SessionScreen.svelte']` (scripts/a11y-routes.test.ts line 57 needs at least one claim) and update `state` to 'a spatial item in a browser without WebGL: the panel that says so once, with the skip offer'. Then scripts/a11y-routes.test.ts will want the route in STATES (it shares its claim with other session routes: test 'lets no route go unseen'): add 'item-spatial-no-webgl' there. Everything else in a11y.spec.ts for welcome|ready|item-spatial|interstitial|item- passes on chromium and iphone (42 and 36 passed). My own ux2-session.spec.ts covers this route with axe, 320 px, 200% text and the keyboard meanwhile (it calls route.open, not openRoute)."
+    },
+    {
+      "id": "UX-017a",
+      "file": "web/e2e/ux-render.spec.ts",
+      "change": "Line 412, 'rotation without WebGL (UX-017b)': `await expect(rotation.getByRole('status')).toHaveText(ROTATION_UNAVAILABLE, { timeout: 30_000 })` fails in the session now (confirmed on chromium: the renderer's note is in a hidden wrapper, getByRole skips hidden elements). Replace with `await expect(rotation.getByRole('status', { includeHidden: true })).toHaveText(ROTATION_UNAVAILABLE, { timeout: 30_000 })` and add `await expect(rotation).toBeHidden()` (the wrapper hides the whole renderer; the panel in .unavailable is what a person sees and hears). The other lines of that test (no canvas, img, radio, Confirm) still pass. render-visual.spec.ts:218 is not affected (it uses the gallery route, which has no SessionScreen)."
+    },
+    {
+      "id": "VER-01",
+      "file": "web/ux-review/lib/journey.ts",
+      "change": "None needed to run, but any harness that screenshots the sidebar will see the status under the name instead of to the right of it (rows of the 16rem sidebar are laid out mark | name with the status on the line below). That is intended; see the VER-01 deviations."
+    }
+  ],
+  "gates": {
+    "check": "npm run check: 0 errors, 0 warnings (svelte-check --fail-on-warnings, tsc node, tsc scripts)",
+    "lint_language": "npm run lint:language: 359 files clean",
+    "build": "npx vite build --outDir test-results/iso/w2-session/dist-gate --emptyOutDir: exit 0",
+    "vitest_targeted": "App, App.served, Ready, Ready.served, components, SessionScreen, practice, PracticeScreen, src/save/**, copy.test: all pass except App.served.dom.test.ts 'with a server the footer links ...' (see integration_requests, caused by VER-02)",
+    "vitest_full": "npx vitest run (load average up to 190 from the other workstreams): 4599 passed, 6 failed. Five of the six were timeouts under that load in files this package does not own (sim/cat.test.ts, render/leak.dom.test.ts, save/brief-prefs.test.ts, save/merge.test.ts x2, tasks/span/span.test.ts) and all pass when re-run alone (108 tests, load about 8). The sixth is App.served.dom.test.ts (integration request).",
+    "e2e": {
+      "ux2-session + ux-session + smoke": "chromium, iphone, webkit: all pass (mobile-only tests skip on desktop engines and the reverse)",
+      "session-save + session": "chromium and iphone pass. The first run of session-save failed in the whole-session play on both projects (RT block 'Start' not found within 20 s at load average 190, the page showed the fast-mode clock at 13 min); re-run alone it passed, and the full file passed on chromium (19) and iphone (19).",
+      "keyboard-session": "chromium: 6 passed",
+      "a11y.spec.ts --grep 'welcome|ready|item-spatial|interstitial|item-'": "chromium: 42 passed, 7 failed; iphone: 36 passed, 6 failed. Every failure is the item-spatial-no-webgl route's renderer claim (integration request)."
+    },
+    "notes": "All e2e ran through ux-review/playwright.iso.config.ts on ports 4710-4711 with HB_RUN w2-session-*; web/test-results was not touched outside test-results/iso/. A throwaway vite preview on 4712 for screenshots was stopped."
+  }
+}

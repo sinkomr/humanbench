@@ -1,0 +1,520 @@
+{
+  "reviewer": "keyboard",
+  "model": "sonnet",
+  "summary": "Persona Alex (keyboard only, Chrome and Safari engines) walked all 50 product routes plus notes.html and rt-selftest.html with a Tab-by-Tab probe (arrival focus, Tab presses to the primary action, a full walk of 858 stops in Chromium and 870 in WebKit), then drove the interactive parts by keys (practice, choice, typed, confidence slider, RT, digit span, Corsi, coding, reading, confirm panels, results, share card, notes builder, self-test) and played one whole ?fast=1 session keyboard-only in each engine (706 key presses, 165 of them Tab, in Chromium; 743 and 172 in WebKit). The fundamentals are strong: a solid 3 px ring at 4.5:1 or better in light and 7.9:1 or better in dark on every stop, no clipped, covered or off-screen ring, no sticky bars, no keyboard trap, Tab order matches visual order, every counted-session screen change moves focus to its heading, the confidence slider takes focus itself, Corsi has roving arrow keys, the RT keys are explained, and the 'Talking about your results' link lands on a ringed helper. The problems cluster where a control disappears or a key means two things: practice drops focus so the first Tab lands on 'Back' (Tab then Enter abandons practice), 'Keep going' hands focus to the Skip button where the block's own keys no longer work (Space re-opens the panel in RT), Enter on any reading answer submits the whole block with questions unanswered, 'Leave anyway' is first and styled primary, Escape closes nothing, 'Stay and save' leaves focus 1900 px from the save button, and a button that is disabled while something prepares (share-card PNG, device Continue) silently falls out of the Tab order. The two items that cost the most presses are structural: one Tab per item to get from the heading to the field (96 of 165 Tabs in a session), and 48 Tab stops to 'Copy the notes' on notes.html (96 once a few topics are chosen). Safari's default skips buttons, so Alex needs Option+Tab (or Full Keyboard Access) and the app says nothing about it. Tab stops from arrival to the primary action, Chrome / Safari engines equal unless shown (focus lands on the heading except where noted): welcome Start 1 (focus on body); gate checkbox 2 then Continue 1; gate after error 4+1; honour 1+1; device 2 (Continue disabled for about 1 s); ready Begin 1; practice field 1 (but 3 on questions 2 to 4); interstitial Start 1; rt-intro Start practice 1; counted item field 1 (typed: box 1, Submit 1 more); confidence slider 0 (Continue 1); confirm-skip and confirm-finish yes 1, Keep going 2; memory-intro Start 1; digit entry Done 10 to 11 (stage to Done; Enter also works, unlisted); Corsi board 0, Done 1 to 2; coding-intro Start 1; reading passage Done reading 1; reading questions first answer 1, Submit 4; break-offer 1; results Download save file 11 (Skip animation 1 while building); results-leave Leave 1, Stay 2; after saving, share-card SVG 13 more (PNG 12); notes Copy the notes 48 (96 filled); rt-selftest Start 1. Not covered: real Safari with its default settings and Full Keyboard Access (only Playwright WebKit, whose chord is Option+Tab here), Firefox, browser-chrome Tab stops, a headed window, OS-level magnification or forced colours.",
+  "coverage": [
+    "All 50 product routes (e2e/routes.ts PREVIEW_ROUTES): arrival focus, Tab presses to the primary action, full Tab walk with ring, clipping, covering, scroll and visual-order checks - Chromium 1280 light (858 stops) and WebKit (870 stops, Option+Tab chord)",
+    "Dark scheme ring contrast on 10 routes (welcome, gate, ready, confidence, item-spatial, memory-corsi, results, share-card-dark, notes, rt-selftest-keys): minimum 7.9:1",
+    "Practice by keyboard (4 questions, choice and typed, slider, feedback, Next, Back) - both engines",
+    "Counted choice item (spatial): arrows, letter keys, Enter with nothing chosen, Confirm; typed item (quantitative): empty Enter, 'abc', sign button; confidence slider keys (Arrow, PageUp/PageDown, Home/End: step sizes) - both engines",
+    "Double Enter (40 ms and 400 ms apart) on a choice item - both engines",
+    "RT simple and four-position by keys (Space; D F J K), a stray Tab from the stage, Skip panel opened mid-block, Keep going, Space on the opener - both engines",
+    "Digit span (type, Backspace, 0, Tab to keypad, Enter on keypad, Done cost, Enter), Corsi (arrows, Enter, Space, digits, Backspace, Undo, Done), coding (digits, Tab to keypad, Space), reading (passage, questions, Enter on a radio) - both engines",
+    "Confirm panels skip, finish and leave-without-saving: opener, Escape, first Tab, Keep going / Stay and save, where focus returns - both engines",
+    "Results: Skip animation, view toggle, cluster drill-down (wedges are not focusable; the 8 cluster buttons are the route), Download save file, share-card skill toggles, Show all / Hide all, colour radios, PNG, 'Talking about your results with an AI' link, notes link, focus-session picker, Back to the start - both engines",
+    "notes.html builder end to end by keys (where radios, topics, fit row, extras, lines, Why this line, Copy, Keep my settings with and without the 18+ box, checker) - both engines",
+    "rt-selftest.html key phase, pointer phase (Skip: no mouse or touch) and results - both engines",
+    "Start screens: privacy notice round trip, gate privacy link (new tab), gate error, under-18 dead end - Chromium; the privacy round trip also in WebKit",
+    "One whole ?fast=1 session keyboard-only with key and Tab counts per screen kind - Chromium (62 s) and WebKit",
+    "Follow-up experiments (keyboard-extra.ux.ts): welcome after Back, share-card PNG disabled window, Keep going then block keys, practice Next then Tab then Enter, device-check Continue under quick Tabs - both engines"
+  ],
+  "findings": [
+    {
+      "id": "KBD-01",
+      "severity": "major",
+      "category": "a11y",
+      "title": "Practice: after 'Next practice question' focus is lost and the first Tab lands on 'Back', which ends practice",
+      "route": "practice / practice-feedback",
+      "env": "Chromium 1280 light and WebKit (Option+Tab); keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/extra-practice-chromium/002-q2-arrived-no-focus.png",
+        "web/test-results/ux-review/keyboard/extra-practice-chromium/003-q2-first-tab.png",
+        "web/test-results/ux-review/keyboard/extra-practice-chromium/004-after-enter.png",
+        "web/test-results/ux-review/keyboard/practice-chromium/001-practice-q1-feedback.png",
+        "web/test-results/ux-review/keyboard/extra-chromium/practice-next.json",
+        "web/test-results/ux-review/keyboard/extra-webkit/practice-next.json",
+        "web/test-results/ux-review/keyboard/items-chromium/practice.json"
+      ],
+      "observed": "Pressing Enter on 'Next practice question' removes the focused button and the new question appears in the same screen, so focus drops to the body (trace: 'after Enter on Next => nothing'). The next Tab does not go to the new question: it goes to the 'Back' button below it (screenshot 003), the one after that leaves the page, and only the third reaches the answer field (questions 2, 3 and 4 each cost 3 presses against 1 in the counted session; the same in WebKit). One more Enter on that first stop lands on 'Practice complete': Next, Tab, Enter abandons the practice. After the confidence 'Continue' the feedback also appears with focus on the body (the live region is the only signal), and the feedback state is not covered by e2e/keyboard-session.spec.ts, which skips practice.",
+      "expected": "Every screen change moves focus somewhere sensible, as the counted session does (heading, then Tab to the field in 1 press). A new practice question takes focus on its heading or first field; the feedback takes it on its Next button or the feedback text; Tab never lands first on the control that leaves the activity.",
+      "suggestion": "In PracticeScreen.svelte wrap the Screen in {#key view.number} (as SessionScreen does with screenKey) so each question remounts and Screen.svelte focuses the h1, or focus the first field in an $effect when phase becomes 'item'. When phase becomes 'feedback', focus the Next button (or a tabindex=-1 wrapper of the feedback). Add the practice path to keyboard-session.spec.ts: no step may end with focus on the body.",
+      "files": [
+        "web/src/session/PracticeScreen.svelte",
+        "web/src/session/Screen.svelte",
+        "web/e2e/keyboard-session.spec.ts"
+      ],
+      "spec_refs": [
+        "§13",
+        "§10",
+        "WCAG 2.4.3",
+        "ROADMAP M1.15",
+        "ROADMAP M1.21"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-02",
+      "severity": "major",
+      "category": "bug",
+      "title": "Reading questions: Enter on any answer submits the whole block, with questions unanswered and no way back",
+      "route": "reading-questions",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/coding-chromium/004-reading-questions.png",
+        "web/test-results/ux-review/keyboard/coding-chromium/005-reading-after-enter.png",
+        "web/test-results/ux-review/keyboard/coding-webkit/005-reading-after-enter.png",
+        "web/test-results/ux-review/keyboard/items-chromium/coding.json"
+      ],
+      "observed": "The questions are a native form with radio groups and a 'Submit answers' button. With question 1 answered and the status line saying '2 of 3 not answered yet.', pressing Enter on the radio submitted the form: the block ended at once, the screen moved on (here to 'Session complete') and questions 2 and 3 were recorded as blank. ReadingRenderer.submit() has no check for unanswered questions. Everywhere else in the session Enter on an option means 'confirm this answer' (choice items), so a keyboard user will press it after picking an answer in a group and end the block by accident.",
+      "expected": "Choosing an answer by keyboard never submits the block. Either Enter in a radio moves to the next question or does nothing, or the block asks before submitting with unanswered questions (the status line already counts them). A submission of test responses needs a check or a confirmation (WCAG 3.3.4).",
+      "suggestion": "In ReadingRenderer.svelte handle keydown Enter on a question radio with preventDefault (focus the next fieldset's checked or first radio, or the Submit button after the last), and in submit() with unanswered > 0 either refuse with a role=alert naming the question numbers or show the same confirm panel pattern ('Submit with 2 unanswered?', Keep going first). Add a dom test: Enter on a radio does not call onrespond.",
+      "files": [
+        "web/src/render/reading/ReadingRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 3.3.4",
+        "WCAG 3.2.2"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-03",
+      "severity": "major",
+      "category": "bug",
+      "title": "'Keep going' returns focus to the Skip button, where the block's own keys no longer work and Space re-opens the panel",
+      "route": "confirm-skip on a running block (reaction time, digit span; also coding and Corsi by the same code)",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/extra-keepgoing-chromium/001-span-skip-panel.png",
+        "web/test-results/ux-review/keyboard/extra-keepgoing-chromium/002-span-after-keep-going-typed.png",
+        "web/test-results/ux-review/keyboard/extra-keepgoing-chromium/003-span-enter-on-opener.png",
+        "web/test-results/ux-review/keyboard/rt-skip-chromium/001-rt-skip-panel-open.png",
+        "web/test-results/ux-review/keyboard/rt-skip-chromium/002-rt-space-on-opener.png",
+        "web/test-results/ux-review/keyboard/extra-chromium/keep-going-span.json",
+        "web/test-results/ux-review/keyboard/items-chromium/rt-skip.json"
+      ],
+      "observed": "SessionScreen.cancel() hands focus back to the opener, which for a running block is the 'Skip <part>' button in the top bar. The block renderers act only on keys whose target is inside the renderer or the body (isOwnKey in render/common/focus.ts), so after 'Keep going': in digit span typing 3 and 4 changes nothing (entry stays '2 of 3 digits', screenshot 002), Enter reopens the Skip panel instead of meaning Done (003), and in reaction time the block runs on behind the panel (under ?fast=1, 20 times faster, progress went from trial 2 to trial 9 in 1.5 s while the panel was open; at normal speed it is the same, just slower) and the next Space re-opened the panel instead of responding (trial 11, panel open again, screenshot 002). Nothing tells the person that their keys are going nowhere. The same happens after a stray Tab or Shift+Tab out of the stage (Tab from the RT stage reaches 'Skip Reaction Time', then 'Finish early').",
+      "expected": "After 'Keep going' in a running block, focus goes back to the block's input surface (its stage), so the very next key counts. A stray Tab must not turn the response key into a button press.",
+      "suggestion": "In SessionScreen.cancel(), when view.phase === 'block' focus the block's stage (document.querySelector('section.hb-render [tabindex=\"-1\"].stage') or expose a focusStage() from Stage.svelte) instead of opener; keep opener focus for item screens. Alternatively widen isOwnKey to accept targets inside the session's action bar for digit and Space keys. Add a dom test for span and rt: Keep going then a key reaches the block.",
+      "files": [
+        "web/src/session/SessionScreen.svelte",
+        "web/src/render/common/focus.ts",
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/session/ConfirmPanel.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "§11.6",
+        "WCAG 2.4.3",
+        "ROADMAP M1.15"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-04",
+      "severity": "minor",
+      "category": "flow",
+      "title": "'Leave without saving?': the destructive 'Leave anyway' is first in Tab order and styled as the primary button",
+      "route": "results-leave",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/results-leave-chromium/001-leave-panel.png",
+        "web/test-results/ux-review/keyboard/items-chromium/results-leave.json"
+      ],
+      "observed": "Pressing Enter on 'Back to the start' (unsaved) opens the panel with focus on its heading. The first Tab stop is 'Leave anyway', drawn filled blue (primary); 'Stay and save' is second and outline-only. Tab then Enter (the reflex after a heading) discards the only copy of the results the person has not downloaded ('clearing its data removes them'). The skip and finish panels share the pattern ('Skip Matrix & Series' first and primary), where the cost is a skipped part.",
+      "expected": "The safe choice is first in Tab order and carries the primary style on a panel whose yes-answer destroys the person's results (the usual guidance for a confirm: initial focus on the least destructive action).",
+      "suggestion": "For the leave panel give ConfirmPanel a prop (for example safeFirst) that renders 'Stay and save' first and primary, or focus it when the panel opens; leave 'Leave anyway' as the plain second button. Keep Skip and Finish as they are if the owner prefers.",
+      "files": [
+        "web/src/session/ConfirmPanel.svelte",
+        "web/src/reveal/Reveal.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "ROADMAP M1.15"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-05",
+      "severity": "minor",
+      "category": "flow",
+      "title": "'Stay and save' returns focus to 'Back to the start', about 1900 px below the Download save file button",
+      "route": "results-leave",
+      "env": "Chromium 1280x720 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/results-leave-chromium/002-after-stay-and-save.png",
+        "web/test-results/ux-review/keyboard/items-chromium/results-leave.json",
+        "web/test-results/ux-review/keyboard/items-webkit/results-leave.json"
+      ],
+      "observed": "After Enter on 'Stay and save', focus returns to the opener ('Back to the start', bottom of the page, scrollY 3810). The save button is at top -1929 px (off screen, 6 Shift+Tab presses away in Chromium, 7 in WebKit). The label promises that the person stays to save, but nothing takes them to the thing to save with.",
+      "expected": "'Stay and save' puts focus (and the view) on 'Download save file'.",
+      "suggestion": "Reveal.svelte stay() focuses restartButton; focus the save button instead (give SavePanel a bind:this on 'Download save file' or query the save section's button, scrollIntoView, then focus).",
+      "files": [
+        "web/src/reveal/Reveal.svelte",
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/session/ConfirmPanel.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 2.4.3"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-06",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Escape does not close the Skip, Finish or Leave panels",
+      "route": "confirm-skip, confirm-finish, results-leave",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/confirm-chromium/001-confirm-skip-open.png",
+        "web/test-results/ux-review/keyboard/confirm-chromium/004-confirm-finish-open.png",
+        "web/test-results/ux-review/keyboard/results-leave-chromium/001-leave-panel.png",
+        "web/test-results/ux-review/keyboard/items-chromium/confirm.json",
+        "web/test-results/ux-review/keyboard/items-webkit/confirm.json"
+      ],
+      "observed": "With any of the three panels open and focus on the heading, Escape does nothing (trace: 'after Escape => panelStillOpen true', in both engines); the only ways out are Tab to 'Keep going' / 'Stay and save' (1 to 2 presses) or Enter on a yes-button. The panels are inline, not modal, which is documented, but they take focus like a dialog, and Escape is the key a keyboard user tries first. Only the emotion tip handles Escape in the app.",
+      "expected": "Escape closes the panel and returns focus to the opener, same as 'Keep going'.",
+      "suggestion": "In ConfirmPanel.svelte add onkeydown on the section: if (e.key === 'Escape') { e.stopPropagation(); onno() }. For the running-block case combine with KBD-03 so focus returns to the stage.",
+      "files": [
+        "web/src/session/ConfirmPanel.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 2.1.1"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-07",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Privacy notice -> Back: the welcome screen takes no focus, the next Tab leaves the page (a dead end in WebKit)",
+      "route": "privacy -> welcome",
+      "env": "WebKit (Option+Tab) and Chromium 1280 light; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/extra-welcome-webkit/001-welcome-after-back.png",
+        "web/test-results/ux-review/keyboard/extra-webkit/welcome.json",
+        "web/test-results/ux-review/keyboard/items-chromium/start.json",
+        "web/test-results/ux-review/keyboard/start-chromium/001-gate-error.png"
+      ],
+      "observed": "Enter on the privacy notice's 'Back' link removes the focused link and re-mounts the welcome screen, which is the one Screen created with focus={false} (right for the first load, wrong here). Focus is on the body. In Chromium the first Tab goes to the browser (trace: 'first Tab after coming back => nothing') and the second reaches 'Start'. In WebKit 64 forward presses of Option+Tab in a row never reached 'Start' (focus stayed on nothing); only the reverse direction recovered it. A person sees a screen with a Start button that no key reaches.",
+      "expected": "A screen reached by an in-page link takes focus on its heading like every other screen change; only the very first screen of a page load leaves focus alone.",
+      "suggestion": "Welcome.svelte: pass focus={cameFromPrivacy} (or track a 'visited' flag in SessionApp) so the h1 takes focus on a return; the privacy screen's Back could instead focus the welcome h1 itself. Add a keyboard step to e2e: privacy, Back, Tab reaches Start in 1 press.",
+      "files": [
+        "web/src/session/Welcome.svelte",
+        "web/src/session/Screen.svelte",
+        "web/src/session/SessionApp.svelte",
+        "web/src/session/Privacy.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 2.4.3",
+        "ROADMAP M1.21"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-08",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Share card: 'Download image (PNG)' is disabled for 0.3 to 1.3 s after every change, so a quick Tab skips it",
+      "route": "results-saved (share card)",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/extra-share-chromium/001-after-colour-change.png",
+        "web/test-results/ux-review/keyboard/extra-chromium/share-card-png.json",
+        "web/test-results/ux-review/keyboard/extra-webkit/share-card-png.json",
+        "web/test-results/ux-review/keyboard/routes-chromium/001-results-saved-arrival.png"
+      ],
+      "observed": "ShareCard.svelte rebuilds the PNG 250 ms after the last change and keeps the button disabled=true meanwhile; a disabled button is not in the Tab order. ArrowDown on the colour radios followed at once by Tab went to 'Download vector image (SVG)': the PNG button was skipped (the Tab came 5 to 18 ms after the arrow key in Chromium, 10 ms in WebKit). It was still disabled 1285 ms later in Chromium (316 ms in WebKit); with a 100 ms or 400 ms pause between the keys Tab still skipped it in Chromium. After one more change the person has to Shift+Tab back and wait. The 'Preparing' note is visible but the button gives no hint to a keyboard user.",
+      "expected": "The primary download stays reachable while it prepares: it keeps its place in the Tab order and says it is busy.",
+      "suggestion": "Use aria-disabled=\"true\" (focusable) with aria-describedby on the 'Preparing' note and ignore clicks until ready, or make the PNG on demand in the click handler (await makePng, announce 'Preparing image…' in the status line). Same pattern wherever a button is disabled while something loads.",
+      "files": [
+        "web/src/reveal/ShareCard.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 2.4.3",
+        "WCAG 4.1.2"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-09",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Device check: 'Continue' is disabled for about 1 s, so two quick Tabs leave the page",
+      "route": "device",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/extra-device-chromium/001-device-after-quick-tabs.png",
+        "web/test-results/ux-review/keyboard/extra-chromium/device.json",
+        "web/test-results/ux-review/keyboard/extra-webkit/device.json",
+        "web/test-results/ux-review/keyboard/routes-chromium/001-device-arrival.png"
+      ],
+      "observed": "DeviceCheck.svelte sets disabled={info === null} until the measurement ends (about 1.0 s in both engines). Three Tabs 5 ms apart went: 'Keyboard' radio, then nothing (the disabled Continue was skipped and focus left the page), then the radio again. A real person reads the page first, so this is rarely hit, but the screen says 'This takes a few seconds' and a disabled primary button is not in the Tab order. The self-test's 'Start' does the same and drops focus to the body when pressed.",
+      "expected": "The Continue button stays in the Tab order while the page measures (aria-disabled) or appears only when ready.",
+      "suggestion": "Render Continue enabled but guarded (aria-disabled plus 'Measuring…' described by the status), or move focus to the Continue button when info arrives. Same for web/src/selftest 'Start' (keep focus on the button or move it to the status).",
+      "files": [
+        "web/src/session/DeviceCheck.svelte",
+        "web/src/selftest"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 2.4.3"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-10",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Digit span: Enter means Done, but nothing says so, and Done is 10 to 11 Tabs away",
+      "route": "memory-entry",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/memory-chromium/001-span-entry.png",
+        "web/test-results/ux-review/keyboard/items-chromium/memory.json",
+        "web/test-results/ux-review/keyboard/routes-chromium/001-memory-entry-arrival.png"
+      ],
+      "observed": "During entry focus sits on the display and Enter finishes the sequence (DigitSpanRenderer.onkey), which is what the session run used; the instructions say 'enter them in the same order you saw them, using the keypad or the number keys, then choose Done' and the status says 'Enter 3 digits.' Neither mentions Enter or Backspace. A person who does not guess it must Tab through the nine keypad buttons and Delete: 10 presses from an empty entry, 11 once a digit is typed, on every sequence. Corsi is the contrast: its intro names the arrow keys and Enter and Done is 1 to 2 Tabs.",
+      "expected": "The keyboard way to finish is stated where the person reads the instructions, and the shortest way is the documented one.",
+      "suggestion": "Add to the digit-span instructions and the entry status: 'Press Enter when you are done; Backspace removes the last digit.' (copy decision; the same sentence shape as the Corsi intro). Optionally make the keypad one Tab stop (roving tabindex like the Corsi board) so Done is 2 presses away.",
+      "files": [
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/common/Keypad.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-11",
+      "severity": "minor",
+      "category": "flow",
+      "title": "notes.html: 'Copy the notes' is 48 Tab stops from the top (96 after a few choices) and there is no skip link",
+      "route": "notes, notes-filled",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/routes-chromium/002-notes-at-primary.png",
+        "web/test-results/ux-review/keyboard/routes-chromium/001-notes-arrival.png",
+        "web/test-results/ux-review/keyboard/routes-chromium/001-notes-filled-arrival.png",
+        "web/test-results/ux-review/keyboard/items-chromium/notes.json"
+      ],
+      "observed": "The page has 64 tab stops on first load; the primary action 'Copy the notes' is stop 48 (scroll 7132 px), after the pickers and the line list (stops 20 to 47 are the per-line checkboxes with their 'Why this line?' and 'Other wording' disclosures between them). With two topics, answers and the drawers open (route notes-filled) it is stop 96 of 113. The page has one main landmark and no skip link. A person who just wants the defaults presses Tab 48 times.",
+      "expected": "The main action is reachable in a handful of presses, or a bypass exists (WCAG 2.4.1 is about repeated blocks, but the length is the issue here).",
+      "suggestion": "Add a first-in-page link 'Skip to the notes and copy' that moves focus to the copy section, or repeat 'Copy the notes' / 'Download' in a compact bar after the preview. Consider making each line's checkbox and 'Why this line?' one stop (the disclosure inside the line's label group).",
+      "files": [
+        "web/src/brief/NotesBuilder.svelte",
+        "web/src/brief/ui/Preview.svelte",
+        "web/src/brief/ui/Paste.svelte",
+        "web/notes.html"
+      ],
+      "spec_refs": [
+        "§13",
+        "A20",
+        "WCAG 2.4.1"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-12",
+      "severity": "minor",
+      "category": "flow",
+      "title": "One Tab per question just to leave the heading: 96 of the 165 Tab presses of a session",
+      "route": "item-matrix-series, item-spatial, quant-item (every counted question)",
+      "env": "Chromium 1280 light and WebKit; whole ?fast=1 session, keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/choice-chromium/001-choice-arrival.png",
+        "web/test-results/ux-review/keyboard/items-chromium/session.json",
+        "web/test-results/ux-review/keyboard/items-webkit/session.json",
+        "web/test-results/ux-review/keyboard/routes-chromium/001-item-matrix-series-arrival.png"
+      ],
+      "observed": "Each question is a new Screen, so focus lands on the h1 (the skill name, the same text for the 33 Matrix & Series, 24 Spatial or 39 Quantitative questions) and the person's first key is always Tab to reach the field. The session table (Chromium): entry 57 screens, 57 Tabs; choice 39 screens, 39 Tabs; confidence 96 screens, 0 Tabs (the slider takes focus itself); 706 keys in total, 165 Tabs, 96 of them this one. WebKit: 56 entry and 46 choice screens with 102 confidence screens, 172 Tabs. A question is 5 keys (Tab, letter, Enter, Arrow, Enter) or 4 with the default confidence.",
+      "expected": "From the second question of a skill on, focus lands where the person acts, as it already does on the confidence step.",
+      "suggestion": "Keep the h1 focus on the first question of each part (the context announcement) and on later questions of the same part focus the first field directly (the field's group label and the progress status carry the context), or add a visually-hidden 'Question 5 of 24' to the field's group name so nothing is lost. Owner decision: the heading focus was a deliberate choice for screen-reader users (WCAG 2.4.3 note in Screen.svelte).",
+      "files": [
+        "web/src/session/Screen.svelte",
+        "web/src/session/SessionScreen.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "ROADMAP M1.15"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-13",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "Enter, Enter accepts the default confidence without the slider being used (even 400 ms apart)",
+      "route": "item-spatial / confidence",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/choice-chromium/004-confidence-arrival.png",
+        "web/test-results/ux-review/keyboard/items-chromium/double-enter.json",
+        "web/test-results/ux-review/keyboard/items-webkit/double-enter.json",
+        "web/test-results/ux-review/keyboard/items-chromium/choice.json"
+      ],
+      "observed": "Enter on a chosen option confirms the answer and the slider then takes focus; a second Enter on the slider submits the form (Confidence.svelte has no touched state or delay). Two Enters 40 ms apart and two 400 ms apart both ended with the slider gone and the next question on screen, so the answer was recorded with the start value (63% in the example) and the person may never have seen the slider. A held Enter can do the same. Calibration reads these numbers; for a pointer user the default needs a deliberate click on Continue.",
+      "expected": "Confidence recorded from a keyboard is as deliberate as from a pointer.",
+      "suggestion": "Ignore Enter on the slider for the first ~600 ms after it mounts, and ignore event.repeat; or require that the slider has been touched or Continue focused first. If acceptance of the default is wanted, record 'default accepted' in the response so scoring can tell.",
+      "files": [
+        "web/src/session/Confidence.svelte",
+        "web/src/session/SessionScreen.svelte",
+        "web/src/backend/items.ts"
+      ],
+      "spec_refs": [
+        "§3",
+        "§14.6",
+        "§10"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-14",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Confidence slider: 1% steps across 17 to 100 (up to 83 presses), Page keys uneven, no hint for keyboard use",
+      "route": "confidence",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/choice-chromium/004-confidence-arrival.png",
+        "web/test-results/ux-review/keyboard/items-chromium/choice.json"
+      ],
+      "observed": "On a 4-option item (min 25, max 100, start 63): ArrowRight/ArrowUp +1, ArrowLeft/ArrowDown -1, PageUp +8, PageDown -7 (about a tenth of the range, and not symmetric), End jumps to 100, Home to 25; 38 ArrowRight presses from 25 back to the start value 63. Fine for a few percent, slow for a big move, and the hint under the slider only explains the ends of the scale, not the keys.",
+      "expected": "A keyboard user can reach a round value such as 50, 75 or 90 in a few presses, and knows how.",
+      "suggestion": "Set step=5 with PageUp/PageDown at 10, or keep 1% and add to the hint 'Arrow keys move 1%, Page Up and Page Down 10%'. If the step changes, the stored value stays in whole percent (rounded).",
+      "files": [
+        "web/src/session/Confidence.svelte",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "§3",
+        "§14.6"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-15",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Gate: 'I am under 18' sits one Tab after Continue, and the blocked screen has no way back",
+      "route": "gate, gate-under-18",
+      "env": "Chromium 1280 light; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/start-chromium/001-gate-error.png",
+        "web/test-results/ux-review/keyboard/start-chromium/002-under-18.png",
+        "web/test-results/ux-review/keyboard/items-chromium/start.json"
+      ],
+      "observed": "After 'Continue' (with the box ticked or not) the next Tab stop is the secondary button 'I am under 18'; one Tab too far and Enter leads to 'HumanBench is for adults' with no control on it (0 buttons or links; focus on the heading, the next Tab leaves the page). Nothing is stored, so a reload restores the gate, but a keyboard user who mis-presses has no visible way back, and the text says 'You can close this page.'",
+      "expected": "A mis-press on the gate can be undone from the blocked screen.",
+      "suggestion": "Add a 'Back' button on the blocked screen that returns to the gate (the flow stores nothing, so it is safe), or put 'I am under 18' before the checkbox. Owner decision because it touches the under-18 path (§13).",
+      "files": [
+        "web/src/session/ConsentGate.svelte",
+        "web/src/session/SessionApp.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-16",
+      "severity": "polish",
+      "category": "copy",
+      "title": "The gate's privacy link opens a new tab without saying so",
+      "route": "gate",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/start-chromium/001-gate-error.png",
+        "web/test-results/ux-review/keyboard/items-chromium/start.json"
+      ],
+      "observed": "'Read the full privacy notice and terms' has target=_blank (opens #/privacy in a new tab; trace: 'Enter on the gate privacy link => opensNewTab true') while the accessible name has no warning. By contrast the results page names its notes link 'Make notes for your AI (opens in a new tab)'. A keyboard user lands in the new tab with focus on its heading and must close it (Ctrl+W) or switch back to carry on.",
+      "expected": "Links that open a new tab say so in their name, as the notes link does.",
+      "suggestion": "Append ' (opens in a new tab)' to GATE_LINK, or visually-hidden text inside the link.",
+      "files": [
+        "web/src/session/ConsentGate.svelte",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 3.2.5"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "KBD-17",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Safari's default does not Tab to buttons, checkboxes or radios; every primary action here is one, and the app says nothing",
+      "route": "welcome and every screen",
+      "env": "WebKit (Playwright macOS build; chordFor selects Option+Tab because Tab skips buttons)",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/routes-webkit/001-welcome-arrival.png",
+        "web/test-results/ux-review/keyboard/routes-webkit/001-gate-arrival.png",
+        "web/test-results/ux-review/keyboard/extra-webkit/welcome.json"
+      ],
+      "observed": "e2e/keyboard.ts documents that Safari's default is to Tab only to text fields and links, and its probe chose Option+Tab on this machine. On the welcome screen plain Tab would reach only 'Privacy and terms'; 'Start' (a button), the gate checkbox and every radio, 'Continue' and 'Begin' need Option+Tab or Safari's 'Press Tab to highlight each item' or macOS Full Keyboard Access. A person on default Safari sees no way to start with a keyboard.",
+      "expected": "A keyboard-only Safari user is told once, where they first need it, how to reach buttons.",
+      "suggestion": "Optional one-line hint on the welcome screen shown only for Safari (navigator.vendor): 'Using Safari with the keyboard? Press Option+Tab to move between buttons, or turn on Safari > Settings > Advanced > Press Tab to highlight each item.' Owner decision because the welcome copy may be fixed by DESIGN.",
+      "files": [
+        "web/src/session/Welcome.svelte",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "KBD-18",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Controls that remove themselves drop focus to the body: notes 'Keep my settings', self-test 'Start'",
+      "route": "notes, rt-selftest",
+      "env": "Chromium 1280 light and WebKit; keyboard only",
+      "screenshots": [
+        "web/test-results/ux-review/keyboard/notes-chromium/005-notes-keep-error.png",
+        "web/test-results/ux-review/keyboard/selftest-chromium/001-selftest-first-tab.png",
+        "web/test-results/ux-review/keyboard/items-chromium/notes.json",
+        "web/test-results/ux-review/keyboard/items-chromium/selftest.json"
+      ],
+      "observed": "Enter on 'Keep my settings on this device' (after the 18+ box) replaces the form with the 'kept' state and focus goes to the body (trace: 'Keep my settings after ticking the box => nothing'); the status line announces it, but a sighted keyboard user has lost the place and the next Tab restarts from the removed button's position. On rt-selftest.html pressing Enter on 'Start' disables it (focus to the body) until the key phase takes it on its prompt paragraph.",
+      "expected": "After a control is replaced, focus goes to what replaced it (the new Download button or the status).",
+      "suggestion": "In SaveSettings.svelte focus the 'kept' paragraph or the Download settings button after onkeep; in the self-test keep Start enabled but guarded, or focus its status line.",
+      "files": [
+        "web/src/brief/ui/SaveSettings.svelte",
+        "web/src/selftest"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 2.4.3"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    }
+  ]
+}

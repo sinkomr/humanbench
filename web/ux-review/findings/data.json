@@ -1,0 +1,503 @@
+{
+  "reviewer": "data",
+  "model": "opus",
+  "summary": "Dr Kim, a quantitative researcher, checked the drawn charts against the numbers, and the geometry holds up well. An evaluator read the drawn SVG and compared it with the data table (page blob, facet sub-blobs, the share card preview and the exported SVG on Chromium at 1280 and 1440 px, WebKit and iPhone 13). Every marker sits at R(θ + 3)/6 within 0.15 px, and every whisker end matches the 90% interval within 0.19 px. The crisp curve passes within 0.13 px of every marker, the curve overshoots by at most 0.05 rings (§9.2 allows 0.1), the ±1 SD band and the 20-curve fuzz sit at the right radii, and muting matches the intervals on every spoke. The blob, the bar view, the table, the share card and the exported SVG agree to the digit, and no page, card, alt text or export shows a total, an area, a single score, a percentile or an IQ-like scale. The problems are in what the numbers mean, not in the drawing. Estimates below −3 SD collapse into the centre with no off-scale mark and no visible uncertainty; for reaction time that starts at about 470 ms. The facet drill-down counts the axis's items twice and can flip a skill from 'Overlaps 0 SD' to 'Below 0 SD'. Nothing says what 0 SD is, and the share card claims that 'Ranges that overlap are not real differences', which its own peak contradicts. Smaller issues: the session summary contradicts the table ('You finished every part.' after two parts were skipped), skills the MVP never offers are labelled plainly 'Not measured', and a two-session profile never says how many sessions it rests on or what changed.",
+  "coverage": [
+    "results of toResults(page, 1): blob, table, bar view, peaks, retest, About these numbers, drill-down of all 8 clusters, save, share card light and dark, SVG and PNG export (Chromium 1280 and 1440, WebKit 1280)",
+    "results of toResults(page, 2): the same, plus session 1 vs session 1+2 change and tightening (Chromium 1280)",
+    "results of a real ?fast=1 session played with Spatial and Working Memory skipped (playJourney, Chromium 1280, run twice): not-measured stubs, a partial profile, off-scale estimates",
+    "#/dev/blob?profile=full and ?profile=m1 (all 17 spokes measured, tier (c) hatching, facets incl. insufficient data), light and dark",
+    "tour of routes results, results-drilldown, results-bars, results-open, results-saved, share-card-dark, share-card-too-few, finished-nothing at 1280 and 1440, light and dark (Chromium)",
+    "iPhone 13 (390 px): chart legibility, compact labels, peaks, retest, numbers, bar view overflow, card preview",
+    "colour-blind simulation (protan, deutan, greyscale SVG filters) of the page chart (light and dark) and of the share card preview; band contrast sampled from screenshots in light and dark",
+    "geometry evaluator (web/ux-review/personas/data.ux.ts) output: web/test-results/ux-review/data/*/report.json"
+  ],
+  "findings": [
+    {
+      "id": "DATA-01",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "Estimates below −3 SD collapse into the centre with no off-scale mark, so they look the same as not-measured spokes and lose their uncertainty",
+      "route": "results (real ?fast=1 session, Spatial and Working Memory skipped)",
+      "env": "Chromium desktop 1280 px, light; reproduced on two separate plays",
+      "screenshots": [
+        "web/test-results/ux-review/data/journey-chromium/002-chart-light.png",
+        "web/test-results/ux-review/data/journey-chromium/003-bars-light.png"
+      ],
+      "observed": "Table: Matrix & Series −3.45 (SD 0.32), −3.98 to −2.92; Reaction Time −4.96 (SD 0.25), −5.37 to −4.55; Processing & Reading Speed −3.93 (SD 0.63); Calibration −5.22 (SD 0.52), −6.06 to −4.37; Quantitative Reasoning −3.60 (SD 0.51), −4.45 to −2.76. Evaluator: all 5 measured markers are drawn at r = 0.04R = 7.2 units (the inner clamp, −2.76 SD). The 10 not-measured spokes dip to exactly the same radius (curve-to-dip distance at most 0.13 px), so measured and not-measured spokes look the same and the blob is a knot at the centre. None of the band's sample points fall inside the drawable range (n = 0), so no uncertainty is visible anywhere on the chart. In the bar view every dot is at x = 6 (the −3 end), and the 90% bars of Reaction Time and Calibration have x1 = x2 = 6, which is zero length. The caption says 'Each line runs from −3 SD to +3 SD', with no hint that the values lie beyond it. The peak line ('Matrix & Series stands out by about 0.8 SD') cannot be seen on the chart, because every spoke is clamped. This is not only a bot artefact: the RT norm (src/tasks/rt/prior.ts: β = ln 300 ms, s = 0.15 log-RT per SD) puts θ = −3 at a median simple RT of about 300·e^0.45 ≈ 470 ms. Touch devices and older users often reach that on the web.",
+      "expected": "§9.1 clamps the radius, but the chart must still show that a value is off the scale and how uncertain it is (§9.3: uncertainty is always shown). A clamped estimate must never look like a not-measured spoke (§9.7).",
+      "suggestion": "When θ is below −2.76 SD (the 0.04R clamp) or above +3 SD, draw the marker as an arrowhead pointing off-scale at the clamp radius, add '(off scale)' to the spoke label, and draw the part of the whisker or band that falls inside the range. In BarTable, draw a left-pointing arrow at the track end, and when any value is off-scale add to the note: 'An arrow at the end of a line means the estimate lies beyond −3 or +3 SD; the table gives the number.' Add one caption line under the blob: 'Arrows at the centre or the rim mark estimates beyond the scale.' Separately, the owner should check whether s = 0.15 is too narrow for web RT across devices. Under it, only about 0.1% of people should fall below −3 SD (a median simple RT above about 470 ms), yet such times are common on touch screens.",
+      "files": [
+        "web/src/viz/geometry.ts",
+        "web/src/viz/blob.ts",
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/BarTable.svelte",
+        "web/src/viz/copy.ts",
+        "web/src/tasks/rt/prior.ts"
+      ],
+      "spec_refs": [
+        "§9.1",
+        "§9.3",
+        "§9.7",
+        "§7.3",
+        "A10",
+        "A12"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-02",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "Facet drill-down counts the axis's items twice: a one-facet skill flips from 'Overlaps 0 SD' to 'Below 0 SD' and every facet is more precise than its axis",
+      "route": "results-drilldown (Spatial/Memory, Reasoning)",
+      "env": "Chromium desktop 1280 px, light",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/015-drill-spatial-memory.png",
+        "web/test-results/ux-review/data/results2-chromium/007-drill-spatial-memory.png",
+        "web/test-results/ux-review/data/results2-chromium/004-drill-reasoning.png"
+      ],
+      "observed": "Spatial has one facet, '3d rotation', which contains every Spatial item. One session: the Spatial axis reads −0.84 (SD 0.56), −1.76 to +0.08, 'Overlaps 0 SD' (hollow grey), but its only facet reads −1.20 (SD 0.45), −1.94 to −0.46, 'Below 0 SD' (filled blue). Two sessions: Spatial −0.51 (SD 0.44), 'Overlaps 0 SD', against '3d rotation' −0.65 (SD 0.34), 'Below 0 SD'. Matrix & Series is +1.26 (SD 0.49), yet both of its facets lie above it: Series +1.63 (SD 0.44) and Matrix +1.44 (SD 0.44). Every measured facet has a smaller SD than its axis even though it holds fewer items: 5 of 5 in the real states, 14 of 14 in #/dev/blob?profile=full (for example Physics 0.37 against STEM Knowledge 0.39, Passage 0.33 against Reading Comprehension 0.42). The facets.ts module comment admits it: 'the axis posterior already contains the facet's own items, so the facet interval is somewhat narrower'. The effect is larger than 'somewhat': it reverses the relation to 0.",
+      "expected": "A facet that holds a subset of an axis's items should be no more precise than the axis. A facet that holds all of them should repeat the axis estimate. The drill-down must not show a credible low or high that the axis itself does not support.",
+      "suggestion": "Use a leave-facet-out prior: the axis posterior computed without that facet's own observations (rescore the axis with the facet's items removed, or divide the facet likelihood out of the Gaussian posterior), then add the facet items once. If that has to wait, at least (a) do not show a facet sub-estimate for an axis that has only one facet, and (b) add to the facet caption: 'Facet ranges are provisional and somewhat too narrow.' A12's wording ('with the axis posterior as prior') needs an amendment, so this is an owner decision.",
+      "files": [
+        "web/src/viz/facets.ts",
+        "web/src/viz/ProfileView.svelte",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "A12",
+        "§9.6",
+        "§7.1"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-03",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "Nothing says what '0 SD' is or why the scale is 'provisional', yet every verdict ('Above/Below/Overlaps 0 SD'), the muting and the peaks note depend on it",
+      "route": "results",
+      "env": "Chromium desktop 1280 px; WebKit 1280 px; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/002-chart-light.png",
+        "web/test-results/ux-review/data/results1-chromium/004-bars-light.png"
+      ],
+      "observed": "The ring caption says: 'Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability.' The table column is headed 'Compared with 0 SD' and its cells read 'Above 0 SD', 'Below 0 SD' or 'Overlaps 0 SD'. Neither the page nor the card says whose mean 0 SD is, what an SD is a spread of, or what 'provisional' means. There is no taker data yet, and the 0 point currently comes from seeded item difficulties and, for reaction time, a 300 ms web reference. A lay reader will take 'Below 0 SD' to mean 'below average people'. A researcher cannot tell what population it refers to. §9.1's label 'typical HumanBench taker' is correctly withheld (A12), but nothing replaces it.",
+      "expected": "Wherever the page judges a skill against 0 SD, it should say once, in plain words, what 0 SD stands for and why it is provisional (A12 honesty).",
+      "suggestion": "Append to RING_CAPTION: '0 SD marks where we expect a typical adult to land on each skill, and 1 SD is the usual spread between people. For now these points come from the expected difficulty of the questions and from published figures, not from other people's results, so the scale is provisional and may shift.' Add the same sentence (or a link to it) to BARS_NOTE.",
+      "files": [
+        "web/src/viz/copy.ts",
+        "web/src/viz/ProfileView.svelte"
+      ],
+      "spec_refs": [
+        "§7.3",
+        "§9.1",
+        "A12"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-04",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "'Ranges that overlap are not real differences' is statistically wrong, and the card's own peak contradicts it",
+      "route": "results-saved (share card), results (no-peaks note), Working with AI preamble",
+      "env": "Chromium desktop 1280 px, card light and dark; exported PNG and SVG",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/export-light-humanbench-card-2026-10-03.png",
+        "web/test-results/ux-review/data/results1-chromium/020-after-save.png"
+      ],
+      "observed": "The card says: 'Matrix & Series. Stands out by about 1.1 SD. 90% range +0.3 to +1.9 SD.' Its footer then says: 'Rough estimates on a provisional scale. Ranges that overlap are not real differences.' Matrix & Series' own range (−0.10 to +1.86) overlaps the range of every other skill on the card, for example Working Memory −0.88 to +0.76 and Quantitative Reasoning −1.20 to +0.82. By the card's own rule, its headline peak is 'not a real difference'. Two overlapping 90% intervals do not mean there is no difference; the within-person contrast here excludes 0. The same sentence appears in the no-peaks note (src/reveal/copy.ts line 34) and in the 'Paste this first' text for an AI assistant (results-talk.ts, DESIGN §17 table, row results-preamble).",
+      "expected": "Copy about uncertainty should be true and consistent with the peaks shown next to it.",
+      "suggestion": "Card (CARD_NOTE_SCALE): 'Rough estimates on a provisional scale. Where two ranges overlap, the difference between them is uncertain.' No-peaks note: 'No skill stands out clearly from your others yet. That is common after one session: the ranges are still wide.' AI preamble (DESIGN-fixed): replace 'Ranges that overlap are not real differences.' with 'Where ranges overlap, a difference may not be real.'",
+      "files": [
+        "web/src/viz/card-copy.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/brief/results-talk.ts",
+        "docs/DESIGN.md"
+      ],
+      "spec_refs": [
+        "§9.9",
+        "§17",
+        "A12",
+        "AI.6b"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-05",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "On the share card the headline peak is drawn as a hollow grey mark and the only blue spoke is a credible low, with no key to say why",
+      "route": "results-saved (share card)",
+      "env": "Chromium desktop 1280 px, card light and dark; exported PNG",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/export-light-humanbench-card-2026-10-03.png",
+        "web/test-results/ux-review/data/results1-chromium/022-card-preview-dark.png"
+      ],
+      "observed": "One-session card: the text panel names Matrix & Series as the most distinctive peak, but its marker is hollow and its line grey, because its level interval (−0.10 to +1.86) overlaps 0 SD. The one filled blue marker and blue line segment belong to Calibration (−0.86, −1.70 to −0.02, 'Below 0 SD'), the person's lowest skill. The page explains the two rules (PEAKS_NOTE: 'Peaks compare each skill with the rest of your own profile, so they can differ from the hollow grey and filled blue marks…'). The card, which people see without the page, has no legend for hollow or grey and no such note. The evaluator confirmed that the card's muting matches the intervals; the encoding is right but unexplained.",
+      "expected": "A shared image should not stress a low while greying out the strength it names, or it must say why.",
+      "suggestion": "Add a one-line key under the card's ring note: 'Filled blue: range clear of 0 SD. Hollow grey: range overlaps 0 SD.' Mark the named peak spokes on the card (for example a bold label or a small ▲ next to the label), so the headline and the drawing connect. Alternatively, the owner could decide that the card shows peaks with the credible colour.",
+      "files": [
+        "web/src/viz/card.ts",
+        "web/src/viz/card-copy.ts"
+      ],
+      "spec_refs": [
+        "§9.5",
+        "§9.9",
+        "A12",
+        "R-5.6.4"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-06",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "'You finished every part.' is shown after two parts were skipped",
+      "route": "results (real ?fast=1 session, Spatial and Working Memory skipped)",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/journey-chromium/001-results-light.png"
+      ],
+      "observed": "The first line under 'Session complete' reads 'You finished every part.' The table on the same page lists 'Spatial: Not measured (skipped)' and 'Working Memory: Not measured (skipped)'. The 'complete' reason (FINISHED_REASON.complete) is used whenever the session ran to the end, however many parts were skipped.",
+      "expected": "The summary should agree with the profile below it.",
+      "suggestion": "When any part was skipped, use: 'You reached the end of the session. You skipped 2 parts: Spatial and Working Memory.' (count and names from the session's skipped list). Keep 'You finished every part.' only when nothing was skipped.",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/reveal/Reveal.svelte"
+      ],
+      "spec_refs": [
+        "§10",
+        "§9.7"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-07",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "Eight skills the static app never offers are labelled plainly 'Not measured', unlike Emotion Reading and Creative Thinking ('not offered yet')",
+      "route": "results",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/journey-chromium/003-bars-light.png",
+        "web/test-results/ux-review/data/results1-chromium/002-chart-light.png"
+      ],
+      "observed": "A played session offers 6 parts (Reaction time, Matrix & Series, Spatial, Working Memory, Quantitative Reasoning, Processing & Reading Speed). After 'You finished every part.', the table still lists Analytical/Logic Games, Logical Reasoning, Reading Comprehension, Vocabulary & Verbal Analogies, Humanities, STEM and Arts & Practical Knowledge, and Fermi Estimation as 'Not measured', with no reason. Emotion Reading and Creative Thinking say 'Not measured (not offered yet)'. profile.ts line 171 gives 'not_yet_available' only to axes with status 'v2', so axes that this build cannot offer get 'no_data'. A reader assumes the eight were their own omission. Every static-MVP profile has these 10 of 17 spokes as stubs.",
+      "expected": "A skill the person was never offered should say so, the same way for all such skills.",
+      "suggestion": "Mark every axis that has no part in this build's session plan as 'not_yet_available' (derive this from the session's part list, not only from axis status), so the label reads 'Not measured (not offered yet)'. Keep plain 'Not measured' for offered parts that produced no data (for example after 'Finish early').",
+      "files": [
+        "web/src/viz/profile.ts",
+        "web/src/engine/axes.ts"
+      ],
+      "spec_refs": [
+        "§9.7",
+        "A15"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-08",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "Not-measured spokes dip to the centre, where −3 SD is drawn, so 10 of 17 spokes in every static-MVP blob look like extreme lows",
+      "route": "results",
+      "env": "Chromium desktop 1280 px; iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/002-chart-light.png",
+        "web/test-results/ux-review/data/phone-iphone/001-chart.png"
+      ],
+      "observed": "Following §9.7, the curve dips to 0.04R at each not-measured spoke (the evaluator found it within 0.13 px of the dip point on all 10). That is the radius of θ = −2.76 SD, the same place a very low estimate would sit. With 10 of 17 spokes always unmeasured in the static app, the 7 measured skills look like petals around a star of dips into the centre. The dashed spokes, the 'not measured' labels and the stub caption soften this, but the main visual encoding (distance from the centre) says 'very low'. The evaluator found no band or fuzz at half radius on any stub, so no uncertainty is drawn there. That is correct.",
+      "expected": "A gap in the data should read as missing, not as the bottom of the scale.",
+      "suggestion": "Owner option A: break the crisp curve and the band at a not-measured spoke (an open gap with a small '×' gap marker at the spoke's 0 SD ring) instead of dipping to the centre. Option B, for the static app: draw the blob over the offered skills only and list the others in one line under the chart ('Not offered in this version: …'). Either way, amend §9.7.",
+      "files": [
+        "web/src/viz/blob.ts",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§9.7",
+        "§9.5"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-09",
+      "severity": "minor",
+      "category": "copy",
+      "title": "'SD' means two different things in one cell: the scale unit and the estimate's uncertainty",
+      "route": "results-bars",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/004-bars-light.png"
+      ],
+      "observed": "Column 'Estimate (SD)' with cells such as '+0.88 (SD 0.60)'. The first SD is the scale unit; the second is the posterior SD (the standard error), a different quantity. The chart caption's 'The light band spans ±1 SD' uses the second meaning, but the ring caption a line above uses the first ('Rings are standard-deviation (SD) units'). A reader can easily take the band to be one ring wide. It is 0.60 of a ring for Matrix & Series and 0.26 for Reaction Time.",
+      "expected": "Each quantity should have its own name.",
+      "suggestion": "Column header 'Estimate (SD units)'; cells '+0.88 ± 0.60'. Uncertainty caption: 'The solid line is the most likely profile. The light band spans each estimate ± its uncertainty, and the soft edge…'. Facet table the same.",
+      "files": [
+        "web/src/viz/copy.ts",
+        "web/src/viz/BarTable.svelte"
+      ],
+      "spec_refs": [
+        "§9.3",
+        "A12"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-10",
+      "severity": "minor",
+      "category": "content",
+      "title": "A two-session profile never says how many sessions it rests on, or what changed and tightened",
+      "route": "results (save with 2 sessions)",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results2-chromium/001-results-light.png",
+        "web/test-results/ux-review/data/results2-chromium/export-light-humanbench-card-2026-10-03.png"
+      ],
+      "observed": "With 2 saved sessions, the page text never says '2 sessions'. Only the share card does ('Based on 2 sessions'). The page also shows no change between sessions. Measured, session 1 to sessions 1+2: Matrix & Series +0.88 to +1.26 (SD 0.60 to 0.49); Working Memory −0.06 to −0.49; ranges tightened by 18–26% (median 23%). The one-session page had predicted 'about 25%', so the prediction held, but the person cannot see that. The page only says 'Another session would typically tighten the ranges in your profile by about 15%' (the §7.6 figure for session 3, 1 − 0.37/0.44 = 16%, which is right).",
+      "expected": "§10's retest motivation is built on tightening. A returning person should see that their profile now rests on more data and how much the ranges moved.",
+      "suggestion": "Under 'Session complete' add: 'This profile combines your 2 sessions.' In the retest section, before the forecast: 'Since your last session, your ranges have tightened by about 23%.' (median over the skills measured in both). Optionally add a faint outline of the previous session's crisp curve in the blob, with the caption 'Dotted: your profile before this session.'",
+      "files": [
+        "web/src/reveal/Reveal.svelte",
+        "web/src/reveal/RetestSection.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "§10",
+        "§7.6",
+        "§7.8"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-11",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "'About these numbers' does not say which session its figures come from",
+      "route": "results (save with 2 sessions)",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results2-chromium/001-results-light.png",
+        "web/test-results/ux-review/data/results1-chromium/001-results-light.png"
+      ],
+      "observed": "After session 1 the section says 'You repeated up to 7 digits forwards… read a passage at about 222 words per minute'. With 2 sessions it says 'You repeated up to 6 digits forwards… about 197 words per minute… about 300 ms'. normFacts() keeps the latest valid result of each kind, but the copy reads as a property of the person, so a lower figure looks like the overall result.",
+      "expected": "The figures should be labelled with their source.",
+      "suggestion": "Prefix the list with: 'From your latest session:' (or 'In your latest session, you read a passage at about…'). If several sessions exist, optionally add the earlier figure in brackets: '(7 last time)'.",
+      "files": [
+        "web/src/reveal/norms.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/reveal/NumbersSection.svelte"
+      ],
+      "spec_refs": [
+        "§7.3"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-12",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "The 'practice-adjusted' badge overstates what a provisional prior can do",
+      "route": "results (save with 2 sessions)",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results2-chromium/001-results-light.png"
+      ],
+      "observed": "The badge reads: 'This profile is practice-adjusted: each later session is credited for the practice you gained from the earlier ones, so the estimates describe you and not how many times you have tried.' The adjustment uses the §7.8 prior ρ_max (0.45 reasoning/spatial/speed, 0.25 knowledge), which is a population guess. §7.8 says ρ is to be estimated only once N ≥ 300 returning users exist. It is not the person's own practice gain, and it cannot fully remove practice effects.",
+      "expected": "Name the adjustment as a typical, provisional correction.",
+      "suggestion": "PRACTICE_ADJUSTED_LATER: 'This profile is practice-adjusted: later sessions are credited for the typical gain from practice (a provisional figure), so repeating the test inflates the estimates less.'",
+      "files": [
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "§7.8"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-13",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Facet names are raw generator codes ('3d rotation', 'Simple rt', 'Arith', 'Recip', 'Fraction of', 'Linear eq')",
+      "route": "results-drilldown",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/017-drill-speed.png",
+        "web/test-results/ux-review/data/journey-chromium/011-drill-quantitative.png"
+      ],
+      "observed": "facetLabel() only replaces underscores and capitalises the first letter. As a result the drill-down shows '3d rotation', 'Simple rt', 'Choice rt', 'Arith', 'Recip', 'Linear eq', 'Geom series', 'Arith series', 'Fraction of', 'System', 'Symmetric', 'Modular' and 'Mean', in the chart labels and in the facet table.",
+      "expected": "Readable names in sentence case, as the axis names are.",
+      "suggestion": "Add a FACET_LABELS map in viz/copy.ts: 3d_rotation 'Mental rotation (3D)', simple_rt 'Simple reaction time', choice_rt 'Choice reaction time', span_fwd/forward 'Digits forward', arith 'Arithmetic', fraction 'Fractions', fraction_of 'Fraction of an amount', percent 'Percentages', ratio 'Ratios', rate 'Rates', mean 'Averages', linear_eq 'Linear equations', system 'Simultaneous equations', exponent 'Powers', quadratic 'Quadratics', probability 'Probability', counting 'Counting', arith_series 'Arithmetic series', geom_series 'Geometric series', modular 'Remainders', recip 'Reciprocals', symmetric 'Symmetric expressions'. Fall back to facetLabel() for unknown codes.",
+      "files": [
+        "web/src/viz/facets.ts",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§9.6",
+        "§3"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-14",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The Quantitative drill-down lists 18 facets that can never reach 5 items in a session, so it is a wall of 'Insufficient data'",
+      "route": "results-drilldown (Quantitative)",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/journey-chromium/011-drill-quantitative.png",
+        "web/test-results/ux-review/data/results2-chromium/011-drill-quantitative.png"
+      ],
+      "observed": "After a full played session, the Quantitative facet panel has 18 rows, every one 'Insufficient data (1–4 items; 5 needed)': Quadratic, Rate, Fraction of, Percent, Fraction, Ratio, Mean, Arith, Linear eq, System, Exponent, Recip, Symmetric, Counting, Probability, Geom series, Modular, Arith series. With 2 sessions there are 10 rows, all insufficient. Each facet is one generator template, so 5 items per facet will rarely happen. The app already groups these templates into 6 named topics (src/tasks/quant/topics.ts QUANT_GROUPS: 'Arithmetic, fractions and percentages', 'Ratios, rates and averages', 'Linear equations and systems', 'Powers and quadratics', 'Probability and counting', 'Series and number puzzles').",
+      "expected": "Facets that can reach an estimate, or a clear message when none can yet.",
+      "suggestion": "Use the QUANT_GROUPS topics as the Quantitative facets (facet = group id, label = group label). Where a cluster has no facet with an estimate, replace the empty sub-blob with one line: 'No facet has 5 scored questions yet; facets fill in over several sessions.'",
+      "files": [
+        "web/src/viz/facets.ts",
+        "web/src/tasks/quant/topics.ts",
+        "web/src/viz/ProfileView.svelte"
+      ],
+      "spec_refs": [
+        "§9.6",
+        "A12",
+        "A7"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-15",
+      "severity": "minor",
+      "category": "layout",
+      "title": "The bar view's Cluster column breaks 'Quantitative' mid-word ('Quantitativ / e') at 1280 px",
+      "route": "results-bars",
+      "env": "Chromium desktop 1280 px, light",
+      "screenshots": [
+        "web/test-results/ux-review/data/journey-chromium/003-bars-light.png"
+      ],
+      "observed": "In the Quantitative Reasoning row, the Cluster cell wraps as 'Quantitativ' and then 'e' on its own line. This happens when the estimate column is wide (two-line '−3.60 (SD 0.51)').",
+      "expected": "Words should wrap only at spaces or the slash in 'Spatial/Memory'.",
+      "suggestion": "Set overflow-wrap: normal and word-break: normal on td.group-col (the mid-word break comes from an inherited rule, not from BarTable.svelte itself, which only adds a zero-width space after '/'), and give the column min-width: 12ch so 'Quantitative' fits on one line.",
+      "files": [
+        "web/src/viz/BarTable.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-16",
+      "severity": "minor",
+      "category": "layout",
+      "title": "On phones the compact spoke labels do not match the table names, and 'Quantitative' stacks over 'Estimation' to read 'Quantitative Estimation not measured'",
+      "route": "results",
+      "env": "iPhone 13 (390 px), light",
+      "screenshots": [
+        "web/test-results/ux-review/data/phone-iphone/001-chart.png"
+      ],
+      "observed": "At 390 px the chart uses one-word labels: 'Matrices', 'Arguments', 'Reading', 'Speed', 'Memory', 'Arts & life', 'Emotion', 'Humanities', 'STEM'. None of these match the table rows below (Matrix & Series, Logical Reasoning, Reading Comprehension, Processing & Reading Speed, …). 'Reading' is Reading Comprehension, not Reading Speed. The Quantitative Reasoning label 'Quantitative' sits directly above Fermi's 'Estimation ○ / not measured', so the pair reads as one label. The evaluator confirmed the smallest chart text is 11.0 px and every marker is within 0.04 px; the geometry is fine.",
+      "expected": "A reader can match each spoke to its table row.",
+      "suggestion": "Use compact labels that start with the table name: 'Matrix & Series', 'Logical reasoning', 'Reading comp.', 'Processing speed', 'Working memory', 'Quantitative reasoning' (two lines). Add at least one line of vertical space between labels on neighbouring spokes (fitLayout's overlap test should use the label's whole box, including the note line).",
+      "files": [
+        "web/src/viz/profile.ts",
+        "web/src/viz/blob.ts"
+      ],
+      "spec_refs": [
+        "§9.1",
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-17",
+      "severity": "polish",
+      "category": "data-honesty",
+      "title": "The peaks intro and card say 'the rest of your profile' / 'the other skills', but the contrast is against the mean of all measured skills, the peak itself included",
+      "route": "results, results-saved",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/001-results-light.png"
+      ],
+      "observed": "PEAKS_INTRO: 'A peak is a skill that stands out from the rest of your own profile…'; card: 'Compared with the other skills on this card'. peaks.ts computes θ_k − θ̄ with θ̄ over all m measured skills, the peak included. Recomputed from the table: Matrix & Series +0.88 − (−0.24) = +1.12, shown as 'about 1.1 SD', which agrees. Against the other six skills it would be 1.12 × 7/6 = 1.31. The line item ('from your profile as a whole') is accurate; the intro and the card heading are not quite.",
+      "expected": "Wording that matches the computation.",
+      "suggestion": "PEAKS_INTRO: 'A peak is a skill that stands out from your profile as a whole, with a range that stays clearly above it. It is not a comparison with other people.' CARD_PEAKS_SUB: 'Compared with this card's skills as a whole'.",
+      "files": [
+        "web/src/reveal/copy.ts",
+        "web/src/viz/card-copy.ts"
+      ],
+      "spec_refs": [
+        "A12",
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "DATA-18",
+      "severity": "polish",
+      "category": "visual",
+      "title": "The ±1 SD band is faint: about 1.3:1 against the background in light and 1.4:1 in dark",
+      "route": "results",
+      "env": "Chromium desktop 1280 px, light and dark; #/dev/blob?profile=full",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/002-chart-light.png",
+        "web/test-results/ux-review/data/results1-chromium/008-chart-dark.png"
+      ],
+      "observed": "Pixel samples at ±0.5 posterior SD, 3° off each spoke (away from whiskers and markers), measured against the page background. One-session profile: median contrast 1.33:1 (n = 14) in light and 1.42:1 in dark. Full profile: median 1.32:1 in light and 1.40:1 in dark (n = 34). The whiskers carry the 90% interval at ≥ 3:1, so this is not an AA failure. On a laptop at arm's length, though, the band is hard to see around the grey (muted) stretches of the line. Under protan, deutan and greyscale simulation the credible and muted marks stay distinct (filled vs hollow), and the hatch stays visible.",
+      "expected": "Uncertainty is always shown (§9.3); the band should be clearly visible next to the line.",
+      "suggestion": "Raise the band's fill opacity so it reaches about 1.6:1 against the background (or add a 1 px #56B4E9 outline at 40% opacity), in both schemes. Keep the fuzz as it is.",
+      "files": [
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/palette.ts"
+      ],
+      "spec_refs": [
+        "§9.3",
+        "§9.8"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "DATA-19",
+      "severity": "polish",
+      "category": "copy",
+      "title": "The 'size means nothing' sentence is the last of five caption paragraphs, and the fixed spoke order is never explained",
+      "route": "results",
+      "env": "Chromium desktop 1280 px",
+      "screenshots": [
+        "web/test-results/ux-review/data/results1-chromium/002-chart-light.png"
+      ],
+      "observed": "The caption order is: rings, uncertainty, stubs, tier glyphs, and then 'Compare spokes one at a time. The size of the shape means nothing on its own, and the spoke order is fixed for everyone.' A lay reader who reads only the first line under the chart never reaches the most important warning against reading the area as total ability (§9.5 a). 'Fixed for everyone' does not say what fixes it (seriation by correlation, §9.4), so the neighbours look arbitrary.",
+      "expected": "The guard against reading the area as a total comes first, and the order is explained in one clause.",
+      "suggestion": "Move READING_CAPTION to the top and reword: 'Compare spokes one at a time: the size of the shape means nothing on its own. The spoke order is the same for everyone, with skills that tend to go together placed side by side.'",
+      "files": [
+        "web/src/viz/copy.ts",
+        "web/src/viz/ProfileView.svelte"
+      ],
+      "spec_refs": [
+        "§9.4",
+        "§9.5"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    }
+  ]
+}

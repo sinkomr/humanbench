@@ -15,13 +15,13 @@
   import type { SeriesSpec } from '../tasks/series/types'
   import {
     WORKED_ANSWER,
-    WORKED_HEADING,
     WORKED_INTRO,
     WORKED_MATRIX_OPTIONS,
     WORKED_NONE,
     WORKED_SERIES_PROMPT,
     WORKED_SHOW,
     WORKED_TRY_FIRST,
+    workedHeading,
     workedMatrixOption,
     workedTitle,
   } from './copy'
@@ -46,7 +46,7 @@
 </script>
 
 <section class="hb-reveal-panel worked" aria-labelledby="{uid}-h" data-section="worked">
-  <h2 id="{uid}-h">{WORKED_HEADING}</h2>
+  <h2 id="{uid}-h">{workedHeading(items.length)}</h2>
   {#if items.length === 0}
     <p>{WORKED_NONE}</p>
   {:else}
@@ -77,7 +77,7 @@
           <p>{WORKED_SERIES_PROMPT}</p>
           <p class="terms"><strong>{seriesTerms(w)}, ?</strong></p>
         {:else}
-          <p class="terms"><strong>{quantStem(w)}</strong></p>
+          <p class="terms">{quantStem(w)}</p>
         {/if}
         <p class="note">{WORKED_TRY_FIRST}</p>
         <details>

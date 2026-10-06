@@ -1,8 +1,9 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import type { Clock, FrameCallback, FrameSource } from '../tasks/rt/timing'
+import { MAX_EVENT_LAG_MS, type Clock, type FrameCallback, type FrameSource } from '../tasks/rt/timing'
 import {
   DEFAULT_PLAN,
+  EVENT_CLOCK_NOTE,
   GATED_METRICS,
   INPUT_LATENCY_NOTE,
   ONSET_DELAY_MIN_MS,
@@ -409,8 +410,32 @@ describe('report and verdict', () => {
       expect(r.metrics[k].summary?.p95, k).toBeCloseTo(12, 9)
       expect(r.metrics[k].note, k).toBe(INPUT_LATENCY_NOTE)
     }
-    expect(r.metrics.key_latency_ms.note).toMatch(/event timestamp/)
+    expect(r.metrics.key_latency_ms.note).toMatch(/time stamp of the key press or tap/)
     expect(r.pass).toBe(true)
+  })
+
+  it('an epoch-based event time stamp is reported with a plain-language note, not a number', () => {
+    const epoch = Array.from({ length: 5 }, (_, i) => ({ eventTs: 1.7e12 + i, handlerTs: 5000 + i }))
+    const r = buildReport(base({ keys: epoch, pointers: epoch }))
+    for (const k of ['key_latency_ms', 'pointer_latency_ms'] as const) {
+      expect(r.metrics[k], k).toEqual({ summary: null, pass: null, note: EVENT_CLOCK_NOTE })
+    }
+    expect(r.pass).toBe(true)
+  })
+
+  it('the notes in the copied report are plain words: no developer names, no abbreviation for reaction time', () => {
+    for (const note of [INPUT_LATENCY_NOTE, EVENT_CLOCK_NOTE, EVENT_OFFSET_NOTE]) {
+      expect(note).not.toMatch(/\bRT\b|event\.timeStamp|performance\.now|dispatch/)
+      for (const sentence of note.split(/(?<=\.)\s+/)) expect(sentence.split(/\s+/).length, sentence).toBeLessThanOrEqual(25)
+    }
+  })
+
+  it('the two clock notes are different conditions: time stamps on another clock, and time stamps offset beyond the bound', () => {
+    expect(EVENT_OFFSET_NOTE).not.toBe(EVENT_CLOCK_NOTE)
+    expect(EVENT_CLOCK_NOTE).toMatch(/different clock/)
+    expect(EVENT_OFFSET_NOTE).toMatch(/offset/)
+    expect(EVENT_OFFSET_NOTE).toContain(`more than ${MAX_EVENT_LAG_MS} ms`)
+    expect(EVENT_OFFSET_NOTE).toMatch(/checked like the other timing checks/)
   })
 
   it('a constant ~205 ms event offset (Safari): latency FAILs with the note, the run fails, RT source is the handler', () => {

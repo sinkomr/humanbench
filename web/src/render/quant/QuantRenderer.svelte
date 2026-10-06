@@ -18,7 +18,11 @@
 
   const clock = $derived((timing ?? browserTiming()).clock)
   const parts = $derived(stemParts(spec.stem))
-  const accepts = (t: string): boolean => parseEntry(t) !== null
+  // A whole-number item takes whole numbers only: "3.5" gets the format note instead of being scored.
+  const accepts = (t: string): boolean => {
+    const v = parseEntry(t)
+    return v !== null && (spec.input_format !== 'integer' || v.isInteger())
+  }
   // An expression, not literal text: Svelte trims the edge spaces of a text-only element's content,
   // which ran the words into the stem ("xto the power2").
   const SPOKEN_POWER = ' to the power '

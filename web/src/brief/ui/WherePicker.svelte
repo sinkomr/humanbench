@@ -12,6 +12,8 @@
   }
   let { model, onchange }: Props = $props()
 
+  const uid = $props.id()
+
   const current = $derived(model.contexts[model.active])
   /** A label made from the preset and destination, never typed (so no free text needs storing). */
   const labelOf = (i: number): string => {
@@ -38,10 +40,19 @@
     <legend>Use for set {model.active + 1}</legend>
     {#each PRESETS as p (p)}
       <label class="choice">
-        <input type="radio" name="preset" value={p} checked={current?.preset === p} onchange={() => onchange(choosePreset(model, p))} />
+        <!-- The radio is named by the short label and described by the longer line, which is still inside the label so the whole block can be clicked. -->
+        <input
+          type="radio"
+          name="preset"
+          value={p}
+          checked={current?.preset === p}
+          aria-labelledby="{uid}-{p}-label"
+          aria-describedby="{uid}-{p}-hint"
+          onchange={() => onchange(choosePreset(model, p))}
+        />
         <span>
-          {PRESET_INFO[p].label}
-          <span class="hint">{PRESET_INFO[p].blurb}</span>
+          <span id="{uid}-{p}-label">{PRESET_INFO[p].label}</span>
+          <span class="hint" id="{uid}-{p}-hint">{PRESET_INFO[p].blurb}</span>
         </span>
       </label>
     {/each}

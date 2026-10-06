@@ -1,0 +1,515 @@
+{
+  "reviewer": "visual-start",
+  "model": "opus",
+  "summary": "The start funnel and the session screens are calm, readable and technically sound: no sideways overflow, clipped text or sub-24 px targets at any width from 320 to 1440 px, at 200% text, or in either scheme, and the amber focus ring is clear in light and dark. The serious problems are on phones and in the stimuli. The symbol-digit task never shows legend, target and keypad together on an iPhone, partly because the session header takes 153-229 px. Multi-line fieldset legends cut through their frames at 390 px. Matrix answer options are drawn at 0.70 times the size of the matrix cells, which confounds the size rule. The no-WebGL fallback repeats its message three times and hides its only action 2.4 screens down. Underneath sits a design-system problem: four colour-token sets with drifting values, an option-item component with its own black Confirm button and blue focus ring, browser-default blue on checkboxes and radios, and session.css descendant rules that silently override component styles. The rest is consistency and taste: mixed sentence and Title Case part names, text stuck to button rows, competing primary buttons, and lines of 81-98 characters at desktop widths, each with a concrete proposal.",
+  "coverage": [
+    "Desktop Chromium, widths 320, 390, 768, 1024, 1280 and 1440 px, light and dark, with metrics: all 31 routes of the start and session groups (welcome, gate, gate-error, gate-under-18, privacy, honour, device, ready, ready-returning, practice, interstitial, rt-intro, rt-trial, item-matrix-series, confidence, confirm-skip, confirm-finish, item-spatial, item-spatial-no-webgl, memory-intro, memory-entry, memory-corsi, quant-item, coding-intro, coding-running, reading-passage, reading-questions, break-offer, on-break, finished-nothing); practice-feedback failed to open in this tour (page closed) and was covered on iPhone and in the option-focus detail run",
+    "Emulated iPhone 13 (WebKit, 390 x 664, touch, 44 px target check), light and dark: all 31 routes",
+    "200% text zoom on desktop Chromium at 390 and 1280 px, light: all 31 routes (no overflow or clipping found)",
+    "Fold check (where the controls sit in the first viewport, after the app's own focus scroll): iPhone SE (320 x 568) and iPhone 13 for coding-running, memory-corsi, rt-trial, item-matrix-series, confidence, item-spatial, memory-entry, reading-questions, confirm-skip, confirm-finish, ready-returning, practice, item-spatial-no-webgl",
+    "Focus-ring and component detail runs at 1280 px light and dark: welcome, gate (checkbox, secondary button), device radios at 390 px, practice option cards and Confirm, interstitial, confidence, series item; reduced and allowed motion on rt-trial",
+    "Pixel sampling for contrast (checkbox and slider edges, progress-ring track, focus rings) and the CSS of app.css, session.css, render.css, OptionGroup, ConfirmPanel, Confidence, Checklist, ProgressRing, CodingRenderer, RtRenderer, MatrixRenderer, draw.ts, CorsiRenderer, FocusPicker, Ready, Finished and reveal.css",
+    "Not covered: real iOS Safari or Android hardware, Firefox, Windows high-contrast mode, and real WebGL failure (the no-WebGL route forces the fallback)"
+  ],
+  "findings": [
+    {
+      "id": "VIS1-01",
+      "severity": "major",
+      "category": "layout",
+      "title": "On phones the timed symbol-digit task never shows legend, target and keypad together: at start the keypad (iPhone 13) or the legend (iPhone SE) is off screen",
+      "route": "coding-running",
+      "env": "iphone (WebKit, 390 x 664) and iphone-se (320 x 568), light; also desktop Chromium 390 px at 200% text",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/fold-iphone/coding-running/001-viewport-as-shown.png",
+        "web/test-results/ux-review/visual-start/fold-iphone-se/coding-running/001-viewport-as-shown.png",
+        "web/test-results/ux-review/visual-start/tour-zoom200-chromium/coding-running/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/coding-running/320-light.png"
+      ],
+      "observed": "Measured after the app's own focus scroll (fold-*/coding-running/002-fold.json). iPhone 13: page at scrollY 43, visible to 707 px; legend 341-511, target 559-687, keypad rows 703-753 and 759-809, so the whole keypad starts below the fold. iPhone SE: focus on the stage scrolls to 498, so the legend (370-540) is above the window except its last 42 px (digits 6-9 without their symbols); target and keys are visible. Legend top to keypad bottom is 468 px and would fit in 568 px, but the header takes 229 px (VIS1-02) and the legend and keypad each wrap to two rows (5+4 at 320, 7+2 at 390) because cells have a 2.75rem minimum. At 200% text at 390 px the legend alone is three rows, about 500 px. The task is timed (1:30), so every scroll between key and keypad costs the person time and counts against them.",
+      "expected": "On a 320 x 568 viewport at 100% text, legend, target and keypad are all visible without scrolling while the timer runs.",
+      "suggestion": "Below 30rem: `.legend { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 0.125rem; }`, `.cell { padding: 0.25rem 0; }`, glyph 1.25rem and digit 1rem (legend about 64 px tall); keypad in one row of nine, `grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 0.25rem`, keys min-height 2.75rem (about 30 px wide at 320, above the 24 px AA minimum); `.stage { width: 6rem; height: 6rem; }`. When the block starts, call `legendEl.scrollIntoView({ block: 'start' })` and focus the stage with `focus({ preventScroll: true })`, so the scroll anchors at the legend, not the stage. With the compact header of VIS1-02 the whole task fits in about 330 px.",
+      "files": [
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/common/Keypad.svelte",
+        "web/src/session/SessionScreen.svelte"
+      ],
+      "spec_refs": ["§3", "§7.1", "§13", "WCAG 1.4.10"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-02",
+      "severity": "major",
+      "category": "layout",
+      "title": "The session header takes 153-229 px (up to 40%) of a phone viewport before any item content",
+      "route": "interstitial, rt-trial, item-matrix-series, confidence, memory-entry, coding-running (every in-session screen)",
+      "env": "iphone-se (320 x 568) and iphone (390 x 664), light and dark; desktop Chromium 320 px; 200% text at 390 px",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/fold-iphone-se/coding-running/001-viewport-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/item-matrix-series/320-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/confidence/390-dark.png",
+        "web/test-results/ux-review/visual-start/tour-zoom200-chromium/coding-running/390-light.png"
+      ],
+      "observed": "At 320 px the bar wraps into three rows (the 48 px ring with its text, 'Skip <part name>', 'Finish early') plus the two-line skip notice. The header ends at 229 px on coding, series and memory entry and at 205 px on rt-trial and confidence, of a 568 px viewport (fold-iphone-se/*/002-fold.json); on iPhone 13 it is 153-229 px. The skip button carries the full part name ('Skip Processing & Reading Speed' is 281 px wide). At 200% text the header is about 500 px tall. Knock-on effects: on iPhone SE the confidence 'Continue' (800-844) sits exactly below the visible window (232-800), and the coding keypad drops below the fold (VIS1-01). The skip notice ('Reaction Time skipped. It will show as not measured.') is set in --r-note (#7a2e0e light, #fdba74 dark), the warning colour, for a choice the person made, and it stays through the whole next part.",
+      "expected": "One compact header row on a 320 px phone (about 64-96 px), so items start in the upper third of the screen.",
+      "suggestion": "Below 30rem: `.bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 0.5rem; padding: 0.5rem 0.75rem; }`; ring svg 32 x 32 with its text at 0.875rem; buttons labelled 'Skip part' and 'Finish' (aria-label keeps the full 'Skip Processing & Reading Speed'), `padding: 0.5rem 0.75rem`, still min-height 2.75rem. Show the 'skipped' notice in --r-muted for one screen only, or move it into the checklist row (which already says 'Skipped').",
+      "files": [
+        "web/src/session/SessionScreen.svelte",
+        "web/src/session/ProgressRing.svelte",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": ["§10", "§13", "WCAG 1.4.10"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-03",
+      "severity": "major",
+      "category": "layout",
+      "title": "Multi-line fieldset legends cut through their frames at 390 px (device, confidence, reading questions)",
+      "route": "device, confidence, reading-questions",
+      "env": "desktop Chromium 390 px light and dark; iphone (WebKit) 390 px; also 320 px",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/details-device-chromium/001-device-focus-radio-390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/reading-questions/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/confidence/390-dark.png",
+        "web/test-results/ux-review/visual-start/tour-iphone/device/390-light.png"
+      ],
+      "observed": "'How will you respond in the reaction tasks?', 'How sure are you that your answer is right?' and the reading questions ('1. According to the passage, the first general winter storm seldom breaks before what time?') wrap to two or three lines. The fieldset's top border is drawn through the vertical middle of the legend box, so the frame's top-left corner starts beside the second line and the first line sits outside the box. It looks broken, on the most common phone width, in both Chromium and WebKit. At 768 px and wider the legends fit on one line and look fine.",
+      "expected": "The question text sits fully above, or fully inside, an unbroken frame at every width.",
+      "suggestion": "Float the legend so it renders inside the border box: `legend { float: left; width: 100%; padding: 0; margin: 0 0 0.5rem; } legend + * { clear: both; }` in session.css (`.hb-screen legend`), Confidence.svelte and ReadingRenderer.svelte. Or drop the fieldset border, keep the fieldset/legend semantics, and draw the 2px --r-border frame on an inner div that follows the legend.",
+      "files": [
+        "web/src/session/session.css",
+        "web/src/session/Confidence.svelte",
+        "web/src/session/DeviceCheck.svelte",
+        "web/src/render/reading/ReadingRenderer.svelte"
+      ],
+      "spec_refs": ["§13", "M1.15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-04",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "Matrix answer options are drawn at 0.70 times the size of the matrix cells, more than one size step, so size rules read wrong",
+      "route": "practice, practice-feedback (same renderer as the counted Matrix items)",
+      "env": "desktop Chromium 768-1440 px light and dark; 390 px",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/details-options-chromium/001-practice-focus-option-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/practice/1280-dark.png",
+        "web/test-results/ux-review/visual-start/tour-iphone/practice-feedback/390-light.png"
+      ],
+      "observed": "Measured (details-options-chromium/*sizes*.json): matrix cells are 116 px and option figures 81 px at 768, 1280 and 1440 px (ratio 0.70); at 390 px, 115 px vs 95 px (0.83). draw.ts sizes glyphs in 1.35x steps (radius small 7.4, medium 10, large 13.5 in a 100-unit cell), so one step down is 0.74x. At 0.70 a large glyph in an option (13.5 x 0.81 = 10.9 px radius) is drawn smaller than a medium glyph in the matrix (10 x 1.16 = 11.6 px). Size is one of the grammar's rule attributes, so the correct option can look a size smaller than the pattern implies. Secondary: the 3 x 3 grid is centred (`align-self: center`) while the stem, the option row and Confirm are left-aligned at desktop widths.",
+      "expected": "Option figures and matrix cells are drawn at the same scale, so a glyph's size can be compared directly.",
+      "suggestion": "Size the option figure to the matrix cell. For matrices pass `--narrow: 3; --wide: 3` to OptionGroup (two rows of three) and set `.options { grid-template-columns: repeat(3, 7.25rem); gap: 0.375rem; }`, matching `.grid` cells ((22.5rem - 2 x 0.375rem) / 3 = 7.25rem), with the card padding outside the figure width. Then align the grid and the options on the same axis (both `align-self: flex-start`, or both centred). Add a unit test that the option svg width equals the matrix cell svg width.",
+      "files": [
+        "web/src/render/matrices/MatrixRenderer.svelte",
+        "web/src/render/choice/OptionGroup.svelte",
+        "web/src/render/matrices/draw.ts"
+      ],
+      "spec_refs": ["§3", "§4.2"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-05",
+      "severity": "major",
+      "category": "flow",
+      "title": "When 3D cannot be drawn, the same message appears three times, empty frames remain, and the only working action is 2.4 screens down",
+      "route": "item-spatial-no-webgl",
+      "env": "desktop Chromium 1280 and 390 px light; iphone-se 320 x 568",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/item-spatial-no-webgl/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/item-spatial-no-webgl/390-light.png",
+        "web/test-results/ux-review/visual-start/fold-iphone-se/item-spatial-no-webgl/001-viewport-as-shown.png"
+      ],
+      "observed": "The header status line (144 characters on one line at 1280 px), a bordered note in the target slot ('The 3D figures could not be drawn...') and the grey .unavailable panel all say the same thing. Four empty option frames labelled A-D and an enabled-looking 'Confirm' stay on screen. The panel's 'Skip Spatial' button sits at 1265 px on a 390 px page and at 1373-1417 px on iPhone SE, where the window shows 73-641 px.",
+      "expected": "One message directly under the heading, with 'Skip Spatial' in the first screen, and no empty stimulus frames or Confirm.",
+      "suggestion": "When the rotation renderer reports it cannot draw, render only the .unavailable panel under the h1 (text plus primary 'Skip Spatial' and secondary 'Finish early'), wrapping target, options and Confirm in `{#if !unavailable}`. Leave the header status empty for this case, since the panel is the message.",
+      "files": [
+        "web/src/session/SessionScreen.svelte",
+        "web/src/render/rotation/RotationRenderer.svelte"
+      ],
+      "spec_refs": ["§10", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-06",
+      "severity": "major",
+      "category": "content",
+      "title": "The privacy page shows 'TODO(user)' placeholders for the controller, contact and retention terms",
+      "route": "privacy",
+      "env": "every width and scheme (desktop Chromium 390 and 1440 px shown)",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/privacy/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/privacy/1440-dark.png"
+      ],
+      "observed": "Under 'Who runs this site': 'Controller: TODO(user): name of the person or organisation responsible for this site.' and 'Contact: TODO(user): an email address for questions and requests about your data.' Under 'When there is an online version': 'Draft terms for that version, to be confirmed: TODO(user): retention period (draft: 24 months)...'. The gate links here as 'the full privacy notice and terms' that a person agrees to.",
+      "expected": "A real controller name and contact address, or the two lines left out until they exist; no developer markers in public text.",
+      "suggestion": "The owner supplies the controller and contact. Until then, replace the two lines with 'This is a personal hobby project. Questions: open an issue at <repo URL>.' and drop the online-version draft paragraph. Add a copy test that fails on 'TODO' in any rendered string.",
+      "files": ["web/src/session/Privacy.svelte", "web/src/session/copy.ts"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-07",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Option items use their own button and focus styles: black or white Confirm, blue focus ring, and a disabled state that looks enabled",
+      "route": "practice, practice-feedback, item-spatial (and counted Matrix items)",
+      "env": "desktop Chromium 1280 px light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/details-options-chromium/001-practice-focus-option-light.png",
+        "web/test-results/ux-review/visual-start/details-options-chromium/002-practice-focus-confirm-light.png",
+        "web/test-results/ux-review/visual-start/details-options-chromium/006-practice-focus-confirm-dark.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/item-spatial/390-light.png"
+      ],
+      "observed": "OptionGroup's Confirm is filled with --hb-chosen, #0b0a0f in light and #f4f3f6 in dark, with min-width 8rem and padding 0.5rem 1.25rem. Every other primary button is .hb-primary blue (#1d4ed8 light, #8fb0ff dark). Option cards and Confirm get a 3 px blue ring (--hb-focus #1a5fb4 light, #8cb4ff dark, offset 3px); every other control gets the amber --r-focus ring (#b45309 light, #fbbf24 dark, offset 2px). So the focus colour changes within one screen (Confirm blue, Back amber). The disabled Confirm is transparent, with a #767676 border and full-opacity #3d3a44 text, so it looks like an enabled outline button; .hb-btn:disabled uses opacity 0.6 instead.",
+      "expected": "One primary style, one focus ring and one disabled treatment across every screen.",
+      "suggestion": "Render Confirm as `<button class=\"hb-btn hb-primary\">` and delete OptionGroup's `button` rules. Replace --hb-focus with var(--r-focus) and use outline-offset 2px. Keep the selected card's black 4 px frame and inverted letter, so selection is not shown by colour alone.",
+      "files": ["web/src/render/choice/OptionGroup.svelte"],
+      "spec_refs": ["§13", "M1.13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-08",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Design system: four colour-token sets with drifting values, and checkboxes, radios and the file input left in browser default styling",
+      "route": "device, gate, ready-returning, practice, interstitial (system-wide)",
+      "env": "desktop Chromium 390 and 1280 px, light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/details-device-chromium/001-device-focus-radio-390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/ready-returning/1280-dark.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/interstitial/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/ready/390-light.png"
+      ],
+      "observed": "Four token namespaces: app.css (--text, --text-strong, --bg, --border), render.css (12 --r-* tokens), OptionGroup (--hb-focus, --hb-card-border, --hb-chosen, --hb-surface) and notes.css (--surface, --muted, --accent, --focus, --warn-*). Drift: the dark page background is #15151a in one and #16151b in another. Card borders are #767676 (OptionGroup, matrix CELL_BORDER) vs #75707f. There are three focus colours (amber, #1a5fb4, #1d4ed8 in notes). The session header rule is 1px #75707f (4.8:1, heavy) while the footer rule is #e3e2e6 (1.3:1). Radios and checkboxes use Chrome's default #0075ff right next to the #1d4ed8 primary button (sampled on the device screen); only the confidence range and Emotion set accent-color. 'Choose File' is the browser's grey button inside a box styled like a text field. MatrixRenderer's .stem reads --text-strong from app.css inside a renderer. Spacing is fine (mostly a 0.25rem scale).",
+      "expected": "One token source that every component reads, and native controls tinted with the accent.",
+      "suggestion": "Add web/src/tokens.css, imported once from app.css, with light/dark values: --hb-fg #1f1d24/#f1f0f4, --hb-muted #4a4652/#c9c6d1, --hb-bg #ffffff/#16151b, --hb-surface #f3f2f6/#24232b, --hb-border #75707f/#a09aad, --hb-divider #d4d2d9/#3a3842 (decorative rules), --hb-accent #1d4ed8/#8fb0ff, --hb-accent-fg #ffffff/#0b0a0f, --hb-focus #b45309/#fbbf24, --hb-note #7a2e0e/#fdba74. Alias --r-*, OptionGroup's --hb-card-* and the notes variables to these. Add `.hb-render { accent-color: var(--hb-accent); }` and `.hb-screen input[type='file']::file-selector-button { font: inherit; margin-right: 0.75rem; padding: 0.375rem 0.75rem; border: 2px solid var(--hb-border); border-radius: 0.375rem; background: var(--hb-surface); color: var(--hb-fg); }`. Draw the session header rule in --hb-divider.",
+      "files": [
+        "web/src/app.css",
+        "web/src/render/common/render.css",
+        "web/src/render/choice/OptionGroup.svelte",
+        "web/src/brief/notes.css",
+        "web/src/session/session.css",
+        "web/src/session/SessionScreen.svelte",
+        "web/src/render/matrices/MatrixRenderer.svelte"
+      ],
+      "spec_refs": ["§9", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-09",
+      "severity": "minor",
+      "category": "visual",
+      "title": "session.css descendant rules override component styles of equal specificity (confirm panel heading gets 24 px extra top space; focus-picker rows spread to 60 px)",
+      "route": "confirm-skip, confirm-finish, ready-returning",
+      "env": "desktop Chromium 1280 px light; iphone-se",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/confirm-skip/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/confirm-finish/390-dark.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/ready-returning/1280-dark.png"
+      ],
+      "observed": "`.hb-screen h2 { margin: 1.5rem 0 0.5rem }` and ConfirmPanel's scoped `h2 { margin: 0 0 0.5rem }` both have specificity (0,1,1), and the session.css rule wins on source order. The computed margin-top is 24px (fold-iphone-se/confirm-skip/002-fold.json: panel top 636, heading top 674), so the panel has 38 px above its heading against 14 px at the sides. `.hb-screen p { margin: 0 0 1rem; max-width: 38rem }` likewise beats the panel's `p { margin: 0 0 0.5rem }`. `.hb-screen .check { margin: 1rem 0 }` reaches inside FocusPicker: its rows are 44 px tall with 16 px margins, a 60 px pitch (measured 546, 606, 670), against 44 px for the device radios.",
+      "expected": "Component styles win inside their components; panel padding is even on all sides.",
+      "suggestion": "Lower session.css's specificity with :where(), for example `:where(.hb-screen) h2 { ... }`, `:where(.hb-screen) p { ... }`, `:where(.hb-screen) .check { ... }`, `:where(.hb-screen) fieldset { ... }` (all become 0,0,1 or 0,1,0), or limit the rules to direct children (`.hb-screen > h2`, `.hb-screen > p`).",
+      "files": [
+        "web/src/session/session.css",
+        "web/src/session/ConfirmPanel.svelte",
+        "web/src/reveal/FocusPicker.svelte"
+      ],
+      "spec_refs": ["M1.15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-10",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "The confidence slider's unfilled track (2.1:1) and the progress-ring track (1.8:1 light, 2.3:1 dark) fall below 3:1",
+      "route": "confidence, interstitial (ring on every in-session screen)",
+      "env": "desktop Chromium 1280 px light; 390 and 1280 px dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/confidence/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/interstitial/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/rt-trial/1280-dark.png"
+      ],
+      "observed": "The confidence range is Chrome's default track: its unfilled edge is #b2b2b2 on #ffffff, 2.12:1 (dark is fine at #858585 on #16151b, 4.92:1). The progress-ring track is --r-border at opacity 0.45, sampled #c1bfc5 on white (1.82:1) and #54505c on #16151b (2.32:1). At 0 elapsed the ring is only a blue dot on a faint circle. The ring's text says the same thing, so the ring itself is the lesser issue.",
+      "expected": "At least 3:1 for the parts of a control that show its range (WCAG 1.4.11).",
+      "suggestion": "Range: `appearance: none`, with `::-webkit-slider-runnable-track` and `::-moz-range-track` set to `height: 0.5rem; border-radius: 999px; background: var(--r-surface); border: 1px solid var(--r-border);` (4.79:1) and a 1.5rem thumb in --r-accent with a 2px --r-bg ring. Ring: `.track { stroke: var(--r-border); opacity: 1; stroke-width: 3; }` (4.79:1 light, 6.67:1 dark), keeping the 5 px --r-accent bar so filled and remaining still differ by width and hue.",
+      "files": ["web/src/session/Confidence.svelte", "web/src/session/ProgressRing.svelte"],
+      "spec_refs": ["§13", "§10", "WCAG 1.4.11"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-11",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Checklist: 'Calibration/Metacognition' breaks mid-word at 320 px, 'With each answer' leaves the status column, and three rows say 'Up next' at once",
+      "route": "interstitial (checklist on every in-session screen)",
+      "env": "desktop Chromium 320 px and 1280 px light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/item-matrix-series/320-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/interstitial/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/interstitial/390-light.png"
+      ],
+      "observed": "At 320 px the row reads 'Calibration/Metacog' / 'nition': `.name { overflow-wrap: anywhere }` and there is no break opportunity after the slash. At 52rem and wider the 16rem sidebar cannot fit 'With each answer' beside 'Estimation', so it drops to its own line under the name, while every other status is right-aligned on the name line. Reasoning, Spatial/Memory and Quantitative all read 'Up next' at the same time. Related: L2-14 (mid-word breaks with a wide font), SR-10, SKIM-13.",
+      "expected": "Words break only at spaces or slashes, statuses share one column, and only one row is 'Up next'.",
+      "suggestion": "`li { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) auto; column-gap: 0.5rem; }`, with `.status { white-space: normal; text-align: right; max-width: 7rem; }` so long statuses wrap inside their column. Write 'Calibration / metacognition' (or put `<wbr>` after the slash) and use `.name { overflow-wrap: break-word; hyphens: auto; }`. Show 'Up next' only on the next cluster and 'Later' on the rest.",
+      "files": ["web/src/session/Checklist.svelte", "web/src/session/copy.ts", "web/src/session/segments.ts"],
+      "spec_refs": ["§10"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-12",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Part names switch between sentence case and Title Case on the same screen",
+      "route": "interstitial, rt-intro, memory-corsi, quant-item, coding-running, ready-returning",
+      "env": "desktop Chromium 1280 px light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/rt-intro/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/memory-corsi/1280-dark.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/ready-returning/1280-dark.png"
+      ],
+      "observed": "The h1 reads 'Reaction time' but also 'Working Memory', 'Matrix & Series', 'Quantitative Reasoning' and 'Processing & Reading Speed'. Buttons read 'Skip Reaction Time' and 'Skip Working Memory', the notice 'Reaction Time skipped', the checklist 'Reaction Time, Processing & Reading Speed', and the focus picker lists 'Reaction time' next to 'Working Memory'. House style is sentence case. SR-11 reports the spoken side.",
+      "expected": "One sentence-case name per part, used everywhere.",
+      "suggestion": "Keep the names in segments.ts in sentence case ('Reaction time', 'Matrix and series', 'Spatial', 'Working memory', 'Quantitative reasoning', 'Processing and reading speed') and build buttons, notices, checklist and focus picker from that one list. Update SEGMENT_TITLES in e2e/routes.ts alongside.",
+      "files": ["web/src/session/segments.ts", "web/src/session/copy.ts", "web/e2e/routes.ts"],
+      "spec_refs": ["A13"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-13",
+      "severity": "minor",
+      "category": "visual",
+      "title": "The coding legend tiles look exactly like the answer keys",
+      "route": "coding-intro, coding-running",
+      "env": "desktop Chromium 320 and 1280 px light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/coding-running/320-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/coding-running/1280-light.png"
+      ],
+      "observed": "The legend `.cell` has a 2px --r-border, 0.5rem radius and --r-surface fill, the same as `.hb-btn`, which the keys use. At 320 px both form 5+4 grids of identical tiles one above the other, so the legend looks tappable and the eye has to work out which grid is the key.",
+      "expected": "The legend reads as a reference strip and the keypad as buttons.",
+      "suggestion": "`.legend { gap: 0; border: 1px solid var(--r-border); border-radius: 0.5rem; overflow: hidden; }` and `.cell { border: 0; border-right: 1px solid var(--r-border); border-radius: 0; background: var(--r-bg); }`, with the digit in 1rem --r-muted under the glyph. The keys keep the button style.",
+      "files": ["web/src/render/coding/CodingRenderer.svelte"],
+      "spec_refs": ["§3"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-14",
+      "severity": "minor",
+      "category": "visual",
+      "title": "The reaction-time screens show the same heading twice",
+      "route": "rt-intro, rt-trial",
+      "env": "desktop Chromium 390 and 1280 px, light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/rt-intro/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/rt-trial/390-light.png"
+      ],
+      "observed": "The h1 'Reaction time' (clamp 1.5-2.25rem) is followed directly by the renderer's title 'Reaction time' (1.125rem, weight 600). Other blocks use a title that adds information ('Block sequence', 'Symbol to digit', 'Digits, same order'); only reaction time repeats the h1. At 390 px the repeat costs about 40 px above the stage.",
+      "expected": "A second line that says what this block is, or no second line.",
+      "suggestion": "Hide the renderer's `.title` when the session hosts it (a `showTitle={false}` prop), or retitle it 'Press when you see the target' (and 'Four positions' for the choice version).",
+      "files": ["web/src/render/rt/RtRenderer.svelte", "web/src/session/SessionScreen.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-15",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Text under a row of buttons sits with no gap against them",
+      "route": "welcome, ready, ready-returning, practice-feedback",
+      "env": "desktop Chromium 390 px light; iphone 390 px",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/welcome/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/ready/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-iphone/practice-feedback/390-light.png"
+      ],
+      "observed": "Pixel-sampled gaps of 0 px between the button row and the next line box: the welcome 'Privacy and terms' link (Start ends at y 290, the link box starts at 291), the ready note 'Practice questions show whether you were right...', the 'Loaded 1 earlier session...' status under Load, and 'That was not correct.' under Confirm in practice. Everywhere else blocks are 16 px apart. Cause: `.hb-render .hb-actions { margin-top: 1rem }` has no bottom margin, and `.hb-screen p` has no top margin.",
+      "expected": "A consistent gap (12-16 px) after an action row, or 8 px for a note that belongs to the buttons.",
+      "suggestion": "`.hb-render .hb-actions { margin: 1rem 0; }` (it collapses with the following paragraph's 0 top margin), and `.hb-actions + p.muted { margin-top: 0.5rem; }` for notes that annotate the buttons.",
+      "files": [
+        "web/src/render/common/render.css",
+        "web/src/session/Welcome.svelte",
+        "web/src/session/Ready.svelte",
+        "web/src/session/PracticeScreen.svelte"
+      ],
+      "spec_refs": ["M1.15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-16",
+      "severity": "minor",
+      "category": "bug",
+      "title": "Focus-session labels lose the space before '(wide range)'",
+      "route": "ready-returning",
+      "env": "desktop Chromium 1280 px dark; iphone 390 px dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/ready-returning/1280-dark.png",
+        "web/test-results/ux-review/visual-start/tour-iphone/ready-returning/390-dark.png"
+      ],
+      "observed": "The labels read 'Matrix & Series(wide range)', 'Spatial(wide range)' and 'Quantitative Reasoning(wide range)'. FocusPicker writes `{o.title}{#if o.suggested} <span class=\"suggested\">` and Svelte 5 trims the leading space inside the block. SR-12 reports the screen-reader side; this is the visible side, also in the results retest picker.",
+      "expected": "'Matrix & Series (wide range)'.",
+      "suggestion": "Put the space inside the span: `<span class=\"suggested\">&nbsp;({FOCUS_SUGGESTED})</span>`, or write `{o.title}{#if o.suggested}{' '}<span ...>`. Add a DOM test that the label text is 'Matrix & Series (wide range)'.",
+      "files": ["web/src/reveal/FocusPicker.svelte"],
+      "spec_refs": ["M1.15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-17",
+      "severity": "minor",
+      "category": "layout",
+      "title": "The 'Save your results' panel on the nothing-measured screen is indented 144 px from everything else",
+      "route": "finished-nothing",
+      "env": "desktop Chromium 1280 and 1440 px, light and dark",
+      "screenshots": ["web/test-results/ux-review/visual-start/tour-chromium/finished-nothing/1280-light.png"],
+      "observed": "The h1, both paragraphs and 'Back to the start' start at x 80, but the save panel starts at x 224. `.hb-reveal-panel { max-width: 52rem; margin: 1.5rem auto 0 }` centres it inside the 72rem wide screen ((1120 - 832) / 2 = 144 px). On the results page every panel is centred, so it lines up there, but here the rest of the page is left-aligned.",
+      "expected": "The panel aligned with the heading and paragraphs.",
+      "suggestion": "Use the narrow screen when there is no profile (`<Screen title={FINISHED_HEADING} wide={results !== null}>`), or add `.hb-screen.wide > .hb-reveal-panel { margin-left: 0; }` for this branch.",
+      "files": ["web/src/session/Finished.svelte", "web/src/reveal/reveal.css"],
+      "spec_refs": ["M1.15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-18",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Touch targets under 44 px on phones: Corsi blocks (34-42 px), focus-picker checkboxes (24 px), the privacy Back link",
+      "route": "memory-corsi, ready-returning, honour, privacy",
+      "env": "iphone (390 px) and iphone-se (320 px), touch",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/memory-corsi/320-light.png",
+        "web/test-results/ux-review/visual-start/tour-iphone/memory-corsi/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-iphone/ready-returning/390-dark.png"
+      ],
+      "observed": "From the touch metrics (tour-iphone/summary.json and fold-iphone-se): Corsi blocks are 42.5 px on iPhone 13 and 34 px on iPhone SE (board 288 px; a block is `size: 0.12` of the board in tasks/span/config.ts). Focus-picker checkboxes are 24 x 24, with labels 24 px tall; the row is 44 px but only the input and the label text take taps. The honour checkbox label is 26 px and the privacy 'Back' link is 36 x 24. All pass WCAG 2.2 AA 2.5.8 (24 px), and render.css promises 44 px targets. A missed Corsi tap is scored as a wrong answer in a timed memory task.",
+      "expected": "Targets of at least 44 px on touch screens, as render.css states.",
+      "suggestion": "Corsi: block size `max(12%, 2.75rem)` (keeping the 0.12 board fraction as the design size), with `.hb-screen { padding-inline: 0.75rem; }` below 22rem so the board gets 296 px. Make the whole check row the target by wrapping it: `<label class=\"check\"><input type=\"checkbox\" /> <span>...</span></label>`. Style the privacy 'Back' as `.hb-btn`.",
+      "files": [
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/reveal/FocusPicker.svelte",
+        "web/src/session/Honour.svelte",
+        "web/src/session/Privacy.svelte"
+      ],
+      "spec_refs": ["§13", "WCAG 2.5.8"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VIS1-19",
+      "severity": "polish",
+      "category": "visual",
+      "title": "On desktop, short-answer inputs and the confidence and confirm panels stretch across the whole column",
+      "route": "item-matrix-series, quant-item, confidence, confirm-skip",
+      "env": "desktop Chromium 1280 px light",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/confidence/1280-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/confirm-skip/1280-light.png"
+      ],
+      "observed": "The series 'Next term' input is 608 px wide for a one- to four-digit answer. The confidence fieldset is 848 px with a 740 px slider, and the confirm panel is 848 px, while all text above is capped at 38rem (608 px). The 50% value sits 740 px from the slider's left end.",
+      "expected": "Controls sized to their content and aligned to the text measure.",
+      "suggestion": "In NumericEntry.svelte, `.entry .box { flex: 0 1 12rem; max-width: 12rem; }` for whole-number and fraction entry (± and Submit then sit beside it); `.confidence, .confirm { max-width: 38rem; }`.",
+      "files": [
+        "web/src/render/common/NumericEntry.svelte",
+        "web/src/render/series/SeriesRenderer.svelte",
+        "web/src/session/Confidence.svelte",
+        "web/src/session/ConfirmPanel.svelte"
+      ],
+      "spec_refs": ["§10"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-20",
+      "severity": "polish",
+      "category": "visual",
+      "title": "Lines run to 81-98 characters at 768 px and wider (aim 45-80)",
+      "route": "welcome, gate, privacy, honour, rt-intro, item-spatial-no-webgl (every narrow screen)",
+      "env": "desktop Chromium 768-1440 px",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/privacy/1440-dark.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/welcome/1280-dark.png"
+      ],
+      "observed": "`.hb-screen p { max-width: 38rem }` at 16 px holds 81-86 characters: welcome 'The session takes about 30 minutes and has six short parts. You can skip any part' is 81, and privacy 'Controller: TODO(user): name of the person or organisation responsible for this site.' is 86. The footer disclaimer (0.875rem in a 40rem box) runs to 98 characters (maxLineChars 98 on every route at 768 px and up), and the no-WebGL header status reaches 144. The reading passage, at about 76, is fine.",
+      "expected": "Body lines of 45-80 characters.",
+      "suggestion": "`.hb-screen p, .hb-screen ul.points, .hb-render .hb-instructions { max-width: 34rem; }` (about 72 characters at 16 px), `.disclaimer { max-width: 34rem; }` and `.status { max-width: 42rem; }` in the session header.",
+      "files": ["web/src/session/session.css", "web/src/render/common/render.css", "web/src/App.svelte", "web/src/session/SessionScreen.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-21",
+      "severity": "polish",
+      "category": "visual",
+      "title": "Two primary buttons compete on the returning Ready screen, and the confirm panels make the consequential choice primary",
+      "route": "ready-returning, confirm-skip, confirm-finish",
+      "env": "desktop Chromium 1280 px dark; 390 px dark",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-chromium/ready-returning/1280-dark.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/confirm-finish/390-dark.png"
+      ],
+      "observed": "'Begin' and 'Start a 20-minute focus session' are both filled .hb-primary on one screen, so the screen has no single next step. In the confirm panels the irreversible choice ('Skip Matrix & Series', 'Finish now') is filled primary and 'Keep going' is secondary.",
+      "expected": "One primary action per screen; the safe choice gets the emphasis in a confirm panel.",
+      "suggestion": "Make the focus-session start a secondary `.hb-btn`. In ConfirmPanel, make 'Keep going' the primary and the consequential action a secondary `.hb-btn` placed first, or style both secondary.",
+      "files": ["web/src/reveal/FocusPicker.svelte", "web/src/session/ConfirmPanel.svelte"],
+      "spec_refs": ["§10"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-22",
+      "severity": "polish",
+      "category": "visual",
+      "title": "Large matrix glyphs in corner slots touch the cell frame",
+      "route": "practice-feedback, practice",
+      "env": "iphone 390 px light (cells about 180 px on screen)",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/tour-iphone/practice-feedback/390-light.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/practice/390-light.png"
+      ],
+      "observed": "Corner slot centres sit at 16.67 units and a large glyph has radius 13.5 plus a 0.8 half-outline, leaving 2.4 of 100 units (about 4 px at a 180 px cell) to the edge, with the #767676 frame drawn on top. In the iPhone screenshot the large hexagons in row 2 visibly meet the frame, and at 390 px in Chromium the corner circles of row 2 overlap it. draw.ts says large 'still leaves a gap ... to the border'.",
+      "expected": "A clear gap (at least 4 viewBox units) between every glyph and the frame.",
+      "suggestion": "Move the slot centres in to 18 / 50 / 82, or reduce the large radius to 12.5 (keeping a 1.25x step over medium). Update draw.test.ts snapshots.",
+      "files": ["web/src/render/matrices/draw.ts"],
+      "spec_refs": ["§4.2"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "VIS1-23",
+      "severity": "polish",
+      "category": "visual",
+      "title": "The reaction-time fixation cross is drawn above the target box, not where the target appears",
+      "route": "rt-trial",
+      "env": "desktop Chromium 390 and 1280 px, light and dark, motion allowed",
+      "screenshots": [
+        "web/test-results/ux-review/visual-start/details-motion-chromium/003-rt-trial-motion-2.png",
+        "web/test-results/ux-review/visual-start/tour-chromium/rt-trial/1280-dark.png"
+      ],
+      "observed": "`.fixation` is its own 2.5rem row above `.pads`, so the '+' sits about 8rem (128 px) above the centre of the 12rem target box. Gaze rests above the box and has to drop to the target. The reserved row also adds 3.25rem to the stage height on phones (VIS1-02).",
+      "expected": "Fixation at the point where the target will appear, as in most simple reaction-time set-ups.",
+      "suggestion": "Draw the '+' centred inside the pad during the fixation phase (`.pad[data-fixation]::after { content: '+'; font: 700 2rem/1 system-ui; }`) and remove the separate row. Check with the self-test that onset timing is unchanged.",
+      "files": ["web/src/render/rt/RtRenderer.svelte"],
+      "spec_refs": ["§11.6", "§3"],
+      "confidence": "medium",
+      "owner_decision": true
+    }
+  ]
+}

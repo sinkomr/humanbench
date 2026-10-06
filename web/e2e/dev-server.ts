@@ -12,6 +12,19 @@ export const DEV_ORIGIN = `http://127.0.0.1:${DEV_PORT}`
 export const DEV_BASE = '/humanbench/'
 export const DEV_BASE_URL = `${DEV_ORIGIN}${DEV_BASE}`
 
+/**
+ * Set to "1" by a config that starts no dev server (`ux-review/playwright.iso.config.ts` without HB_DEV_SERVER=1; the base
+ * config always starts one): the routes that live on it (`devServer` in routes.ts) are skipped there, as gallery.spec.ts
+ * and render-visual.spec.ts are left out, and are checked in the run that does start it. Without it they would load a
+ * page from whatever listens on the default port 4175, or fail on a refused connection.
+ */
+export const NO_DEV_SERVER_ENV = 'HB_NO_DEV_SERVER'
+
+/** This run starts no dev server (see {@link NO_DEV_SERVER_ENV}). */
+export function devServerAbsent(): boolean {
+  return process.env[NO_DEV_SERVER_ENV] === '1'
+}
+
 /** URL of the dev-only visual renderer gallery (`web/render-visual.html`). */
 export function visualGalleryUrl(query: Readonly<Record<string, string | number>> = {}): string {
   const q = new URLSearchParams(Object.entries(query).map(([k, v]): [string, string] => [k, String(v)])).toString()

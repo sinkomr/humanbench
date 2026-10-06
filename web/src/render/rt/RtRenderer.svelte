@@ -15,7 +15,7 @@
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
   import '../common/render.css'
-  import { isOwnKey } from '../common/focus'
+  import { focusStage, isOwnKey } from '../common/focus'
   import { browserTiming, type RendererProps } from '../common/props'
   import { afterFrames } from '../common/sequence'
   import { BlockTimestampPolicy, createOnsetScheduler, combineTimestampSources, responseRtMs, type ScheduledOnset, type TimestampReason, type TimestampSource } from '../../tasks/rt/timing'
@@ -84,6 +84,16 @@
   const choice4 = $derived(spec.mode === 'choice4')
   const positions = $derived(Array.from({ length: spec.n_positions }, (_, i) => i))
   const nTrials = $derived(stage === 'practice' ? spec.practice_positions.length : spec.positions.length)
+  // The name of the element that holds focus while the block runs (a nameless target is silent in a screen reader).
+  const stageLabel = $derived(
+    mode === 'touch'
+      ? choice4
+        ? 'Reaction stage: tap the position where the target appears'
+        : 'Reaction stage: tap the target when it appears'
+      : choice4
+        ? 'Reaction stage: press D, F, J or K to match the position of the target'
+        : 'Reaction stage: press Space when the target appears',
+  )
 
   function stopTimers(): void {
     onset?.cancel()
@@ -199,7 +209,7 @@
     phase = 'running'
     note = ''
     flushSync()
-    stageEl?.focus()
+    focusStage(stageEl)
     runTrial()
   }
 
@@ -225,15 +235,15 @@
 <svelte:window onkeydown={onkey} />
 
 <section class="hb-render rt" bind:this={root} aria-labelledby="{uid}-title">
-  <p class="title" id="{uid}-title">{choice4 ? 'Reaction time, four positions' : 'Reaction time'}</p>
+  <p class="title" id="{uid}-title">{choice4 ? 'Four positions' : 'One position'}</p>
   {#if phase === 'intro'}
     <p class="hb-instructions">
       {#if choice4}
         A target will appear in one of four positions. Respond to its position as fast as you can:
-        {mode === 'keyboard' ? 'press D, F, J or K (or 1 to 4) for the positions from left to right' : 'tap or click that position'}.
+        {#if mode === 'keyboard'}press <kbd translate="no">D</kbd>, <kbd translate="no">F</kbd>, <kbd translate="no">J</kbd> or <kbd translate="no">K</kbd> (or <kbd translate="no">1</kbd> to <kbd translate="no">4</kbd>) for the positions from left to right{:else}tap or click that position{/if}.
       {:else}
         A target will appear in the box. As soon as you see it,
-        {mode === 'keyboard' ? 'press the Space bar' : 'tap or click the box'}.
+        {#if mode === 'keyboard'}press the <kbd translate="no">Space</kbd> bar{:else}tap or click the box{/if}.
       {/if}
       Wait for the target: pressing early does not count. First come {RT_PRACTICE_TRIALS} practice trials, then {spec.positions.length} counted trials.
     </p>
@@ -249,8 +259,8 @@
     <p class="hb-instructions">Practice done. The counted trials start now.</p>
     <button type="button" class="hb-btn hb-primary" onclick={() => begin('main')}>Start</button>
   {:else if phase === 'running'}
-    <p class="progress">{stage === 'practice' ? 'Practice' : 'Trial'} {trialIdx + 1} of {nTrials}</p>
-    <div class="stage" class:choice4 bind:this={stageEl} tabindex="-1">
+    <p class="progress">{stage === 'practice' ? 'Practice' : 'Trial'} <span translate="no">{trialIdx + 1}</span> of <span translate="no">{nTrials}</span></p>
+    <div class="stage" class:choice4 role="group" aria-label={stageLabel} bind:this={stageEl} tabindex="-1">
       <p class="fixation" aria-hidden="true">{trialState === 'fixation' ? '+' : ''}</p>
       <div class="pads">
         {#each positions as i (i)}
@@ -312,6 +322,15 @@
     color: var(--r-muted);
   }
 
+  kbd {
+    padding: 0 0.25rem;
+    border: 1px solid var(--r-border);
+    border-radius: 0.25rem;
+    background: var(--r-surface);
+    font: inherit;
+    font-weight: 600;
+  }
+
   .stage {
     display: grid;
     gap: 0.75rem;
@@ -323,6 +342,7 @@
     background: var(--r-surface);
     user-select: none;
     -webkit-user-select: none;
+    touch-action: manipulation;
   }
 
   .fixation {

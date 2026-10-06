@@ -88,16 +88,19 @@ describe('practice mode (DESIGN §10: feedback only here, never counted)', () =>
     expect(p.view()).toMatchObject({ number: 2, unavailable: false, phase: 'item' })
   })
 
-  it('can be left at any time, and notifies its listeners', () => {
+  it('notifies its listeners of a change until they unsubscribe (leaving practice is the screen\'s own ondone, UX-004)', () => {
     const p = new PracticeRun('s_PRACTICE0000007')
     let n = 0
     const off = p.subscribe(() => n++)
-    p.end()
-    expect(p.view()).toMatchObject({ phase: 'done', item: null })
+    p.itemUnavailable()
     expect(n).toBe(1)
+    p.itemUnavailable()
+    expect(n).toBe(1)
+    p.next()
+    expect(n).toBe(2)
     off()
-    p.end()
-    expect(n).toBe(1)
+    p.itemUnavailable()
+    expect(n).toBe(2)
   })
 
   it('reports the families it used, so the counted session can leave them out', () => {

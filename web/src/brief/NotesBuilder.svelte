@@ -18,7 +18,7 @@
   import { copyText as defaultCopy, downloadText as defaultDownload, hexToken } from './browser'
   import { activeExtras, activePrefs, contextLabel, initialState, otherContexts, persistedOf, recordCopied, resetAll, stateFromStored, type BuilderState } from './builder'
   import { buildBrief } from './build'
-  import { CLAIM, COPY, DATA_FREE_SNIPPET } from './copy'
+  import { CLAIM, COPY, COPY_TARGET_ID, DATA_FREE_SNIPPET } from './copy'
   import { DEFAULT_GATES, type GateFile } from './gates'
   import { asFile, renderJson } from './render'
   import { copiedRecordOf, returningNotices, type CopiedSet } from './returning'
@@ -73,6 +73,8 @@
 
   let model = $state<BuilderState>(untrack(() => initial ?? initialState()))
   let keep = $state(untrack(() => keepInitial && store !== null))
+  /** The kept settings came back from an earlier visit (so the top of the page says "from last time"). */
+  let restored = $state(untrack(() => keepInitial && store !== null))
   let storeStatus = $state<StoreStatus>('ok')
   let status = $state('')
   let moreStatus = $state('')
@@ -92,6 +94,8 @@
   const fileName = $derived(downloadName(dest, form, asOf, token))
   const sets = $derived<CopiedSet[]>(model.contexts.flatMap((c, i) => (model.copied[i] ? [{ label: contextLabel(c), copied: model.copied[i] as NonNullable<(typeof model.copied)[number]> }] : [])))
   const notices = $derived(returningNotices(sets, gates, today))
+  /** What the top of the page says about keeping: nothing, unless settings are being kept (and the browser lets them be). */
+  const topNote = $derived(keep && storeStatus === 'ok' ? (restored ? COPY.settingsRestored : COPY.settingsKept) : COPY.notSaved)
   const mime = $derived(dest.output === 'json' ? 'application/json' : form === 'short' ? 'text/plain' : 'text/markdown')
 
   /** The settings as they are kept, without the month (which moves on by itself) so an unchanged page writes nothing. */
@@ -196,6 +200,7 @@
   function onRemove(): void {
     freshSave = store?.remove() === true
     keep = false
+    restored = false
     lastWritten = ''
     model = resetAll()
     status = ''
@@ -216,7 +221,23 @@
   const change = (next: BuilderState): void => {
     model = next
   }
+
+  /** The base path of the app (`/humanbench/`): the notes page lives beside the app's own page. */
+  const base = import.meta.env.BASE_URL
+  /** Move focus to the copy section. Done by script as well as by the link, because Safari does not always focus a link's target. */
+  function skipToCopy(event: MouseEvent): void {
+    const target = document.getElementById(COPY_TARGET_ID)
+    if (target === null) return
+    event.preventDefault()
+    target.focus()
+  }
 </script>
+
+<a class="skip-link" href="#{COPY_TARGET_ID}" onclick={skipToCopy}>{COPY.skipToCopy}</a>
+
+<header class="site">
+  <a class="home" href={base} translate="no">{COPY.homeLink}</a>
+</header>
 
 <main>
   <header>
@@ -225,7 +246,7 @@
     <p class="note" data-testid="trust">{COPY.trust}</p>
     <p data-testid="claim">{CLAIM}</p>
     <p>{COPY.instructionsNotTraits} {COPY.noResultsYet}</p>
-    <p class="hint" data-testid="not-saved">{COPY.notSaved}</p>
+    <p class="hint" data-testid="not-saved">{topNote}</p>
   </header>
 
   <Returning {notices} />
@@ -273,17 +294,53 @@
   />
 </main>
 
+<!-- The disclaimer, then the link, as in the app's own footer (App.svelte). -->
 <footer>
   <p class="disclaimer">{DISCLAIMER}</p>
+  <p class="links"><a class="hb-standalone-link" href="{base}index.html#/privacy" target="_blank" rel="noopener">{COPY.privacyLink}{COPY.newTab}</a></p>
 </footer>
 
 <style>
+  /* Hidden above the page until it has focus; then it sits over the top left corner. */
+  .skip-link {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    box-sizing: border-box;
+    padding: 0.25rem 1rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--bg);
+    border: 2px solid var(--accent);
+    border-radius: 0.375rem;
+    transform: translateY(-300%);
+  }
+  .skip-link:focus {
+    transform: none;
+  }
+  .site {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 0.5rem 1rem 0;
+  }
+  .home {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    font-weight: 700;
+  }
   main {
     box-sizing: border-box;
     width: 100%;
     max-width: 46rem;
     margin: 0 auto;
-    padding: 1.5rem 1rem 2rem;
+    padding: 0.5rem 1rem 2rem;
     flex: 1;
   }
   header h1 {
@@ -315,6 +372,10 @@
   .disclaimer {
     margin: 0 auto;
     max-width: 40rem;
+    font-size: 0.875rem;
+  }
+  .links {
+    margin: 0.5rem auto 0;
     font-size: 0.875rem;
   }
 </style>

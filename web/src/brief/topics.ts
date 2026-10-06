@@ -38,7 +38,7 @@ export interface Topic {
 
 /** Areas in display order, with their headings. */
 export const AREAS: readonly { readonly id: TopicArea; readonly label: string }[] = [
-  { id: 'math', label: 'Math and numbers' },
+  { id: 'math', label: 'Maths and numbers' },
   { id: 'logic', label: 'Logic' },
   { id: 'science', label: 'Science' },
   { id: 'humanities', label: 'Humanities' },

@@ -10,7 +10,7 @@ import { DEFAULT_GATES, type GateFile } from './gates'
 import { TEMPLATES, TEMPLATE_BY_ID } from './grammar'
 import { lintLine } from './lint'
 import { genericMeaning } from './meaning'
-import { outdatedMessage, returningNotices, reviewByMessage, switchedOffLines, withdrawnMessage, isOutdated, isWithdrawn, type CopiedRecord, type CopiedSet } from './returning'
+import { monthName, outdatedMessage, returningNotices, reviewByMessage, switchedOffLines, withdrawnMessage, isOutdated, isWithdrawn, type CopiedRecord, type CopiedSet } from './returning'
 import { BENEFIT_RE } from './testing'
 import { TEMPLATES_VERSION } from './types'
 
@@ -123,6 +123,36 @@ describe('the other notices', () => {
       expect(lintLine(t).filter((h) => h.rule === 'a13'), t).toEqual([])
       expect(BENEFIT_RE.test(t), t).toBe(false)
     }
+  })
+})
+
+describe('the month in words (UX-052)', () => {
+  it('says a stored YYYY-MM month the way a person does, with the month spelled out in full', () => {
+    expect(monthName('2025-01')).toBe('January 2025')
+    expect(monthName('2026-11')).toBe('November 2026')
+    expect(monthName('2027-12')).toBe('December 2027')
+    expect(monthName('2026-09')).toBe('September 2026')
+    expect(monthName('2026-05')).toBe('May 2026')
+  })
+
+  it('gives back anything that is not a month as it came, and names every real month', () => {
+    expect(monthName('soon')).toBe('soon')
+    expect(monthName('2026-13')).toBe('2026-13')
+    fc.assert(
+      fc.property(fc.integer({ min: 1900, max: 2199 }), fc.integer({ min: 1, max: 12 }), (y, m) => {
+        const iso = `${y}-${String(m).padStart(2, '0')}`
+        const named = monthName(iso)
+        expect(named).toMatch(/^[A-Z][a-z]+ \d{4}$/)
+        expect(named.endsWith(String(y))).toBe(true)
+        expect(named).not.toContain('-')
+      }),
+    )
+  })
+
+  it('words the review-by sentence plainly, with the month in words, and leaves the approved withdrawal sentence alone', () => {
+    expect(reviewByMessage('2025-01')).toBe('The notes you made in January 2025 may need another look. Check that they still say what you want, and copy them again if you change anything.')
+    expect(reviewByMessage('2026-11')).not.toContain('due for')
+    expect(withdrawnMessage('2026-11')).toContain('2026-11') // approved draft, word for word
   })
 })
 

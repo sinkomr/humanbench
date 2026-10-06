@@ -45,6 +45,12 @@ export interface VizTheme {
   readonly blob: string
   /** The ±1 SD band and the fuzz bands (§9.3). */
   readonly band: string
+  /**
+   * Opacity of the band's outline (the ±1 SD edge), set so the outline reaches at least
+   * {@link MIN_BAND_CONTRAST}:1 against `bg` in both schemes; the translucent fill alone is 1.1:1
+   * (UX-047). A number, not a colour.
+   */
+  readonly bandEdgeOpacity: number
   /** Tier (c) hatch (§9.7). */
   readonly hatch: string
   /** Muted markers and whiskers (§9.5). */
@@ -64,6 +70,7 @@ export const THEMES: Readonly<Record<'light' | 'dark', VizTheme>> = Object.freez
     textMuted: '#6b6b6b',
     blob: OKABE_ITO.blue,
     band: OKABE_ITO.skyBlue,
+    bandEdgeOpacity: 0.6,
     hatch: OKABE_ITO.orange,
     muted: '#808080',
     grid: '#d4d3d8',
@@ -77,6 +84,7 @@ export const THEMES: Readonly<Record<'light' | 'dark', VizTheme>> = Object.freez
     textMuted: MUTED_GREY,
     blob: OKABE_ITO.skyBlue,
     band: OKABE_ITO.blue,
+    bandEdgeOpacity: 0.5,
     hatch: OKABE_ITO.orange,
     muted: MUTED_GREY,
     grid: '#3a3942',
@@ -94,6 +102,8 @@ export const MARK_TOKENS = ['blob', 'muted', 'stub'] as const satisfies readonly
 
 export const MIN_TEXT_CONTRAST = 4.5
 export const MIN_MARK_CONTRAST = 3
+/** The band's outline against the page (not a meaningful mark: the line and the markers carry the data), UX-047. */
+export const MIN_BAND_CONTRAST = 1.5
 
 function channel(v: number): number {
   const s = v / 255
@@ -115,9 +125,20 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }
 
+/** `fg` laid over `bg` at `alpha` (sRGB blend, as a browser composites a translucent paint), as `#rrggbb`. */
+export function blend(fg: string, bg: string, alpha: number): string {
+  const part = (hex: string, i: number): number => parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16)
+  const mixed = [0, 1, 2].map((i) =>
+    Math.round(part(fg, i) * alpha + part(bg, i) * (1 - alpha))
+      .toString(16)
+      .padStart(2, '0'),
+  )
+  return `#${mixed.join('')}`
+}
+
 /** CSS custom properties (`--hb-<token>`) for a theme, to set on the chart's root element. */
 export function themeVars(theme: VizTheme): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(theme)) out[`--hb-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`] = v
+  for (const [k, v] of Object.entries(theme)) out[`--hb-${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`] = String(v)
   return out
 }

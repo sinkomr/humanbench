@@ -40,3 +40,11 @@
   {/if}
   <p class="note">{PEAKS_NOTE}</p>
 </section>
+
+<style>
+  /* This section sits inside the profile view, whose text colour is the body's: the heading takes the results' own (UX-036). */
+  h2 {
+    color: var(--r-fg);
+    font-size: 1.25rem;
+  }
+</style>

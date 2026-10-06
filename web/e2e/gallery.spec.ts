@@ -16,7 +16,7 @@ import { REVIEW_URL } from './dev-server'
 /** Families with an entry/block renderer, and how to drive each into its main phase. */
 const DRIVERS: Readonly<Record<string, (page: Page) => Promise<void>>> = {
   series: async (page) => {
-    await page.getByLabel('Next term', { exact: true }).first().fill('1')
+    await page.getByLabel(/^Next (number|letter)$/).first().fill('1')
     await page.getByRole('button', { name: 'Submit' }).first().click()
     await expect(page.getByText('Answer recorded.')).toBeVisible()
   },
@@ -192,10 +192,10 @@ test.describe('stable SVG renderers look the same on every load', () => {
     const b = await boardShot(page)
     expect(a.equals(b)).toBe(true)
     await openFamily(page, 'coding')
-    const legend = page.getByRole('list', { name: /Key: each shape and its digit/ })
+    const legend = page.getByRole('list', { name: /Shape-to-digit table/ })
     const c = await legend.screenshot({ animations: 'disabled' })
     await page.reload()
-    const d = await page.getByRole('list', { name: /Key: each shape and its digit/ }).screenshot({ animations: 'disabled' })
+    const d = await page.getByRole('list', { name: /Shape-to-digit table/ }).screenshot({ animations: 'disabled' })
     expect(c.equals(d)).toBe(true)
     if (process.platform === 'darwin') {
       // Baselines are recorded on macOS Chromium (npx playwright test e2e/gallery.spec.ts --update-snapshots).

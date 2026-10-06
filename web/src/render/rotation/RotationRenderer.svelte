@@ -15,10 +15,11 @@
     first frame showing the stimulus). A failed paint (lost context, zero-size canvas) reports
     nothing; the next successful pass (resize, context restore) does. The lazy load is never in
     the response time.
-  - Without WebGL the figures stay blank, the text alternatives remain, a notice says the question
-    cannot be answered here, the options stay locked, `onshown` is never called and
-    `onunavailable()` is called once per spec instead, so the session can offer skipping (§13
-    "skip any axis", M1.15).
+  - Without WebGL nothing is drawn but a one-line note that the question cannot be answered here (no
+    empty frames, no options, no Confirm to press); `onshown` is never called and `onunavailable()`
+    is called once per spec instead, so the session can offer skipping (§13 "skip any axis", M1.15).
+  - While the three-view chunk loads, the target box says "Loading figures…" instead of sitting
+    empty; the onset logic is unchanged (the figures' first paint is the onset).
   - The figures are static (no animation), so prefers-reduced-motion has nothing to reduce.
   - Canvases are sized from their CSS box × devicePixelRatio (capped at 2) and redrawn on resize.
 -->
@@ -27,7 +28,7 @@
   import type { RotationResponse, RotationSpec } from '../../tasks/rotation/spec'
   import OptionGroup from '../choice/OptionGroup.svelte'
   import { optionLetter } from '../choice/keys'
-  import { ROTATION_OPTIONS_LEGEND, ROTATION_STEM, ROTATION_UNAVAILABLE, optionAlt, targetAlt } from './copy'
+  import { ROTATION_LOADING, ROTATION_OPTIONS_LEGEND, ROTATION_STEM, ROTATION_UNAVAILABLE, optionAlt, targetAlt } from './copy'
   import { rotationScene, type RotationScene } from './scene'
   import type { FigurePainter } from './three-view'
 
@@ -135,30 +136,34 @@
 </script>
 
 <div class="rotation" bind:this={root}>
-  <p class="stem">{ROTATION_STEM}</p>
-  <div class="target">
-    <span class="caption" aria-hidden="true">Target</span>
-    <div class="frame" role="img" aria-label={targetAlt(nCubes)}>
-      <canvas bind:this={targetCanvas} class="view" aria-hidden="true">{targetAlt(nCubes)}</canvas>
-    </div>
-  </div>
   {#if status === 'unavailable'}
     <p class="notice" role="status">{ROTATION_UNAVAILABLE}</p>
+  {:else}
+    <p class="stem">{ROTATION_STEM}</p>
+    <div class="target">
+      <span class="caption" aria-hidden="true">Target</span>
+      <div class="frame" role="img" aria-label={targetAlt(nCubes)}>
+        <canvas bind:this={targetCanvas} class="view" aria-hidden="true">{targetAlt(nCubes)}</canvas>
+        {#if status === 'loading'}
+          <p class="loading">{ROTATION_LOADING}</p>
+        {/if}
+      </div>
+    </div>
+    {#key spec}
+      <OptionGroup
+        count={spec.options.length}
+        legend={ROTATION_OPTIONS_LEGEND}
+        optionName={(i) => optionAlt(optionLetter(i), nCubes)}
+        {onrespond}
+        disabled={disabled || !drawn}
+        columns={{ narrow: 2, wide: 4 }}
+      >
+        {#snippet option(i: number)}
+          <canvas bind:this={optionCanvases[i]} class="view" aria-hidden="true">{optionAlt(optionLetter(i), nCubes)}</canvas>
+        {/snippet}
+      </OptionGroup>
+    {/key}
   {/if}
-  {#key spec}
-    <OptionGroup
-      count={spec.options.length}
-      legend={ROTATION_OPTIONS_LEGEND}
-      optionName={(i) => optionAlt(optionLetter(i), nCubes)}
-      {onrespond}
-      disabled={disabled || !drawn}
-      columns={{ narrow: 2, wide: 4 }}
-    >
-      {#snippet option(i: number)}
-        <canvas bind:this={optionCanvases[i]} class="view" aria-hidden="true">{optionAlt(optionLetter(i), nCubes)}</canvas>
-      {/snippet}
-    </OptionGroup>
-  {/key}
 </div>
 
 <style>
@@ -189,9 +194,28 @@
   }
 
   .target .frame {
+    position: relative;
     width: min(100%, 14rem);
     border: 2px solid #767676;
     border-radius: 0.375rem;
+  }
+
+  /*
+    A label over the empty box while the figures load. The box is paper white in both themes, so the
+    label carries its own page-coloured ground (the page's text colour on the page's background).
+  */
+  .loading {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.375rem;
+    background: var(--bg, #ffffff);
+    color: var(--text, #3d3a44);
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   /* The paper-white stimulus looks the same in both themes (scene.ts LIGHTING.background). */
@@ -205,9 +229,6 @@
 
   .notice {
     margin: 0;
-    padding: 0.5rem 0.75rem;
-    border: 2px solid var(--text, #3d3a44);
-    border-radius: 0.5rem;
-    color: var(--text-strong, #0b0a0f);
+    color: var(--text, #3d3a44);
   }
 </style>

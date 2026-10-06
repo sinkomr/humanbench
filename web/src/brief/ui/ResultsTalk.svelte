@@ -84,7 +84,8 @@
     --rt-quote-bg: #f6f5f8;
     --rt-quote-edge: #55525d;
   }
-  @media (prefers-color-scheme: dark) {
+  /* Screen only: paper stays light, whatever the system scheme. */
+  @media screen and (prefers-color-scheme: dark) {
     .results-talk {
       --rt-note-bg: #3a2f10;
       --rt-note-text: #ffe7a3;
@@ -129,6 +130,8 @@
     border-radius: 0.5rem;
     padding: 0.6rem 0.9rem;
     margin: 0.75rem 0;
+    /* The reveal limits its paragraphs to a reading width; the warning box spans the card like the box above it. */
+    max-width: none;
   }
   .badge {
     display: inline-block;

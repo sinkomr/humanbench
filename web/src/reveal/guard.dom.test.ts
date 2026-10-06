@@ -15,4 +15,19 @@ describe('beforeunload guard on the real window (§10)', () => {
     window.dispatchEvent(e2)
     expect(e2.defaultPrevented).toBe(false)
   })
+
+  it('with two guards on the real window, lifting the first leaves the page guarded until the second is lifted', () => {
+    const run = installUnloadGuard()
+    const results = installUnloadGuard()
+    const prevented = (): boolean => {
+      const e = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(e)
+      return e.defaultPrevented
+    }
+    expect(prevented()).toBe(true)
+    run()
+    expect(prevented()).toBe(true)
+    results()
+    expect(prevented()).toBe(false)
+  })
 })

@@ -7,6 +7,14 @@
   fetched). Without one (the default build) neither exists and the flow is exactly that of M1.
   Screens keep their state in memory until the person passes the gate: the under-18 path never touches
   storage, and the consent, the autosaver and the restore of earlier saves all come after it.
+  Leaving by accident (UX-011): once a run holds an answer, closing or reloading the tab asks first (the
+  reveal's guard, `reveal/guard.ts`); while it runs, the browser's Back button or an edge swipe lands on a
+  history entry the run pushed and opens "Finish now?" instead of leaving.
+  The results code (`Finished.svelte` with the reveal, D3 and the share card) is not in the entry chunk
+  (UX-100): `results-loader.ts` fetches it from the ready screen on, so it is normally in memory when the
+  session ends. If it is still on its way the results screen says so; if it does not arrive after the
+  loader's retries, the screen offers "Try again" and "Download my save file" (the save is in the autosave
+  already), and the tab asks before it is closed until the save is downloaded.
 -->
 <script lang="ts">
   import { closeServedRun, type ServedOutcome } from '../backend/flow'
@@ -16,37 +24,61 @@
   import { SERVER_GATE_POINTS, SERVER_READY_TEXT } from '../backend/copy'
   import type { ServerSession } from '../backend/session'
   import type { AxisCode } from '../engine/axes'
+  import { installUnloadGuard } from '../reveal/guard'
   import { FOCUS_TARGET_S } from '../reveal/next'
   import { pruneAutosaves, restoreAutosaves, type RestoreResult } from '../save/autosave'
   import { newSessionId } from '../save/ids'
+  import { downloadSave } from '../save/io'
+  import { mergeAll } from '../save/merge'
   import type { DeviceInfo, SaveFileV1 } from '../save/types'
   import type { RtInputMode } from '../render/rt/keys'
   import ConsentGate from './ConsentGate.svelte'
   import DeviceCheck from './DeviceCheck.svelte'
-  import Finished from './Finished.svelte'
   import Honour from './Honour.svelte'
   import PracticeScreen from './PracticeScreen.svelte'
   import Ready from './Ready.svelte'
+  import Screen from './Screen.svelte'
   import SessionScreen from './SessionScreen.svelte'
   import Welcome from './Welcome.svelte'
   import { SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
   import { browserSessionEnv, type SessionEnv } from './env'
   import { FAST_BANNER } from './fast'
+  import type { FlowPhase } from './phase'
   import { readConsent, recordConsent } from './gate'
   import { priorItemCounts } from './coverage'
   import { SessionPersister, type AutosaveStatus } from './persist'
   import { PracticeRun } from './practice'
   import { baseOf, defaultReadyState, type ReadyState } from './ready-state'
+  import {
+    RESULTS_DOWNLOAD,
+    RESULTS_FAILED,
+    RESULTS_PENDING_HEADING,
+    RESULTS_PREPARING,
+    RESULTS_RETRY,
+    resultsDownloaded,
+    resultsLoader,
+    type ResultsComponent,
+    type ResultsLoader,
+  } from './results-loader'
   import { SessionRun, type ChangeKind, type RunResult } from './run'
 
   interface Props {
     /** The browser services; tests inject fakes. Default: the real browser (with the dev fast flag). */
     readonly env?: SessionEnv
+    /** Told which screen of the flow is up (the app shell opens the privacy notice in a new tab while a run is under way). */
+    readonly onphase?: (phase: FlowPhase) => void
+    /** Where the results code comes from (UX-100); tests inject one. Default: the page's loader. */
+    readonly results?: ResultsLoader
+    /** The fallback's download of the save (tests inject a recorder). Default: `save/io.ts` downloadSave. */
+    readonly download?: (save: SaveFileV1) => string
   }
 
-  let { env = browserSessionEnv() }: Props = $props()
+  let { env = browserSessionEnv(), onphase, results = resultsLoader, download = downloadSave }: Props = $props()
 
-  type Phase = 'welcome' | 'gate' | 'blocked' | 'honour' | 'device' | 'ready' | 'practice' | 'opening' | 'run' | 'closing' | 'finished'
+  type Phase = FlowPhase
+
+  /** The screens from which the results code is fetched: the ready screen on (UX-100). */
+  const PREFETCH: ReadonlySet<Phase> = new Set<Phase>(['ready', 'practice', 'opening', 'run', 'closing', 'finished'])
 
   /** The server of this page, or null: the static fallback, which is the default build. */
   const backend = $derived(env.backend ?? null)
@@ -74,8 +106,73 @@
   let openProblem: LoadProblem | null = $state(null)
   let openFocus: readonly AxisCode[] | undefined = undefined
   let closeFailed = $state(false)
+  /** The person has left the first screen: a return to it takes focus like any other screen (UX-006). */
+  let visited = $state(false)
+  /** The run holds at least one answer: the tab asks before it is closed (UX-011). */
+  let answered = $state(false)
+  /** Counts the times the browser's Back button was pressed during the run: each opens "Finish now?" (UX-011). */
+  let finishRequest = $state(0)
+  /** The run pushed a history entry that is still on top. */
+  let runEntry = false
+  /** The results are those of the loaded save, with no new session (UX-010); the worked examples' families seen meanwhile. */
+  let viewing = $state(false)
+  let viewSeen: readonly string[] = []
+  /** The results component once its chunk is in memory (UX-100); until then the results screen waits or offers the fallback. */
+  // The loader is the page's for the component's life: its state at mount is what counts here.
+  // svelte-ignore state_referenced_locally
+  let Results: ResultsComponent | null = $state.raw(results.current()?.default ?? null)
+  /** The loader gave up (after its retries) while the results were due: "Try again" and the download are offered. */
+  let resultsFailed = $state(false)
+  /** The fallback's download went through: the file name, and the leave-guard is lifted. */
+  let fallbackSaved: string | null = $state(null)
+
+  $effect(() => {
+    onphase?.(phase)
+  })
+
+  // A run with an answer in it is not left by accident: closing or reloading the tab asks first.
+  $effect(() => {
+    if (phase !== 'run' || !answered) return
+    return installUnloadGuard()
+  })
+
+  // The results code is fetched from the ready screen on (UX-100): by the end of a session it is in memory.
+  // On the results screen itself a load that failed before is started again (with its retries).
+  $effect(() => {
+    if (Results !== null || !PREFETCH.has(phase)) return
+    void fetchResults()
+  })
+
+  // While the results code is missing, the new session's results are not saved yet: the tab asks before it
+  // is closed, as the reveal does (§10), until the fallback's download is made. Once the results are up the
+  // reveal's own guard takes over.
+  $effect(() => {
+    if (phase !== 'finished' || Results !== null || viewing || fallbackSaved !== null) return
+    return installUnloadGuard()
+  })
+
+  // One history entry for the run, so the browser's Back button (or an edge swipe on a phone) lands on it and asks, instead of leaving.
+  $effect(() => {
+    if (phase !== 'run') return
+    history.pushState({ hb: 'run' }, '', location.href)
+    runEntry = true
+    const onPop = (): void => {
+      history.pushState({ hb: 'run' }, '', location.href)
+      finishRequest++
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  })
+
+  /** The run is over: its history entry is used up, so Back from the results leaves the page as it did before. */
+  function releaseHistory(): void {
+    if (!runEntry) return
+    runEntry = false
+    if (history.state?.hb === 'run') history.back()
+  }
 
   function start(): void {
+    visited = true
     // Reading is allowed; nothing is written before the gate is passed.
     phase = readConsent(env.storage(), terms) !== null ? 'honour' : 'gate'
   }
@@ -158,6 +255,8 @@
     })
     run = r
     result = null
+    viewing = false
+    answered = false
     autosave = 'ok'
     persister = new SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (st) => (autosave = st), ...(s === null ? {} : { anonId: s.anonId }) })
     persister.schedule()
@@ -175,6 +274,7 @@
    */
   function finishRun(r: SessionRun): void {
     persister?.flush()
+    releaseHistory()
     if (server === null) {
       showResults(r)
       return
@@ -206,11 +306,14 @@
     persister?.flush()
     if (persister !== null && persister.status === 'ok') pruneAutosaves(persister.currentSave(), env.storage(), persister.key)
     result = r.result()
+    resultsFailed = false
+    fallbackSaved = null
     phase = 'finished'
   }
 
   function onChange(kind: ChangeKind): void {
     if (kind === 'phase') return
+    if (kind === 'response') answered = true
     persister?.schedule()
     if (kind === 'finish' && run !== null) finishRun(run)
   }
@@ -222,19 +325,66 @@
    * check were done in this visit, so it goes straight to the first part.
    */
   function startFocus(axes: AxisCode[]): void {
-    if (persister === null || device === null) return
-    const finished = persister.currentSave()
-    persister.dispose()
+    if (device === null) return
+    // The session just finished, or the results of the loaded save when no session was run (UX-010), with everything it holds.
+    const finished = viewing ? viewSave() : persister?.currentSave()
+    if (finished === undefined) return
+    persister?.dispose()
+    viewing = false
     restored = null
     readyState = { includeFound: false, loaded: finished }
     startRun(axes)
   }
 
+  /** Look at the results of the save from the ready screen, with no new session in it (UX-010). */
+  function showSaved(): void {
+    if (base === null) return
+    run = null
+    result = null
+    viewSeen = []
+    viewing = true
+    resultsFailed = false
+    fallbackSaved = null
+    phase = 'finished'
+  }
+
+  /** The loaded save as it is, plus the worked examples' families the person was shown (`seen_families`): no session is added. */
+  function viewSave(): SaveFileV1 {
+    const b = base as SaveFileV1
+    return viewSeen.length === 0 ? b : mergeAll([b, { ...b, sessions: [], seen_items: [], seen_families: [...viewSeen] }], SAVE_CTX)
+  }
+
+  async function fetchResults(): Promise<void> {
+    try {
+      const m = await results.load()
+      Results = m.default
+      resultsFailed = false
+    } catch {
+      if (phase === 'finished') resultsFailed = true
+    }
+  }
+
+  /** "Try again" on the fallback. */
+  function retryResults(): void {
+    resultsFailed = false
+    void fetchResults()
+  }
+
+  /** "Download my save file" on the fallback: the save as the results would have handed it over. */
+  function downloadFallback(): void {
+    const save = viewing ? viewSave() : persister?.currentSave()
+    if (save === undefined) return
+    fallbackSaved = download(save)
+  }
+
   function restart(): void {
+    releaseHistory()
     persister?.dispose()
     persister = null
     run = null
     result = null
+    viewing = false
+    viewSeen = []
     server = null
     outcome = null
     practice = null
@@ -246,7 +396,7 @@
 </script>
 
 {#if phase === 'welcome'}
-  <Welcome onstart={start} />
+  <Welcome onstart={start} focus={visited} />
 {:else if phase === 'gate' || phase === 'blocked'}
   <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} points={backend === null ? undefined : SERVER_GATE_POINTS} />
 {:else if phase === 'honour'}
@@ -260,6 +410,7 @@
     onchoices={(c) => (readyState = c)}
     onpractice={startPractice}
     onbegin={begin}
+    onresults={backend === null ? showSaved : undefined}
     onfocus={(axes) => startRun(axes)}
     text={backend === null ? undefined : SERVER_READY_TEXT}
     verify={backend === null ? undefined : (save) => backend.api.verifySave(save)}
@@ -270,11 +421,34 @@
 {:else if phase === 'opening'}
   <Opening problem={openProblem} onretry={() => void open(openFocus)} onlocal={() => launch(openFocus, null)} onback={() => (phase = 'ready')} />
 {:else if phase === 'run' && run !== null}
-  <SessionScreen {env} {run} {autosave} {banner} report={server === null ? undefined : (r) => server!.reportProblem(r)} />
+  <SessionScreen {env} {run} {autosave} {banner} {finishRequest} report={server === null ? undefined : (r) => server!.reportProblem(r)} />
 {:else if phase === 'closing' && run !== null}
   <Closing failed={closeFailed} onretry={() => void close(run!)} oncontinue={() => continueWithoutServer(run!)} />
+{:else if phase === 'finished' && Results === null}
+  <!-- Rarely seen: the results code is normally in memory by now. One live region each, so a change is read out. -->
+  <Screen title={RESULTS_PENDING_HEADING}>
+    <p role="status">{resultsFailed ? RESULTS_FAILED : RESULTS_PREPARING}</p>
+    {#if resultsFailed}
+      <div class="hb-actions">
+        <button type="button" class="hb-btn hb-primary" onclick={retryResults}>{RESULTS_RETRY}</button>
+        <button type="button" class="hb-btn" onclick={downloadFallback}>{RESULTS_DOWNLOAD}</button>
+      </div>
+    {/if}
+    <p role="status">{fallbackSaved === null ? '' : resultsDownloaded(fallbackSaved)}</p>
+  </Screen>
+{:else if phase === 'finished' && viewing && base !== null}
+  <Results
+    result={null}
+    sessionId={base.sessions.at(-1)?.session_id}
+    makeSave={viewSave}
+    autosave="ok"
+    timing={env.timing}
+    onseen={(ids) => (viewSeen = [...new Set([...viewSeen, ...ids])])}
+    onfocus={startFocus}
+    onrestart={restart}
+  />
 {:else if phase === 'finished' && result !== null && persister !== null}
-  <Finished
+  <Results
     {result}
     {outcome}
     sessionId={run?.sessionId}

@@ -9,6 +9,11 @@
   first animation frame showing the item (rAF clock = performance.now(), §11.6), and the options
   accept a choice only from then on, so no response exists without an onset (the same contract
   as the rotation renderer, `visual.ts`). No animation.
+
+  Scale (UX-020): size is a rule attribute of the matrix grammar, so an option is drawn at exactly
+  the size of a cell of the grid: both lay out three tracks of the same width (the options as two
+  rows of three, as wide as the grid and left-aligned with it, with flush cards that have no padding
+  to eat into the figure).
 -->
 <script lang="ts">
   import { untrack } from 'svelte'
@@ -33,6 +38,9 @@
 
   let { spec, onrespond, onshown, disabled = false }: Props = $props()
 
+  /** The widest the grid and, with it, the options may be. */
+  const GRID_MAX = '22.5rem'
+
   function optionCell(i: number): MatrixCell {
     const cell = spec.options[i]
     if (cell === undefined) throw new RangeError(`matrices renderer: no option ${i}`)
@@ -54,7 +62,7 @@
   })
 </script>
 
-<div class="matrix">
+<div class="matrix" style:--grid-max={GRID_MAX}>
   <p class="stem">{MATRIX_STEM}</p>
   <div class="grid" role="group" aria-label={MATRIX_GRID_LABEL}>
     {#each spec.grid as row, r (r)}
@@ -71,7 +79,9 @@
       optionName={(i) => matrixOptionName(optionLetter(i), optionCell(i))}
       {onrespond}
       disabled={disabled || !shown}
-      columns={{ narrow: 3, wide: 6 }}
+      columns={{ narrow: 3, wide: 3 }}
+      flush
+      maxWidth="var(--grid-max)"
     >
       {#snippet option(i: number)}
         <MatrixCellSvg cell={optionCell(i)} />
@@ -98,8 +108,8 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.375rem;
-    width: min(100%, 22.5rem);
-    align-self: center;
+    gap: 0.5rem;
+    width: min(100%, var(--grid-max));
+    align-self: flex-start;
   }
 </style>

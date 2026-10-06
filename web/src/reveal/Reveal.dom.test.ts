@@ -11,12 +11,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RESOURCE_LINE } from '../copy'
 import { AXIS_CODES, type AxisCode } from '../engine/axes'
 import { buttonByText, click, fakeDisplay } from '../render/common/testing'
-import type { ShareOutcome } from '../save/io'
+import { saveFileName, type ShareOutcome } from '../save/io'
 import type { SaveFileV1 } from '../save/types'
 import Finished from '../session/Finished.svelte'
 import { buildCard, cardAxes } from '../viz/card'
 import { axisEstimates } from '../viz/profile'
 import NumbersSection from './NumbersSection.svelte'
+import WorkedSection from './WorkedSection.svelte'
+import { pickWorkedItems } from './worked'
 import { render } from '../render/common/testing'
 import { PREAMBLE as TALK_PREAMBLE, RESULTS_TALK, REVEAL_CARD } from '../brief/results-talk'
 import { PEAKS_HEADING, TAKER_COMPARISON_TEXT } from './copy'
@@ -180,13 +182,15 @@ describe('distinctive peaks', () => {
 })
 
 describe('the build-up, axis by axis', () => {
-  it('starts with the profile at the centre, announces once, can be skipped, and ends as the static profile', () => {
+  it('starts with the profile at the centre, announces once, can be skipped, and ends as the static profile', async () => {
     const display = fakeDisplay()
     const b = bot('s_REVEALDOM0000009')
     const anim = mountFinished(b, { motion: 'full', timing: display })
     const root = anim.c.querySelector('.reveal')!
     expect(root.getAttribute('data-building')).toBe('true')
-    expect(anim.c.querySelector('.reveal [role="status"]')?.textContent).toBe('Building your profile, one skill at a time.')
+    // The status region is in the page empty, and the start is announced a moment later: a region that appears with its text is not announced (UX-036).
+    expect(anim.c.querySelector('.reveal [role="status"]')?.textContent).toBe('')
+    await vi.waitFor(() => expect(anim.c.querySelector('.reveal [role="status"]')?.textContent).toBe('Building your profile, one skill at a time.'))
     // The later sections wait for the profile.
     expect(section(anim.c, 'peaks')).toBeNull()
     expect(section(anim.c, 'save')).toBeNull()
@@ -334,8 +338,14 @@ describe('the required save (§10)', () => {
     click(buttonByText(m.c, 'Back to the start'))
     expect(m.restarts).toHaveLength(0)
     expect(m.c.querySelector('.confirm h2')?.textContent).toBe('Leave without saving?')
+    // The safe answer comes first and is the primary one (UX-005b).
+    const answers = [...m.c.querySelectorAll<HTMLButtonElement>('.confirm button')]
+    expect(answers.map((b) => b.textContent?.trim())).toEqual(['Stay and save', 'Leave anyway'])
+    expect(answers.map((b) => b.classList.contains('hb-primary'))).toEqual([true, false])
     click(buttonByText(m.c, 'Stay and save'))
-    await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Back to the start'))
+    // The person stays to save: focus goes to the download button, not back to the button at the bottom (UX-028).
+    await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Download save file'))
+    expect(document.activeElement).toBe(buttonByText(section(m.c, 'save')!, 'Download save file'))
     click(buttonByText(m.c, 'Back to the start'))
     click(buttonByText(m.c, 'Leave anyway'))
     expect(m.restarts).toHaveLength(1)
@@ -344,6 +354,127 @@ describe('the required save (§10)', () => {
     click(buttonByText(saved.c, 'Download save file'))
     click(buttonByText(saved.c, 'Back to the start'))
     expect(saved.restarts).toHaveLength(1)
+  })
+
+  it('a save made while "Leave without saving?" is open takes the question away: it no longer says the file is not downloaded', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000023'))
+    click(buttonByText(m.c, 'Back to the start'))
+    expect(m.c.querySelector('.confirm h2')?.textContent).toBe('Leave without saving?')
+    // The person scrolls up and saves instead of answering.
+    click(buttonByText(section(m.c, 'save')!, 'Download save file'))
+    flushSync()
+    expect(m.downloads).toHaveLength(1)
+    expect(m.c.querySelector('.confirm')).toBeNull()
+    expect(m.c.textContent).not.toContain('You have not downloaded your save file')
+    // "Back to the start" is back, and now leaves at once.
+    click(buttonByText(m.c, 'Back to the start'))
+    expect(m.restarts).toHaveLength(1)
+  })
+})
+
+describe('the unsaved results point to the save (UX-029)', () => {
+  it('a line at the top says the results are not saved, leads to the save panel and goes once the file is saved', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000201'))
+    const pointer = m.c.querySelector<HTMLElement>('[data-save-pointer]')!
+    expect(pointer.textContent).toContain('Your results are not saved yet. Download your save file to keep them.')
+    expect(pointer.getAttribute('data-ready')).toBe('true')
+    // At the top of the results: before the chart.
+    expect(before(pointer, m.c.querySelector('svg.hb-blob')!)).toBe(true)
+    // Not a status: the first status of the reveal is the profile's (the drivers read it).
+    expect(pointer.querySelector('[role], [aria-live]')).toBeNull()
+    expect(m.c.querySelector('[role="status"]')?.textContent).toBe('Your profile is ready.')
+    const link = pointer.querySelector<HTMLAnchorElement>('a')!
+    expect(link.textContent).toBe('Go to the save file')
+    // The link moves focus (and so the view) to the save panel's heading.
+    const heading = section(m.c, 'save')!.querySelector('h2')!
+    expect(link.getAttribute('href')).toBe(`#${heading.id}`)
+    expect(heading.getAttribute('tabindex')).toBe('-1')
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
+    link.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(heading)
+    click(buttonByText(m.c, 'Download save file'))
+    expect(m.c.querySelector('[data-save-pointer]')).toBeNull()
+  })
+
+  it('while the profile builds up the line takes its room but is hidden and has no link; the end shows it', () => {
+    const display = fakeDisplay(SLOW_FRAME_MS)
+    const m = mountFinished(bot('s_REVEALDOM0000202'), { motion: 'full', timing: display })
+    const pointer = m.c.querySelector<HTMLElement>('[data-save-pointer]')!
+    expect(pointer.getAttribute('data-ready')).toBe('false')
+    expect(pointer.querySelector('a')).toBeNull()
+    click(buttonByText(m.c, 'Skip animation'))
+    expect(m.c.querySelector('[data-save-pointer]')!.getAttribute('data-ready')).toBe('true')
+    expect(m.c.querySelector('[data-save-pointer] a')).not.toBeNull()
+  })
+
+  it('the save panel has the unsaved look until the file is saved (the styles key on data-saved)', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000203'))
+    expect(section(m.c, 'save')!.getAttribute('data-saved')).toBe('false')
+    click(buttonByText(m.c, 'Download save file'))
+    expect(section(m.c, 'save')!.getAttribute('data-saved')).toBe('true')
+  })
+})
+
+describe('the save panel says what happened (UX-030)', () => {
+  const statusOf = (m: Mounted): string => section(m.c, 'save')!.querySelector('[role="status"]')?.textContent ?? ''
+
+  it('a copy before the file is saved is confirmed once, says where the code is pasted, and the file stays the safest way', async () => {
+    const m = mountFinished(bot('s_REVEALDOM0000204'), { copyCode: async () => ({ code: 'H4sIAAAA', copied: true }) })
+    click(buttonByText(m.c, 'Copy save code'))
+    await vi.waitFor(() => expect(statusOf(m)).toContain('Save code copied.'))
+    expect(statusOf(m).match(/Save code copied\./g)).toHaveLength(1)
+    expect(statusOf(m)).toContain('under "Or paste a save code" on the "Ready when you are" screen')
+    expect(statusOf(m)).toContain('Downloading the file is still the safest way')
+    expect(unloadPrevented()).toBe(true)
+    // Once the file is saved, a copy is just confirmed.
+    click(buttonByText(m.c, 'Download save file'))
+    click(buttonByText(m.c, 'Copy save code'))
+    await vi.waitFor(() => expect(statusOf(m)).toBe('Save code copied.'))
+  })
+
+  it('a download keeps the status "Save file downloaded." and adds a separate line with the file name and where to look', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000205'), { download: () => 'humanbench-aaaaaa-2026-10-05.hbsave.json' })
+    expect(section(m.c, 'save')!.querySelector('[data-saved-as]')).toBeNull()
+    click(buttonByText(m.c, 'Download save file'))
+    expect(statusOf(m)).toBe('Save file downloaded.')
+    const line = section(m.c, 'save')!.querySelector('[data-saved-as]')!
+    expect(line.textContent).toBe('Saved as humanbench-aaaaaa-2026-10-05.hbsave.json. Look in your Downloads folder (on an iPhone, the Files app) and keep it.')
+    expect(line.classList.contains('note')).toBe(true)
+    expect(line.closest('[role="status"]')).toBeNull()
+    // And the done message points at what is below.
+    expect(section(m.c, 'save')!.querySelector('.done')?.textContent).toBe(
+      'Your results are saved in your file. You can leave this page safely. Your share card and notes for your AI are just below.',
+    )
+  })
+
+  it('a share that fell back to a download names the file the usual way; a share to an app does not name one', async () => {
+    const b = bot('s_REVEALDOM0000206')
+    let outcome: ShareOutcome = 'downloaded'
+    const m = mountFinished(b, { canShare: true, share: async () => outcome })
+    click(buttonByText(m.c, 'Share or save to an app'))
+    await vi.waitFor(() => expect(section(m.c, 'save')!.querySelector('[data-saved-as]')?.textContent).toContain(saveFileName(b.save)))
+    cleanup?.()
+    outcome = 'shared'
+    const shared = mountFinished(bot('s_REVEALDOM0000207'), { canShare: true, share: async () => outcome })
+    click(buttonByText(shared.c, 'Share or save to an app'))
+    await vi.waitFor(() => expect(statusOf(shared)).toBe('Save file shared.'))
+    expect(section(shared.c, 'save')!.querySelector('[data-saved-as]')).toBeNull()
+  })
+
+  it('"Download save file" is the primary button until the file is saved, then an ordinary one', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000208'))
+    const download = buttonByText(section(m.c, 'save')!, 'Download save file')
+    expect(download.classList.contains('hb-primary')).toBe(true)
+    click(download)
+    expect(buttonByText(section(m.c, 'save')!, 'Download save file').classList.contains('hb-primary')).toBe(false)
+  })
+
+  it('the save code offered for copying by hand is not translated', async () => {
+    const m = mountFinished(bot('s_REVEALDOM0000209'), { copyCode: async () => ({ code: 'H4sIAAAA', copied: false }) })
+    click(buttonByText(m.c, 'Copy save code'))
+    await vi.waitFor(() => expect(m.c.querySelector('textarea')).not.toBeNull())
+    expect(m.c.querySelector('textarea')!.getAttribute('translate')).toBe('no')
   })
 })
 
@@ -354,6 +485,15 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     expect(m.c.querySelector('[data-slot]')).toBeNull()
     expect(m.c.querySelector('[data-pending]')?.textContent).toBe('Save your file first to see the next steps.')
     expect(m.c.textContent).not.toContain(TALK_PREAMBLE)
+  })
+
+  it('the pointer is a note inside a results panel, so it lines up with the panels and has their muted style (UX-031)', () => {
+    const m = mountFinished(bot('s_REVEALDOM0000200'))
+    const pending = m.c.querySelector('[data-pending]')!
+    expect(pending.tagName).toBe('P')
+    expect(pending.classList.contains('note')).toBe(true)
+    expect(pending.classList.contains('hb-reveal-panel')).toBe(false)
+    expect(pending.parentElement!.classList.contains('hb-reveal-panel')).toBe(true)
   })
 
   it('after the download: the share card slot, then the "Working with AI" card (AI.6b) with the results-talk helper', async () => {
@@ -497,7 +637,8 @@ describe('the share card in the reveal (M1.18)', () => {
     const share = m.c.querySelector('[data-slot="share-card"]')!
     const link = share.querySelector<HTMLAnchorElement>('[data-talk-link] a')!
     expect(link.getAttribute('href')).toBe(`#${TALK_ANCHOR_ID}`)
-    expect(link.textContent).toBe('Talking about your results with an AI')
+    expect(link.textContent).toBe('Read this first')
+    expect(link.closest('[data-talk-link]')!.textContent).toBe('Thinking of asking an AI about your results? Read this first.')
     const talk = m.c.querySelector('[data-testid="results-talk"]') as HTMLElement
     expect(talk.id).toBe(TALK_ANCHOR_ID)
     expect(before(share, talk)).toBe(true)
@@ -554,6 +695,50 @@ describe('worked examples (§10)', () => {
     expect(first).toHaveLength(3)
     cleanup?.()
     expect(ids(mountFinished(b).c)).toEqual(first)
+  })
+})
+
+describe('worked examples: heading, wording (UX-035)', () => {
+  const mountWorked = (items: ReturnType<typeof pickWorkedItems>): HTMLElement => {
+    const r = render(WorkedSection, { items })
+    cleanup = r.destroy
+    return r.container
+  }
+
+  it('the heading counts the examples that are shown', () => {
+    const three = pickWorkedItems('s_WORKEDHEAD0001', [])
+    expect(three).toHaveLength(3)
+    expect(mountWorked(three).querySelector('h2')?.textContent).toBe('Three worked examples')
+    cleanup?.()
+    expect(mountWorked(three.slice(0, 2)).querySelector('h2')?.textContent).toBe('Two worked examples')
+    cleanup?.()
+    expect(mountWorked(three.slice(0, 1)).querySelector('h2')?.textContent).toBe('One worked example')
+    cleanup?.()
+    const none = mountWorked([])
+    expect(none.querySelector('h2')?.textContent).toBe('Worked examples')
+    expect(none.textContent).toContain('No new examples are available this time.')
+  })
+
+  it('the sequence is called a sequence, the quantitative question is plain text, and a solution is a rule under the text, not a box in a box', () => {
+    const c = mountWorked(pickWorkedItems('s_WORKEDHEAD0002', []))
+    const titles = [...c.querySelectorAll('h3')].map((h) => h.textContent)
+    expect(titles).toEqual(['Example 1: Matrix', 'Example 2: Sequence', 'Example 3: Quantitative'])
+    expect(c.querySelector('article[data-worked="series"]')!.textContent).toContain('What comes next in this sequence?')
+    expect(c.textContent).not.toMatch(/next term of this series/)
+    const quant = c.querySelector('article[data-worked="quant"] .terms')!
+    expect(quant.querySelector('strong')).toBeNull()
+    expect(quant.textContent!.length).toBeGreaterThan(10)
+    // The sequence's terms stay in bold, as the matrix's grid is drawn.
+    expect(c.querySelector('article[data-worked="series"] .terms strong')?.textContent).toMatch(/, \?$/)
+  })
+
+  it('a solution never writes a coefficient of 1 ("subtract 1x")', () => {
+    for (let i = 0; i < 60; i++) {
+      const c = mountWorked(pickWorkedItems(`s_WORKEDONE${String(i).padStart(4, '0')}`, []))
+      const steps = [...c.querySelectorAll('article[data-worked="quant"] ol.steps li')].map((li) => li.textContent ?? '')
+      for (const step of steps) expect(step).not.toMatch(/(^|[^\d.])1x\b/)
+      cleanup?.()
+    }
   })
 })
 

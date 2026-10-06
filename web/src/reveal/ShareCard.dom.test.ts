@@ -86,10 +86,15 @@ const svgOf = (c: HTMLElement): string => {
   return decodeURIComponent(src.slice(src.indexOf(',') + 1))
 }
 const status = (c: HTMLElement, which: 'count' | 'message'): string => c.querySelector(`[data-${which}]`)!.textContent ?? ''
-const ready = (c: HTMLElement, name: string): Promise<void> => vi.waitFor(() => expect(buttonByText(c, name).disabled).toBe(false))
+/** A button that does nothing yet: natively disabled, or `aria-disabled` while the PNG is prepared (it stays in the Tab order). */
+const unavailable = (b: HTMLButtonElement): boolean => b.disabled || b.getAttribute('aria-disabled') === 'true'
+const before = (a: Element, b: Element): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+const ready = (c: HTMLElement, name: string): Promise<void> => vi.waitFor(() => expect(unavailable(buttonByText(c, name))).toBe(false))
+/** The count line is mounted empty and gets its text a moment later (UX-032). */
+const counted = (c: HTMLElement): Promise<void> => vi.waitFor(() => expect(c.querySelector('[data-count]')!.textContent).not.toBe(''))
 
 describe('the skills toggles', () => {
-  it('offers one checkbox per measured skill, in spoke order, all ticked; not-measured skills get none', () => {
+  it('offers one checkbox per measured skill, in spoke order, all ticked; not-measured skills get none', async () => {
     const est = estimatesOf('m1')
     const m = mountCard({ input: inputOf('m1') })
     const measured = est.filter((e) => e.measured).map((e) => e.code)
@@ -98,12 +103,14 @@ describe('the skills toggles', () => {
     for (const box of m.c.querySelectorAll<HTMLInputElement>('input[data-skill]')) expect(box.checked).toBe(true)
     // Each is labelled with the skill's full name.
     for (const code of measured) expect(checkbox(m.c, code)!.closest('label')!.textContent!.trim()).toBe(axis(code).name)
+    await counted(m.c)
     expect(status(m.c, 'count')).toBe(`${measured.length} skills are on the card.`)
   })
 
-  it('unticking a skill takes it off the card at once; ticking it brings it back', () => {
+  it('unticking a skill takes it off the card at once; ticking it brings it back', async () => {
     const full = inputOf('full')
     const m = mountCard()
+    await counted(m.c)
     expect(svgOf(m.c)).toBe(expectedCard(full).svg)
     click(checkbox(m.c, 'MAT'))
     const without = expectedCard(full, { hidden: ['MAT'] })
@@ -118,6 +125,7 @@ describe('the skills toggles', () => {
 
   it('"Hide all" leaves nothing to draw and says how many are needed; "Show all" brings the card back', async () => {
     const m = mountCard()
+    await counted(m.c)
     click(buttonByText(m.c, 'Hide all'))
     expect(preview(m.c)).toBeNull()
     expect(status(m.c, 'count')).toBe('Tick at least 3 skills to make a card (0 ticked).')
@@ -251,10 +259,11 @@ describe('what a hidden or withheld skill cannot change (R-5.6.4, M1.18: never h
 })
 
 describe('Emotion Reading and the card (R-5.6.4)', () => {
-  it('a low estimate gets no toggle, no mention on the card, and a plain note on the page', () => {
+  it('a low estimate gets no toggle, no mention on the card, and a plain note on the page', async () => {
     const input = inputWith('full', 'EMO', -1.2)
     expect(cardAxes(axisEstimates(input)).find((a) => a.estimate.code === 'EMO')!.status).toBe('withheld')
     const m = mountCard({ input })
+    await counted(m.c)
     expect(checkbox(m.c, 'EMO')).toBeNull()
     const note = m.c.querySelector('[data-emo-rule][data-withheld="EMO"]')!
     expect(note.textContent).toContain('Emotion Reading (text scenarios)')
@@ -306,7 +315,9 @@ describe('the PNG and SVG exports', () => {
 
   it('makes the PNG from the 2400 × 1260 document a moment after a change, and the PNG button waits for it', async () => {
     const m = mountCard()
-    expect(buttonByText(m.c, 'Download image (PNG)').disabled).toBe(true)
+    // Not natively disabled: a disabled button is skipped by Tab. It is aria-disabled and described by the note (UX-032).
+    expect(buttonByText(m.c, 'Download image (PNG)').disabled).toBe(false)
+    expect(buttonByText(m.c, 'Download image (PNG)').getAttribute('aria-disabled')).toBe('true')
     expect(m.c.querySelector('[data-preparing]')?.textContent).toBe('Preparing the PNG…')
     await ready(m.c, 'Download image (PNG)')
     expect(m.c.querySelector('[data-preparing]')).toBeNull()
@@ -324,7 +335,7 @@ describe('the PNG and SVG exports', () => {
     expect(m.saved).toHaveLength(1)
     expect(m.saved[0]!.name).toBe('humanbench-card-2026-09-30.png')
     expect(m.saved[0]!.blob.type).toBe('image/png')
-    expect(status(m.c, 'message')).toBe('Image saved: 2400 × 1260 px.')
+    expect(status(m.c, 'message')).toBe('Image saved: 2400 × 1260 pixels.')
   })
 
   it('downloading the SVG hands over exactly the previewed document at once (no wait for the PNG)', async () => {
@@ -352,7 +363,7 @@ describe('the PNG and SVG exports', () => {
     pending[0]!.resolve({ blob: new Blob(['old']), width: 2400, height: 1260 })
     await new Promise((r) => setTimeout(r, 10))
     flushSync()
-    expect(buttonByText(m.c, 'Download image (PNG)').disabled).toBe(true)
+    expect(unavailable(buttonByText(m.c, 'Download image (PNG)'))).toBe(true)
     pending[1]!.resolve({ blob: new Blob(['new']), width: 2400, height: 1260 })
     await ready(m.c, 'Download image (PNG)')
     click(buttonByText(m.c, 'Download image (PNG)'))
@@ -372,8 +383,8 @@ describe('the PNG and SVG exports', () => {
     await ready(m.c, 'Share image')
     // Untick a skill: at once, not after the wait or the drawing, neither button has an image to give.
     click(checkbox(m.c, 'MAT'))
-    expect(buttonByText(m.c, 'Download image (PNG)').disabled).toBe(true)
-    expect(buttonByText(m.c, 'Share image').disabled).toBe(true)
+    expect(unavailable(buttonByText(m.c, 'Download image (PNG)'))).toBe(true)
+    expect(unavailable(buttonByText(m.c, 'Share image'))).toBe(true)
     expect(m.c.querySelector('[data-preparing]')).not.toBeNull()
     click(buttonByText(m.c, 'Download image (PNG)'))
     click(buttonByText(m.c, 'Share image'))
@@ -408,10 +419,204 @@ describe('the PNG and SVG exports', () => {
     expect(buttonByText(m.c, 'Download vector image (SVG)').disabled).toBe(false)
   })
 
-  it('states both sizes', () => {
+  it('states both sizes, in words', () => {
     const m = mountCard()
-    expect(m.c.textContent).toContain('2400 × 1260 px')
-    expect(m.c.textContent).toContain('1200 × 630 px')
+    expect(m.c.textContent).toContain('2400 × 1260 pixels (twice the card size, for sharp screens)')
+    expect(m.c.textContent).toContain('1200 × 630 pixels')
+  })
+})
+
+/** The same profile with only the first `n` measured skills still measured. */
+const fewMeasured = (n: number): AxisEstimate[] => {
+  let kept = 0
+  return estimatesOf('full').map((e) => (e.measured && kept++ < n ? e : { ...e, measured: false }))
+}
+
+describe('a profile with fewer measured skills than a card needs (UX-032)', () => {
+  for (const n of [1, 2]) {
+    it(`${n} measured skill${n === 1 ? '' : 's'}: the panel says what a card needs; there is nothing to tick, colour or download`, async () => {
+      const m = mountCard({ estimates: fewMeasured(n) })
+      await new Promise((r) => setTimeout(r, 150))
+      expect(m.c.querySelector('[data-needs-more]')?.textContent).toBe(
+        `A card needs at least 3 measured skills, and your profile has ${n}. Play more parts or add another session, then come back to make a card.`,
+      )
+      expect(m.c.querySelectorAll('input')).toHaveLength(0)
+      expect(m.c.querySelectorAll('fieldset')).toHaveLength(0)
+      expect(m.c.querySelectorAll('button')).toHaveLength(0)
+      expect(m.c.querySelector('[data-count]')).toBeNull()
+      expect(preview(m.c)).toBeNull()
+      expect(m.c.textContent).not.toContain('Tick at least')
+      expect(m.makePng).not.toHaveBeenCalled()
+    })
+  }
+
+  it('three measured skills are a card, with a toggle for each', async () => {
+    const m = mountCard({ estimates: fewMeasured(3) })
+    await counted(m.c)
+    expect(m.c.querySelector('[data-needs-more]')).toBeNull()
+    expect(codes(m.c)).toHaveLength(3)
+    expect(preview(m.c)).not.toBeNull()
+    expect(status(m.c, 'count')).toBe('3 skills are on the card.')
+  })
+
+  it('"Tick at least 3 skills" is for a person who has three or more and unticked some', async () => {
+    const m = mountCard({ estimates: fewMeasured(4) })
+    await counted(m.c)
+    click(checkbox(m.c, codes(m.c)[0]!))
+    click(checkbox(m.c, codes(m.c)[1]!))
+    expect(status(m.c, 'count')).toBe('Tick at least 3 skills to make a card (2 ticked).')
+    expect(buttonByText(m.c, 'Download image (PNG)').disabled).toBe(true)
+    expect(buttonByText(m.c, 'Download vector image (SVG)').disabled).toBe(true)
+    expect(m.c.querySelector('[data-needs-more]')).toBeNull()
+  })
+
+  it('a withheld Emotion Reading does not turn the note into a toggle, and its rule is still said', () => {
+    const est = estimatesOf('full').map((e) => (e.code === EMO_CODE ? { ...e, measured: true, theta: -1.5, lo90: -2, hi90: -1 } : e.measured && !['MAT', 'QR'].includes(e.code) ? { ...e, measured: false } : e))
+    const m = mountCard({ estimates: est })
+    // Two skills can be on a card; the third measured one is the withheld Emotion Reading.
+    expect(m.c.querySelector('[data-needs-more]')).not.toBeNull()
+    expect(checkbox(m.c, EMO_CODE)).toBeNull()
+    expect(m.c.querySelector('[data-emo-rule]')).not.toBeNull()
+  })
+})
+
+describe('the PNG buttons while the PNG is prepared (UX-032)', () => {
+  it('stay in the Tab order with the "Preparing" note as their description, ignore clicks, and are plain buttons once it is ready', async () => {
+    let finish: (r: Raster) => void = () => undefined
+    const makePng = vi.fn(() => new Promise<Raster>((resolve) => (finish = resolve)))
+    const m = mountCard({ makePng })
+    await vi.waitFor(() => expect(makePng).toHaveBeenCalled())
+    const png = buttonByText(m.c, 'Download image (PNG)')
+    const sharing = buttonByText(m.c, 'Share image')
+    for (const b of [png, sharing]) {
+      expect(b.disabled).toBe(false)
+      expect(b.tabIndex).toBe(0)
+      expect(b.getAttribute('aria-disabled')).toBe('true')
+      expect(m.c.querySelector(`#${CSS.escape(b.getAttribute('aria-describedby')!)}`)?.textContent).toBe('Preparing the PNG…')
+    }
+    png.focus()
+    expect(document.activeElement).toBe(png)
+    click(png)
+    click(sharing)
+    expect(m.saved).toHaveLength(0)
+    expect(m.shared).toHaveLength(0)
+    finish({ blob: new Blob(['png']), width: 2400, height: 1260 })
+    await ready(m.c, 'Download image (PNG)')
+    await ready(m.c, 'Share image')
+    for (const b of [png, sharing]) {
+      expect(b.hasAttribute('aria-disabled')).toBe(false)
+      expect(b.hasAttribute('aria-describedby')).toBe(false)
+    }
+    click(png)
+    expect(m.saved).toHaveLength(1)
+    // The SVG never waits.
+    expect(buttonByText(m.c, 'Download vector image (SVG)').disabled).toBe(false)
+  })
+
+  it('a change makes them aria-disabled again, not disabled: Tab still reaches them', async () => {
+    const m = mountCard()
+    await ready(m.c, 'Download image (PNG)')
+    click(checkbox(m.c, 'MAT'))
+    const png = buttonByText(m.c, 'Download image (PNG)')
+    expect(png.disabled).toBe(false)
+    expect(png.getAttribute('aria-disabled')).toBe('true')
+    await ready(m.c, 'Download image (PNG)')
+  })
+})
+
+describe('the count line (UX-032)', () => {
+  it('is mounted empty, and its number is in an element of its own that a page translator leaves alone', async () => {
+    const m = mountCard()
+    const line = m.c.querySelector('[data-count]')!
+    expect(line.getAttribute('role')).toBe('status')
+    expect(line.textContent).toBe('')
+    await counted(m.c)
+    const num = line.querySelector('span[translate="no"]')!
+    expect(num.textContent).toBe(String(AXIS_CODES.length))
+    expect(line.textContent).toBe(`${AXIS_CODES.length} skills are on the card.`)
+    // A change writes the new number into that same element.
+    click(checkbox(m.c, 'MAT'))
+    expect(line.querySelector('span[translate="no"]')).toBe(num)
+    expect(num.textContent).toBe(String(AXIS_CODES.length - 1))
+    // Too few: the number of ticked skills is in its own element too.
+    click(buttonByText(m.c, 'Hide all'))
+    expect(line.querySelector('span[translate="no"]')?.textContent).toBe('0')
+    expect(line.textContent).toBe('Tick at least 3 skills to make a card (0 ticked).')
+  })
+})
+
+describe('the card at full size (UX-032)', () => {
+  const made: { url: string; blob: Blob }[] = []
+  const revoked: string[] = []
+  const had = { create: Object.getOwnPropertyDescriptor(URL, 'createObjectURL'), revoke: Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL') }
+  afterEach(() => {
+    made.length = 0
+    revoked.length = 0
+    for (const [name, d] of [['createObjectURL', had.create], ['revokeObjectURL', had.revoke]] as const) {
+      if (d === undefined) Reflect.deleteProperty(URL, name)
+      else Object.defineProperty(URL, name, d)
+    }
+  })
+  const withObjectUrls = (): void => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: (blob: Blob): string => {
+        const url = `blob:http://localhost/card-${made.length}`
+        made.push({ url, blob })
+        return url
+      },
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, writable: true, value: (url: string): void => void revoked.push(url) })
+  }
+
+  it('has a link that opens the card as an image in a new tab; it follows each change, and the old address is let go', async () => {
+    withObjectUrls()
+    const m = mountCard()
+    const link = m.c.querySelector<HTMLAnchorElement>('a[data-fullsize]')!
+    expect(link.textContent).toBe('View the card full size (opens in a new tab)')
+    expect(link.target).toBe('_blank')
+    expect(link.rel).toBe('noopener')
+    const first = link.getAttribute('href')!
+    expect(first).toBe(made.at(-1)!.url)
+    expect(made.at(-1)!.blob.type).toContain('image/svg+xml')
+    expect(await made.at(-1)!.blob.text()).toBe(svgOf(m.c))
+    expect(before(preview(m.c)!, link)).toBe(true)
+    click(checkbox(m.c, 'MAT'))
+    const second = m.c.querySelector<HTMLAnchorElement>('a[data-fullsize]')!.getAttribute('href')!
+    expect(second).not.toBe(first)
+    expect(revoked).toContain(first)
+    expect(await made.at(-1)!.blob.text()).toBe(svgOf(m.c))
+    // No card, no link.
+    click(buttonByText(m.c, 'Hide all'))
+    expect(m.c.querySelector('a[data-fullsize]')).toBeNull()
+    expect(revoked).toContain(second)
+    // Nothing else is a link, and none goes anywhere but the card itself.
+    expect(m.c.querySelectorAll('a')).toHaveLength(0)
+  })
+
+  it('is the only link the panel can have, and it is an object URL, never a web address', () => {
+    withObjectUrls()
+    const m = mountCard()
+    const links = [...m.c.querySelectorAll('a')]
+    expect(links).toHaveLength(1)
+    expect(links[0]!.getAttribute('href')).toMatch(/^blob:/)
+  })
+
+  it('lets go of its address when the panel goes away', () => {
+    withObjectUrls()
+    const m = mountCard()
+    const url = m.c.querySelector('a[data-fullsize]')!.getAttribute('href')!
+    cleanup?.()
+    cleanup = undefined
+    expect(revoked).toContain(url)
+    expect(m.c.isConnected).toBe(false)
+  })
+
+  it('without object URLs (a browser that has none) there is no link, and nothing breaks', () => {
+    const m = mountCard()
+    expect(m.c.querySelector('a')).toBeNull()
+    expect(preview(m.c)).not.toBeNull()
   })
 })
 
@@ -427,7 +632,7 @@ describe('the share sheet', () => {
     const m = mountCard({
       shareFile: async (_b: Blob, name: string) => (shared.push(name), outcome),
     })
-    expect(buttonByText(m.c, 'Share image').disabled).toBe(true)
+    expect(unavailable(buttonByText(m.c, 'Share image'))).toBe(true)
     await ready(m.c, 'Share image')
     click(buttonByText(m.c, 'Share image'))
     await vi.waitFor(() => expect(status(m.c, 'message')).toBe('Image shared.'))
@@ -449,6 +654,7 @@ describe('what the panel does not carry (M1.18 amendment)', () => {
       expect(svgOf(m.c)).not.toContain(probe)
     }
     expect(m.c.innerHTML).not.toContain('anon_id')
+    // No link to anything: the one link the panel can have is to the card itself (an object URL), tested with the full-size link.
     expect(m.c.querySelector('a')).toBeNull()
   })
 

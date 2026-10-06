@@ -23,18 +23,33 @@
  *   covariance. Its facets arrive as computed estimates. An axis the server withholds (too few answers
  *   in one session) or could not be asked about shows as not measured, as any axis with no data does.
  *
+ * - **Skills not offered yet** (§9.7, A15). The profile is told which skills a session of this build
+ *   puts in front of the person ({@link OFFERED_AXES}), so a skill no part measures reads "not offered
+ *   yet" rather than plain "not measured" (UX-048b).
+ *
  * Nothing here returns a total, a mean or any other single number across skills (§9.5 a).
  */
 
 import type { RescoreReply } from '../backend/replies'
-import { AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
+import { AXES, AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
 import { adjustObservation } from '../engine/retest'
+import { A15_SEGMENTS } from '../engine/selector'
 import type { ResponseTuple } from '../engine/types'
 import { itemAxis, registryObservation, rescoreSessions, type ResolvedResponse, type SaveRescore } from '../save/rescore'
 import { TIMED_TASKS_ONLY_FLAG, type SaveFileV1, type SaveSession } from '../save/types'
 import { getFamily, resolveItem } from '../tasks/registry'
 import type { FacetObservation, FacetOptions } from '../viz/facets'
 import type { ProfileInput } from '../viz/profile'
+
+/**
+ * The skills a session of this build puts in front of the person: the axes of the A15 plan and the
+ * embedded ones (Calibration, measured with every rated answer). With a server the plan is the same and
+ * the server scores some of its parts (M2.7), so it offers no others.
+ */
+export const OFFERED_AXES: ReadonlySet<AxisCode> = new Set([
+  ...A15_SEGMENTS.flatMap((s) => (s.kind === 'block' ? [s.axis] : s.axes)),
+  ...AXES.filter((a) => a.embedded).map((a) => a.code),
+])
 
 /** The part of a save the server scores (M2.7). */
 export interface ServedScores {
@@ -168,7 +183,7 @@ export function buildResults(save: SaveFileV1, served?: ServedScores): ResultsMo
 
   return {
     rescore,
-    input: { score: rescore, skipped },
+    input: { score: rescore, skipped, offered: OFFERED_AXES },
     skipped,
     facetObservations,
     ...(publishes && est !== null ? { servedFacets: est.facets as FacetOptions['precomputed'] } : {}),

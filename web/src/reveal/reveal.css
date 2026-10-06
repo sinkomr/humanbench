@@ -79,8 +79,35 @@
   min-height: 2.75rem;
   display: flex;
   align-items: center;
+  gap: 0.5rem;
+  list-style: none;
   cursor: pointer;
   font-weight: 600;
+}
+
+/* The flex display removes the browser's marker, so the state is drawn here: a chevron that points right when closed and down when open (UX-036). */
+.hb-reveal-panel details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hb-reveal-panel details > summary::before {
+  content: '';
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.hb-reveal-panel details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hb-reveal-panel details > summary::before {
+    transition: transform 120ms ease-out;
+  }
 }
 
 .hb-reveal-panel details > summary:focus-visible {
@@ -90,6 +117,32 @@
 
 .hb-reveal-panel details[open] > summary {
   margin-bottom: 0.25rem;
+}
+
+/* A disclosure inside a card (the worked solution) is a rule under the card's text, not a box in a box (UX-035). */
+.hb-reveal-card details {
+  margin: 0;
+  padding-inline: 0;
+  border: 0;
+  border-top: 1px solid var(--r-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+/*
+ * The save panel (UX-029): while the file is not saved it has a surface of its own, so it does not
+ * read as one more optional section; the border stays after the save (the padding too, so nothing
+ * moves when the download ends), only the accent and the fill go.
+ */
+.hb-reveal-panel.save {
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--r-border);
+  border-radius: 0.75rem;
+}
+
+.hb-reveal-panel.save:not([data-saved='true']) {
+  border-color: var(--r-accent);
+  background: var(--r-surface);
 }
 
 .hb-reveal-panel textarea {

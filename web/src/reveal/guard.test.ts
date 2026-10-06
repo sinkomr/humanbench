@@ -38,4 +38,15 @@ describe('beforeunload guard (§10)', () => {
     b()
     expect(t.handlers.size).toBe(0)
   })
+
+  it('two guards that overlap are independent: lifting one leaves the other on (the run guard and the results guard)', () => {
+    const t = fakeTarget()
+    const run = installUnloadGuard(t)
+    const results = installUnloadGuard(t)
+    expect(t.handlers.size).toBe(2)
+    run()
+    expect(t.handlers.size).toBe(1)
+    results()
+    expect(t.handlers.size).toBe(0)
+  })
 })

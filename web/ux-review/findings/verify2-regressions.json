@@ -1,0 +1,33 @@
+{
+  "reviewer": "verify2",
+  "model": "fable",
+  "summary": "Independent verification of wave 2 and of the wave-1 coverage gaps on the merged build (run id verify2): the 9 wave-2 items replayed from their fix notes on Chromium, iPhone 13, desktop WebKit and Pixel 7; the 20 major wave-1 items replayed on desktop WebKit and Pixel 7; all 51 product routes toured with metrics and axe (Chromium 390/1280 light/dark, iPhone 390 light/dark, WebKit 1280 light) and compared state by state with the wave-1 verify tours; one whole ?fast=1 session per project through save, reload, file load and 'See my results'. Nothing regressed: no new overflow, clipped text, small target, serious axe issue, console error or route failure, and all three journeys end in the same profile after the file is loaded back. One new problem from the WebKit coverage: inside an option group the focus ring leaves the card as soon as an arrow key moves the focus, because desktop WebKit stops matching :focus-visible there; only the chosen ring remains.",
+  "coverage": [
+    "wave-2 items: VER-01, VER-02, UX-017a, UX-012a (incl. the 'Last saved today at …' line), pasted-JSON wording, UX-023, OptionGroup print border, UX-100 (speed on Fast 3G + 4x CPU, entry size, shell to app, one h1, deep links, blocked results chunk, full session), the self-test page and the RT block after the dev merge (web/test-results/ux-review/verify2/<item>/<project>/)",
+    "wave-1 gaps: UX-001, UX-002, UX-003, UX-004, UX-005a, UX-009a, UX-010, UX-011, UX-012a, UX-017a, UX-017b, UX-018a, UX-018b, UX-019, UX-020, UX-028, UX-032, UX-037, UX-038, UX-054 on desktop WebKit and Pixel 7 (keyboard-only and download scenarios on WebKit)",
+    "tour of all 51 product routes: chromium 390/1280 light/dark, iphone 390 light/dark, webkit 1280 light (web/test-results/ux-review/verify2/tour-*/summary.json, tour-compare.json)",
+    "one ?fast=1 journey per project (chromium, iphone, webkit) with save, reload, load and See my results (web/test-results/ux-review/verify2/journey-*/)"
+  ],
+  "findings": [
+    {
+      "id": "VER2-01",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Option-card focus ring leaves the card on arrow keys in desktop WebKit",
+      "route": "item-spatial",
+      "env": "webkit (Desktop Safari project) 1280x800 light; the same on item-matrix-series choice items; Chromium keeps the ring",
+      "screenshots": [
+        "web/test-results/ux-review/verify2/UX-021-focus/webkit/001-a-tab-into-group.png",
+        "web/test-results/ux-review/verify2/UX-021-focus/webkit/002-b-arrow-right.png",
+        "web/test-results/ux-review/verify2/UX-021-focus/chromium/002-b-arrow-right.png"
+      ],
+      "observed": "The card's ring comes from `input:focus-visible + .card` (OptionGroup.svelte). On desktop WebKit, Tab (Alt+Tab there) into the group draws the 3 px orange ring on the first card (:focus-visible matches). The first ArrowRight moves the focus and the check to the next option, and the ring is gone: the radio no longer matches :focus-visible (outline none), and the only mark on the current option is the 2 px chosen shadow; the same after every further arrow. Shift+Tab away and back restores the ring. Chromium keeps the ring on every option as the arrows move (outline 3px solid rgb(180, 83, 9) plus the chosen shadow). A mouse click draws no ring in either engine; WebKit does not even focus the radio on a click, so arrow keys do nothing after a click there (engine convention, no change asked).",
+      "expected": "A visible focus indicator on the option that has the keyboard focus in every engine, whichever key moved it there (WCAG 2.4.7). Today a Safari keyboard user sees the chosen ring move with the arrows, which does show the current option, but it is the selection mark, not the focus mark, and the orange ring the person saw on entry disappears.",
+      "suggestion": "Owner view: either accept the chosen ring as the indicator while arrowing (the arrows check as they move, so focus and choice coincide) and note it, or give a checked card with the focus the ring too (`input:focus:checked + .card { outline: 3px solid var(--r-focus); outline-offset: 2px }` beside the :focus-visible rule), accepting that Chromium then also shows the ring on the option a mouse just clicked.",
+      "files": ["web/src/render/choice/OptionGroup.svelte"],
+      "spec_refs": ["WCAG 2.4.7", "UX-021"],
+      "confidence": "medium",
+      "owner_decision": true
+    }
+  ]
+}

@@ -25,9 +25,12 @@
   box-sizing: border-box;
   font-size: 1rem;
   line-height: 1.5;
+  /* Checkboxes, radios and ranges in the same blue as the primary button, not the browser's own. */
+  accent-color: var(--r-accent);
 }
 
-@media (prefers-color-scheme: dark) {
+/* `screen`: a page printed on paper keeps the light tokens, whatever the screen's scheme (the paper is white). */
+@media screen and (prefers-color-scheme: dark) {
   .hb-render {
     --r-fg: #f1f0f4;
     --r-muted: #c9c6d1;
@@ -101,7 +104,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin: 1rem 0;
+}
+
+/* A note that follows a row of buttons sits a little closer to it than a new paragraph would. */
+.hb-render .hb-actions + p.muted {
+  margin-top: 0.5rem;
 }
 
 .hb-render .hb-sr-only {

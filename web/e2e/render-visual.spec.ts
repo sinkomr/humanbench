@@ -10,9 +10,9 @@
  * - nothing animates under prefers-reduced-motion (the renderers have no motion at all);
  * - rotation: five non-blank figures per item, the options all different, identical pixels on a
  *   reload (fixed camera and lighting), ONE WebGL context however many figures and items, and that
- *   context freed when the items unmount; without WebGL, the notice, locked options, the
- *   `onunavailable` report instead of an onset, and no axe issues (a browser build without WebGL
- *   skips the tests that need the figures drawn);
+ *   context freed when the items unmount; without WebGL, only the one-line notice (no frames,
+ *   options or Confirm), the `onunavailable` report instead of an onset, and no axe issues (a
+ *   browser build without WebGL skips the tests that need the figures drawn);
  * - matrices: a screenshot comparison where a baseline exists for the platform (SVG is stable).
  */
 
@@ -204,7 +204,7 @@ test.describe('rotation renderer drawing (Three.js)', () => {
 })
 
 test.describe('rotation renderer without WebGL', () => {
-  test('shows the notice and text alternatives, keeps the options locked, reports unavailable, and passes axe', async ({ page }) => {
+  test('shows only a one-line note (no frames, options or Confirm), reports unavailable instead of an onset, and passes axe', async ({ page }) => {
     // A browser (or a blocked GPU) without WebGL: every WebGL context request fails.
     await page.addInitScript(() => {
       const orig = HTMLCanvasElement.prototype.getContext
@@ -216,11 +216,11 @@ test.describe('rotation renderer without WebGL', () => {
     await page.goto(visualGalleryUrl({ family: 'rotation', seed: 'e2e-nogl-1' }))
     await expect(page.locator('#shown-0')).toHaveText('Unavailable', { timeout: 30_000 })
     await expect(page.locator('.rotation').getByRole('status')).toHaveText(ROTATION_UNAVAILABLE)
-    await expect(page.getByRole('img', { name: /^Target: a 3D object made of \d+ cubes/ })).toBeVisible()
-    const radios = page.getByRole('radio')
-    await expect(radios).toHaveCount(4)
-    for (const r of await radios.all()) await expect(r).toBeDisabled()
-    await expect(page.getByRole('button', { name: CONFIRM_LABEL })).toBeDisabled()
+    // Nothing of the item is drawn: no empty frames, no figure, no option, no Confirm button (UX-017b).
+    await expect(page.locator('.rotation canvas')).toHaveCount(0)
+    await expect(page.getByRole('img', { name: /^Target: a 3D object/ })).toHaveCount(0)
+    await expect(page.getByRole('radio')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: CONFIRM_LABEL })).toHaveCount(0)
     await page.keyboard.press('2')
     await page.keyboard.press('Enter')
     await expect(page.locator('#response-0')).toHaveText('none yet')

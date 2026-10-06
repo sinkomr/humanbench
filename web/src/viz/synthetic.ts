@@ -155,11 +155,18 @@ const SPARSE_PLAN: AxisPlan = {
   RT: [['simple_rt', 1]],
 }
 
+/**
+ * Two estimates beyond the drawn scale: Processing & Reading Speed far below it, Reaction Time above
+ * it (UX-037; timed measures are scored on a Gaussian model, so they can leave the prior behind).
+ */
+const OFFSCALE_TRUTH: Partial<Record<AxisCode, number>> = { ...M1_TRUTH, PS: -6, RT: 6 }
+
 export const SYNTHETIC_PROFILES: readonly SyntheticProfile[] = Object.freeze([
   build('m1', 'Typical first session', M1_TRUTH, M1_PLAN),
   build('full', 'Every skill measured', FULL_TRUTH, FULL_PLAN),
   build('skipped', 'Spatial skipped', M1_TRUTH, M1_PLAN, ['SPA']),
   build('sparse', 'Very few items', M1_TRUTH, SPARSE_PLAN),
+  build('offscale', 'Estimates beyond the scale', OFFSCALE_TRUTH, M1_PLAN),
 ])
 
 export function syntheticProfile(id: string): SyntheticProfile | undefined {

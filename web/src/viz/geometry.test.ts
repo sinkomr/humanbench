@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { formatTheta, polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, Z90 } from './geometry'
+import { formatTheta, offScaleOf, polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, THETA_CLAMP_LOW, Z90 } from './geometry'
 
 describe('radius (§9.1, CLAUDE.md: linear in θ over [−3, 3])', () => {
   const R = 180
@@ -40,6 +40,27 @@ describe('radius (§9.1, CLAUDE.md: linear in θ over [−3, 3])', () => {
     expect(RING_THETAS.map((t) => r(t))).toEqual([30, 60, 90, 120, 150])
     expect(() => r(Number.NaN)).toThrow(RangeError)
     expect(() => radiusScale(0)).toThrow(RangeError)
+  })
+})
+
+describe('off-scale estimates (UX-037)', () => {
+  const R = 180
+  const r = radiusScale(R)
+
+  it('an estimate is off scale exactly where the clamp changes the radius: the radius map itself stays linear', () => {
+    fc.assert(
+      fc.property(fc.double({ min: -8, max: 8, noNaN: true }), (t) => {
+        const linear = (R * (t + 3)) / 6
+        const clamped = Math.abs(r(t) - linear) > 1e-9
+        const end = offScaleOf(t)
+        // Clamped at the bottom or the top ⇔ off scale there; linear everywhere else.
+        expect(end !== 'none', `θ = ${t}`).toBe(clamped)
+        if (end === 'low') expect(r(t)).toBeCloseTo(R_MIN_FRACTION * R, 9)
+        if (end === 'high') expect(r(t)).toBe(R)
+      }),
+      { numRuns: 300 },
+    )
+    expect(THETA_CLAMP_LOW).toBeCloseTo(-3 + 6 * R_MIN_FRACTION, 12)
   })
 })
 

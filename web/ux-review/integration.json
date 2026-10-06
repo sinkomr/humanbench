@@ -1,0 +1,260 @@
+{
+ "package": "integrate",
+ "model": "claude-opus-5-5",
+ "note": "An earlier integrate run (killed by the watchdog) had already applied the five integration items and most integration_requests; this run checked each of them, fixed what was wrong or missing, reviewed the combined diff and ran every gate.",
+ "changes": [
+  {
+   "id": "UX-005b",
+   "files": [
+    "web/src/reveal/Reveal.svelte",
+    "web/src/reveal/Reveal.dom.test.ts",
+    "web/e2e/ux-reveal.spec.ts"
+   ],
+   "summary": "The leave panel passes primary=\"no\": \"Stay and save\" is the first, primary answer and Escape means it too (ConfirmPanel prop of UX-005a); labels unchanged."
+  },
+  {
+   "id": "UX-007b",
+   "files": [
+    "web/src/session/Checklist.svelte",
+    "web/e2e/session.spec.ts",
+    "web/e2e/reveal.spec.ts",
+    "web/e2e/ux-session.spec.ts",
+    "web/src/session/SessionApp.dom.test.ts",
+    "web/src/session/components.dom.test.ts"
+   ],
+   "summary": "The checklist is <section aria-label=\"Session checklist\"> (a named region), not a navigation landmark with no links; selectors moved from role navigation to region."
+  },
+  {
+   "id": "UX-009b",
+   "files": [
+    "web/src/session/copy.ts",
+    "web/src/session/Finished.svelte",
+    "web/e2e/flow.ts",
+    "web/e2e/session-driver.ts",
+    "web/e2e/keyboard-session.spec.ts",
+    "web/e2e/routes.ts",
+    "web/e2e/server.spec.ts",
+    "web/e2e/session.spec.ts",
+    "web/e2e/ux-session.spec.ts",
+    "web/src/session/SessionApp.dom.test.ts",
+    "web/src/session/SessionApp.served.dom.test.ts",
+    "web/src/session/SessionApp.flow.dom.test.ts",
+    "web/src/session/Finished.dom.test.ts",
+    "web/ux-review/personas/flow.ux.ts",
+    "web/ux-review/personas/keyboard.ux.ts",
+    "web/ux-review/personas/phone.ux.ts",
+    "web/ux-review/personas/skimmer.ux.ts"
+   ],
+   "summary": "FINISHED_EMPTY_HEADING 'Session ended' when nothing was measured; flow.ts exports FINISHED_HEADINGS; both drivers and the keyboard spec detect either heading; the finished-nothing route and every empty-finish expectation say 'Session ended'."
+  },
+  {
+   "id": "UX-048b",
+   "files": [
+    "web/src/reveal/results.ts",
+    "web/src/reveal/results.test.ts",
+    "web/src/reveal/results.served.test.ts"
+   ],
+   "summary": "buildResults passes offered = OFFERED_AXES (the A15 plan's axes plus the embedded CAL), so skills no part measures read 'Not measured (not offered yet)'; served parts with nothing published stay 'no data'."
+  },
+  {
+   "id": "UX-056",
+   "files": [
+    "web/src/backend/copy.ts",
+    "web/src/backend/DataPage.dom.test.ts"
+   ],
+   "summary": "DATA_RESTORE_FOUND names the 'Ready when you are' screen (press Start, then load), the same wording as the reveal's SPACING_TEXT (UX-034)."
+  },
+  {
+   "id": "UX-052 (notes request)",
+   "files": [
+    "web/e2e/routes.ts",
+    "web/src/brief/returning.ts",
+    "web/src/brief/returning.test.ts",
+    "web/src/brief/Checker.dom.test.ts"
+   ],
+   "summary": "The review-by sentence names the month in words ('January 2025') via monthName; the notes-returning route and the two tests follow. Withdrawal and new-wording sentences keep the stored month (approved draft pinned)."
+  },
+  {
+   "id": "UX-015 / UX-027 / UX-053 (session, render and notes requests)",
+   "files": [
+    "web/scripts/contrast.test.ts"
+   ],
+   "summary": "The stray-token test accepts '@media screen and (prefers-color-scheme: dark)' as well as the plain query, so print-safe dark rules count as dark rules."
+  },
+  {
+   "id": "UX-021 (render, optional)",
+   "files": [
+    "web/src/render/choice/OptionGroup.svelte",
+    "web/scripts/contrast.test.ts"
+   ],
+   "summary": "--hb-focus dropped: option cards use the shared amber --r-focus ring; its contrast pair and the old Confirm pairs removed (Confirm is hb-btn hb-primary, paired in render.css)."
+  },
+  {
+   "id": "UX-017b (render, optional)",
+   "files": [
+    "web/e2e/routes.ts"
+   ],
+   "summary": "The item-spatial-no-webgl route's state text describes the one-line notice and the skip offer."
+  },
+  {
+   "id": "UX-011 (session request)",
+   "files": [
+    "web/e2e/server.spec.ts"
+   ],
+   "summary": "The static-fallback test checks that there is no data-page link, since the footer now always links 'Privacy and terms'."
+  },
+  {
+   "id": "UX-004 / REVIEW-HARNESS / persona-harness",
+   "files": [
+    "web/ux-review/lib/journey.ts",
+    "web/ux-review/personas/flow.ux.ts",
+    "web/ux-review/personas/keyboard.ux.ts",
+    "web/ux-review/personas/data.ux.ts"
+   ],
+   "summary": "Harness literals follow the renames: 'Continue' on Practice complete and 'Stop practice', 'Read this first' for the results-talk link, NBSP normalised in the bar table relation cell."
+  },
+  {
+   "id": "UX-010 (a11y route)",
+   "files": [
+    "web/e2e/routes.ts",
+    "web/scripts/a11y-routes.test.ts"
+   ],
+   "summary": "New route results-view ('See my results' from the ready screen, heading 'Your results'), pinned in STATES, so the new screen gets the full axe, reflow, zoom, text-spacing and keyboard sweep."
+  }
+ ],
+ "review_fixes": [
+  {
+   "files": [
+    "web/e2e/session.spec.ts"
+   ],
+   "summary": "The hard-stop fake-clock test had been changed to expect 'Session ended', saying nothing was answered. But the 56-minute fastForward runs the open question past its cap and records it as timed out (§7.4), so the end is 'Session complete'. That edit also weakened the 'not stopped at 56' guard to rule out only 'Session ended'. Both checks now use FINISHED_HEADINGS (red on chromium before the fix, green after)."
+  },
+  {
+   "files": [
+    "web/e2e/ux-session.spec.ts"
+   ],
+   "summary": "Three empty finishes (tab-title test, finish-at-once test, Back-button test) still expected 'Session complete' (UX-009b literals the earlier integrate run missed): they now expect 'Session ended' / 'Session ended · HumanBench'."
+  },
+  {
+   "files": [
+    "web/src/save/parse.ts",
+    "web/src/save/parse.test.ts"
+   ],
+   "summary": "A pasted save code whose gzip content is not a save was told 'This file is not a HumanBench save...'. It now gets the code message (format === 'code'); a new case pins both wordings."
+  },
+  {
+   "files": [
+    "web/src/brief/NotesBuilder.svelte"
+   ],
+   "summary": "The notes page footer now puts the disclaimer first and the 'Privacy and terms (opens in a new tab)' link after it, as the app's footer does, with the same 0.875rem link size."
+  }
+ ],
+ "reverted": [],
+ "gates": {
+  "check": "pass: svelte-check 1192 files 0 errors 0 warnings; tsc node and scripts configs (includes e2e/** and ux-review/**)",
+  "unit": {
+   "passed": 4525,
+   "failed": 0,
+   "skipped": 7
+  },
+  "lint_language": "pass: 358 files clean",
+  "build": "pass (npm run build -- --outDir test-results/iso/integrate/dist-gate)",
+  "test_db": "not run: the only change under src/backend is the DATA_RESTORE_FOUND string (UX-056) and its DOM test, which npm test runs; no scripts/db/*.db.test.ts reads backend/copy.ts, and scripts/db and supabase/ are unchanged",
+  "ux_harness_smoke": "pass: npm run ux:build, then smoke.ux.ts on chromium (UX_PORT=4653, UX_RUN=integrate): 1 passed, 3/3 tour routes opened",
+  "e2e": [
+   {
+    "project": "chromium",
+    "shard": "1/3",
+    "passed": 261,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 32
+   },
+   {
+    "project": "chromium",
+    "shard": "2/3",
+    "passed": 266,
+    "failed": 5,
+    "flaky": 0,
+    "skipped": 22,
+    "note": "All 5 (4 in notes.spec.ts, the whole-session test in keyboard-session.spec.ts) failed with ENOENT on their trace files: by mistake I started shard 3 on the same ports while shard 2 ran, it refused to start, but its startup cleared the shared output dir. Rerun of notes.spec.ts + keyboard-session.spec.ts: 45 passed, 0 failed. Not product failures, not flakes."
+   },
+   {
+    "project": "chromium",
+    "shard": "3/3",
+    "passed": 279,
+    "failed": 4,
+    "flaky": 0,
+    "skipped": 12,
+    "note": "4 real failures, the stale literals fixed above (session.spec.ts hard stop, three in ux-session.spec.ts). Rerun of ux-session.spec.ts + session.spec.ts after the fix: 61 passed, 11 skipped, 0 failed."
+   },
+   {
+    "project": "chromium",
+    "shard": "a11y results-view (new route; shards 1-2 listed the tests before it was added)",
+    "passed": 7,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 1
+   },
+   {
+    "project": "webkit",
+    "shard": "1/3",
+    "passed": 264,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 32
+   },
+   {
+    "project": "webkit",
+    "shard": "2/3",
+    "passed": 264,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 31
+   },
+   {
+    "project": "webkit",
+    "shard": "3/3",
+    "passed": 273,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 22
+   },
+   {
+    "project": "iphone",
+    "shard": "1/3",
+    "passed": 262,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 34
+   },
+   {
+    "project": "iphone",
+    "shard": "2/3",
+    "passed": 182,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 113
+   },
+   {
+    "project": "iphone",
+    "shard": "3/3",
+    "passed": 272,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 23
+   }
+  ]
+ },
+ "flaky": [],
+ "open_issues": [
+  "Two separate double-tap guards with different thresholds: ConfirmPanel.svelte (module script, window pointerdown, 350 ms / 32 px; UX-005a) and OptionGroup.svelte (module script, document pointerdown, 350 ms settle / 600 ms / 32 px; UX-021). Both work and are tested; one shared helper in render/common would be cleaner. Left as is: merging them at integration would change tested behaviour.",
+  "e2e/blob.spec.ts: the minimum blob label size at 320 px was lowered from 10 to 9.5 px by the viz package, because the UX-042 compact labels are longer. The bar view and the table carry the same names; the verifier may want an owner view on this.",
+  "src/save/parse.ts: pasted raw JSON (not a save code) that is not a save, or is cut off, is still worded as a file ('This file is not a HumanBench save', 'This save file looks cut off'), because loadSaveDocument has no source argument. Rare: copied codes are base64 gzip, which this run fixed.",
+  "src/session/practice.ts: PracticeRun.end() is now used only by practice.test.ts ('Stop practice' calls ondone directly, UX-004).",
+  "ProgressRing text is translate=\"no\" (UX-008): a page translator leaves the whole ring sentence ('12 of about 30 min') in English. This is the session package's trade-off: a translated node would stop updating.",
+  "OptionGroup.svelte keeps its dark --hb-card-border under the plain prefers-color-scheme query, while app.css, render.css, notes.css, ResultsTalk and ProfileView now use the screen-only form. Harmless (a question is never printed), but not uniform.",
+  "A previous integrate run left traces of load-induced timeouts (DeviceCheck 'Continue' not enabled within 20 s under a fake clock, load average about 19). Nothing like that recurred in this run (load 6-17)."
+ ],
+ "diffstat": "tracked: 161 files changed, 5991 insertions(+), 1132 deletions(-); untracked: 33 files (6 ux e2e specs, 13 new unit test files, 5 new src modules, triage.json, 6 fix reports, this file); nothing under web/test-results is tracked; docs/, CLAUDE.md and bank-mirrored files untouched"
+}

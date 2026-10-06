@@ -49,8 +49,47 @@ export interface FacetEstimate extends SpokeEstimate {
   readonly unit: CountUnit
 }
 
-/** "3d_rotation" → "3d rotation"; "percent" → "Percent". */
+/**
+ * What each facet is called on screen (UX-040): plain words, not the generator's code. The keys are
+ * the facet ids the task families declare (`family.facets`, the quant templates, the RT and span
+ * modes); `facets.test.ts` checks that every registered one has an entry. Anything else falls back
+ * to the id with underscores turned into spaces.
+ */
+export const FACET_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  simple_rt: 'Simple reaction time',
+  choice_rt: 'Choice reaction time',
+  coding: 'Shape to digit',
+  reading_speed: 'Reading speed',
+  matrix: 'Matrices',
+  series: 'Sequences',
+  '3d_rotation': 'Mental rotation (3D)',
+  digits_forward: 'Digits, same order',
+  digits_backward: 'Digits, reverse order',
+  corsi: 'Block sequence',
+  arith: 'Arithmetic',
+  percent: 'Percentages',
+  fraction: 'Fractions',
+  fraction_of: 'Fractions of amounts',
+  ratio: 'Ratios',
+  rate: 'Rates',
+  mean: 'Averages',
+  linear_eq: 'Linear equations',
+  system: 'Simultaneous equations',
+  exponent: 'Powers',
+  quadratic: 'Quadratics',
+  probability: 'Probability',
+  counting: 'Counting',
+  arith_series: 'Arithmetic sequences',
+  geom_series: 'Geometric sequences',
+  modular: 'Remainders',
+  recip: 'Reciprocals',
+  symmetric: 'Symmetric expressions',
+  confidence: 'Confidence ratings',
+})
+
+/** The on-screen name of a facet id: {@link FACET_LABELS}, else the id as words ("odd_one_out" → "Odd one out"). */
 export function facetLabel(facet: string): string {
+  if (Object.hasOwn(FACET_LABELS, facet)) return FACET_LABELS[facet]!
   const s = facet.replace(/[_-]+/g, ' ').trim()
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
@@ -107,7 +146,7 @@ export function clusterFacets(score: ProfileScore, observations: readonly FacetO
         id: `${a.code}:${facet}`,
         axis: a.code,
         facet,
-        name: `${facetLabel(facet)} (${a.name})`,
+        name: facetLabel(facet),
         shortLabel: [facetLabel(facet)],
         group: a.name,
         tier: a.tier,

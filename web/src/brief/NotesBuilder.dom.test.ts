@@ -9,7 +9,7 @@
 import { flushSync, mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DISCLAIMER } from '../copy'
-import { CLAIM, COPY } from './copy'
+import { CLAIM, COPY, COPY_TARGET_ID, STEPS } from './copy'
 import NotesBuilder from './NotesBuilder.svelte'
 import { NOTICE_TEXT } from './build'
 
@@ -99,7 +99,12 @@ describe('the page', () => {
   it('offers no send button, no pre-filled chat link and no external link', () => {
     open()
     // the keep and load forms are local: they have no action, and nothing is submitted anywhere
-    expect(document.querySelectorAll('a, [href], [src], [action], form[method]')).toHaveLength(0)
+    expect(document.querySelectorAll('[src], [action], form[method]')).toHaveLength(0)
+    // The only links are the page's frame (UX-049): the skip link, the way back to the app and the privacy notice, all on this site.
+    const links = [...document.querySelectorAll('a, [href]')]
+    expect(links.every((l) => l.tagName === 'A')).toBe(true)
+    expect(links.map((l) => l.getAttribute('href'))).toEqual(['#copy-notes', '/', '/index.html#/privacy'])
+    expect(links.every((l) => document.querySelector('main')?.contains(l) === false)).toBe(true)
     expect([...document.querySelectorAll('form')].every((f) => f.getAttribute('action') === null && f.getAttribute('method') === null)).toBe(true)
     expect(document.body.textContent).not.toMatch(/Send to (?:ChatGPT|Claude|Gemini)/i)
     // (the control-word card's SVG namespace is the only web address in the page, and it is not a link)
@@ -441,7 +446,7 @@ describe('more', () => {
     click(button('Download for-ai.md'))
     expect(download.mock.calls.at(-1)?.[1]).toBe('for-ai.md')
     expect($('[data-testid=for-ai]').textContent).toContain('| Build up |')
-    expect(document.querySelectorAll('a[href]')).toHaveLength(0)
+    expect(document.querySelectorAll('main a[href]')).toHaveLength(0) // the notes never link to it (the frame's links sit outside the main part)
   })
 
   it('removes the settings on request and announces it', async () => {
@@ -507,5 +512,136 @@ describe('local only: nothing is stored and nothing is sent', () => {
     expect(xhrSpy).not.toHaveBeenCalled()
     expect(beacon).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+})
+
+/** The accessible name of an element that is named by `aria-labelledby` (what a screen reader reads first). */
+const nameOf = (el: Element): string =>
+  (el.getAttribute('aria-labelledby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+const descriptionOf = (el: Element): string =>
+  (el.getAttribute('aria-describedby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+describe('the way around the page (UX-049)', () => {
+  it('starts with a skip link that targets the copy section, and says where it goes', () => {
+    open()
+    const first = document.querySelector('a[href], button, input, select, textarea, summary')
+    expect(first?.tagName).toBe('A')
+    expect(first?.textContent).toBe(COPY.skipToCopy)
+    expect(first?.getAttribute('href')).toBe(`#${COPY_TARGET_ID}`)
+    const target = $(`#${COPY_TARGET_ID}`)
+    expect(target.getAttribute('tabindex')).toBe('-1') // focusable by script, not an extra Tab stop
+    expect(target.getAttribute('role')).toBe('group')
+    expect(target.getAttribute('aria-label')).toBe(COPY.copyGroup)
+  })
+
+  it('moves focus to the warnings that come before copying, and the copy button is the next control', () => {
+    open()
+    const skip = $<HTMLAnchorElement>('a.skip-link')
+    skip.focus()
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+    skip.dispatchEvent(event)
+    flushSync()
+    expect(event.defaultPrevented).toBe(true) // the page moves focus itself; the address does not gain a "#copy-notes"
+    expect(document.activeElement).toBe($(`#${COPY_TARGET_ID}`))
+    // the warnings are inside the target, before the buttons: they are not skipped over
+    const target = $(`#${COPY_TARGET_ID}`)
+    for (const id of ['provider-warning', 'anti-coercion', 'placement', 'look-for']) expect(target.contains($(`[data-testid=${id}]`)), id).toBe(true)
+    const tabbable = [...target.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, summary')]
+    expect(tabbable[0]?.textContent).toBe('Copy the notes') // the primary action is the first stop after the skip
+    expect(tabbable.map((t) => t.textContent?.trim())).toContain(`Download hb-notes-2026-11-k3f9.txt`)
+    // the status line stays inside, so what the buttons announce is read from the same place
+    expect(target.contains($('[data-testid=status]'))).toBe(true)
+  })
+
+  it('puts the download first inside the target for a coding agent, and the copy button is then the second stop', () => {
+    open()
+    pickUse('Coding and data')
+    const tabbable = [...$(`#${COPY_TARGET_ID}`).querySelectorAll<HTMLElement>('button')].map((b) => b.textContent?.trim() ?? '')
+    expect(tabbable[0]).toMatch(/^Download hb-skill-/)
+    expect(tabbable[1]).toBe('Copy the notes')
+  })
+
+  it('links back to the app and to the privacy notice, the privacy notice in its own tab so nothing typed here is lost', () => {
+    open()
+    const home = $<HTMLAnchorElement>('header.site a')
+    expect(home.textContent).toBe('HumanBench')
+    expect(home.getAttribute('href')).toBe(import.meta.env.BASE_URL)
+    expect(home.hasAttribute('target')).toBe(false)
+    const privacy = $<HTMLAnchorElement>('footer a')
+    expect(privacy.textContent).toBe(`Privacy and terms${COPY.newTab}`)
+    expect(privacy.getAttribute('href')).toBe(`${import.meta.env.BASE_URL}index.html#/privacy`)
+    expect(privacy.getAttribute('target')).toBe('_blank')
+    expect(privacy.getAttribute('rel')).toBe('noopener')
+    // both stay on this site
+    for (const a of [home, privacy]) expect(a.getAttribute('href')).not.toMatch(/^[a-z]+:\/\//i)
+  })
+
+  it('keeps the frame outside the main part, with one banner-level header and the disclaimer footer', () => {
+    open()
+    expect($('header.site').closest('main')).toBeNull()
+    expect($('footer').closest('main')).toBeNull()
+    expect(document.querySelectorAll('main')).toHaveLength(1)
+    expect($('footer .disclaimer').textContent).toBe(DISCLAIMER)
+  })
+})
+
+describe('where to use the notes: radios named by their short label (UX-051)', () => {
+  it('names each radio by the short label and describes it with the longer line', () => {
+    open()
+    const radios = [...document.querySelectorAll<HTMLInputElement>('input[name=preset]')]
+    expect(radios).toHaveLength(6)
+    const names = radios.map(nameOf)
+    expect([...names].sort()).toEqual(['Coding and data', 'Everyday numbers', 'General', 'Learning something new', 'Reading dense material', 'Writing'])
+    for (const r of radios) {
+      const hint = descriptionOf(r)
+      expect(hint.length).toBeGreaterThan(20)
+      expect(nameOf(r)).not.toContain(hint)
+      expect(nameOf(r).length).toBeLessThan(hint.length)
+      // the longer line is still inside the label, so a tap anywhere in the block picks it
+      expect(r.closest('label')?.textContent).toContain(hint)
+    }
+  })
+
+  it('gives every radio its own ids, and a click on the long line still picks the radio', () => {
+    open()
+    const radios = [...document.querySelectorAll<HTMLInputElement>('input[name=preset]')]
+    const ids = radios.flatMap((r) => [r.getAttribute('aria-labelledby'), r.getAttribute('aria-describedby')])
+    expect(new Set(ids).size).toBe(ids.length)
+    const coding = radios.find((r) => nameOf(r) === 'Coding and data') as HTMLInputElement
+    const hintEl = document.getElementById(coding.getAttribute('aria-describedby') as string) as HTMLElement
+    hintEl.click()
+    flushSync()
+    expect(coding.checked).toBe(true)
+    expect(notes().startsWith('---\nname: working-with-me')).toBe(true)
+  })
+})
+
+describe('copy polish (UX-052)', () => {
+  it('says "Maths", and tells the assistant how to adjust its explanations, not how to pitch them', () => {
+    open()
+    expect([...document.querySelectorAll('h3')].some((h) => h.textContent === 'Maths and numbers')).toBe(true)
+    expect(document.body.textContent).not.toMatch(/\bMath and\b/)
+    expect(document.body.textContent).toContain('and your notes tell the assistant how to adjust its explanations.')
+    expect(STEPS.topics.hint).not.toMatch(/pitch/) // (the word is gated elsewhere, in the notes' own lines; only this hint changed)
+  })
+
+  it('names the form in lower case beside the others: "(short form)", then "(skill form)"', () => {
+    open()
+    expect($('[data-testid=counter]').textContent?.replace(/\s+/g, ' ')).toContain('(short form)')
+    pickUse('Coding and data')
+    expect($('[data-testid=counter]').textContent?.replace(/\s+/g, ' ')).toContain('(skill form)')
+    expect($('[data-testid=counter]').textContent).not.toContain('Skill form')
   })
 })

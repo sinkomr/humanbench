@@ -1,0 +1,392 @@
+{
+  "reviewer": "nonnative",
+  "model": "fable",
+  "summary": "Persona Mei (CEFR B2 English, sometimes uses Chrome page translation, types decimals with a comma) went through the static app on desktop Chromium and iPhone 13 emulation: a tour of 35 product routes with readability metrics and page text, typed-entry probes on series and quant items (decimal comma, grouped digits, full-width and Arabic-Indic digits, a lowercase letter, spaces), a simulated Chrome page translation played through the gate, honour code, device check, practice, two items, the confidence slider and the results, and a wide-font plus 200% text-zoom tour at 390 and 1280 px. The copy is generally short (most routes read at Flesch 55-80, few sentences over 25 words) and nothing crashed. The biggest problem is Chrome page translation: the app keeps working, but every number or message that Svelte updates in place freezes once Chrome has wrapped it in <font> elements, so a translated reader sees a confidence readout stuck at 59% after setting 80%, a practice counter stuck at 1 of 4, a 'Checking your screen' message that never goes away and a share-card count that does not change; nothing is marked translate='no', not even the brand or the save code. Number entry is strict in a way that mostly helps (a decimal comma is rejected with a note that says to use a point), but '1,500' is silently read as one thousand five hundred, non-ASCII digits are refused with a note that says 'use digits', and on an iPhone set to a decimal-comma language the decimal keypad the app asks for offers only a comma, which the app then rejects. The rest is wording: maths and statistics jargon at first contact (SD, 90% interval, provisional, Calibration/Metacognition, integer, term), idioms in instructions ('keep this window in front', 'stay sharp', 'whiskers'), two names for one thing (integer/whole number, sequence/series, interval/range, short blob labels vs table names), and a reading passage in 19th-century English whose speed norms are first-language figures.",
+  "coverage": [
+    "Tour (chromium 1280 light, metrics + page text): welcome, gate, gate-error, honour, device, ready, ready-returning, practice, practice-feedback, privacy, interstitial, rt-intro, item-matrix-series, confidence, confirm-skip, item-spatial, memory-intro, memory-entry, memory-corsi, quant-item, coding-intro, coding-running, reading-passage, reading-questions, break-offer, finished-nothing, results, results-drilldown, results-bars, results-open, results-saved, share-card-dark, notes, notes-filled, rt-selftest-results (web/test-results/ux-review/nonnative/tour/)",
+    "Baseline page text read for the routes not re-toured: rt-trial, confirm-finish, on-break, results-building, results-leave, share-card-too-few, notes-checker, notes-fit, notes-keep-error, notes-kept, notes-returning, rt-selftest, rt-selftest-keys (web/test-results/ux-review/baseline/tour/)",
+    "Typed entry (chromium 1280 and iphone 390): series items (2 per project) and quant items (3 per project, integer and fraction formats) with the entries 3,5 / 1 000 / full-width 12 / Arabic-Indic 35 / a / 3.5 / 1,500 / -7 / ' 7 ' (web/test-results/ux-review/nonnative/entry-*/)",
+    "Simulated Chrome page translation (chromium): welcome, gate error, honour, device, ready, practice question + confidence + feedback + next question, interstitial, skip confirm, two Matrix & Series items, finish early, results, drill-down, bar view, save, share card untick (web/test-results/ux-review/nonnative/translate-flow/, translate-results/)",
+    "Text expansion (chromium, wide font + 200% text zoom, 390 and 1280 px): welcome, gate, honour, device, ready, item-matrix-series, confidence, quant-item, results, results-saved (web/test-results/ux-review/nonnative/expand/)",
+    "Not tested: a real Chrome translation (simulated with <font> wrapping and upper-casing instead); the iOS on-screen keypad itself (Playwright emulation shows no keyboard, so the decimal-comma keypad is inferred from the inputmode attribute and iOS behaviour); a letter series item in the UI (none came up in the probed items; the parser and the input attributes were read instead); WebKit desktop; the notes builder beyond its text; the self-test's live measurements."
+  ],
+  "findings": [
+    {
+      "id": "L2-01",
+      "severity": "major",
+      "category": "bug",
+      "title": "Under Chrome page translation every in-place text update freezes: confidence readout, practice counter, device placeholder, share-card count",
+      "route": "device, practice, confidence, results-saved",
+      "env": "Desktop Chrome 1280 light, simulated page translation (text nodes wrapped in <font><font>…</font></font>, re-applied 200 ms after DOM changes)",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/translate-flow/006-practice-confidence.png",
+        "web/test-results/ux-review/nonnative/translate-flow/008-practice-2.png",
+        "web/test-results/ux-review/nonnative/translate-results/004-device.png",
+        "web/test-results/ux-review/nonnative/translate-results/010-share-card-untick.png"
+      ],
+      "observed": "Chrome's translator replaces each text node with <font> elements; Svelte keeps a reference to the detached text node and writes later values into it, so the screen never changes. Verified: (1) the practice confidence slider moved to 80 while the readout next to it still says 59% (the default); (2) after 'Next practice question' the second question (a series) is on screen but the counter still says 'Practice question 1 of 4'; (3) on the device check 'Checking your screen…' stays on the page above the finished facts; (4) on the share card, unticking a skill leaves '7 skills are on the card.' unchanged. New screens and new items render fine (item 2 showed its own terms, the bar view drew, the 'Reaction Time skipped' notice appeared once), there were no page errors and no console errors. By the same mechanism, though not verified one by one, the session clock '0 of about 28 min', the coding countdown '1:30', 'Enter 3 digits.', 'Selected 0 of 3.', '3 of 3 not answered yet.' and 'Now showing: X (1 of 7)' would freeze for a translated reader.",
+      "expected": "A reader who turned on page translation sees the same live numbers as everyone else: the confidence value they set, the current question number, the time left, how many skills are on the card.",
+      "suggestion": "Keep live values out of the translator's reach and never clear a message by emptying a text node. (a) Put translate=\"no\" on elements whose content is a number or a time and needs no translation: <output class=\"value\"> in src/session/Confidence.svelte:51, <p class=\"timer\"> in src/render/coding/CodingRenderer.svelte:143, the ring text in src/session/ProgressRing.svelte (progressText), the keypad counts in src/render/span/DigitSpanRenderer.svelte:141 and CorsiRenderer.svelte:171 (wrap the number: 'Enter <span translate=\"no\">{length}</span> digits.'). (b) Where a sentence mixes words and a changing number, render the number in its own <span translate=\"no\">: src/session/PracticeScreen.svelte:52 'Practice question <span translate=\"no\">{view.number}</span> of <span translate=\"no\">{view.total}</span>', src/reveal/ShareCard.svelte:193 (shareCount), src/render/reading/ReadingRenderer.svelte:95, src/reveal/copy.ts:19 revealNow. (c) Show conditional messages with an element inside {#if}, not a text node that becomes '': src/session/DeviceCheck.svelte:50 becomes {#if info === null}<p class=\"muted\" role=\"status\">{DEVICE_MEASURING}</p>{:else}<p class=\"muted\" role=\"status\"></p>{/if} (Svelte removes the whole <p>, <font> children and all). (d) Add an e2e regression that plays the gate, practice and one item with the simulated translator (the TRANSLATE_INIT script in web/ux-review/personas/nonnative.ux.ts can be moved to e2e/) and asserts the four readouts above.",
+      "files": [
+        "web/src/session/Confidence.svelte",
+        "web/src/session/PracticeScreen.svelte",
+        "web/src/session/DeviceCheck.svelte",
+        "web/src/reveal/ShareCard.svelte",
+        "web/src/session/ProgressRing.svelte",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/reading/ReadingRenderer.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": ["§10", "§4.2"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-02",
+      "severity": "minor",
+      "category": "bug",
+      "title": "Nothing is marked translate=\"no\": the brand name, save codes, the hb_ identifier and key names are handed to the translator",
+      "route": "welcome, ready, results-saved, rt-intro",
+      "env": "Desktop Chrome 1280 light, simulated page translation; DOM audit of translate attributes",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/translate-flow/001-welcome.png",
+        "web/test-results/ux-review/nonnative/translate-results/006-results.png"
+      ],
+      "observed": "The audit at the end of the translated results run found lang=\"en\" on <html>, no translate attribute anywhere, no .notranslate class and no <meta name=\"google\" content=\"notranslate\"> (checks.json: translateNo [], notranslate 0). The brand heading was translated like any text ('HUMANBENCH' in the simulation; a real translator may render 'Human Bench' as two common words in the target language). The save code a person pastes or copies, the random hb_ identifier named in the privacy notice, the key names ('Space bar') and the ± button label are all translatable text nodes too; a translator that rewrites a save code or a key name breaks the thing it names.",
+      "expected": "Everything a person reads is translated; everything a person types back, compares or presses stays as written: the product name, codes, identifiers, key names.",
+      "suggestion": "Add translate=\"no\" to: the brand <h1> in src/session/Welcome.svelte (HEADING) and the brand line of the share card preview; the save-code <textarea>/<code> and the 'paste a save code' field in src/session/Ready.svelte and src/session/Finished.svelte / src/reveal/SavePanel.svelte; the hb_ example in the privacy text (wrap 'hb_' in <code translate=\"no\">); key names in src/render/rt/RtRenderer.svelte and src/selftest/RtSelfTest.svelte (<kbd translate=\"no\">Space</kbd>); the ± button in src/render/common/NumericEntry.svelte. Do not add the page-wide notranslate meta: a second-language reader wants the rest translated.",
+      "files": [
+        "web/src/session/Welcome.svelte",
+        "web/src/session/Ready.svelte",
+        "web/src/session/Finished.svelte",
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/common/NumericEntry.svelte",
+        "web/index.html"
+      ],
+      "spec_refs": ["§10", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-03",
+      "severity": "major",
+      "category": "bug",
+      "title": "On an iPhone set to a decimal-comma language, decimal quant items ask for a keypad whose only separator is the comma, which the app rejects",
+      "route": "quant-item",
+      "env": "iPhone 13 emulation 390 px (inputmode read from the DOM; the iOS keypad itself is not rendered by the emulator)",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/entry-quant-iphone/001-quant-item-1.png",
+        "web/test-results/ux-review/nonnative/entry-quant-chromium/002-quant-item-1-entry-1-rejected.png"
+      ],
+      "observed": "The entry box of integer and decimal items has inputmode=\"decimal\" (src/render/common/entry-copy.ts:34-36). iOS shows the decimal pad with the separator of the device language: a comma for German, French, Spanish, Portuguese, Italian, Dutch, Turkish, Russian and most of Europe and South America, and no point, no slash and no way to switch to the full keyboard. The parser rejects a decimal comma by design ('0,5' is in the rejected list of src/tasks/quant/numeric.test.ts:38), and the note then says 'Use digits and an optional decimal point, for example 12.5.' Two quant templates have decimal keys (src/tasks/quant/templates.ts:221 percent/discount and :378 rate/avg_speed; keys have at most two decimal places), so such a reader meets an item whose correct answer cannot be typed on the keypad offered. Integer items are unaffected (no separator needed; the ± button covers the sign) and fraction items ask for the full keyboard (inputmode=\"text\"). On desktop the same person types '3,5', is told to use a point, and can.",
+      "expected": "A decimal answer can be typed on whatever keypad the app asks for; a reader who types the comma their keyboard offers is understood or at least given a key that works.",
+      "suggestion": "Two ways, the first needs the owner because the bank's hb.gen.quant implements the same grammar (A1): (a) read one comma followed by one or two digits as a decimal comma in src/tasks/quant/numeric.ts parseEntry ('3,5' -> 3.5, '12,25' -> 12.25; a thousands group is always exactly three digits, so '1,533' stays 1533 and only 'd,ddd' stays ambiguous, see L2-04), and the same in the bank's parser and tests. (b) UI only: in src/render/common/NumericEntry.svelte, when format is 'decimal' and Intl.NumberFormat(navigator.language).formatToParts(1.1) has a decimal part ',', either render inputmode=\"text\" (full keyboard, point available) or add a '.' key button beside ± that inserts a point at the caret; and word the decimal note as 'Use a point (.) for decimals, not a comma: 12.5.' (src/render/common/entry-copy.ts:15).",
+      "files": [
+        "web/src/render/common/entry-copy.ts",
+        "web/src/render/common/NumericEntry.svelte",
+        "web/src/tasks/quant/numeric.ts",
+        "web/src/tasks/quant/templates.ts"
+      ],
+      "spec_refs": ["§4.2", "A1", "A18"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-04",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "'1,500' is accepted silently as one thousand five hundred, and '3.5' is accepted on an 'Enter an integer' item",
+      "route": "quant-item",
+      "env": "Desktop Chrome 1280 light and iPhone 13 390 px (same result)",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/entry-quant-chromium/009-quant-item-2-entry-1-accepted.png",
+        "web/test-results/ux-review/nonnative/entry-quant-chromium/002-quant-item-1-entry-1-rejected.png",
+        "web/test-results/ux-review/nonnative/entry-quant-chromium/007-quant-item-1-entry-6-accepted.png"
+      ],
+      "observed": "For a decimal-comma typist '1,500' means one and a half; the app recorded it ('Answer recorded.') and the parser reads 1500 (THOUSANDS_RE in src/tasks/quant/numeric.ts). '3,5' and '1,5' are rejected with a note, so the one comma entry that gets through is the one with exactly three digits after it, and it gets through with the wrong meaning. Separately, on the item whose hint says 'Enter an integer, such as 42 or -7.', '3.5' was accepted (QuantRenderer accepts = parseEntry(t) !== null, src/render/quant/QuantRenderer.svelte:21) and scores 0 against an exact key, while the note shown for other entries on the same item says the answer must be a whole number. Series items reject '1,500' and '3.5' (parseIntegerResponse is strict), so the two families disagree.",
+      "expected": "An entry that the hint says is not in the right format is sent back with the format note, like the others; a comma is never silently read as a thousands separator for someone who meant a decimal.",
+      "suggestion": "Pub-only part: make quant's accepts check the item's format, not just parseability: for format 'integer', accepts = (t) => { const v = parseEntry(t); return v !== null && v.isInteger() } (or denominator 1n) so '3.5' gets FORMAT_NOTES.integer like '3,5' does. Owner part (bank grammar, A1): either read a single comma as a decimal comma when it is followed by one or two digits and reject 'd,ddd' as ambiguous with a note 'Write thousands without a comma (1500) and decimals with a point (1.5).', or keep thousands commas but only when the key is at least 1000. Record the choice in the quant template docs (src/tasks/quant/templates.ts:22-27) and the bank tests.",
+      "files": [
+        "web/src/render/quant/QuantRenderer.svelte",
+        "web/src/tasks/quant/numeric.ts",
+        "web/src/tasks/quant/numeric.test.ts",
+        "web/src/render/common/entry-copy.ts"
+      ],
+      "spec_refs": ["§4.2", "A1", "§10"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-05",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Full-width and Arabic-Indic digits and '1 000' are refused with a note that says 'use digits'",
+      "route": "item-matrix-series, quant-item",
+      "env": "Desktop Chrome 1280 light and iPhone 13 390 px",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/entry-series-chromium/004-series-item-1-entry-3-rejected.png",
+        "web/test-results/ux-review/nonnative/entry-series-chromium/005-series-item-1-entry-4-rejected.png",
+        "web/test-results/ux-review/nonnative/entry-series-chromium/003-series-item-1-entry-2-rejected.png"
+      ],
+      "observed": "'１２' (U+FF11 U+FF12, what a Japanese or Chinese IME produces in full-width mode) and '٣٥' (U+0663 U+0665, Arabic-Indic digits) are rejected on series and quant items with 'That entry could not be read as a whole number. Use digits, with a minus sign if needed, for example 42 or -7.' The person did type digits. '1 000' (a space as thousands separator, common in French and Russian habits) gets the same note, which does not mention spaces. aria-invalid=\"true\" is set and the note is announced, which is good; the note just does not say what is wrong. Leading and trailing spaces (' 7 ') are accepted on both families; '-7' and the ± button work.",
+      "expected": "Either the entry is understood (a digit is a digit) or the note names the rule that was broken: the digits 0 to 9, no spaces, no commas.",
+      "suggestion": "In src/render/common/NumericEntry.svelte, normalise before accepts/onsubmit: text.normalize('NFKC') (full-width to ASCII) and map other Unicode decimal digits with a small table (Arabic-Indic U+0660-0669, Extended U+06F0-06F9, Devanagari U+0966-096F are the common ones), and remove inner spaces and U+00A0/U+202F for the integer and decimal formats; the stored response is then plain ASCII, so the bank's parser (A1) sees nothing new. Also reword src/render/common/entry-copy.ts:14-15: integer -> 'That entry could not be read as a whole number. Use only the digits 0 to 9, with no spaces or commas, and a minus sign if needed, for example 42 or -7.'; decimal -> 'That entry could not be read as a number. Use only the digits 0 to 9 and a point (.) for decimals, with no spaces or commas, for example 12.5.'",
+      "files": [
+        "web/src/render/common/NumericEntry.svelte",
+        "web/src/render/common/entry-copy.ts"
+      ],
+      "spec_refs": ["§4.2", "A18", "R-5.6.x"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-06",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Two words for one thing in the typed-entry items: integer/whole number, sequence/series, term/number",
+      "route": "quant-item, item-matrix-series, results-open",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/tour/quant-item/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/item-matrix-series/1280-light.png",
+        "web/test-results/ux-review/nonnative/entry-quant-chromium/002-quant-item-1-entry-1-rejected.png"
+      ],
+      "observed": "On a quant item the hint says 'Enter an integer, such as 42 or -7.' (src/tasks/quant/templates.ts:73) and the note under it, after a bad entry, says '…could not be read as a whole number…' (src/render/common/entry-copy.ts:14); the series hint for the same format says 'Enter a whole number' (entry-copy.ts:24) and the quant fraction hint says 'or an integer' (templates.ts:75) where the shared one says 'or a whole number' (entry-copy.ts:26). 'Integer' is a maths word a B2 reader may not know; 'whole number' they do. The series prompt asks 'What comes next in this sequence?' with the field labelled 'Next term' (src/render/series/SeriesRenderer.svelte:33,43), and the worked example later asks 'What is the next term of this series?' (src/reveal/copy.ts:114): sequence and series for the same thing, and 'term' twice. The question itself never says whether a number or a letter is wanted; only the hint under the box does (and a letter series shows the same prompt).",
+      "expected": "One plain word per idea, used everywhere: 'whole number', 'sequence', 'number'/'letter'.",
+      "suggestion": "src/tasks/quant/templates.ts:73 -> 'Enter a whole number, such as 42 or -7.'; :75 -> 'Enter a fraction such as 3/8, or a whole number.' (these hints are generated item content mirrored in the bank, A1/A14, so the bank's hb.gen.quant text changes in step: owner). Pub-only: src/render/series/SeriesRenderer.svelte:43 label -> {spec.input_format === 'letter' ? 'Next letter' : 'Next number'} and :38 sr text -> 'missing next {letter|number}'; :33 prompt -> 'Which number comes next in this sequence?' / 'Which letter comes next in this sequence?' by format; src/reveal/copy.ts:114 -> 'What is the next number in this sequence?'.",
+      "files": [
+        "web/src/tasks/quant/templates.ts",
+        "web/src/render/common/entry-copy.ts",
+        "web/src/render/series/SeriesRenderer.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": ["§4.2", "A1", "A14"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-07",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Task instructions that read two ways for a second-language reader: 'key' vs 'keys', 'mirror-imaged', 'what pure guessing would give'",
+      "route": "coding-intro, item-spatial, confidence, memory-intro",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/tour/coding-intro/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/item-spatial/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/confidence/1280-light.png"
+      ],
+      "observed": "Coding intro (src/render/coding/CodingRenderer.svelte:138-139): 'Each shape in the key above has a digit. Shapes will appear one at a time: type the digit that goes with each shape, using the keypad or the number keys…' uses 'key' for the legend and 'keys' for keyboard keys in the same breath (29-word sentence). Spatial stem (src/render/rotation/copy.ts:11, quoted from DESIGN's example item): 'Which option is the same object as the target, rotated? (Not mirror-imaged.)' -- 'mirror-imaged' is a rare verb form, and the route reads at Flesch 41. Confidence hint (src/session/copy.ts:112-115): '17% is what pure guessing would give among 6 options.' is a nominal construction ('what X would give') that B2 readers parse slowly. Memory intro: 'enter them in the same order you saw them, using the keypad or the number keys, then choose Done' is fine but long; 'Sequences get longer as you go' is idiomatic ('as you go').",
+      "expected": "Each instruction says one thing in the order it happens, with everyday words.",
+      "suggestion": "CodingRenderer.svelte:138-139 -> 'Each shape in the table above has a digit. Shapes will appear one at a time. For each shape, type its digit, with the on-screen keypad or the number keys on your keyboard. Be as fast and as accurate as you can. You have {spec.duration_s} seconds.' (rename the legend's aria-label to 'Shape-to-digit table' too). render/rotation/copy.ts:11 -> 'Which option shows the same object as the target, turned around? A mirror image does not count.' (owner: the stem is quoted from a DESIGN example item). session/copy.ts:115 -> 'With {optionsCount} options, guessing would be right about {floorPct}% of the time. 100% means you are certain.' Memory intro -> '…When the sequence ends, type the digits in the same order, with the keypad or the number keys, then choose Done. The sequences get longer step by step.'",
+      "files": [
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/rotation/copy.ts",
+        "web/src/session/copy.ts",
+        "web/src/render/span/DigitSpanRenderer.svelte"
+      ],
+      "spec_refs": ["§4.2", "§10", "R-5.6.x"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-08",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Idioms and figurative phrases in instructions, buttons and notes (grouped, with replacements)",
+      "route": "device, gate, break-offer, confirm-skip, results-saved, results, notes, notes-returning",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/tour/device/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/results-saved/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/notes/1280-light.png",
+        "web/test-results/ux-review/baseline/tour/notes-returning/1280-light.png"
+      ],
+      "observed": "Phrases a B2 reader has to guess at, with where they are: 'keep this window in front' (src/session/copy.ts:48; 'in front' of what?); 'coarse details of your device' (:24; 'coarse' is C1 vocabulary); 'A short break can help you stay sharp' (:172); 'Almost there' as the clock text past the target (:167); 'Keep going' as the answer to 'Skip X?' and 'Finish now?' (:125, :129, :174; it reads as encouragement, not as 'cancel'); 'how many sessions it rests on' (src/reveal/copy.ts:70); 'Whiskers show 90% intervals' (src/viz/copy.ts:33; a box-plot term); 'your notes tell the assistant how to pitch its explanations' (src/brief/copy.ts:79); 'are due for another look' (src/brief/returning.ts:84); 'A study Project or Gem' (src/brief/contexts.ts:56; ChatGPT and Gemini product words without the product names); 'Sit somewhere quiet' is fine.",
+      "expected": "Instructions use literal, everyday English; the cancel button of a confirm says what it does.",
+      "suggestion": "session/copy.ts:48 -> 'Sit somewhere quiet and keep this browser window open and on top of other windows.'; :24 -> 'basic details of your device'; :172 -> 'A short break can help you stay focused.'; :167 -> 'Over the planned time'; :125/:129/:174 -> 'Continue the session' (the e2e specs press 'Keep going' by name, so update e2e/flow.ts and the specs that use it); reveal/copy.ts:70 -> 'how many sessions it is based on'; viz/copy.ts:33 -> 'The thin lines through each marker show the 90% ranges; where one crosses 0 SD, the marker is hollow and the line turns grey.'; brief/copy.ts:79 -> 'how to adjust its explanations'; brief/returning.ts:84 -> 'The notes you made in {month} should be checked again.'; brief/contexts.ts:56 -> 'A study space in your assistant (a ChatGPT Project or a Gemini Gem): the answer first, plain words, …'.",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/viz/copy.ts",
+        "web/src/brief/copy.ts",
+        "web/src/brief/returning.ts",
+        "web/src/brief/contexts.ts"
+      ],
+      "spec_refs": ["R-5.6.x", "§10", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-09",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Brand-voice figures of speech a B2 reader will not get: 'jagged', 'one honest picture', 'Ready when you are', 'tightens the picture', 'sharpen', 'blob' before any blob is seen",
+      "route": "welcome, honour, ready, results",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/tour/welcome/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/honour/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/results/1280-light.png"
+      ],
+      "observed": "Tagline 'A jagged profile of how you think: short tasks, one honest picture.' (src/session/copy.ts:13; 'jagged' is rare, 'honest picture' is figurative; index.html's meta description says 'jagged-blob'). Ready heading 'Ready when you are' (:66) is an idiom with no verb a learner can look up. Honour code: 'Your blob is only meaningful if it's yours.' (:39) is the first time 'blob' appears, three screens before anything blob-shaped; a reader who does not know the word does not know what they are agreeing about (the sentence is fixed word-for-word by DESIGN §13). Results: 'Coming back for more' (src/reveal/copy.ts:120), 'A second look tightens the picture.' (:121), 'Pick the parts you want to sharpen.' (:131). None blocks anyone; together they set a tone that says 'this is written for native speakers'.",
+      "expected": "The voice can stay warm with plain words; a term of art ('blob') is introduced before it is used in a promise.",
+      "suggestion": "Owner decisions (voice, and one DESIGN-fixed sentence): tagline alternative 'A profile of how you think, with its peaks and dips: short tasks, one fair picture.'; READY_HEADING -> 'Ready to begin?'; RETEST_HEADING -> 'Coming back for a second session'; RETEST_INTRO -> 'A second session makes the picture more precise. Here is what to expect, and where another session helps most.'; FOCUS_TEXT -> 'Pick the parts you want to measure more precisely. …'. For the honour code, keep the §13 sentence and add a lead-in line above it that defines the word: 'Your profile is drawn as a shape we call the blob.' (or move 'blob' into the welcome intro).",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/reveal/copy.ts",
+        "web/index.html"
+      ],
+      "spec_refs": ["§13", "§9", "R-5.6.x"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-10",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Jargon and abbreviations at first contact: ms, Hz, SD before it is expanded, 90% interval vs range, provisional, consensus-keyed, Calibration/Metacognition, '(wide range)'",
+      "route": "device, interstitial, results, ready-returning",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/tour/device/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/interstitial/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/results/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/ready-returning/1280-light.png"
+      ],
+      "observed": "Device check: 'Timer precision 0.1 ms', 'Screen refresh rate 60 Hz' (src/session/DeviceCheck.svelte:60,62) with no words. Session checklist from the first interstitial on: 'Estimation / Calibration/Metacognition / With each answer' (src/engine/axes.ts:119, src/session/copy.ts:156): three words a newcomer cannot decode, and nothing on the screen says what is measured with each answer. Results: the table caption 'Estimates by skill, in SD units on a provisional scale, with 90% intervals.' and headers 'Estimate (SD)', '90% interval (SD)', 'Compared with 0 SD' (src/viz/copy.ts:53-58) come before the only expansion 'standard-deviation (SD) units' (:26, under the chart); the same quantity is '90% interval' in the table, bars note and chart caption (:33, :57, :61) and '90% range' in the peaks and retest sections (src/reveal/copy.ts:39, :127-129, peakDetail); '(timed, recall or estimate measures with provisional norms)' and '(consensus-keyed items, less certain)' (viz/copy.ts:42-48) are research wording; '(wide range)' as a tag on parts in the focus picker (reveal/copy.ts:137) is unexplained until the results page.",
+      "expected": "Each abbreviation is spelled out the first time it appears on a page, one word is used per idea, and a label a person cannot act on is glossed in plain words.",
+      "suggestion": "Pub-only: DeviceCheck.svelte:62 -> '{info.timer_res_ms} ms (thousandths of a second)'; :60 -> '{hz} Hz (pictures per second)'. viz/copy.ts:53 -> 'Estimates by skill, in standard-deviation (SD) units on a provisional scale (still being calibrated), each with a 90% range.'; :57 -> '90% range (SD)'; :33 and :61 'interval' -> 'range'; facetCaption likewise; then 'range' is the one word (the peaks and retest copy already use it). viz/copy.ts:42-48 TIER_TEXT b -> 'timed, memory or estimate tasks; the comparison scale is still provisional', c -> 'questions scored by agreement between people, so less certain'. reveal/copy.ts:137 FOCUS_SUGGESTED -> 'still uncertain'. Owner (axis names are DESIGN §3): show a gloss under the checklist row, e.g. session/copy.ts:156 CHECKLIST_EMBEDDED_STATUS -> 'With each answer: how well your confidence matches your results', or rename the axis for readers to 'Confidence calibration'.",
+      "files": [
+        "web/src/session/DeviceCheck.svelte",
+        "web/src/viz/copy.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/session/copy.ts",
+        "web/src/engine/axes.ts"
+      ],
+      "spec_refs": ["§9", "A12", "§3", "R-5.6.x"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-11",
+      "severity": "minor",
+      "category": "copy",
+      "title": "The narrow blob uses short skill names that differ from the table ('Matrices', 'Arguments', 'Arts & life', 'Speed'), and 'Estimation' names both a skill and a cluster",
+      "route": "results",
+      "env": "Desktop Chrome at 390 px (wide font + 200% text zoom) and the narrow blob labels in general",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/expand/results/390-light.png",
+        "web/test-results/ux-review/nonnative/tour/results/1280-light.png"
+      ],
+      "observed": "At narrow widths the blob labels come from the short names in src/viz/profile.ts:97-111: 'Matrices' for Matrix & Series, 'Arguments' for Logical Reasoning, 'Arts & life' for Arts & Practical Knowledge, 'Reading' for Reading Comprehension, 'Speed' for Processing & Reading Speed, 'Memory' for Working Memory, 'Estimation' for Fermi Estimation. The table under the chart and the peaks list use the full names, so a reader has to match 'Arguments' to 'Logical Reasoning' by position; a second-language reader cannot rely on the near-synonym. 'Estimation' is also the cluster of Calibration and Fermi in the checklist and the drill-down buttons ('Explore a cluster: … Estimation'), so one word points at two different things on the same page.",
+      "expected": "A short label is a recognisable cut of the full name, and no skill shares its short name with a cluster.",
+      "suggestion": "src/viz/profile.ts short names: MAT -> 'Matrix/Series', LR -> 'Logical', KAP -> 'Arts/Practical', RC -> 'Reading comp.', PS -> 'Reading speed', WM -> 'Working mem.', FER -> 'Fermi'. Owner decision on naming taste; the e2e snapshots of the narrow blob (e2e/*-snapshots) would need regenerating.",
+      "files": [
+        "web/src/viz/profile.ts",
+        "web/src/engine/axes.ts"
+      ],
+      "spec_refs": ["§9", "A12"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-12",
+      "severity": "minor",
+      "category": "content",
+      "title": "The reading passage is 19th-century travel prose; for a second-language reader the speed and comprehension score is a vocabulary test, and the norms line compares with first-language figures",
+      "route": "reading-passage, results",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/tour/reading-passage/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/results/1280-light.png"
+      ],
+      "observed": "The passage on the reading-passage route is Isabella Bird's 1879 letters: 'grub', 'plenty of bedding', 'ill found', 'Rosinante', 'careworn', 'print skirt', 'short-gown', 'sun-bonnet', 'girth', 'fore-legs', 'matter ran from both his nearly-blind eyes'; 7 sentences over 25 words in a 210-word paragraph (Flesch 73 only because the words are short). A B2 reader slows down on every second line and misses idioms the questions may hinge on, so the timed block measures English exposure, not processing speed. The results then say 'You read a passage at about 222 words per minute. A review of 190 studies found that silent reading averages about 238 words per minute…' (src/reveal/copy.ts:149) without saying that those are first-language figures. Item content is bank-mirrored (A1/A14) and the results line is in the reveal copy, so neither is edited in this pass.",
+      "expected": "Passages in plain modern English at a known level (CEFR B2 vocabulary), or a note that the comparison assumes reading in one's first language.",
+      "suggestion": "Bank (owner): prefer modern plain non-fiction passages and tag each passage with a readability band; keep public-domain classics for a separate 'literary' variant if wanted. Pub, results (owner, gated wording): add a sentence to the reading line, src/reveal/copy.ts:149: 'The comparison figures are for people reading in their first language.' and, if the pub has the information, let a person mark the session as 'English is not my first language' so the line is shown as a note, never as a comparison.",
+      "files": [
+        "web/src/reveal/copy.ts",
+        "web/src/tasks/reading/synthetic.ts"
+      ],
+      "spec_refs": ["A1", "A14", "§3", "R-5.6.x"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "L2-13",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Sentences over 25 words on the results, privacy, coding-intro and self-test pages (grouped, with rewrites)",
+      "route": "results-open, privacy, coding-intro, rt-selftest",
+      "env": "Desktop Chrome 1280 light (readability metrics of the tour)",
+      "screenshots": [
+        "web/test-results/ux-review/baseline/tour/results-open/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/privacy/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/coding-intro/1280-light.png"
+      ],
+      "observed": "Counting words per sentence in the toured text: privacy 'What this version keeps' first sentence 58 words (src/session/copy.ts PRIVACY_SECTIONS); results chart caption 'The light band spans ±1 SD, and the soft edge around the line fades out across each 90% interval: the darker the shading, the more plausible that value.' 28 words (src/viz/copy.ts:33); 'Peaks compare each skill with the rest of your own profile, so they can differ from the hollow grey and filled blue marks in the chart, which compare with 0 SD.' 31 words (src/reveal/copy.ts:37); share-card intro sentence 3, 26 words (:70); reading norm line 28 words (:149); reaction-time norm line 'Times on the web run tens of milliseconds slower…' 26 words; coding intro 29 words (src/render/coding/CodingRenderer.svelte:138); self-test intro 34 words (src/selftest/RtSelfTest.svelte:255). Most other routes have none, and the results pages read at Flesch 77-79 overall, so these are the exceptions.",
+      "expected": "One idea per sentence; a list where a sentence enumerates.",
+      "suggestion": "PRIVACY 'What this version keeps' -> 'While you take part, HumanBench keeps: your answers; how long each took; how sure you said you were; basic details of your device: its class (desktop, tablet or phone), the type of input you used, the family of your system and browser (no version numbers), your window size, your screen refresh rate and your timer precision.' (render as a <ul>). viz/copy.ts:33 -> 'The solid line is the most likely profile. The light band covers ±1 SD. The soft edge fades out across each 90% range: the darker the shading, the more likely that value. The thin lines through the markers show the 90% ranges. Where a range crosses 0 SD, the marker is hollow and the line turns grey.' reveal/copy.ts:37 -> 'Peaks compare each skill with the rest of your own profile. The hollow grey and filled blue marks in the chart compare with 0 SD instead, so the two can differ.' :70 -> '…It shows the skills you leave ticked, your most distinctive peaks and how many sessions it is based on. It never shows a total or a single score.' :149 -> '…A review of 190 studies found that people read silently at about 238 words per minute for non-fiction and 260 for fiction. The studies differed widely (SD 51). One passage is a rough guide.' CodingRenderer: see L2-07.",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/viz/copy.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/selftest/RtSelfTest.svelte"
+      ],
+      "spec_refs": ["R-5.6.x", "§9", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-14",
+      "severity": "polish",
+      "category": "layout",
+      "title": "With a wide font and 200% text zoom at 390 px, headings and checklist labels break mid-word without hyphens ('Quantitati / ve', 'Spatial/Memor / y'); no clipping or sideways overflow anywhere",
+      "route": "quant-item, item-matrix-series",
+      "env": "Desktop Chrome at 390 px, Verdana + 0.06em letter spacing (e2e/wide-font.ts) and html font-size 200%",
+      "screenshots": [
+        "web/test-results/ux-review/nonnative/expand/quant-item/390-light.png",
+        "web/test-results/ux-review/nonnative/expand/results/1280-light.png"
+      ],
+      "observed": "Across 10 routes x 2 widths the metrics report overflowX 0 px and no clipped text, and the 1280 px results page with the expanded blob keeps its labels apart. At 390 px the h1 'Quantitative Reasoning' wraps as 'Quantitati' / 've' / 'Reasoning' and the checklist shows 'Spatial/Memor' / 'y' and 'Calibration/Meta' / 'cognition' (break-anywhere behaviour; the slash is not a break opportunity in the checklist, although src/viz/BarTable.svelte:41 adds one for the same label in the table). This is a simulated worst case (wide face + letter spacing + 200%), so it is unlikely to be met exactly like this; a long German or Finnish translation of these labels would hit the same wrapping rules at 200% alone.",
+      "expected": "Words break at a slash or with a hyphen, never in the middle of a syllable, before the layout runs out of room.",
+      "suggestion": "In src/session/Checklist.svelte, render cluster names with a <wbr> after each '/' (reuse the BarTable approach); on h1 and label styles prefer overflow-wrap: break-word; hyphens: auto (lang=\"en\" is set on <html>, so Chromium and WebKit hyphenate properly) over overflow-wrap: anywhere / word-break: break-all, keeping 'anywhere' only for untranslatable tokens such as save codes.",
+      "files": [
+        "web/src/session/Checklist.svelte",
+        "web/src/viz/BarTable.svelte",
+        "web/src/app.css"
+      ],
+      "spec_refs": ["WCAG 1.4.4", "WCAG 1.4.10"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "L2-15",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Formats shown to people: a month as '2025-01', seconds as 's', '2×' for image scale; minus, decimal point and × are otherwise consistent",
+      "route": "notes-returning, results-open, results-saved",
+      "env": "Desktop Chrome 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/baseline/tour/notes-returning/1280-light.png",
+        "web/test-results/ux-review/baseline/tour/results-open/1280-light.png",
+        "web/test-results/ux-review/nonnative/tour/results-saved/1280-light.png"
+      ],
+      "observed": "Notes page notice: 'The notes you made in 2025-01 are due for another look.' (src/brief/returning.ts:84, month = today.slice(0, 7) at :104): a machine date in a sentence. Pace list: 'about 45 s per question' ('s' for seconds, the only unit abbreviation that is not spelled out where it is used). Share card: 'The PNG is 2400 × 1260 px, the card at 2×.' (src/reveal/copy.ts:90): '2×' is unexplained. Good: the true minus sign (−) is used in series terms and in every estimate ('−0.10 to +1.86'), decimals use a point throughout and the parser also accepts a typed hyphen or U+2212 minus, window size uses '1280 × 720', durations are 'about 30 minutes' / 'About 3 min.', percentages are plain ('50%', 'about 25%'), and 'words per minute' is spelled out.",
+      "expected": "Dates, units and scales read as words a person would say.",
+      "suggestion": "src/brief/returning.ts: format the month for display with new Intl.DateTimeFormat(document.documentElement.lang || 'en', { month: 'long', year: 'numeric' }).format(new Date(`${month}-01T00:00:00`)) -> 'January 2025' (keep YYYY-MM in storage). Pace lines: 'about 45 seconds per question'. reveal/copy.ts:90 -> 'The PNG is 2400 × 1260 pixels (twice the card size, for sharp screens). The SVG is 1200 × 630 pixels and stays sharp at any size.'",
+      "files": [
+        "web/src/brief/returning.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/reveal/NumbersSection.svelte"
+      ],
+      "spec_refs": ["R-5.6.x"],
+      "confidence": "high",
+      "owner_decision": false
+    }
+  ]
+}

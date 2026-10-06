@@ -5,11 +5,12 @@
  */
 
 import fc from 'fast-check'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quant, type QuantItem } from '../../tasks/quant'
 import { parseEntry } from '../../tasks/quant/numeric'
 import type { QuantResponse } from '../../tasks/quant/score'
 import { FORMAT_NOTES } from '../common/entry-copy'
+import { normalizeEntry } from '../common/normalize-digits'
 import { normalizeIds } from '../common/leak'
 import { buttonByText, click, fakeDisplay, render, typeInto } from '../common/testing'
 import QuantRenderer from './QuantRenderer.svelte'
@@ -98,14 +99,101 @@ describe('QuantRenderer', () => {
           const m = mountItem(item)
           typeInto(m.input, text)
           m.submit()
-          const ok = parseEntry(text) !== null
+          // The box sends the typed text normalised (UX-024); a whole-number item takes whole numbers only.
+          const sent = normalizeEntry(text, item.spec.input_format)
+          const value = parseEntry(sent)
+          const ok = value !== null && (item.spec.input_format !== 'integer' || value.isInteger())
           expect(m.responses.length).toBe(ok ? 1 : 0)
+          if (ok) expect(m.responses[0]).toBe(sent)
           if (!ok && text.trim() !== '') expect(m.container.querySelector('.hb-note')?.textContent).toBe(FORMAT_NOTES[item.spec.input_format])
           m.destroy()
         },
       ),
       { numRuns: 80 },
     )
+  })
+
+  /** A generated item with a given answer format. */
+  function itemOf(format: QuantItem['spec']['input_format']): QuantItem {
+    for (let i = 0; i < 2000; i++) {
+      const item = quant.generate(`render-quant-format-${i}`)
+      if (item.spec.input_format === format) return item
+    }
+    throw new Error(`no ${format} quant item`)
+  }
+
+  it('a whole-number item does not take 3.5: it gets the format note and nothing is sent (UX-024)', () => {
+    const item = itemOf('integer')
+    const m = mountItem(item)
+    for (const text of ['3.5', '7/2', '0.25']) {
+      typeInto(m.input, text)
+      m.submit()
+      expect(m.responses, text).toEqual([])
+      expect(m.container.querySelector('.hb-note')?.textContent, text).toBe(FORMAT_NOTES.integer)
+    }
+    // Whole numbers in any spelling still go through (the parser reads "12.0" and "24/2" as 12).
+    typeInto(m.input, '12')
+    m.submit()
+    expect(m.responses).toEqual(['12'])
+  })
+
+  it('the format notes name the rule that was broken, in plain words (UX-024)', () => {
+    expect(FORMAT_NOTES.integer).toBe('That entry could not be read as a whole number. Use only the digits 0 to 9, with no spaces or commas, and a minus sign if needed, for example 42 or -7.')
+    expect(FORMAT_NOTES.decimal).toBe('That entry could not be read as a number. Use only the digits 0 to 9 and a point (.) for decimals, with no spaces or commas, for example 12.5.')
+  })
+
+  it('digits of other scripts and full-width digits submit as ASCII; a mixed number keeps its spaces (UX-024)', () => {
+    const item = itemOf('integer')
+    const m = mountItem(item)
+    typeInto(m.input, '１２')
+    m.submit()
+    expect(m.responses).toEqual(['12'])
+    m.destroy()
+    const again = mountItem(item)
+    typeInto(again.input, '٣٥')
+    again.submit()
+    expect(again.responses).toEqual(['35'])
+    again.destroy()
+  })
+
+  it('a decimal item offers a point key where the number pad may not have one (a comma language), inserting at the caret (UX-024)', () => {
+    const decimal = (() => {
+      try {
+        return itemOf('decimal')
+      } catch {
+        return null
+      }
+    })()
+    if (decimal === null) return
+    const language = vi.spyOn(navigator, 'language', 'get')
+    try {
+      language.mockReturnValue('en-GB')
+      expect(mountItem(decimal).container.querySelector('button[aria-label="Decimal point"]')).toBeNull()
+      language.mockReturnValue('de-DE')
+      const m = mountItem(decimal)
+      const point = m.container.querySelector<HTMLButtonElement>('button[aria-label="Decimal point"]')
+      expect(point).not.toBeNull()
+      expect(point?.getAttribute('translate')).toBe('no')
+      typeInto(m.input, '125')
+      m.input.setSelectionRange(2, 2)
+      click(point)
+      expect(m.input.value).toBe('12.5')
+      expect(m.input.selectionStart).toBe(3)
+      expect(document.activeElement).toBe(m.input)
+    } finally {
+      language.mockRestore()
+    }
+  })
+
+  it('an integer item has a sign key but no point key, in any language', () => {
+    const language = vi.spyOn(navigator, 'language', 'get').mockReturnValue('de-DE')
+    try {
+      const m = mountItem(itemOf('integer'))
+      expect(m.container.querySelector('button[aria-label="Change sign"]')?.getAttribute('translate')).toBe('no')
+      expect(m.container.querySelector('button[aria-label="Decimal point"]')).toBeNull()
+    } finally {
+      language.mockRestore()
+    }
   })
 
   it('matches its snapshot', () => {

@@ -9,9 +9,17 @@
   would carry its level into the visible numbers), again after every tick.
 
   The PNG is prepared shortly after the card changes (debounced), so that the download and share
-  buttons act inside the click, where iOS wants them. The SVG is always ready.
+  buttons act inside the click, where iOS wants them. The SVG is always ready. While the PNG is
+  being prepared its buttons are `aria-disabled` (still in the Tab order, clicks ignored, the
+  "Preparing" note as their description) rather than `disabled`, which Tab would skip (UX-032).
+  With fewer than the minimum of measured skills there is nothing to tick: the panel says what a
+  card needs instead. A link opens the card at full size in a new tab (the preview is a thumbnail on
+  a phone). The count line is mounted empty and filled a moment later, with its number in a
+  `translate="no"` element: a page translator replaces text nodes, and a number written into a
+  replaced node never shows.
 -->
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { N_AXES, type AxisCode } from '../engine/axes'
   import { wallClockMs } from '../save/clock'
   import { buildCard, cardAxes, cardSvg, CARD_H, CARD_W, EMO_CODE, MIN_CARD_SKILLS, PNG_SCALE } from '../viz/card'
@@ -38,9 +46,11 @@
     SHARE_SVG,
     SHARE_SVG_DONE,
     SHARE_EMO_RULE,
-    shareCount,
+    SHARE_FULLSIZE,
+    shareCountParts,
+    shareNeedsMore,
     sharePngDone,
-    shareTooFew,
+    shareTooFewParts,
   } from './copy'
   import { distinctivePeaks } from './peaks'
   import './reveal.css'
@@ -79,6 +89,13 @@
   }: Props = $props()
 
   const uid = $props.id()
+  /** How long after mount the count line gets its text: the live region has to exist, empty, before its text arrives. */
+  const COUNT_AFTER_MS = 100
+  let counted = $state(false)
+  onMount(() => {
+    const timer = setTimeout(() => (counted = true), COUNT_AFTER_MS)
+    return () => clearTimeout(timer)
+  })
   let hidden = $state<AxisCode[]>([])
   let theme = $state<ThemeName>('light')
   let message = $state('')
@@ -95,6 +112,25 @@
   const peaks = $derived(shownCount >= MIN_CARD_SKILLS ? distinctivePeaks(score, shownCodes, { max: N_AXES }) : [])
   const card = $derived(shownCount >= MIN_CARD_SKILLS ? buildCard({ estimates, hidden, peaks, sessions, theme }) : null)
   const previewUrl = $derived(card === null ? '' : svgDataUrl(card.svg))
+  // Fewer measured skills than a card needs: nothing to tick, so the panel says what would unlock one (UX-032).
+  const needsMore = $derived(offered.length < MIN_CARD_SKILLS)
+  const preparing = $derived(card !== null && png === null && !pngFailed)
+
+  // The card at full size, in a new tab: the SVG, which is ready with the preview. Not every environment has object URLs.
+  let fullUrl = $state('')
+  $effect(() => {
+    const c = card
+    fullUrl = ''
+    if (c === null || typeof URL.createObjectURL !== 'function') return
+    let url = ''
+    try {
+      url = URL.createObjectURL(svgBlob(c.svg))
+    } catch {
+      return
+    }
+    fullUrl = url
+    return () => URL.revokeObjectURL(url)
+  })
 
   // The PNG for the card as it is now, made a moment after the last change.
   $effect(() => {
@@ -158,61 +194,95 @@
 <div class="share" data-share-card>
   <p>{SHARE_INTRO}</p>
 
-  <fieldset class="skills" aria-describedby="{uid}-help">
-    <legend>{SHARE_SKILLS_LEGEND}</legend>
-    <p class="note" id="{uid}-help">{SHARE_SKILLS_HELP}</p>
-    <div class="hb-actions">
-      <button type="button" class="hb-btn" onclick={showAll}>{SHARE_SHOW_ALL}</button>
-      <button type="button" class="hb-btn" onclick={hideAll}>{SHARE_HIDE_ALL}</button>
-    </div>
-    <div class="grid">
-      {#each offered as a (a.estimate.code)}
-        <label>
-          <input
-            type="checkbox"
-            checked={a.status === 'shown'}
-            data-skill={a.estimate.code}
-            onchange={(e) => toggle(a.estimate.code, e.currentTarget.checked)}
-          />
-          <span>{a.estimate.name}</span>
-        </label>
-      {/each}
-    </div>
+  {#if needsMore}
+    <p class="needs-more" data-needs-more>{shareNeedsMore(MIN_CARD_SKILLS, offered.length)}</p>
     {#if emo !== undefined}
-      <!-- The rule is stated the same way whatever the estimate is, so the note itself says nothing about it. -->
       <p class="note emo-rule" data-emo-rule data-withheld={emo.status === 'withheld' ? emo.estimate.code : undefined}><strong>{emo.estimate.name}:</strong> {SHARE_EMO_RULE}</p>
     {/if}
-  </fieldset>
+  {:else}
+    <fieldset class="skills" aria-describedby="{uid}-help">
+      <legend>{SHARE_SKILLS_LEGEND}</legend>
+      <p class="note" id="{uid}-help">{SHARE_SKILLS_HELP}</p>
+      <div class="hb-actions">
+        <button type="button" class="hb-btn" onclick={showAll}>{SHARE_SHOW_ALL}</button>
+        <button type="button" class="hb-btn" onclick={hideAll}>{SHARE_HIDE_ALL}</button>
+      </div>
+      <div class="grid">
+        {#each offered as a (a.estimate.code)}
+          <label>
+            <input
+              type="checkbox"
+              checked={a.status === 'shown'}
+              data-skill={a.estimate.code}
+              onchange={(e) => toggle(a.estimate.code, e.currentTarget.checked)}
+            />
+            <span>{a.estimate.name}</span>
+          </label>
+        {/each}
+      </div>
+      {#if emo !== undefined}
+        <!-- The rule is stated the same way whatever the estimate is, so the note itself says nothing about it. -->
+        <p class="note emo-rule" data-emo-rule data-withheld={emo.status === 'withheld' ? emo.estimate.code : undefined}><strong>{emo.estimate.name}:</strong> {SHARE_EMO_RULE}</p>
+      {/if}
+    </fieldset>
 
-  <fieldset class="colours">
-    <legend>{SHARE_COLOURS_LEGEND}</legend>
-    <label><input type="radio" name="{uid}-colours" value="light" checked={theme === 'light'} onchange={() => (theme = 'light')} /> <span>{SHARE_LIGHT}</span></label>
-    <label><input type="radio" name="{uid}-colours" value="dark" checked={theme === 'dark'} onchange={() => (theme = 'dark')} /> <span>{SHARE_DARK}</span></label>
-  </fieldset>
+    <fieldset class="colours">
+      <legend>{SHARE_COLOURS_LEGEND}</legend>
+      <label><input type="radio" name="{uid}-colours" value="light" checked={theme === 'light'} onchange={() => (theme = 'light')} /> <span>{SHARE_LIGHT}</span></label>
+      <label><input type="radio" name="{uid}-colours" value="dark" checked={theme === 'dark'} onchange={() => (theme = 'dark')} /> <span>{SHARE_DARK}</span></label>
+    </fieldset>
 
-  <p class="hb-status" role="status" data-count>{card === null ? shareTooFew(shownCount, MIN_CARD_SKILLS) : shareCount(shownCount)}</p>
+    <p class="hb-status" role="status" data-count>
+      {#if counted}
+        {#if card === null}
+          {@const [before, n, after] = shareTooFewParts(shownCount, MIN_CARD_SKILLS)}
+          {before}<span translate="no">{n}</span>{after}
+        {:else}
+          {@const [n, rest] = shareCountParts(shownCount)}
+          <span translate="no">{n}</span>{rest}
+        {/if}
+      {/if}
+    </p>
 
-  {#if card !== null}
-    <figure class="preview">
-      <img src={previewUrl} alt={card.alt} width={CARD_W} height={CARD_H} data-preview />
-    </figure>
-  {/if}
-
-  <div class="hb-actions">
-    <button type="button" class="hb-btn hb-primary" disabled={png === null} onclick={savePng}>{SHARE_PNG}</button>
-    <button type="button" class="hb-btn" disabled={card === null} onclick={saveSvg}>{SHARE_SVG}</button>
-    {#if canShare}
-      <button type="button" class="hb-btn" disabled={png === null} onclick={() => void sharePng()}>{SHARE_SHARE}</button>
+    {#if card !== null}
+      <figure class="preview">
+        <img src={previewUrl} alt={card.alt} width={CARD_W} height={CARD_H} data-preview />
+      </figure>
+      {#if fullUrl !== ''}
+        <p class="note fullsize"><a href={fullUrl} target="_blank" rel="noopener" data-fullsize>{SHARE_FULLSIZE}</a></p>
+      {/if}
     {/if}
-  </div>
-  {#if card !== null && png === null && !pngFailed}
-    <p class="note" data-preparing>{SHARE_PREPARING}</p>
+
+    <div class="hb-actions">
+      <button
+        type="button"
+        class="hb-btn hb-primary"
+        disabled={card === null || pngFailed}
+        aria-disabled={preparing ? 'true' : undefined}
+        aria-describedby={preparing ? `${uid}-preparing` : undefined}
+        onclick={savePng}>{SHARE_PNG}</button
+      >
+      <button type="button" class="hb-btn" disabled={card === null} onclick={saveSvg}>{SHARE_SVG}</button>
+      {#if canShare}
+        <button
+          type="button"
+          class="hb-btn"
+          disabled={card === null || pngFailed}
+          aria-disabled={preparing ? 'true' : undefined}
+          aria-describedby={preparing ? `${uid}-preparing` : undefined}
+          onclick={() => void sharePng()}>{SHARE_SHARE}</button
+        >
+      {/if}
+    </div>
+    {#if preparing}
+      <p class="note" id="{uid}-preparing" data-preparing>{SHARE_PREPARING}</p>
+    {/if}
+    {#if pngFailed}
+      <p class="error" role="alert">{SHARE_PNG_FAILED}</p>
+    {/if}
+    <p class="hb-status" role="status" data-message>{message}</p>
+    <p class="note">{SHARE_SIZES}</p>
   {/if}
-  {#if pngFailed}
-    <p class="error" role="alert">{SHARE_PNG_FAILED}</p>
-  {/if}
-  <p class="hb-status" role="status" data-message>{message}</p>
-  <p class="note">{SHARE_SIZES}</p>
 </div>
 
 <style>
@@ -270,5 +340,18 @@
   }
   .error {
     color: var(--r-note);
+  }
+  .hb-btn[aria-disabled='true'] {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .fullsize {
+    margin: 0 0 0.5rem;
+  }
+  .fullsize a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    color: var(--r-accent);
   }
 </style>

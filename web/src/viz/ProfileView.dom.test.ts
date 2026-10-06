@@ -55,8 +55,9 @@ const button = (root: HTMLElement, text: string): HTMLButtonElement | undefined 
 const AGGREGATE_WORDS = /\b(areas?|totals?|overall|sum(?:med|s)?|composite|aggregate|average|mean|combined|g[- ]factor|general ability|percentiles?|rank(?:ed|ing)?|IQ)\b/i
 
 /** Every number a reader can see must be one of these: per-spoke values, ring labels, fixed copy numbers. */
-function allowedNumbers(rows: readonly (SpokeEstimate & { nItems?: number })[]): Set<string> {
-  const ok = new Set(['1', '2', '3', '0', '90', String(FACET_MIN_ITEMS)])
+function allowedNumbers(rows: readonly (SpokeEstimate & { nItems?: number })[], facetCount = 0): Set<string> {
+  // The count of facets in "None of the 4 facets of Speed has enough data yet" is a count of facets, not a score.
+  const ok = new Set(['1', '2', '3', '0', '90', String(FACET_MIN_ITEMS), String(facetCount)])
   for (const r of rows) {
     if (r.nItems !== undefined) ok.add(String(r.nItems))
     if (!r.measured) continue
@@ -88,9 +89,9 @@ describe('ProfileView structure (§9, A15)', () => {
     const root = render(p)
     const svg = root.querySelector('svg.hb-blob')!
     expect(svg.getAttribute('role')).toBe('img')
-    const labelled = svg.getAttribute('aria-labelledby')!.split(' ').map((id) => document.getElementById(id)?.textContent)
-    expect(labelled[0]).toBe('Skill profile blob')
-    expect(labelled[1]).toMatch(/table/)
+    // Named by its title alone; the description is the description (a long name is read as one string, UX-047).
+    expect(svg.getAttribute('aria-labelledby')!.split(' ').map((id) => document.getElementById(id)?.textContent)).toEqual(['Skill profile blob'])
+    expect(document.getElementById(svg.getAttribute('aria-describedby')!)!.textContent).toMatch(/table/)
     expect(svg.getAttribute('data-spokes')).toBe('17')
     expect(svg.querySelectorAll('g.mark')).toHaveLength(17)
     const est = axisEstimates(p.input)
@@ -134,7 +135,9 @@ describe('ProfileView structure (§9, A15)', () => {
     for (const e of est) {
       const row = root.querySelector(`tr[data-row="${e.id}"]`)!
       expect(row.classList.contains('muted')).toBe(e.muted)
-      expect(row.textContent).toContain(e.muted ? 'Overlaps 0 SD' : e.relation === 'above' ? 'Above 0 SD' : 'Below 0 SD')
+      // "0 SD" is held together by non-breaking spaces (UX-043); the words are the same.
+      expect(row.textContent!.replace(/\u00a0/g, ' ')).toContain(e.muted ? 'Overlaps 0 SD' : e.relation === 'above' ? 'Above 0 SD' : 'Below 0 SD')
+      expect(row.querySelector('td.relation')!.textContent).toMatch(/\u00a0\d\u00a0SD$/)
     }
   })
 
@@ -142,7 +145,8 @@ describe('ProfileView structure (§9, A15)', () => {
     const root = render(syntheticProfile('full')!)
     const header = (id: string): HTMLElement => root.querySelector(`tr[data-row="${id}"] th`)!
     expect(header('WM').querySelector('[aria-hidden="true"]')!.textContent).toContain('○')
-    expect(header('WM').textContent).toContain('provisional norms')
+    expect(header('WM').textContent).toContain('compared with provisional typical values')
+    expect(header('EMO').textContent).toContain('scored by how most people respond')
     expect(header('EMO').querySelector('[aria-hidden="true"]')!.textContent).toContain('◇')
     expect(header('MAT').querySelector('.glyph')).toBeNull()
     expect(root.querySelectorAll('path.hatch')).toHaveLength(2)
@@ -287,12 +291,13 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     for (const r of rows) {
       const tr = panel.querySelector(`tr[data-row="${r.id}"]`)!
       if (r.measured) expect(tr.textContent).toContain(formatTheta(r.theta!))
-      else expect(tr.querySelector('td.stub')!.textContent).toBe(`Insufficient data (${r.nItems} items; 5 needed)`)
+      else expect(tr.querySelector('td.stub')!.textContent).toBe(`Insufficient data (${r.nItems} questions; 5 needed)`)
     }
-    // Four facets: a sub-blob, with "insufficient data" stubs.
-    const sub = panel.querySelector('svg.hb-blob')!
-    expect(sub.getAttribute('data-spokes')).toBe('4')
-    expect([...sub.querySelectorAll('text.label.unmeasured')].map((t) => t.textContent)).toEqual(['Fractioninsufficient data', 'Ratioinsufficient data'])
+    // Plain names, and no generator code anywhere in the panel (UX-040).
+    expect([...panel.querySelectorAll('tbody th')].map((th) => th.textContent!.trim())).toEqual(['Percentages', 'Arithmetic', 'Fractions', 'Ratios'])
+    expect(panel.textContent).not.toMatch(/_|\bPercent\b|\bitems?\b|\bblocks?\b/)
+    // Two of the four are measured: too few for a chart of its own (UX-041), so the table stands alone.
+    expect(panel.querySelector('svg.hb-blob')).toBeNull()
     click(btn)
     expect(root.querySelector('.facet-panel')).toBeNull()
   })
@@ -302,16 +307,21 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     click(root.querySelector('path.wedge[data-group="Speed"]'))
     expect(root.querySelector('.facet-panel h3')!.textContent).toBe('Speed: facets')
     expect(button(root, 'Speed')!.getAttribute('aria-expanded')).toBe('true')
-    // One block per facet: below the threshold, so no numbers, counted in blocks (A12, A18).
-    const stubs = [...root.querySelectorAll('.facet-panel td.stub')].map((td) => td.textContent)
-    expect(stubs).toHaveLength(4)
-    expect(stubs.every((t) => t === 'Insufficient data (1 block; 5 needed)')).toBe(true)
+    // One timed task per facet: below the threshold, so no numbers and no empty chart or table of the same stub (UX-041, A12, A18).
+    expect(root.querySelectorAll('.facet-panel td.stub')).toHaveLength(0)
+    expect(root.querySelector('.facet-panel svg.hb-blob')).toBeNull()
+    expect(root.querySelector('.facet-panel .facet-none')!.textContent).toBe(
+      'None of the 4 facets of Speed has enough data yet: each needs 5 scored questions or timed tasks. Facets fill in over several sessions.',
+    )
+    expect([...root.querySelectorAll('.facet-panel ul.facet-names li')].map((li) => li.textContent)).toEqual(['Simple reaction time', 'Choice reaction time', 'Shape to digit', 'Reading speed'])
   })
 
   it('facets of a skipped axis read "not measured (skipped)"', () => {
     const root = render(syntheticProfile('skipped')!)
     click(button(root, 'Spatial/Memory'))
+    // Not "none have enough data": the skill was skipped, so the table keeps the reason per facet.
     expect(root.querySelector('.facet-panel tr[data-row="SPA:3d_rotation"] td.stub')!.textContent).toBe('Not measured (skipped)')
+    expect(root.querySelector('.facet-panel .facet-none')).toBeNull()
   })
 
   it('the facet sub-blob has no clickable wedges (only the main blob drills down)', () => {
@@ -344,7 +354,7 @@ describe('no area, total or single score anywhere (§9.5 a, CLAUDE.md blob rule,
         act()
         const selected = root.querySelector('.facet-panel')?.getAttribute('data-cluster')
         const facetRows = selected ? clusterFacets(p.input.score, p.facetObservations, selected as (typeof CLUSTERS)[number], { catalog: p.catalog, unmeasured: unmeasuredReasons(est) }) : []
-        const allowed = allowedNumbers([...est, ...facetRows])
+        const allowed = allowedNumbers([...est, ...facetRows], facetRows.length)
         const { text, attrs } = textAndAttributes(root)
         expect(text.match(AGGREGATE_WORDS), `${name}: text`).toBeNull()
         for (const a of attrs) expect(a.match(AGGREGATE_WORDS), `${name}: ${a}`).toBeNull()

@@ -14,7 +14,8 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
+/* Screen only: paper stays light, whatever the system scheme (UX-015). */
+@media screen and (prefers-color-scheme: dark) {
   :root {
     --text: #c9c7cf;
     --text-strong: #f4f3f6;
@@ -56,4 +57,34 @@ button {
   display: inline-block;
   min-height: 24px;
   line-height: 24px;
+}
+
+/*
+ * Printing (UX-015): the page is a column that flows over as many sheets as it needs, and paper is white
+ * whatever the system theme. The screen's flex column with a minimum height of the window would lay the
+ * footer over the end of the content, and a dark system theme would print light text with no dark
+ * background behind it (browsers leave backgrounds out). The text takes the system colours of a light page,
+ * not the dark tokens (those are for screens only, above); the disclaimer stays in one piece.
+ */
+@media print {
+  :root {
+    color-scheme: light;
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  body {
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  #app {
+    display: block;
+    min-height: 0;
+  }
+
+  footer {
+    break-inside: avoid;
+    border-top-color: GrayText;
+  }
 }

@@ -15,7 +15,7 @@ import { variantsOf } from '../../tasks/quant/templates'
 import { series } from '../../tasks/series'
 import type { SeriesItem } from '../../tasks/series/types'
 import { RULE_NAMES } from '../../tasks/series/rules'
-import { QUANT_SOLVED_VARIANTS, hasQuantSolution, matrixSolution, pickWorkedItems, quantSolution, seriesSolution, siblingFamilyIds, workedSeed, workedSolutionOf } from '.'
+import { FALLBACK_STRATA, QUANT_SOLVED_VARIANTS, hasQuantSolution, matrixSolution, pickWorkedItems, quantSolution, seriesSolution, siblingFamilyIds, workedSeed, workedSolutionOf } from '.'
 import { Fraction, frac } from '../../tasks/quant/fraction'
 import { decimalText } from './quant'
 import { WORKED_KINDS } from './types'
@@ -108,6 +108,24 @@ describe('quant worked solutions', () => {
       }
     }
   })
+
+  it('never writes a coefficient of 1 ("subtract 1x"): it is "x" (UX-035)', () => {
+    let met = 0
+    for (let i = 0; i < 6_000; i++) {
+      const item = quant.generate(`wc:${i}`, { stratum: 2 }) as QuantItem
+      const sp = item.structural_params as { template: string; variant: string }
+      if (!hasQuantSolution(sp.template, sp.variant)) continue
+      const sol = quantSolution(item)!
+      for (const step of sol.steps) expect(step, `${item.item_id}: ${step}`).not.toMatch(/(^|[^\d.])1x\b/)
+      const given = item.spec.given as Record<string, number>
+      if (sp.template === 'linear_eq' && sp.variant !== 'over' && given.c === 1) {
+        met++
+        expect(sol.steps.join(' ')).toMatch(/[Ss]ubtract x from both sides/)
+      }
+    }
+    // The test bites: items with a coefficient of 1 on the right-hand side do come up.
+    expect(met).toBeGreaterThan(5)
+  }, 60_000)
 
   it('writes decimals for decimal answers and never "p/q" for a terminating one', () => {
     expect(decimalText(frac(375, 2))).toBe('187.5')
@@ -239,10 +257,36 @@ describe('pickWorkedItems', () => {
     for (let n = 0; n < 2_000; n++) {
       seen.add(matrices.generate(workedSeed('s_ALLSEEN', 'matrix', n), { stratum: 2 }).family_id)
     }
-    // Matrix families at stratum 2 are far fewer than 2,000 draws cover: none is left to show.
-    const w = pickWorkedItems('s_ALLSEEN', seen)
+    // Matrix families at stratum 2 are far fewer than 2,000 draws cover: none is left to show at that stratum.
+    // (A stratum that is fixed is not widened: the fallback to neighbouring strata is tested below.)
+    const w = pickWorkedItems('s_ALLSEEN', seen, { matrix: 2 })
     expect(w.map((x) => x.kind)).toEqual(['series', 'quant'])
   }, 60_000)
+
+  it('widens to a neighbouring stratum when every family of a kind is used up at its own (UX-035), and still leaves out what was seen', () => {
+    // Quant has about a dozen families per stratum: a person who met them all would be shown two examples.
+    const seen = new Set<string>()
+    for (let n = 0; n < 2_000; n++) seen.add(quant.generate(workedSeed('s_QUANTUSED', 'quant', n), { stratum: 2 }).family_id)
+    const fixed = pickWorkedItems('s_QUANTUSED', seen, { quant: 2 })
+    expect(fixed.map((x) => x.kind)).toEqual(['matrix', 'series'])
+    const widened = pickWorkedItems('s_QUANTUSED', seen)
+    expect(widened.map((x) => x.kind)).toEqual(['matrix', 'series', 'quant'])
+    const q = widened.find((x) => x.kind === 'quant')!
+    expect(q.item.stratum).toBe(1)
+    for (const f of q.families) expect(seen.has(f)).toBe(false)
+    expect(pickWorkedItems('s_QUANTUSED', seen).map((x) => x.item.item_id)).toEqual(widened.map((x) => x.item.item_id))
+  }, 60_000)
+
+  it('the strata tried start with the kind\'s own and are in range', () => {
+    expect(FALLBACK_STRATA.matrix[0]).toBe(2)
+    expect(FALLBACK_STRATA.series[0]).toBe(3)
+    expect(FALLBACK_STRATA.quant[0]).toBe(2)
+    for (const kind of WORKED_KINDS) for (const st of FALLBACK_STRATA[kind]) expect([1, 2, 3, 4, 5]).toContain(st)
+  })
+
+  it('titles the sequence a sequence', () => {
+    expect(pickWorkedItems('s_WORKEDTITLE01', []).map((w) => w.title)).toEqual(['Matrix', 'Sequence', 'Quantitative'])
+  })
 
   it('uses no randomness of its own: same inputs, same examples', () => {
     const one = pickWorkedItems('s_DETERMINISM0001', ['f:x:0'])

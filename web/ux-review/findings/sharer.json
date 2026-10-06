@@ -1,0 +1,616 @@
+{
+  "reviewer": "sharer",
+  "model": "sonnet",
+  "summary": "Pat (iPhone and laptop; wants to show friends the blob and keep results for next time) was played on Chromium 1280x720, WebKit desktop and an iPhone 13 emulation with the persona specs web/ux-review/personas/sharer.ux.ts (save panel, leave guard, share sheet, share card exports) and sharer-b.ux.ts (AI helper, notes builder, second device, load errors, two extra flows); raw numbers are in web/test-results/ux-review/sharer/*/facts.json. The exports themselves are in good shape: the save downloads as humanbench-<id>-<date>.hbsave.json (about 9 KB, one line of RFC 8785 JSON), the PNG is exactly 2400x1260 and the SVG 1200x630, there is no A13 term, no total, no notes text, no resource line on any card, the clipboard holds a real save code, and every kind of damaged code or renamed file I tried is either loaded or refused with a message beside the button. The weak spot is the loop around the file, which is the heart of 'keep the results for next time': a file that is chosen but not loaded is silently ignored by Begin (the earlier sessions vanish into a second, unrelated save), a pasted code is ignored once a bad file has been chosen, there is no way to open earlier results without a fake 'finished early' session that adds an empty session to the save, and 'Stay and save' leaves the person 2,000 to 3,000 px from the Save panel. Smaller points: the Save panel never says what the file is for, where it went or what is lost without it, 'Save code copied.' appears twice, after a short session the card panel asks for 3 skills when only 1 exists, the card is full of unexplained SD and its fine print is unreadable at feed size, and the notes builder is a 10,000+ px page with no way back. Not testable here: real iOS Safari downloads, the iOS share sheet, the browser's own leave prompt (only the guarded beforeunload event), and Emotion Reading on the card (not measured in this build, so R-5.6.4 holds trivially).",
+  "coverage": [
+    "save panel: Download save file (filename, size, JSON keys, sessions), Copy save code (clipboard read back on Chromium; message on all three), Share or save to an app (navigator.share/canShare stub recording files, title, text), leave guard (unloadIsGuarded before and after, the Leave without saving? question, Stay and save, Leave anyway), message after saving: Chromium, WebKit desktop, iPhone 13",
+    "share card: toggles, Show all, Hide all, exactly 2 and 3 ticked, Light and Dark, PNG (2400x1260 verified from the IHDR) and SVG downloads (1200x630), Share image (stub), shrunk to 600x315 and 340 px, SVG opened on its own at 1200 and 390 px; content checks on the SVG (emotion, total words, notes markers, A13 lint, resource line)",
+    "talking about results: the link from the card, the helper, the clipboard text (340 characters), the Notes for your AI link in a new tab (Chromium, WebKit, iPhone 13)",
+    "notes builder: opened from the after-save card, one use, one topic, one choice, copy (clipboard compared), download, keep settings, reload, load settings from the results save and from the notes page save on a second device (Chromium full; iPhone 13 and WebKit as far as listed in facts)",
+    "second device: fresh browser context loads device A's file on the ready screen, plays a short ?fast=1 session (reaction skipped, one item), results, saves again, card panel; a third context pastes a wrapped code (Chromium, WebKit, iPhone 13)",
+    "bad inputs on the ready screen (17 cases x Chromium, iPhone 13, WebKit): nothing chosen, truncated, hand-edited, random text, empty, 9 MB, JSON not a save, JSON list, newer version, PNG, wrapped code, code inside an email, cut code, mistyped code, code with a space, bad file then good code, real save renamed .txt",
+    "extra flows: file chosen but Begin pressed without Load (Chromium, iPhone 13), where Stay and save lands (Chromium, WebKit, iPhone 13)",
+    "not covered: real iPhone Safari (download location, share sheet, beforeunload on tab swipe), Pixel/iPhone SE widths, axe/keyboard (other reviewers), the served backend (mirror, verify)"
+  ],
+  "findings": [
+    {
+      "id": "SHARE-01",
+      "severity": "major",
+      "category": "bug",
+      "title": "A save file that is chosen but not loaded is ignored when Begin is pressed, and the earlier results are silently dropped",
+      "route": "ready (returning person)",
+      "env": "Chromium 1280x720 and iPhone 13 (WebKit emulation), ?fast=1; WebKit desktop behaves the same",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/forgot-load-iphone/001-file-chosen-not-loaded.png",
+        "web/test-results/ux-review/sharer/forgot-load-chromium/001-file-chosen-not-loaded.png",
+        "web/test-results/ux-review/sharer/device2-iphone-b/002-b-ready-loaded.png"
+      ],
+      "observed": "On the ready screen the primary 'Begin' button comes first; 'Continue from a save file' (file field, code box, 'Load') sits below it (iPhone 13: Begin at y=177, Load at y=601 of a 664 px viewport). Choosing a file shows its name in the field but nothing is read until 'Load' is pressed, and the confirmation ('Loaded 1 earlier session. Your new session will be added to it.') appears under Load, out of sight whenever Begin is in view. I chose a valid save (1 session), pressed Begin, answered one item, finished early and downloaded the result: the new file holds 1 session (the new one only) and a different anon_id from the file I chose (forgot-load-*/facts: sessionsInSave 1, anonIdSame false, on Chromium and iPhone). Nothing warned that a chosen file had not been loaded, so a returning person ends with two unrelated save files and a profile that rests on one session.",
+      "expected": "Picking a file can never be silently ignored: either choosing it loads it, or Begin warns first.",
+      "suggestion": "In Ready.svelte load on selection: add onchange to the file input (and a debounced oninput on the code box) that calls load(). If load-on-change is not wanted, make onbegin check `(fileInput?.files?.length ?? 0) > 0 || code.trim() !== ''` while `choices.loaded === null` and show, instead of starting: 'You chose a save file but have not loaded it yet. Press Load to add your new session to it, or clear the file to begin without it.' When an earlier save is on the device or was just loaded, show 'Continuing from 1 earlier session' next to Begin, and put the 'Continue from a save file' block above Begin.",
+      "files": [
+        "web/src/session/Ready.svelte"
+      ],
+      "spec_refs": [
+        "R-8.1",
+        "DESIGN §8 (merging)",
+        "ROADMAP M1.15"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-02",
+      "severity": "major",
+      "category": "bug",
+      "title": "After a failed file load a valid pasted save code is ignored, because the chosen file always wins",
+      "route": "ready",
+      "env": "Chromium 1280x720, iPhone 13 and WebKit desktop (identical)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/bad-chromium/016-case-file-then-code.png",
+        "web/test-results/ux-review/sharer/bad-chromium/017-case-file-then-code-after-good-code.png"
+      ],
+      "observed": "I chose a text file that is not a save and pressed Load: 'The content is not a HumanBench save or save code.' I then pasted a valid, complete save code into 'Or paste a save code' and pressed Load again: the same error came back and the code was never read (bad-*/facts: file-then-code, messageAfterGoodCode is the error, fileStillChosen 'notes.txt'). In Ready.svelte load() reads `fileInput.files[0]` first and uses the code only when no file is chosen; the file name stays in the field and nothing says the code was skipped. The save code is the documented fallback when a file will not load (iOS renames or truncates files, DESIGN §8), and a phone browser offers no way to clear the file field, so the person is stuck at exactly the moment they used the fallback.",
+      "expected": "A pasted code is used when the chosen file failed (or whenever the code box has text and the file is bad), and the screen shows what was read.",
+      "suggestion": "In load(): `let r = file !== undefined ? await readSaveFile(file) : null; if ((r === null || !r.ok) && code.trim() !== '') r = await parseSaveText(code)`. After any failed file read clear it (`fileInput.value = ''`) so the field matches what the next press will read. Add a Ready dom test: bad file, then valid code, expect 'Loaded N earlier sessions'.",
+      "files": [
+        "web/src/session/Ready.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §8 (download and upload compatibility)"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-03",
+      "severity": "major",
+      "category": "flow",
+      "title": "There is no way to look at earlier results again: the only route is Begin, Finish early, Finish now, which also adds an empty session to the save",
+      "route": "ready-returning, then results",
+      "env": "Chromium 1280x720 and iPhone 13, ?fast=1",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/save-panel-iphone/001-results-top.png",
+        "web/test-results/ux-review/sharer/device2-chromium-b/002-b-ready-loaded.png"
+      ],
+      "observed": "Pat saved a file 'to keep the results for next time'. To see the blob again from that file (or from the autosave) the path is Start, honour code, device check (the 18+ gate is skipped on a device that remembers it), Ready, load the file, Begin, 'Finish early', 'Finish now'. The Ready screen offers only Begin, practice questions and a focus session. The results then open as 'Session complete / You finished early, so some parts are not measured. / You answered 0 questions and completed 0 timed tasks in about 1 min.', and the save downloaded from them holds an extra session with 0 responses and duration 0 (save-panel-chromium/dl-*.hbsave.json: sessions [33 responses, 0 responses], flags.finished_early true). Every look at old results therefore grows the file by an empty session. (The skimmer reported the same gap; this is the returning-person view of it.)",
+      "expected": "Loading a save offers 'Show my results': the profile is built from the loaded sessions, headed as the person's results, and no empty session is recorded.",
+      "suggestion": "On Ready, when a save is loaded or autosaves are found, add a secondary button 'Show my results' that runs the same buildResults(base) the finish path uses, with the heading 'Your results' and the line 'Based on N earlier sessions.' in place of 'You finished early...'; do not append a session. Until then, at least word a 0-answer finish as 'No new answers in this session. These are your results from N earlier sessions.' and skip writing a 0-response session into the save.",
+      "files": [
+        "web/src/session/Ready.svelte",
+        "web/src/session/SessionApp.svelte",
+        "web/src/reveal/Reveal.svelte",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §10 (reveal flow)",
+        "DESIGN §8",
+        "R-8.1"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-04",
+      "severity": "major",
+      "category": "flow",
+      "title": "'Stay and save' only closes the question: the Save panel stays 2,000 to 3,000 pixels away",
+      "route": "results-leave",
+      "env": "Chromium 1280x720 (2,092 px), WebKit desktop (2,068 px), iPhone 13 (3,008 px)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/stay-iphone/002-after-stay.png",
+        "web/test-results/ux-review/sharer/stay-chromium/002-after-stay.png",
+        "web/test-results/ux-review/sharer/leave-iphone/001-leave-question.png"
+      ],
+      "observed": "The 'Leave without saving?' question is inline at the very bottom of the results. 'Stay and save' dismisses it and returns focus to 'Back to the start' (Reveal.svelte stay(): `restartButton?.focus()`). After that the Save panel is 2,092 px above the viewport on a laptop (page 4,530 px tall) and 3,008 px above on an iPhone 13 (page 5,468 px): the person sees the same footer as before and must scroll back up with no hint where the save is (stay-*/facts: savePanelRectAfterStay, savePanelInViewAfterStay false). The button label promises saving; it does not take the person to it.",
+      "expected": "'Stay and save' lands on the 'Download save file' button.",
+      "suggestion": "In Reveal.svelte stay(): after `leaving = false; await tick()` scroll the save panel into view and focus its primary button (give SavePanel a bind:this on the download button, or `document.querySelector('[data-section=\"save\"] .hb-primary')?.focus()`), which also scrolls it into view. Keep the return-focus-to-button behaviour only for any other way of closing the question.",
+      "files": [
+        "web/src/reveal/Reveal.svelte",
+        "web/src/reveal/SavePanel.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §10",
+        "ROADMAP M1.R"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-05",
+      "severity": "major",
+      "category": "copy",
+      "title": "After a short session the share card says 'Tick at least 3 skills (1 ticked)' when only one skill exists",
+      "route": "results (real short session), share card panel",
+      "env": "Chromium 1280x720 and iPhone 13, ?fast=1: reaction tasks skipped, one Matrix & Series item answered, finish early",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/device2-chromium/002-a-card-panel.png",
+        "web/test-results/ux-review/sharer/device2-iphone-b/004-b-card-panel.png"
+      ],
+      "observed": "The welcome page invites people to skip any part and finish early. After such a session one skill is measured, so the card panel shows one checkbox ('Matrix & Series'), 'Show all / Hide all', 'Card colours', and the line 'Tick at least 3 skills to make a card (1 ticked).' with the PNG and SVG buttons disabled. The instruction cannot be followed; nothing says that a card needs three measured skills or that more parts or another session would unlock it. Same result on the second device after adding one more short session (device2-*/facts: aCardSkillBoxes 1, aPngEnabled false, bCardSkillBoxes 1).",
+      "expected": "The panel says why there is no card and what would make one.",
+      "suggestion": "In ShareCard.svelte, when fewer than 3 skills are measured replace the toggles, colours and count with: 'A card needs at least 3 measured skills, and this session measured 1. Play more parts or add another session, then come back to make a card.' Keep 'Tick at least 3 skills to make a card (n ticked).' only for a person who has 3 or more measured skills and has unticked some.",
+      "files": [
+        "web/src/reveal/ShareCard.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §9 (export)",
+        "DESIGN §10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-06",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The Save panel sits 2.4 to 2.7 screens down and nothing near the top of the results says they are not saved yet",
+      "route": "results",
+      "env": "Chromium 1280x720 (panel at 1,718 px, 2.4 screens), iPhone 13 (1,796 px, 2.7 screens)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/save-panel-iphone/001-results-top.png",
+        "web/test-results/ux-review/sharer/stay-chromium/003-results-top.png"
+      ],
+      "observed": "The results open with 'Session complete', the summary line, the blob, the skill table and the peaks; 'Save your results' comes after all of that. The first screen on both devices has no sentence about saving (stay-*/facts: topOfPageSaveMentions null). While unsaved the page installs a beforeunload guard (unloadIsGuarded true before saving, false after: save-panel-*/facts), which is the safety net on desktop; iOS Safari generally shows no leave prompt when a tab is closed (not testable here), so on a phone the page text is the only prompt. DESIGN §10 asks for the download to be prominent and required before leaving. (The skimmer also noted the 2.4 screens.)",
+      "expected": "A short line near the top, for example 'Not saved yet: download your save file to keep these results', linking to the Save panel and gone once saved.",
+      "suggestion": "While `!saved`, add under the h1 in Reveal.svelte: 'Your results are not saved yet. Download your save file to keep them.' with an in-page link to the Save panel (give the panel an id, move focus to its heading on activation). Remove it when `saved` becomes true.",
+      "files": [
+        "web/src/reveal/Reveal.svelte",
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §10"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-07",
+      "severity": "minor",
+      "category": "copy",
+      "title": "The Save panel does not say what the file is for, where it went, or what happens if it is lost",
+      "route": "results, results-saved",
+      "env": "Chromium, WebKit desktop and iPhone 13; the same text everywhere",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/save-panel-iphone/002-save-panel-before.png",
+        "web/test-results/ux-review/sharer/save-panel-iphone/003-save-panel-after.png"
+      ],
+      "observed": "Before saving: 'Download your save file before you leave this page. It holds your answers, so it is your copy of the results. This browser keeps a temporary copy too, but clearing its data removes it.' After: 'Save file downloaded.' and 'Your results are saved in your file. You can leave this page safely.' None of it names the file (humanbench-0PkUMq-2026-10-04.hbsave.json), says where it landed (Downloads; on an iPhone, the Files app), says how it is used later (the line 'load your save file on the start screen' exists only far below, under 'Coming back for more'), or says what is lost if the file and the browser data are both gone (save-panel-*/facts: mentionsDownloadsFolder false, bodyHasFileName false, mentionsLost null). SavePanel.doDownload ignores the file name that download() returns. FINISHED_SAVE_TEXT in session/copy.ts already has the 'add later sessions' half but is not used here.",
+      "expected": "Pat can tell what the file does, where to find it, and that losing it loses the results.",
+      "suggestion": "SAVE_PANEL_REQUIRED: 'Download your save file before you leave this page. It holds your answers, so it is your copy of the results: load it on the start screen to open them again or add a later session. This browser keeps a temporary copy too, but clearing its data removes it, and HumanBench keeps no other copy for you.' Keep the name from `download(makeSave())` and show, after downloading: `Saved as ${name}. Look in your Downloads folder (on an iPhone, the Files app) and keep it: you need it to add a later session.` Where the name is not known (share sheet): 'Saved. Keep the file somewhere you can find it: you need it to add a later session.' Pin the new strings in the reveal copy test. Check the sentence 'HumanBench keeps no other copy' against the server-backup mode before shipping it there.",
+      "files": [
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/copy.ts",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §8",
+        "DESIGN §10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-08",
+      "severity": "minor",
+      "category": "bug",
+      "title": "'Save code copied.' appears twice in the message after copying the code, and the message does not say where to paste it",
+      "route": "results",
+      "env": "Chromium, WebKit desktop and iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/copy-code-iphone/001-after-copy-unsaved.png",
+        "web/test-results/ux-review/sharer/copy-code-chromium/001-after-copy-unsaved.png"
+      ],
+      "observed": "Copy save code before downloading shows 'Save code copied. Save code copied. Downloading the file is still the safest way to keep your results.' (copy-code-*/facts: messageUnsaved). SavePanel.svelte line 70 joins FINISHED_COPIED ('Save code copied.') to SAVE_COPIED_NOT_SAVED, which itself starts with 'Save code copied.'. The code is 3,360 characters of text (clipboard read back on Chromium: starts 'H4sI', a gzip in base64); the message does not say where to keep it or where it is used again.",
+      "expected": "One confirmation, then what to do with the code.",
+      "suggestion": "In SavePanel.doCopy use `message = saved ? FINISHED_COPIED : SAVE_COPIED_NOT_SAVED` and reword SAVE_COPIED_NOT_SAVED to: 'Save code copied. Keep it in a note to yourself and paste it under \"Or paste a save code\" on the start screen. Downloading the file is still the safest way to keep your results.' Extend FINISHED_COPIED the same way for the saved case.",
+      "files": [
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §8 (copy code fallback)"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-09",
+      "severity": "minor",
+      "category": "flow",
+      "title": "After saving on a phone the cards that follow are below the fold, and the message invites the person to leave",
+      "route": "results-saved",
+      "env": "iPhone 13 (390x664): card top at 722 px after the save; Chromium 1280x720: card top at 628 px",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/save-panel-iphone/004-after-save-viewport.png",
+        "web/test-results/ux-review/sharer/card-iphone/001-after-save-viewport.png"
+      ],
+      "observed": "On the iPhone the save is followed by 'Your results are saved in your file. You can leave this page safely.' with only the 'After you save' heading peeking in at the bottom edge; the share card panel starts at y=722 in a 664 px viewport and nothing scrolls or moves focus to it (WebKit and iPhone: focus stays on the page body; Chromium: on the Download button). The persona that wants to show friends the blob reads 'you can leave' before reaching the card (card-*/facts: afterSaveCardRect, afterSaveFocus).",
+      "expected": "After the save the person is pointed at what comes next.",
+      "suggestion": "Append to SAVE_DONE: 'Your share card and notes for your AI are just below.' and, after a download or share, `scrollIntoView({block:'start'})` the 'After you save' heading with focus on it (respect reduced motion).",
+      "files": [
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/AfterSave.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §10 (reveal flow: save, then share card)"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-10",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Load errors say what is wrong but almost never what to do, and one uses the word gzip",
+      "route": "ready",
+      "env": "Chromium, iPhone 13 and WebKit desktop (same messages)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/bad-chromium/002-case-truncated.png",
+        "web/test-results/ux-review/sharer/bad-chromium/004-case-random-text.png",
+        "web/test-results/ux-review/sharer/bad-chromium/010-case-card-png.png"
+      ],
+      "observed": "Messages seen (bad-*/facts): truncated file 'The content looks like JSON but is not valid JSON.'; random text and a JSON list 'The content is not a HumanBench save or save code.'; empty 'The file is empty.'; 9 MB file 'The file is too large to be a HumanBench save.'; a JSON file that is not a save 'The content is JSON but not a HumanBench save.'; the share card PNG chosen by mistake 'The file is not text or gzip, so it is not a HumanBench save.'; newer version 'This save was made by a newer version of HumanBench. Reload the page to update, then try again.'; cut-off or mistyped code 'The save code is incomplete or damaged. Copy it again in full.' Only the code messages and the newer-version one say what to do. 'The content' is odd when the person chose a file, 'gzip' means nothing to most people, and a truncated file is not described as cut off. Good: wrapped codes with spaces and line breaks, a code inside other text, a space inside a line and a real save renamed .txt all load (4 of 4), and every error is announced in a role=status line next to Load.",
+      "expected": "Each message names the likely cause and the next step, in plain words.",
+      "suggestion": "parse.ts / Ready.svelte replacement texts: truncated JSON 'This save file looks cut off, so it cannot be read. Download it again from your results, or paste a save code instead.'; not a save / list 'That is not a HumanBench save. Choose the file called humanbench-...hbsave.json (on an iPhone it may end in .txt), or paste a save code.'; empty 'That file is empty. Choose your save file again, or paste a save code.'; too large 'That file is too large to be a HumanBench save (they are a few kilobytes). Choose the file called humanbench-...hbsave.json.'; JSON not a save 'That file is not a HumanBench save. Choose the file called humanbench-...hbsave.json.'; PNG/binary 'That looks like a picture or another kind of file, not a save. Choose the file called humanbench-...hbsave.json, not the card image.'; damaged 'This save file is damaged or was edited into an unreadable form. Try another copy of it, or paste a save code.'",
+      "files": [
+        "web/src/save/parse.ts",
+        "web/src/session/Ready.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §8",
+        "A13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-11",
+      "severity": "minor",
+      "category": "content",
+      "title": "The share card is written for the person, not for the friend: 'SD', 'o' marks and one blue spoke are unexplained",
+      "route": "results-saved (share card PNG and SVG)",
+      "env": "Exported 2400x1260 PNG and 1200x630 SVG, light and dark, Chromium; same on iPhone and WebKit",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-chromium/card-light.png",
+        "web/test-results/ux-review/sharer/card-chromium/card-dark.png"
+      ],
+      "observed": "The card reads 'Stands out by about 1.1 SD', '90% range +0.3 to +1.9 SD', rings '-2 SD ... +2 SD', 'Rings: SD units, provisional / Centre: -3 SD'. SD is never spelled out on the card, the hollow circle after Working Memory, Reaction Time, Processing & Reading Speed and Calibration has no key, and the Calibration spoke alone is drawn in blue with no explanation. A friend who sees only the picture cannot read it. The content rules hold: no emotion skill is on the card (none is measured in this build), no A13 term (lint of the SVG is clean), no total, no notes text and no resource line (card-*/facts: svgHasEmotion false, svgA13Hits [], svgNotesMarkers [], svgResourceLine false).",
+      "expected": "Short plain-words labels so the picture stands alone.",
+      "suggestion": "Spell it out once in the footnote line: 'Rings are standard deviations (SD) from the average, a provisional scale. Hollow circle: rougher estimate.' and either explain the blue Calibration spoke ('Blue: how well confidence matches accuracy') or draw it like the others. Consider 'Stands out most: about 1.1 steps above the other skills on this card' for the headline number. Wording is the owner's call (the card text is exercised by src/viz/export tests and ShareCard.dom.test.ts).",
+      "files": [
+        "web/src/viz/card.ts",
+        "web/src/render/",
+        "web/src/reveal/ShareCard.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §9 (export)",
+        "R-5.6.4"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-12",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Card text is too small to read when the picture is shrunk to a feed size, while the right column has room",
+      "route": "results-saved (share card PNG)",
+      "env": "PNG shrunk in the browser to 600x315 and 340 px wide, light and dark; the on-page preview on an iPhone is 324 px wide",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-chromium-thumbs/001-png-light-600px.png",
+        "web/test-results/ux-review/sharer/card-chromium-thumbs/001-png-dark-340px.png",
+        "web/test-results/ux-review/sharer/card-iphone/002-card-panel.png"
+      ],
+      "observed": "Font sizes in the 1200x630 card: caveats 13, subtitle 14, peak numbers 16, peak name 22, title 38. At 600 px wide the caveats are about 6.5 px and the peak numbers 8 px; at 340 px only the logo, the title and the blob are legible. The right column has a gap of about 200 px between the peak numbers and the caveats (see card-light.png), so the sizes could grow without crowding.",
+      "expected": "The peak name and numbers stay readable at 600 px; the caveats at least about 8 px.",
+      "suggestion": "In the card renderer raise peak number size to 20-22, 'Compared with the other skills' to 18, caveats to 16-17 (a 3-line block fits in the existing gap) and the three footnote lines to a tighter two. Pin a minimum size in the card renderer test (no text under 16 units in the 1200x630 card) so it stays readable at 600 px.",
+      "files": [
+        "web/src/viz/card.ts",
+        "web/src/render/"
+      ],
+      "spec_refs": [
+        "DESIGN §9 (export: 1200x630 social card)"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-13",
+      "severity": "polish",
+      "category": "content",
+      "title": "The card carries no address or hint of what HumanBench is, so a friend cannot find it",
+      "route": "results-saved (share card)",
+      "env": "Exported card, light and dark",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-chromium/card-light.png"
+      ],
+      "observed": "The only brand element is the word 'HumanBench'. There is no web address, no one-line description of what the picture is a profile of ('My skill profile'), and no 'try it' prompt. The share sheet call carries only a title ('HumanBench skill profile') and the file: no text or url (share-sheet/card facts: keys ['files','title']).",
+      "expected": "A friend who sees the image can find the site.",
+      "suggestion": "Add a footer line to the card 'sinkomr.github.io/humanbench' (or the final domain) in the muted style, and pass `url` in navigator.share for the card. Product taste: owner decision.",
+      "files": [
+        "web/src/viz/card.ts",
+        "web/src/reveal/ShareCard.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §9"
+      ],
+      "confidence": "low",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-14",
+      "severity": "minor",
+      "category": "layout",
+      "title": "On a phone the card preview is a 324 px thumbnail below seven checkboxes and cannot be enlarged",
+      "route": "results-saved (share card panel)",
+      "env": "iPhone 13 390x664",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-iphone/002-card-panel.png",
+        "web/test-results/ux-review/sharer/card-iphone/003-toggle-viewport-first-skill.png"
+      ],
+      "observed": "The panel stacks the explanation, a 7-row skill list, the colour choice, the count line and then the preview, 324 x 170 px (card-iphone facts: previewRectWhenToggling). At that size the card text is about 3.5 px; toggling a skill changes only the line '6 skills are on the card.' unless the person scrolls to look at the thumbnail, and there is no way to see the picture at a readable size before downloading it.",
+      "expected": "Pat can check the card before sharing it.",
+      "suggestion": "Make the preview tappable to open it full width (a dialog with the 1200x630 image scaled to the viewport, landscape hint) or place the preview above the toggles and keep it sticky while the checkboxes are on screen.",
+      "files": [
+        "web/src/reveal/ShareCard.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §9"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-15",
+      "severity": "minor",
+      "category": "flow",
+      "title": "On a phone the first action for the card is 'Download image (PNG)'; the share sheet, which is how people post, is the third button",
+      "route": "results-saved (share card panel)",
+      "env": "iPhone 13 (navigator.share present); Chromium desktop has no Share image button",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-iphone/002-card-panel.png",
+        "web/test-results/ux-review/sharer/native-share-iphone/002-panel.png"
+      ],
+      "observed": "Button order and weight: 'Download image (PNG)' (blue), 'Download vector image (SVG)', 'Share image'. On iOS a download goes to the Files app, not Photos or Messages; the share sheet (stubbed here: called with humanbench-card-2026-10-03.png, image/png, title 'HumanBench skill profile', no text) is the route to Photos and chats. I could not check a real iPhone download.",
+      "expected": "Where the device can share files, 'Share image' is the main action and the SVG sits in a quieter place.",
+      "suggestion": "When `navigator.canShare({files})` is true, render 'Share image' as the primary button first and move the PNG/SVG downloads below it under 'Save a copy'. Product taste: owner decision.",
+      "files": [
+        "web/src/reveal/ShareCard.svelte"
+      ],
+      "spec_refs": [
+        "DESIGN §8 (share fallbacks)"
+      ],
+      "confidence": "low",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-16",
+      "severity": "polish",
+      "category": "bug",
+      "title": "The exported SVG has a fixed 1200x630 size, so opened on its own in a narrow browser it is cropped",
+      "route": "results-saved (SVG export)",
+      "env": "Chromium with a 390 px wide viewport opening card-light.svg directly (emulation, not a real iPhone)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-chromium-thumbs/svg-light-phone-standalone.png",
+        "web/test-results/ux-review/sharer/card-chromium-thumbs/svg-dark-standalone.png"
+      ],
+      "observed": "The root element is `<svg width=\"1200\" height=\"630\" viewBox=\"0 0 1200 630\" ...>`. Opened directly at 390 px wide it renders at 1200 px and shows only the left third. At 1200 px it is correct (second screenshot). The panel text 'stays sharp at any size' is true, but the file does not shrink to fit.",
+      "expected": "A directly opened SVG fits the window.",
+      "suggestion": "Add `style=\"max-width:100%;height:auto\"` to the root element (design tools ignore it and keep the 1200x630 size). Low confidence: real mobile Safari may scale a standalone SVG by itself.",
+      "files": [
+        "web/src/viz/export.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §9 (export)"
+      ],
+      "confidence": "low",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-17",
+      "severity": "minor",
+      "category": "copy",
+      "title": "File names carry only a date: two saves on one day, and the light and dark card, get identical names; save and card dates can disagree",
+      "route": "results-saved",
+      "env": "Chromium, WebKit, iPhone 13; runs at about 18:50 and 23:45 PDT on 2026-10-03, when the UTC date is already 2026-10-04",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/card-chromium/002-card-panel.png",
+        "web/test-results/ux-review/sharer/device2-chromium/002-a-card-panel.png"
+      ],
+      "observed": "Second-device run: device A's save and device B's save (after one more short session) are both 'humanbench-0PkUMq-2026-10-04.hbsave.json' (device2-*/facts: nameA, nameB), so the browser will add '(1)' and Pat cannot tell which is newer. The light and dark PNG are both 'humanbench-card-2026-10-03.png' (card-*/facts: files). The save name takes its date from created_utc (UTC, 2026-10-04) while the card name uses the local date (2026-10-03) for the same minute (in the evening in the Americas the save is named for tomorrow). Good: sensible names, no personal data, and the short id stays the same across saves of one person (sameAnonId true).",
+      "expected": "Names that sort and distinguish: 'humanbench-0PkUMq-2026-10-03.hbsave.json' on the person's own date, and a theme in the card name.",
+      "suggestion": "Name the card 'humanbench-card-light-2026-10-03.png' / '...-dark-...'; use the same (local or UTC) date for both and say which in the SAVE_DONE text. DESIGN §8 fixes the save name as humanbench-<shortid>-<date>.hbsave.json, so adding a time or session count (e.g. -s2) is an owner decision.",
+      "files": [
+        "web/src/save/io.ts",
+        "web/src/viz/export.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §8 (format)"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-18",
+      "severity": "minor",
+      "category": "copy",
+      "title": "The results-talk helper says 'Paste this first.' and never says what to paste next",
+      "route": "results-saved (talking about results with an AI)",
+      "env": "Chromium, WebKit, iPhone 13; clipboard read back on Chromium (340 characters, identical to the preamble)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/talk-chromium/001-ai-card.png",
+        "web/test-results/ux-review/sharer/talk-iphone/001-ai-card.png"
+      ],
+      "observed": "The card says 'Talking about your results with an AI? Paste this first.', shows the 340-character preamble ('These are rough, uncertain self-reflection results from a free online test. Ranges that overlap are not real differences. Don't turn them into an intelligence number, a rank against other people or one overall figure. Don't guess at health or medical explanations for them. Help me think about what I might practise or explore, if anything.') and a warning not to paste the save file. 'Copy the text to paste first' copies exactly that text (clipboardEqualsPreamble true, no results in it, A13 lint clean). Nothing says what Pat is then supposed to give the assistant: the results are not in the text and the save file is forbidden, so the sequence is incomplete (mentionsWhatNext false).",
+      "expected": "A second sentence tells the person what to do after pasting.",
+      "suggestion": "Add after 'Paste this first.': 'Then describe your results in your own words, or attach your share card picture.' (the card holds no notes and no total). Gated wording (A20/A22: report only, the owner decides): the sentence would need the same gate pin as the preamble.",
+      "files": [
+        "web/src/brief/results-talk.ts",
+        "web/src/brief/ui/ResultsTalk.svelte"
+      ],
+      "spec_refs": [
+        "A20",
+        "A22",
+        "R-17.13"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-19",
+      "severity": "polish",
+      "category": "copy",
+      "title": "The share card's link to the helper reads as a broken sentence",
+      "route": "results-saved (under the share card)",
+      "env": "Chromium, iPhone 13",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/talk-chromium/002-after-talk-link.png"
+      ],
+      "observed": "The line is 'Before you ask an AI about your results: Talking about your results with an AI.' The link text is the heading of the helper, capital T mid-sentence, ending with a full stop where the heading has a question mark. The jump itself works (focus moves to the helper, talkJump.focus 'DIV#hb-results-talk').",
+      "expected": "A sentence that reads on its own.",
+      "suggestion": "SHARE_TALK_LEAD/SHARE_TALK_LINK: 'Thinking of asking an AI about your results? <a>Read this first</a>.' Gated wording is not involved (the link is not a gated line), but check the share-card copy pins.",
+      "files": [
+        "web/src/reveal/copy.ts",
+        "web/src/reveal/AfterSave.svelte"
+      ],
+      "spec_refs": [
+        "R-17.13"
+      ],
+      "confidence": "low",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-20",
+      "severity": "minor",
+      "category": "content",
+      "title": "The notes builder is one 10,500 to 13,200 px page; on a phone the first screen is all introduction and there is no way back to HumanBench",
+      "route": "notes",
+      "env": "Chromium 1280x720 (page 10,519 px), iPhone 13 (13,165 px), WebKit desktop (10,518 px)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/talk-chromium-notes-tab/001-notes-first-screen.png",
+        "web/test-results/ux-review/sharer/notes-iphone-tab/001-01-as-opened-viewport.png"
+      ],
+      "observed": "Pat opens 'Make notes for your AI' from the results (new tab, as designed). The page has five numbered steps plus Keep my settings, Check notes and More (words card, repository snippet, for-ai.md, start over): 9 headings, about 20 phone screens. The first iPhone screen holds five paragraphs of introduction and ends just above '1. Where will you use these notes?'. The page has no links at all (notesBackLink []), so there is no way back to HumanBench except closing the tab. The building itself worked: choose a use, a topic and one choice; the preview and character counter ('2,015 of 5,000 characters for Claude Project (long form)') update; 'Copy the notes' announces 'Copied to the clipboard.' and the clipboard equals the preview; the download is hb-notes-2026-10-<4 chars>.md (2,016 bytes); no A13 hits in the notes text.",
+      "expected": "A casual first visit gets to step 1 in the first screen and can get back.",
+      "suggestion": "Cut the intro to the one-line promise plus 'Nothing leaves your device' on the first screen and move the other three paragraphs into a closed 'About these notes' disclosure; add a 'Back to HumanBench' link in the header; consider collapsing Check notes / More until asked. Design call: owner decision.",
+      "files": [
+        "web/src/brief/NotesBuilder.svelte",
+        "web/notes.html"
+      ],
+      "spec_refs": [
+        "A20",
+        "R-17.1"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-21",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Notes settings kept on the notes page are not in the save downloaded from the results, and the notes page's own save is a different file",
+      "route": "results-saved, then notes",
+      "env": "Chromium 1280x720 (and iPhone 13, WebKit): real short session, save, notes tab, keep settings, back to the results tab",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/notes-chromium-tab/005-05-kept.png",
+        "web/test-results/ux-review/sharer/notes-chromium-device2/001-load-settings-result-results-save.png",
+        "web/test-results/ux-review/sharer/notes-chromium-device2/002-load-settings-result-notes-save.png"
+      ],
+      "observed": "In a real short session (Chromium; iPhone 13 and WebKit identical) I downloaded the save (1 session, humanbench-1ctB6c-2026-10-04.hbsave.json), opened the notes page from the after-save card, built a note and pressed 'Keep my settings on this device' (it kept at once, with no 18+ tick, because the app's consent record already says 18+). Back on the results tab 'Download save file' produced a second file with the same name, the same anon_id and 1 session but no brief_prefs (notes-*/facts: resultsSaveAfterKeep, saveAfterKeepHasBriefPrefs false), because SessionApp's makeSave is persister.currentSave(), built from the loaded base and the run, not from the kept settings. The notes page's own 'Download a save file with my settings' gave a third file, again named humanbench-1ctB6c-2026-10-04.hbsave.json, with brief_prefs, the same anon_id and the same session (1,680 bytes). On a second device the notes page read the results file with 'That save has no notes settings.' and the notes-page file with 'Loaded your notes settings from the save.' (device2LoadStatus, device2LoadStatusNotesSave). A person who keeps settings after saving ends with two files of one name, one of which silently lacks the settings, and nothing on either page says which to keep.",
+      "expected": "One save file per person that holds both the answers and the notes settings, or a plain explanation of why there are two.",
+      "suggestion": "Either have SavePanel's makeSave read the kept notes settings at click time (as it does for the worked examples' families), or add to the notes page's 'Download a save file with my settings' note: 'This is a different file from the one on your results page. It holds your notes settings and the answers saved on this device.' and, when the load box meets a save without settings, say: 'That save has no notes settings. Use the file you downloaded from the notes page.'",
+      "files": [
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/save/brief-prefs.ts",
+        "web/src/brief/ui/SaveSettings.svelte",
+        "web/src/brief/copy.ts"
+      ],
+      "spec_refs": [
+        "R-17.12",
+        "DESIGN §8"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-22",
+      "severity": "polish",
+      "category": "copy",
+      "title": "After keeping settings the notes page still opens with 'keeps nothing on your device unless you choose to', and the kept state is only at the bottom",
+      "route": "notes-kept",
+      "env": "iPhone 13 and Chromium after a reload with settings kept",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/notes-iphone-tab/006-06-after-reload-viewport.png",
+        "web/test-results/ux-review/sharer/notes-iphone-tab/005-05-kept.png"
+      ],
+      "observed": "After keeping the settings and reloading, the top of the page is unchanged ('This page keeps nothing on your device unless you choose to keep your settings, further down. Without that, reloading the page clears them.'); the form is restored (Learning something new is checked) but the only sign that settings are kept is 'Your settings are kept on this device. When you change them here, the kept copy changes too.' near the bottom, followed by a second, near-identical line 'Your settings are now kept on this device.' The returning-person section ('About notes you made earlier') did not show (returningShown false: the notes were copied this session, so none are out of date). Keep works without the 18+ tick here because the app's consent record already says 18+ (adultTickShown false), which is fine.",
+      "expected": "A returning person is told at the top that their settings were restored.",
+      "suggestion": "When settings are kept, replace the top 'keeps nothing' paragraph with 'Your settings from last time are here. Only your choices are kept, never what you typed.' and drop the duplicate 'now kept' status line when the state line already says it.",
+      "files": [
+        "web/src/brief/NotesBuilder.svelte",
+        "web/src/brief/ui/SaveSettings.svelte",
+        "web/src/brief/copy.ts"
+      ],
+      "spec_refs": [
+        "R-17.12"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "SHARE-23",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Sharing the save file counts as saved and removes the leave guard, although the share sheet cannot say where the file went",
+      "route": "results",
+      "env": "Chromium, WebKit and iPhone 13 with navigator.share stubbed (a real iOS share sheet not available here)",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/share-sheet-iphone/001-save-panel-with-share.png",
+        "web/test-results/ux-review/sharer/share-sheet-iphone/002-after-share.png"
+      ],
+      "observed": "'Share or save to an app' calls navigator.share with the file humanbench-aaaaaa-2026-10-04.hbsave.json (application/json, title 'HumanBench save', no text) and, when the promise resolves, sets saved: the message becomes 'Save file shared.', the leave guard comes off (guardedAfter false) and 'Your results are saved in your file. You can leave this page safely.' appears. A cancelled sheet is handled well ('Sharing was cancelled. Nothing was saved yet.'). On iOS the promise also resolves when the person picks Copy or an app that does not keep the file, so the page may declare the results saved when no file exists.",
+      "expected": "After sharing, the page asks the person to check the file reached somewhere they will find it.",
+      "suggestion": "SAVE_SHARED: 'Save file shared. Check that it reached the Files app or the app you chose.' and, for the share path, a SAVE_DONE variant 'If you chose Copy, use Download save file as well.' Low confidence: depends on real iOS behaviour I could not test.",
+      "files": [
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/save/io.ts",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §8 (Web Share fallback)",
+        "DESIGN §10"
+      ],
+      "confidence": "low",
+      "owner_decision": true
+    },
+    {
+      "id": "SHARE-24",
+      "severity": "polish",
+      "category": "data-honesty",
+      "title": "A hand-edited save loads without any mark, and the results page never says how many sessions the profile rests on",
+      "route": "ready, results",
+      "env": "Chromium, iPhone 13, WebKit",
+      "screenshots": [
+        "web/test-results/ux-review/sharer/bad-chromium/003-case-hand-edited.png",
+        "web/test-results/ux-review/sharer/device2-chromium-b/003-b-results-top.png"
+      ],
+      "observed": "A copy of a real save with every wrong answer flipped to right and the first response time set to 1 ms loads with 'Loaded 2 earlier sessions. Your new session will be added to them.' like any other file (bad-*/facts: hand-edited). DESIGN §8 says unsigned or hand-edited files are accepted for personal display 'marked unverified'; the static build has no signing, so nothing is marked. Separately, on the second device the results of two sessions (one loaded, one played) do not say 'based on 2 sessions' anywhere on the page, only the card image does (device2-*/facts: bSessionMentions null); the top line describes only the session just played ('You answered 1 question and completed 0 timed tasks').",
+      "expected": "The results say how many sessions they rest on; whether edited files should be marked in the static build is a product decision.",
+      "suggestion": "Add 'Based on N sessions' under 'Profile by skill' (the number the card already uses). Leave the unverified mark for the served build, but say so in DESIGN/ROADMAP so the static behaviour is intentional.",
+      "files": [
+        "web/src/reveal/RevealProfile.svelte",
+        "web/src/save/validate.ts"
+      ],
+      "spec_refs": [
+        "DESIGN §8 (tamper evidence)",
+        "DESIGN §9"
+      ],
+      "confidence": "low",
+      "owner_decision": true
+    }
+  ]
+}

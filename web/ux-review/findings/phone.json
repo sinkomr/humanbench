@@ -1,0 +1,452 @@
+{
+  "reviewer": "phone",
+  "model": "fable",
+  "summary": "Sam can take the whole session by thumb: two full touch sessions on the iPhone 13 emulation (one with the practice questions) finished in 57 and 59 s of real time under ?fast=1 with 181 answers each, the device check preselects 'Tap or click' on a coarse pointer, every text field is 16 px so iOS Safari will not zoom on focus, the digit keypads (46 to 51 px keys), the four-position pads (57 to 80 px), the option cards and the confidence slider (44 px tall, a tap at three quarters sets 81%) are all thumb-sized, none of the 50 product routes overflows sideways at 320 or 390 px, and axe reported no serious violation on any of them. The one big problem is where screens land on the iPhone emulations (WebKit): after the thumb taps a button at the bottom of a page, the next screen, and every next item, opens scrolled to its bottom, so the heading and the question (and in the coding block the key, and on the SE the digit box) are above the viewport, while Chrome on the Pixel lands with the heading in view. The rest is friction: the coding block never positions its key, Corsi blocks are 42.5 px (390) and 34 px (320), several primary buttons sit just under the fold (confidence Continue, Corsi Done, the device check's Continue once the facts appear), the blob's labels render at 11 to 12.5 px on a 288 to 358 px chart, the save panel is three screens down the results page, and the share-card preview is too small to read. On Fast 3G with a 4x slower CPU the welcome page is usable at 1.5 s, Three.js (534 kB) loads only when the Spatial part starts (1.4 s there), and the save file and share card download in under 100 ms; the save file is dated in UTC while the card is dated locally.",
+  "coverage": [
+    "Full touch session with practice on iphone (iPhone 13, 390x664, light), ?fast=1: welcome, gate, honour code, device check, ready, 12 practice questions, Reaction time, Matrix & Series, Spatial, Working Memory (digits and Corsi), Quantitative Reasoning, Processing & Reading Speed (coding and reading), results; 377 steps, 181 answers, 57 s (journey-practice-iphone/journey.json)",
+    "Full touch session without practice on iphone: 375 steps, 181 answers, 59 s, results metrics and blob photographed (journey-iphone/)",
+    "Screen-by-screen start flow by thumb on iphone, iphone-se (320x568) and pixel (Pixel 7, 412x839): welcome, gate (checkbox and link targets), honour, device check before and after the measurement (preselected mode, facts list), ready, practice item, confidence slider by finger, practice feedback; screenFacts (scroll position, primary action, fixed elements) and pageMetrics with touch targets at 44 px (screens-start-*/018-facts.json)",
+    "Screen-by-screen session on iphone and pixel: interstitial, RT intro, RT practice trial (pad rects, touch-action, double tap on the pad, visualViewport.scale), Matrix & Series item (input font, inputmode), confirm-skip, Spatial item (time to figures, canvas rects), memory intro and digit entry (keypad rects), quant entry focused, coding intro and running (keypad rects), finished-with-nothing (screens-session-*/026-facts.json)",
+    "Four-position reaction block by finger on iphone, iphone-se and pixel: pad sizes and gaps, a trial with a lit pad (rt4-*/)",
+    "Corsi board by route on iphone, iphone-se and pixel: board and block rects, gaps, two taps, Undo and Done (corsi-*/)",
+    "Reading passage and questions by route on iphone, iphone-se and pixel: passage type size, line height, words, paragraphs, Done reading state, option heights, Submit (reading-*/)",
+    "Coding block fit on iphone, iphone-se and pixel: absolute positions of key, timer, symbol box and keypad at block start, and whether one scroll position shows them all (coding-fit-*/)",
+    "Where each new screen lands on iphone, iphone-se and pixel: from the top of the page and from its bottom, interstitial, RT intro, three Matrix & Series items in a row, Spatial, memory intro and digit entry, measured at once and 300 to 1500 ms later (scroll-*/010-facts.json)",
+    "The same screen-landing steps on desktop webkit and chromium (1280x720, mouse) for comparison (scroll-webkit/, scroll-chromium/)",
+    "Landscape 664x390 on iphone (the iPhone 13 viewport rotated): ready, interstitial, RT intro and trial, item, digit entry (landscape-iphone/)",
+    "Results of a simulated earlier session (toResults, 1 session) on iphone, iphone-se and pixel: ready-returning, confirm-finish, results, blob labels (overlaps, cut labels, rendered font px, viewBox scale), drill-down by tap (Speed), bar view and its table widths, navigator.share presence, save panel buttons, Download save file (download event: suggested name), share card (time to preview, buttons, PNG download name), working-with-AI card, leaving (results-*/016-facts.json, blob-*/004-facts.json)",
+    "Tour of all 50 product routes with touch targets at 44 px and axe on iphone (390) and iphone-se (320), light scheme (tour-iphone/summary.json, tour-iphone-se/summary.json)",
+    "Performance on pixel with CDP Fast 3G (1.6 Mbps down, 750 kbps up, 150 ms RTT) and 4x CPU slowdown: first paint, first contentful paint, time to h1 and to Start enabled, device check duration, Begin to interstitial, Start to RT intro, Spatial: time to item, to the Three.js chunk and to the five canvases; asset sizes of the shared build (perf-pixel/006-facts.json)",
+    "Not tested: real-device iOS behaviour (double-tap zoom, the share sheet, saving to Files), Android Chrome's real navigator.share (undefined in headless Chromium, so the share buttons were hidden on pixel), landscape at exactly 844x390, dark scheme on phones, the notes builder by touch (toured with metrics only)"
+  ],
+  "findings": [
+    {
+      "id": "PHONE-01",
+      "severity": "major",
+      "category": "flow",
+      "title": "On iPhone (WebKit) a new screen or item opens scrolled past its heading and question after a tap at the bottom of the page",
+      "route": "item-matrix-series",
+      "env": "iphone (iPhone 13 emulation, 390x664, light) and iphone-se (320x568, light); not on pixel (Chrome)",
+      "screenshots": [
+        "web/test-results/ux-review/phone/scroll-iphone/005-d-item2-viewport.png",
+        "web/test-results/ux-review/phone/scroll-iphone/007-e-spatial-viewport.png",
+        "web/test-results/ux-review/phone/scroll-iphone-se/009-g-memory-entry-viewport.png",
+        "web/test-results/ux-review/phone/scroll-pixel/005-d-item2-viewport.png",
+        "web/test-results/ux-review/phone/screens-session-iphone/011-spatial-viewport.png",
+        "web/test-results/ux-review/phone/scroll-iphone/010-facts.json",
+        "web/test-results/ux-review/phone/scroll-iphone-se/010-facts.json",
+        "web/test-results/ux-review/phone/scroll-webkit/010-facts.json"
+      ],
+      "observed": "A thumb user scrolls down to the button and taps it. On both iPhone emulations the screen that replaces the page then sits at (or near) its maximum scroll. iPhone 13, ?fast=1 session by touch: after Continue on the confidence panel the next Matrix & Series item opened at scrollY 942 of a 942 px maximum, with the heading 709 px and the question 664 px above the viewport; the viewport showed options D to F, Confirm and the part checklist (005-d-item2-viewport.png). The third item in a row: scrollY 407/407, question 121 px above. Start tapped at the bottom of the Spatial interstitial: scrollY 957/957, the Target figure 655 px above the viewport, only options C and D and Confirm visible (007-e-spatial-viewport.png). The reaction-time intro: 311/311, heading 78 px above. iPhone SE: item 2 at 1044/1085 (question 693 px above), Spatial at 1087/1094, and the digit-span block, started from the bottom of its intro, opened at scrollY 544 with the digit box 169 px above the viewport, so the first sequence is presented off-screen (009-g-memory-entry-viewport.png). The same taps made with the page at its top (Begin on ready, Start with the interstitial at scrollY 0) open the next screen with the heading in view (item 1: heading at 257 px). Pixel 7 (Chrome): identical steps land with the heading and question in view (item 2: scrollY 0, heading at 233; Spatial: scrollY 4). document.activeElement was the new h1 every time (Screen.svelte focuses it on mount), so focus moved but WebKit did not scroll the focused heading into view; the values were unchanged 600 to 1500 ms later. The same pattern explains the item, Spatial and coding screenshots of the earlier screens-session run (007, 011, 022). Desktop WebKit (1280x720, mouse) and desktop Chromium, same steps, land with the heading in view (item 2: heading at 55 px; Spatial: scrollY 0 of 257), so the behaviour belongs to the mobile WebKit configuration (isMobile, touch), the closest emulation of iOS Safari available here.",
+      "expected": "Every new screen and every new item opens at its top, with the heading and the question in the first viewport, whatever the scroll position of the page before the tap, as it does in Chrome.",
+      "suggestion": "Do not rely on focus() to scroll. In web/src/session/Screen.svelte, in onMount, call `heading.focus({ preventScroll: true })` and then `window.scrollTo({ top: 0, behavior: 'instant' })` (or `heading.scrollIntoView({ block: 'start' })`) inside a requestAnimationFrame so the new screen is laid out first. Block renderers that focus their stage when a block starts (DigitSpanRenderer, CodingRenderer, RtRenderer, CorsiRenderer) should also call `stage.scrollIntoView({ block: 'center' })` so the presentation area is on screen. Add to the iphone project of the e2e suite: after Continue on a confidence panel, `await expect(h1(page)).toBeInViewport()`. Confirm once on a real iPhone: Playwright's WebKit is close to, but not, iOS Safari.",
+      "files": [
+        "web/src/session/Screen.svelte",
+        "web/src/session/Stage.svelte",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/span/CorsiRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "§14.3"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-02",
+      "severity": "major",
+      "category": "layout",
+      "title": "The coding block starts with its key (symbol to digit) off the screen on every phone, although key, symbol and keypad fit one viewport",
+      "route": "coding-running",
+      "env": "iphone (390x664), iphone-se (320x568), pixel (412x839), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/coding-fit-iphone/001-coding-start-viewport.png",
+        "web/test-results/ux-review/phone/coding-fit-iphone-se/001-coding-start-viewport.png",
+        "web/test-results/ux-review/phone/coding-fit-iphone/002-coding-legend-at-top-viewport.png",
+        "web/test-results/ux-review/phone/screens-session-iphone/022-coding-viewport.png",
+        "web/test-results/ux-review/phone/coding-fit-iphone/003-facts.json"
+      ],
+      "observed": "Start is at the bottom of the coding intro, so the thumb scrolls down and taps it. At that moment the 90 s clock starts and, measured in absolute page coordinates, the key sits at 341 to 511 px, the timer at 527 to 551, the symbol box at 559 to 687 and the keypad at 703 to 809: 468 px from the top of the key to the bottom of the keypad, which fits the 568 px SE viewport and the 664 px iPhone 13 viewport. The block does not scroll to that position: on the iPhone 13 the page stayed at scrollY 639 (the key 128 px above the viewport and the top 80 px of the symbol box cut off: the person sees a keypad and no symbol), on the SE at 454 (the key 84 px above), and on the Pixel at 362 (the top 21 px of the key cut). Scrolling so the key is at the top (scrollY 333 to 362) shows key, symbol and keypad together with the keypad bottom at 476 px (002-coding-legend-at-top-viewport.png). On the iPhones this is aggravated by PHONE-01; on the Pixel it is the block's own doing (it focuses the symbol box, which was already in view).",
+      "expected": "When the block starts, the key, the symbol box and the keypad are all on screen, with the key at the top, so the person never scrolls during the timed block.",
+      "suggestion": "In web/src/render/coding/CodingRenderer.svelte `start()`: scroll the key into place before focusing the stage, e.g. `legendEl.scrollIntoView({ block: 'start' }); stageEl.focus({ preventScroll: true })` (bind the ul.legend to `legendEl`). Keep the vertical budget at 468 px (do not add margin above the key) so it keeps fitting a 568 px viewport; if a future phone is shorter, hide the title while the clock runs. A dom test can assert that after start() the legend's top is at or below 0 and the keypad's bottom at or above the viewport height.",
+      "files": [
+        "web/src/render/coding/CodingRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§13",
+        "§11.6"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-03",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Corsi blocks are 42.5 px on an iPhone 13 and 34 px on a 320 px phone, under the 44 px thumb target",
+      "route": "memory-corsi",
+      "env": "iphone (390x664) and iphone-se (320x568), light; pixel (412) passes at 45 px",
+      "screenshots": [
+        "web/test-results/ux-review/phone/corsi-iphone-se/001-corsi-viewport.png",
+        "web/test-results/ux-review/phone/corsi-iphone/001-corsi-viewport.png",
+        "web/test-results/ux-review/phone/tour-iphone-se/memory-corsi/320-light.png",
+        "web/test-results/ux-review/phone/corsi-iphone-se/004-facts.json"
+      ],
+      "observed": "The board is `min(100%, 26rem)` wide with square blocks of 0.12 of its side (web/src/tasks/span/config.ts `size: 0.12`; `.block` has only `min-width: 1.5rem`). On the iPhone 13 the board is 358 px and all nine blocks are 42.5 x 42.5 px (smallest edge gap 35 px); on the SE the board is 288 px and the blocks 34.1 x 34.1 px (gap 28 px); on the Pixel 380 px and 45.1 px. The tour's touch metric lists all nine as under 44 px on both iPhones. Taps on two blocks registered ('Selected 2 of 3.'), so this is comfort and error rate, not function; WCAG 2.5.8's 24 px minimum is met.",
+      "expected": "Blocks a thumb can hit without care on the smallest supported phone: at least 44 px, with gaps that still make the sequence unambiguous.",
+      "suggestion": "Give blocks a floor of 44 px: in CorsiRenderer.svelte set `.block { min-width: 2.75rem; min-height: 2.75rem }` and compute the drawn size as `max(board.size, 44 / boardPx)` so the positions (which are fractions of the board) stay valid; with 44 px blocks on a 288 px board the smallest gap drops from 28 to about 18 px, still clear. Alternatively raise `size` to 0.15 in config.ts (43 px at 288), which the layout tests must then re-check for overlap.",
+      "files": [
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/tasks/span/config.ts"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-04",
+      "severity": "minor",
+      "category": "layout",
+      "title": "Done sits just below the fold on the Corsi board (portrait) and on the digit keypad (landscape), so every sequence ends with a scroll",
+      "route": "memory-corsi",
+      "env": "iphone (390x664) and iphone-se (320x568) portrait; iphone landscape (664x390); light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/corsi-iphone/001-corsi-viewport.png",
+        "web/test-results/ux-review/phone/corsi-iphone-se/001-corsi-viewport.png",
+        "web/test-results/ux-review/phone/landscape-iphone/007-memory-entry.png",
+        "web/test-results/ux-review/phone/landscape-iphone/003-rt-intro.png",
+        "web/test-results/ux-review/phone/landscape-iphone/009-facts.json"
+      ],
+      "observed": "Corsi on the iPhone 13: with the heading at the top the board spans 290 to 648 px of a 664 px viewport and 'Selected 0 of 3.' plus Undo and Done sit at 696 to 740 px, 76 px below the fold (001-corsi-viewport.png shows Done cut by the bottom edge); on the SE the board ends at 482 px of 568 and Done is at 530 to 574, cut by 6 px. After each sequence the person scrolls, taps Done, and the next sequence plays on a board that has moved. Landscape (664x390) digit entry: the keypad row is at 293 to 343 px and Delete/Done at 359 to 403 px, cut by the 390 px edge (007-memory-entry.png); the RT intro's 'Start practice' is 13 px below the fold there too.",
+      "expected": "Board (or digit box and keypad) and the Done button fit one viewport in both orientations, so the hand never leaves the board.",
+      "suggestion": "Cap the Corsi board at the viewport: `.board { width: min(100%, 26rem, 52vh) }` (345 px at 664, 295 px at 568) and tighten the margins between board, status line and buttons to 0.5rem. In landscape (`@media (orientation: landscape) and (max-height: 480px)`) place the digit stage and the keypad side by side in a two-column grid and put Delete/Done under the keypad.",
+      "files": [
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/common/Keypad.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-05",
+      "severity": "minor",
+      "category": "layout",
+      "title": "Device check: Continue drops below the fold the moment the measurement finishes",
+      "route": "device",
+      "env": "iphone (390x664) and iphone-se (320x568), light; pixel (839 tall) unaffected",
+      "screenshots": [
+        "web/test-results/ux-review/phone/screens-start-iphone/007-device-measuring.png",
+        "web/test-results/ux-review/phone/screens-start-iphone/008-device-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-iphone-se/008-device-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-iphone/018-facts.json"
+      ],
+      "observed": "While measuring, the page is 664 px tall and Continue (disabled) is visible at 395 px. When the facts list (Device, System and browser, Window size, Screen refresh rate, Timer precision: 10 lines) appears, the page grows to 807 px and Continue moves to 647 px, its bottom 27 px below the fold; on the SE the page grows from 600 to 852 px and Continue ends 147 px below the fold. The person who was watching the button sees it slide away and has to scroll to find it. The preselection itself is right: 'Tap or click' is checked on both coarse-pointer emulations (device.ts defaultRtInput).",
+      "expected": "The button the person is waiting for stays where it was, or the screen is laid out so that the response-mode choice and Continue are in the first viewport after the facts appear.",
+      "suggestion": "Reserve the space: render the facts `dl` from the start with placeholder values ('measuring…') so the height does not change, or move the 'How will you respond in the reaction tasks?' fieldset and Continue above the facts list and show the facts as a compact two-column `dl` (label and value on one line) to save about 120 px.",
+      "files": [
+        "web/src/session/DeviceCheck.svelte"
+      ],
+      "spec_refs": [
+        "§11.6",
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-06",
+      "severity": "minor",
+      "category": "flow",
+      "title": "After every answer the confidence panel's Continue is just below the fold",
+      "route": "confidence",
+      "env": "iphone (390x664), iphone-se (320x568), pixel (412x839), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/screens-start-iphone/014-confidence-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-iphone-se/014-confidence-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-pixel/014-confidence-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-iphone/018-facts.json"
+      ],
+      "observed": "Confidence.svelte focuses the slider on mount, which brings the slider into view but not the button under its helper text. iPhone 13: slider at 574 to 618 px, Continue at 716 px of a 664 px viewport (96 px below); SE: slider at 457, Continue at 599 of 568 (75 px below); Pixel: slider at 483, Continue at 843 of 839. So every one of the session's roughly 60 to 80 answers ends with a small scroll to find Continue; the practice feedback's 'Next practice question' is likewise 450 px down a 1,290 px page.",
+      "expected": "After the slider is set, Continue is visible without scrolling.",
+      "suggestion": "In web/src/session/Confidence.svelte, after `slider.focus()`, scroll the fieldset's bottom into view: `fieldset.scrollIntoView({ block: 'end' })` (preventScroll on the focus), or lay out the percentage and Continue on one row to the right of the slider on narrow screens so the whole panel is about 150 px tall.",
+      "files": [
+        "web/src/session/Confidence.svelte",
+        "web/src/session/PracticeScreen.svelte"
+      ],
+      "spec_refs": [
+        "§10",
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-07",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The save panel is three screens down a 5,500 px results page on a phone",
+      "route": "results",
+      "env": "iphone (390x664), iphone-se (320x568), pixel (412x839), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/results-iphone/003-results-viewport.png",
+        "web/test-results/ux-review/phone/results-iphone/010-after-save-viewport.png",
+        "web/test-results/ux-review/phone/results-iphone/004-results.png",
+        "web/test-results/ux-review/phone/results-iphone/016-facts.json"
+      ],
+      "observed": "On the iPhone 13 the results page is 5,470 px tall (8 viewports) and 'Download save file', the action the panel itself says to do 'before you leave this page', is 2,039 px down: past the finished-early notes, the practice-adjusted box, the blob, the view toggle, the peaks and the eight cluster buttons. After the save the page is 9,031 px. SE: 5,964 px, the button at 2,209 px; Pixel: 5,251 px, at 2,048 px. The first viewport (003-results-viewport.png) shows only 'Session complete', two sentences, the practice-adjusted box and the two view buttons; nothing says a save is needed. A phone user who looks at the blob and closes the tab keeps only the browser copy.",
+      "expected": "The save action is reachable from the first or second viewport on a phone, or the page says early that there is something to do at the end.",
+      "suggestion": "Add a one-line strip under 'Your profile is ready.' on phones: 'Save your results below when you are done' with an in-page link to the panel, or render a compact copy of the Download button there (same handler, the full panel stays where it is). A stickier option, a bottom bar with 'Download save file' until `saved` is true, is product taste.",
+      "files": [
+        "web/src/reveal/Reveal.svelte",
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/RevealProfile.svelte"
+      ],
+      "spec_refs": [
+        "§8",
+        "§10"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "PHONE-08",
+      "severity": "minor",
+      "category": "visual",
+      "title": "Blob labels render at 11 to 12.5 px on phones and crowd each other at 320 and 390 px",
+      "route": "results",
+      "env": "iphone (390x664), iphone-se (320x568), pixel (412x839), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/blob-iphone/001-blob.png",
+        "web/test-results/ux-review/phone/blob-iphone-se/001-blob.png",
+        "web/test-results/ux-review/phone/results-iphone/005-blob.png",
+        "web/test-results/ux-review/phone/blob-iphone/004-facts.json"
+      ],
+      "observed": "The chart is 358 x 290 px at 390 (viewBox 689 x 559, scale 0.52) and 288 x 247 px at 320 (viewBox 863 x 739, scale 0.33). Multiplying each label's SVG font size by the scale: ring labels, the legend lines and every 'not measured' sub-label render at 11 px, the skill names at 12.5 px, on all three phones. At 390 the boxes of 'Estimation ○' and 'Quantitative' overlap by 2 px; at 320 only three ring labels fit ('+2 SD', '0 SD', '−2 SD'), '0 SD' sits on the Matrices lobe, and the eight 'not measured' sub-labels take about a third of the chart's width on the right. The uncertainty band and the rings are still readable; the small italic sub-labels are the first thing to go in sunlight.",
+      "expected": "Labels of at least 13 px on a phone, none touching, with the chart's area given to the measured skills.",
+      "suggestion": "Below 420 px CSS width drop the 'not measured' sub-labels from the chart (the dashed spoke and the legend sentence 'Dashed grey spokes are skills that were not measured' already say it) and let names use 13 to 14 px; or move all labels into an HTML legend under the chart (two columns, with the ○ and ◇ marks) and keep only the ring labels inside the SVG. Both keep A12 (radius linear in theta, uncertainty shown, no total).",
+      "files": [
+        "web/src/viz/BlobChart.svelte",
+        "web/src/viz/measure.ts",
+        "web/src/viz/geometry.ts"
+      ],
+      "spec_refs": [
+        "§9",
+        "A12"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "PHONE-09",
+      "severity": "polish",
+      "category": "visual",
+      "title": "The share-card preview is unreadable on a phone (a 1200 x 630 card shown at 254 to 346 px)",
+      "route": "results-saved",
+      "env": "iphone (390x664), iphone-se (320x568), pixel (412x839), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/results-iphone/013-share-card.png",
+        "web/test-results/ux-review/phone/results-iphone-se/012-share-card-viewport.png",
+        "web/test-results/ux-review/phone/results-iphone/016-facts.json"
+      ],
+      "observed": "The preview img is 324 px wide at 390 (scale 0.27), 254 px at 320 (0.21) and 346 px at 412 (0.29) for a 1200 x 630 card, so the card's body text ('Compared with the other skills on this card', the 90% range line, the small print) renders at roughly 3 to 5 px. The person ticks skills and picks colours but cannot read the card they are about to share until it is downloaded. The card itself is quick: preview in 8 to 36 ms, PNG download in 15 to 65 ms, 'Share image' offered where navigator.share exists (iPhone) and hidden where it does not (headless Chrome).",
+      "expected": "A phone user can read the card before sharing it.",
+      "suggestion": "Add 'View full size' under the preview that opens the PNG blob in a `<dialog>` at 100% width (pinch-zoom works there) or in a new tab; or on screens under 480 px render the preview at 2x inside a horizontally scrollable box.",
+      "files": [
+        "web/src/reveal/ShareCard.svelte"
+      ],
+      "spec_refs": [
+        "§9",
+        "R-5.6.4"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "PHONE-10",
+      "severity": "polish",
+      "category": "bug",
+      "title": "The save file is dated in UTC and the share card in local time, so the same evening gives two dates",
+      "route": "results-saved",
+      "env": "iphone (390x664), iphone-se, pixel; run at about 18:46 PDT on 3 October 2026",
+      "screenshots": [
+        "web/test-results/ux-review/phone/results-iphone/010-after-save-viewport.png",
+        "web/test-results/ux-review/phone/results-iphone/016-facts.json",
+        "web/test-results/ux-review/phone/results-pixel/016-facts.json"
+      ],
+      "observed": "The download events reported 'humanbench-aaaaaa-2026-10-04.hbsave.json' for the save file and 'humanbench-card-2026-10-03.png' for the card, in the same minute. web/src/save/io.ts line 28 builds the name from `save.created_utc.slice(0, 10)` (UTC); web/src/viz/export.ts line 31 uses the local `getFullYear/getMonth/getDate`. Anyone in the Americas who finishes after about 17:00 (or in Asia-Pacific before about 10:00) gets a save file dated 'tomorrow' or 'yesterday' next to a card dated today, and a folder of saves that sorts oddly against the cards.",
+      "expected": "Both files carry the same date, the one the person sees on their clock.",
+      "suggestion": "In web/src/save/io.ts format the date part from `new Date(save.created_utc)` in local time with the same two-digit helper export.ts uses (the id and the UTC timestamp inside the file stay as they are). §8 fixes the pattern `humanbench-<shortid>-<YYYY-MM-DD>.hbsave.json`; it does not say which zone, so this is a wording decision for the owner.",
+      "files": [
+        "web/src/save/io.ts",
+        "web/src/viz/export.ts"
+      ],
+      "spec_refs": [
+        "§8"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "PHONE-11",
+      "severity": "polish",
+      "category": "performance",
+      "title": "On Fast 3G the Spatial figures arrive 1.4 s after the item, in empty boxes; the welcome page is otherwise quick",
+      "route": "item-spatial",
+      "env": "pixel (Pixel 7, 412x839), CDP Fast 3G (1.6 Mbps down, 750 kbps up, 150 ms RTT) and 4x CPU slowdown",
+      "screenshots": [
+        "web/test-results/ux-review/phone/perf-pixel/004-spatial-waiting.png",
+        "web/test-results/ux-review/phone/perf-pixel/001-welcome.png",
+        "web/test-results/ux-review/phone/perf-pixel/006-facts.json"
+      ],
+      "observed": "Welcome: first paint 512 ms, first contentful paint 1,464 ms, heading at 1,540 ms, Start enabled at 1,547 ms; the main script is 445 kB (152 kB transferred) and nothing else heavy loads before Begin (Begin to interstitial 88 ms, Start to the RT intro 54 ms; device check 1.3 s). Three.js is not loaded at welcome (good): `three-view` (534 kB, 131 kB transferred, the chunk the build warns about) is fetched when the Spatial part starts and took 788 ms on this link; the item's text, 'Target', 'Options A to D' and Confirm were on screen 126 ms after Start, the five canvases 1,379 ms after. During those 1.25 s the figure boxes are empty with no hint (spatial-waiting-text has no loading line). The onset clock starts when the figures are painted (RotationRenderer `onshown`), so timing is not affected.",
+      "expected": "Either the figures are there when the item appears, or the empty boxes say they are loading.",
+      "suggestion": "Warm the chunk earlier on the session path: when the Matrix & Series interstitial (the part before Spatial) renders, `import('./render/rotation/three-view')` in the background (or add `<link rel=\"modulepreload\">` for it from SessionScreen when Spatial is the next part); and in RotationRenderer show 'Loading figures…' inside the target box while `status === 'loading'`. Code-splitting the results and share-card code (D3, the card renderer) out of the 445 kB entry would also trim first load for people who abandon on the welcome page.",
+      "files": [
+        "web/src/render/rotation/RotationRenderer.svelte",
+        "web/src/session/SessionScreen.svelte",
+        "web/vite.config.ts"
+      ],
+      "spec_refs": [
+        "§11.6",
+        "§14.4"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-12",
+      "severity": "polish",
+      "category": "layout",
+      "title": "Welcome: the 24 px 'Privacy and terms' link sits 8 px under the Start button",
+      "route": "welcome",
+      "env": "iphone (390x664) and iphone-se (320x568), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/screens-start-iphone-se/001-welcome-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-iphone/001-welcome-viewport.png",
+        "web/test-results/ux-review/phone/screens-start-iphone/018-facts.json"
+      ],
+      "observed": "Start is 74 x 44 px at (16, 247) on the iPhone 13 and (16, 271) on the SE; the 'Privacy and terms' link (130 x 24 px, the only target under 44 px on the start, gate and honour screens) begins about 8 px below it. A thumb that lands low on Start, or a second tap after a missed first one, opens the privacy page instead of the gate.",
+      "expected": "A clear gap between the primary button and the next tappable thing, and a link tall enough for a thumb.",
+      "suggestion": "In web/src/session/Welcome.svelte give the link `display: inline-block; margin-top: 1rem; padding: 0.625rem 0` (a 44 px line) or move it next to the disclaimer in the footer line, where the gate repeats it anyway ('Read the full privacy notice and terms').",
+      "files": [
+        "web/src/session/Welcome.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-13",
+      "severity": "minor",
+      "category": "content",
+      "title": "A reading passage can be one 363-word paragraph, 1,280 px tall on a phone",
+      "route": "reading-passage",
+      "env": "iphone (390x664), light; also iphone-se and pixel with other passages",
+      "screenshots": [
+        "web/test-results/ux-review/phone/reading-iphone/001-passage-viewport.png",
+        "web/test-results/ux-review/phone/reading-iphone/002-passage.png",
+        "web/test-results/ux-review/phone/reading-iphone/006-facts.json"
+      ],
+      "observed": "The passage served on the iPhone 13 was a single paragraph of 363 words set at 17 px with a 27 px line height (good type for a phone) that ran 1,278 px, almost two viewports, with 'Done reading' 1,076 px below the fold; six of its 27 sentences are over 25 words (Flesch 62). The SE drew a 360-word passage in three paragraphs (1,692 px) and the Pixel a 353-word one in two. Readers lose their line in a block that long on a 358 px measure.",
+      "expected": "Passages broken into paragraphs of roughly 80 to 120 words, as the source texts usually are.",
+      "suggestion": "Keep the source paragraph breaks when passages are added to the bank, and split any single paragraph over about 150 words at a sentence boundary; the renderer already draws `<p>` per paragraph. This is bank content (private repo), so a content decision rather than a code change here.",
+      "files": [
+        "web/src/render/reading/ReadingRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§10",
+        "§4.2"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "PHONE-14",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Only the pads and buttons disable double-tap zoom; the reaction stage, Corsi board and keypad row do not",
+      "route": "rt-trial",
+      "env": "iphone (390x664) and iphone-se (320x568), light; emulation cannot reproduce iOS double-tap zoom, so this is from the stylesheet",
+      "screenshots": [
+        "web/test-results/ux-review/phone/screens-session-iphone/005-rt-trial-viewport.png",
+        "web/test-results/ux-review/phone/rt4-iphone-se/002-choice4-trial-viewport.png",
+        "web/test-results/ux-review/phone/screens-session-iphone/026-facts.json"
+      ],
+      "observed": "`touch-action: manipulation` is set on `.hb-btn`, `.rt .pad` and `.corsi .block` only; `.rt .stage`, body and html are `auto` (measured on the trial screen). The viewport meta is `width=device-width, initial-scale=1.0` without `user-scalable=no` (right for accessibility). In the four-position block the pads are 57 px wide with 8 px gaps on the SE and 74.5 px with 8 px gaps on the iPhone 13; a fast second tap that lands in a gap, on the fixation cross area or between Corsi blocks falls on an element with `touch-action: auto`, which iOS Safari may read as double-tap-to-zoom in a block timed in milliseconds. Two taps 80 ms apart on the pad itself left visualViewport.scale at 1, as expected for the pad.",
+      "expected": "No tap during a timed block can zoom or scroll the page.",
+      "suggestion": "Add `touch-action: manipulation` to `.rt .stage` (RtRenderer.svelte), `.board` (CorsiRenderer.svelte), the keypad `[role=group]` (Keypad.svelte) and the coding `.stage`; it only removes the double-tap gesture and keeps pinch zoom.",
+      "files": [
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/common/Keypad.svelte",
+        "web/src/render/coding/CodingRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§11.6",
+        "§13"
+      ],
+      "confidence": "low",
+      "owner_decision": false
+    },
+    {
+      "id": "PHONE-15",
+      "severity": "polish",
+      "category": "layout",
+      "title": "Bar-view table at 320 px hyphenates its headers and skill names",
+      "route": "results-bars",
+      "env": "iphone-se (320x568), light; iphone (390) wraps without hyphens",
+      "screenshots": [
+        "web/test-results/ux-review/phone/results-iphone-se/008-bars-viewport.png",
+        "web/test-results/ux-review/phone/blob-iphone-se/003-bars-viewport.png",
+        "web/test-results/ux-review/phone/blob-iphone-se/004-facts.json"
+      ],
+      "observed": "The table fits the 288 px column (no sideways scroll, Cluster column hidden) by hyphenating: 'Esti-mate (SD)', '90% in-terval (SD)', 'Com-pared with 0 SD' in the header and 'Matrix & Se-ries' in the first column (columns 92, 58, 75 and 63 px). It stays readable; it looks broken.",
+      "expected": "Headers that wrap at spaces or use a short form at narrow widths.",
+      "suggestion": "In web/src/viz/BarTable.svelte set `hyphens: manual` on `th` and, under 360 px, use short header texts ('Estimate', '90% range', 'vs 0 SD') with the full text in `abbr` titles or a visually hidden span; the wording of TABLE_RELATION is copy (src/viz/copy.ts), so the short form is the owner's call.",
+      "files": [
+        "web/src/viz/BarTable.svelte",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§9"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "PHONE-16",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Focus-session checkboxes on the ready and results screens are 24 px rows",
+      "route": "ready-returning",
+      "env": "iphone (390x664) and iphone-se (320x568), light",
+      "screenshots": [
+        "web/test-results/ux-review/phone/tour-iphone/ready-returning/390-light.png",
+        "web/test-results/ux-review/phone/results-iphone/011-after-save.png",
+        "web/test-results/ux-review/phone/tour-iphone/summary.json"
+      ],
+      "observed": "The six part checkboxes of the focus picker ('Reaction time', 'Matrix & Series (wide range)', …) measure 135 to 295 px wide by 24 px tall on the ready-returning screen and again in 'Coming back for more' on the results page (the tour's only under-44 targets there besides two inline links). 24 px meets WCAG 2.5.8; on a phone, stacked rows that short invite ticking the neighbour.",
+      "expected": "Checkbox rows at least 44 px tall on touch devices, as the device check's radio rows already are (44 px).",
+      "suggestion": "In web/src/reveal/FocusPicker.svelte give each label `display: flex; align-items: center; min-height: 2.75rem` as the device check's `label.radio` does.",
+      "files": [
+        "web/src/reveal/FocusPicker.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    }
+  ]
+}

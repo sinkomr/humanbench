@@ -5,7 +5,9 @@
   3. the cluster drill-down (inside the profile view, below the peaks);
   4. the save file: prominent, and required before leaving. A `beforeunload` warning guards the
      tab until it is downloaded or shared, and leaving through "Back to the start" asks first. The
-     20-minute focus session also leaves the results, so its form waits for the save too;
+     20-minute focus session also leaves the results, so its form waits for the save too. The
+     panel is a screen or two down, so while it is not saved one line at the top of the results
+     says so and leads to it (UX-029), and "Stay and save" takes focus to its download button;
   5. once saved: the share card (`ShareCard.svelte`, M1.18: hide any skill, PNG / SVG, never an
      emotion low), "Notes for your AI" and the results-talk helper;
   then three worked examples, what another session would buy (with 20-minute focus sessions and the
@@ -26,7 +28,7 @@
   import { RESOURCE_LINE } from '../copy'
   import { axisEstimates } from '../viz/profile'
   import AfterSave from './AfterSave.svelte'
-  import { LEAVE_HEADING, LEAVE_NO, LEAVE_TEXT, LEAVE_YES, SAVE_PENDING } from './copy'
+  import { LEAVE_HEADING, LEAVE_NO, LEAVE_TEXT, LEAVE_YES, SAVE_PENDING, SAVE_POINTER, SAVE_POINTER_LINK } from './copy'
   import { installUnloadGuard } from './guard'
   import NumbersSection from './NumbersSection.svelte'
   import { typicalSessions } from './next'
@@ -38,6 +40,7 @@
   import { scoredSessions, type ResultsModel } from './results'
   import SavePanel from './SavePanel.svelte'
   import ShareCard from './ShareCard.svelte'
+  import { SAVE_HEADING_ID } from './slots'
   import WorkedSection from './WorkedSection.svelte'
   import { pickWorkedItems } from './worked'
   import './reveal.css'
@@ -98,6 +101,7 @@
   let saved = $state(false)
   let leaving = $state(false)
   let restartButton: HTMLButtonElement | undefined = $state()
+  let savePanel: SavePanel | undefined = $state()
 
   const estimates = $derived(axisEstimates(results.input))
   const measured = $derived(estimates.filter((e) => e.measured).map((e) => e.code))
@@ -124,14 +128,32 @@
     else leaving = true
   }
 
+  // "Stay and save": the person stays to save, so focus (and the view) goes to the download button, not back to the
+  // button at the bottom that opened the question (WCAG 2.4.3). Without a panel (still building) it goes back there.
   async function stay(): Promise<void> {
     leaving = false
     await tick()
+    if (savePanel?.focusDownload()) return
     restartButton?.focus()
+  }
+
+  // The pointer's link: focus the save panel's heading, which scrolls it into view. Without the panel the anchor works as a plain link.
+  function goToSave(event: MouseEvent): void {
+    if (savePanel?.focusHeading()) event.preventDefault()
   }
 </script>
 
 <div class="hb-reveal" data-saved={saved} data-built={built}>
+  {#if !saved}
+    <!-- Not a status: the first status of the reveal is "Your profile is ready." (the drivers read it). Hidden, but
+         taking its room, until the build-up ends, so the chart does not jump when it appears. -->
+    <div class="hb-reveal-panel save-pointer" data-save-pointer data-ready={built}>
+      <p>{SAVE_POINTER}</p>
+      {#if built}
+        <a href="#{SAVE_HEADING_ID}" onclick={goToSave}>{SAVE_POINTER_LINK}</a>
+      {/if}
+    </div>
+  {/if}
   <RevealProfile
     input={results.input}
     facetObservations={results.facetObservations}
@@ -149,7 +171,7 @@
   </RevealProfile>
 
   {#if built}
-    <SavePanel {makeSave} {autosave} {saved} onsaved={() => (saved = true)} {download} {copyCode} {share} {canShare} />
+    <SavePanel bind:this={savePanel} {makeSave} {autosave} {saved} onsaved={() => (saved = true)} {download} {copyCode} {share} {canShare} />
     {#if online}
       {@render online()}
     {/if}
@@ -160,7 +182,7 @@
         {/snippet}
       </AfterSave>
     {:else}
-      <p class="hb-reveal-panel note" data-pending>{SAVE_PENDING}</p>
+      <div class="hb-reveal-panel"><p class="note" data-pending>{SAVE_PENDING}</p></div>
     {/if}
     <WorkedSection items={worked} />
     <RetestSection {estimates} {sessions} {onfocus} focusLocked={!saved} />
@@ -168,8 +190,10 @@
   {/if}
 
   <div class="hb-reveal-panel leave">
-    {#if leaving}
-      <ConfirmPanel heading={LEAVE_HEADING} text={LEAVE_TEXT} yes={LEAVE_YES} no={LEAVE_NO} onyes={onrestart} onno={() => void stay()} />
+    {#if leaving && !saved}
+      <!-- The safe answer, "Stay and save", comes first and in the primary style; Escape means it too (§10, UX-005b).
+           A save made while the question is open answers it: it goes, and "Back to the start" then leaves at once. -->
+      <ConfirmPanel heading={LEAVE_HEADING} text={LEAVE_TEXT} yes={LEAVE_YES} no={LEAVE_NO} primary="no" onyes={onrestart} onno={() => void stay()} />
     {:else}
       <div class="hb-actions">
         <button type="button" class="hb-btn" bind:this={restartButton} onclick={leave}>{FINISHED_AGAIN}</button>
@@ -192,5 +216,30 @@
     border-top: 1px solid var(--r-border);
     margin-top: 2rem;
     padding-top: 1rem;
+  }
+  .save-pointer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 1rem;
+    margin: 0 auto 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-left: 4px solid var(--r-accent);
+    border-radius: 0.5rem;
+    background: var(--r-surface);
+  }
+  .save-pointer[data-ready='false'] {
+    visibility: hidden;
+  }
+  .save-pointer p {
+    margin: 0;
+    padding: 0.5rem 0;
+  }
+  .save-pointer a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    color: var(--r-accent);
+    font-weight: 600;
   }
 </style>

@@ -22,13 +22,20 @@ export function unloadHandler(event: BeforeUnloadEvent): void {
   event.returnValue = ''
 }
 
-/** Ask the browser to confirm leaving until the returned function is called. */
+/**
+ * Ask the browser to confirm leaving until the returned function is called. Every call installs its own
+ * listener: the session's run guard (`SessionApp.svelte`) and the results' guard (`Reveal.svelte`) overlap
+ * for a moment when a run ends, and one shared listener would be added once (`addEventListener` ignores a
+ * second add of the same function) and then removed by whichever guard is lifted first, leaving the other
+ * guard standing in the page and doing nothing.
+ */
 export function installUnloadGuard(target: UnloadTarget = window): () => void {
   let on = true
-  target.addEventListener('beforeunload', unloadHandler)
+  const listener = (event: BeforeUnloadEvent): void => unloadHandler(event)
+  target.addEventListener('beforeunload', listener)
   return () => {
     if (!on) return
     on = false
-    target.removeEventListener('beforeunload', unloadHandler)
+    target.removeEventListener('beforeunload', listener)
   }
 }

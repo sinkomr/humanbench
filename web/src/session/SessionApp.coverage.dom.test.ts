@@ -5,7 +5,7 @@
  */
 
 import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { AUTOSAVE_PREFIX, autosaveKeys, restoreAutosaves } from '../save/autosave'
 import { saveWithSession } from '../save/create'
 import { newAnonId } from '../save/ids'
@@ -17,6 +17,13 @@ import { CONSENT_KEY, SAVE_CTX } from './constants'
 import { fakeEnv, SpyStorage, type FakeEnv } from './dom-support'
 import type { RunConfig, SessionRun } from './run'
 import SessionApp from './SessionApp.svelte'
+import { resultsLoader } from './results-loader'
+
+// The results code is its own chunk (UX-100); loaded here once, so the flow shows the results at once as it does
+// when the ready screen has fetched them.
+beforeAll(async () => {
+  await resultsLoader.load()
+}, 90_000)
 
 const configs = vi.hoisted(() => [] as unknown[])
 const runs = vi.hoisted(() => [] as unknown[])
@@ -157,8 +164,7 @@ describe('what the flow tells the run about earlier sessions (coverage floor per
     click(buttonByText(host, 'Load'))
     await vi.waitFor(() => expect(host.querySelector('[role="status"]')?.textContent).toContain('Loaded 1 earlier session'))
     click(buttonByText(host, 'Try practice questions first'))
-    click(buttonByText(host, 'Back'))
-    click(buttonByText(host, 'Back'))
+    click(buttonByText(host, 'Stop practice'))
     expect(h1()).toBe('Ready when you are')
     click(buttonByText(host, 'Begin'))
     expect(lastConfig().priorItemCounts).toEqual({ MAT: 1 })
@@ -183,8 +189,7 @@ describe('what the flow tells the run about earlier sessions (coverage floor per
     await toReady(fake, true)
     for (let round = 0; round < 2; round++) {
       click(buttonByText(host, 'Try practice questions first'))
-      click(buttonByText(host, 'Back'))
-      click(buttonByText(host, 'Back'))
+      click(buttonByText(host, 'Stop practice'))
       expect(h1()).toBe('Ready when you are')
     }
     expect(practices).toHaveLength(2)

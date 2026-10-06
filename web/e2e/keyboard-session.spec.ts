@@ -50,7 +50,7 @@ type Kind = 'finished' | 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'co
 const SCREEN = `(() => {
   const h1 = (document.querySelector('h1') || {}).textContent || ''
   const text = h1.trim()
-  if (text === 'Session complete') return 'finished'
+  if (text === 'Session complete' || text === 'Session ended') return 'finished'
   if (document.querySelector('input[type=range]')) return 'confidence'
   if (document.querySelector('form.choice:not(:has(fieldset:disabled))')) return 'choice'
   if (document.querySelector('form.entry')) return 'entry'
@@ -113,9 +113,10 @@ class Taker {
 
   // ------------------------------------------------------------------ the start
 
-  async toReady(): Promise<void> {
+  /** From the start page to the ready screen; `url` is `?fast=1` unless a test needs the real timeline. */
+  async toReadyScreen(url = './?fast=1'): Promise<void> {
     const { page } = this
-    await page.goto('./?fast=1')
+    await page.goto(url)
     await expect(heading(page)).toHaveText('HumanBench')
     await this.activate(control(page, 'button', 'Start'))
     await expect(heading(page)).toHaveText('Before you start')
@@ -135,8 +136,22 @@ class Taker {
     await this.activate(control(page, 'button', 'Continue'))
     await expect(heading(page)).toHaveText('Ready when you are')
     await this.checkFocus('ready')
+  }
+
+  /** From the start page into the first part. */
+  async toReady(url?: string): Promise<void> {
+    const { page } = this
+    await this.toReadyScreen(url)
     await this.activate(control(page, 'button', 'Begin'))
     await expect(heading(page)).toHaveText(/^Up next:/)
+  }
+
+  /** The practice question on screen: a choice or a typed answer, by keys, as far as the confidence slider. */
+  async answerPractice(): Promise<void> {
+    // A figure question keeps its options locked until the figures are drawn (the 3D view loads first): wait until it takes an answer.
+    await expect.poll(() => this.screen(), { timeout: 15_000 }).toMatch(/^(choice|entry)$/)
+    if ((await this.screen()) === 'choice') await this.answerChoice()
+    else await this.answerEntry()
   }
 
   // ------------------------------------------------------------------ the parts
@@ -409,6 +424,72 @@ test.describe('the keyboard-only guards are not vacuous', () => {
     expect((await focusInfo(page)).indicator).toBe(true)
     await page.addStyleTag({ content: '*:focus, *:focus-visible { outline: none !important; box-shadow: none !important; }' })
     expect((await focusInfo(page)).indicator).toBe(false)
+  })
+})
+
+test.describe('practice by keyboard alone (UX-004, WCAG 2.4.3, 4.1.3)', () => {
+  test('no step of the practice drops focus to the page, the feedback is where focus is, and one press leaves', async ({ page, browserName, isMobile }) => {
+    test.skip(isMobile === true, 'a touch phone has no Tab key')
+    test.setTimeout(3 * 60_000)
+    await page.addInitScript(POINTER_GUARD)
+    const taker = new Taker(page, browserName)
+    await taker.toReadyScreen()
+    await taker.activate(control(page, 'button', 'Try practice questions first'))
+    for (let n = 1; n <= 4; n++) {
+      await expect(heading(page)).toHaveText('Practice')
+      await expect(page.getByText(`Practice question ${n} of 4`)).toBeVisible()
+      // A new question is a new screen: its heading has focus, and one Tab reaches the field.
+      await expect(heading(page)).toBeFocused()
+      await taker.checkFocus(`practice question ${n}`)
+      await taker.answerPractice()
+      await expect(page.getByRole('slider')).toBeFocused()
+      await taker.checkFocus(`practice confidence ${n}`)
+      await taker.activate(control(page, 'button', 'Continue'))
+      // The feedback arrives with focus on it (and a status line tells a screen reader the verdict).
+      await expect(page.locator('section.feedback')).toBeFocused()
+      await expect(page.locator('p.hb-sr-only[role="status"]')).toHaveText(/^Your answer was (not )?correct\./)
+      await taker.checkFocus(`practice feedback ${n}`)
+      await taker.activate(control(page, 'button', n < 4 ? 'Next practice question' : 'Finish practice'))
+    }
+    await expect(heading(page)).toHaveText('Practice complete')
+    await expect(heading(page)).toBeFocused()
+    await taker.activate(control(page, 'button', 'Continue'))
+    await expect(heading(page)).toHaveText('Ready when you are')
+    await expect(heading(page)).toBeFocused()
+    // Leaving a practice by keys is one press, whichever question it is on.
+    await taker.activate(control(page, 'button', 'Try practice questions first'))
+    await expect(heading(page)).toBeFocused()
+    await taker.activate(control(page, 'button', 'Stop practice'))
+    await expect(heading(page)).toHaveText('Ready when you are')
+    await expect(heading(page)).toBeFocused()
+    expect(await page.evaluate<number>('window.__hbPointer')).toBe(0)
+    expect(taker.lostFocus, 'screens where nothing had focus').toEqual([])
+    expect(taker.noIndicator, 'focused controls with no focus indicator').toEqual([])
+  })
+
+  test('Keep going in a running block gives the keys back to the block, and Escape closes the panel', async ({ page, browserName, isMobile }) => {
+    test.skip(isMobile === true, 'a touch phone has no Tab key')
+    const taker = new Taker(page, browserName)
+    // Real time, not ?fast=1: the practice block keeps running while the panel is open (an owner decision, D30), and at
+    // 20 times speed its three trials can end before "Keep going" under machine load, taking the stage away. In real
+    // time they last about ten seconds, far longer than these few presses.
+    await taker.toReady('./')
+    await taker.activate(control(page, 'button', 'Start'))
+    await expect(heading(page)).toHaveText('Reaction time')
+    await taker.activate(control(page, 'button', 'Start practice'))
+    const stage = page.locator('section.hb-render.rt .stage')
+    await expect(stage).toBeVisible()
+    await taker.activate(control(page, 'button', 'Skip Reaction Time'))
+    await expect(page.getByRole('heading', { level: 2, name: 'Skip Reaction Time?' })).toBeFocused()
+    await taker.activate(control(page, 'button', 'Keep going'))
+    await expect(stage).toBeFocused()
+    await taker.checkFocus('reaction time, after Keep going')
+    await taker.activate(control(page, 'button', 'Skip Reaction Time'))
+    await page.keyboard.press('Escape')
+    await expect(page.locator('section.confirm')).toHaveCount(0)
+    await expect(stage).toBeFocused()
+    expect(taker.lostFocus).toEqual([])
+    expect(taker.noIndicator).toEqual([])
   })
 })
 

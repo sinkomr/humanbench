@@ -1,0 +1,471 @@
+{
+  "package": "verify",
+  "model": "fable",
+  "run": "verify",
+  "build": "npm run ux:build on wf10/ux after every fix package and the integration had finished (test-results/ux-review/_dist), served by vite preview on port 4653",
+  "summary": "63 items checked (the 58 fix items of the six areas and the 5 integration items): 60 verified, 3 partially fixed, 0 not fixed, 0 regressed. Every scenario was replayed from the source findings on the fixed build, on Chromium and on the iPhone 13 project (plus 320x568 and 200% text where the finding needed it), with after-screenshots under web/test-results/ux-review/verify/<item>/<project>/ and measured numbers in each folder's facts.json. The partial items: UX-007a (the checklist no longer says 'Up next' three times, reads as sentences and is a named region, but 'Calibration/Metacognition' now breaks mid-word in the 1280 px sidebar and one letter per line at 320 px with 200% text), UX-017a (the no-WebGL state has one panel with Skip in the first screen, but the message is still shown twice: the panel and the renderer's note), UX-023 (44 px Corsi blocks, no overlaps, Done in the first screen at 390 x 664, but 17 px below the fold at 320 x 568) UX-003 is counted as verified with a caveat (one 60 px row at 390 px; two rows, 100 px, at 320 px). The regression sweep (50 routes at 390/1280, light/dark on Chromium, device width on iPhone, and a whole ?fast=1 journey on each) found no route that fails to open, overflows sideways or clips text, no console or page errors beyond the expected WebGL error on the no-WebGL route, and both journeys end in a profile with off-scale marks and 'not offered yet' labels in place. Three new findings (VER-01 to VER-03) are in findings/verify-regressions.json: the checklist breaks (from UX-007a's column change), two identical 'Privacy and terms' links on the welcome screen (UX-011's footer link next to UX-016's), and 30 to 38 px wide coding keys (UX-002's one-row keypad).",
+  "counts": { "items": 63, "verified": 60, "partially": 3, "not-fixed": 0, "regressed": 0 },
+  "items": [
+    {
+      "id": "UX-001",
+      "verdict": "verified",
+      "evidence": "iPhone 13 (390x664) and 320x568, ?fast=1, every tap made with the page scrolled to the bottom as a thumb does: 16 of 18 landings have the h1 in the viewport with scrollY 0 (interstitial from top, RT intro from bottom, item 1, item 2 and item 3 after Continue at the bottom, Spatial from bottom, Working Memory intro from top). Before: item 2 opened at scrollY 942 of 942 with the question 664 px above. The two 'G' landings (digit-span entry after the renderer's own Start, same screen) show the stage, status and keypad with the h1 67 px above: that is UX-002's focusStage scrolling the stage into view inside one screen, not a screen change.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-001/iphone/005-390x664-d-item2-viewport.png", "web/test-results/ux-review/verify/UX-001/iphone/007-390x664-e-spatial-viewport.png", "web/test-results/ux-review/verify/UX-001/iphone/014-320x568-d-item2-viewport.png", "web/test-results/ux-review/verify/UX-001/iphone/009-390x664-g-memory-entry-viewport.png"],
+      "before": ["web/test-results/ux-review/phone/scroll-iphone/005-d-item2-viewport.png", "web/test-results/ux-review/phone/scroll-iphone/007-e-spatial-viewport.png"]
+    },
+    {
+      "id": "UX-002",
+      "verdict": "verified",
+      "evidence": "Coding block at the moment the clock starts: table, target and keypad all inside the viewport at 390x664 (iPhone, keys 38x50) and 320x568 (keys 30x50), span from the top of the table to the bottom of the keypad 248 px, one keypad row, table cells borderless (0 px border, no fill) where the keys have a 2 px border, so nothing in the table looks like a key. Digit span and RT stages: after Start from the bottom of the intro the stage is in view at both sizes (stageTop 126 at 390, 166 at 320, scrollY 0). See VER-03 for the key width trade-off.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-002/iphone/001-390x664-coding-start-viewport.png", "web/test-results/ux-review/verify/UX-002/iphone/005-320x568-coding-start-viewport.png", "web/test-results/ux-review/verify/UX-002/iphone/003-390x664-span-entry-viewport.png", "web/test-results/ux-review/verify/UX-002/iphone/004-390x664-rt-stage-viewport.png"],
+      "before": ["web/test-results/ux-review/phone/coding-fit-iphone/001-coding-start-viewport.png", "web/test-results/ux-review/phone/coding-fit-iphone-se/001-coding-start-viewport.png"]
+    },
+    {
+      "id": "UX-003",
+      "verdict": "verified",
+      "evidence": "Measured without the 61 to 81 px 'Fast mode' dev banner that ?fast=1 adds (production has none). At 390 px the bar is one row of 60 px on every in-session screen (ring 32 px, 'Skip' and 'Finish' with the rest of their names clip-hidden; accessible names 'Skip Matrix & Series' / 'Finish early' kept). At 320 px the bar wraps to two rows, 100 px (before: 180 px), plus 48 px while a notice shows. Notices: 'Reaction Time skipped' is shown on the Matrix interstitial (where it was raised) and gone on the first item, i.e. it never survives two screen changes; the colour is the muted grey (rgb 74,70,82, class calm), not the warning colour. Caveat: at 320 px the header is 100 px, slightly over the '≤ ~96 px' acceptance, and 148 px for the one screen that carries a notice.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-003/iphone/003-3-item-1-viewport.png", "web/test-results/ux-review/verify/UX-003/iphone/002-2-interstitial-matrix-viewport.png", "web/test-results/ux-review/verify/UX-003/chromium/003-3-item-1-viewport.png", "web/test-results/ux-review/verify/UX-003/chromium/004-4-item-2-viewport.png"],
+      "before": ["web/test-results/ux-review/visual-start/fold-iphone-se/coding-running/001-viewport-light.png", "web/test-results/ux-review/flow/idle-chromium/002-idle-matrix-series-reaction-time-skipped-it-will.png"]
+    },
+    {
+      "id": "UX-004",
+      "verdict": "verified",
+      "evidence": "Chromium by keyboard: Q1 arrives with focus on the h1 'Practice' and one Tab reaches the field; after the answer, focus is on section.feedback and a role=status line carries 'Your answer was not correct. The right answer is E.'; Tab from the feedback lands on 'Next practice question'; Q2 arrives with focus on the h1 again and one Tab reaches the field (before: focus on body, first Tab on 'Back'). No 'Back' button; 'Stop practice' returns to 'Ready when you are' in one press with focus on its h1.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-004/chromium/003-q2-arrival.png", "web/test-results/ux-review/verify/UX-004/chromium/004-q2-first-field.png", "web/test-results/ux-review/verify/UX-004/chromium/002-q1-feedback.png", "web/test-results/ux-review/verify/UX-004/chromium/005-after-stop-practice.png"],
+      "before": ["web/test-results/ux-review/keyboard/extra-practice-chromium/002-q2-arrived-no-focus.png", "web/test-results/ux-review/keyboard/extra-practice-chromium/003-q2-first-tab.png"]
+    },
+    {
+      "id": "UX-005a",
+      "verdict": "verified",
+      "evidence": "Chromium, digit span running: Skip opener, Enter opens the panel (focus on its h2, width 608 px at 1280, h2 margin-top 0); Escape closes it and focus is on the stage ('Digits: watch them, then type them in order'); the next typed digit counts (entry 2 of 3 became 3 of 3). Keep going by button does the same; the Finish panel also closes on Escape. iPhone: a double tap on 'Finish early' leaves the panel open; a double tap on 'Keep going' closes it without reaching the item underneath (no radio checked).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-005a/chromium/001-span-skip-panel.png", "web/test-results/ux-review/verify/UX-005a/chromium/002-span-after-keep-going.png", "web/test-results/ux-review/verify/UX-005a/iphone/001-finish-early-double-tap.png"],
+      "before": ["web/test-results/ux-review/keyboard/extra-keepgoing-chromium/002-span-after-keep-going-typed.png", "web/test-results/ux-review/skimmer/double-iphone/004-after-continue-twice.png"]
+    },
+    {
+      "id": "UX-005b",
+      "verdict": "verified",
+      "evidence": "Leave panel: buttons in order 'Stay and save' (hb-primary, blue) then 'Leave anyway' (plain); the first Tab from the heading lands on 'Stay and save'; Escape closes the panel with focus on 'Download save file'. Enter on that first stop lands focus on 'Download save file' in view (results-leave-keys).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-005b/chromium/001-leave-panel-first-tab.png", "web/test-results/ux-review/verify/results-leave-keys/chromium/001-after-first-tab-enter.png"],
+      "before": ["web/test-results/ux-review/keyboard/results-leave-chromium/001-leave-panel.png"]
+    },
+    {
+      "id": "UX-006",
+      "verdict": "verified",
+      "evidence": "Chromium and iPhone: privacy -> Back lands focus on the h1 'HumanBench'; 'Back to the start' from the results lands it there too; gate, honour, device, ready, results view all take focus on their h1. document.title is 'Before you start · HumanBench', 'Honour code · HumanBench', ... 'Your results · HumanBench' (before: 'HumanBench' everywhere). The gate and honour checkboxes in error carry aria-invalid='true' and aria-describedby pointing at the error text; the welcome h1 has translate='no'.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-006/chromium/001-welcome-after-back.png", "web/test-results/ux-review/verify/UX-006/chromium/002-gate-error.png", "web/test-results/ux-review/verify/UX-006/chromium/003-welcome-after-results.png"],
+      "before": ["web/test-results/ux-review/keyboard/extra-welcome-webkit/001-welcome-after-back.png", "web/test-results/ux-review/keyboard/start-chromium/001-gate-error.png"]
+    },
+    {
+      "id": "UX-007a",
+      "verdict": "partially",
+      "evidence": "Fixed: exactly one 'Up next' in the checklist on every screen (first interstitial, after a skip, during a part); rows read 'Reasoning: Matrix & Series. Up next' with hidden separators; later rows say 'Later'; at 320 px with 100% text no word breaks and no clipping. Not fixed: in the 1280 px sidebar on every item screen 'Calibration/Metacognition' renders as 'Calibration/ Metacognitio n' (the status column now keeps 'With each answer' and the name column got too narrow; the baseline let the status drop out instead), and at 320 px with 200% text 'Estimation' and 'Calibration/Metacognition' render one letter per line (row 1,530 px tall). Raised as VER-01.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-007/chromium/001-320-interstitial.png", "web/test-results/ux-review/verify/UX-007/chromium/005-during-matrix-item.png", "web/test-results/ux-review/verify/tour-chromium/item-matrix-series/1280-light.png", "web/test-results/ux-review/verify/UX-007/chromium/002-320-interstitial-zoom200.png"],
+      "before": ["web/test-results/ux-review/visual-start/tour-chromium/item-matrix-series/320-light.png", "web/test-results/ux-review/visual-start/tour-chromium/interstitial/1280-light.png"]
+    },
+    {
+      "id": "UX-007b",
+      "verdict": "verified",
+      "evidence": "Landmarks on the interstitial: banner, main, complementary, region 'Session checklist', contentinfo; no navigation landmark on any route (the tour's landmark list changed from 'navigation' to 'region' on every session route).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-007/chromium/001-320-interstitial.png"]
+    },
+    {
+      "id": "UX-008",
+      "verdict": "verified",
+      "evidence": "Welcome 'about 30 minutes', Ready 'Six short parts, about 30 minutes', ring '0 of about 30 min' with aria-valuemax 30 (before: 28). After 31 minutes on the first interstitial with every part still to do the ring says 'Over the planned time', not 'Almost there'. Ring track stroke rgb(117,112,127) at opacity 1 (about 4.5:1 on white); ring text translate='no'. Per-part 'About N minutes' lines are the remaining budget and change when parts are skipped (3/6/9/5/24/4 after skipping; 3/5/5/5/10/4 on the full journey), which is by design and not the 30/28/31 disagreement of the finding.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-008/chromium/002-break-offer.png", "web/test-results/ux-review/verify/UX-008/chromium/001-last-interstitial.png"],
+      "before": ["web/test-results/ux-review/flow/tour-chromium/break-offer/1280-light.png", "web/test-results/ux-review/skimmer/funnel-chromium/006-ready.png"]
+    },
+    {
+      "id": "UX-009a",
+      "verdict": "verified",
+      "evidence": "Load a file, Begin, Finish early at once: 'This visit added no new answers. Your profile below comes from 1 earlier session.' (before: 'You answered 0 questions…'). A whole ?fast=1 journey with no skips: 'You finished every part. You answered 157 questions and completed 7 timed tasks in about 15 minutes.' One answer then every part skipped: 'You reached the end of the session. You skipped 6 parts: Reaction Time, Matrix & Series, …' with no profile. Nothing measured: no save push, 'Back to the start' is the primary and first button, the save panel sits inside a closed 'Keep a file of this visit anyway' disclosure aligned with the text (x 29 on the phone).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-009-010/chromium/002-a-finished-after-load-top.png", "web/test-results/ux-review/verify/journey-chromium/025-results-final.png", "web/test-results/ux-review/verify/UX-009-010/chromium/005-d-one-answer-rest-skipped-top.png", "web/test-results/ux-review/verify/UX-009-010/iphone/004-c-finished-nothing.png"],
+      "before": ["web/test-results/ux-review/skimmer/back-chromium-return/004-results-returning.png", "web/test-results/ux-review/flow/edge-nothing-chromium/001-last-interstitial.png"]
+    },
+    {
+      "id": "UX-009b",
+      "verdict": "verified",
+      "evidence": "The empty finish is headed 'Session ended' (title 'Session ended · HumanBench'); the tour's finished-nothing route and both journeys' drivers still pass.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-009-010/iphone/004-c-finished-nothing.png", "web/test-results/ux-review/verify/tour-chromium/finished-nothing/1280-light.png"],
+      "before": ["web/test-results/ux-review/skimmer/exits-chromium/003-finished-nothing.png"]
+    },
+    {
+      "id": "UX-010",
+      "verdict": "verified",
+      "evidence": "After loading a save the Ready screen offers Begin, 'See my results', practice. 'See my results' opens 'Your results' ('Your profile from 1 earlier session.') with the full profile and the save panel; the file downloaded from there holds 1 session with 33 responses and the same anon_id as the loaded save (nothing appended). Before: seven presses and an empty session added to the save.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-009-010/chromium/001-ready-loaded.png", "web/test-results/ux-review/verify/UX-009-010/chromium/003-b-results-view-top.png", "web/test-results/ux-review/verify/tour-iphone/results-view/390-light.png"],
+      "before": ["web/test-results/ux-review/skimmer/back-chromium-return/003-ready-returning-viewport.png", "web/test-results/ux-review/flow/end-chromium/009-ready-after-results.png"]
+    },
+    {
+      "id": "UX-011",
+      "verdict": "verified",
+      "evidence": "During an item (one answer given): browser Back opens 'Finish now?' on the same item (URL unchanged, item still there); Keep going returns to it and a second Back asks again; beforeunload is guarded (a refresh prompts). The footer's 'Privacy and terms (opens in a new tab)' link in a run has target=_blank and opens a second tab while the item and clock stay; on the welcome and gate the link is same-tab and Back returns to the welcome with focus on its h1. Verified on Chromium and iPhone.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-011/chromium/002-after-browser-back.png", "web/test-results/ux-review/verify/UX-011/iphone/002-after-browser-back.png"],
+      "before": ["web/test-results/ux-review/skimmer/back-chromium-mid/002-after-back-mid-session.png", "web/test-results/ux-review/flow/edge-history-chromium/002-after-browser-back-1.png"]
+    },
+    {
+      "id": "UX-012a",
+      "verdict": "verified",
+      "evidence": "A chosen file loads on change without Load ('Loaded 1 earlier session. Your new session will be added to it.'). A bad file (JPEG bytes) is refused, cleared from the field (0 files) and the message is tied to the field (aria-invalid='true', aria-describedby on the file input); a valid code pasted afterwards loads on Load. Random text pasted marks the textarea invalid instead. Verified on Chromium and iPhone. Not exercised: the 'Last saved today at …' line under the earlier-saves checkbox (needs an autosave in the browser).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-012/chromium/001-1-file-chosen.png", "web/test-results/ux-review/verify/UX-012/chromium/002-2a-bad-file.png", "web/test-results/ux-review/verify/UX-012/chromium/003-2b-code-after-bad-file.png", "web/test-results/ux-review/verify/UX-012/iphone/001-1-file-chosen.png"],
+      "before": ["web/test-results/ux-review/sharer/forgot-load-chromium/001-file-chosen-not-loaded.png", "web/test-results/ux-review/sharer/bad-chromium/017-case-file-then-code-after-good-code.png"]
+    },
+    {
+      "id": "UX-012b",
+      "verdict": "verified",
+      "evidence": "Six bad inputs, six plain messages with a next step and no JSON/gzip/schema/version words: truncated file 'This save file looks cut off or damaged, so it cannot be read. Download it again from your results, or paste a save code instead.'; text file 'This file is not a HumanBench save. Choose the file you downloaded at the end of a session (its name ends in .hbsave.json; on an iPhone it may end in .txt), or paste a save code.'; empty file 'That file is empty. Choose your save file again, or paste a save code.'; newer version 'This save cannot be opened by this version of HumanBench. Reload the page and try again; if it still fails, the file may be damaged.'; random text pasted 'This is not a HumanBench save or save code. Choose your downloaded save file, or paste the save code you copied.'; truncated paste as the truncated file.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-012/chromium/004-3-last-error.png", "web/test-results/ux-review/verify/UX-012/chromium/002-2a-bad-file.png"],
+      "before": ["web/test-results/ux-review/sharer/bad-chromium/002-case-truncated.png", "web/test-results/ux-review/sharer/bad-chromium/004-case-random-text.png"]
+    },
+    {
+      "id": "UX-013",
+      "verdict": "verified",
+      "evidence": "Continue's rectangle is identical on arrival and after the facts appear (moved 0 px, Chromium and iPhone: the choice and Continue come before the facts). While measuring, Continue is aria-disabled (not disabled): three quick Tabs on arrival land on the radio, Continue and the footer link, and Enter on it does nothing. 'Checking your screen…' is a span inside an empty-mounted role=status line and is removed when the facts are in (about 1 s). Units read '60 Hz (screen updates per second)' and '0.1 ms (thousandths of a second)'.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-013/iphone/001-device-measuring.png", "web/test-results/ux-review/verify/UX-013/iphone/002-device-measured.png", "web/test-results/ux-review/verify/UX-013/chromium/002-device-measured.png"],
+      "before": ["web/test-results/ux-review/phone/screens-start-iphone/008-device-viewport.png", "web/test-results/ux-review/keyboard/extra-device-chromium/001-device-after-quick-tabs.png"]
+    },
+    {
+      "id": "UX-014",
+      "verdict": "verified",
+      "evidence": "After answering with the page scrolled to the bottom, Continue is inside the viewport at 390x664, 320x568 and 390x839 on the iPhone project and at 320x568 and 1280x800 on Chromium (needsScroll 0 everywhere; the form is scrolled 'nearest'). Five synthetic repeat=true Enter keydowns on the slider do not submit (defaultPrevented true), a plain Enter does. The legend sits inside the frame, the output has translate='no', the form is 608 px wide at 1280, and the hint reads '0% means you have no idea. 100% means you are certain.' on a typed item.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-014/iphone/001-390x664-confidence-viewport.png", "web/test-results/ux-review/verify/UX-014/iphone/002-320x568-confidence-viewport.png", "web/test-results/ux-review/verify/UX-014/chromium/002-1280x800-confidence-viewport.png"],
+      "before": ["web/test-results/ux-review/phone/screens-start-iphone/014-confidence-viewport.png", "web/test-results/ux-review/visual-start/tour-chromium/confidence/1280-light.png"]
+    },
+    {
+      "id": "UX-015",
+      "verdict": "verified",
+      "evidence": "Two-line legends on device, confidence and reading-questions at 320, 390 and 1440 px all sit inside their frames (legend top 14 px below the frame top, float left). Print with a dark OS: html/body black on white, colour-scheme light, #app display block, the chart in the light theme; the A4 PDF's last page shows the resource line and the §13 footer apart with no overlap (pdf-dark-last-page.png rendered from results-after-save-a4-dark.pdf).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-015/chromium/003-reading-questions-390.png", "web/test-results/ux-review/verify/UX-015/chromium/001-device-390.png", "web/test-results/ux-review/verify/UX-015/chromium/007-print-dark-bottom.png", "web/test-results/ux-review/verify/UX-015/chromium/pdf-dark-last-page.png", "web/test-results/ux-review/verify/UX-015/chromium/pdf-light-first-page.png"],
+      "before": ["web/test-results/ux-review/visual-start/tour-chromium/reading-questions/390-light.png", "web/test-results/ux-review/visual-results/crops/print-a4-light-last-page-overlap.png", "web/test-results/ux-review/visual-results/crops/print-a4-dark-os-no-backgrounds-p1.png"]
+    },
+    {
+      "id": "UX-016",
+      "verdict": "verified",
+      "evidence": "Interstitial blurbs use the items' nouns (Matrix 'cell', Working Memory 'blocks', Processing 'shapes'; no 'piece', 'squares', 'symbols', 'figure'). No curly apostrophes on the welcome or privacy text. On the welcome the privacy link is on its own line 16 px under Start and 44 px tall (before 8 px, 24 px). See VER-02 for the second, footer copy of the link.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-016-018/iphone/001-welcome-viewport.png", "web/test-results/ux-review/verify/tour-chromium/interstitial/390-light.png"],
+      "before": ["web/test-results/ux-review/phone/screens-start-iphone/001-welcome-viewport.png"]
+    },
+    {
+      "id": "UX-017a",
+      "verdict": "partially",
+      "evidence": "The no-WebGL Spatial screen now shows one panel directly under the h1 with 'Skip Spatial' (primary) and 'Finish early'; Skip is inside the first screen at 320x568 (y 316, bottom 360) and on the iPhone (y 252); the header status is empty. But the message is still shown twice: the panel's 'This question cannot be shown in your browser (for example, 3D graphics may be switched off)…' and, under it, the renderer's 'The 3D figures could not be drawn in this browser, so this question cannot be answered here.' (before: three times). The acceptance asked for one message.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-017/chromium/002-320x568-no-webgl-viewport.png", "web/test-results/ux-review/verify/UX-017/chromium/004-1280x800-no-webgl-viewport.png", "web/test-results/ux-review/verify/UX-017/iphone/002-390x664-no-webgl-viewport.png"],
+      "before": ["web/test-results/ux-review/visual-start/tour-chromium/item-spatial-no-webgl/1280-light.png", "web/test-results/ux-review/visual-start/tour-chromium/item-spatial-no-webgl/390-light.png"]
+    },
+    {
+      "id": "UX-017b",
+      "verdict": "verified",
+      "evidence": "Without WebGL the renderer draws no option frames, no canvases and no Confirm (counts 0, 0, 0 at 320, 390 and 1280), only its one-line note. With the three-view chunk delayed by 2.5 s the target box shows 'Loading figures…' over the paper. The expected console error 'THREE.WebGLRenderer: Error creating WebGL context' is the only console error of the whole tour.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-017/chromium/004-1280x800-no-webgl-viewport.png", "web/test-results/ux-review/verify/UX-017/chromium/005-loading-figures.png"],
+      "before": ["web/test-results/ux-review/visual-start/tour-chromium/item-spatial-no-webgl/1280-light.png", "web/test-results/ux-review/phone/perf-pixel/004-spatial-waiting.png"]
+    },
+    {
+      "id": "UX-018a",
+      "verdict": "verified",
+      "evidence": "Break offer: 'You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.' No 'sharp', 'help you', 'improve' or similar anywhere on the screen.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-008/chromium/002-break-offer.png"],
+      "before": ["web/test-results/ux-review/flow/tour-chromium/break-offer/1280-light.png"]
+    },
+    {
+      "id": "UX-018b",
+      "verdict": "verified",
+      "evidence": "Focus-session text on Ready (returning) and on the results: 'Pick the parts you want measured more precisely. A focus session takes about 20 minutes and covers only the parts you choose.' The results page with every disclosure open has no sentence with sharpen/improve/boost/train/you gained/describe you; the retest intro reads '…where another session would narrow your ranges most.'",
+      "screenshots": ["web/test-results/ux-review/verify/UX-033/chromium/001-ready-returning-picker.png", "web/test-results/ux-review/verify/UX-034-036/chromium/001-1-sessions-results-open.png"],
+      "before": ["web/test-results/ux-review/copy/evidence/retest-sharpen/001-retest-sharpen.png"]
+    },
+    {
+      "id": "UX-019",
+      "verdict": "verified",
+      "evidence": "Reading questions by keyboard: Space then Enter on question 1's option moves focus to question 2's first radio (2 of 3 still blank, no submit); Enter on question 3's option lands on 'Submit answers'. Submit with two blank asks once in a role=alert line ('2 questions are not answered yet. Choose Submit answers again to submit anyway, or answer them first.') and keeps the questions; a second press submits. With every question answered one press ends the block. The count line reads '3 questions not answered yet.' and legends sit inside their frames.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-019/chromium/001-after-enter-on-q1.png", "web/test-results/ux-review/verify/UX-019/chromium/002-after-submit-with-blanks.png"],
+      "before": ["web/test-results/ux-review/keyboard/coding-chromium/005-reading-after-enter.png", "web/test-results/ux-review/copy/evidence/reading-not-answered/001-reading-not-answered.png"]
+    },
+    {
+      "id": "UX-020",
+      "verdict": "verified",
+      "evidence": "Matrix practice item: grid cells and option figures are the same width at 1280 (114.7 px both), 768 (114.7), 390 (114) and 320 (90.7), ratio 1.00 (before 0.70); the grid and the options share their left edge (320/64/16 px) and width (360/358/288).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-020-021/chromium/001-1280-matrix.png", "web/test-results/ux-review/verify/UX-020-021/chromium/006-320-matrix.png"],
+      "before": ["web/test-results/ux-review/visual-start/details-options-chromium/001-practice-focus-option-light.png"]
+    },
+    {
+      "id": "UX-021",
+      "verdict": "verified",
+      "evidence": "Confirm is hb-btn hb-primary (blue rgb 29,78,216 on white), disabled at opacity 0.6; a focused option card shows the shared amber 3 px ring (rgb 180,83,9), the same as the Confirm button after it. iPhone: a double tap on the confidence Continue twice in a row never pre-selects an option or types into the next item (0 radios checked both times).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-020-021/chromium/002-1280-option-focus.png", "web/test-results/ux-review/verify/UX-020-021/chromium/003-1280-confirm-focus.png", "web/test-results/ux-review/verify/UX-020-021/iphone/002-double-tap-continue-0.png"],
+      "before": ["web/test-results/ux-review/visual-start/details-options-chromium/002-practice-focus-confirm-light.png", "web/test-results/ux-review/skimmer/double-iphone/004-after-continue-twice.png"]
+    },
+    {
+      "id": "UX-022",
+      "verdict": "verified",
+      "evidence": "On Start the focused stage is a named group: RT 'Reaction stage: press Space when the target appears', digit span 'Digits: watch them, then type them in order', coding 'Shapes: type the digit for each shape'; the Corsi board is 'Board of 9 blocks'. The digit-span status line is mounted empty (aria-live polite) in the intro and carries 'Watch the digits.' as a change. translate='no' on the ring text, RT counters, the coding timer and the sign/point keys; touch-action manipulation on the RT stage, the Corsi board, the keypad and the coding stage.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-022-025-026/chromium/001-rt-stage.png", "web/test-results/ux-review/verify/UX-002/iphone/003-390x664-span-entry-viewport.png"],
+      "before": ["web/test-results/ux-review/phone/screens-session-iphone/005-rt-trial-viewport.png"]
+    },
+    {
+      "id": "UX-023",
+      "verdict": "partially",
+      "evidence": "Nine blocks of exactly 44 px at 390x664 and 320x568, none overlapping, all inside the board (345 px at 390, 288 px at 320). At 390x664 Done is inside the first screen (bottom 558 with the h1 at the top) and the board does not move after Done. At 320x568 with the dev banner hidden and the h1 at the top, Done's bottom is at 585 px, 17 px below the fold, and after Done the board shifts 17 px as the next sequence comes into view. The acceptance named 320x568.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-023/iphone/002-390x664-corsi-no-banner-viewport.png", "web/test-results/ux-review/verify/UX-023/iphone/005-320x568-corsi-no-banner-viewport.png", "web/test-results/ux-review/verify/UX-023/iphone/006-320x568-after-done-viewport.png"],
+      "before": ["web/test-results/ux-review/phone/corsi-iphone-se/001-corsi-viewport.png", "web/test-results/ux-review/phone/corsi-iphone/001-corsi-viewport.png"]
+    },
+    {
+      "id": "UX-024",
+      "verdict": "verified",
+      "evidence": "Typed '٣٥', '１２' and '1 000' are accepted and submitted on integer/decimal items; '3,5' and '3.5' on an integer item are refused with 'That entry could not be read as a whole number. Use only the digits 0 to 9, with no spaces or commas, and a minus sign if needed, for example 42 or -7.' (before: 3.5 passed). On a decimal item ('decimals are fine, such as 12.5') the 'Decimal point' key appears on the iPhone (coarse pointer) and on a de-DE desktop, and inserts the point ('3.5'); an en-US desktop with a mouse gets no extra key. Entry box 192 px wide (before 608).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-024b/iphone/001-touch-coarse-pointer-decimal-item.png", "web/test-results/ux-review/verify/UX-024b/chromium/001-desktop-de-de-decimal-item.png", "web/test-results/ux-review/verify/UX-024/chromium/001-quant-item-1.png"],
+      "before": ["web/test-results/ux-review/nonnative/entry-quant-iphone/001-quant-item-1.png", "web/test-results/ux-review/nonnative/entry-series-chromium/004-series-item-1-entry-3-rejected.png"]
+    },
+    {
+      "id": "UX-025",
+      "verdict": "verified",
+      "evidence": "Digit span intro: '…with the keypad or the number keys, then choose Done. Press Enter when you are done; Backspace removes the last digit. The sequences get longer step by step.' Coding: title 'Shape to digit', table 'Shape-to-digit table', intro 'Each shape in the table above has a digit. Shapes will appear one at a time. For each shape, type its digit, with the on-screen keypad or the number keys on your keyboard…'. Series: region 'Number or letter sequence', prompt 'Which number comes next in this sequence?', field 'Next number', hidden 'missing next number'.",
+      "screenshots": ["web/test-results/ux-review/verify/tour-chromium/memory-intro/1280-light.png", "web/test-results/ux-review/verify/tour-chromium/coding-intro/1280-light.png", "web/test-results/ux-review/verify/tour-chromium/item-matrix-series/1280-light.png"],
+      "before": ["web/test-results/ux-review/nonnative/tour/coding-intro/1280-light.png", "web/test-results/ux-review/copy/tour/item-spatial/1280-light.png"]
+    },
+    {
+      "id": "UX-026",
+      "verdict": "verified",
+      "evidence": "RT screens: h1 'Reaction time', renderer title 'One position' (and 'Four positions' for the choice block); no repeated heading.",
+      "screenshots": ["web/test-results/ux-review/verify/tour-chromium/rt-intro/390-light.png"],
+      "before": ["web/test-results/ux-review/visual-start/tour-chromium/rt-trial/390-light.png"]
+    },
+    {
+      "id": "UX-027",
+      "verdict": "verified",
+      "evidence": "16 px under every button row (welcome link, ready notes; .hb-actions margin-bottom 16px); checkboxes and radios take the accent rgb(29,78,216), the same as the primary button; in print with a dark OS the render tokens are the light ones (--r-fg #1f1d24, --r-bg #fff, buttons dark on light) where the screen in dark mode has --r-fg #f1f0f4 on #16151b.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-027/chromium/001-device-390.png", "web/test-results/ux-review/verify/UX-027/chromium/002-print-dark-os.png"],
+      "before": ["web/test-results/ux-review/visual-start/tour-chromium/welcome/390-light.png", "web/test-results/ux-review/visual-start/details-device-chromium/001-device-focus-radio-390-light.png"]
+    },
+    {
+      "id": "UX-028",
+      "verdict": "verified",
+      "evidence": "Back to the start -> Stay and save: focus is on 'Download save file' and the button is in view (Chromium: top 338 of 720; iPhone: top 310 of 664, save panel in view). Before: focus on 'Back to the start' 2,000 to 3,000 px below the panel.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-028-031/chromium/003-after-stay-and-save.png", "web/test-results/ux-review/verify/UX-028-031/iphone/003-after-stay-and-save.png"],
+      "before": ["web/test-results/ux-review/keyboard/results-leave-chromium/002-after-stay-and-save.png", "web/test-results/ux-review/sharer/stay-iphone/002-after-stay.png"]
+    },
+    {
+      "id": "UX-029",
+      "verdict": "verified",
+      "evidence": "Unsaved results open with 'Your results are not saved yet. Download your save file to keep them. Go to the save file' above the practice badge, inside the first screen (top 161 px at 1280x720, 135 px on the iPhone), plain text (no status role). The link moves focus to the 'Save your results' heading and scrolls the panel into view. The unsaved panel has a 2 px accent border and a surface fill; after the save the border is grey and the fill gone, the pointer is removed.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-028-031/iphone/001-results-top-unsaved.png", "web/test-results/ux-review/verify/UX-028-031/chromium/001-results-top-unsaved.png", "web/test-results/ux-review/verify/UX-028-031/chromium/002-after-pointer-link.png"],
+      "before": ["web/test-results/ux-review/sharer/save-panel-iphone/001-results-top.png", "web/test-results/ux-review/phone/results-iphone/003-results-viewport.png"]
+    },
+    {
+      "id": "UX-030",
+      "verdict": "verified",
+      "evidence": "Copy save code before saving: one status, 'Save code copied. Keep it in a note to yourself and paste it under \"Or paste a save code\" on the \"Ready when you are\" screen. Downloading the file is still the safest way to keep your results.' (before: 'Save code copied. Save code copied.'); after saving, 'Save code copied.' once. After the download: status 'Save file downloaded.', a line 'Saved as humanbench-aaaaaa-2026-10-05.hbsave.json. Look in your Downloads folder (on an iPhone, the Files app) and keep it.', done text '…Your share card and notes for your AI are just below.', and 'Download save file' is no longer primary. Chromium and iPhone.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-028-031/chromium/004-after-copy-code.png", "web/test-results/ux-review/verify/UX-028-031/chromium/005-save-panel-after-download.png", "web/test-results/ux-review/verify/UX-028-031/iphone/006-after-download-viewport.png"],
+      "before": ["web/test-results/ux-review/sharer/copy-code-chromium/001-after-copy-unsaved.png", "web/test-results/ux-review/sharer/save-panel-iphone/003-save-panel-after.png"]
+    },
+    {
+      "id": "UX-031",
+      "verdict": "verified",
+      "evidence": "'Save your file first to see the next steps.' sits in an hb-reveal-panel at x 224 at 1280 px (the same x as the save panel; before x 80), in the muted note style (rgb 74,70,82, 15 px, class note).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-028-031/chromium/003-after-stay-and-save.png"],
+      "before": ["web/test-results/ux-review/visual-results/crops/results-1280-light-pending-note.png"]
+    },
+    {
+      "id": "UX-032",
+      "verdict": "verified",
+      "evidence": "A one-skill profile (one answer, finish early, save) gets 'A card needs at least 3 measured skills, and your profile has 1. Play more parts or add another session, then come back to make a card.' with no toggles or buttons; the seven-skill profile keeps 'Tick at least 3 skills to make a card (0 ticked).' after Hide all. After a colour change the PNG button is aria-disabled for about 1.3 s but stays in the Tab order (ArrowUp then Tab: full-size link, PNG, SVG). The count line's number is in a translate='no' span. 'View the card full size (opens in a new tab)' (blob URL) is under the preview; on the iPhone it is 44 px tall and the preview is 324 px wide.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-032/chromium/003-c-one-skill-card-panel.png", "web/test-results/ux-review/verify/UX-032/chromium/001-a-card-panel.png", "web/test-results/ux-review/verify/UX-032/iphone/001-a-card-panel.png"],
+      "before": ["web/test-results/ux-review/sharer/device2-iphone-b/004-b-card-panel.png", "web/test-results/ux-review/keyboard/extra-share-chromium/001-after-colour-change.png"]
+    },
+    {
+      "id": "UX-033",
+      "verdict": "verified",
+      "evidence": "Focus picker rows on Ready (returning) and after the save: each a 44 px label with the checkbox inside, 44 px pitch (before 60), text and accessible name 'Matrix & Series (wide range)' with the space, 1 px fieldset border; no small targets inside the picker on the iPhone.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-033/chromium/001-ready-returning-picker.png", "web/test-results/ux-review/verify/UX-033/iphone/002-results-saved-picker.png"],
+      "before": ["web/test-results/ux-review/copy/evidence/focus-picker-wide-range.png"]
+    },
+    {
+      "id": "UX-034",
+      "verdict": "verified",
+      "evidence": "Results of 1 and 2 sessions with every disclosure open: practice badge 'This profile is practice-adjusted: each later session is credited for the typical gain from practice (a provisional figure)…' (no 'describe you', no 'you gained'); peaks intro 'A peak is a skill that stands out from your profile as a whole…'; peaks note names the hollow and filled markers, no colours; the loading screen is named as 'press Start and load your save file on the \"Ready when you are\" screen' (no 'start screen'); 'About these numbers' leads with 'Rough comparisons and a note on pace…' and 'From your most recent attempt at each task:'; pace in words ('about 45 seconds per question'); the AI link reads 'Thinking of asking an AI about your results? Read this first.'",
+      "screenshots": ["web/test-results/ux-review/verify/UX-034-036/chromium/001-1-sessions-results-open.png", "web/test-results/ux-review/verify/UX-034-036/chromium/002-2-sessions-results-open.png"],
+      "before": ["web/test-results/ux-review/copy/evidence/peaks-colour-note/001-peaks-colour-note.png", "web/test-results/ux-review/data/results2-chromium/001-results-light.png"]
+    },
+    {
+      "id": "UX-035",
+      "verdict": "verified",
+      "evidence": "Heading matches the count: 'Three worked examples' with three articles on the simulated saves, 'Two worked examples' with two on the Chromium journey. Example 2 is 'Sequence' and asks 'What comes next in this sequence?'; the quantitative stem is regular weight (400, no strong); no 'subtract 1x' or 'next term'; the disclosure inside a card is a 1 px rule with no fill (no box in a box).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-034-036/chromium/001-1-sessions-results-open.png", "web/test-results/ux-review/verify/journey-chromium/025-results-final.png"],
+      "before": ["web/test-results/ux-review/copy/tour/results-open/1280-light.png"]
+    },
+    {
+      "id": "UX-036",
+      "verdict": "verified",
+      "evidence": "Summaries ('Show the worked solution', 'Pace') have list-style none and a CSS chevron (::before with a 2 px border); every h2 on the results is rgb(31,29,36) at 20 px, the peaks heading included; the build-up status is mounted empty and reads 'Building your profile, one skill at a time.' 106 ms later, then 'Your profile is ready.'",
+      "screenshots": ["web/test-results/ux-review/verify/UX-034-036/chromium/003-build-up.png", "web/test-results/ux-review/verify/UX-034-036/chromium/001-1-sessions-results-open.png"],
+      "before": ["web/test-results/ux-review/visual-results/crops/results-iphone-pace-summary.png"]
+    },
+    {
+      "id": "UX-037",
+      "verdict": "verified",
+      "evidence": "#/dev/blob?profile=offscale: Reaction Time (+4.74) and Processing & Reading Speed (−4.87) draw an arrowhead at the rim and at the clamp instead of a dot, with an italic 'off scale' label line, while the ten not-measured spokes keep their grey stubs; the caption adds 'An arrow at the centre or the rim of the chart marks an estimate at or past the end of the scale…'. Bar view: arrow at the track end, '(off scale)' after the estimate, no zero-length range line, and the note under the bars. On the real journeys (random answers) seven skills are off scale and carry the label and '(off scale)' in the table.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-037/chromium/001-dev-offscale-chart.png", "web/test-results/ux-review/verify/UX-037/chromium/002-dev-offscale-bars.png", "web/test-results/ux-review/verify/journey-chromium/025-results-final.png", "web/test-results/ux-review/verify/journey-iphone/027-results-bars.png"],
+      "before": ["web/test-results/ux-review/data/journey-chromium/002-chart-light.png", "web/test-results/ux-review/data/journey-chromium/003-bars-light.png"]
+    },
+    {
+      "id": "UX-038",
+      "verdict": "verified",
+      "evidence": "Downloaded light and dark cards (SVG and PNG): the smallest text is 20 card px, i.e. 10 px at 600 wide (before: caveats unreadable); the small print holds 'Rough estimates on a provisional scale…', 'Ranges that overlap are not real differences.' exactly once, the key 'Filled: range clear of 0 SD. Hollow: range overlaps 0 SD. SD means standard deviation.' and 'Rings: SD units, provisional / Centre: −3 SD'. Rendered at 600 px the caveats and key are readable.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-038/chromium/003-light-png-at-600.png", "web/test-results/ux-review/verify/UX-038/chromium/004-dark-png-at-600.png", "web/test-results/ux-review/verify/UX-038/chromium/001-light-panel.png"],
+      "before": ["web/test-results/ux-review/sharer/card-chromium-thumbs/001-png-light-600px.png", "web/test-results/ux-review/visual-results/details-share/downloads/thumb-600-light.png"]
+    },
+    {
+      "id": "UX-039",
+      "verdict": "verified",
+      "evidence": "Table headers 'Skill | Cluster | Estimate (SD units) | 90% range (SD) | Compared with 0 SD', caption 'Estimates by skill, in standard-deviation (SD) units on a provisional scale, each ± its uncertainty, with 90% ranges.', cells '+0.88 ± 0.60' (no '(SD 0.60)'); the word 'interval' appears 0 times and '90% range' 5 times; the figcaption opens with 'Compare spokes one at a time: the size of the shape means nothing on its own…' and spells out 'standard-deviation (SD) units'; the tier legend is '○ timed, memory or estimation tasks, compared with provisional typical values. ◇ answers scored by how most people respond, so less certain.'",
+      "screenshots": ["web/test-results/ux-review/verify/UX-039-043/chromium/001-bars-1280.png", "web/test-results/ux-review/verify/UX-037/chromium/001-dev-offscale-chart.png"],
+      "before": ["web/test-results/ux-review/copy/evidence/results-table-sd-interval/001-results-table-sd-interval.png"]
+    },
+    {
+      "id": "UX-040",
+      "verdict": "verified",
+      "evidence": "Drill-down facets read 'Mental rotation (3D)', 'Digits, same order', 'Block sequence', 'Simple reaction time', 'Choice reaction time', 'Shape to digit', 'Reading speed', 'Averages', 'Fractions', 'Rates', 'Ratios', 'Simultaneous equations', 'Sequences', 'Matrices'; stubs read 'Insufficient data (1 timed task; 5 needed)'; no 'Simple rt', 'Linear eq', 'Recip', '3d rotation', 'Arith', 'block;' anywhere in the eight panels.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-039-043/chromium/005-drill-spatial-memory.png", "web/test-results/ux-review/verify/UX-039-043/iphone/007-drill-speed.png"],
+      "before": ["web/test-results/ux-review/copy/evidence/drilldown-facet-names/001-drilldown-facet-names.png", "web/test-results/ux-review/data/results1-chromium/017-drill-speed.png"]
+    },
+    {
+      "id": "UX-041",
+      "verdict": "verified",
+      "evidence": "Speed, Quantitative and Reasoning (every facet short of data) show one sentence ('None of the 4 facets of Speed has enough data yet: each needs 5 scored questions or timed tasks. Facets fill in over several sessions.' / 'Neither of the 2 facets of Reasoning…') and a plain list of the facet names, with no chart and no table; Spatial/Memory with one measured facet shows the table alone, no sub-blob.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-039-043/iphone/007-drill-speed.png", "web/test-results/ux-review/verify/UX-039-043/chromium/009-drill-quantitative.png", "web/test-results/ux-review/verify/UX-039-043/chromium/005-drill-spatial-memory.png"],
+      "before": ["web/test-results/ux-review/visual-results/details-charts/017-facets-speed-1280-light.png", "web/test-results/ux-review/data/journey-chromium/011-drill-quantitative.png"]
+    },
+    {
+      "id": "UX-042",
+      "verdict": "verified",
+      "evidence": "At 390 and 320 px on Chromium the compact labels are prefixes of the table names ('Logic games', 'Logical', 'Reading comp.', 'Working mem.', 'Reaction', 'Processing', 'Fermi', 'Quantitative'); 'Estimation' no longer doubles as a skill name next to 'Quantitative' and no label boxes overlap (0 overlaps at 390 and 320). On the iPhone project the full two-line names fit with 0 overlaps.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-039-043/chromium/010-390-blob.png", "web/test-results/ux-review/verify/UX-039-043/chromium/012-320-blob.png", "web/test-results/ux-review/verify/UX-039-043/iphone/010-390-blob.png"],
+      "before": ["web/test-results/ux-review/nonnative/expand/results/390-light.png", "web/test-results/ux-review/data/phone-iphone/001-chart.png"]
+    },
+    {
+      "id": "UX-043",
+      "verdict": "verified",
+      "evidence": "Bar view at 390 and 320 px: each row is a card (name and comparison, estimate and range, the lollipop on its own 240 px line; before 62 px), no word broken inside a word, no number split from its unit, the cluster column dropped, no clipped text and no page-level sideways scroll (tour: overflow 0 on results-bars at 390 on both projects).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-039-043/chromium/013-320-bars.png", "web/test-results/ux-review/verify/UX-039-043/iphone/011-390-bars.png"],
+      "before": ["web/test-results/ux-review/visual-results/crops/bars-320-light-top.png", "web/test-results/ux-review/phone/results-iphone-se/008-bars-viewport.png"]
+    },
+    {
+      "id": "UX-044",
+      "verdict": "verified",
+      "evidence": "At 390 px with the text at 200% the chart labels stay 13.3 px (body 32 px) but the page now shows 'Large text: the bar view shows the same data in text.' beside the view toggle; at 1280 px with 200% text the labels scale to 38.5 px. At 100% nothing changes (12.5 / 13.5 px, no hint).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-044-047/chromium/002-blob-390-zoom200.png", "web/test-results/ux-review/verify/UX-044-047/chromium/001-blob-390-zoom100.png"],
+      "before": ["web/test-results/ux-review/visual-results/details-chart-text/002-blob-390-zoom200.png"]
+    },
+    {
+      "id": "UX-045",
+      "verdict": "verified",
+      "evidence": "Paint order of the page chart: wedges, grid, ring-labels, band, fuzz, crisp, marks, labels, so the ring labels' halo knocks out the grid only; the card's SVG has the same order (grid, ring-labels, fuzz, marks, labels). No label sits over a curve, marker or whisker in the light or dark chart shots.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-044-047/chromium/005-chart-light.png", "web/test-results/ux-review/verify/UX-038/chromium/003-light-png-at-600.png"],
+      "before": ["web/test-results/ux-review/visual-results/details-devblob/005-blob-full-1280-light.png"]
+    },
+    {
+      "id": "UX-046",
+      "verdict": "verified",
+      "evidence": "Clicking the Knowledge wedge opens its panel, scrolls it into view (panel top 787 of a 900 px viewport, block 'nearest', so its heading and first line enter at the bottom edge) and moves focus to the h3 'Knowledge: facets'. On the iPhone the Speed panel opens with its top at 369 of 664. Before: nothing in view changed.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-044-047/chromium/006-after-wedge-click.png", "web/test-results/ux-review/verify/viz-phone/iphone/002-drill-speed-viewport.png"],
+      "before": ["web/test-results/ux-review/visual-results/details-motion/016-wedge-click.png"]
+    },
+    {
+      "id": "UX-047",
+      "verdict": "verified",
+      "evidence": "svg role=img is labelled by the title only and described by the desc; the figure is named 'Skill profile blob' (figcaption is content). The ±1 SD band has a 1 px outline at opacity 0.6 (light) / 0.5 (dark) in the band colour. Every h2 is 20 px rgb(31,29,36). In print with a dark OS the chart's curve is the light-theme blue rgb(0,114,178) and the label halo is gone. Card peaks sub-heading 'Compared with this card's skills as a whole'.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-044-047/chromium/005-chart-light.png", "web/test-results/ux-review/verify/UX-044-047/chromium/004-chart-dark.png", "web/test-results/ux-review/verify/UX-044-047/chromium/003-print-dark-chart.png", "web/test-results/ux-review/verify/UX-038/chromium/003-light-png-at-600.png"],
+      "before": ["web/test-results/ux-review/data/results1-chromium/002-chart-light.png", "web/test-results/ux-review/visual-results/crops/print-a4-dark-os-no-backgrounds-p1.png"]
+    },
+    {
+      "id": "UX-048a",
+      "verdict": "verified",
+      "evidence": "The 'not offered yet' reason exists and is backward compatible: the dev blob route (no offered set) still shows plain 'not measured' stubs, the product build (UX-048b) shows the new label.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-037/chromium/002-dev-offscale-bars.png"]
+    },
+    {
+      "id": "UX-048b",
+      "verdict": "verified",
+      "evidence": "On the real results (simulated save, and both journeys) every skill no part measures reads 'Not measured (not offered yet)': Analytical/Logic Games, Logical Reasoning, Reading Comprehension, Vocabulary & Verbal Analogies, Humanities, STEM and Arts & Practical Knowledge, Emotion Reading, Creative Thinking, Fermi Estimation; skills with a part show their estimate.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-039-043/chromium/001-bars-1280.png", "web/test-results/ux-review/verify/journey-iphone/027-results-bars.png"],
+      "before": ["web/test-results/ux-review/data/journey-chromium/003-bars-light.png"]
+    },
+    {
+      "id": "UX-049",
+      "verdict": "verified",
+      "evidence": "notes.html links 'HumanBench' home (header) and 'Privacy and terms (opens in a new tab)' (footer, target=_blank). The first Tab lands on 'Skip to copying your notes'; Enter moves focus to the 'Copy your notes' group with the Copy button in view, and the next Tab is 'Copy the notes' (68 Tabs from the top without the skip link, before 48 to 96 with nothing to skip to).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-049-053/chromium/002-notes-first-tab.png", "web/test-results/ux-review/verify/UX-049-053/chromium/003-notes-after-skip-link.png", "web/test-results/ux-review/verify/UX-049-053/iphone/001-notes-top.png"],
+      "before": ["web/test-results/ux-review/keyboard/routes-chromium/001-notes-arrival.png", "web/test-results/ux-review/sharer/notes-iphone-tab/001-01-as-opened-viewport.png"]
+    },
+    {
+      "id": "UX-050",
+      "verdict": "verified",
+      "evidence": "Enter on 'Keep my settings on this device' with the box ticked moves focus to 'Download a save file with my settings'; without the tick the 18+ checkbox gets aria-invalid='true' and aria-describedby pointing at the error, and focus stays on the button.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-049-053/chromium/005-keep-error.png", "web/test-results/ux-review/verify/UX-049-053/chromium/006-after-keep.png"],
+      "before": ["web/test-results/ux-review/keyboard/notes-chromium/005-notes-keep-error.png"]
+    },
+    {
+      "id": "UX-051",
+      "verdict": "verified",
+      "evidence": "The 'Where will you use these notes?' radios are named 'Coding and data', 'Learning something new', 'Reading dense material', 'Everyday numbers', 'Writing', 'General' and described by their blurbs (aria-labelledby / aria-describedby).",
+      "screenshots": ["web/test-results/ux-review/verify/tour-chromium/notes/1280-light.png"],
+      "before": ["web/test-results/ux-review/screenreader/audit/notes/001-notes.png"]
+    },
+    {
+      "id": "UX-052",
+      "verdict": "verified",
+      "evidence": "Checker prints '(lines 14 and 15)'; the returning notice reads 'The notes you made in January 2025 may need another look. Check that they still say what you want, and copy them again if you change anything.' (integration completed the month in words); after settings are kept the top note changes to 'Your settings are kept on this device. Only your choices are kept, never what you typed.' and on return 'Your settings from last time are here…', with the duplicate 'now kept' line hidden visually (still announced); the topic hint says 'how to adjust its explanations' (no 'pitch'); 'Maths and numbers' is in the topics list.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-049-053/chromium/004-checker.png", "web/test-results/ux-review/verify/UX-049-053/chromium/007-returning.png", "web/test-results/ux-review/verify/UX-049-053/chromium/006-after-keep.png"],
+      "before": ["web/test-results/ux-review/copy/evidence/notes-checker-line-list/001-notes-checker-line-list.png", "web/test-results/ux-review/baseline/tour/notes-returning/1280-light.png"]
+    },
+    {
+      "id": "UX-053",
+      "verdict": "verified",
+      "evidence": "The share card and 'Working with AI' cards share bg rgb(243,242,246), 1 px grey border, padding 12/16 px, margin 0 0 16 px, h3 17 px dark with margin-top 0, same x and width (224/832 at 1280, 16/358 on the iPhone); the 'never paste' warning spans the card. In print with a dark OS the AI card and warning keep light colours, and notes.html prints black on white.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-049-053/chromium/008-after-save-cards.png", "web/test-results/ux-review/verify/UX-049-053/chromium/009-after-save-cards-print-dark.png", "web/test-results/ux-review/verify/UX-049-053/chromium/010-notes-print-dark.png"],
+      "before": ["web/test-results/ux-review/visual-results/crops/results-saved-1280-light-cards.png"]
+    },
+    {
+      "id": "UX-054",
+      "verdict": "verified",
+      "evidence": "Self-test results table on the iPhone (390) and at 320 px: p50/p95/Max numbers on one line ('17.0', '18.0', '26.0'), the n and Result columns hidden on phones and the verdict ('Pass', 'For information', 'Skipped') under the check name, no word broken, table 358/288 px wide, no sideways overflow; caption 'Timing checks in milliseconds (n is the number of samples)'.",
+      "screenshots": ["web/test-results/ux-review/verify/UX-054-055/iphone/002-results-table.png", "web/test-results/ux-review/verify/UX-054-055/chromium/004-results-table-320.png"],
+      "before": ["web/test-results/ux-review/visual-results/crops/rt-selftest-results-iphone-table.png", "web/test-results/ux-review/visual-results/tour-chromium/rt-selftest-results/320-light.png"]
+    },
+    {
+      "id": "UX-055",
+      "verdict": "verified",
+      "evidence": "Start keeps focus (Chromium: focus on 'Start' aria-disabled while measuring; the key phase then focuses its zone 'Press the Space bar 3 times, at your own pace (0 of 3).'); 'Run again' is a plain button afterwards. 'RT' appears only in the title; no 'timestamp' or 'performance.now' text; the intro is a short sentence plus a list; a 44 px 'HumanBench' link leads home; copy says 'Report copied.' (iPhone) or 'Copying was blocked. The report is selected: copy it yourself.' (Chromium without clipboard permission).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-054-055/chromium/001-after-start.png", "web/test-results/ux-review/verify/UX-054-055/chromium/005-results.png"],
+      "before": ["web/test-results/ux-review/keyboard/selftest-chromium/001-selftest-first-tab.png", "web/test-results/ux-review/copy/tour/rt-selftest/1280-light.png"]
+    },
+    {
+      "id": "UX-056",
+      "verdict": "verified",
+      "evidence": "After the save the results say 'To add a session later, press Start and load your save file on the \"Ready when you are\" screen.'; no sentence names a 'start screen' on the results (Chromium and iPhone).",
+      "screenshots": ["web/test-results/ux-review/verify/UX-028-031/chromium/005-save-panel-after-download.png"],
+      "before": ["web/test-results/ux-review/flow/end-chromium/007-results-full-after-save.png"]
+    }
+  ],
+  "integration_changes": [
+    { "id": "harness literals", "verdict": "verified", "evidence": "The shared drivers and personas run on the fixed build: both ?fast=1 journeys complete (iPhone by touch: 6 parts, 218 answers, 505 steps in 51 s; Chromium: 157 answers, 410 steps in 47 s), every product route opens on both projects, 'Session ended' is detected by the drivers." },
+    { "id": "results-view route", "verdict": "verified", "evidence": "The new results-view route opens on Chromium (1280/390, light/dark) and iPhone with no overflow, clipping or console error." },
+    { "id": "stray-token and static-fallback tests", "verdict": "not re-run", "evidence": "Unit tests are the integrator's gate; this package ran no vitest." }
+  ],
+  "regressions": [
+    "VER-01 Checklist names break mid-word in the desktop sidebar and one letter per line at 320 px with 200% text (minor)",
+    "VER-02 Welcome screen shows two identical 'Privacy and terms' links, the footer one 24 px tall (polish)",
+    "VER-03 One-row coding keypad: keys 38 px wide on an iPhone 13 and 30 px at 320 px (minor, owner decision)"
+  ],
+  "coverage": {
+    "tour": "50 product routes on chromium at 390 and 1280 px, light and dark (200 states), and on iphone at 390 px light; every route opened; metrics per state in web/test-results/ux-review/verify/tour-<project>/summary.json; compared with web/test-results/ux-review/baseline/tour/summary.json (differences: titles now name the screen, checklist navigation became a region, notes and self-test gained a banner, finished-nothing is 'Session ended'; no new overflow, clipped text or console error; the only console error is THREE's WebGL message on item-spatial-no-webgl, present in the baseline too)",
+    "journeys": "web/test-results/ux-review/verify/journey-iphone (touch) and journey-chromium (mouse and keys): both completed to a profile; results metrics: overflow 0, clipped 0, axe serious 0",
+    "items": "every fix and integration item replayed on chromium and iphone (iPhone 13; 320x568 and 200% text where the finding was there), evidence under web/test-results/ux-review/verify/<item>/<project>/ with NNN-facts.json; the first, overwritten pass is kept under verify/_first-pass/",
+    "keyboard spot checks": "practice (UX-004), confirm panels (UX-005a), leave panel (UX-005b, results-leave-keys), welcome/privacy/gate/results (UX-006), device check (UX-013), reading questions (UX-019), share card (UX-032), notes skip link and keep (UX-049, UX-050), self-test Start (UX-055)",
+    "not covered": "WebKit desktop and Pixel projects (the iPhone project is WebKit); vitest and the isolated e2e (the integrator's gates); the 'Last saved today at …' autosave line (UX-012a); the per-part minute figures were not compared with a plan (they are a remaining-time budget)"
+  },
+  "files": {
+    "specs": ["web/ux-review/personas/verify-tour.ux.ts", "web/ux-review/personas/verify-session.ux.ts", "web/ux-review/personas/verify-render.ux.ts", "web/ux-review/personas/verify-reveal.ux.ts", "web/ux-review/personas/verify-viz.ux.ts", "web/ux-review/personas/verify-notes.ux.ts"],
+    "findings": "web/ux-review/findings/verify-regressions.json",
+    "evidence": "web/test-results/ux-review/verify/"
+  }
+}

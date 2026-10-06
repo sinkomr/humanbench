@@ -15,7 +15,8 @@
   --warn-border: #b7791f;
 }
 
-@media (prefers-color-scheme: dark) {
+/* Screen only: paper stays light, whatever the system scheme (UX-053). */
+@media screen and (prefers-color-scheme: dark) {
   :root {
     --surface: #1e1d25;
     --muted: #a9a7b3;

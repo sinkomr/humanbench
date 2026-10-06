@@ -20,7 +20,9 @@
  *   the solved variants rather than a case a taker meets now; `worked.test.ts` pins both.
  * - **Uncounted.** Nothing here is scored, stored as a response or fed to the estimate.
  * - Easy-to-follow strata: matrix 2, series 3, quant 2, and only quant variants that have a
- *   worked solution (`quant.ts`).
+ *   worked solution (`quant.ts`). A kind whose families are all used up at its stratum is tried at
+ *   the neighbouring ones ({@link FALLBACK_STRATA}) before it is left out: quant has only about a
+ *   dozen families per stratum, so a person who met many of them would otherwise see two examples.
  */
 
 import { getFamily } from '../../tasks/registry'
@@ -37,14 +39,23 @@ export { seriesSolution, quantSolution, matrixSolution, hasQuantSolution, QUANT_
 export type { WorkedItem, WorkedKind, WorkedSolution } from './types'
 export { WORKED_KINDS } from './types'
 
-const SPEC: Readonly<Record<WorkedKind, { family: string; stratum: 1 | 2 | 3 | 4 | 5; title: string }>> = {
-  matrix: { family: 'matrices', stratum: 2, title: 'Matrix' },
-  series: { family: 'series', stratum: 3, title: 'Series' },
-  quant: { family: 'quant', stratum: 2, title: 'Quantitative' },
+const SPEC: Readonly<Record<WorkedKind, { family: string; title: string }>> = {
+  matrix: { family: 'matrices', title: 'Matrix' },
+  series: { family: 'series', title: 'Sequence' },
+  quant: { family: 'quant', title: 'Quantitative' },
 }
 
-/** Seeds tried per kind before it is left out (a family is one of many, so a handful is plenty). */
+/** Seeds tried per kind and stratum before it moves on (a family is one of many, so a handful is plenty). */
 export const WORKED_ATTEMPTS = 400
+
+type Stratum = 1 | 2 | 3 | 4 | 5
+
+/** The strata tried for each kind, in order: its own first, then the neighbours whose items a reader can still follow. */
+export const FALLBACK_STRATA: Readonly<Record<WorkedKind, readonly Stratum[]>> = Object.freeze({
+  matrix: [2, 3, 1],
+  series: [3, 2, 4],
+  quant: [2, 1],
+})
 
 /** The worked solution of `item`, or null when its kind or variant has none. */
 export function workedSolutionOf(item: ItemInstance<object, object>): WorkedSolution | null {
@@ -83,28 +94,34 @@ export function siblingFamilyIds(item: ItemInstance<object, object>): string[] {
 /** The seed of the n-th try for `kind` in a session. */
 export const workedSeed = (sessionId: string, kind: WorkedKind, n: number): string => `worked.${sessionId}.${kind}.${n}`
 
-/** Up to three worked examples for `sessionId`, none from a family in `seenFamilies` (module comment). `strata` overrides a kind's stratum (tests). */
-export function pickWorkedItems(sessionId: string, seenFamilies: Iterable<string>, strata: Partial<Record<WorkedKind, 1 | 2 | 3 | 4 | 5>> = {}): WorkedItem[] {
+/**
+ * Up to three worked examples for `sessionId`, none from a family in `seenFamilies` (module comment).
+ * `strata` fixes a kind's stratum and turns the fallback to neighbouring strata off for it (tests).
+ */
+export function pickWorkedItems(sessionId: string, seenFamilies: Iterable<string>, strata: Partial<Record<WorkedKind, Stratum>> = {}): WorkedItem[] {
   const seen = new Set(seenFamilies)
   const out: WorkedItem[] = []
   for (const kind of WORKED_KINDS) {
     const { family: name, title } = SPEC[kind]
-    const stratum = strata[kind] ?? SPEC[kind].stratum
+    const fixed = strata[kind]
+    const tryStrata: readonly Stratum[] = fixed === undefined ? FALLBACK_STRATA[kind] : [fixed]
     const family = getFamily(name)
     if (family === undefined) continue
-    for (let n = 0; n < WORKED_ATTEMPTS; n++) {
-      const item = family.generate(workedSeed(sessionId, kind, n), { stratum })
-      const families = siblingFamilyIds(item as ItemInstance<object, object>)
-      if (families.some((f) => seen.has(f))) continue
-      if (kind === 'quant') {
-        const sp = item.structural_params as { template?: string; variant?: string }
-        if (!hasQuantSolution(String(sp.template), String(sp.variant))) continue
+    found: for (const stratum of tryStrata) {
+      for (let n = 0; n < WORKED_ATTEMPTS; n++) {
+        const item = family.generate(workedSeed(sessionId, kind, n), { stratum })
+        const families = siblingFamilyIds(item as ItemInstance<object, object>)
+        if (families.some((f) => seen.has(f))) continue
+        if (kind === 'quant') {
+          const sp = item.structural_params as { template?: string; variant?: string }
+          if (!hasQuantSolution(String(sp.template), String(sp.variant))) continue
+        }
+        const solution = workedSolutionOf(item as ItemInstance<object, object>)
+        if (solution === null) continue
+        out.push({ kind, title, item: item as ItemInstance<object, object>, solution, families })
+        for (const f of families) seen.add(f) // two kinds never share a family
+        break found
       }
-      const solution = workedSolutionOf(item as ItemInstance<object, object>)
-      if (solution === null) continue
-      out.push({ kind, title, item: item as ItemInstance<object, object>, solution, families })
-      for (const f of families) seen.add(f) // two kinds never share a family
-      break
     }
   }
   return out

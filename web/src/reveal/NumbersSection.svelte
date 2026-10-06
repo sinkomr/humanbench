@@ -11,6 +11,7 @@
 <script lang="ts">
   import { hasNorms, TAKER_COMPARISON, WEB_SIMPLE_RT_MEDIAN_MS, type NormFacts, type PaceRow } from './norms'
   import {
+    NORMS_LATEST,
     NORMS_NONE,
     NUMBERS_HEADING,
     NUMBERS_INTRO,
@@ -44,6 +45,7 @@
   <p>{NUMBERS_INTRO}</p>
 
   {#if hasNorms(facts)}
+    <p class="norms-from">{NORMS_LATEST}</p>
     <ul class="norms">
       {#if facts.readingWpm !== null}<li data-norm="reading">{readingNorm(facts.readingWpm)}</li>{/if}
       {#if facts.digitsForward !== null || facts.digitsBackward !== null}

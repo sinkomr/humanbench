@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
 import { SAVE_CTX } from './constants'
-import { priorItemCounts } from './coverage'
+import { priorItemCounts, questionsAnswered } from './coverage'
 import { Bot } from './bot'
 
 const CAT_ONLY = ['RT', 'WM', 'PS'] as const
@@ -62,3 +62,17 @@ describe('priorItemCounts: CAT items per axis in a save (M1.15 review, §7.4 L58
     expect(priorItemCounts(save)).toEqual({ MAT: 1 })
   })
 })
+
+describe('questionsAnswered: the power items one session holds (UX-012a)', () => {
+  it('is 0 for a session with no answers, and counts the answers and time-outs of power items, not fixed blocks', () => {
+    expect(questionsAnswered(saveOf([new Bot({ sessionId: 's_COVERAGE000009' })])!.sessions[0]!)).toBe(0)
+    const bot = new Bot({ sessionId: 's_COVERAGE000010' })
+    bot.finish()
+    const save = saveOf([bot])!
+    const items = Object.values(bot.run.result().itemsByAxis).reduce<number>((n, c) => n + (c ?? 0), 0)
+    expect(items).toBeGreaterThan(0)
+    expect(questionsAnswered(save.sessions[0]!)).toBe(items)
+    expect(save.sessions[0]!.responses.length).toBeGreaterThan(items) // the blocks are in the session too
+  })
+})
+

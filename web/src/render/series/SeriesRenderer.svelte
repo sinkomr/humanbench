@@ -17,6 +17,8 @@
   let { spec, onrespond, onshown, onpaste, timing, disabled = false }: EntryRendererProps<SeriesSpec, SeriesResponse> = $props()
 
   const clock = $derived((timing ?? browserTiming()).clock)
+  // One noun for the whole item: the prompt, the field and the hidden text all say number or all say letter.
+  const noun = $derived(spec.input_format === 'letter' ? 'letter' : 'number')
   const accepts = $derived(
     spec.input_format === 'letter' ? (t: string) => parseLetterResponse(t) !== undefined : (t: string) => parseIntegerResponse(t) !== undefined,
   )
@@ -29,18 +31,18 @@
   })
 </script>
 
-<section class="hb-render series" aria-label="Number or letter series">
-  <p class="prompt">What comes next in this sequence?</p>
-  <ol class="terms" aria-label="Sequence, {spec.terms.length} terms shown, then the missing next term">
+<section class="hb-render series" aria-label="Number or letter sequence">
+  <p class="prompt">Which {noun} comes next in this sequence?</p>
+  <ol class="terms" aria-label="Sequence, {spec.terms.length} terms shown, then the missing next {noun}">
     {#each spec.terms as term, i (i)}
       <li class="term">{displayTerm(term)}</li>
     {/each}
-    <li class="term next"><span aria-hidden="true">?</span><span class="hb-sr-only">missing next term</span></li>
+    <li class="term next"><span aria-hidden="true">?</span><span class="hb-sr-only">missing next {noun}</span></li>
   </ol>
   <NumericEntry
     format={spec.input_format}
     hint={FORMAT_HINTS[spec.input_format]}
-    label="Next term"
+    label="Next {noun}"
     {accepts}
     onsubmit={(text) => onrespond(text)}
     onpaste={() => onpaste?.({ t_ms: clock.now() })}

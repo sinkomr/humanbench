@@ -1,0 +1,178 @@
+{
+  "package": "integrate-2",
+  "model": "opus",
+  "note": "Wave-2 integration of the w2-sync, w2-session, w2-render and w2-perf packages. Logs: web/test-results/iso/w2-int/*.log (vitest, check, build, harness smoke, every e2e run and re-run). Nothing committed.",
+  "changes": [
+    {
+      "id": "VER-02 (session request)",
+      "files": [
+        "web/src/App.served.dom.test.ts"
+      ],
+      "summary": "The footer test follows VER-02: on the welcome screen the footer links only the data page with a server (['#/data']) and nothing without one ([]); after 'Start' the gate's footer links ['#/privacy', '#/data'] / ['#/privacy']. It was the one failure of the baseline full vitest run."
+    },
+    {
+      "id": "UX-017a (session request)",
+      "files": [
+        "web/e2e/routes.ts"
+      ],
+      "summary": "Route item-spatial-no-webgl claims session/SessionScreen.svelte instead of RotationRenderer.svelte (the renderer is parked hidden on purpose, so openRoute's 'div.rotation is visible' claim check failed) and says 'the panel that says so once, with the skip offer'. The route was already in STATES of scripts/a11y-routes.test.ts, so that test needed no change and passes."
+    },
+    {
+      "id": "UX-017a (session and render requests)",
+      "files": [
+        "web/e2e/ux-render.spec.ts"
+      ],
+      "summary": "'rotation without WebGL (UX-017b)' reads the renderer's note with getByRole('status', { includeHidden: true }) and checks that div.rotation is hidden; the no-canvas / no-img / no-radio / no-Confirm / .unavailable-visible checks are unchanged."
+    },
+    {
+      "id": "VER-01 (session note), w2-render dev-routes / flow requests, w2-perf requests",
+      "files": [],
+      "summary": "No change needed: journey.ts needs none (VER-01 note); scripts/dev-routes.test.ts and SessionApp.flow.dom.test.ts 'Back to the start', which the render package saw failing mid-wave, pass in the integrated tree; the shell footer needs no links line because the App.svelte welcome-footer change (VER-02) is integrated."
+    }
+  ],
+  "review_fixes": [
+    {
+      "what": "Results leave panel: a save made while 'Leave without saving?' was open left the panel up, still saying 'You have not downloaded your save file' with 'Leave anyway' after the file was downloaded. The panel now shows only while unsaved ({#if leaving && !saved}); once saved, 'Back to the start' is back and leaves at once.",
+      "file": "web/src/reveal/Reveal.svelte",
+      "test": "web/src/reveal/Reveal.dom.test.ts 'a save made while \"Leave without saving?\" is open takes the question away: it no longer says the file is not downloaded' (red before the fix: the .confirm section was still there; green after; the 58 other Reveal DOM tests pass)."
+    },
+    {
+      "what": "e2e harness: a11y.spec.ts runs every route, including the three that live on the Vite dev server (dev-visual-gallery, dev-review, dev-review-matrices), but the isolated config starts that server only with HB_DEV_SERVER=1. Without it those tests went to 127.0.0.1:4175: ERR_CONNECTION_REFUSED here (6 failures in each of chromium 1/3 and webkit 1/3), or, worse, whatever another workstream serves there (which is how they could pass before). The isolated config now sets HB_NO_DEV_SERVER=1 when it starts no dev server, and a11y.spec.ts's setUp skips a devServer route then, with the reason; the HB_DEV_SERVER=1 runs check them.",
+      "file": "web/ux-review/playwright.iso.config.ts, web/e2e/dev-server.ts (NO_DEV_SERVER_ENV, devServerAbsent), web/e2e/a11y.spec.ts (setUp)",
+      "test": "e2e: chromium 2/3 and the later shards list the dev routes as skipped (no refused connection); the HB_DEV_SERVER=1 runs pass them on chromium (21 passed, 2 skipped), webkit (21 passed, 2 skipped) and iphone (17 passed, 6 skipped). The base config (npm run e2e) always starts the dev server and never sets the variable, so its runs are unchanged."
+    }
+  ],
+  "reverted": [],
+  "gates": {
+    "check": "pass: npm run check (svelte-check 1194 files, 0 errors, 0 warnings; tsc node; tsc scripts incl. e2e and ux-review), re-run after the last edit",
+    "vitest": {
+      "passed": 4618,
+      "failed": 0,
+      "skipped": 7,
+      "files": "260 passed, 1 skipped (261)",
+      "note": "Final run alone on a quiet machine (load ~3-50), 212 s. An earlier full run made while two e2e shards ran (load average up to 188) had 13 timeouts in 11 files (leak, entry-leak, fermi, emotion, visual, Reveal build-up, SessionApp.coverage waitFor, run, sim/cat hook, coding and span property tests); those 11 files re-run alone: 238/238 passed."
+    },
+    "lint": "pass: npm run lint:language, 359 files clean",
+    "build": "pass: npx vite build --outDir test-results/iso/w2-int/dist-gate --emptyOutDir (entry index 345.13 kB / 120.43 kB gzip, Finished chunk 116.05 kB / 41.11 kB gzip; only the usual chunk-size warning)",
+    "test_db": "skipped: nothing under web/src/backend, web/scripts/db or supabase changed in wave 2 or in this integration (git status is empty for those paths)",
+    "harness_smoke": "pass: npm run ux:build, then UX_PORT=4740 UX_RUN=w2-int-smoke smoke.ux.ts on chromium: 1 passed, tour 3/3 routes opened, journey completed",
+    "e2e": [
+      {
+        "project": "chromium",
+        "shard": "1/3",
+        "passed": 256,
+        "failed": 6,
+        "skipped": 32,
+        "reruns": "The 6 are the dev-server routes of a11y.spec.ts (net::ERR_CONNECTION_REFUSED at 127.0.0.1:4175; run before the harness fix above). They pass in the chromium HB_DEV_SERVER=1 run (w2-int-chromium-dev) and are skipped, not failed, in runs without the dev server since the fix."
+      },
+      {
+        "project": "chromium",
+        "shard": "2/3",
+        "passed": 254,
+        "failed": 1,
+        "skipped": 38,
+        "reruns": "keyboard-session.spec.ts:470 'Keep going in a running block' (the ?fast=1 practice ended under the Skip panel, so .stage was gone; load ~35-70). Re-run alone (w2-int-rerun-keyboard): passed on chromium and webkit."
+      },
+      {
+        "project": "chromium",
+        "shard": "3/3",
+        "passed": 262,
+        "failed": 1,
+        "skipped": 12,
+        "did_not_run": 18,
+        "reruns": "session-save.spec.ts:289 whole ?fast=1 session ('rt_simple: valid trials of 30' 9 < 20; the 20x clock leaves 7.5-75 ms of real time per valid response, so the driver misses under load); the 18 serial tests after it did not run. session-save.spec.ts re-run alone (w2-int-rerun-save-chromium): 19/19 passed."
+      },
+      {
+        "project": "webkit",
+        "shard": "1/3",
+        "passed": 256,
+        "failed": 6,
+        "skipped": 32,
+        "reruns": "Same 6 dev-server routes as chromium 1/3; webkit HB_DEV_SERVER=1 run of the a11y dev routes (w2-int-webkit-dev): 21 passed, 2 skipped."
+      },
+      {
+        "project": "webkit",
+        "shard": "2/3",
+        "passed": 251,
+        "failed": 1,
+        "skipped": 41,
+        "reruns": "keyboard-session.spec.ts:470, same as chromium 2/3; re-run alone: passed."
+      },
+      {
+        "project": "webkit",
+        "shard": "3/3",
+        "passed": 253,
+        "failed": 1,
+        "skipped": 21,
+        "did_not_run": 18,
+        "reruns": "session-save.spec.ts:289 ('rt_simple: valid trials' 17 < 20), 18 did not run; session-save.spec.ts re-run alone (w2-int-rerun-save-webkit): 19/19 passed."
+      },
+      {
+        "project": "iphone",
+        "shard": "1/3",
+        "passed": 255,
+        "failed": 0,
+        "skipped": 39,
+        "reruns": "none needed"
+      },
+      {
+        "project": "iphone",
+        "shard": "2/3",
+        "passed": 173,
+        "failed": 0,
+        "skipped": 120,
+        "reruns": "none needed"
+      },
+      {
+        "project": "iphone",
+        "shard": "3/3",
+        "passed": 252,
+        "failed": 1,
+        "skipped": 22,
+        "did_not_run": 18,
+        "reruns": "session-save.spec.ts:289 ('rt_simple: valid trials' 4 < 20), 18 did not run; session-save.spec.ts re-run alone (w2-int-rerun-save-iphone): 19/19 passed."
+      },
+      {
+        "project": "chromium",
+        "shard": "HB_DEV_SERVER=1: gallery.spec.ts, render-visual.spec.ts and the a11y dev-server routes (w2-int-chromium-dev)",
+        "passed": 54,
+        "failed": 2,
+        "skipped": 2,
+        "reruns": "gallery.spec.ts:128 (reading heading not visible in 30 s; test timeout 60 s) and render-visual.spec.ts:67 (rotation axe dark, test timeout) under load ~75-98 on the dev server's first transforms. gallery.spec.ts + render-visual.spec.ts re-run alone (w2-int-rerun-dev-chromium): 35/35 passed; the 23 a11y dev-route tests of that run were already green (21 passed, 2 phone-only skipped)."
+      },
+      {
+        "project": "webkit",
+        "shard": "HB_DEV_SERVER=1: a11y dev-server routes (w2-int-webkit-dev)",
+        "passed": 21,
+        "failed": 0,
+        "skipped": 2,
+        "reruns": "none needed"
+      },
+      {
+        "project": "iphone",
+        "shard": "HB_DEV_SERVER=1: a11y dev-server routes (w2-int-iphone-dev)",
+        "passed": 17,
+        "failed": 0,
+        "skipped": 6,
+        "reruns": "none needed"
+      }
+    ]
+  },
+  "flaky": [
+    "e2e/keyboard-session.spec.ts:470 (chromium, webkit): wall-clock dependent. The ?fast=1 practice block keeps running while the 'Skip Reaction Time?' panel is open, so under CPU load it can end before 'Keep going' hands focus back, and .stage is gone. Passes alone. Already an open issue of w2-sync; making it robust means either waiting on the trial state in the test or pausing the block while the panel is open (a product decision).",
+    "e2e/session-save.spec.ts:289 whole ?fast=1 session (chromium, webkit, iphone): 'rt_simple: valid trials' below min_valid when the machine is loaded. The 20x fast clock scales the 150-1,500 ms valid window down to 7.5-75 ms of real time, so a driver slowed by load answers 'too slow'. Passes alone on all three projects (19/19 each). Same as w2-perf and w2-session reported.",
+    "e2e/gallery.spec.ts:128 and e2e/render-visual.spec.ts:67 (chromium, dev server): test timeouts on the dev server under load; pass alone (35/35).",
+    "vitest: 13 timeouts in 11 heavy files while e2e shards ran in parallel (load up to 188); all pass alone and in the final full run."
+  ],
+  "open_issues": [
+    "Product decision (not taken): an RT block, practice or counted, keeps running while a 'Skip' or 'Finish now?' panel is open, so trials pass unanswered while the person reads it. That is what makes keyboard-session.spec.ts:470 wall-clock dependent; pausing the block under the panel would change the RT procedure, so it was left (w2-sync named it too).",
+    "web/src/session/Ready.svelte (wave 1, UX-012a): load() returns the read already under way, so a second file chosen while the first is still being read is not read, and if the first was not a save the field is cleared under the second. Unreachable in practice (choosing a second file means opening the picker again; a save is read in milliseconds), so left as is; a queued re-read plus clearing the field only if it still holds the failed file would close it.",
+    "web/src/session/Ready.svelte (wave 1): with a file loaded, pasting a different code and pressing Load does nothing (the file in the field wins and is already loaded), with no message. This follows the documented order (the file first, the code only when there is no file or it is not a save) but could surprise; an owner view may want the newer input to win or a line that says the file is used.",
+    "The isolated e2e config used to send a11y.spec.ts's dev-server routes to 127.0.0.1:4175 without starting a server there, so wave-1 isolated runs may have checked those three routes against another worktree's dev server. Fixed above (they are skipped without HB_DEV_SERVER=1); a full isolated pass now needs one HB_DEV_SERVER=1 run per project for them, as this integration did.",
+    "e2e helpers duplicated across the new specs (not merged at integration, to keep wave 2 as tested): a no-WebGL init script exists in e2e/routes.ts (NO_WEBGL), e2e/ux-render.spec.ts (inline) and e2e/ux2-session.spec.ts (noWebGlSpatial); e2e/ux2-perf.spec.ts has its own toReady(page, driver, beforeReady) beside flow.ts toReady(page).",
+    "The w2-session panel message has role='status' and is inserted together with its text, as the renderer's note was; some screen readers do not announce a live region that arrives with its content (the w2-session deviation says so). The Skip button is the first thing in the panel and the heading stays, so the condition is still found by reading on.",
+    "w2-sync open issues carried over: dev's rt_timestamp_reason is taken as dev wrote it; web/ux-review/findings/copy-inventory.json still lists the old 'Key/Pointer press handling delay (information only)' strings (a review-time record).",
+    "A stale vite preview on port 4612 (test-results/ux-review/_dist) from an earlier package of this worktree is still listening; it was not started by this run and was left alone."
+  ],
+  "diffstat": "tracked: 36 files changed, 1305 insertions(+), 180 deletions(-) (wave 2 plus this integration; this integration alone: App.served.dom.test.ts, e2e/routes.ts, e2e/ux-render.spec.ts, e2e/a11y.spec.ts, e2e/dev-server.ts, ux-review/playwright.iso.config.ts, reveal/Reveal.svelte, reveal/Reveal.dom.test.ts); untracked: 12 files (web/ux-review/integration-2.json, web/e2e/ux2-perf.spec.ts, web/e2e/ux2-render.spec.ts, web/e2e/ux2-session.spec.ts, web/scripts/results-split.test.ts, web/scripts/static-shell.test.ts, web/src/session/results-loader.dom.test.ts, web/src/session/results-loader.ts, web/ux-review/fixes/w2-perf.json, web/ux-review/fixes/w2-render.json, web/ux-review/fixes/w2-session.json, web/ux-review/fixes/w2-sync.json); nothing under web/test-results is tracked; docs/, CLAUDE.md, src/backend, scripts/db and supabase untouched"
+}

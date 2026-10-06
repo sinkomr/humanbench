@@ -30,7 +30,7 @@
   const prefs = $derived(model.contexts[model.active])
   const fmt = new Intl.NumberFormat('en-US')
   const droppedKeys = $derived(new Set(result.dropped.map((d) => d.key)))
-  const FORM_NAME: Record<Form, string> = { short: 'short', long: 'long', skill: 'Skill' }
+  const FORM_NAME: Record<Form, string> = { short: 'short', long: 'long', skill: 'skill' }
 
   /** The written text of a row; the header row shows its dated body. */
   function rowText(c: ComposedLine): string {

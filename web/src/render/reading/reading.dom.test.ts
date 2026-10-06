@@ -5,12 +5,13 @@
  * the source is credited after the block, and no authoring data (evidence, rationales) is shown.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { flushSync } from 'svelte'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reading, type ReadingItem } from '../../tasks/reading'
 import { AUTHORED_PASSAGES } from '../../tasks/reading/authoring'
 import type { ReadingResponse } from '../../tasks/reading/types'
 import { normalizeIds } from '../common/leak'
-import { buttonByText, click, fakeDisplay, render } from '../common/testing'
+import { buttonByText, click, fakeDisplay, press, render } from '../common/testing'
 import ReadingRenderer from './ReadingRenderer.svelte'
 
 const FRAME = 1000 / 60
@@ -56,7 +57,10 @@ describe('ReadingRenderer', () => {
       })
       // Answer the first two with the key, leave the third blank.
       item.key.indices.slice(0, 2).forEach((k, qi) => click(fieldsets[qi]?.querySelectorAll('input')[k]))
-      expect(m.container.querySelector('.hb-status')?.textContent).toBe('1 of 3 not answered yet.')
+      expect(m.container.querySelector('.hb-status')?.textContent).toBe('1 question not answered yet.')
+      // A blank question is recorded as blank for good: the first press asks, the second submits.
+      click(buttonByText(m.container, 'Submit answers'))
+      expect(m.responses).toEqual([])
       click(buttonByText(m.container, 'Submit answers'))
       expect(m.responses).toEqual([{ reading_time_ms: m.display.now() - shownAt, choices: [item.key.indices[0], item.key.indices[1], null] }])
       expect(m.responses[0]?.reading_time_ms).toBeCloseTo(90_000, 6)
@@ -79,6 +83,108 @@ describe('ReadingRenderer', () => {
       for (const q of passage?.questions ?? []) for (const r of q.option_rationales) expect(html).not.toContain(r)
       expect(html).not.toMatch(/evidence|rationale/i)
       m.destroy()
+    }
+  })
+
+  /** Reading block mounted and taken to the questions. */
+  function atQuestions(seed: string) {
+    const item = reading.generate(seed)
+    const m = mountReading(item)
+    click(buttonByText(m.container, 'Show the passage'))
+    m.display.advance(FRAME + 5_000)
+    click(buttonByText(m.container, 'Done reading'))
+    const groups = [...m.container.querySelectorAll<HTMLFieldSetElement>('fieldset.question')]
+    const radios = (qi: number): HTMLInputElement[] => [...(groups[qi]?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [])]
+    const status = (): HTMLElement => m.container.querySelector('.hb-status') as HTMLElement
+    return { ...m, item, groups, radios, status }
+  }
+
+  it('says "Done reading", the label of the button, in the intro (UX-019)', () => {
+    const m = mountReading(reading.generate('render-reading-intro'))
+    const text = m.container.querySelector('.hb-instructions')?.textContent?.replace(/\s+/g, ' ') ?? ''
+    expect(text).toContain('Choose Done reading when you reach the end.')
+    expect(buttonByText(m.container, 'Show the passage')).toBeTruthy()
+  })
+
+  it('Enter on an option never submits: it moves to the next question, and from the last to Submit answers (UX-019, WCAG 3.2.2)', () => {
+    const m = atQuestions('render-reading-enter')
+    m.radios(0)[1]?.focus()
+    const first = press('Enter', m.radios(0)[1])
+    expect(first.defaultPrevented).toBe(true)
+    expect(m.responses).toEqual([])
+    expect(document.activeElement).toBe(m.radios(1)[0])
+    // A question that already has an answer is entered on that answer.
+    click(m.radios(2)[2])
+    m.radios(1)[0]?.focus()
+    press('Enter', m.radios(1)[0])
+    expect(document.activeElement).toBe(m.radios(2)[2])
+    press('Enter', m.radios(2)[2])
+    expect(document.activeElement).toBe(buttonByText(m.container, 'Submit answers'))
+    expect(m.responses).toEqual([])
+    // Enter on the button itself is the browser's own submit; the keydown is left alone there.
+    const onButton = press('Enter', buttonByText(m.container, 'Submit answers'))
+    expect(onButton.defaultPrevented).toBe(false)
+  })
+
+  it('Submit answers with questions left blank asks first, in an alert, and a second press submits (UX-019, WCAG 3.3.4)', () => {
+    const m = atQuestions('render-reading-warn')
+    click(m.radios(0)[0])
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.responses).toEqual([])
+    const alert = m.container.querySelector('[role="alert"]')
+    expect(alert?.textContent?.replace(/\s+/g, ' ').trim()).toBe('2 questions are not answered yet. Choose Submit answers again to submit anyway, or answer them first.')
+    expect(alert?.classList.contains('hb-status')).toBe(true)
+    expect(m.container.querySelector('.hb-status[aria-live]')).toBeNull()
+    expect(m.container.querySelector('.questions')).not.toBeNull()
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.responses).toHaveLength(1)
+    expect(m.responses[0]?.choices).toEqual([0, null, null])
+    expect(m.container.querySelector('.credit')).not.toBeNull()
+  })
+
+  it('says it in the singular for one blank question', () => {
+    const m = atQuestions('render-reading-warn-one')
+    click(m.radios(0)[0])
+    click(m.radios(1)[1])
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.container.querySelector('[role="alert"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('1 question is not answered yet. Choose Submit answers again to submit anyway, or answer it first.')
+  })
+
+  it('answering one more question after the warning clears it, and the next press asks again about what is still blank', () => {
+    const m = atQuestions('render-reading-warn-again')
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.container.querySelector('[role="alert"]')?.textContent).toContain('3 questions are not answered yet.')
+    click(m.radios(0)[2])
+    expect(m.container.querySelector('[role="alert"]')).toBeNull()
+    expect(m.status().textContent).toBe('2 questions not answered yet.')
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.responses).toEqual([])
+    expect(m.container.querySelector('[role="alert"]')?.textContent).toContain('2 questions are not answered yet.')
+  })
+
+  it('all answered: one press submits, with no question in between (the shared drivers rely on it)', () => {
+    const m = atQuestions('render-reading-all')
+    for (let qi = 0; qi < m.groups.length; qi++) click(m.radios(qi)[qi])
+    expect(m.status().textContent?.trim()).toBe('')
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.responses).toHaveLength(1)
+    expect(m.responses[0]?.choices).toEqual([0, 1, 2])
+  })
+
+  it('mounts the count line empty and fills it a moment later, so the first count is announced (UX-019, WCAG 4.1.3)', () => {
+    vi.useFakeTimers()
+    try {
+      const m = atQuestions('render-reading-count')
+      const line = m.status()
+      expect(line.getAttribute('aria-live')).toBe('polite')
+      expect(line.textContent?.trim()).toBe('')
+      vi.advanceTimersByTime(200)
+      flushSync()
+      expect(m.container.querySelector('.hb-status')).toBe(line)
+      expect(line.textContent?.trim()).toBe('3 questions not answered yet.')
+      expect(line.querySelector('span')?.getAttribute('translate')).toBe('no')
+    } finally {
+      vi.useRealTimers()
     }
   })
 

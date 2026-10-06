@@ -10,6 +10,7 @@
   import { checkNotes, type CheckReport, type LineFinding } from '../check'
   import { DEFAULT_GATES, type GateFile } from '../gates'
   import { switchedOffLines } from '../returning'
+  import { lineRef } from './format'
 
   interface Props {
     gates?: GateFile
@@ -73,7 +74,7 @@
           <h3>Needs a look</h3>
           <ul>
             {#each report.flags as flag (flag.kind + flag.message)}
-              <li>{flag.message}{#if flag.lines.length > 0} <span class="hint">(line {flag.lines.join(', ')})</span>{/if}</li>
+              <li>{flag.message}{#if flag.lines.length > 0} <span class="hint">({lineRef(flag.lines)})</span>{/if}</li>
             {/each}
           </ul>
         </div>

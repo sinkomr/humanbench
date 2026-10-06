@@ -19,7 +19,7 @@
 
 import { AXES, isAxisCode, N_AXES, type AxisCode, type AxisDef, type Cluster, type GoldTier } from '../engine/axes'
 import type { ScoreResult } from '../engine/scorer'
-import { Z90 } from './geometry'
+import { offScaleOf, Z90, type OffScale } from './geometry'
 import { spokeOrder } from './seriation'
 
 /**
@@ -61,6 +61,12 @@ export interface SpokeEstimate {
   readonly relation?: Relation
   /** Measured and the 90% interval overlaps 0 (§9.5). */
   readonly muted: boolean
+  /**
+   * Whether the estimate lies beyond the drawn −3 … +3 SD scale (UX-037): the chart marks it with an
+   * arrowhead at the clamp. Absent on a spoke that is not measured, or built without it (then the
+   * chart works it out from `theta`).
+   */
+  readonly offScale?: OffScale
 }
 
 export interface AxisEstimate extends SpokeEstimate {
@@ -92,23 +98,26 @@ export const SHORT_LABELS: Readonly<Record<AxisCode, readonly string[]>> = Objec
 /**
  * One-line chart labels for narrow screens, where 17 full labels cannot all fit around the circle
  * at a legible size (M1.16 review). Plain words; the table and the full labels keep the names.
+ * Each is a cut of its table name, so a spoke can be matched to its row (UX-042): the first word(s)
+ * of the name, or a documented abbreviation ("comp.", "mem."); no label is also a cluster name that
+ * could sit next to it ("Estimation", "Speed").
  */
 export const COMPACT_LABELS: Readonly<Record<AxisCode, string>> = Object.freeze({
-  MAT: 'Matrices',
-  LR: 'Arguments',
+  MAT: 'Matrix & Series',
+  LR: 'Logical',
   LG: 'Logic games',
-  RC: 'Reading',
+  RC: 'Reading comp.',
   VOC: 'Vocabulary',
   QR: 'Quantitative',
   SPA: 'Spatial',
-  WM: 'Memory',
+  WM: 'Working mem.',
   RT: 'Reaction',
-  PS: 'Speed',
-  FER: 'Estimation',
+  PS: 'Processing',
+  FER: 'Fermi',
   CAL: 'Calibration',
   KST: 'STEM',
   KHU: 'Humanities',
-  KAP: 'Arts & life',
+  KAP: 'Arts & practical',
   EMO: 'Emotion',
   CRE: 'Creative',
 })
@@ -122,9 +131,9 @@ export function interval90(theta: number, sd: number): { lo90: number; hi90: num
 }
 
 /** A measured spoke's estimate fields. */
-export function measuredFields(theta: number, sd: number): Pick<SpokeEstimate, 'measured' | 'theta' | 'sd' | 'lo90' | 'hi90' | 'relation' | 'muted'> {
+export function measuredFields(theta: number, sd: number): Pick<SpokeEstimate, 'measured' | 'theta' | 'sd' | 'lo90' | 'hi90' | 'relation' | 'muted' | 'offScale'> {
   const iv = interval90(theta, sd)
-  return { measured: true, theta, sd, ...iv, muted: iv.relation === 'overlaps' }
+  return { measured: true, theta, sd, ...iv, muted: iv.relation === 'overlaps', offScale: offScaleOf(theta) }
 }
 
 /** The scorer output the viz reads (ScoreResult without the informational fields). */
@@ -136,6 +145,12 @@ export interface ProfileInput {
   readonly skipped?: readonly AxisCode[]
   /** Σ version that fixes the spoke order (§9.4); default the pinned one. */
   readonly sigmaVersion?: string
+  /**
+   * The axes this build puts in front of the person (UX-048a). An axis that is not observed, not
+   * skipped and not in this set is "not measured (not offered yet)" rather than plain "not measured".
+   * Without it the reason follows the registry only (an axis with status 'v2' is not offered yet).
+   */
+  readonly offered?: ReadonlySet<AxisCode>
 }
 
 function checkScore(score: ProfileScore): void {
@@ -168,7 +183,9 @@ export function axisEstimates(input: ProfileInput): AxisEstimate[] {
     }
     const observed = Object.hasOwn(input.score.eap, code)
     if (skipped.has(code) || !observed) {
-      const reason: NotMeasuredReason = skipped.has(code) ? 'skipped' : a.status === 'v2' ? 'not_yet_available' : 'no_data'
+      // Skipped wins; then an axis the build does not offer (registry 'v2', or outside `offered`); else it just has no data.
+      const unavailable = a.status === 'v2' || (input.offered !== undefined && !input.offered.has(code))
+      const reason: NotMeasuredReason = skipped.has(code) ? 'skipped' : unavailable ? 'not_yet_available' : 'no_data'
       return { ...base, measured: false, reason, muted: false }
     }
     const theta = input.score.theta[a.index]!

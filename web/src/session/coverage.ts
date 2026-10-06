@@ -11,7 +11,7 @@
  */
 
 import type { AxisCode } from '../engine/axes'
-import type { SaveFileV1 } from '../save/types'
+import type { SaveFileV1, SaveSession } from '../save/types'
 import { parseItemId } from '../tasks/ids'
 import { getFamily } from '../tasks/registry'
 
@@ -33,4 +33,19 @@ export function priorItemCounts(save: SaveFileV1 | null): Partial<Record<AxisCod
     }
   }
   return out
+}
+
+/**
+ * The power items (questions) a session answered or timed out on, pretest responses and fixed blocks
+ * left out: what the ready screen says an earlier save holds (UX-012a).
+ */
+export function questionsAnswered(session: SaveSession): number {
+  let n = 0
+  for (const [itemId, pretest] of session.responses) {
+    if (pretest === 1) continue
+    const ids = parseItemId(itemId)
+    const family = ids === null ? undefined : getFamily(ids.family)
+    if (family !== undefined && family.kind === 'item') n++
+  }
+  return n
 }

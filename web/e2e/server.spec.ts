@@ -201,7 +201,7 @@ test.describe('the flow with a server', () => {
     await button(page, 'Start').click()
     await expect(page.locator('form.entry, form.choice').first()).toBeVisible() // an item made on this device
     await finishNow(page)
-    await expect(h1(page)).toHaveText('Session complete')
+    await expect(h1(page)).toHaveText('Session ended') // nothing answered, nothing measured (UX-009b)
     expect(server.of('next_item')).toHaveLength(0)
     expect(server.of('finish')).toHaveLength(0)
     await expect(online(page)).toHaveCount(0)
@@ -362,9 +362,10 @@ test.describe('the static fallback (the default build) is untouched', () => {
     await button(page, 'Begin').click()
     await expect(h1(page)).toHaveText('Up next: Reaction time')
     await finishNow(page)
-    await expect(h1(page)).toHaveText('Session complete')
+    await expect(h1(page)).toHaveText('Session ended') // nothing answered, nothing measured (UX-009b)
     await expect(online(page)).toHaveCount(0)
-    await expect(page.locator('footer a')).toHaveCount(0)
+    // The privacy notice is linked from every page (UX-011); the data page only with a server.
+    await expect(page.locator('footer a[href="#/data"]')).toHaveCount(0)
     expect(server.calls).toEqual([])
     expect(requested).toEqual([])
     // the data page only explains

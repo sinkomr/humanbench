@@ -10,6 +10,7 @@ import { series } from '../../tasks/series'
 import { parseIntegerResponse, parseLetterResponse } from '../../tasks/series/score'
 import type { SeriesItem, SeriesResponse } from '../../tasks/series/types'
 import { FORMAT_NOTES } from '../common/entry-copy'
+import { normalizeEntry } from '../common/normalize-digits'
 import { normalizeIds } from '../common/leak'
 import { buttonByText, click, fakeDisplay, render, typeInto } from '../common/testing'
 import SeriesRenderer from './SeriesRenderer.svelte'
@@ -73,8 +74,11 @@ describe('SeriesRenderer', () => {
           const m = mountItem(item)
           typeInto(m.input, text)
           m.submit()
-          const ok = parse(text) !== undefined
+          // What the box sends is the typed text with its digits and spacing normalised (UX-024); the parser reads that.
+          const sent = normalizeEntry(text, item.spec.input_format)
+          const ok = parse(sent) !== undefined
           expect(m.responses.length).toBe(ok ? 1 : 0)
+          if (ok) expect(m.responses[0]).toBe(sent)
           if (ok) expect(() => series.score(item, m.responses[0] as SeriesResponse)).not.toThrow()
           else {
             const note = m.container.querySelector('.hb-note')?.textContent ?? ''
@@ -116,6 +120,44 @@ describe('SeriesRenderer', () => {
     expect(m.input.value).toBe('-15')
     click(m.container.querySelector('button[aria-label="Change sign"]'))
     expect(m.input.value).toBe('15')
+  })
+
+  it('reads digits of other scripts and full-width digits as the digits they are, and sends plain ASCII (UX-024)', () => {
+    const item = findItem((i) => i.spec.input_format === 'integer')
+    for (const [typed, sent] of [
+      ['٣٥', '35'],
+      ['۱۲', '12'],
+      ['१२', '12'],
+      ['１２', '12'],
+      ['1 2', '12'],
+      ['1\u00a02', '12'],
+      ['1\u202f2', '12'],
+      ['−٣٥', '−35'],
+    ] as const) {
+      const m = mountItem(item)
+      typeInto(m.input, typed)
+      m.submit()
+      expect(m.responses, typed).toEqual([sent])
+      expect(() => series.score(item, m.responses[0] as SeriesResponse)).not.toThrow()
+      m.destroy()
+    }
+  })
+
+  it('names one noun for the whole item: the number items say number, the letter items say letter (UX-025)', () => {
+    for (const [format, noun] of [
+      ['integer', 'number'],
+      ['letter', 'letter'],
+    ] as const) {
+      const item = findItem((i) => i.spec.input_format === format)
+      const { container } = mountItem(item)
+      expect(container.querySelector('section')?.getAttribute('aria-label')).toBe('Number or letter sequence')
+      expect(container.querySelector('.prompt')?.textContent).toBe(`Which ${noun} comes next in this sequence?`)
+      expect(container.querySelector('label.label')?.textContent).toBe(`Next ${noun}`)
+      expect(container.querySelector('input')?.labels?.[0]?.textContent).toBe(`Next ${noun}`)
+      expect(container.querySelector('.term.next .hb-sr-only')?.textContent).toBe(`missing next ${noun}`)
+      expect(container.querySelector('ol.terms')?.getAttribute('aria-label')).toBe(`Sequence, ${item.spec.terms.length} terms shown, then the missing next ${noun}`)
+      expect(container.textContent).not.toMatch(/next term/i)
+    }
   })
 
   it('reports the onset frame and pastes on the performance.now() timeline', () => {

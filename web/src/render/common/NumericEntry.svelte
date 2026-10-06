@@ -3,12 +3,16 @@
   answer format comes from `spec.input_format` (integer | decimal | fraction | letter). A submit is
   checked with the family's own score() parser (`accepts`), so an entry the renderer lets through
   is exactly one score() can read; anything else gets a neutral note about the format (never about
-  right or wrong) and is not submitted. The typed text is what `onsubmit` receives.
+  right or wrong) and is not submitted. What `onsubmit` receives is the typed text with its digits
+  and spacing normalised to the ASCII the parsers read (`normalize-digits.ts`). A number pad in a
+  comma-decimal language has no point, so decimal entries get a point key beside the sign key.
 -->
 <script lang="ts">
   import './render.css'
   import type { EntryFormat } from '../../tasks/family'
+  import { flushSync } from 'svelte'
   import { FORMAT_NOTES, EMPTY_NOTE, INPUT_MODES } from './entry-copy'
+  import { normalizeEntry, usesDecimalComma } from './normalize-digits'
 
   interface Props {
     readonly format: EntryFormat
@@ -33,27 +37,42 @@
   let input: HTMLInputElement | undefined = $state()
 
   const signed = $derived(format === 'integer' || format === 'decimal')
+  // The decimal pad of a comma language (or of a touch screen, whose keyboard region we cannot see) may offer no point.
+  const pointKey = $derived(format === 'decimal' && (usesDecimalComma() || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)))
 
   function submit(event: SubmitEvent): void {
     event.preventDefault()
     if (submitted || disabled) return
-    if (text.trim() === '') {
+    const entry = normalizeEntry(text, format)
+    if (entry.trim() === '') {
       note = EMPTY_NOTE
       return
     }
-    if (!accepts(text)) {
+    if (!accepts(entry)) {
       note = FORMAT_NOTES[format]
       return
     }
     note = ''
     submitted = true
-    onsubmit(text)
+    onsubmit(entry)
   }
 
   function toggleSign(): void {
     const t = text.trimStart()
     text = t.startsWith('-') || t.startsWith('−') ? t.slice(1) : `-${t}`
     input?.focus()
+  }
+
+  function insertPoint(): void {
+    const el = input
+    if (!el) return
+    const start = el.selectionStart ?? text.length
+    const end = el.selectionEnd ?? start
+    text = `${text.slice(0, start)}.${text.slice(end)}`
+    note = ''
+    flushSync()
+    el.focus()
+    el.setSelectionRange(start + 1, start + 1)
   }
 </script>
 
@@ -66,6 +85,7 @@
       id="{uid}-in"
       class="box"
       class:letter={format === 'letter'}
+      class:fraction={format === 'fraction'}
       type="text"
       inputmode={INPUT_MODES[format]}
       autocomplete="off"
@@ -80,7 +100,10 @@
       onpaste={() => onpaste?.()}
     />
     {#if signed}
-      <button type="button" class="hb-btn" aria-label="Change sign" disabled={submitted || disabled} onclick={toggleSign}>±</button>
+      <button type="button" class="hb-btn" aria-label="Change sign" translate="no" disabled={submitted || disabled} onclick={toggleSign}>±</button>
+    {/if}
+    {#if pointKey}
+      <button type="button" class="hb-btn" aria-label="Decimal point" translate="no" disabled={submitted || disabled} onclick={insertPoint}>.</button>
     {/if}
     <button type="submit" class="hb-btn hb-primary" disabled={submitted || disabled}>Submit</button>
   </div>
@@ -108,9 +131,9 @@
   }
 
   .box {
-    flex: 1 1 8rem;
+    flex: 0 1 12rem;
     min-width: 0;
-    max-width: 16rem;
+    max-width: 12rem;
     min-height: 2.75rem;
     padding: 0.5rem 0.75rem;
     border: 2px solid var(--r-border);
@@ -120,6 +143,11 @@
     font: inherit;
     font-size: 1.25rem;
     font-variant-numeric: tabular-nums;
+  }
+
+  .box.fraction {
+    flex: 1 1 8rem;
+    max-width: 16rem;
   }
 
   .box.letter {

@@ -1,16 +1,16 @@
 /**
  * The polycube renderer without WebGL (ROADMAP M1.13; DESIGN §13): jsdom has no WebGL context, so
- * the real `three-view.ts` (and Three.js) loads and fails to create its renderer. The item must
- * then still render its text alternatives and say that the figures cannot be drawn here; it must
- * NOT report an onset (nothing was shown) or accept a response (a guess would be scored), and it
- * reports `onunavailable()` once instead, so the session can offer skipping (§13).
+ * the real `three-view.ts` (and Three.js) loads and fails to create its renderer. The renderer must
+ * then draw nothing but a one-line note that the figures cannot be drawn here (no empty frames, no
+ * options, no Confirm; UX-017b); it must NOT report an onset (nothing was shown) or accept a
+ * response (a guess would be scored), and it reports `onunavailable()` once instead, so the session
+ * can offer skipping (§13). While the chunk loads, the target box says so.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rotation } from '../../tasks/rotation'
-import { CONFIRM_LABEL } from '../choice/keys'
-import { click, mountInto, optionInputs, press, settle, type Mounted } from '../dom-testing'
-import { ROTATION_UNAVAILABLE, targetAlt } from './copy'
+import { mountInto, optionInputs, press, settle, type Mounted } from '../dom-testing'
+import { ROTATION_LOADING, ROTATION_UNAVAILABLE } from './copy'
 import RotationRenderer from './RotationRenderer.svelte'
 import { sharedPainterUsers } from './three-view'
 
@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 describe('RotationRenderer without WebGL', () => {
-  it('shows the notice and the text alternatives, reports unavailable (not an onset) and accepts no response', async () => {
+  it('shows only a one-line note (no frames, no options, no Confirm), reports unavailable once and never an onset', async () => {
     const item = rotation.generate('rotation-fallback-1')
     const onrespond = vi.fn<(r: number) => void>()
     const onshown = vi.fn<(t: number) => void>()
@@ -40,24 +40,47 @@ describe('RotationRenderer without WebGL', () => {
     await settle()
     const root = mounted.target
     expect(root.querySelector('[role="status"]')?.textContent).toBe(ROTATION_UNAVAILABLE)
-    expect(root.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(targetAlt(item.spec.target.cubes.length))
+    // Nothing else of the item is drawn: no target frame, no canvas, no option, no Confirm, no stem.
+    expect(root.querySelector('[role="img"]')).toBeNull()
+    expect(root.querySelector('canvas')).toBeNull()
+    expect(root.querySelector('form')).toBeNull()
+    expect(optionInputs(root)).toHaveLength(0)
+    expect(root.querySelectorAll('button')).toHaveLength(0)
+    expect(root.textContent?.trim()).toBe(ROTATION_UNAVAILABLE)
     expect(onunavailable).toHaveBeenCalledTimes(1)
     expect(onshown).not.toHaveBeenCalled()
     expect(sharedPainterUsers()).toBe(0)
-    // Locked: no key, Enter, click or Confirm gets a response through.
-    const inputs = optionInputs(root)
-    const confirm = [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === CONFIRM_LABEL) as HTMLButtonElement
-    expect(inputs.every((x) => x.matches(':disabled'))).toBe(true)
-    expect(confirm.disabled).toBe(true)
-    inputs[1]?.focus()
-    press(inputs[1] as HTMLInputElement, '1')
-    press(inputs[1] as HTMLInputElement, 'Enter')
-    click(inputs[0] as HTMLInputElement)
-    click(confirm)
-    expect(inputs.some((x) => x.checked)).toBe(false)
+    // And nothing can answer it: a key or Enter anywhere reaches no response.
+    press(root, '2')
+    press(root, 'Enter')
     expect(onrespond).not.toHaveBeenCalled()
     await settle()
     expect(onunavailable).toHaveBeenCalledTimes(1)
     expect(onshown).not.toHaveBeenCalled()
+  })
+
+  it('the loading line is gone and the frames with it once the browser has said it cannot draw', async () => {
+    const item = rotation.generate('rotation-fallback-2')
+    mounted = mountInto(RotationRenderer, { spec: item.spec, onrespond: vi.fn() })
+    await vi.waitFor(() => expect(mounted?.target.textContent).toContain(ROTATION_UNAVAILABLE), { timeout: 5000 })
+    expect(mounted.target.textContent).not.toContain(ROTATION_LOADING)
+  })
+})
+
+describe('RotationRenderer while the figures load', () => {
+  it('says so in the target box, keeps the options locked, and reports no onset yet', () => {
+    const item = rotation.generate('rotation-loading-1')
+    const onshown = vi.fn<(t: number) => void>()
+    const onunavailable = vi.fn<() => void>()
+    mounted = mountInto(RotationRenderer, { spec: item.spec, onrespond: vi.fn(), onshown, onunavailable })
+    const root = mounted.target
+    // Straight after the mount the three-view chunk has not arrived: the frames are there and say why they are empty.
+    const frame = root.querySelector('.frame')
+    expect(frame?.querySelector('.loading')?.textContent).toBe(ROTATION_LOADING)
+    expect(ROTATION_LOADING).toBe('Loading figures…')
+    expect(optionInputs(root)).toHaveLength(4)
+    expect(optionInputs(root).every((x) => x.matches(':disabled'))).toBe(true)
+    expect(onshown).not.toHaveBeenCalled()
+    expect(onunavailable).not.toHaveBeenCalled()
   })
 })

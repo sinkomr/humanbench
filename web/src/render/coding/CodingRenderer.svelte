@@ -8,6 +8,11 @@
   response list goes to `onrespond`. No right/wrong feedback is shown. One polite status line
   stays mounted in every phase; when the block ends it says so and takes focus, so keyboard and
   screen-reader users keep their place (WCAG 2.4.3, 4.1.3; as the span renderers).
+
+  On a phone the whole block (the table of shapes and digits, the target and the keypad) has to be
+  on screen when the clock starts, because every scroll costs score (UX-002): the table is a
+  one-row reference strip (not a row of keys), the target is smaller below 30rem, the keypad is one
+  row of nine keys, and starting scrolls the table to the top of the screen.
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
@@ -31,6 +36,7 @@
   let secondsLeft = $state(0)
   let endedBy: 'time' | 'all' = $state('time')
   let root: HTMLElement | undefined = $state()
+  let legendEl: HTMLElement | undefined = $state()
   let stageEl: HTMLElement | undefined = $state()
   let statusEl: HTMLElement | undefined = $state()
   const responses: CodingResponse[] = []
@@ -71,7 +77,9 @@
     visible = false
     secondsLeft = spec.duration_s
     flushSync()
-    stageEl?.focus()
+    // Table, target and keypad in view before the clock starts; focus must not scroll them away again.
+    legendEl?.scrollIntoView?.({ block: 'start' })
+    stageEl?.focus({ preventScroll: true })
     // The window opens in the frame that draws the first glyph.
     handle = t.frames.request((ts) => {
       handle = null
@@ -142,8 +150,8 @@
 <svelte:window onkeydown={onkey} />
 
 <section class="hb-render coding" bind:this={root} aria-labelledby="{uid}-title">
-  <p class="title" id="{uid}-title">Symbol to digit</p>
-  <ul class="legend" aria-label="Key: each shape and its digit">
+  <p class="title" id="{uid}-title">Shape to digit</p>
+  <ul class="legend" aria-label="Shape-to-digit table" bind:this={legendEl}>
     {#each spec.legend as cell (cell.digit)}
       <li class="cell">
         <Glyph symbol={cell.symbol} size="2rem" decorative />
@@ -154,19 +162,19 @@
   </ul>
   {#if phase === 'intro'}
     <p class="hb-instructions">
-      Each shape in the key above has a digit. Shapes will appear one at a time: type the digit that goes with each shape, using
-      the keypad or the number keys, as quickly and accurately as you can. You have {spec.duration_s} seconds.
+      Each shape in the table above has a digit. Shapes will appear one at a time. For each shape, type its digit, with the
+      on-screen keypad or the number keys on your keyboard. Be as fast and as accurate as you can. You have {spec.duration_s} seconds.
     </p>
     <button type="button" class="hb-btn hb-primary" onclick={() => start()}>Start</button>
   {:else if phase === 'running'}
-    <p class="timer" role="timer" aria-label="Time left">{format(secondsLeft)}</p>
-    <div class="stage" bind:this={stageEl} tabindex="-1">
+    <p class="timer" role="timer" aria-label="Time left" translate="no">{format(secondsLeft)}</p>
+    <div class="stage" role="group" aria-label="Shapes: type the digit for each shape" bind:this={stageEl} tabindex="-1">
       {#if visible && current !== undefined}
         <Glyph symbol={current} size="5rem" />
       {/if}
     </div>
     <p class="hb-sr-only" aria-live="assertive" aria-atomic="true">{visible && current !== undefined ? GLYPHS[current].name : ''}</p>
-    <Keypad digits={CODING_DIGITS} label="Digit keypad" onpress={press} />
+    <Keypad digits={CODING_DIGITS} label="Digit keypad" columns={CODING_DIGITS.length} onpress={press} />
   {/if}
   <p class="hb-status" aria-live="polite" tabindex="-1" bind:this={statusEl}>{phase === 'done' ? doneText : ''}</p>
 </section>
@@ -182,14 +190,17 @@
     margin: 0 0 0.75rem;
   }
 
+  /* A reference strip, not a row of keys: one bordered band, borderless cells with hairline dividers. */
   .legend {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(2.75rem, 1fr));
-    gap: 0.375rem;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
     max-width: 32rem;
     margin: 0 0 1rem;
     padding: 0;
     list-style: none;
+    border: 2px solid var(--r-border);
+    border-radius: 0.5rem;
+    background: var(--r-bg);
   }
 
   .cell {
@@ -197,15 +208,18 @@
     justify-items: center;
     gap: 0.25rem;
     padding: 0.375rem 0.25rem;
-    border: 2px solid var(--r-border);
-    border-radius: 0.5rem;
-    background: var(--r-surface);
+    border-left: 1px solid var(--r-border);
+  }
+
+  .cell:first-child {
+    border-left: 0;
   }
 
   .legend-digit {
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    color: var(--r-muted);
   }
 
   .timer {
@@ -223,5 +237,43 @@
     border: 2px solid var(--r-border);
     border-radius: 0.75rem;
     background: var(--r-bg);
+    touch-action: manipulation;
+  }
+
+  /* A phone: key, target and keypad together stay under about 310 px of height. */
+  @media (max-width: 29.99rem) {
+    .title {
+      margin-bottom: 0.5rem;
+    }
+
+    .legend {
+      margin-bottom: 0.5rem;
+    }
+
+    .cell {
+      gap: 0.125rem;
+      padding: 0.25rem 0;
+    }
+
+    /* Never wider than its column, whatever the text size (200% text makes rem twice as wide, the columns not). */
+    .cell :global(.glyph) {
+      width: min(1.25rem, 80%);
+      height: auto;
+      aspect-ratio: 1;
+    }
+
+    .legend-digit {
+      font-size: 1rem;
+    }
+
+    .timer {
+      margin-bottom: 0.25rem;
+    }
+
+    .stage {
+      width: 6rem;
+      height: 6rem;
+      margin-bottom: 0.5rem;
+    }
   }
 </style>

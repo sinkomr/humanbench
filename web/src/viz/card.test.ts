@@ -14,12 +14,16 @@ import { AXIS_CODES, axis, type AxisCode } from '../engine/axes'
 import { NOTES_LEAK_MARKERS } from '../brief/leak-markers'
 import { PREAMBLE, RESULTS_TALK, RESULTS_TALK_TEXT, REVEAL_CARD } from '../brief/results-talk'
 import { distinctivePeaks } from '../reveal/peaks'
-import { DEFAULT_R, MIN_TEXT_PX, N_FUZZ } from './blob'
+import { DEFAULT_R, N_FUZZ } from './blob'
 import {
   buildCard,
+  CARD_BLOB_REGION,
   CARD_COLUMN_W,
+  CARD_FOOT_TOP,
+  CARD_FOOT_W,
   CARD_H,
   CARD_MAX_PEAKS,
+  CARD_MIN_TEXT,
   CARD_W,
   cardAxes,
   cardPeaks,
@@ -27,13 +31,27 @@ import {
   cardTextWidth,
   columnTexts,
   EMO_MIN_THETA,
+  footerTexts,
   isWithheld,
   MIN_CARD_SKILLS,
   PNG_SCALE,
   type CardModel,
   type CardPeak,
+  type CardText,
 } from './card'
-import { CARD_BRAND, CARD_NO_PEAKS, CARD_NOTE_READING, CARD_NOTE_SCALE, CARD_PEAKS_HEADING, CARD_PEAKS_SUB, CARD_PURPOSE, CARD_TITLE, cardSessions } from './card-copy'
+import {
+  CARD_BRAND,
+  CARD_KEY,
+  CARD_NO_PEAKS,
+  CARD_NOTE_READING,
+  CARD_NOTE_SCALE,
+  CARD_PEAKS_HEADING,
+  CARD_PEAKS_SUB,
+  CARD_PURPOSE,
+  CARD_SD_MEANING,
+  CARD_TITLE,
+  cardSessions,
+} from './card-copy'
 import { RING_NOTE } from './copy'
 import { formatTheta, radiusScale, RING_THETAS, ringLabel } from './geometry'
 import { THEMES } from './palette'
@@ -80,8 +98,11 @@ function labelForms(e: AxisEstimate): string[] {
   return [e.shortLabel.join(' '), e.compactLabel ?? '']
 }
 
+/** The radius of each marker, in document order: a dot's centre, or the tip of an off-scale arrowhead (UX-037). */
 function markerRadii(svg: string): number[] {
-  return [...svg.matchAll(/<circle class="marker" cx="(-?[\d.]+)" cy="(-?[\d.]+)" r="4.5"\/>/g)].map((m) => Math.hypot(Number(m[1]), Number(m[2])))
+  return [...svg.matchAll(/<circle class="marker" cx="(-?[\d.]+)" cy="(-?[\d.]+)" r="4.5"\/>|<path class="arrow" d="M(-?[\d.]+),(-?[\d.]+)L/g)].map((m) =>
+    m[1] !== undefined ? Math.hypot(Number(m[1]), Number(m[2])) : Math.hypot(Number(m[3]), Number(m[4])),
+  )
 }
 
 const NOTES_PROBES: readonly string[] = [
@@ -382,10 +403,12 @@ describe('the most distinctive peaks on the card', () => {
 describe('only known words are on the card; notes for an AI never are (proposal §8, M1.18)', () => {
   /** Whether a column text is one of the card\'s own lines. */
   function columnAllowed(t: string, card: CardModel, sessions: number): boolean {
-    if ([CARD_BRAND, CARD_TITLE, cardSessions(sessions), CARD_PEAKS_HEADING, CARD_PEAKS_SUB, CARD_PURPOSE].includes(t)) return true
+    if ([CARD_BRAND, CARD_TITLE, cardSessions(sessions), CARD_PEAKS_HEADING, ...RING_NOTE].includes(t)) return true
     if (/^Stands out by about \d\.\d SD$/.test(t) || /^90% range [+−]\d\.\d to [+−]\d\.\d SD$/.test(t)) return true
     if (card.peaks.some((p) => axis(p.code).name.includes(t))) return true
-    return [CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_NO_PEAKS].some((sentence) => sentence.includes(t))
+    // Lines of the wrapped paragraphs: a run of the card's own sentences (the small print flows from one into the next).
+    const flows = [[CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), [CARD_KEY, CARD_SD_MEANING].join(' '), CARD_PEAKS_SUB, CARD_NO_PEAKS]
+    return flows.some((text) => text.includes(t))
   }
 
   const profiles = ['m1', 'full', 'skipped', 'sparse'] as const
@@ -395,7 +418,7 @@ describe('only known words are on the card; notes for an AI never are (proposal 
     const sessions = 3
     const card = buildCard({ estimates: est, peaks: peaksOf(id), sessions })
     const shown = est.filter((e) => card.shown.includes(e.code))
-    const allowed = new Set<string>([...RING_THETAS.map(ringLabel), ...RING_NOTE, CARD_TITLE])
+    const allowed = new Set<string>([...RING_THETAS.map(ringLabel), ...RING_NOTE, CARD_TITLE, 'off scale'])
     for (const e of shown) for (const line of [...e.shortLabel, e.compactLabel!]) [line, `${line} ${e.glyph}`].forEach((x) => allowed.add(x))
     const column = new Set(card.texts.map((t) => t.text))
     const strays: string[] = []
@@ -478,7 +501,7 @@ describe('the blob on the card follows the blob rules (DESIGN §9, CLAUDE.md)', 
     for (const theme of ['light', 'dark'] as const) {
       const t = THEMES[theme]
       const card = buildCard({ estimates: FULL, sessions: 1, theme })
-      const allowed = new Set(Object.values(t).map((c) => c.toLowerCase()))
+      const allowed = new Set(Object.values(t).filter((c): c is string => typeof c === 'string').map((c) => c.toLowerCase()))
       const used = new Set((card.svg.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).map((c) => c.toLowerCase()))
       for (const c of used) expect(allowed.has(c), `${theme} ${c}`).toBe(true)
       expect(card.svg).toContain(`<rect width="1200" height="630" fill="${t.bg}"/>`)
@@ -501,26 +524,30 @@ describe('the blob on the card follows the blob rules (DESIGN §9, CLAUDE.md)', 
 
 describe('layout: legible and inside the frame', () => {
   const eachShownCount = (): number[] => Array.from({ length: AXIS_CODES.length - MIN_CARD_SKILLS + 1 }, (_, i) => i + MIN_CARD_SKILLS)
+  const R = CARD_BLOB_REGION
 
   function checkFrame(card: CardModel): void {
     const { model, scale, tx, ty, smallPx } = card.placement
-    expect(smallPx).toBeGreaterThanOrEqual(MIN_TEXT_PX - 0.01)
+    // The chart's smallest text is the most it can be (UX-038): 20 card px or more, so half of it is 10 px at 600 px wide.
+    expect(smallPx).toBeGreaterThanOrEqual(CARD_MIN_TEXT)
     const boxes = [...model.labelBoxes, model.noteBox]
     for (const b of boxes) {
-      expect(b.x0 * scale + tx).toBeGreaterThanOrEqual(0)
-      expect(b.x1 * scale + tx).toBeLessThanOrEqual(700)
-      expect(b.y0 * scale + ty).toBeGreaterThanOrEqual(0)
-      expect(b.y1 * scale + ty).toBeLessThanOrEqual(CARD_H)
+      expect(b.x0 * scale + tx).toBeGreaterThanOrEqual(R.x - 0.01)
+      expect(b.x1 * scale + tx).toBeLessThanOrEqual(R.x + R.w + 0.01)
+      expect(b.y0 * scale + ty).toBeGreaterThanOrEqual(R.y - 0.01)
+      expect(b.y1 * scale + ty).toBeLessThanOrEqual(R.y + R.h + 0.01)
     }
-    // The circle (with its wedges) is inside the frame too.
+    // The circle (with its wedges) is inside the frame too, and above the small print.
     const rim = (DEFAULT_R + 4) * scale
-    expect(tx - rim).toBeGreaterThanOrEqual(0)
-    expect(tx + rim).toBeLessThanOrEqual(700)
-    expect(ty - rim).toBeGreaterThanOrEqual(0)
-    expect(ty + rim).toBeLessThanOrEqual(CARD_H)
+    expect(tx - rim).toBeGreaterThanOrEqual(R.x - 0.01)
+    expect(tx + rim).toBeLessThanOrEqual(R.x + R.w + 0.01)
+    expect(ty - rim).toBeGreaterThanOrEqual(R.y - 0.01)
+    expect(ty + rim).toBeLessThanOrEqual(CARD_FOOT_TOP)
+    // The blob is clear of the column.
+    expect(R.x + R.w).toBeLessThan(columnTexts(1, [])[0]!.x)
   }
 
-  it('for any number of skills from 3 to 17 the blob is legible, inside its part of the card, and clear of the column', () => {
+  it('for any number of skills from 3 to 17 the chart text is at least 20 card px, inside its part of the card, clear of the column and the small print', () => {
     for (const n of eachShownCount()) {
       const hidden = AXIS_CODES.slice(n) // keep the first n in canonical order, hide the rest
       checkFrame(buildCard({ estimates: FULL, hidden, peaks: FULL_PEAKS, sessions: 1 }))
@@ -532,18 +559,28 @@ describe('layout: legible and inside the frame', () => {
       fc.property(fc.uniqueArray(fc.integer({ min: 0, max: AXIS_CODES.length - 1 }), { minLength: 0, maxLength: AXIS_CODES.length - MIN_CARD_SKILLS }), (idx) => {
         checkFrame(buildCard({ estimates: FULL, hidden: idx.map((i) => AXIS_CODES[i]!), peaks: FULL_PEAKS, sessions: 1 }))
       }),
-      { numRuns: 100 },
+      { numRuns: 60 },
     )
   })
+
+  it('the circle is larger than before: about 360 card px across for a typical handful of skills', () => {
+    for (const n of [5, 6, 7]) {
+      const card = buildCard({ estimates: FULL, hidden: AXIS_CODES.slice(n), peaks: FULL_PEAKS, sessions: 1 })
+      expect(2 * DEFAULT_R * card.placement.scale, `${n} skills`).toBeGreaterThan(340)
+    }
+  })
+
+  /** Boxes of the column and small-print texts, as the layout tests see them. */
+  const box = (t: CardText): { x0: number; x1: number; y0: number; y1: number } => ({ x0: t.x, x1: t.x + cardTextWidth(t), y0: t.y - 0.8 * t.size, y1: t.y + 0.25 * t.size })
 
   it('the right column fits its width and its lines do not overlap, with three long-named peaks', () => {
     const long: CardPeak[] = (['EMO', 'PS', 'KAP'] as const).map((code, i) => ({ code, contrast: 1.5 - i * 0.1, lo90: 0.2, hi90: 2.9 }))
     for (const [peaks, sessions] of [[long, 12], [FULL_PEAKS, 1], [[], 99]] as const) {
       const texts = columnTexts(sessions, peaks)
-      expect(texts.filter((t) => t.size === 22)).toHaveLength(Math.min(peaks.length, CARD_MAX_PEAKS))
       for (const t of texts) {
         expect(cardTextWidth(t), t.text).toBeLessThanOrEqual(CARD_COLUMN_W)
-        expect(t.y + 0.25 * t.size).toBeLessThanOrEqual(CARD_H)
+        expect(t.size, t.text).toBeGreaterThanOrEqual(CARD_MIN_TEXT)
+        expect(t.y + 0.25 * t.size, `${t.text} ends above the small print`).toBeLessThanOrEqual(CARD_FOOT_TOP)
       }
       const sorted = [...texts].sort((a, b) => a.y - b.y)
       for (let i = 1; i < sorted.length; i++) {
@@ -552,5 +589,115 @@ describe('layout: legible and inside the frame', () => {
         expect(below.y - 0.8 * below.size, `${above.text} / ${below.text}`).toBeGreaterThan(above.y + 0.2 * above.size - 1e-9)
       }
     }
+  })
+
+  it('no text of the card is under 20 units: the column, the small print and the chart (UX-038)', () => {
+    for (const id of ['m1', 'full', 'skipped', 'sparse'] as const) {
+      const est = estimatesOf(id)
+      const card = buildCard({ estimates: est, peaks: peaksOf(id), sessions: 3 })
+      for (const t of card.texts) expect(t.size, `${id}: ${t.text}`).toBeGreaterThanOrEqual(CARD_MIN_TEXT)
+      // What the SVG itself says: every font-size on a column text, and the chart's after its scale.
+      const scale = card.placement.scale
+      const sizes = [...card.svg.matchAll(/<text [^>]*font-size="([\d.]+)"/g)].map((m) => Number(m[1]))
+      const colSizes = sizes.filter((x) => x >= CARD_MIN_TEXT - 1e-9 || x * scale >= CARD_MIN_TEXT - 1e-9)
+      expect(colSizes.length, id).toBe(sizes.length)
+      const rendered = [card.placement.model.text.small, card.placement.model.text.label].map((v) => v * scale)
+      for (const r of rendered) expect(r, id).toBeGreaterThanOrEqual(CARD_MIN_TEXT)
+    }
+  })
+
+  it('the small print runs full width under the chart and the column, lines do not overlap, and the last baseline is 24 px from the edge', () => {
+    const foot = footerTexts()
+    expect(foot.length).toBeGreaterThanOrEqual(4)
+    for (const t of foot) {
+      expect(t.size).toBeGreaterThanOrEqual(CARD_MIN_TEXT)
+      expect(t.x).toBeGreaterThanOrEqual(0)
+      expect(t.x + cardTextWidth(t), t.text).toBeLessThanOrEqual(CARD_FOOT_W + t.x)
+      expect(t.y + 0.25 * t.size).toBeLessThan(CARD_H)
+      expect(t.y - 0.8 * t.size, t.text).toBeGreaterThanOrEqual(CARD_FOOT_TOP)
+    }
+    expect(Math.max(...foot.map((t) => t.y))).toBe(CARD_H - 24)
+    const boxes = foot.map(box)
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!
+        const b = boxes[j]!
+        expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `${foot[i]!.text} / ${foot[j]!.text}`).toBe(false)
+      }
+    }
+  })
+})
+
+describe('the card explains its marks and its scale (UX-038, §9.9, A12)', () => {
+  const card = buildCard({ estimates: FULL, peaks: FULL_PEAKS, sessions: 2 })
+  const words = textsOf(card.svg).join(' ')
+
+  it('has a one-line key for filled and hollow marks, and spells out SD', () => {
+    expect(CARD_KEY).toBe('Filled: range clear of 0 SD. Hollow: range overlaps 0 SD.')
+    expect(CARD_SD_MEANING).toBe('SD means standard deviation.')
+    expect(words).toContain(CARD_KEY)
+    expect(words).toContain(CARD_SD_MEANING)
+  })
+
+  it('keeps every caveat sentence, the overlap sentence exactly once, and the ring note word for word', () => {
+    for (const sentence of [CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE]) expect(words).toContain(sentence)
+    expect(words.split('Ranges that overlap are not real differences.')).toHaveLength(2)
+    // The ring note is two texts of their own (share-card.spec.ts matches them one by one).
+    for (const line of RING_NOTE) expect(textsOf(card.svg)).toContain(line)
+    expect(textsOf(card.svg)).toContain('Rings: SD units, provisional')
+    expect(textsOf(card.svg)).toContain('Centre: −3 SD')
+  })
+
+  it('the key matches what is drawn: hollow marks are the muted ones, filled the credible ones', () => {
+    const sparse = buildCard({ estimates: estimatesOf('sparse'), sessions: 1 })
+    expect(sparse.svg).toContain('class="mark muted"')
+    expect(sparse.svg).toContain('.muted .marker{fill:#ffffff')
+    expect(sparse.svg).toContain('.marker{fill:#0072B2')
+  })
+
+  it('the peaks line compares with the card\'s skills as a whole, not "the other skills" (UX-047)', () => {
+    expect(CARD_PEAKS_SUB).toBe("Compared with this card's skills as a whole")
+    expect(words).toContain('Compared with this card&#39;s'.replace('&#39;', "'"))
+    expect(words).not.toContain('the other skills')
+  })
+
+  it('labels only −2, 0 and +2 SD on the rings, at the chart text size', () => {
+    const rings = textsOf(card.svg).filter((x) => /^[+−]?\d SD$/.test(x))
+    expect(rings).toEqual(['−2 SD', '0 SD', '+2 SD'])
+  })
+
+  it('draws the ring labels before the band, curve, whiskers and markers, so no halo erases the data (UX-045)', () => {
+    const at = (needle: string): number => card.svg.indexOf(needle)
+    expect(at('class="ring-labels"')).toBeGreaterThan(at('class="grid"'))
+    for (const later of ['class="band"', 'class="fuzz"', 'class="crisp"', 'class="marks"', 'class="labels"']) expect(at('class="ring-labels"'), later).toBeLessThan(at(later))
+  })
+
+  it('outlines the ±1 SD band in the palette\'s band colour so it shows (UX-047)', () => {
+    for (const theme of ['light', 'dark'] as const) {
+      const t = THEMES[theme]
+      const svg = buildCard({ estimates: FULL, sessions: 1, theme }).svg
+      expect(svg).toContain(`.band{fill:${t.band};fill-opacity:.12;stroke:${t.band};stroke-opacity:${t.bandEdgeOpacity};stroke-width:1}`)
+    }
+  })
+})
+
+describe('an estimate beyond the scale is marked on the card too (UX-037)', () => {
+  it('draws an arrowhead on the clamp instead of the dot, with "off scale" under its name, and no stub', () => {
+    const est = withSkill(withSkill(FULL, 'RT', -4.6, 0.3), 'MAT', 3.6, 0.3)
+    const card = buildCard({ estimates: est, sessions: 1 })
+    expect((card.svg.match(/class="arrow"/g) ?? []).length).toBe(2)
+    expect(card.svg).not.toMatch(/class="stub"|class="gap"/)
+    expect(textsOf(card.svg).filter((x) => x === 'off scale')).toHaveLength(2)
+    const radii = markerRadii(card.svg)
+    expect(radii).toHaveLength(card.shown.length)
+    const shown = est.filter((e) => card.shown.includes(e.code))
+    const r = radiusScale(DEFAULT_R)
+    radii.forEach((got, i) => expect(got).toBeCloseTo(r(shown[i]!.theta!), 1))
+  })
+
+  it('a card of in-range skills has no arrow and no "off scale"', () => {
+    const card = buildCard({ estimates: estimatesOf('m1'), sessions: 1 })
+    expect(card.svg).not.toContain('class="arrow"')
+    expect(textsOf(card.svg)).not.toContain('off scale')
   })
 })

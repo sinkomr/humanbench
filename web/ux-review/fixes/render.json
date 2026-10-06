@@ -1,0 +1,269 @@
+{
+  "area": "render",
+  "model": "claude-sonnet-5-5",
+  "items": [
+    {
+      "id": "UX-002",
+      "outcome": "fixed",
+      "summary": "Timed blocks start with everything on screen on a phone. Coding: the table of shapes is one bordered reference strip of nine borderless cells (no tile looks like a key; glyph 1.25rem, never wider than its column), the target is 6rem below 30rem, the keypad is one row of nine keys (Keypad gets an optional `columns` prop; keys keep 2.75rem height and give up width, min 24 px), and start() scrolls the table to the top of the screen before focusing the stage with preventScroll. Digit span, RT and Corsi focus their stage through a new `focusStage` (focus with preventScroll, then scrollIntoView nearest). Key + target + keypad measure about 310 px (budget 468).",
+      "files": [
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/common/Keypad.svelte",
+        "web/src/render/common/focus.ts",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/rt/RtRenderer.svelte"
+      ],
+      "tests_added": [
+        "src/render/coding/coding.dom.test.ts: 'scrolls the table to the top of the screen when the block starts, then focuses the stage without scrolling' (scrollIntoView block start on the legend, focus preventScroll, call order)",
+        "src/render/coding/coding.dom.test.ts: 'names the table and the shapes in one noun and shows the table as a reference strip, not as keys'; 'the stage ... is a named group, the keypad is one row of nine'",
+        "src/render/span/span.dom.test.ts and src/render/rt/rt.dom.test.ts: stage focused with preventScroll and scrollIntoView nearest",
+        "e2e/ux-render.spec.ts: 'the table, the shape and the keypad are all on screen when the clock starts' at 390 x 664 and 320 x 568 (legend top >= 0, all nine keys one row and inside the viewport, stage inside, key-to-keypad span < 468, legend cells not buttons, no sideways scroll)",
+        "e2e/ux-render.spec.ts: 'reaction time and digit span' stages in view at both sizes"
+      ],
+      "tests_changed": [
+        "src/render/coding/__snapshots__/coding.dom.test.ts.snap",
+        "e2e/gallery.spec.ts: list name /Shape-to-digit table/ (UX-025)"
+      ],
+      "notes": "Pixel snapshot e2e/gallery.spec.ts-snapshots/coding-legend-chromium-darwin.png regenerated (new strip). Measured on 320 x 568: the session header (182 px tall in this tree) is above the block; the table is scrolled to the top of the screen, so the header does not matter. No change to tasks/span/config.ts."
+    },
+    {
+      "id": "UX-017b",
+      "outcome": "fixed",
+      "summary": "RotationRenderer without WebGL renders nothing but the one-line muted note (role=status, same text, no border box); no stem, target frame, canvases, options or Confirm; onunavailable is still called once per spec. While the three-view chunk loads (status 'loading') the target box carries 'Loading figures…' (a label with the page's own colours over the paper-white canvas, so it reads in both schemes). Onset logic untouched.",
+      "files": [
+        "web/src/render/rotation/RotationRenderer.svelte",
+        "web/src/render/rotation/copy.ts"
+      ],
+      "tests_added": [
+        "src/render/rotation/RotationFallback.dom.test.ts: unavailable -> no img/canvas/form/radio/button, onunavailable once, no onset, keys reach no response; loading state shows ROTATION_LOADING, options locked",
+        "e2e/ux-render.spec.ts: 'nothing is drawn but the one-line note' (session, init script without WebGL) and 'the target box says so while the three-view chunk is on its way' (route delays the three-view chunk)"
+      ],
+      "tests_changed": [
+        "e2e/render-visual.spec.ts: 'rotation renderer without WebGL' now expects no canvas, figure, radio or Confirm",
+        "src/render/rotation/__snapshots__/RotationRenderer.dom.test.ts.snap (class hash)"
+      ],
+      "notes": "ROTATION_LOADING is new UI text in rotation/copy.ts. The session's own .unavailable group (skip offer, session-owned) is unchanged and still shows under the note."
+    },
+    {
+      "id": "UX-019",
+      "outcome": "fixed",
+      "summary": "Reading questions: Enter on an option moves focus to the next question's checked-or-first radio (from the last question to Submit answers) and never submits; Submit answers with blank questions asks once in a role=alert status line (exact wording of the triage, singular and plural), a second press with the same blank count submits, answering another question clears the alert and a later press asks again about what is still blank. Intro says 'Choose Done reading when you reach the end.'; the count line reads '<n> question(s) not answered yet.' with the number in span translate=no, is mounted empty and filled 150 ms later (or at the first answer) so the first count is announced; question legends float inside their frames (float left, width 100%, clear on the first option). Button labels 'Submit answers' and 'Done reading' kept; with every question answered one press submits.",
+      "files": [
+        "web/src/render/reading/ReadingRenderer.svelte"
+      ],
+      "tests_added": [
+        "src/render/reading/reading.dom.test.ts: intro copy; Enter moves on and never submits (defaultPrevented, focus targets, Enter on the button left alone); warning + second press; singular; warning clears and asks again; all answered -> one press; count line empty then filled (fake timers)",
+        "e2e/ux-render.spec.ts: 'Enter on an option moves on and never submits; submitting with blank questions asks first' (keyboard, legends inside frames) and 'every question answered: one press of Submit answers finishes the block'"
+      ],
+      "tests_changed": [
+        "src/render/reading/reading.dom.test.ts: '1 of 3 not answered yet.' -> '1 question not answered yet.', and the 12-item loop now presses Submit answers twice (one question is left blank)",
+        "src/render/reading/__snapshots__/reading.dom.test.ts.snap"
+      ],
+      "notes": "A svelte-ignore (a11y_no_noninteractive_element_interactions) is on the form: its keydown handler only turns an Enter pressed in a radio into 'next question'. e2e/keyboard-session.spec.ts (whole session by keyboard) and the touch driver both still finish the block with one press."
+    },
+    {
+      "id": "UX-020",
+      "outcome": "fixed",
+      "summary": "Matrix options are drawn at the size of a grid cell: OptionGroup gets `flush` (card with no padding or border, a box-shadow frame outside the figure; chosen = 4 px frame + inverted letter) and `maxWidth`; the matrix lays options out as two rows of three with the same width cap as the grid (both read --grid-max = 22.5rem, same 0.5rem gap, both align-self flex-start), so each option track is exactly a grid track. Measured: option svg and grid svg widths equal at 1280, 768, 390 and 320 px; grid and options share their left edge and width. draw.ts untouched.",
+      "files": [
+        "web/src/render/matrices/MatrixRenderer.svelte",
+        "web/src/render/choice/OptionGroup.svelte"
+      ],
+      "tests_added": [
+        "src/render/matrices/MatrixRenderer.dom.test.ts: options on the grid's tracks (flush, --max var(--grid-max), 3 columns)",
+        "e2e/ux-render.spec.ts: 'grid cells and option figures are the same width, on one left edge' at 1280, 768, 390 and 320 px (within 5%, two rows of three, no sideways scroll)"
+      ],
+      "tests_changed": [
+        "src/render/matrices/__snapshots__/MatrixRenderer.dom.test.ts.snap",
+        "e2e/render-visual.spec.ts-snapshots/matrices-e2e-look-1-{chromium,webkit,iphone}-darwin.png regenerated (grid gap 0.375 -> 0.5rem)"
+      ],
+      "notes": "The grid gap changed from 0.375rem to 0.5rem so that the options' ring frames have room between cards; the two use the same value so the scale stays equal."
+    },
+    {
+      "id": "UX-021",
+      "outcome": "fixed",
+      "summary": "OptionGroup: Confirm is `hb-btn hb-primary` (its own button rules deleted; the form is `choice hb-render` and imports render.css so the shared rules and tokens apply on any page); option cards focus with the same amber 3 px ring as every control (offset 2 px, 4 px on flush cards); disabled Confirm gets the shared disabled look (opacity 0.6). A repeat of an earlier touch tap is held back: a touch tap within 350 ms of the group appearing, at the spot (32 px) of a touch tap made before it appeared (600 ms), selects nothing and leaves the radio as it was; mouse, pen, keyboard and any other tap are never held back.",
+      "files": [
+        "web/src/render/choice/OptionGroup.svelte"
+      ],
+      "tests_added": [
+        "src/render/choice/OptionGroup.dom.test.ts (new): primary classes and disabled state; hb-render tokens; double-tap tail held back; fast tap elsewhere selects; lone/late/own-group taps select; mouse and pen never held back; key right after a touch picks its option; held-back tap leaves the choice as it was; flush/maxWidth reach the grid",
+        "e2e/ux-render.spec.ts: 'Confirm is the primary blue and looks disabled until an option is chosen', 'the focus ring of an option card is the amber ring of every other control' (chromium), 'the second tap of a double tap on the confidence Continue selects nothing on the next item' (touch projects; fails when the guard is switched off, checked by mutation)"
+      ],
+      "tests_changed": [],
+      "notes": "DEVIATION from the triage's guard: 'a touch tap < 350 ms after mount' as specified swallows the SessionDriver's taps in the iphone project (measured: its option taps land 57 to 131 ms after the group mounts, and `tick()` then fails with 'unchecked'; the triage assumed the drivers click). The guard therefore also requires the tap to repeat the spot of an earlier touch tap made before the group appeared, which is the double-tap tail itself. The whole touch-driven session (e2e/session-save.spec.ts 'plays from the start page', iphone) passes with it. `--hb-focus` is kept (value now the amber #b45309 / #fbbf24 of --r-focus, instead of being dropped) because scripts/contrast.test.ts pairs --hb-focus, --hb-card-border, --hb-chosen and --hb-surface of OptionGroup by name; dropping it would fail that test. Snapshots of OptionGroup users changed only by the Svelte class hash. A module-level pointerdown listener (capture, passive) in OptionGroup.svelte records the last two touch presses."
+    },
+    {
+      "id": "UX-022",
+      "outcome": "fixed",
+      "summary": "Focused stages are named groups: RT 'Reaction stage: press Space when the target appears' / 'tap the target when it appears' / (four positions) 'press D, F, J or K to match the position of the target' / 'tap the position where the target appears'; digit span 'Digits: watch them, then type them in order' (reverse order for backward); coding 'Shapes: type the digit for each shape'. Digit span and Corsi keep one polite .hb-status mounted for the whole block, empty in the intro, so every phase text is a change of an existing live region (same class and texts, 'Block complete. Thank you.' kept). translate=\"no\" on the coding timer, digit-span length, Corsi counts, RT trial counters, key names (<kbd>) in the RT instructions, and the sign and point buttons of NumericEntry. touch-action: manipulation on .rt .stage, .corsi .board, the keypad group and the coding .stage.",
+      "files": [
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/common/Keypad.svelte",
+        "web/src/render/common/NumericEntry.svelte"
+      ],
+      "tests_added": [
+        "src/render/rt/rt.dom.test.ts: stage role group and name in each input mode; kbd and counter translate=no, texts unchanged",
+        "src/render/span/span.dom.test.ts: status line mounted empty before Start and the same element through the block (digit span and Corsi); stage names forward and backward",
+        "src/render/coding/coding.dom.test.ts: stage group, timer translate=no",
+        "e2e/ux-render.spec.ts: names, focus, touch-action and the empty-then-live status line in the real session"
+      ],
+      "tests_changed": [
+        "src/render/rt/__snapshots__/rt.dom.test.ts.snap, src/render/span/__snapshots__/span.dom.test.ts.snap, src/render/coding/__snapshots__/coding.dom.test.ts.snap"
+      ],
+      "notes": "DEVIATION: 'set the phase text after a tick' is not needed: the status paragraph now exists from the intro (outside the phase branches), so the text change on Start is already a change of a mounted live region; no timer was added to the span renderers. The RT choice-4 keyboard label avoids the word 'right' (the key-leak lint in src/render/common/leak.ts treats it as naming an answer). The status line in the intro of digit span and Corsi now takes its usual 1.5em of space under the Start button. Literal checks kept: .hb-status class and texts, 'Selected 0 of N.' and 'Enter N digits' match the shared drivers and gallery.spec (the number spans do not break getByText)."
+    },
+    {
+      "id": "UX-023",
+      "outcome": "fixed",
+      "summary": "Corsi blocks are placed by their centres (--x/--y/--s custom properties, left/top = centre, translate(-50%,-50%)) with width and height max(size%, 2.75rem), so they are at least 44 px on any board while their centres keep the fractions; the board is min(100%, 26rem, 52vh) (52svh where supported); the gaps to the status line and Undo/Done are 0.5rem. Measured at 390 x 664 and 320 x 568: nine blocks >= 44 x 44, none overlap, all inside the board, and with the h1 at the top of the screen Undo and Done end inside the first screen. tasks/span/config.ts untouched.",
+      "files": [
+        "web/src/render/span/CorsiRenderer.svelte"
+      ],
+      "tests_added": [
+        "e2e/ux-render.spec.ts: 'Corsi blocks (UX-023)' at both phone sizes (size, overlap, inside the board, Done in the first screen, touch-action, no sideways scroll)",
+        "src/render/span/span.dom.test.ts: block placement by centre (--x/--y/--s equal the board coordinates)"
+      ],
+      "tests_changed": [
+        "src/render/span/span.dom.test.ts: the placement test read left/top = centre - size/2; it now reads the centre properties",
+        "src/render/span/__snapshots__/span.dom.test.ts.snap",
+        "e2e/gallery.spec.ts-snapshots/corsi-board-chromium-darwin.png regenerated (board is 375 px, not 416 px, at the default 1280 x 720: the 52vh cap)"
+      ],
+      "notes": "The Done-in-first-screen check scrolls the h1 to the top of the screen (the triage's wording), not the page: the session header above it is a session-package item."
+    },
+    {
+      "id": "UX-024",
+      "outcome": "fixed",
+      "summary": "NumericEntry normalises the typed text before accepts/submit (new common/normalize-digits.ts): NFKC, the digits of Arabic-Indic, Extended Arabic-Indic and Devanagari to ASCII, and inner white space (spaces, U+00A0, U+202F, tabs) removed when the text is only a sign, digits and a point (so '1 000' is 1000 but the mixed number '2 1/3' keeps its spaces); fractions get the digit mapping only, letters nothing; the ASCII text is what onsubmit and the family's parser receive. Decimal entries get a point key ('Decimal point', translate=no) beside the sign key when the browser language writes decimals with a comma or the pointer is coarse, inserting at the caret. QuantRenderer: an integer item accepts only whole values ('3.5', '7/2' get the integer note). entry-copy notes reworded as in the triage. Entry box flex 0 1 12rem / max 12rem (fraction keeps its width).",
+      "files": [
+        "web/src/render/common/NumericEntry.svelte",
+        "web/src/render/common/entry-copy.ts",
+        "web/src/render/common/normalize-digits.ts",
+        "web/src/render/quant/QuantRenderer.svelte"
+      ],
+      "tests_added": [
+        "src/render/common/normalize-digits.test.ts (new, fast-check): any integer in any supported script with any spaces inside normalises to String(n); decimals; idempotent; never makes unreadable text readable unless it was a plain number; mixed numbers and decimal commas untouched; usesDecimalComma",
+        "src/render/quant/quant.dom.test.ts: '3.5' on an integer item shows the note and sends nothing; full-width and Arabic-Indic digits submit as ASCII; point key inserts at the caret under a comma locale and is absent under en-GB and on integer items; notes text",
+        "src/render/series/series.dom.test.ts: Arabic-Indic, Persian, Devanagari, full-width digits, spaced and no-break-spaced digits submit as plain digits",
+        "e2e/ux-render.spec.ts: 'digits of another script are read, an unreadable entry gets a note that names the rule, and the box is short'"
+      ],
+      "tests_changed": [
+        "src/render/series/series.dom.test.ts and src/render/quant/quant.dom.test.ts property tests now compare against the normalised text and the integer rule",
+        "src/render/quant/__snapshots__/quant.dom.test.ts.snap, src/render/series/__snapshots__/series.dom.test.ts.snap"
+      ],
+      "notes": "tasks/quant/numeric.ts and templates.ts untouched (bank-mirrored); the decimal-comma grammar stays with owner item UX-079. The point key is shown on touch screens whatever the browser language because the keyboard region cannot be read from the page."
+    },
+    {
+      "id": "UX-025",
+      "outcome": "fixed",
+      "summary": "Digit span intro now says 'Press Enter when you are done; Backspace removes the last digit.' and 'The sequences get longer step by step.' (type the digits ... with the keypad or the number keys, then choose Done; reverse-order clause kept). Coding: title 'Shape to digit', table aria-label 'Shape-to-digit table', intro 'Each shape in the table above has a digit. ... on-screen keypad or the number keys on your keyboard. Be as fast and as accurate as you can.' Series: region 'Number or letter sequence', prompt 'Which number|letter comes next in this sequence?', field 'Next number|letter' and the hidden 'missing next number|letter' text.",
+      "files": [
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/render/series/SeriesRenderer.svelte",
+        "web/e2e/gallery.spec.ts"
+      ],
+      "tests_added": [
+        "src/render/span/span.dom.test.ts: instructions name Enter and Backspace, both directions",
+        "src/render/series/series.dom.test.ts: one noun per item (prompt, label, hidden text, list name) for number and letter items",
+        "src/render/coding/coding.dom.test.ts: title, list name and intro"
+      ],
+      "tests_changed": [
+        "e2e/gallery.spec.ts: series driver fills getByLabel(/^Next (number|letter)$/); the coding legend is found by /Shape-to-digit table/",
+        "src/render/series/__snapshots__/series.dom.test.ts.snap, src/render/coding/__snapshots__/coding.dom.test.ts.snap, src/render/span/__snapshots__/span.dom.test.ts.snap"
+      ],
+      "notes": "No literal elsewhere matched the old strings (checked e2e, scripts, ux-review/lib; session-driver.ts fills form.entry by locator)."
+    },
+    {
+      "id": "UX-026",
+      "outcome": "fixed",
+      "summary": "RtRenderer sub-title is 'One position' or 'Four positions' (the session h1 still says 'Reaction time').",
+      "files": [
+        "web/src/render/rt/RtRenderer.svelte"
+      ],
+      "tests_added": [
+        "src/render/rt/rt.dom.test.ts: titles for both families",
+        "e2e/ux-render.spec.ts: h1 'Reaction time' with block title 'One position'"
+      ],
+      "tests_changed": [
+        "src/render/rt/__snapshots__/rt.dom.test.ts.snap"
+      ],
+      "notes": "e2e/session.spec.ts:350 asserts the session h1 only; unchanged."
+    },
+    {
+      "id": "UX-027",
+      "outcome": "fixed",
+      "summary": "render.css: .hb-actions margin 1rem 0 (a gap below button rows) and .hb-actions + p.muted margin-top .5rem; the dark tokens are under @media screen and (prefers-color-scheme: dark), so a printed page keeps the light tokens; .hb-render { accent-color: var(--r-accent) } so checkboxes, radios and the slider use the primary blue.",
+      "files": [
+        "web/src/render/common/render.css"
+      ],
+      "tests_added": [
+        "e2e/ux-render.spec.ts: Confirm background equals --r-accent (shared tokens in force); the a11y sweep of every touched route stayed clean"
+      ],
+      "tests_changed": [],
+      "notes": "NEEDS INTEGRATION: scripts/contrast.test.ts 'every colour token of src/ sits in a rule that a sheet above stands for' compares t.media to the exact string '@media (prefers-color-scheme: dark)', so it now fails for the render.css tokens (and for src/brief/notes.css and src/brief/ui/ResultsTalk.svelte, which other packages moved to the same `screen and` form). See integration_requests. No new colour token or literal was added."
+    }
+  ],
+  "integration_requests": [
+    {
+      "id": "UX-027",
+      "file": "web/scripts/contrast.test.ts",
+      "change": "Line 212 `const DARK = '@media (prefers-color-scheme: dark)'` and line 222 `t.media !== DARK`: accept the print-safe form too, e.g. `const DARK = new Set(['@media (prefers-color-scheme: dark)', '@media screen and (prefers-color-scheme: dark)'])` and `!DARK.has(t.media)`. scripts/css-tokens.ts and the 'a dark-scheme rule is not undone by a later rule' test already match both forms (their regexes are /prefers-color-scheme:\\s*dark/). Until then `npm test` has exactly this one failure; it lists src/render/common/render.css (this package) and src/brief/notes.css and src/brief/ui/ResultsTalk.svelte (other packages)."
+    },
+    {
+      "id": "UX-021",
+      "file": "web/scripts/contrast.test.ts",
+      "change": "Optional clean-up only: OptionGroup.svelte keeps the token --hb-focus (now amber, the same hex as --r-focus) because the pair('--hb-focus', '--hb-surface', ...) at line 137 names it. If the integrator wants the token gone (the triage said 'drop --hb-focus'), delete that pair and the --hb-focus lines in OptionGroup.svelte's .choice rule and its dark override, and use var(--r-focus) in the two outline rules. Not needed for green gates."
+    },
+    {
+      "id": "UX-017b",
+      "file": "web/e2e/routes.ts",
+      "change": "Optional wording only: the `state` of the route 'item-spatial-no-webgl' still says 'the notice, the text alternatives and the skip offer'; without WebGL the renderer now draws only the one-line notice (the skip offer is the session's .unavailable group). The route's assertions (.unavailable, 'Skip Spatial') still hold."
+    }
+  ],
+  "snapshots_updated": [
+    "web/e2e/gallery.spec.ts-snapshots/coding-legend-chromium-darwin.png",
+    "web/e2e/gallery.spec.ts-snapshots/corsi-board-chromium-darwin.png",
+    "web/e2e/render-visual.spec.ts-snapshots/matrices-e2e-look-1-chromium-darwin.png",
+    "web/e2e/render-visual.spec.ts-snapshots/matrices-e2e-look-1-webkit-darwin.png",
+    "web/e2e/render-visual.spec.ts-snapshots/matrices-e2e-look-1-iphone-darwin.png",
+    "web/src/render/coding/__snapshots__/coding.dom.test.ts.snap",
+    "web/src/render/matrices/__snapshots__/MatrixRenderer.dom.test.ts.snap",
+    "web/src/render/quant/__snapshots__/quant.dom.test.ts.snap",
+    "web/src/render/reading/__snapshots__/reading.dom.test.ts.snap",
+    "web/src/render/rotation/__snapshots__/RotationRenderer.dom.test.ts.snap",
+    "web/src/render/rt/__snapshots__/rt.dom.test.ts.snap",
+    "web/src/render/series/__snapshots__/series.dom.test.ts.snap",
+    "web/src/render/span/__snapshots__/span.dom.test.ts.snap"
+  ],
+  "gates": {
+    "check": "pass (npm run check: svelte-check 0 errors 0 warnings, tsc node and scripts configs). An earlier run failed only on src/reveal/copy.test.ts importing scripts/language-lint (reveal package); gone in the final run.",
+    "unit": "npx vitest run src/render src/tasks: 80 files, 1593 tests pass. Full npm test: 4522 pass, 1 fails = scripts/contrast.test.ts ('every colour token ... under prefers-color-scheme: dark'), the integration request for UX-027. Under a machine load average of 120 to 165, src/render/leak.dom.test.ts 'matrices: 150 generated items' timed out at 30 s in two combined runs; alone it takes 3 to 12 s, and it is faster with this change than with the original OptionGroup/MatrixRenderer (2.8 s against 4.7 s, A/B on the same load), and it passed in the final combined runs.",
+    "build": "pass (npm run build -- --outDir test-results/iso/fix-render/dist-gate)",
+    "e2e": [
+      { "spec": "e2e/ux-render.spec.ts", "project": "chromium", "result": "19 passed, 1 skipped (the touch-only double tap)" },
+      { "spec": "e2e/ux-render.spec.ts", "project": "iphone", "result": "19 passed, 1 skipped (the chromium-only focus ring)" },
+      { "spec": "e2e/ux-render.spec.ts", "project": "webkit", "result": "18 passed, 2 skipped" },
+      { "spec": "e2e/gallery.spec.ts (HB_DEV_SERVER=1)", "project": "chromium", "result": "18 passed (one load-induced timeout of the reading axe test on the first run, 7.6 s alone)" },
+      { "spec": "e2e/gallery.spec.ts (HB_DEV_SERVER=1)", "project": "webkit", "result": "12 passed, 6 skipped" },
+      { "spec": "e2e/gallery.spec.ts (HB_DEV_SERVER=1)", "project": "iphone", "result": "12 passed, 6 skipped" },
+      { "spec": "e2e/render-visual.spec.ts (HB_DEV_SERVER=1)", "project": "chromium", "result": "17 passed" },
+      { "spec": "e2e/render-visual.spec.ts (HB_DEV_SERVER=1)", "project": "webkit", "result": "15 passed, 2 skipped (no WebGL in this WebKit)" },
+      { "spec": "e2e/render-visual.spec.ts (HB_DEV_SERVER=1)", "project": "iphone", "result": "15 passed, 2 skipped (no WebGL in this WebKit)" },
+      { "spec": "e2e/emotion.spec.ts", "project": "chromium", "result": "14 passed" },
+      { "spec": "e2e/emotion.spec.ts", "project": "iphone", "result": "12 passed, 2 skipped" },
+      { "spec": "e2e/fermi.spec.ts", "project": "chromium", "result": "14 passed" },
+      { "spec": "e2e/fermi.spec.ts", "project": "iphone", "result": "12 passed, 2 skipped" },
+      { "spec": "e2e/a11y.spec.ts --grep (rt-intro, rt-trial, item-matrix-series, item-spatial, item-spatial-no-webgl, memory-intro, memory-entry, memory-corsi, quant-item, coding-intro, coding-running, reading-passage, reading-questions, practice, practice-feedback)", "project": "chromium", "result": "105 passed, 15 skipped" },
+      { "spec": "e2e/a11y.spec.ts --grep (same routes)", "project": "iphone", "result": "90 passed, 30 skipped" },
+      { "spec": "e2e/session.spec.ts --grep (reaction-time block, counted item, confidence slider, practice feedback, autosave, Matrix & Series stop)", "project": "chromium", "result": "6 passed" },
+      { "spec": "e2e/session.spec.ts --grep (same)", "project": "iphone", "result": "5 passed, 1 skipped" },
+      { "spec": "e2e/keyboard-session.spec.ts --grep 'a whole session by keyboard alone'", "project": "chromium", "result": "1 passed" },
+      { "spec": "e2e/session-save.spec.ts --grep 'plays from the start page' (the touch driver plays a whole session)", "project": "iphone", "result": "1 passed" }
+    ]
+  }
+}

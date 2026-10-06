@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
-import { loadEnv, type Plugin } from 'vite'
+import { loadEnv, runnerImport, type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 
 const SCHEMA_DIR = fileURLToPath(new URL('../schema/', import.meta.url))
@@ -76,6 +76,84 @@ function surfacesStaleness(): Plugin {
   }
 }
 
+/** The words of the static welcome shell of index.html (UX-100): the app's own constants, by name. */
+export const SHELL_TEXT_NAMES = ['WELCOME_HEADING', 'WELCOME_TAGLINE', 'WELCOME_INTRO', 'DISCLAIMER'] as const
+export type ShellText = Readonly<Record<(typeof SHELL_TEXT_NAMES)[number], string>>
+
+/** The mark of a page that has the shell (index.html only). */
+export const SHELL_MARK = 'id="hb-shell"'
+
+const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/**
+ * index.html with the shell's placeholders (`<!--hb-shell:NAME-->`) filled in with `text`, and the build's
+ * stylesheet links moved from the head to the end of the body: the browser paints the shell (styled inline)
+ * without waiting for them, and the app's module script still waits for them before it runs, so the app
+ * never mounts unstyled. Pages without the shell come back as they are.
+ */
+export function fillShell(html: string, text: ShellText): string {
+  if (!html.includes(SHELL_MARK)) return html
+  const filled = html.replace(/<!--hb-shell:([A-Z_]+)-->/g, (whole, name: string) => {
+    const value = (text as Readonly<Record<string, string>>)[name]
+    if (value === undefined) throw new Error(`index.html: unknown shell placeholder ${whole}`)
+    return escapeHtml(value)
+  })
+  const headEnd = filled.indexOf('</head>')
+  const links: string[] = []
+  const head = filled.slice(0, headEnd).replace(/[ \t]*<link\b[^>]*\brel="stylesheet"[^>]*>\n?/g, (link) => {
+    links.push(link.trim())
+    return ''
+  })
+  const rest = filled.slice(headEnd)
+  if (links.length === 0) return head + rest
+  return head + rest.replace('</body>', `${links.map((l) => `  ${l}\n`).join('')}  </body>`)
+}
+
+/** The shell's words, read from src/session/copy.ts and src/copy.ts through Vite's module runner. */
+export async function loadShellText(): Promise<ShellText> {
+  const [session, app] = await Promise.all(
+    ['./src/session/copy.ts', './src/copy.ts'].map(async (f) => (await runnerImport<Record<string, unknown>>(fileURLToPath(new URL(f, import.meta.url)))).module),
+  )
+  const all: Record<string, unknown> = { ...app, ...session }
+  const out: Record<string, string> = {}
+  for (const name of SHELL_TEXT_NAMES) {
+    const value = all[name]
+    if (typeof value !== 'string' || value === '') throw new Error(`static shell: ${name} is not a string in src/session/copy.ts or src/copy.ts`)
+    out[name] = value
+  }
+  return out as ShellText
+}
+
+/**
+ * The static welcome shell of index.html (UX-100), filled in dev and build (`fillShell`). On a slow line the page
+ * used to stay blank until the app's script had loaded and run; now the HTML itself shows the welcome screen's
+ * heading, tagline and intro and the footer disclaimer, in the app's own words (`loadShellText`) and look (inline
+ * styles that repeat app.css, render.css, session.css and App.svelte's footer; scripts/static-shell.test.ts
+ * compares them), with a "Loading…" line where Start will be and nothing to press. src/main.ts clears it before
+ * the app mounts. A tiny inline script in the head (the site sends no Content-Security-Policy, so it may run)
+ * marks a page with JavaScript, which shows the "Loading…" line and the footer (without JavaScript the noscript
+ * text in the shell says what to do and carries the disclaimer), and a page opened on a deep link (the privacy
+ * notice, the data page, a dev route), whose welcome text stays hidden: that page is about to be another one.
+ */
+function staticShell(): Plugin {
+  let text: Promise<ShellText> | undefined
+  return {
+    name: 'humanbench-static-shell',
+    transformIndexHtml: {
+      order: 'post',
+      async handler(html) {
+        if (!html.includes(SHELL_MARK)) return html
+        // Read once per server or build; a failure is not kept, so the next request tries again.
+        text ??= loadShellText().catch((e: unknown) => {
+          text = undefined
+          throw e
+        })
+        return fillShell(html, await text)
+      },
+    },
+  }
+}
+
 /** Whether the build includes the dev-only routes of src/dev/ (see `define` below; M1.16). */
 export function devRoutesEnabled(mode: string, env: Record<string, string>): boolean {
   return mode !== 'production' || env.VITE_HB_DEV_ROUTES === '1'
@@ -101,7 +179,7 @@ export default defineConfig(({ mode }) => {
   const base = (env.VITE_BASE || '/humanbench/').replace(/\/?$/, '/')
   return {
     base,
-    plugins: [svelte(), schemaAssets(), surfacesStaleness()],
+    plugins: [svelte(), schemaAssets(), surfacesStaleness(), staticShell()],
     // Dev-only routes (src/dev/, e.g. the M1.16 blob demo): on in dev and tests, and in a build
     // with VITE_HB_DEV_ROUTES=1 (the Playwright e2e build); a plain production build drops them.
     define: { __HB_DEV_ROUTES__: JSON.stringify(devRoutesEnabled(mode, env)), __HB_BACKEND__: JSON.stringify(backendCompiledIn(mode, env)) },

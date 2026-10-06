@@ -9,7 +9,7 @@
    * and a warning once that date is more than 120 days old (R-17.10).
    */
   import { setDestination, setForm, type BuilderState } from '../builder'
-  import { COPY, STEPS } from '../copy'
+  import { COPY, COPY_TARGET_ID, STEPS } from '../copy'
   import { DESTINATIONS, SURFACES, commandBlocks, surfacesStaleness, type Destination, type DestinationGroup, type Os } from '../surfaces'
   import { whatToLookFor } from '../look'
   import type { Form } from '../types'
@@ -82,32 +82,35 @@
     </fieldset>
   {/if}
 
-  <div class="warn" data-testid="provider-warning">{COPY.providerWarning}</div>
-  <p class="note" data-testid="anti-coercion">{COPY.antiCoercion}</p>
-  <p class="note" data-testid="placement">{COPY.placement}</p>
+  <!-- The page's skip link moves focus here: the warnings that come before copying, then the copy and download buttons (the next Tab stops). -->
+  <div id={COPY_TARGET_ID} class="copy-target" role="group" aria-label={COPY.copyGroup} tabindex="-1">
+    <div class="warn" data-testid="provider-warning">{COPY.providerWarning}</div>
+    <p class="note" data-testid="anti-coercion">{COPY.antiCoercion}</p>
+    <p class="note" data-testid="placement">{COPY.placement}</p>
 
-  <div data-testid="look-for">
-    <h3>What to look for</h3>
-    {#if looks.length > 0}
-      <ul>
-        {#each looks as l (l)}
-          <li>{l}</li>
-        {/each}
-      </ul>
-    {/if}
-    <p>If none of this appears: {COPY.troubleshooting}</p>
-  </div>
+    <div data-testid="look-for">
+      <h3>What to look for</h3>
+      {#if looks.length > 0}
+        <ul>
+          {#each looks as l (l)}
+            <li>{l}</li>
+          {/each}
+        </ul>
+      {/if}
+      <p>If none of this appears: {COPY.troubleshooting}</p>
+    </div>
 
-  <div class="row actions">
-    {#if downloadFirst}
-      <button type="button" class="primary" onclick={ondownload}>Download {fileName}</button>
-      <button type="button" onclick={oncopy}>Copy the notes</button>
-    {:else}
-      <button type="button" class="primary" onclick={oncopy}>Copy the notes</button>
-      <button type="button" onclick={ondownload}>Download {fileName}</button>
-    {/if}
+    <div class="row actions">
+      {#if downloadFirst}
+        <button type="button" class="primary" onclick={ondownload}>Download {fileName}</button>
+        <button type="button" onclick={oncopy}>Copy the notes</button>
+      {:else}
+        <button type="button" class="primary" onclick={oncopy}>Copy the notes</button>
+        <button type="button" onclick={ondownload}>Download {fileName}</button>
+      {/if}
+    </div>
+    <p class="status" role="status" aria-live="polite" data-testid="status">{status}</p>
   </div>
-  <p class="status" role="status" aria-live="polite" data-testid="status">{status}</p>
   <p class="hint">File name: <code data-testid="file-name">{fileName}</code>. {COPY.fileHint}</p>
 
   <h3>Steps for {dest.label}</h3>
@@ -157,6 +160,13 @@
 </section>
 
 <style>
+  .copy-target:focus {
+    outline: none;
+  }
+  .copy-target:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 4px;
+  }
   .actions {
     margin: 1rem 0 0.5rem;
   }

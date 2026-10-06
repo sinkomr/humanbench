@@ -48,3 +48,40 @@ describe('FocusPicker inside the retest section', () => {
     expect(ticked(r.container).sort()).toEqual(['coding_reading', 'quant', 'rt'])
   })
 })
+
+describe('FocusPicker rows (UX-033)', () => {
+  const mount = (suggested: string[]) => {
+    const base = axisEstimates(buildResults(botSave('s_FOCUSROWS0000001', { level: 0.5 }).save)!.input)
+    const r = render(RetestSection, { estimates: widest(base, suggested), sessions: 1, onfocus: () => undefined, focusLocked: false })
+    cleanup = r.destroy
+    return r.container
+  }
+
+  it('a suggested part reads "Matrix & Series (wide range)": the space before the bracket is there in the text and in the name', () => {
+    const c = mount(['MAT', 'SPA', 'WM'])
+    const labels = [...c.querySelectorAll('form label')].map((l) => (l.textContent ?? '').trim())
+    expect(labels).toContain('Matrix & Series (wide range)')
+    expect(labels).toContain('Spatial (wide range)')
+    expect(labels.every((l) => !/\S\(/.test(l))).toBe(true)
+    // A part that is not suggested has no bracket.
+    expect(labels.find((l) => l.startsWith('Quantitative'))).toBe('Quantitative Reasoning')
+  })
+
+  it('each row is one label around its checkbox, so the whole row is the target, and every box keeps its id', () => {
+    const c = mount(['MAT'])
+    const boxes = [...c.querySelectorAll<HTMLInputElement>('form input[type="checkbox"]')]
+    expect(boxes).toHaveLength(6)
+    for (const box of boxes) {
+      const label = box.closest('label')!
+      expect(label.getAttribute('for')).toBe(box.id)
+      expect(label.classList.contains('check')).toBe(true)
+      expect(label.querySelectorAll('input')).toHaveLength(1)
+    }
+    // Pressing the label's text ticks the box.
+    const quant = boxes.find((b) => b.id.endsWith('quant'))!
+    const before = quant.checked
+    quant.closest('label')!.querySelector('span')!.click()
+    flushSync()
+    expect(quant.checked).toBe(!before)
+  })
+})

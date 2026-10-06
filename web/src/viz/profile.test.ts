@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { AXES, AXIS_CODES, N_AXES } from '../engine/axes'
 import { scoreAll } from '../engine/scorer'
 import { Z90 } from './geometry'
-import { axisEstimates, interval90, stubLabel } from './profile'
+import { axisEstimates, COMPACT_LABELS, interval90, measuredFields, stubLabel } from './profile'
+import { notMeasuredText } from './copy'
 import { spokeOrder } from './seriation'
 import { syntheticProfile } from './synthetic'
 
@@ -70,3 +71,68 @@ describe('axisEstimates (§9, A12, A15)', () => {
   })
 })
 
+
+describe('axes this build never offers (UX-048a)', () => {
+  const input = m1.input
+  const offered = new Set(['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS', 'CAL'] as const)
+  const byCode = (est: ReturnType<typeof axisEstimates>, code: string) => est.find((e) => e.code === code)!
+
+  it('without `offered` nothing changes: only a v2 axis is "not offered yet"', () => {
+    const est = axisEstimates(input)
+    expect(byCode(est, 'LR')).toMatchObject({ measured: false, reason: 'no_data' })
+    expect(byCode(est, 'EMO')).toMatchObject({ measured: false, reason: 'not_yet_available' })
+    expect(axisEstimates({ ...input, offered: undefined })).toEqual(est)
+  })
+
+  it('an axis outside `offered` that has no data is "not offered yet"; one inside it with none stays "no data"', () => {
+    const est = axisEstimates({ ...input, offered })
+    for (const code of ['LR', 'LG', 'RC', 'VOC', 'FER', 'KST', 'KHU', 'KAP', 'EMO', 'CRE']) {
+      expect(byCode(est, code), code).toMatchObject({ measured: false, reason: 'not_yet_available' })
+      expect(notMeasuredText(byCode(est, code).reason)).toBe('Not measured (not offered yet)')
+    }
+    // An offered axis that simply has no observations keeps "no data": give the m1 profile one it lacks.
+    const sparse = axisEstimates({ score: syntheticProfile('sparse')!.input.score, offered })
+    expect(byCode(sparse, 'WM')).toMatchObject({ measured: false, reason: 'no_data' })
+    expect(notMeasuredText(byCode(sparse, 'WM').reason)).toBe('Not measured')
+  })
+
+  it('a skipped axis stays skipped and a measured axis stays measured, offered or not', () => {
+    const skipped = axisEstimates({ ...syntheticProfile('skipped')!.input, offered })
+    expect(byCode(skipped, 'SPA')).toMatchObject({ measured: false, reason: 'skipped' })
+    const notOffered = axisEstimates({ ...syntheticProfile('skipped')!.input, skipped: ['LR'], offered: new Set(['MAT']) })
+    expect(byCode(notOffered, 'LR')).toMatchObject({ reason: 'skipped' })
+    // Observed axes outside `offered` are still drawn: the score is what the person did.
+    expect(byCode(axisEstimates({ ...input, offered: new Set(['MAT']) }), 'QR').measured).toBe(true)
+  })
+})
+
+describe('compact chart labels (UX-042)', () => {
+  it('are the exact short names, each a cut of its table name', () => {
+    expect(COMPACT_LABELS).toEqual({
+      MAT: 'Matrix & Series',
+      LR: 'Logical',
+      LG: 'Logic games',
+      RC: 'Reading comp.',
+      VOC: 'Vocabulary',
+      QR: 'Quantitative',
+      SPA: 'Spatial',
+      WM: 'Working mem.',
+      RT: 'Reaction',
+      PS: 'Processing',
+      FER: 'Fermi',
+      CAL: 'Calibration',
+      KST: 'STEM',
+      KHU: 'Humanities',
+      KAP: 'Arts & practical',
+      EMO: 'Emotion',
+      CRE: 'Creative',
+    })
+  })
+})
+
+describe('where an estimate lies against the drawn scale (UX-037)', () => {
+  it('every measured estimate records it; a stub has none', () => {
+    for (const e of axisEstimates(full.input)) expect(e.offScale).toBe(e.measured ? (e.theta! < -2.76 ? 'low' : e.theta! > 3 ? 'high' : 'none') : undefined)
+    expect(measuredFields(-3.5, 0.2).offScale).toBe('low')
+  })
+})

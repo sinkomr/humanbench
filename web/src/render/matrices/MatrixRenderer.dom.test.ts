@@ -44,6 +44,19 @@ describe('MatrixRenderer', () => {
     expect(stableHtml(root)).toMatchSnapshot()
   })
 
+  it('lays the options out on the same three tracks as the grid, flush, so an option is drawn at the size of a grid cell (UX-020)', async () => {
+    const { root } = await renderShown('matrices-dom-scale')
+    const matrix = root.querySelector('.matrix') as HTMLElement
+    const options = root.querySelector('.options') as HTMLElement
+    expect(matrix.style.getPropertyValue('--grid-max')).toBe('22.5rem')
+    // Same width cap as the grid, three columns at every width (two rows of three), no card padding.
+    expect(options.style.getPropertyValue('--max')).toBe('var(--grid-max)')
+    expect(options.style.getPropertyValue('--narrow')).toBe('3')
+    expect(options.style.getPropertyValue('--wide')).toBe('3')
+    expect(options.classList.contains('flush')).toBe(true)
+    expect(optionInputs(root)).toHaveLength(6)
+  })
+
   it('draws the stem, the 8 visible cells in reading order with text alternatives, then the missing cell', async () => {
     const { item, root } = await renderShown('matrices-dom-1')
     expect(root.querySelector('.stem')?.textContent).toBe(MATRIX_STEM)

@@ -16,6 +16,9 @@ export const ROTATION_OPTIONS_LEGEND = 'Options'
 /** Shown when the 3D figures cannot be drawn (no WebGL); the session offers skipping (§13). */
 export const ROTATION_UNAVAILABLE = 'The 3D figures could not be drawn in this browser, so this question cannot be answered here.'
 
+/** Shown in the target box while the three-view chunk loads and the figures are not yet drawn. */
+export const ROTATION_LOADING = 'Loading figures…'
+
 /** Text alternative of the target figure. */
 export function targetAlt(nCubes: number): string {
   return `Target: a 3D object made of ${nCubes} cubes joined face to face, drawn from a fixed viewpoint.`

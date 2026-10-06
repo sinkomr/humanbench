@@ -8,7 +8,7 @@
  */
 
 import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { BackendError } from '../backend/errors'
 import { SERVER_GATE_POINTS, SERVER_READY_TEXT } from '../backend/copy'
 import { ANON, CANNED, ScriptedTransport, SESSION_ID, fakeBackend } from '../backend/testing'
@@ -21,20 +21,31 @@ import { getFamily } from '../tasks/registry'
 import { CONSENT_KEY, SAVE_CTX, TERMS_VERSION_SERVER } from './constants'
 import { fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
+import { createResultsLoader, RESULTS_PENDING_HEADING, RESULTS_PREPARING, resultsLoader, type ResultsLoader, type ResultsModule } from './results-loader'
+
+// The results code is its own chunk (UX-100); loaded here once, so the flow shows the results at once as it does
+// when the ready screen has fetched them.
+beforeAll(async () => {
+  await resultsLoader.load()
+}, 90_000)
 
 let app: ReturnType<typeof mount> | undefined
 let host: HTMLElement
 
+/** A results loader for the next mount (UX-100); the page's own when unset. */
+let injected: ResultsLoader | undefined
+
 function open(fake: FakeEnv<FakeDisplay>): void {
   host = document.createElement('div')
   document.body.appendChild(host)
-  app = mount(SessionApp, { target: host, props: { env: fake.env } })
+  app = mount(SessionApp, { target: host, props: { env: fake.env, ...(injected === undefined ? {} : { results: injected }) } })
   flushSync()
 }
 
 afterEach(() => {
   if (app) unmount(app)
   app = undefined
+  injected = undefined
   document.body.innerHTML = ''
 })
 
@@ -171,7 +182,7 @@ describe('opening the session', () => {
     expect(t.callsOf('next_item')).toBe(0)
     click(buttonByText(host, 'Finish early'))
     click(buttonByText(host, 'Finish now'))
-    expect(h1()).toBe('Session complete')
+    expect(h1()).toBe('Session ended') // nothing answered, nothing measured (UX-009b)
     expect(t.callsOf('finish')).toBe(0)
     expect(host.querySelector('[data-section="online"]')).toBeNull()
   })
@@ -319,6 +330,23 @@ describe('closing and the results', () => {
     click(buttonByText(host, 'Finish now'))
   }
 
+  it('the results code still on its way when the session is closed: "Preparing your results…", then the results with what the server added (UX-100)', async () => {
+    const { t, fake } = setup()
+    const gate: { resolve?: (m: ResultsModule) => void } = {}
+    injected = createResultsLoader({ importer: () => new Promise<ResultsModule>((resolve) => (gate.resolve = resolve)), delays: [], online: () => true, beforeRetry: async () => undefined })
+    await toResults(t, fake)
+    await tick(12)
+    await settle(3)
+    expect(t.args('finish')).toBeDefined() // closed on the server first
+    expect(h1()).toBe(RESULTS_PENDING_HEADING)
+    expect(host.textContent).toContain(RESULTS_PREPARING)
+    gate.resolve!(await resultsLoader.load())
+    await tick()
+    await settle(3)
+    expect(h1()).toBe('Session complete')
+    expect(host.querySelector('[data-section="online"] [data-section="save-check"]')?.textContent).toContain('1 session was checked by the server')
+  })
+
   it('sends the last answers, closes the session with the flags, fetches the scores, and shows what an online session adds', async () => {
     const { t, fake } = setup()
     await toResults(t, fake)
@@ -437,7 +465,7 @@ describe('closing and the results', () => {
     await tick(12)
     click(buttonByText(host, 'Continue without the server'))
     await settle(3)
-    expect(h1()).toBe('Session complete')
+    expect(h1()).toBe('Session ended') // the served answers are not scored here, so nothing is measured (UX-009b)
     expect(t.callsOf('rescore')).toBe(0)
     expect(host.querySelector('[data-section="online"]')).not.toBeNull()
     expect(host.querySelector('[data-section="survey"]')).toBeNull() // nothing can be sent to a session that was not closed

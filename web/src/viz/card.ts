@@ -23,24 +23,33 @@
  *   skill's level into the visible numbers. No skill is picked out as a weakness (R-5.6.4).
  * - **No total, mean, area or single score (§9.5 a).** The blob is `buildBlob`'s: radius linear in θ
  *   over [−3, 3] (§9.1), the crisp mean curve, the ±1 SD band, the §9.3 fuzz and the 90% whiskers,
- *   the tier hatch, the muting rule, and the in-chart ring note ("Rings: SD units, provisional").
+ *   the tier hatch, the muting rule, and the ring note ("Rings: SD units, provisional"), which the
+ *   card sets in its own small print rather than inside the chart, at a size that survives a feed.
  * - **No other text.** Every text is an axis label, a ring label, the ring note, or a line of
  *   `card-copy.ts`. Notes for an AI (Phase AI), the R-5.6.5 resource line and the save file are
  *   never inputs of this module, and `card.test.ts` scans the output for them.
+ *
+ * Legible when shrunk (UX-038): a card is seen at feed size, often 600 px wide (half size). Every
+ * text of the column and the small print is at least {@link CARD_MIN_TEXT} card px; the chart's
+ * own text (spoke labels, the ring labels −2, 0 and +2 SD) aims for the same and falls back
+ * only where many skills crowd the circle (`placeBlob`). The small print runs the full width under
+ * the chart and the column.
  *
  * Colours are inlined from the palette (§9.8): a picture cannot read the page's CSS variables.
  */
 
 import { AXIS_INDEX, axis, type AxisCode } from '../engine/axes'
-import { buildBlob, estimateTextWidth, fitLayout, LABEL_LINE_EM, MIN_TEXT_PX, NOTE_LINE_EM, wrapLine, type BlobModel } from './blob'
+import { buildBlob, CHAR_EM, estimateTextWidth, fitLayout, LABEL_FONT, LABEL_LINE_EM, layoutExtent, MAX_LABEL_FONT, MIN_TEXT_PX, NOTE_LINE_EM, wrapLine, type BlobLayout, type BlobModel } from './blob'
 import {
   CARD_BRAND,
+  CARD_KEY,
   CARD_NO_PEAKS,
   CARD_NOTE_READING,
   CARD_NOTE_SCALE,
   CARD_PEAKS_HEADING,
   CARD_PEAKS_SUB,
   CARD_PURPOSE,
+  CARD_SD_MEANING,
   CARD_TITLE,
   cardAlt,
   cardPeakRange,
@@ -69,12 +78,20 @@ export const EMO_MIN_THETA = 0
 /** A picture cannot load the page's fonts, so it names the system ones the app uses (`app.css`). */
 export const CARD_FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
 
-/** Where each part of the card sits, in card px. */
-const BLOB_REGION = { x: 24, y: 24, w: 664, h: 582 } as const
-const COLUMN_X = 728
-export const CARD_COLUMN_W = 448
-/** Smallest chart text on the card, in card px, that the blob's fit aims for (largest first). */
-const TEXT_TARGETS: readonly number[] = [16, 15, 14, 13, 12, MIN_TEXT_PX]
+/** The least size of any text of the column and the small print, in card px (half of it is 10 px at a 600 px thumbnail). */
+export const CARD_MIN_TEXT = 20
+
+/** Where each part of the card sits, in card px. The small print runs full width at the bottom (`footerTexts`). */
+const COLUMN_X = 744
+export const CARD_COLUMN_W = 432
+const FOOT_X = 24
+export const CARD_FOOT_W = CARD_W - 2 * FOOT_X
+const FOOT_SIZE = CARD_MIN_TEXT
+const FOOT_LINE = 24
+/** Last baseline of the small print, from the bottom edge. */
+const FOOT_BOTTOM = 24
+/** Smallest chart text on the card, in card px (ring labels, the −2/0/+2 SD labels), that the blob's fit aims for (largest first): spoke labels are 1/0.88 of it. */
+const TEXT_TARGETS: readonly number[] = [21.2, 20.5, CARD_MIN_TEXT, 18, 16, 15, 14, 13, 12, MIN_TEXT_PX]
 
 // --------------------------------------------------------------------------------- which skills
 
@@ -156,48 +173,69 @@ export function peakName(p: Pick<CardPeak, 'code'>): string {
   return axis(p.code).name
 }
 
-/** The right-hand column: brand, title, sessions, peaks (or a plain sentence), then the small print. */
+/** The right-hand column: brand, title, sessions, then the peaks (or a plain sentence). */
 export function columnTexts(sessions: number, allPeaks: readonly CardPeak[]): CardText[] {
   const peaks = allPeaks.slice(0, CARD_MAX_PEAKS)
   const out: CardText[] = []
   const put = (text: string, y: number, size: number, weight: CardText['weight'], fill: CardText['fill']): void => {
     out.push({ text, x: COLUMN_X, y, size, weight, fill })
   }
-  put(CARD_BRAND, 64, 26, 700, 'textAccent')
-  put(CARD_TITLE, 114, 38, 700, 'textStrong')
-  put(cardSessions(sessions), 148, 18, 400, 'textMuted')
-  let y = 210
+  put(CARD_BRAND, 46, 28, 700, 'textAccent')
+  put(CARD_TITLE, 96, 44, 700, 'textStrong')
+  put(cardSessions(sessions), 128, 22, 400, 'textMuted')
   if (peaks.length === 0) {
-    for (const line of wrapLine(CARD_NO_PEAKS, 38)) {
-      put(line, y, 18, 400, 'textMuted')
-      y += 26
+    let y = 190
+    for (const line of wrapLine(CARD_NO_PEAKS, 32)) {
+      put(line, y, 22, 400, 'textMuted')
+      y += 28
     }
   } else {
-    put(CARD_PEAKS_HEADING, y, 21, 700, 'textStrong')
-    put(CARD_PEAKS_SUB, y + 24, 14, 400, 'textMuted')
-    y += 66
+    put(CARD_PEAKS_HEADING, 178, 24, 700, 'textStrong')
+    let y = 204
+    for (const line of wrapLine(CARD_PEAKS_SUB, 34)) {
+      put(line, y, CARD_MIN_TEXT, 400, 'textMuted')
+      y += 24
+    }
+    y += 14
     for (const p of peaks) {
-      const name = wrapLine(peakName(p), 34)
+      const name = wrapLine(peakName(p), 32)
       name.forEach((line, i) => put(line, y + 26 * i, 22, 700, 'textStrong'))
       y += 26 * (name.length - 1)
-      put(cardPeakStands(p.contrast.toFixed(1)), y + 25, 16, 400, 'text')
-      put(cardPeakRange(formatTheta(p.lo90, 1), formatTheta(p.hi90, 1)), y + 47, 16, 400, 'textMuted')
-      y += 86
+      put(cardPeakStands(p.contrast.toFixed(1)), y + 24, CARD_MIN_TEXT, 400, 'text')
+      put(cardPeakRange(formatTheta(p.lo90, 1), formatTheta(p.hi90, 1)), y + 46, CARD_MIN_TEXT, 400, 'textMuted')
+      y += 80
     }
-  }
-  // The small print sits at the bottom, last baseline 24 px from the edge.
-  const lines = [wrapLine(CARD_NOTE_SCALE, 54), wrapLine(CARD_NOTE_READING, 54), [CARD_PURPOSE]]
-  const rows = lines.reduce((n, g) => n + g.length, 0)
-  let fy = CARD_H - 24 - (rows - 1) * 17 - (lines.length - 1) * 8
-  for (const group of lines) {
-    for (const line of group) {
-      put(line, fy, 13, 400, 'textMuted')
-      fy += 17
-    }
-    fy += 8
   }
   return out
 }
+
+/**
+ * The small print, full width at the bottom (UX-038): the caveats and the purpose as one paragraph,
+ * the key to the marks with what "SD" is, and the ring note (A12) as the last row, its two lines
+ * side by side. Every line is {@link CARD_MIN_TEXT} px; the last baseline is 24 px from the edge.
+ */
+export function footerTexts(): CardText[] {
+  const chars = Math.floor(CARD_FOOT_W / (CHAR_EM * FOOT_SIZE))
+  const rows = [...wrapLine([CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), chars), ...wrapLine(`${CARD_KEY} ${CARD_SD_MEANING}`, chars)]
+  const lastRow = CARD_H - FOOT_BOTTOM
+  const first = lastRow - rows.length * FOOT_LINE
+  const out: CardText[] = rows.map((text, i) => ({ text, x: FOOT_X, y: first + i * FOOT_LINE, size: FOOT_SIZE, weight: 400, fill: 'textMuted' }))
+  // The ring note: its two lines on one row, the second after the first.
+  const gap = 2 * FOOT_SIZE
+  let x = FOOT_X
+  for (const text of RING_NOTE) {
+    out.push({ text, x, y: lastRow, size: FOOT_SIZE, weight: 400, fill: 'textMuted' })
+    x += estimateTextWidth(text, FOOT_SIZE) + gap
+  }
+  return out
+}
+
+/** Top of the small print: the chart and the column end above it. */
+export const CARD_FOOT_TOP = footerTexts().reduce((top, t) => Math.min(top, t.y - 0.8 * t.size), CARD_H) - 8
+
+/** Where the chart sits: the left part of the card, above the small print. */
+export const CARD_BLOB_REGION = { x: 12, y: 8, w: 704, h: CARD_FOOT_TOP - 8 - 6 } as const
+const BLOB_REGION = CARD_BLOB_REGION
 
 export interface BlobPlacement {
   readonly model: BlobModel
@@ -211,27 +249,45 @@ export interface BlobPlacement {
 
 /**
  * The blob for these spokes, as large as fits the left part of the card with the largest chart
- * text that still fits (at least {@link MIN_TEXT_PX}, aiming for 16 card px, since a card is
- * often seen shrunk in a feed). Deterministic: widths are estimated, never measured.
+ * text that fits: the smallest chart text (the −2, 0 and +2 SD labels) aims for
+ * {@link TEXT_TARGETS}\[0] card px and steps down only where the circle would otherwise be
+ * squeezed (many skills), never below {@link MIN_TEXT_PX}. A card is often seen shrunk in a feed,
+ * so text size wins over circle size, and among the layouts that reach the target the largest
+ * circle wins. Deterministic: widths are estimated, never measured.
  */
 export function placeBlob(spokes: readonly SpokeEstimate[]): BlobPlacement {
-  let fit: BlobPlacement | undefined
-  for (const target of TEXT_TARGETS) {
-    // fitLayout aims for MIN_TEXT_PX at the width it is given: a narrower width asks for larger text.
-    const layout = fitLayout(spokes, (BLOB_REGION.w * MIN_TEXT_PX) / target)
-    const model = buildBlob(spokes, { layout })
-    const [vx, vy, vw, vh] = model.viewBox.split(' ').map(Number) as [number, number, number, number]
-    const scale = Math.min(BLOB_REGION.w / vw, BLOB_REGION.h / vh)
-    fit = {
-      model,
-      scale,
-      tx: BLOB_REGION.x + (BLOB_REGION.w - vw * scale) / 2 - vx * scale,
-      ty: BLOB_REGION.y + (BLOB_REGION.h - vh * scale) / 2 - vy * scale,
-      smallPx: model.text.small * scale,
+  const opts = { note: false, ringStep: 2 } as const
+  // Every collision-free layout (one-line or full labels, font sizes from the page's to MAX_LABEL_FONT)
+  // with the scale it gets in the region and the smallest text that scale gives.
+  const options: { layout: BlobLayout; scale: number; smallPx: number }[] = []
+  for (const compact of [false, true]) {
+    for (let fontSize = LABEL_FONT; fontSize <= MAX_LABEL_FONT; fontSize += 0.5) {
+      const layout = { fontSize, compact }
+      const ext = layoutExtent(spokes, layout, opts)
+      if (ext.collides) continue
+      const scale = Math.min(BLOB_REGION.w / ext.width, BLOB_REGION.h / ext.height)
+      options.push({ layout, scale, smallPx: ext.small * scale })
     }
-    if (fit.smallPx >= target - 1e-6) break
   }
-  return fit!
+  let chosen: { layout: BlobLayout } | undefined
+  for (const target of TEXT_TARGETS) {
+    const fits = options.filter((o) => o.smallPx >= target - 1e-6)
+    if (fits.length === 0) continue
+    chosen = fits.reduce((best, o) => (o.scale > best.scale + 1e-9 ? o : best))
+    break
+  }
+  // Nothing clear of overlaps reaches the floor (a very full circle): the fit for the floor, as before.
+  const layout = chosen?.layout ?? fitLayout(spokes, (BLOB_REGION.w * MIN_TEXT_PX) / MIN_TEXT_PX, opts)
+  const model = buildBlob(spokes, { layout, ...opts })
+  const [vx, vy, vw, vh] = model.viewBox.split(' ').map(Number) as [number, number, number, number]
+  const scale = Math.min(BLOB_REGION.w / vw, BLOB_REGION.h / vh)
+  return {
+    model,
+    scale,
+    tx: BLOB_REGION.x + (BLOB_REGION.w - vw * scale) / 2 - vx * scale,
+    ty: BLOB_REGION.y + (BLOB_REGION.h - vh * scale) / 2 - vy * scale,
+    smallPx: model.text.small * scale,
+  }
 }
 
 // ------------------------------------------------------------------------------------ markup
@@ -250,7 +306,7 @@ function styleSheet(t: VizTheme): string {
     `.ring{fill:none;stroke:${t.grid};stroke-width:1}`,
     `.ring.reference{stroke:${t.stub};stroke-dasharray:5 4}`,
     `.spoke{stroke:${t.grid};stroke-width:1}`,
-    `.band{fill:${t.band};fill-opacity:.12;stroke:none}`,
+    `.band{fill:${t.band};fill-opacity:.12;stroke:${t.band};stroke-opacity:${t.bandEdgeOpacity};stroke-width:1}`,
     `.fuzz path{fill:${t.band};stroke:none}`,
     `.hatch{stroke:none}`,
     `.hatch-line{stroke:${t.hatch};stroke-width:2}`,
@@ -260,11 +316,14 @@ function styleSheet(t: VizTheme): string {
     `.marker{fill:${t.blob};stroke:${t.bg};stroke-width:1.5}`,
     `.muted .whisker{stroke:${t.muted}}`,
     `.muted .marker{fill:${t.bg};stroke:${t.muted};stroke-width:2}`,
+    `.arrow{fill:${t.blob};stroke:${t.bg};stroke-width:1.5;stroke-linejoin:round}`,
+    `.muted .arrow{fill:${t.bg};stroke:${t.muted};stroke-width:2}`,
     `.ring-label{fill:${t.textMuted}}`,
     `.ring-label.reference{font-weight:600}`,
     `.ring-note{fill:${t.textMuted}}`,
     `.label{fill:${t.textStrong}}`,
     `.label.muted{fill:${t.text}}`,
+    `.label .note{font-style:italic}`,
   ].join('')
 }
 
@@ -290,6 +349,13 @@ export function blobMarkup(model: BlobModel, id: string): string {
   for (const s of model.spokes) p.push(`<line class="spoke" x1="0" y1="0" x2="${f2(s.outer[0])}" y2="${f2(s.outer[1])}"/>`)
   p.push('</g>')
 
+  // Under the data (UX-045), as on the page: a ring label's halo knocks out the grid only.
+  p.push(`<g class="ring-labels" font-size="${f2(model.text.small)}" stroke-width="${f2(model.text.halo)}">`)
+  for (const r of model.rings.filter((x) => x.showLabel)) {
+    p.push(`<text class="ring-label${r.reference ? ' reference' : ''}" x="${f2(r.labelAt[0])}" y="${f2(r.labelAt[1])}">${esc(r.label)}</text>`)
+  }
+  p.push('</g>')
+
   p.push(`<path class="band" d="${model.band.d}" fill-rule="evenodd"/>`)
   p.push('<g class="fuzz">')
   for (const c of model.fuzz) p.push(`<path d="${c.band}" fill-rule="evenodd" fill-opacity="${c.opacity.toFixed(3)}"/>`)
@@ -301,29 +367,28 @@ export function blobMarkup(model: BlobModel, id: string): string {
   p.push('<g class="marks">')
   for (const s of model.spokes) {
     if (!s.whisker || !s.marker) throw new RangeError('a card draws measured skills only')
+    const mark = s.arrow !== undefined ? `<path class="arrow" d="${s.arrow}"/>` : `<circle class="marker" cx="${f2(s.marker[0])}" cy="${f2(s.marker[1])}" r="4.5"/>`
     p.push(
-      `<g class="mark${s.muted ? ' muted' : ''}"><line class="whisker" x1="${f2(s.whisker[0][0])}" y1="${f2(s.whisker[0][1])}" x2="${f2(s.whisker[1][0])}" y2="${f2(s.whisker[1][1])}"/><circle class="marker" cx="${f2(s.marker[0])}" cy="${f2(s.marker[1])}" r="4.5"/></g>`,
+      `<g class="mark${s.muted ? ' muted' : ''}"><line class="whisker" x1="${f2(s.whisker[0][0])}" y1="${f2(s.whisker[0][1])}" x2="${f2(s.whisker[1][0])}" y2="${f2(s.whisker[1][1])}"/>${mark}</g>`,
     )
   }
   p.push('</g>')
 
-  p.push(`<g class="ring-labels" font-size="${f2(model.text.small)}" stroke-width="${f2(model.text.halo)}">`)
-  for (const r of model.rings.filter((x) => x.showLabel)) {
-    p.push(`<text class="ring-label${r.reference ? ' reference' : ''}" x="${f2(r.labelAt[0])}" y="${f2(r.labelAt[1])}">${esc(r.label)}</text>`)
+  if (model.showNote) {
+    const [nx, ny] = model.noteAt
+    p.push(`<text class="ring-note" x="${f2(nx)}" y="${f2(ny)}" font-size="${f2(model.text.small)}" stroke-width="${f2(model.text.halo)}">`)
+    RING_NOTE.forEach((line, i) => p.push(`<tspan x="${f2(nx)}" dy="${i === 0 ? '0' : `${NOTE_LINE_EM}em`}">${esc(line)}</tspan>`))
+    p.push('</text>')
   }
-  p.push('</g>')
-
-  const [nx, ny] = model.noteAt
-  p.push(`<text class="ring-note" x="${f2(nx)}" y="${f2(ny)}" font-size="${f2(model.text.small)}" stroke-width="${f2(model.text.halo)}">`)
-  RING_NOTE.forEach((line, i) => p.push(`<tspan x="${f2(nx)}" dy="${i === 0 ? '0' : `${NOTE_LINE_EM}em`}">${esc(line)}</tspan>`))
-  p.push('</text>')
 
   p.push(`<g class="labels" font-size="${f2(model.text.label)}" stroke-width="${f2(model.text.halo)}">`)
   for (const s of model.spokes) {
     p.push(`<text class="label${s.muted ? ' muted' : ''}" x="${f2(s.label.at[0])}" y="${f2(s.label.at[1])}" text-anchor="${s.label.anchor}">`)
     s.lines.forEach((line, i) => {
       // U+00A0 (the page's &nbsp;) keeps the tier glyph on its label's line.
-      p.push(`<tspan x="${f2(s.label.at[0])}" dy="${i === 0 ? s.label.dy0.toFixed(2) : LABEL_LINE_EM}em">${esc(line.text)}${line.glyph ? ` ${esc(s.glyph)}` : ''}</tspan>`)
+      // A note line ("off scale") is set smaller and in italics, as on the page.
+      const note = line.note ? ` class="note" font-size="${f2(model.text.small)}"` : ''
+      p.push(`<tspan x="${f2(s.label.at[0])}" dy="${i === 0 ? s.label.dy0.toFixed(2) : LABEL_LINE_EM}em"${note}>${esc(line.text)}${line.glyph ? ` ${esc(s.glyph)}` : ''}</tspan>`)
     })
     p.push('</text>')
   }
@@ -374,7 +439,7 @@ export function buildCard(input: CardInput): CardModel {
   const shown = spokes.map((s) => s.code)
   const peaks = cardPeaks(input.peaks ?? [], shown)
   const placement = placeBlob(spokes)
-  const texts = columnTexts(input.sessions, peaks)
+  const texts = [...columnTexts(input.sessions, peaks), ...footerTexts()]
   const theme = input.theme ?? 'light'
   const t = THEMES[theme]
   const alt = cardAlt(shown.length, peaks.map(peakName))

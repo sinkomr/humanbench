@@ -1,10 +1,17 @@
-import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, describe, expect, it } from 'vitest'
+import { flushSync, mount, tick, unmount } from 'svelte'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { buttonByText, click, fakeDisplay, type FakeDisplay } from '../render/common/testing'
 import { settle } from '../render/dom-testing'
 import { CONSENT_KEY, TERMS_VERSION } from './constants'
 import { DESKTOP, fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
+import { resultsLoader } from './results-loader'
+
+// The results code is its own chunk (UX-100); loaded here once, so the flow shows the results at once as it does
+// when the ready screen has fetched them.
+beforeAll(async () => {
+  await resultsLoader.load()
+}, 90_000)
 
 let app: ReturnType<typeof mount> | undefined
 let host: HTMLElement
@@ -144,20 +151,25 @@ describe('honour code and device check', () => {
   it('measures the screen, lists the coarse facts and offers the RT input mode (keyboard by default)', async () => {
     const fake = fakeEnv(fakeDisplay())
     await toDevice(fake)
+    // The status line is on the page before the words go into it (they are announced); "Continue" waits, but stays in the tab order (UX-013).
+    expect(host.querySelector('p[role="status"]')).not.toBeNull()
+    await tick()
     expect(host.textContent).toContain('Checking your screen')
-    expect(buttonByText(host, 'Continue').disabled).toBe(true)
+    expect(buttonByText(host, 'Continue').getAttribute('aria-disabled')).toBe('true')
+    expect(buttonByText(host, 'Continue').disabled).toBe(false)
     await measured(fake)
+    expect(host.textContent).not.toContain('Checking your screen')
     const facts = host.querySelector('dl.facts')?.textContent ?? ''
     expect(facts).toContain('desktop')
     expect(facts).toContain('macOS, Safari')
     expect(facts).toContain('1280 × 800')
-    expect(facts).toContain('60 Hz')
+    expect(facts).toContain('60 Hz (screen updates per second)')
     const inputs = [...host.querySelectorAll<HTMLInputElement>('input[name$="-input"]')]
     expect(inputs.map((i) => [i.value, i.checked])).toEqual([
       ['keyboard', true],
       ['touch', false],
     ])
-    expect(buttonByText(host, 'Continue').disabled).toBe(false)
+    expect(buttonByText(host, 'Continue').hasAttribute('aria-disabled')).toBe(false)
   })
 
   it('a touch device starts on tap or click', async () => {
@@ -181,16 +193,14 @@ describe('ready, practice and the start of a session', () => {
     expect(fake.storage.writes).toEqual([`set:${CONSENT_KEY}`])
   })
 
-  it('practice: four questions, not counted, and back to the ready screen', async () => {
+  it('practice: four questions, not counted, and "Stop practice" goes straight back to the ready screen (UX-004)', async () => {
     const fake = fakeEnv(fakeDisplay())
     await toReady(fake)
     click(buttonByText(host, 'Try practice questions first'))
     expect(h1()).toBe('Practice')
     expect(host.textContent).toContain('Practice question 1 of 4')
     expect(host.textContent).toContain('not counted')
-    click(buttonByText(host, 'Back'))
-    expect(h1()).toBe('Practice complete')
-    click(buttonByText(host, 'Back'))
+    click(buttonByText(host, 'Stop practice'))
     expect(h1()).toBe('Ready when you are')
     // Practice wrote nothing.
     expect(fake.storage.writes).toEqual([`set:${CONSENT_KEY}`])
@@ -201,11 +211,11 @@ describe('ready, practice and the start of a session', () => {
     await toReady(fake)
     click(buttonByText(host, 'Begin'))
     expect(h1()).toBe('Up next: Reaction time')
-    expect(host.textContent).toMatch(/About \d+ min\./)
+    expect(host.textContent).toMatch(/About \d+ minutes?\./)
     const ring = host.querySelector('[role="progressbar"]')
     expect(ring?.getAttribute('aria-label')).toBe('Session time')
-    expect(ring?.getAttribute('aria-valuetext')).toBe('0 of about 28 min')
-    const list = host.querySelector('nav[aria-label="Session checklist"]')
+    expect(ring?.getAttribute('aria-valuetext')).toBe('0 of about 30 min')
+    const list = host.querySelector('section[aria-label="Session checklist"]')
     expect([...list!.querySelectorAll('li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
       expect.stringContaining('Speed'),
       expect.stringContaining('Reasoning'),
@@ -229,8 +239,10 @@ describe('ready, practice and the start of a session', () => {
     click(buttonByText(host, 'Skip Reaction Time')) // asks first
     expect(h1()).toBe('Up next: Matrix & Series')
     // Reaction time is skipped, but Speed still has processing and reading speed ahead.
-    expect(host.querySelector('nav li[data-status="upcoming"]')?.textContent).toContain('Speed')
-    expect(host.querySelector('nav li[data-status="current"]')?.textContent).toContain('Reasoning')
+    // ... but it is not what comes next: Spatial/Memory is "Up next", Speed "Later" (UX-007a).
+    expect(host.querySelector('.checklist li[data-status="later"]')?.textContent).toContain('Speed')
+    expect(host.querySelector('.checklist li[data-status="upcoming"]')?.textContent).toContain('Spatial/Memory')
+    expect(host.querySelector('.checklist li[data-status="current"]')?.textContent).toContain('Reasoning')
     click(buttonByText(host, 'Start'))
     await settle(3)
     expect(host.querySelector('[role="progressbar"]')).not.toBeNull()
@@ -251,7 +263,7 @@ describe('ready, practice and the start of a session', () => {
     expect(h1()).toBe('Up next: Reaction time')
     click(buttonByText(host, 'Finish early'))
     click(buttonByText(host, 'Finish now'))
-    expect(h1()).toBe('Session complete')
+    expect(h1()).toBe('Session ended') // nothing was measured (UX-009b)
     expect(host.textContent).toContain('You finished early')
     expect(host.textContent).toContain('Nothing was measured')
     expect(buttonByText(host, 'Download save file')).toBeTruthy()

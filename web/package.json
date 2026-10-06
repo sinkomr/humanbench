@@ -31,7 +31,10 @@
     "dump:briefs": "tsx scripts/dump-briefs.ts",
     "dump:language-terms": "tsx scripts/language-terms.ts",
     "sync:reading-render": "tsx scripts/sync-reading-render.ts",
-    "sim:cat": "tsx scripts/sim-cat.ts"
+    "sim:cat": "tsx scripts/sim-cat.ts",
+    "ux:build": "tsx ux-review/build.ts",
+    "ux:review": "playwright test -c ux-review/playwright.ux.config.ts",
+    "e2e:iso": "playwright test -c ux-review/playwright.iso.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

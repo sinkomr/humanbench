@@ -4,13 +4,14 @@
   animation frames, then takes the entry on an on-screen keypad or the digit keys. The family's
   state machine (`advanceSpan`, via `run.ts`) picks the next trial and ends the block; the response
   is the list of entered sequences, one per trial given (`SpanResponse`), which is what score()
-  takes. No correctness is shown (§10).
+  takes. No correctness is shown (§10). One polite status line stays mounted for the whole block
+  (empty until the block starts), so every phase text is announced as a change, never as new content.
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
   import '../common/render.css'
   import Keypad from '../common/Keypad.svelte'
-  import { digitOfKey, isControlTarget, isOwnKey } from '../common/focus'
+  import { digitOfKey, focusStage, isControlTarget, isOwnKey } from '../common/focus'
   import { browserTiming, type RendererProps } from '../common/props'
   import { afterFrames, presentSequence } from '../common/sequence'
   import { DIGITS, type SpanResponse, type SpanSpec } from '../../tasks/span/config'
@@ -43,7 +44,7 @@
     shown = null
     phase = 'present'
     flushSync()
-    stage?.focus()
+    focusStage(stage)
     cancel = presentSequence(
       frames,
       seq.length,
@@ -61,7 +62,7 @@
           phase = 'entry'
           flushSync()
           // Focus stays on the display, so Enter means Done (not a press of a focused key).
-          stage?.focus()
+          focusStage(stage)
         },
       },
       SPAN_LEAD_MS,
@@ -89,13 +90,13 @@
     if (status.finished) {
       phase = 'done'
       flushSync()
-      stage?.focus()
+      focusStage(stage)
       onrespond(responses.map((r) => [...r]))
       return
     }
     phase = 'pause'
     flushSync()
-    stage?.focus()
+    focusStage(stage)
     cancel = afterFrames(frames, SPAN_PAUSE_MS, () => runTrial(status.trial))
   }
 
@@ -128,30 +129,37 @@
   <p class="title" id="{uid}-title">{backward ? 'Digits, reverse order' : 'Digits, same order'}</p>
   {#if phase === 'intro'}
     <p class="hb-instructions">
-      You will see digits one at a time. When the sequence ends, enter them
+      You will see digits one at a time. When the sequence ends, type the digits
       {backward ? 'in reverse order, starting with the last digit you saw' : 'in the same order you saw them'},
-      using the keypad or the number keys, then choose Done. Sequences get longer as you go.
+      with the keypad or the number keys, then choose Done. Press Enter when you are done; Backspace removes the last digit. The
+      sequences get longer step by step.
     </p>
     <button type="button" class="hb-btn hb-primary" onclick={start}>Start</button>
   {:else}
-    <div class="stage" bind:this={stage} tabindex="-1">
+    <div
+      class="stage"
+      role="group"
+      aria-label={backward ? 'Digits: watch them, then type them in reverse order' : 'Digits: watch them, then type them in order'}
+      bind:this={stage}
+      tabindex="-1"
+    >
       <p class="digit" aria-live="assertive" aria-atomic="true">{phase === 'present' && shown !== null ? shown : ''}</p>
     </div>
-    <p class="hb-status" aria-live="polite">
-      {#if phase === 'present'}Watch the digits.{:else if phase === 'entry'}Enter {length} digits{backward ? ', last one first' : ''}.{:else if phase === 'pause'}Next sequence coming up.{:else}Block complete. Thank you.{/if}
-    </p>
-    {#if phase === 'entry'}
-      <ol class="slots" aria-label="Your entry, {entered.length} of {length} digits">
-        {#each slots as i (i)}
-          <li class="slot">{entered[i] ?? ''}</li>
-        {/each}
-      </ol>
-      <Keypad digits={DIGITS} label="Digit keypad" onpress={add} />
-      <div class="hb-actions">
-        <button type="button" class="hb-btn" onclick={erase} disabled={entered.length === 0}>Delete</button>
-        <button type="button" class="hb-btn hb-primary" onclick={() => finishTrial()}>Done</button>
-      </div>
-    {/if}
+  {/if}
+  <p class="hb-status" aria-live="polite">
+    {#if phase === 'present'}Watch the digits.{:else if phase === 'entry'}Enter <span translate="no">{length}</span> digits{backward ? ', last one first' : ''}.{:else if phase === 'pause'}Next sequence coming up.{:else if phase === 'done'}Block complete. Thank you.{/if}
+  </p>
+  {#if phase === 'entry'}
+    <ol class="slots" aria-label="Your entry, {entered.length} of {length} digits">
+      {#each slots as i (i)}
+        <li class="slot">{entered[i] ?? ''}</li>
+      {/each}
+    </ol>
+    <Keypad digits={DIGITS} label="Digit keypad" onpress={add} />
+    <div class="hb-actions">
+      <button type="button" class="hb-btn" onclick={erase} disabled={entered.length === 0}>Delete</button>
+      <button type="button" class="hb-btn hb-primary" onclick={() => finishTrial()}>Done</button>
+    </div>
   {/if}
 </section>
 

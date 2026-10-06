@@ -1,0 +1,305 @@
+{
+  "reviewer": "screenreader",
+  "model": "fable",
+  "summary": "Persona Jordan, a blind VoiceOver user, judged from what the browser hands a screen reader: Playwright accessibility trees, roles and names, document.title, focus and a MutationObserver log of every live-region change through a whole ?fast=1 session and the results. The structure is unusually good: every one of the 50 product routes has exactly one h1, no skipped heading levels, named main/region/contentinfo landmarks, labelled controls, grouped radios, named buttons, descriptive alt text for matrix cells, the rotation canvases, the Corsi board, the blob (one role=img with title and description) and the share-card image, and 0 non-blocking axe violations (best practice, moderate, minor) on all 50 routes. Each new screen moves focus to its h1, confirmations take focus on their h2 and hand it back on cancel, block ends ('Block complete. Thank you.'), part skips, 'Your profile is ready.', 'Save file downloaded.' and 'Copied to the clipboard.' are all announced as live updates, nothing announced reveals correctness in the counted session, and the DESIGN §9.5(c) bar-view default is implemented as a full data table that sits before the blob in the tree in both views, so a screen reader meets the numbers first whichever view is on. The gaps are around what a screen reader hears rather than what it can find: the document title never changes across the 30-odd screens of index.html; the only right/wrong feedback in the product (practice) is mounted as a live region with its text already inside and leaves focus on body; timed blocks move focus to nameless generic divs; several status lines are mounted with their text already in them; a new question is signalled only by refocusing an identical h1; and the visual-first tasks (reaction time, mental rotation) are operable only through announcements or not at all, without telling a screen-reader user that 'Skip' is the intended path. None of these blocks finishing a session; most are small, well-placed fixes.",
+  "coverage": [
+    "All 50 product routes of e2e/routes.ts on Chromium 1280 px light with the screen-reader audit (title, lang, heading outline, landmarks, control names, radio grouping, label-in-name, aria-describedby targets, aria-invalid, live regions, focus, DOM order of controls around the h1, where 'Skip' sits) plus pageMetrics with axe (serious and non-blocking): web/test-results/ux-review/screenreader/audit/<route>/ (png, txt, aria.yml, audit.json, metrics.json) and audit/summary.json",
+    "A whole ?fast=1 session (touch false, keyboard RT mode) with the live-region/focus/title logger: all six parts, 139 answers, 684 live-region changes, 779 focus events, then the reveal, bar view, drill-down, save, share card, copy of the results-talk preamble and 'Back to the start': web/test-results/ux-review/screenreader/journey/ (live-log.json, focus-log.json, samples.json, digest.json, per-screen png/txt/aria, profile-*.aria.yml, share-card.aria.yml)",
+    "Form errors and their field links: gate, honour code, Load with nothing chosen, a save file that is not one, notes 'keep my settings' without the 18+ tick, and live-region chatter while typing in the notes builder (none: 30 keystrokes into two fields plus a context and topic pick produced one empty status change): web/test-results/ux-review/screenreader/forms/, forms-2/, forms-3/ and forms/forms.json",
+    "Practice question feedback: what the live log records when the feedback appears and where focus is: web/test-results/ux-review/screenreader/practice/",
+    "WebKit (Desktop Safari) comparison of the trees of device, rt-trial, item-matrix-series, confidence, item-spatial, memory-entry, memory-corsi, coding-running, results, results-bars, results-saved: web/test-results/ux-review/screenreader/webkit/. Result: the trees match Chromium's apart from the randomly drawn items, the Safari-only 'Share or save to an app' button, and WebKit leaving focus on body after a mouse click on 'Bar view' / 'Download save file' (Safari's own button behaviour, not the app's); no WebKit-specific finding",
+    "Non-blocking axe (best practice, moderate and minor) on all 50 product routes: 0 violations, so no pattern to report; serious: 0",
+    "Not tested: a real screen reader (VoiceOver was not available), so announcement timing, what VoiceOver actually says for a live region mounted with text, and iOS VoiceOver gestures are inferred from the tree and the live-region log, not heard; the phone projects were not run for this persona; dev-only routes were out of scope"
+  ],
+  "findings": [
+    {
+      "id": "SR-01",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "document.title stays 'HumanBench' on every screen of index.html, from the gate to the results",
+      "route": "welcome (and every index.html screen: gate, honour, device, ready, interstitial, every block, results)",
+      "env": "Chromium 1280 light; the same on WebKit",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/journey/digest.json",
+        "web/test-results/ux-review/screenreader/audit/summary.json",
+        "web/test-results/ux-review/screenreader/audit/honour/001-honour.png",
+        "web/test-results/ux-review/screenreader/audit/results/001-results.png"
+      ],
+      "observed": "The audit of all 50 routes and the 50 ms title sampler of the whole journey saw exactly one title on index.html: 'HumanBench' (journey digest: titles [\"HumanBench\"]), through about 30 distinct screens from 'Before you start' to 'Session complete'. notes.html ('Notes for your AI · HumanBench') and rt-selftest.html ('RT timing self-test · HumanBench') do name themselves; only the session page does not. A VoiceOver user who asks for the window title (VO-F2), switches tabs, or lands in the page from the tab list hears no screen context; the browser history and bookmarks say the same thing for every state.",
+      "expected": "The title names the current screen the way the two other pages do: 'Honour code · HumanBench', 'Up next: Spatial · HumanBench', 'Session complete · HumanBench' (WCAG 2.4.2 in a single-page app; the moved focus to the h1 covers the in-page announcement, the title covers everything outside the page).",
+      "suggestion": "In web/src/session/Screen.svelte set document.title = `${title} · HumanBench` in onMount (and restore 'HumanBench' on the welcome screen, which e2e/smoke.spec.ts:28 asserts), or do it once in SessionApp from the phase. The notes page already uses the ' · HumanBench' pattern.",
+      "files": ["web/src/session/Screen.svelte", "web/src/session/SessionApp.svelte", "web/index.html", "web/e2e/smoke.spec.ts"],
+      "spec_refs": ["§13", "WCAG 2.4.2"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-02",
+      "severity": "major",
+      "category": "a11y",
+      "title": "Practice feedback, the only right/wrong feedback in the product, is mounted as a live region with its text already inside and leaves focus on body",
+      "route": "practice-feedback",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/practice/002-practice-feedback.png",
+        "web/test-results/ux-review/screenreader/practice/002-practice-feedback.aria.yml",
+        "web/test-results/ux-review/screenreader/practice/practice.json",
+        "web/test-results/ux-review/screenreader/audit/practice-feedback/001-practice-feedback.png",
+        "web/test-results/ux-review/screenreader/audit/practice-feedback/audit.json"
+      ],
+      "observed": "After the confidence slider's Continue the feedback screen renders `<section aria-live=\"polite\" class=\"feedback\">` (PracticeScreen.svelte:77) inside an {#if}, so the region is inserted into the DOM together with its text. The live-region logger (practice.json) records exactly one event for the feedback: kind 'mount', section.feedback [polite], text 'That was not correct. The answer was C. Next practice question', and no 'update'. Screen readers announce changes inside an existing live region; a region that arrives with its content already in it is not read by VoiceOver or NVDA in most cases. At the same moment focus is on body (practice.json feedback.audit.active 'body'; the audit route practice-feedback is the only non-page-load route of the 50 where that happens): the slider that had focus was unmounted, and after 'Next practice question' focus is on body again because that button unmounts too. The 'Practice question 2 of 4' counter does arrive as an update and would be heard. So the one place the product teaches a person what the questions look like and whether they got one right is silent for a screen-reader user, who then has to find their way from the top of the page.",
+      "expected": "The feedback is announced and focus lands somewhere sensible: on the feedback itself (tabindex -1, focused on mount) or on the 'Next practice question' / 'Finish practice' button, as the counted session moves focus to the item h1 and the confirmations to their h2.",
+      "suggestion": "Keep one `<p class=\"hb-status\" role=\"status\">` mounted across the practice question, confidence and feedback states and set its text when the feedback arrives (the RT renderer's pattern), or give the feedback section tabindex=-1 and focus it in onMount, which VoiceOver reads on focus without any live region. Move the counter into the same persistent status line.",
+      "files": ["web/src/session/PracticeScreen.svelte", "web/src/session/Confidence.svelte"],
+      "spec_refs": ["§10", "§13", "WCAG 4.1.3", "WCAG 2.4.3"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-03",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Timed blocks move focus to a nameless generic div (the RT stage, the digit-span stage, the coding stage)",
+      "route": "rt-trial, memory-entry, coding-running",
+      "env": "Chromium 1280 light; WebKit the same",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/rt-trial/001-rt-trial.aria.yml",
+        "web/test-results/ux-review/screenreader/audit/rt-trial/audit.json",
+        "web/test-results/ux-review/screenreader/audit/memory-entry/audit.json",
+        "web/test-results/ux-review/screenreader/audit/coding-running/audit.json",
+        "web/test-results/ux-review/screenreader/journey/focus-log.json"
+      ],
+      "observed": "When a trial block starts, focus is moved programmatically to `div.stage` (tabindex -1) so the response keys work: RtRenderer.svelte:244, DigitSpanRenderer.svelte:137, CodingRenderer.svelte:144. The div has no role and no accessible name (audit: active 'div.stage \"\"'; in the RT tree the stage does not appear at all, the region holds only 'Reaction time', 'Practice 1 of 3' and two empty paragraphs). A focus move to a nameless generic element is silent in VoiceOver (at best 'group'), so the person who pressed Start hears nothing to say that the keys are now live or what to press; the journey's focus log shows nine such moves. The Corsi board, by contrast, is `role=\"group\" aria-label=\"Board of 9 blocks\"` and reads well.",
+      "expected": "The focus target says what it is and what to do, in a sentence a screen reader reads on focus: 'Reaction stage. Press Space when you hear Target.', 'Digits. Listen, then type them.', 'Symbols. Press the digit for each shape you hear.'",
+      "suggestion": "Give each stage `role=\"group\"` and an `aria-label` (or `aria-labelledby` pointing at the progress line plus a visually hidden instruction), the way CorsiRenderer.svelte:152 does; or move focus to the already-mounted status line, which the RT and coding renderers do at the end of the block.",
+      "files": ["web/src/render/rt/RtRenderer.svelte", "web/src/render/span/DigitSpanRenderer.svelte", "web/src/render/coding/CodingRenderer.svelte", "web/src/render/span/CorsiRenderer.svelte"],
+      "spec_refs": ["§13", "WCAG 4.1.2", "WCAG 2.4.3"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-04",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "Reaction time is 'operable' for a screen-reader user only through an assertive announcement, so what gets measured is speech latency, and nothing says that skipping is the intended path",
+      "route": "rt-intro, rt-trial",
+      "env": "Chromium 1280 light, keyboard RT mode",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/journey/live-log.json",
+        "web/test-results/ux-review/screenreader/audit/rt-intro/001-rt-intro.txt",
+        "web/test-results/ux-review/screenreader/audit/rt-intro/001-rt-intro.png",
+        "web/test-results/ux-review/screenreader/audit/rt-trial/001-rt-trial.aria.yml"
+      ],
+      "observed": "In keyboard mode the pads are plain divs; the only thing a screen reader gets per trial is the assertive live text 'Target' / 'Target, position 3' (journey live log: 364 updates of p.hb-sr-only). A blind person can press Space when they hear it, but the response window closes at max_rt_ms 1500 ms (simple) / 2000 ms (four positions) after onset (src/tasks/rt/types.ts:43-44) and a screen reader needs a few hundred milliseconds to start speaking, so most trials come back 'too_slow' or measure the synthesiser rather than the person, and the axis is normed with sighted keyboard takers (§11.6). The intro says 'A target will appear in the box. As soon as you see it, press the Space bar' and the interstitial 'Respond as fast as you can once you see it'; neither the intro nor the item says that the task is sight-first or points at 'Skip Reaction Time' (which is there, in the banner before the h1). The reading-speed block has the same shape in a milder form: 'Done reading' times the synthesiser's reading rate.",
+      "expected": "A screen-reader user is told, where they are deciding whether to start, that this task measures seeing and that skipping it is the normal thing to do (§13 'I can't do this one'; the blob shows 'not measured'), rather than finding out from a profile that says Speed is low.",
+      "suggestion": "Add one sentence to the RT intro (and the Spatial interstitial, see SR-05): 'This task needs you to see the target. If you use a screen reader or cannot see the box, use Skip Reaction Time: it will show as not measured.' Optionally record `input_type` 'assistive' when the responses follow the assertive announcement, so such sessions are not pooled with sighted keyboard norms. The wording and whether to flag such responses are owner calls.",
+      "files": ["web/src/render/rt/RtRenderer.svelte", "web/src/session/segments.ts", "web/src/tasks/rt/types.ts", "web/src/render/rt/keys.ts"],
+      "spec_refs": ["§13", "§11.6", "§7.1"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SR-05",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Spatial items give four options whose text alternatives are identical, with no in-item hint that the question is visual-only and that 'Skip Spatial' is the way out",
+      "route": "item-spatial",
+      "env": "Chromium 1280 light (WebGL on)",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/item-spatial/001-item-spatial.aria.yml",
+        "web/test-results/ux-review/screenreader/audit/item-spatial/001-item-spatial.png",
+        "web/test-results/ux-review/screenreader/audit/item-spatial-no-webgl/001-item-spatial-no-webgl.aria.yml"
+      ],
+      "observed": "The tree reads: img 'Target: a 3D object made of 9 cubes joined face to face, drawn from a fixed viewpoint.' then group 'Options' with radio 'Option A: a 3D object made of 9 cubes.', 'Option B: a 3D object made of 9 cubes.', 'Option C: ...', 'Option D: ...' and a disabled Confirm. The alternatives are honest (nothing pretends the figure is describable) but they leave a blind person with four indistinguishable radios and no sentence saying 'this one needs sight; skip it'. The skip exists ('Skip Spatial' in the banner, before the h1) and the no-WebGL state does it right: a role=status notice plus an inline 'Skip Spatial' button next to the item (SessionScreen.svelte:221-224). The interstitial blurb 'Turn shapes in your mind. Decide which figure is the same shape as the target.' is the only warning, and it does not say the figures are pictures.",
+      "expected": "A screen-reader user is told at the first spatial item (or on its interstitial) that the figures are pictures that cannot be described in words, and is offered the skip right there, as the no-WebGL state already does.",
+      "suggestion": "Reuse the no-WebGL layout for everyone: under the stem add a short paragraph 'The target and the options are pictures of 3D figures; they cannot be described in words. If you cannot see them, skip this part.' with the inline 'Skip Spatial' button (role=status is not needed since it is static text). Alternatively add the sentence to the Spatial interstitial blurb in segments.ts. Copy is an owner call.",
+      "files": ["web/src/render/rotation/RotationRenderer.svelte", "web/src/render/rotation/copy.ts", "web/src/session/SessionScreen.svelte", "web/src/session/segments.ts"],
+      "spec_refs": ["§13", "WCAG 1.1.1"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SR-06",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "A new question is signalled only by refocusing an identical h1; the live text says 'Answer recorded.' and nothing about what comes next",
+      "route": "item-matrix-series, quant-item",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/journey/focus-log.json",
+        "web/test-results/ux-review/screenreader/journey/live-log.json",
+        "web/test-results/ux-review/screenreader/journey/005-matrix-series-entry.png",
+        "web/test-results/ux-review/screenreader/journey/009-matrix-series-choice.png"
+      ],
+      "observed": "Every item remounts the screen (SessionScreen.svelte screenKey) and Screen.svelte focuses the h1, which is the part title: the journey's focus log shows 'Matrix & Series' focused 60-odd times in a row (h1#c16-h, c19-h, c22-h, ...) and 'Quantitative Reasoning' 40 times, each time with the same text, while the only live-region text in those parts is 'Answer recorded.' after each submit (114 updates). So a screen-reader user hears 'Matrix & Series, heading level 1' again and again and must infer that the content under it is a new question, then navigate down to find whether it is a series (text box 'Next term') or a matrix (nine images and six radios). Sighted takers see the item change; the heading is the only cue a blind taker gets.",
+      "expected": "A short, consistent cue that a new question has loaded and what kind it is, without an item count (progress is time, §10): for example the status line reads 'Next question.' or the item region is labelled 'Number or letter series' / 'Pattern' and takes focus itself.",
+      "suggestion": "Either announce 'Next question.' from the persistent status line when a new item mounts, or move the per-item focus target from the part h1 to the item's own region heading/stem (the renderers already have aria-labelledby regions: 'Number or letter series', 'Quantitative question'), so the first thing read names the question type. The copy is an owner call; the engineering is small.",
+      "files": ["web/src/session/SessionScreen.svelte", "web/src/session/Screen.svelte", "web/src/session/Stage.svelte", "web/src/render/common/NumericEntry.svelte"],
+      "spec_refs": ["§10", "§13", "WCAG 4.1.3"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SR-07",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Several status lines are mounted with their text already inside, which most screen readers do not announce: 'Checking your screen…', 'Watch the digits.', 'Watch the blocks.', '3 of 3 not answered yet.', 'Building your profile, one skill at a time.', '7 skills are on the card.'",
+      "route": "device, memory-entry, memory-corsi, reading-questions, results-building, results-saved",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/journey/digest.json",
+        "web/test-results/ux-review/screenreader/journey/live-log.json",
+        "web/test-results/ux-review/screenreader/journey/024-results-ready.png"
+      ],
+      "observed": "The journey's live-region logger distinguishes a change inside an existing region ('update') from a region that appears with text in it ('mount'). Eight mounts with text were recorded (digest.mountsWithText): the device check's 'Checking your screen…', 'Watch the digits.' at the start of each digit-span block (DigitSpanRenderer.svelte:140 is inside the running phase's markup), 'Watch the blocks.' (CorsiRenderer.svelte:170), the reading block's '3 of 3 not answered yet.' (ReadingRenderer.svelte:95), the reveal's 'Building your profile, one skill at a time.' (RevealProfile.svelte:104, the region's initial text) and the share card's '7 skills are on the card.' (ShareCard.svelte:193). The messages that matter most do arrive as updates and will be heard: 'Enter 3 digits.', 'Block complete. Thank you.', 'Your profile is ready.', 'Save file downloaded.', 'Copied to the clipboard.'. The silent ones are the instructions at the start of a block, which is when a blind person most needs to know what is about to happen.",
+      "expected": "Instructions and status that must be heard are written into a region that was already in the DOM (empty) a frame earlier, the way RtRenderer.svelte keeps one polite status line mounted in every phase.",
+      "suggestion": "Mount the status paragraph outside the phase {#if} blocks (empty) and set its text from an effect or after `tick()`; in RevealProfile start `announced` as '' and set REVEAL_BUILDING in onMount. The reading count can stay as it is if the passage focus is enough, but 'Watch the digits.' and 'Watch the blocks.' should be heard.",
+      "files": ["web/src/render/span/DigitSpanRenderer.svelte", "web/src/render/span/CorsiRenderer.svelte", "web/src/render/reading/ReadingRenderer.svelte", "web/src/reveal/RevealProfile.svelte", "web/src/reveal/ShareCard.svelte", "web/src/session/DeviceCheck.svelte"],
+      "spec_refs": ["§13", "WCAG 4.1.3"],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-08",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "'Back to the start' after saving drops focus on body: the welcome screen re-renders with focus={false}, which is meant for a page load",
+      "route": "results-saved -> welcome",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/journey/digest.json",
+        "web/test-results/ux-review/screenreader/journey/samples.json",
+        "web/test-results/ux-review/screenreader/journey/027-results-saved.png"
+      ],
+      "observed": "SessionApp.svelte restart() (line 233) sets phase = 'welcome' without a navigation, and Welcome.svelte mounts Screen with focus={false} (the first screen of a page load leaves focus alone). The journey digest records the last screen change at 53150 ms: h1 'HumanBench', focus BODY, the only one of 19 screen changes in the session where focus was lost. A VoiceOver user who presses 'Back to the start' hears nothing and the cursor is at the top of the document; every other screen change in the flow lands on its h1.",
+      "expected": "Focus moves to the welcome h1 (or the Start button) when the welcome screen is reached from the results, as it does for every other screen change.",
+      "suggestion": "Pass focus={false} only on the initial mount (e.g. a `fresh` flag in SessionApp that is true until the first phase change), or focus the h1 explicitly in restart() after `tick()`.",
+      "files": ["web/src/session/SessionApp.svelte", "web/src/session/Welcome.svelte", "web/src/session/Screen.svelte"],
+      "spec_refs": ["§13", "WCAG 2.4.3"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-09",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "The blob image's description is read as part of its name, and the figure is named by its 600-character caption",
+      "route": "results",
+      "env": "Chromium 1280 light; WebKit the same",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/results/001-results.aria.yml",
+        "web/test-results/ux-review/screenreader/audit/results/audit.json",
+        "web/test-results/ux-review/screenreader/audit/results/001-results.png"
+      ],
+      "observed": "BlobChart.svelte:31 sets `aria-labelledby=\"{uid}-title {uid}-desc\"`, so the tree shows one img whose name is 'Skill profile blob One spoke per skill. The same estimates, with their intervals, are in the table that goes with this chart.' and no separate description. The enclosing `<figure>` takes its accessible name from the figcaption, which is the whole legend (rings, band, whiskers, glyphs, 'compare spokes one at a time...'), about 600 characters, so VoiceOver announces that paragraph as the figure's name on entry and then the caption paragraphs again as content. Neither is wrong, but a screen-reader user hears the legend twice and the chart's title mixed with its description.",
+      "expected": "img named 'Skill profile blob' and described by the one-sentence desc; the figure named briefly ('Skill profile chart') with the legend read once as content.",
+      "suggestion": "In BlobChart.svelte use `aria-labelledby=\"{uid}-title\" aria-describedby=\"{uid}-desc\"`; in ProfileView.svelte give the figure `aria-label={BLOB_TITLE}` (or aria-labelledby the chart title) so the figcaption is content, not name.",
+      "files": ["web/src/viz/BlobChart.svelte", "web/src/viz/ProfileView.svelte"],
+      "spec_refs": ["§9.5", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-10",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "The session checklist is a 'navigation' landmark with no links, and its rows run cluster, parts and status into one string",
+      "route": "interstitial (every session screen)",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/rt-trial/001-rt-trial.aria.yml",
+        "web/test-results/ux-review/screenreader/audit/interstitial/001-interstitial.png"
+      ],
+      "observed": "Checklist.svelte:60 wraps the progress list in `<nav aria-label=\"Session checklist\">`, so a VoiceOver user who jumps by landmark to 'navigation' finds a status list with nothing to activate. Each row reads as one run-on string: 'Speed Reaction Time, Processing & Reading Speed Now', 'Spatial/Memory Spatial, Working Memory Up next', because the cluster name, the part names and the status are adjacent spans with no punctuation between them (the status marks are aria-hidden glyphs).",
+      "expected": "A region landmark ('Session checklist') and rows that read 'Speed: Reaction Time, Processing & Reading Speed. Now.'",
+      "suggestion": "Change `<nav>` to `<section aria-labelledby>` or `role=\"region\"`; add visually hidden ': ' and '. ' separators (or make the status a `<span class=\"visually-hidden\">, </span>` boundary) between the three spans.",
+      "files": ["web/src/session/Checklist.svelte"],
+      "spec_refs": ["§10", "§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-11",
+      "severity": "polish",
+      "category": "copy",
+      "title": "One part, two spellings heard back to back: h1 'Reaction time' but 'Skip Reaction Time', 'Reaction Time skipped' and the checklist/table 'Reaction Time'",
+      "route": "rt-intro, interstitial, item-matrix-series",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/rt-intro/audit.json",
+        "web/test-results/ux-review/screenreader/audit/item-matrix-series/audit.json",
+        "web/test-results/ux-review/screenreader/audit/rt-intro/001-rt-intro.png"
+      ],
+      "observed": "The segment title (segments.ts:27) is 'Reaction time' in sentence case (house style) and is the h1 and the interstitial 'Up next: Reaction time'; the skip button, the skipped notice, the checklist and the results table use the axis display name 'Reaction Time' in title case (audit order: button 'Skip Reaction Time' ... h1 'Reaction time'; live region 'Reaction Time skipped. It will show as not measured.'). The same pair exists for the other parts where the part is one axis (Spatial, Working Memory, Quantitative Reasoning are already title case as h1s, so there the h1 breaks sentence case instead). A screen reader voices both forms differently enough to make a person wonder whether they are the same thing.",
+      "expected": "One spelling per name wherever a person hears or reads it, in the house style (sentence case) or consistently the axis name.",
+      "suggestion": "Decide whether part titles follow sentence case ('Working memory', 'Quantitative reasoning', 'Reaction time') or the axis names, and derive skipButton/noticeSkipped from the segment title rather than the axis name. Owner call because the axis names appear in the results table and the share card too.",
+      "files": ["web/src/session/segments.ts", "web/src/session/SessionScreen.svelte", "web/src/session/copy.ts", "web/src/engine/axes.ts"],
+      "spec_refs": ["§10", "house style"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SR-12",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Focus-session checkboxes are named 'Matrix & Series(wide range)': the space before the suggestion is lost in the accessible name",
+      "route": "results-saved (A 20-minute focus session)",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/results-saved/001-results-saved.aria.yml",
+        "web/test-results/ux-review/screenreader/audit/results-saved/001-results-saved.png"
+      ],
+      "observed": "The tree (results-saved aria, lines 260-264) shows checkbox 'Matrix & Series(wide range)', 'Spatial(wide range)', 'Quantitative Reasoning(wide range)'. FocusPicker.svelte:52 writes `{o.title}{#if o.suggested} <span class=\"suggested\">({FOCUS_SUGGESTED})</span>{/if}`; the space at the start of the if block is dropped by the compiler, so the label text has none. Speech engines read 'Series(wide' as one token in some voices.",
+      "expected": "'Matrix & Series (wide range)'.",
+      "suggestion": "Put the space inside the span (`<span class=\"suggested\">&nbsp;({FOCUS_SUGGESTED})</span>`) or write `{o.suggested ? ' ' : ''}` before the span.",
+      "files": ["web/src/reveal/FocusPicker.svelte"],
+      "spec_refs": ["§13"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-13",
+      "severity": "minor",
+      "category": "a11y",
+      "title": "Form errors are announced but never mark the field invalid, and the Ready screen's load errors are polite status text not tied to the file input or the paste box",
+      "route": "gate-error, honour, ready (Load), notes-keep-error",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/forms/001-gate-error.png",
+        "web/test-results/ux-review/screenreader/forms/001-gate-error.aria.yml",
+        "web/test-results/ux-review/screenreader/forms-2/001-ready-bad-save.png",
+        "web/test-results/ux-review/screenreader/forms-2/001-ready-bad-save.aria.yml",
+        "web/test-results/ux-review/screenreader/forms-3/001-notes-keep-error.png",
+        "web/test-results/ux-review/screenreader/forms/forms.json",
+        "web/test-results/ux-review/screenreader/audit/gate-error/audit.json",
+        "web/test-results/ux-review/screenreader/audit/notes-keep-error/audit.json"
+      ],
+      "observed": "The gate, the honour code and the notes 'keep my settings' errors are role=alert paragraphs linked to their checkbox with aria-describedby while shown (ConsentGate.svelte:50-56, Honour.svelte:30-35, SaveSettings.svelte:85-91; forms.json field state: aria-describedby set, describedText the alert, aria-invalid null): announced and findable from the field. None sets aria-invalid, so a screen-reader user who tabs back to the box hears the description but not that it is in error. On the Ready screen, 'Choose a save file or paste a save code first.' and 'The content is not a HumanBench save or save code.' are one `<p role=\"status\">` (Ready.svelte:193; forms-2 tree: 'status: The content is not a HumanBench save or save code.' after the Load button) with no link to the file input or the textarea (forms.json badSave: aria-describedby null, aria-invalid null on both): announced politely (after whatever else is queued), never attached to the control that needs fixing, and not an alert although it is an error.",
+      "expected": "WCAG 3.3.1/4.1.2: the field in error is programmatically marked (aria-invalid=\"true\") and described by the message; a failed load is an alert tied to the load controls.",
+      "suggestion": "Add `aria-invalid={showError && !agreed ? 'true' : undefined}` next to the existing aria-describedby on the three checkboxes; on Ready give the message element an id, set `aria-describedby` on the file input and the textarea while a load error is shown, and use role=\"alert\" for the error case (keep role=\"status\" for 'Loaded N earlier sessions').",
+      "files": ["web/src/session/Ready.svelte", "web/src/session/ConsentGate.svelte", "web/src/session/Honour.svelte", "web/src/brief/ui/SaveSettings.svelte"],
+      "spec_refs": ["§13", "WCAG 3.3.1", "WCAG 4.1.2"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SR-14",
+      "severity": "polish",
+      "category": "a11y",
+      "title": "Notes builder: the 'where will you use these notes' radios carry their whole blurb in the accessible name",
+      "route": "notes",
+      "env": "Chromium 1280 light",
+      "screenshots": [
+        "web/test-results/ux-review/screenreader/audit/notes/audit.json",
+        "web/test-results/ux-review/screenreader/audit/notes/001-notes.png"
+      ],
+      "observed": "WherePicker.svelte:40-46 nests the hint inside the label, so each radio is named 'Coding and data A coding assistant or agent: answers, code and data questions', 'Learning something new A study Project or Gem: the...' and so on (audit order). Six long names in a row make the group slow to scan by arrow keys, and the hint is read before the state. Everything else in the builder is well labelled (fieldsets with legends, aria-pressed topic chips, alert on the 18+ error, status lines for copy/keep/fit).",
+      "expected": "The radio is named by its short label and described by the hint (read after name and state, skippable).",
+      "suggestion": "Give the hint span an id and set `aria-describedby` on the input; keep the hint inside the label visually (it still counts as a click target).",
+      "files": ["web/src/brief/ui/WherePicker.svelte"],
+      "spec_refs": ["§17", "R-17.14"],
+      "confidence": "medium",
+      "owner_decision": false
+    }
+  ]
+}

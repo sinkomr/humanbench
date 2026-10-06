@@ -18,7 +18,7 @@ export function cardSessions(n: number): string {
 }
 
 export const CARD_PEAKS_HEADING = 'Most distinctive peaks'
-export const CARD_PEAKS_SUB = 'Compared with the other skills on this card'
+export const CARD_PEAKS_SUB = "Compared with this card's skills as a whole"
 /** "Stands out by about 0.9 SD" */
 export function cardPeakStands(contrast: string): string {
   return `Stands out by about ${contrast} SD`
@@ -33,6 +33,12 @@ export const CARD_NO_PEAKS = 'No skill stands out clearly among those shown.'
 export const CARD_NOTE_SCALE = 'Rough estimates on a provisional scale. Ranges that overlap are not real differences.'
 export const CARD_NOTE_READING = 'Compare spokes one at a time; the size of the shape means nothing. Only skills I chose are shown.'
 export const CARD_PURPOSE = 'For curiosity and self-reflection.'
+/**
+ * The key to the marks, and what "SD" is (UX-038): a card travels without its page. Filled marks
+ * are the credible ones (§9.5); "range" is the 90% range the thin lines show.
+ */
+export const CARD_KEY = 'Filled: range clear of 0 SD. Hollow: range overlaps 0 SD.'
+export const CARD_SD_MEANING = 'SD means standard deviation.'
 
 /** The picture's title and its text alternative's first sentence (the shown skills follow). */
 export function cardAlt(count: number, peaks: readonly string[]): string {

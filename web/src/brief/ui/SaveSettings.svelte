@@ -15,9 +15,12 @@
    * - `status`: `ok`, `unavailable` or `error`, from the store's last write.
    * - `adultKnown`: the person already confirmed they are 18 or older elsewhere (the session's consent
    *   gate, M1.15), so the question is not asked again.
-   * - `message`, `loadMessage`: the last thing done, announced politely.
-   * - `onkeep`, `ondownload`, `onload(input)`: the actions; the page does the work.
+   * - `message`, `loadMessage`: the last thing done, announced politely. Once the settings are kept, the "now kept"
+   *   message is still announced but not shown: the line above it already says it.
+   * - `onkeep`, `ondownload`, `onload(input)`: the actions; the page does the work. After `onkeep`, focus moves to
+   *   the download button that replaces the "Keep my settings" button, so a keyboard user does not lose their place.
    */
+  import { tick } from 'svelte'
   import { COPY } from '../copy'
   import type { StoreStatus } from '../store-types'
 
@@ -48,8 +51,14 @@
   let pasted = $state('')
   let file = $state<File | null>(null)
   let empty = $state(false)
+  /** The download button of the kept state, which takes over the focus when the "Keep" button goes. */
+  let downloadButton = $state<HTMLButtonElement>()
+  /** The 18+ box is marked in error while its message is shown. */
+  const invalid = $derived(showError && !adult && !adultKnown)
+  /** The announcement that settings are kept repeats the line that says so, so it is kept for screen readers only. */
+  const quiet = $derived(keep && message === COPY.keepNow)
 
-  function submit(event: SubmitEvent): void {
+  async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault()
     if (!adultKnown && !adult) {
       showError = true
@@ -57,6 +66,9 @@
     }
     showError = false
     onkeep()
+    // The form is replaced by the kept state once the page has updated; the button that replaces it takes the focus.
+    await tick()
+    downloadButton?.focus()
   }
   /** A download without a place to keep anything: still only after the 18+ answer (the under-18 path writes no file either). */
   function submitDownload(event: SubmitEvent): void {
@@ -82,7 +94,7 @@
 {#snippet adultBox()}
   {#if !adultKnown}
     <label class="choice">
-      <input type="checkbox" bind:checked={adult} aria-describedby={showError && !adult ? `${uid}-err` : undefined} data-testid="adult" />
+      <input type="checkbox" bind:checked={adult} aria-describedby={showError && !adult ? `${uid}-err` : undefined} aria-invalid={invalid ? 'true' : undefined} data-testid="adult" />
       <span>{COPY.keepAdult}</span>
     </label>
   {/if}
@@ -98,7 +110,7 @@
   {#if keep}
     <p data-testid="keep-state">{status === 'unavailable' ? COPY.keepUnavailable : status === 'error' ? COPY.keepFailed : COPY.keepDone}</p>
     <div class="row actions">
-      <button type="button" data-testid="download-settings" aria-describedby="{uid}-dl-note" onclick={ondownload}>{COPY.keepDownload}</button>
+      <button type="button" bind:this={downloadButton} data-testid="download-settings" aria-describedby="{uid}-dl-note" onclick={ondownload}>{COPY.keepDownload}</button>
     </div>
     <p class="hint" id="{uid}-dl-note" data-testid="download-note">{COPY.keepDownloadNote}</p>
   {:else if !available}
@@ -120,7 +132,7 @@
       </div>
     </form>
   {/if}
-  <p class="status" role="status" aria-live="polite" data-testid="keep-status">{message}</p>
+  <p class="status" class:visually-hidden={quiet} role="status" aria-live="polite" data-testid="keep-status">{message}</p>
 
   <h3>{COPY.loadHeading}</h3>
   <p class="hint">{COPY.loadHint}</p>

@@ -4,6 +4,12 @@
   About 6 min."), a fixed block, a power item with its confidence slider, the break suggestion, or the
   break itself. "Skip <axis>" and "Finish early" are always at hand. This component only shows
   `SessionRun.view()` and forwards the renderers' events; the rules live in `run.ts`.
+  The header is small on a phone (UX-003); "Keep going" in a confirmation hands focus back to the running
+  block's own input surface, so the next response key counts (UX-005a); the browser's Back button opens
+  "Finish now?" through `finishRequest` (UX-011); a question the browser cannot draw shows its message
+  and its Skip button first, and says it once: the renderer that reported the condition stays mounted but
+  parked in a `hidden` wrapper, out of sight and out of the accessibility tree, so its own note and its
+  empty frames are neither drawn nor read, and the panel's role=status line is the one announcement (UX-017a).
 -->
 <script lang="ts">
   import { onMount, tick as svelteTick } from 'svelte'
@@ -30,6 +36,8 @@
     FINISH_CONFIRM_TEXT,
     FINISH_CONFIRM_YES,
     FINISH_EARLY,
+    FINISH_EARLY_HEAD,
+    FINISH_EARLY_TAIL,
     INTERSTITIAL_SKIP,
     INTERSTITIAL_START,
     NOTICE_MALFORMED,
@@ -39,6 +47,7 @@
     SKIP_CONFIRM_NO,
     SKIP_CONFIRM_TEXT,
     SKIP_CONFIRM_YES,
+    SKIP_HEAD,
     aboutMinutes,
     noticeSkipped,
     noticeUnavailable,
@@ -59,9 +68,11 @@
     readonly banner?: string
     /** With a server (ROADMAP M2.7): sends a report about the question on screen. Absent in the static fallback. */
     readonly report?: (r: ProblemReport) => Promise<void>
+    /** Every increase asks "Finish now?" (the browser's Back button during the run, UX-011). */
+    readonly finishRequest?: number
   }
 
-  let { env, run, autosave, banner = '', report }: Props = $props()
+  let { env, run, autosave, banner = '', report, finishRequest = 0 }: Props = $props()
 
   // The run is fixed for the life of this screen; its changes arrive through subscribe().
   // svelte-ignore state_referenced_locally
@@ -70,6 +81,9 @@
   let elapsedS = $state(run.elapsedS())
   let confirm: 'skip' | 'finish' | null = $state(null)
   let opener: HTMLElement | null = null
+  let finishButton: HTMLButtonElement | undefined = $state()
+  // svelte-ignore state_referenced_locally
+  let seenFinishRequest = finishRequest
 
   $effect(() => run.subscribe(() => (view = run.view())))
 
@@ -87,6 +101,13 @@
   })
 
   const segment = $derived(view.segment)
+  /** The part on screen, or the one a break leads to, is the last one still to come (the ring says "Almost there" only then). */
+  const lastPart = $derived.by(() => {
+    const here = view.segments[view.segmentIndex]
+    const onBreak = view.phase === 'break_offer' || view.phase === 'on_break'
+    const next = view.segmentIndex + (onBreak && here !== undefined && here.status !== 'current' ? 2 : 1)
+    return view.segments.slice(next).every((s) => s.status === 'skipped')
+  })
   const skipName = $derived(view.skippable === null ? '' : skipTargetName(view.skippable))
   const title = $derived.by(() => {
     switch (view.phase) {
@@ -117,6 +138,8 @@
   const notice = $derived.by(() => {
     const n = view.notice
     if (n === null) return ''
+    // The panel under the heading says it; the header does not say it a second time.
+    if (view.unavailable && (n.kind === 'unavailable' || n.kind === 'unsupported')) return ''
     switch (n.kind) {
       case 'timeout':
         return n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
@@ -136,10 +159,13 @@
     confirm = which
   }
 
+  /** Where focus goes back to after "Keep going": a running block's input surface, else what opened the panel. */
   async function cancel(): Promise<void> {
     confirm = null
     await svelteTick()
-    opener?.focus()
+    const surface = view.phase === 'block' ? document.querySelector<HTMLElement>('.session .body .stage[tabindex="-1"], .session .body .board[tabindex="-1"]') : null
+    if (surface !== null) surface.focus()
+    else opener?.focus()
   }
 
   function confirmSkip(): void {
@@ -157,6 +183,15 @@
     void screenKey
     confirm = null
   })
+
+  // The browser's Back button: ask whether to finish.
+  $effect(() => {
+    const n = finishRequest
+    if (n === seenFinishRequest) return
+    seenFinishRequest = n
+    opener = finishButton ?? null
+    confirm = 'finish'
+  })
 </script>
 
 <div class="hb-render session" data-phase={view.phase}>
@@ -165,17 +200,17 @@
       <p class="banner" role="note">{banner}</p>
     {/if}
     <div class="bar">
-      <ProgressRing {elapsedS} targetS={view.targetS} />
+      <ProgressRing {elapsedS} targetS={view.targetS} {lastPart} />
       {#if view.phase !== 'on_break'}
         <div class="actions">
           {#if view.skippable !== null && view.phase !== 'interstitial'}
-            <button type="button" class="hb-btn" onclick={(e) => ask('skip', e)}>{skipButton(skipName)}</button>
+            <button type="button" class="hb-btn" onclick={(e) => ask('skip', e)}>{SKIP_HEAD}<span class="narrow-hide">{` ${skipName}`}</span></button>
           {/if}
-          <button type="button" class="hb-btn" onclick={(e) => ask('finish', e)}>{FINISH_EARLY}</button>
+          <button type="button" class="hb-btn" bind:this={finishButton} onclick={(e) => ask('finish', e)}>{FINISH_EARLY_HEAD}<span class="narrow-hide">{FINISH_EARLY_TAIL}</span></button>
         </div>
       {/if}
     </div>
-    <p class="status" role="status" aria-live="polite">{notice}</p>
+    <p class="status" class:calm={view.notice?.kind === 'skipped' || view.notice?.kind === 'timeout'} role="status" aria-live="polite">{notice}</p>
     {#if autosave !== 'ok'}
       <p class="status muted" role="status">{FINISHED_AUTOSAVE_UNAVAILABLE}</p>
     {/if}
@@ -205,26 +240,30 @@
             ontimestampsource={(s, reason) => run.blockTimestampSource(s, reason)}
           />
         {:else if (view.phase === 'item' || view.phase === 'confidence') && view.item !== null}
-          <Stage
-            family={view.item.family}
-            itemId={view.item.item_id}
-            spec={view.item.spec}
-            scale={env.scale}
-            timing={env.timing}
-            disabled={view.phase === 'confidence' || view.unavailable}
-            onrespond={(r) => run.itemResponded(r)}
-            onshown={(ms) => run.itemShown(ms)}
-            onunavailable={() => run.itemUnavailable()}
-            onpaste={(id) => run.notePaste(id)}
-          />
           {#if view.unavailable}
             <div class="unavailable" role="group" aria-label="This question cannot be shown">
-              <p>{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
+              <p role="status">{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
               <div class="hb-actions">
                 <button type="button" class="hb-btn hb-primary" onclick={() => run.skipAxis()}>{skipButton(skipName)}</button>
+                <button type="button" class="hb-btn" onclick={(e) => ask('finish', e)}>{FINISH_EARLY}</button>
               </div>
             </div>
           {/if}
+          <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
+          <div class="stage-host" hidden={view.unavailable}>
+            <Stage
+              family={view.item.family}
+              itemId={view.item.item_id}
+              spec={view.item.spec}
+              scale={env.scale}
+              timing={env.timing}
+              disabled={view.phase === 'confidence' || view.unavailable}
+              onrespond={(r) => run.itemResponded(r)}
+              onshown={(ms) => run.itemShown(ms)}
+              onunavailable={() => run.itemUnavailable()}
+              onpaste={(id) => run.notePaste(id)}
+            />
+          </div>
           {#if view.phase === 'confidence' && view.confidence !== null}
             <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct) => run.confirmConfidence(pct)} />
           {/if}
@@ -315,7 +354,14 @@
     color: var(--r-note);
   }
 
-  .status.muted {
+  /* Nothing to say: the line stays in the page (it is a live region) but takes no room. */
+  .status:empty {
+    min-height: 0;
+  }
+
+  /* What the person did or what the clock did (a skip, a time-out) is news, not a warning. */
+  .status.muted,
+  .status.calm {
     color: var(--r-muted);
   }
 
@@ -336,12 +382,43 @@
     min-width: 0;
   }
 
+  /* The wrapper is not a box of its own, so the renderer lays out as if it were a direct child; parked (hidden), it is display: none. */
+  .stage-host:not([hidden]) {
+    display: contents;
+  }
+
   .unavailable {
     margin: 1rem 0;
     padding: 0.75rem 1rem;
     border: 2px solid var(--r-border);
     border-radius: 0.5rem;
     background: var(--r-surface);
+  }
+
+  /* A phone: the header is one row and small, and its buttons show their first word; the rest stays in the name (WCAG 2.5.3). */
+  @media (max-width: 30rem) {
+    .bar {
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+    }
+
+    .actions {
+      flex-wrap: nowrap;
+      gap: 0.375rem;
+      margin-left: auto;
+    }
+
+    .narrow-hide {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
   }
 
   @media (min-width: 52rem) {

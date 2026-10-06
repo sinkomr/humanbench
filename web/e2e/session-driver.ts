@@ -18,14 +18,14 @@
 
 import { expect, type Locator, type Page } from '@playwright/test'
 import { FINISHED_REASON } from '../src/session/copy'
-import { button, h1 } from './flow'
+import { button, FINISHED_HEADINGS, h1 } from './flow'
 
 /** What is on screen, as far as the driver needs to know. */
 export type Screen = 'finished' | 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'coding' | 'reading' | 'interstitial' | 'break' | 'other'
 
 const SCREEN = `(() => {
   const text = ((document.querySelector('h1') || {}).textContent || '').trim()
-  if (text === 'Session complete') return 'finished'
+  if (text === 'Session complete' || text === 'Session ended') return 'finished'
   if (document.querySelector('input[type=range]')) return 'confidence'
   if (document.querySelector('form.choice:not(:has(fieldset:disabled))')) return 'choice'
   if (document.querySelector('form.entry')) return 'entry'
@@ -137,12 +137,15 @@ export class SessionDriver {
     await expect(page.getByRole('slider')).toHaveCount(0)
   }
 
-  /** Finish at once (from an interstitial or between items): the results of the save the session started from, plus this session. */
+  /**
+   * Finish at once (from an interstitial or between items): the results of the save the session started from, plus this
+   * session, or "Session ended" when there is nothing to show (UX-009b).
+   */
   async finishEarly(): Promise<void> {
     const { page } = this
     await this.press(button(page, 'Finish early'))
     await this.press(button(page, 'Finish now'))
-    await expect(h1(page)).toHaveText('Session complete')
+    await expect(h1(page)).toHaveText(FINISHED_HEADINGS)
   }
 
   // ------------------------------------------------------------------ the session

@@ -12,6 +12,8 @@ import { lintText } from '../scripts/language-lint'
 
 export const h1 = (page: Page): Locator => page.getByRole('heading', { level: 1 })
 export const button = (page: Page, name: string | RegExp): Locator => page.getByRole('button', { name, exact: typeof name === 'string' })
+/** The heading of the end of a session: "Session complete" over a profile, "Session ended" when nothing was measured (UX-009b). */
+export const FINISHED_HEADINGS = /^Session (complete|ended)$/
 
 export async function agreeGate(page: Page): Promise<void> {
   await page.getByRole('checkbox', { name: /18 or older/ }).check()

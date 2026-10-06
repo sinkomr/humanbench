@@ -129,7 +129,7 @@ test.describe('the flow: peaks → drill-down → save → the rest (§10)', () 
   test('a returning person with two sessions sees the later wording and all 17 skills of the merged re-score', async ({ page }) => {
     await still(page)
     await toResults(page, 2)
-    await expect(page.locator('[data-practice-adjusted]')).toContainText('each later session is credited for the practice')
+    await expect(page.locator('[data-practice-adjusted]')).toContainText('each later session is credited for the typical gain from practice')
     await expect(page.locator('table.hb-bars tbody tr')).toHaveCount(17)
   })
 })
@@ -213,14 +213,16 @@ test.describe('the required save (§10)', () => {
     expect(asked).toBe(0)
   })
 
-  test('"Back to the start" asks first while unsaved; staying returns focus; leaving goes to the start', async ({ page }) => {
+  test('"Back to the start" asks first while unsaved; staying takes focus and the view to the download button; leaving goes to the start', async ({ page }) => {
     await still(page)
     await toResults(page)
     await button(page, 'Back to the start').click()
     await expect(page.getByRole('heading', { level: 2, name: 'Leave without saving?' })).toBeVisible()
     await expectNoSeriousAxe(page)
     await button(page, 'Stay and save').click()
-    await expect(button(page, 'Back to the start')).toBeFocused()
+    // The person stays to save: the download button is where focus lands, and it is in view (UX-028).
+    await expect(button(page, 'Download save file')).toBeFocused()
+    await expect(button(page, 'Download save file')).toBeInViewport()
     await button(page, 'Back to the start').click()
     await button(page, 'Leave anyway').click()
     await expect(h1(page)).toHaveText('HumanBench')
@@ -323,7 +325,7 @@ test.describe('coming back for more (§10, §7.6)', () => {
     await button(page, 'Start a 20-minute focus session').click()
     await expect(h1(page)).toHaveText('Up next: Matrix & Series')
     await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuetext', '0 of about 20 min')
-    await expect(page.getByRole('navigation', { name: 'Session checklist' })).toContainText('Not in this session')
+    await expect(page.getByRole('region', { name: 'Session checklist' })).toContainText('Not in this session')
     await expectNoSeriousAxe(page)
     await button(page, 'Start').click()
     await expect(page.locator('form.choice, form.entry').first()).toBeVisible()

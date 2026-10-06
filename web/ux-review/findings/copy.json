@@ -1,0 +1,799 @@
+{
+  "reviewer": "copy",
+  "model": "opus",
+  "summary": "The copy is careful, plain and almost free of A13 risk: the language lint holds, the pinned texts are intact, and most screens say what will happen and what is kept without judging. The main problems are consistency and a few misleading words. Two lines claim a benefit (\"parts you want to sharpen\", \"help you stay sharp\"); on the results, \"SD\" means both the scale unit and an estimate's uncertainty (\"+0.88 (SD 0.60)\"), and the same 90% quantity is an \"interval\" in the table but a \"range\" everywhere else. The drill-down shows internal facet ids (\"Simple rt\", \"Linear eq\", \"Recip\"), internal words \"block\" and \"item\" reach people, and the privacy notice people agree to still shows TODO(user) placeholders. Names drift between screens (Reaction time / Reaction Time; sequence / series; piece / cell; shape / object; squares / blocks), the session length is 30, 28 or 31 minutes depending on the screen, and the answer button is Confirm or Submit by item type. Every finding gives exact replacements and the e2e/script/test literals that would need updating.",
+  "coverage": [
+    "Inventory: 1,569 user-facing strings with file:line, screen and kind (web/ux-review/findings/copy-inventory.json), from every copy module, inline Svelte text and aria-label/title/placeholder/alt values, save/parse errors, segment intros, axis names, notes builder modules (gated line texts tagged), and index.html, notes.html, rt-selftest.html (title, meta description, noscript); dev-only code (src/backend, src/dev, src/review, visual-gallery) excluded",
+    "Tour of all 50 product routes, Chromium desktop 1280 px light, page text + accessibility tree per route (test-results/ux-review/copy/tour)",
+    "Results with every disclosure open: one session (results-open) and two sessions (results-two, practice-adjusted wording)",
+    "A full ?fast=1 journey with practice questions, every interstitial and intro, down to the results (test-results/ux-review/copy/journey)",
+    "Evidence close-ups of the quoted strings (test-results/ux-review/copy/evidence)",
+    "Literal matches of every proposed change grepped in web/e2e/*.ts, web/scripts/*.ts, *.test.ts and snapshots"
+  ],
+  "findings": [
+    {
+      "id": "COPY-01",
+      "severity": "major",
+      "category": "copy",
+      "title": "Focus-session and break copy imply a training benefit ('sharpen', 'stay sharp')",
+      "route": "ready-returning, results-saved, break-offer",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/retest-sharpen/001-retest-sharpen.png",
+        "web/test-results/ux-review/copy/evidence/retest-sharpen/002-retest-sharpen.txt",
+        "web/test-results/ux-review/copy/tour/ready-returning/1280-light.png",
+        "web/test-results/ux-review/copy/evidence/break-offer-stay-sharp/001-break-offer-stay-sharp.png"
+      ],
+      "observed": "web/src/reveal/copy.ts:131 FOCUS_TEXT: \"Pick the parts you want to sharpen. A focus session takes about 20 minutes and only covers the parts you choose.\" (ready screen of a returning person and the results 'Coming back for more' section). web/src/session/copy.ts:172 BREAK_OFFER_TEXT: \"You have been working for about 30 minutes. A short break can help you stay sharp. The clock pauses while you rest.\" 'Sharpen' reads as the focus session improving a skill, which the product explicitly corrects for (practice-adjusted estimates, §7.8), and 'help you stay sharp' is a performance-benefit claim.",
+      "expected": "A focus session is described as measuring the chosen parts more precisely; the break is offered without claiming an effect. No copy claims a benefit beyond the A22 sentence.",
+      "suggestion": "Exact replacements. reveal/copy.ts:131 FOCUS_TEXT → \"Pick the parts you want measured more precisely. A focus session takes about 20 minutes and covers only the parts you choose.\" session/copy.ts:172 BREAK_OFFER_TEXT → \"You have been working for about 30 minutes. You can take a short break now: the clock pauses while you rest.\" Literal matches in e2e/*.ts, scripts/*.ts, *.test.ts: none (tests import the constants).",
+      "files": [
+        "web/src/reveal/copy.ts",
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "A22",
+        "§7.8",
+        "§10",
+        "R-5.6.4"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-02",
+      "severity": "major",
+      "category": "copy",
+      "title": "'SD' means two different things on the results: the scale unit and an estimate's uncertainty",
+      "route": "results-bars, results-open",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/results-bars/1280-light.png",
+        "web/test-results/ux-review/copy/tour/results-bars/1280-light.txt",
+        "web/test-results/ux-review/copy/evidence/results-table-sd-interval/001-results-table-sd-interval.png"
+      ],
+      "observed": "web/src/viz/BarTable.svelte:68 renders the estimate as \"+0.88 (SD 0.60)\" in the column headed \"Estimate (SD)\", and web/src/viz/copy.ts:33 UNCERTAINTY_CAPTION says \"The light band spans ±1 SD\". In both, SD is the estimate's own uncertainty, while everywhere else (ring labels '+1 SD', RING_CAPTION, 'Compared with 0 SD', peaks, card) SD is the unit of the scale. A reader sees '(SD 0.60)' as a second score and reads the band as one ring wide.",
+      "expected": "One meaning for SD (the scale unit). The uncertainty of an estimate is shown as ± a number and called uncertainty.",
+      "suggestion": "BarTable.svelte:68 `<span class=\"sd\">(SD {row.sd.toFixed(2)})</span>` → `<span class=\"sd\">± {row.sd.toFixed(2)}</span>` (cell reads \"+0.88 ± 0.60\"). viz/copy.ts:53 TABLE_CAPTION → \"Estimates by skill, in SD units on a provisional scale, each ± its uncertainty, with 90% ranges.\" viz/copy.ts:33 UNCERTAINTY_CAPTION → \"The solid line is the most likely profile. The light band shows each estimate ± its uncertainty, and the soft edge around the line fades out across each 90% range: the darker the shading, the more plausible that value. Whiskers show 90% ranges; where one overlaps 0 SD, the marker is hollow and the line turns grey.\" (uses the 90% range wording of COPY-10). Literal matches in tests: none for \"(SD \" or \"±1 SD\" (e2e/session.spec.ts:673/675 and run.test.ts:213 only mention SD in titles/comments).",
+      "files": [
+        "web/src/viz/BarTable.svelte",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "A12",
+        "§9.3",
+        "§9.5"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-03",
+      "severity": "major",
+      "category": "copy",
+      "title": "Drill-down facet names are internal ids: 'Simple rt', '3d rotation', 'Linear eq', 'Arith', 'Recip'",
+      "route": "results-drilldown",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/drilldown-facet-names/001-drilldown-facet-names.png",
+        "web/test-results/ux-review/copy/evidence/drilldown-facet-names/002-drilldown-facet-names.txt",
+        "web/test-results/ux-review/copy/tour/results-drilldown/1280-light.png"
+      ],
+      "observed": "web/src/viz/facets.ts:53-56 facetLabel() makes the visible name from the facet id (underscores to spaces, first letter capitalised). The drill-down table and chart show \"Simple rt (Reaction Time)\", \"Choice rt (Reaction Time)\", and for other clusters \"3d rotation\", \"Digits forward\", \"Arith\", \"Linear eq\", \"Recip\", \"Geom series\", \"Arith series\", \"Fraction of\", \"System\", \"Symmetric\", \"Modular\", \"Mean\". The row name also repeats the skill that the next column already gives (facets.ts:110).",
+      "expected": "Plain names that match what the person did (the task sub-headings they saw), in sentence case.",
+      "suggestion": "Add FACET_LABELS to web/src/viz/copy.ts and use it in facetLabel (falling back to the current transform for an unknown id): simple_rt \"Reaction time, one position\"; choice_rt \"Reaction time, four positions\"; coding \"Shape to digit\"; reading_speed \"Reading speed\"; matrix \"Matrices\"; series \"Sequences\"; 3d_rotation \"3D rotation\"; digits_forward \"Digits, same order\"; digits_backward \"Digits, reverse order\"; corsi \"Block sequence\"; arith \"Arithmetic\"; percent \"Percentages\"; fraction \"Fractions\"; fraction_of \"Fractions of amounts\"; ratio \"Ratios\"; rate \"Rates\"; linear_eq \"Linear equations\"; mean \"Averages\"; system \"Simultaneous equations\"; quadratic \"Quadratics\"; exponent \"Powers\"; probability \"Probability\"; recip \"x + 1/x identities\"; symmetric \"Symmetric expressions\"; arith_series \"Arithmetic sequences\"; geom_series \"Geometric sequences\"; modular \"Remainders and last digits\"; counting \"Counting\". facets.ts:110 name `${facetLabel(facet)} (${a.name})` → `${facetLabel(facet)}` (the Skill column already names the skill). Literal matches: src/viz/facets.test.ts:101-103 (expects \"3d rotation\", \"Percent\", \"Digits forward\").",
+      "files": [
+        "web/src/viz/facets.ts",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§9.6",
+        "§9.7"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-04",
+      "severity": "major",
+      "category": "content",
+      "title": "Privacy notice shows TODO(user) placeholders, and the gate asks people to agree to it",
+      "route": "privacy, gate",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/privacy/1280-light.png",
+        "web/test-results/ux-review/copy/tour/privacy/1280-light.txt",
+        "web/test-results/ux-review/copy/tour/gate/1280-light.png"
+      ],
+      "observed": "web/src/session/copy.ts:223 \"Controller: TODO(user): name of the person or organisation responsible for this site.\", :224 \"Contact: TODO(user): an email address for questions and requests about your data.\", :245 \"Draft terms for that version, to be confirmed: TODO(user): retention period (draft: 24 months), legal basis (draft: consent), and where the data is held.\" The gate (GATE_AGREE, :28) asks: \"I am 18 or older, and I agree to these terms and the privacy notice.\"",
+      "expected": "A privacy notice with a named controller and a contact, or, until the owner supplies them, wording without developer markers.",
+      "suggestion": "Owner supplies the controller and contact (ROADMAP M1.15 TODO(user)). If the static MVP is shown before that, interim text: :223-224 → one paragraph \"This site is a hobby project. The name of the person responsible and a contact address will be added here before any version that collects data.\"; :245 → \"Draft terms for that version (how long data is kept, the legal basis and where it is held) will be published here before it starts.\" Literal matches to update: e2e/session.spec.ts:221,228,229; src/App.dom.test.ts:54,64,65; src/App.served.dom.test.ts:43; src/session/copy.test.ts:21,22; src/session/components.dom.test.ts:369,372,373. TERMS_VERSION (session/constants.ts:18) must be bumped when the notice changes in substance.",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/session/constants.ts"
+      ],
+      "spec_refs": [
+        "§13",
+        "M1.15"
+      ],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "COPY-05",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Skill and part names change case and wording between screens ('Reaction time' vs 'Reaction Time')",
+      "route": "interstitial, rt-intro, item-matrix-series, ready-returning, results-saved",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/interstitial-reaction-time-casing/001-interstitial-reaction-time-casing.png",
+        "web/test-results/ux-review/copy/evidence/checklist-up-next-metacognition/001-checklist-up-next-metacognition.png",
+        "web/test-results/ux-review/copy/tour/rt-intro/1280-light.png",
+        "web/test-results/ux-review/copy/evidence/focus-picker-wide-range.png"
+      ],
+      "observed": "The part title is 'Reaction time' (web/src/session/segments.ts:27) but the skill name is 'Reaction Time' (web/src/engine/axes.ts:116), and both appear together: interstitial \"Up next: Reaction time\" above the checklist \"Reaction Time, Processing & Reading Speed\"; the RT screen has \"Skip Reaction Time\" above the heading \"Reaction time\" and a second, identical title \"Reaction time\" (web/src/render/rt/RtRenderer.svelte:219); the next part opens with \"Reaction Time skipped.\"; the focus picker lists \"Reaction time\" among \"Working Memory\", \"Quantitative Reasoning\"; the share-card list says \"Reaction Time\".",
+      "expected": "One spelling per name. Canonical: the DESIGN §3 skill names as proper names in Title Case (as the pinned EMO_AXIS_NAME is), used for parts too.",
+      "suggestion": "segments.ts:27 title 'Reaction time' → 'Reaction Time'. RtRenderer.svelte:219 `{choice4 ? 'Reaction time, four positions' : 'Reaction time'}` → `{choice4 ? 'Four positions' : 'One position'}` (a sub-heading like 'Digits, same order' and 'Block sequence', so the h1 is not repeated). Literal matches: e2e/routes.ts:96 (SEGMENT_TITLES); e2e/parts.ts:20; e2e/session.spec.ts:350; e2e/server.spec.ts:37,198,363 ('Up next: Reaction time'); scripts/e2e-parts.test.ts:17; src/session/SessionScreen.dom.test.ts:41; src/render/rt/__snapshots__/rt.dom.test.ts.snap:8; ux-review/lib/journey.ts:33 (comment only).",
+      "files": [
+        "web/src/session/segments.ts",
+        "web/src/render/rt/RtRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§3",
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-06",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Session length disagrees across screens (30, 28 and 31 minutes) and units switch between minutes and min",
+      "route": "welcome, ready, interstitial, break-offer, results",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/welcome/1280-light.png",
+        "web/test-results/ux-review/copy/tour/ready/1280-light.png",
+        "web/test-results/ux-review/copy/evidence/interstitial-reaction-time-casing/001-interstitial-reaction-time-casing.png",
+        "web/test-results/ux-review/copy/tour/interstitial/1280-light.txt",
+        "web/test-results/ux-review/copy/evidence/break-offer-stay-sharp/001-break-offer-stay-sharp.png"
+      ],
+      "observed": "Welcome (web/src/session/copy.ts:15) and Ready (:68) say \"about 30 minutes\"; the progress ring (progressText :166, target A15_TARGET_S) says \"0 of about 28 min\"; the six interstitials say \"About 3 min.\", 5, 5, 5, 9 and 4 (sum 31); the break offer (BREAK_AT_S 30 min) says \"You have been working for about 30 minutes\" while the ring already reads \"Almost there\". Units: \"30 minutes\", \"About 3 min.\" (a fragment with a full stop), \"28 min\", \"20-minute\", summary \"in about 18 min.\".",
+      "expected": "One session figure everywhere (about 30 minutes), and \"minutes\" in sentences; \"min\" only in the compact ring.",
+      "suggestion": "ProgressRing: show the target rounded to the nearest 5 minutes in the text (28 → 30; focus 20 stays 20) and keep the exact target for the fraction: \"12 of about 30 min\". session/copy.ts:105 aboutMinutes `About ${n} min.` → `About ${n} ${n === 1 ? 'minute' : 'minutes'}`. session/copy.ts:198 summaryLine \"… in about ${minutes} min.\" → \"… in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.\" Literal matches: e2e/session.spec.ts:330,666,669 ('0/10/15 of about 28 min'); src/session/SessionApp.dom.test.ts:207; src/session/components.dom.test.ts:42,43; src/session/copy.test.ts:48,49 (summaryLine); e2e/reveal.spec.ts:325,356 ('of about 20 min', unchanged by the rounding).",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/session/ProgressRing.svelte"
+      ],
+      "spec_refs": [
+        "§10",
+        "A15",
+        "§7.4"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-07",
+      "severity": "minor",
+      "category": "copy",
+      "title": "The button that commits an answer is 'Confirm' on some items and 'Submit' on others",
+      "route": "item-matrix-series, quant-item, item-spatial, reading-questions, practice",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/series-whole-number-hint/001-series-whole-number-hint.png",
+        "web/test-results/ux-review/copy/evidence/quant-integer-hint/001-quant-integer-hint.png",
+        "web/test-results/ux-review/copy/tour/item-spatial/1280-light.png",
+        "web/test-results/ux-review/copy/evidence/reading-not-answered/001-reading-not-answered.png"
+      ],
+      "observed": "Choice items, rotation, emotion and practice: \"Confirm\" (web/src/render/choice/keys.ts:19 CONFIRM_LABEL; web/src/tasks/emotion/copy.ts:13). Typed entry: \"Submit\" (web/src/render/common/NumericEntry.svelte:85) and Fermi \"Submit\" (web/src/tasks/fermi/copy.ts:22); reading: \"Submit answers\" (web/src/render/reading/ReadingRenderer.svelte:96); EMPTY_NOTE (web/src/render/common/entry-copy.ts:10) \"Type an answer first, then submit.\" A matrix and a series item can follow each other within one part.",
+      "expected": "One verb for committing an answer across item types.",
+      "suggestion": "Use \"Confirm\" (the majority, and it leads into the confidence step's \"Continue\"): NumericEntry.svelte:85 'Submit' → 'Confirm'; fermi/copy.ts:22 submit 'Submit' → 'Confirm'; ReadingRenderer.svelte:96 'Submit answers' → 'Confirm answers'; entry-copy.ts:10 → \"Type an answer first, then choose Confirm.\" Keep \"Done\" (span, Corsi) and \"Done reading\". Literal matches: e2e/session-driver.ts:240,400; e2e/keyboard-session.spec.ts:379; e2e/gallery.spec.ts:20,25; ux-review/lib/journey.ts:81; src/render/series/series.dom.test.ts:29,106; src/render/quant/quant.dom.test.ts:29; src/render/reading/reading.dom.test.ts:60; snapshots src/render/{series,quant,reading}/__snapshots__/*.snap; fermi tests that click 'Submit' (grep ENTRY_COPY.submit users).",
+      "files": [
+        "web/src/render/common/NumericEntry.svelte",
+        "web/src/tasks/fermi/copy.ts",
+        "web/src/render/reading/ReadingRenderer.svelte",
+        "web/src/render/common/entry-copy.ts"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-08",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Internal words 'block' and 'item' reach people ('Block complete', '1 block; 5 needed')",
+      "route": "rt-trial, memory-entry, memory-corsi, reading-questions, results-drilldown",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/drilldown-facet-names/001-drilldown-facet-names.png",
+        "web/test-results/ux-review/copy/tour/results-drilldown/1280-light.txt"
+      ],
+      "observed": "\"Block complete. Thank you.\" ends RT (web/src/render/rt/RtRenderer.svelte:271), digits (web/src/render/span/DigitSpanRenderer.svelte:141), Corsi (web/src/render/span/CorsiRenderer.svelte:171) and reading (web/src/render/reading/ReadingRenderer.svelte:99). The drill-down says \"Insufficient data (1 block; 5 needed)\" / \"(3 items; 5 needed)\" (web/src/viz/copy.ts:70-72, :81) and \"A facet needs 5 scored items or blocks before it gets an estimate.\" (:92). Everywhere else the app says questions and timed tasks (summaryLine).",
+      "expected": "People's words: question(s), timed task(s), 'Not enough data yet'.",
+      "suggestion": "Status text → \"Task complete. Thank you.\" (4 places). viz/copy.ts countText: unit item → 'question'/'questions', block → 'timed task'/'timed tasks'. notMeasuredText insufficient_data → `Not enough data yet (${countText(n, unit)}; ${FACET_MIN_ITEMS} needed)`. facetCaption → \"… A facet needs 5 scored questions or timed tasks before it gets an estimate.\" Literal matches: e2e/session-driver.ts:271,305 and e2e/keyboard-session.spec.ts:263,302,333 (/Block complete/ detects the end of a block; change to /Task complete/); src/render/rt/rt.dom.test.ts:241; src/render/span/span.dom.test.ts:90; e2e/blob.spec.ts:144,145; src/viz/ProfileView.dom.test.ts:290,308; src/viz/facets.test.ts:80,96,97.",
+      "files": [
+        "web/src/render/rt/RtRenderer.svelte",
+        "web/src/render/span/DigitSpanRenderer.svelte",
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/reading/ReadingRenderer.svelte",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§9.7",
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-09",
+      "severity": "minor",
+      "category": "copy",
+      "title": "'Cluster' and 'facet' are unexplained terms in the results table and drill-down",
+      "route": "results, results-drilldown",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/drilldown-facet-names/001-drilldown-facet-names.png",
+        "web/test-results/ux-review/copy/tour/results-open/1280-light.txt"
+      ],
+      "observed": "web/src/viz/copy.ts:55 TABLE_CLUSTER \"Cluster\"; :87 DRILL_PROMPT \"Explore a cluster:\"; :89 facetHeading \"Speed: facets\"; :95 FACET_SKILL \"Facet\". Neither word is explained anywhere a person reads; the checklist shows the same groups by name only.",
+      "expected": "Plain words for the grouping and the sub-measures.",
+      "suggestion": "TABLE_CLUSTER → 'Group'; DRILL_PROMPT → 'Look inside a group of skills:'; facetHeading → `${cluster}: question and task types`; facetCaption → `Question and task types in ${cluster}, in SD units on a provisional scale. Each needs ${FACET_MIN_ITEMS} scored questions or timed tasks before it gets an estimate.`; FACET_SKILL 'Facet' → 'Question or task type'. Literal matches: e2e/routes.ts:876 and e2e/blob.spec.ts:100,108,148 (headings and img named '<Cluster>: facets').",
+      "files": [
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§9.6"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-10",
+      "severity": "minor",
+      "category": "copy",
+      "title": "The same 90% quantity is called 'interval' in the chart and table but 'range' everywhere else",
+      "route": "results, results-bars, results-saved",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/results-table-sd-interval/001-results-table-sd-interval.png",
+        "web/test-results/ux-review/copy/tour/results-saved/1280-light.txt",
+        "web/test-results/ux-review/copy/evidence/peaks-colour-note/001-peaks-colour-note.png"
+      ],
+      "observed": "web/src/viz/copy.ts:22 BLOB_DESCRIPTION \"with their intervals\", :33 UNCERTAINTY_CAPTION \"90% interval … 90% intervals\", :53 TABLE_CAPTION \"with 90% intervals\", :57 TABLE_INTERVAL \"90% interval (SD)\", :61 BARS_NOTE \"the bar its 90% interval\"; but peaks (web/src/reveal/copy.ts:40 \"90% range\"), the card (web/src/viz/card-copy.ts:28 \"90% range\"), retest (\"Where your ranges are widest\", web/src/reveal/RetestSection.svelte:65 \"90% range\") and FUZZIEST_NOTE \"A wide range\".",
+      "expected": "One name: \"90% range\" (the plainer word, already used on the card and the peaks).",
+      "suggestion": "viz/copy.ts:22 → \"One spoke per skill. The same estimates, with their ranges, are in the table that goes with this chart.\"; :53 → \"Estimates by skill, in SD units on a provisional scale, with 90% ranges.\" (or the COPY-02 version); :57 → \"90% range (SD)\"; :61 → \"Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD.\"; :33 as in COPY-02. Literal matches: only test titles (src/viz/blob.test.ts:116, profile.test.ts:52, ProfileView.dom.test.ts:126, geometry.test.ts:68), no assertions.",
+      "files": [
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "A12",
+        "§9.3"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-11",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Interstitials and items name the same thing differently (sequence/series, piece/cell, shape/object, squares/blocks, symbol/shape)",
+      "route": "interstitial, item-matrix-series, item-spatial, memory-corsi, coding-intro, results-saved",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/item-matrix-series/1280-light.txt",
+        "web/test-results/ux-review/copy/tour/item-spatial/1280-light.png",
+        "web/test-results/ux-review/copy/tour/coding-intro/1280-light.png",
+        "web/test-results/ux-review/copy/evidence/worked-intro/001-worked-intro.png"
+      ],
+      "observed": "Series: web/src/session/segments.ts:28 \"type the next term of a sequence\"; web/src/render/series/SeriesRenderer.svelte:33 \"What comes next in this sequence?\" but its region label (:32) \"Number or letter series\", worked example web/src/reveal/copy.ts:114 \"What is the next term of this series?\" titled \"Example 2: Series\" (web/src/reveal/worked/index.ts:42). Matrices: segments.ts:28 \"Pick the piece that completes a grid\" vs web/src/render/matrices/copy.ts:10 \"Pick the cell that belongs in the empty space\". Spatial: segments.ts:29 \"Turn shapes in your mind. Decide which figure is the same shape as the target.\" vs web/src/render/rotation/copy.ts:11 \"Which option is the same object as the target, rotated? (Not mirror-imaged.)\". Memory: segments.ts:30 \"the order of lit-up squares\" vs web/src/render/span/CorsiRenderer.svelte:143-145 \"Block sequence … Blocks on the board will light up\". Coding: web/src/render/coding/CodingRenderer.svelte:126 \"Symbol to digit\" and segments.ts:32 \"Match symbols to digits\" vs the instructions (:137) \"Each shape in the key above\".",
+      "expected": "The interstitial, the item and the worked example use the same noun.",
+      "suggestion": "segments.ts:28 → \"Find the pattern. Pick the cell that completes a grid, or type the next term of a sequence.\"; segments.ts:29 → \"Turn objects in your mind. Decide which option is the same object as the target, rotated.\"; segments.ts:30 → \"Repeat short sequences of digits forwards and backwards, then the order in which blocks light up.\"; segments.ts:32 → \"Match shapes to digits against the clock, then read a short passage and answer a few questions about it.\"; CodingRenderer.svelte:126 'Symbol to digit' → 'Shape to digit'; rotation/copy.ts:11 → \"Which option is the same object as the target, rotated? A mirror image does not count.\"; SeriesRenderer.svelte:32 aria-label → \"Number or letter sequence\"; reveal/copy.ts:114 → \"What comes next in this sequence?\"; worked/index.ts:42 title 'Series' → 'Sequence'. Literal matches: src/render/series/__snapshots__/series.dom.test.ts.snap:3,5; src/render/rotation/__snapshots__/RotationRenderer.dom.test.ts.snap:3; src/render/coding/__snapshots__/coding.dom.test.ts.snap:4,8.",
+      "files": [
+        "web/src/session/segments.ts",
+        "web/src/render/series/SeriesRenderer.svelte",
+        "web/src/render/rotation/copy.ts",
+        "web/src/render/coding/CodingRenderer.svelte",
+        "web/src/reveal/copy.ts",
+        "web/src/reveal/worked/index.ts"
+      ],
+      "spec_refs": [
+        "§10",
+        "§12"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-12",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Save-loading errors talk about 'JSON' and 'gzip' and rarely say what to do next",
+      "route": "ready (load a save)",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/ready/1280-light.png",
+        "web/test-results/ux-review/copy/tour/ready/1280-light.txt"
+      ],
+      "observed": "web/src/save/parse.ts:70 \"The content is JSON but not a HumanBench save.\"; :76 \"This save's format version cannot be read ({m.message}).\" and :78 \"This save could not be upgraded ({m.message}).\" where m.message is developer text from web/src/save/migrate.ts:77-92 (e.g. \"schema_version major 2 is newer than 1\"); :85 \"This save file is damaged or was edited into an unreadable form.\"; :110 \"The content looks like JSON but is not valid JSON.\"; :149 \"The content is not a HumanBench save.\"; :165 \"The content is not a HumanBench save or save code.\"; :174 \"The file is not text or gzip, so it is not a HumanBench save.\"",
+      "expected": "Each error says what happened in plain words and what to do.",
+      "suggestion": "parse.ts:70 and :174 → \"This file is not a HumanBench save. Choose the file you downloaded at the end of a session (its name ends in .hbsave.json).\"; :76 and :78 → \"This save cannot be opened by this version of HumanBench. Reload the page and try again; if it still fails, the file may be damaged.\" (keep m.message out of the visible text; log it); :85 and :110 → \"This save file is damaged and cannot be opened. Try an earlier copy, or paste the save code instead.\"; :149 and :165 → \"This is not a HumanBench save or save code. Choose your downloaded save file, or paste the save code you copied.\" Literal matches: e2e/session-save.spec.ts:442 ('not a HumanBench save'), :445 ('not valid JSON'); src/session/components.dom.test.ts:193 ('not a HumanBench save'); src/save/parse.test.ts asserts error codes, not these messages.",
+      "files": [
+        "web/src/save/parse.ts",
+        "web/src/save/migrate.ts"
+      ],
+      "spec_refs": [
+        "§8",
+        "§10"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-13",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Typed-entry hints say 'integer' in quantitative items and 'whole number' in series items",
+      "route": "quant-item, item-matrix-series",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/quant-integer-hint/001-quant-integer-hint.png",
+        "web/test-results/ux-review/copy/evidence/series-whole-number-hint/001-series-whole-number-hint.png",
+        "web/test-results/ux-review/copy/evidence/quant-integer-hint/002-quant-integer-hint.txt"
+      ],
+      "observed": "web/src/tasks/quant/templates.ts:73 \"Enter an integer, such as 42 or -7.\" and :75 \"Enter a fraction such as 3/8, or an integer.\" vs web/src/render/common/entry-copy.ts:22 \"Enter a whole number, such as 42 or -7.\", :24 \"Enter a fraction such as 3/8, or a whole number.\" and the format note \"could not be read as a whole number\" (:14).",
+      "expected": "One plain term: 'whole number'.",
+      "suggestion": "templates.ts:73 → \"Enter a whole number, such as 42 or -7.\"; :75 → \"Enter a fraction such as 3/8, or a whole number.\" The quant generator is bank-mirrored: change humanbench-bank src/hb/gen/quant/spec.py and golden/ts_dumps/quant.json in the same change (A1/A14 twin). Literal matches: scripts/bundle.test.ts:110 (uses the hint as a marker that the topic-taxonomy bundle carries no quant templates: change the marker to the new text); src/render/quant/__snapshots__/quant.dom.test.ts.snap:3.",
+      "files": [
+        "web/src/tasks/quant/templates.ts",
+        "web/scripts/bundle.test.ts"
+      ],
+      "spec_refs": [
+        "A1",
+        "A14",
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-14",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Focus picker reads 'Matrix & Series(wide range)': the space before the hint is lost",
+      "route": "ready-returning, results-saved",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/focus-picker-wide-range.png",
+        "web/test-results/ux-review/copy/tour/ready-returning/1280-light.aria.yml"
+      ],
+      "observed": "web/src/reveal/FocusPicker.svelte:52 `{o.title}{#if o.suggested} <span class=\"suggested\">({FOCUS_SUGGESTED})</span>{/if}`: Svelte drops the leading space inside the if block, so the label and the checkbox's accessible name are \"Matrix & Series(wide range)\", \"Spatial(wide range)\", \"Quantitative Reasoning(wide range)\".",
+      "expected": "\"Matrix & Series (wide range)\".",
+      "suggestion": "`{o.title}{#if o.suggested}{' '}<span class=\"suggested\">({FOCUS_SUGGESTED})</span>{/if}`. Literal matches: none.",
+      "files": [
+        "web/src/reveal/FocusPicker.svelte"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-15",
+      "severity": "minor",
+      "category": "language-a13",
+      "title": "A few lines describe the person rather than the measure (A13 framing)",
+      "route": "welcome, results (two sessions), index.html meta",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/welcome/1280-light.png",
+        "web/test-results/ux-review/copy/results-two/001-results-two-sessions-open.txt",
+        "web/test-results/ux-review/copy/results-two/001-results-two-sessions-open.png"
+      ],
+      "observed": "web/src/reveal/copy.ts:26 PRACTICE_ADJUSTED_LATER \"… so the estimates describe you and not how many times you have tried.\"; web/src/session/copy.ts:13 WELCOME_TAGLINE \"A jagged profile of how you think: short tasks, one honest picture.\"; web/index.html:7 meta description \"HumanBench: a jagged-blob cognitive profile.\"; web/src/session/copy.ts:15 WELCOME_INTRO \"You can skip any part you cannot do\" (frames skipping as inability). R-5.6 and the copy module's own rule: say what a number is, never what it means about the person.",
+      "expected": "The copy talks about skills and estimates, not about who the person is or what they cannot do.",
+      "suggestion": "reveal/copy.ts:26 → \"This profile is practice-adjusted: each later session is credited for the practice you gained from the earlier ones, so the estimates reflect your skills rather than how many times you have tried.\"; session/copy.ts:13 → \"A jagged profile of your skills: short tasks, one honest picture.\" (owner: tagline); index.html:7 → \"HumanBench: a jagged profile of your skills, for curiosity and self-reflection.\"; session/copy.ts:15 \"You can skip any part you cannot do, and finish early at any time.\" → \"You can skip any part you would rather not do, and finish early at any time.\" Literal matches: none (src/brief/copy.test.ts:81 'never describe you' is the notes copy, unaffected).",
+      "files": [
+        "web/src/reveal/copy.ts",
+        "web/src/session/copy.ts",
+        "web/index.html"
+      ],
+      "spec_refs": [
+        "A13",
+        "R-5.6.1",
+        "R-5.6.4"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "COPY-16",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Nothing measured: the screen still says 'Session complete' and 'Save your results … your copy of the results'",
+      "route": "finished-nothing",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/finished-nothing-save-results/001-finished-nothing-save-results.png",
+        "web/test-results/ux-review/copy/evidence/finished-nothing-save-results/002-finished-nothing-save-results.txt"
+      ],
+      "observed": "web/src/session/Finished.svelte:84-90 with results === null shows the heading \"Session complete\" (web/src/session/copy.ts:181), \"You finished early, so some parts are not measured.\", \"You answered 0 questions and completed 0 timed tasks in about 1 min.\", FINISHED_EMPTY, then the save panel \"Save your results\" (web/src/reveal/copy.ts:44) with \"It holds your answers, so it is your copy of the results.\" (:46). There are no results.",
+      "expected": "An empty state that says plainly nothing was measured and what the save file is still for.",
+      "suggestion": "New constants for the empty state, used only when results === null: FINISHED_EMPTY_HEADING = 'Session ended'; SAVE_PANEL_HEADING_EMPTY = 'Save your file'; SAVE_PANEL_EMPTY = \"Download your save file if you want to keep this session. It holds your answers, so you can add later sessions to it. This browser keeps a temporary copy too, but clearing its data removes it.\"; and drop the FINISHED_REASON line there (FINISHED_EMPTY already says it). Literal matches: e2e/routes.ts:594 (finished-nothing expects h1 'Session complete'); the other 'Session complete' checks (e2e/session-driver.ts:28,145,169,408; e2e/flow.ts:70; e2e/reveal.spec.ts:334,400) are results with data and stay.",
+      "files": [
+        "web/src/session/Finished.svelte",
+        "web/src/session/copy.ts",
+        "web/src/reveal/SavePanel.svelte",
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-17",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Practice 'Back' is ambiguous (previous question, or leave practice?)",
+      "route": "practice, practice-feedback",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/practice-back/001-practice-back.png",
+        "web/test-results/ux-review/copy/journey/005-practice-complete.png"
+      ],
+      "observed": "web/src/session/copy.ts:93 PRACTICE_BACK 'Back' is the secondary button on every practice question (web/src/session/PracticeScreen.svelte:85, ends practice) and the only, primary button on \"Practice complete\" (:46). On a question it reads as 'previous question'.",
+      "expected": "Buttons that say where they go.",
+      "suggestion": "Question screens: new PRACTICE_STOP = 'Stop practice' (PracticeScreen.svelte:85). Practice complete: PRACTICE_BACK → 'Back to the start screen' (the Ready screen is already called 'the start screen' in SPACING_TEXT, reveal/copy.ts:140). Literal matches: e2e/session.spec.ts:314,317; src/session/SessionApp.dom.test.ts:191,193; src/session/SessionApp.coverage.dom.test.ts:160,161,186,187; src/session/SessionApp.served.dom.test.ts:152; ux-review/lib/journey.ts:97. (e2e/session.spec.ts:246 is the privacy page's Back link, unaffected.)",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/session/PracticeScreen.svelte"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-18",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Checklist labels every later group 'Up next'",
+      "route": "interstitial and every session screen",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/checklist-up-next-metacognition/001-checklist-up-next-metacognition.png",
+        "web/test-results/ux-review/copy/evidence/checklist-up-next-metacognition/002-checklist-up-next-metacognition.txt"
+      ],
+      "observed": "web/src/session/copy.ts:160 CHECKLIST_STATUS.upcoming 'Up next' is shown on all four later groups at once, next to an h1 that says \"Up next: Reaction time\".",
+      "expected": "Only one thing is up next; the others are later.",
+      "suggestion": "CHECKLIST_STATUS.upcoming 'Up next' → 'Later'. Literal matches: src/session/components.dom.test.ts:91 (['upcoming', 'Up next']); e2e/session.spec.ts:360 (first list item toContainText('Up next')). e2e/session-driver.ts:33 tests /^Up next:/ on the h1 and is unaffected.",
+      "files": [
+        "web/src/session/copy.ts"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-19",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Jargon in skill names and the tier legend ('Metacognition', 'consensus-keyed', 'provisional norms')",
+      "route": "every session screen (checklist), results, results-saved (share card list)",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/checklist-up-next-metacognition/001-checklist-up-next-metacognition.png",
+        "web/test-results/ux-review/copy/evidence/results-table-sd-interval/001-results-table-sd-interval.png",
+        "web/test-results/ux-review/copy/tour/results-open/1280-light.txt"
+      ],
+      "observed": "web/src/engine/axes.ts:119 'Calibration/Metacognition' is on the checklist of every session screen, the results table and the share-card list (chart: 'Calibration'); web/src/viz/copy.ts:43-45 TIER_TEXT \"answers checked against a verified key\", \"timed, recall or estimate measures with provisional norms\", \"consensus-keyed items, less certain\", repeated under each skill in the table; :51 HATCH_CAPTION \"(consensus-keyed items)\"; web/src/engine/axes.ts:110 'Analytical/Logic Games' (chart 'Logic Games').",
+      "expected": "Plain skill names and a legend a lay reader understands.",
+      "suggestion": "(Owner: DESIGN §3 names.) Display name of CAL → 'Confidence Calibration' (chart 'Confidence'); LG → 'Logic Games'. viz/copy.ts:43 → 'answers checked against a verified answer key'; :44 → 'timed, memory or estimation tasks, compared with provisional typical values'; :45 → 'answers scored by how most people respond, less certain'; :51 → 'Hatched wedges mark measured ◇ skills (scored by how most people respond).' Literal matches: src/engine/axes.test.ts:76 ('CAL | Calibration/Metacognition | …'); src/viz/ProfileView.dom.test.ts:145 (contains 'provisional norms').",
+      "files": [
+        "web/src/engine/axes.ts",
+        "web/src/viz/profile.ts",
+        "web/src/viz/copy.ts"
+      ],
+      "spec_refs": [
+        "§3",
+        "§9.7",
+        "A15"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "COPY-20",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Reading task: 'Choose Done' names a button labelled 'Done reading'; '3 of 3 not answered yet.'",
+      "route": "reading-passage, reading-questions",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/reading-not-answered/001-reading-not-answered.png",
+        "web/test-results/ux-review/copy/evidence/reading-not-answered/002-reading-not-answered.txt",
+        "web/test-results/ux-review/copy/tour/reading-passage/1280-light.png"
+      ],
+      "observed": "web/src/render/reading/ReadingRenderer.svelte:70-72 \"… Choose Done when you reach the end …\" but the button (:81) is \"Done reading\"; :95 `{unanswered} of {spec.questions.length} not answered yet.` reads \"3 of 3 not answered yet.\"",
+      "expected": "Instructions quote the real button label; the count reads naturally.",
+      "suggestion": "\"Choose Done reading when you reach the end.\"; status → `${unanswered} ${unanswered === 1 ? 'question' : 'questions'} not answered yet.` (\"3 questions not answered yet.\"). Literal matches: src/render/reading/reading.dom.test.ts:59 ('1 of 3 not answered yet.'); src/render/reading/__snapshots__/reading.dom.test.ts.snap:3.",
+      "files": [
+        "web/src/render/reading/ReadingRenderer.svelte"
+      ],
+      "spec_refs": [
+        "§10",
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-21",
+      "severity": "minor",
+      "category": "copy",
+      "title": "The Quantitative interstitial adds a 'no paper' rule that the honour code does not state",
+      "route": "interstitial (Quantitative Reasoning)",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/journey/021-quantitative-reasoning-interstitial.png",
+        "web/test-results/ux-review/copy/journey/021-quantitative-reasoning-interstitial.txt",
+        "web/test-results/ux-review/copy/tour/honour/1280-light.png"
+      ],
+      "observed": "web/src/session/segments.ts:31 \"Solve short number problems and type your answer. Keep paper and a calculator out of reach.\" The honour code (web/src/session/copy.ts:39, §13 word for word) forbids calculators \"except where provided\" but says nothing about paper, so a new rule appears mid-session.",
+      "expected": "Rules stated once, up front, and the same everywhere.",
+      "suggestion": "Owner decides whether scratch paper is allowed. If it is: segments.ts:31 → \"Solve short number problems and type your answer. Paper is fine; keep calculators out of reach.\" If it is not: keep the interstitial and add a line under the pinned honour text on the honour screen, e.g. \"Work out the number problems in your head, without paper.\" Literal matches: none.",
+      "files": [
+        "web/src/session/segments.ts",
+        "web/src/session/Honour.svelte"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "COPY-22",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Worked-examples intro overstates what is left out ('these question types are left out of your later sessions')",
+      "route": "results-saved",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/worked-intro/001-worked-intro.png",
+        "web/test-results/ux-review/copy/evidence/worked-intro/002-worked-intro.txt"
+      ],
+      "observed": "web/src/reveal/copy.ts:108 \"New questions of the kinds you met, each with a worked solution. They are not counted, and these question types are left out of your later sessions.\" Only the examples' own families (one stem variant each, plus near-isomorph siblings; web/src/reveal/worked/index.ts header) are left out; matrix, sequence and quantitative questions still come in later sessions.",
+      "expected": "A statement a person reads correctly: these particular kinds of question, not whole parts.",
+      "suggestion": "\"New questions like the ones you met, each with a worked solution. They are not counted, and questions built the same way as these are left out of your later sessions.\" Literal matches: none.",
+      "files": [
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "§7.7",
+        "§10"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-23",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Copy-to-clipboard success and failure messages use four different patterns",
+      "route": "results, notes, results-open (talking with an AI), rt-selftest-results",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/results-saved/1280-light.png",
+        "web/test-results/ux-review/copy/tour/notes/1280-light.png"
+      ],
+      "observed": "web/src/session/copy.ts:192-193 \"Save code copied.\" / \"The code could not be copied automatically. Select it below and copy it yourself.\"; web/src/brief/copy.ts:66-67 \"Copied to the clipboard.\" / \"Copying was blocked. The notes are selected above; copy them yourself.\"; web/src/brief/results-talk.ts:33-34 \"Copied to the clipboard.\" / \"Copying was blocked. The text is selected above; copy it yourself.\"; web/src/selftest/RtSelfTest.svelte:224,227 \"Copied to the clipboard.\" / \"Copying was blocked: the text is selected, so copy it with the keyboard.\"",
+      "expected": "One pattern: what was copied; on failure, what happened, where the selected text is, what to do.",
+      "suggestion": "session/copy.ts:193 FINISHED_COPY_FAILED → \"Copying was blocked. The save code is selected below: copy it yourself.\"; RtSelfTest.svelte:224 → \"Report copied.\" and :227 → \"Copying was blocked. The report is selected: copy it yourself.\" The notes and results-talk wording already follow the pattern (results-talk.ts:33-34 are not the gated preamble). Literal matches: src/backend/panels.dom.test.ts:94; src/reveal/Reveal.dom.test.ts:308; src/session/components.dom.test.ts:351 (all 'could not be copied automatically').",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/selftest/RtSelfTest.svelte"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-24",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Peaks note points at colour (\"filled blue marks\")",
+      "route": "results-open, results-saved",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/peaks-colour-note/001-peaks-colour-note.png",
+        "web/test-results/ux-review/copy/evidence/peaks-colour-note/002-peaks-colour-note.txt"
+      ],
+      "observed": "web/src/reveal/copy.ts:37 PEAKS_NOTE \"… so they can differ from the hollow grey and filled blue marks in the chart, which compare with 0 SD.\" The instruction depends on colour (WCAG 1.3.3 / 1.4.1), and in the bar view the marks are dots and bars.",
+      "expected": "Refer to shape, not colour.",
+      "suggestion": "\"Peaks compare each skill with the rest of your own profile, so they can differ from the hollow and filled markers in the chart, which compare each skill with 0 SD.\" Literal matches: none.",
+      "files": [
+        "web/src/reveal/copy.ts"
+      ],
+      "spec_refs": [
+        "§13",
+        "WCAG 1.3.3"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-25",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Worked solution prints '1x' ('subtract 1x from both sides')",
+      "route": "results-open",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/results-open/1280-light.png",
+        "web/test-results/ux-review/copy/tour/results-open/1280-light.txt"
+      ],
+      "observed": "web/src/reveal/worked/quant.ts:278 `subtract ${c}x from both sides` gives \"Solve for x: 3x + 23 = x + 27 … subtract 1x from both sides, which gives 2x + 23 = 27.\"",
+      "expected": "\"subtract x from both sides\".",
+      "suggestion": "Format the coefficient: c === 1 → 'x', c === -1 → '−x', else `${c}x` (or reuse lin([[c, 'x']])). Literal matches: none.",
+      "files": [
+        "web/src/reveal/worked/quant.ts"
+      ],
+      "spec_refs": [
+        "§10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-26",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Notes page: the paid-plan sentence is ungrammatical and hedged twice; checker says \"(line 14, 15)\"",
+      "route": "notes, notes-checker",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/evidence/notes-paid-plans/001-notes-paid-plans.png",
+        "web/test-results/ux-review/copy/evidence/notes-checker-line-list/001-notes-checker-line-list.png",
+        "web/test-results/ux-review/copy/evidence/notes-checker-line-list/002-notes-checker-line-list.txt"
+      ],
+      "observed": "web/src/brief/surfaces.json:20 limit_note \"Free plans have allowed about 1,500 characters per box. Paid plans were reported raised to 5,000 in July 2026 (secondary source, not verified). Trust the counter in your own box.\" web/src/brief/ui/Checker.svelte:76 `(line {flag.lines.join(', ')})` → \"(line 14, 15)\".",
+      "expected": "Plain, grammatical sentences.",
+      "suggestion": "surfaces.json:20 → \"Free plans allow about 1,500 characters per box. Paid plans may allow 5,000 (reported in July 2026, not verified). Trust the counter in your own box.\" Checker.svelte:76 → `({flag.lines.length === 1 ? 'line' : 'lines'} {list})` with the list joined by ', ' and a final ' and ' (\"(lines 14 and 15)\"). Literal matches: none found in tests for either.",
+      "files": [
+        "web/src/brief/surfaces.json",
+        "web/src/brief/ui/Checker.svelte"
+      ],
+      "spec_refs": [
+        "R-17.10"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-27",
+      "severity": "polish",
+      "category": "copy",
+      "title": "House style: one American spelling, mixed apostrophes, key-name case, form-name case, ISO dates in prose, noscript punctuation",
+      "route": "notes, privacy, rt-intro, rt-selftest-keys, notes-returning, no-JS fallbacks",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/notes/1280-light.png",
+        "web/test-results/ux-review/copy/tour/privacy/1280-light.png",
+        "web/test-results/ux-review/copy/tour/rt-selftest-keys/1280-light.png",
+        "web/test-results/ux-review/copy/tour/notes-returning/1280-light.png",
+        "web/test-results/ux-review/copy/tour/notes-kept/1280-light.txt"
+      ],
+      "observed": "1) web/src/brief/topics.ts:41 'Math and numbers' (British: Maths). 2) web/src/session/copy.ts:237-238 \"browser’s\" with a curly apostrophe; every other string, including the pinned ones, uses the straight '. 3) \"press the Space bar\" (web/src/render/rt/RtRenderer.svelte:227) vs \"Press the space bar\" (web/src/selftest/RtSelfTest.svelte:277); the app capitalises other key names (Enter, Escape). 4) web/src/brief/ui/Preview.svelte:33 FORM_NAME skill: 'Skill' gives \"(Skill form)\" next to \"(short form)\". 5) web/src/brief/returning.ts:76,81,84 \"notes you made in 2025-01\" (ISO month in a sentence). 6) No-JS text: web/index.html:12 \"HumanBench needs JavaScript. Please turn it on to continue.\" vs web/notes.html:12 and web/rt-selftest.html:13 \"…needs JavaScript; please turn it on to continue.\"",
+      "expected": "British spelling, one apostrophe style, consistent key and form names, readable dates, one sentence pattern.",
+      "suggestion": "1) 'Math and numbers' → 'Maths and numbers' (a heading, not a gated line text). 2) session/copy.ts:237-238 \"browser’s\" → \"browser's\". 3) RtSelfTest.svelte:277 'Press the space bar' → 'Press the Space bar'. 4) Preview.svelte:33 skill: 'Skill' → 'skill'. 5) returning.ts: format the month as en-GB long form (\"January 2025\"). 6) All three noscript lines → \"<Page> needs JavaScript. Turn it on to continue.\" (index.html keeps \"HumanBench needs JavaScript\", which src/copy.test.ts:62 checks). Literal matches: e2e/rt-selftest.spec.ts:79 (/^Press the space bar/); src/copy.test.ts:62 (contains 'HumanBench needs JavaScript', still true).",
+      "files": [
+        "web/src/brief/topics.ts",
+        "web/src/session/copy.ts",
+        "web/src/selftest/RtSelfTest.svelte",
+        "web/src/brief/ui/Preview.svelte",
+        "web/src/brief/returning.ts",
+        "web/index.html",
+        "web/notes.html",
+        "web/rt-selftest.html"
+      ],
+      "spec_refs": [
+        "§13"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-28",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Device check says 'screen speed' where its own label says 'Screen refresh rate'",
+      "route": "device",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/device/1280-light.png",
+        "web/test-results/ux-review/copy/tour/device/1280-light.txt"
+      ],
+      "observed": "web/src/session/device.ts:148 \"The screen speed could not be measured. You can still continue.\" vs DEVICE_FACTS.refresh 'Screen refresh rate' (web/src/session/copy.ts:60) on the same screen.",
+      "expected": "The note uses the label it refers to.",
+      "suggestion": "device.ts:148 → \"The screen refresh rate could not be measured. You can still continue.\" Literal matches: none.",
+      "files": [
+        "web/src/session/device.ts"
+      ],
+      "spec_refs": [
+        "§11.6"
+      ],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-29",
+      "severity": "polish",
+      "category": "copy",
+      "title": "RT self-test page shows developer notes and the abbreviation RT",
+      "route": "rt-selftest, rt-selftest-results",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/rt-selftest/1280-light.png",
+        "web/test-results/ux-review/copy/tour/rt-selftest-results/1280-light.png",
+        "web/test-results/ux-review/copy/tour/rt-selftest-results/1280-light.txt"
+      ],
+      "observed": "web/src/selftest/RtSelfTest.svelte:372 \"Informational: RT responses use the input event timestamp, so this dispatch delay is excluded from RT.\"; :378 \"event.timeStamp is not on the performance.now() timeline; RT falls back to performance.now() in the handler\"; heading :251 and web/rt-selftest.html:9,13 \"RT timing self-test\".",
+      "expected": "Plain words on a page a curious person can open (it is noindex, but linked for checking a device).",
+      "suggestion": ":372 → \"For information only: reaction times use the time stamp of the key press or tap itself, so this delay is not part of them.\"; :378 → \"This browser's event time stamps use a different clock, so reaction times are timed when the page handles the press, which is less precise.\" Optional: heading and <title> \"Reaction-time timing check\". Literal matches if the heading changes: e2e/rt-selftest.spec.ts:64,65; e2e/routes.ts:826.",
+      "files": [
+        "web/src/selftest/RtSelfTest.svelte",
+        "web/rt-selftest.html"
+      ],
+      "spec_refs": [
+        "§11.6",
+        "M1.23"
+      ],
+      "confidence": "medium",
+      "owner_decision": false
+    },
+    {
+      "id": "COPY-30",
+      "severity": "polish",
+      "category": "copy",
+      "title": "Register: the session app avoids contractions, but pinned texts and the notes page use them on the same screens",
+      "route": "honour, results-saved, notes",
+      "env": "Chromium desktop 1280 px, light (vite preview of the shared _dist, ?fast=1 for the session routes)",
+      "screenshots": [
+        "web/test-results/ux-review/copy/tour/honour/1280-light.png",
+        "web/test-results/ux-review/copy/tour/results-saved/1280-light.png",
+        "web/test-results/ux-review/copy/tour/notes/1280-light.png"
+      ],
+      "observed": "Session copy writes \"cannot\", \"do not\" throughout (web/src/session/copy.ts), while the pinned texts beside it use contractions: HONOUR_TEXT \"it's\" (:39), RESOURCE_LINE \"you're … can't\" (web/src/copy.ts:18), ANTI_COERCION \"aren't\" on the save panel (web/src/brief/save-copy.ts:10). The notes page (proposal §6 drafts, pinned by web/src/brief/copy.test.ts) uses contractions throughout.",
+      "expected": "One register, or a deliberate split documented in the house style.",
+      "suggestion": "Owner decision. Recommendation: keep the pinned texts as they are and accept the split (session screens formal, notes conversational); write it down in the house style so new copy follows it. No code change proposed now.",
+      "files": [
+        "web/src/session/copy.ts",
+        "web/src/copy.ts",
+        "web/src/brief/save-copy.ts",
+        "web/src/brief/copy.ts"
+      ],
+      "spec_refs": [
+        "§13",
+        "R-5.6.5",
+        "R-17.10"
+      ],
+      "confidence": "low",
+      "owner_decision": true
+    }
+  ]
+}

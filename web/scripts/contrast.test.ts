@@ -134,11 +134,9 @@ const SHEETS: readonly Sheet[] = [
     selector: '.choice',
     on: [APP],
     pairs: [
-      pair('--hb-focus', '--hb-surface', UI, 'the focus ring round an option'),
       pair('--hb-card-border', '--hb-surface', UI, 'the edge of an option card, the target of a radio (1.4.11)'),
       pair('--hb-chosen', '--hb-surface', UI, 'the chosen option'),
-      pair('--hb-surface', '--hb-chosen', TEXT, 'the letter on the chosen option and the label of Confirm'),
-      pair('--text', '--hb-surface', TEXT, 'the label of Confirm when it cannot be pressed yet'),
+      pair('--hb-surface', '--hb-chosen', TEXT, 'the letter on the chosen option'),
     ],
     decorative: {},
   },
@@ -209,7 +207,8 @@ describe('colour tokens: contrast of every text and control colour, light and da
 })
 
 describe('no colour token is declared where the sheets above do not read it', () => {
-  const DARK = '@media (prefers-color-scheme: dark)'
+  /** The dark scheme, on any medium or on screens only (paper stays light: UX-015, UX-027, UX-053). */
+  const DARK = new Set(['@media (prefers-color-scheme: dark)', '@media screen and (prefers-color-scheme: dark)'])
   const tokens = allColourTokens()
 
   it('sees the tokens of the app (a scan that finds none is broken)', () => {
@@ -219,7 +218,7 @@ describe('no colour token is declared where the sheets above do not read it', ()
 
   it('every colour token of src/ sits in a rule that a sheet above stands for, at the top level or under prefers-color-scheme: dark', () => {
     const known = new Set(SHEETS.map((s) => `${s.file} ${s.selector}`))
-    const stray = tokens.filter((t) => !known.has(`${t.file} ${t.selector}`) || (t.media !== '' && t.media !== DARK))
+    const stray = tokens.filter((t) => !known.has(`${t.file} ${t.selector}`) || (t.media !== '' && !DARK.has(t.media)))
     expect(
       stray.map((t) => `${t.file}: ${t.media === '' ? '' : `${t.media} `}${t.selector} { ${t.name}: ${t.value} }`),
       'colour tokens no contrast pair reads: add the rule to SHEETS with its pairs (or the token to `decorative` with the reason)',

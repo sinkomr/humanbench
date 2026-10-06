@@ -450,8 +450,9 @@ export const ROUTES: readonly Route[] = [
   {
     id: 'item-spatial-no-webgl',
     group: 'session',
-    state: 'a spatial item in a browser without WebGL: the notice, the text alternatives and the skip offer',
-    covers: ['render/rotation/RotationRenderer.svelte'],
+    state: 'a spatial item in a browser without WebGL: the panel that says so once, with the skip offer',
+    // The renderer stays mounted but is parked out of sight on purpose (UX-017a): the claim is the screen whose panel speaks.
+    covers: ['session/SessionScreen.svelte'],
     prepare: async (page) => {
       await page.addInitScript(NO_WEBGL)
     },
@@ -585,13 +586,13 @@ export const ROUTES: readonly Route[] = [
   {
     id: 'finished-nothing',
     group: 'session',
-    state: 'session complete with nothing measured',
+    state: 'session ended with nothing measured',
     covers: ['session/Finished.svelte'],
     open: async (page) => {
       await toInterstitial(page, 0)
       await button(page, 'Finish early').click()
       await button(page, 'Finish now').click()
-      await expect(h1(page)).toHaveText('Session complete')
+      await expect(h1(page)).toHaveText('Session ended')
     },
   },
 
@@ -646,6 +647,20 @@ export const ROUTES: readonly Route[] = [
       await page.evaluate(() => {
         for (const d of document.querySelectorAll('details')) d.setAttribute('open', '')
       })
+    },
+  },
+  {
+    id: 'results-view',
+    group: 'results',
+    state: 'results of a loaded save, opened from the ready screen with no new session ("See my results", UX-010)',
+    covers: ['session/Finished.svelte', 'session/Ready.svelte'],
+    open: async (page) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await toReady(page)
+      await loadSave(page, simulatedSave(1).save)
+      await button(page, 'See my results').click()
+      await expect(h1(page)).toHaveText('Your results')
+      await expect(button(page, 'Download save file')).toBeVisible()
     },
   },
   {
@@ -811,7 +826,7 @@ export const ROUTES: readonly Route[] = [
       }, NOTES_KEY)
       await page.reload()
       await expect(page.getByTestId('returning')).toBeVisible()
-      await expect(page.getByTestId('returning-message').first()).toContainText('2025-01')
+      await expect(page.getByTestId('returning-message').first()).toContainText('January 2025')
     },
   },
 

@@ -92,9 +92,17 @@
   min-width: 0;
 }
 
+/* The legend sits inside the frame, on its own lines: one of two or three lines would be cut through by the border (UX-015). */
 .hb-screen legend {
-  padding: 0 0.25rem;
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 0.5rem;
   font-weight: 600;
+}
+
+.hb-screen legend + * {
+  clear: both;
 }
 
 .hb-screen .radio {
@@ -141,6 +149,24 @@
 
 .hb-screen .muted {
   color: var(--r-muted);
+}
+
+/* A button that waits for something (the device check): still in the tab order, so not `disabled`, but it looks the part. */
+.hb-screen .hb-btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* The native "Choose file" button, drawn like the page's own buttons. */
+.hb-screen input[type='file']::file-selector-button {
+  font: inherit;
+  margin-right: 0.75rem;
+  padding: 0.375rem 0.75rem;
+  border: 2px solid var(--r-border);
+  border-radius: 0.375rem;
+  background: var(--r-surface);
+  color: var(--r-fg);
+  cursor: pointer;
 }
 
 @media (max-width: 30rem) {

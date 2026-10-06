@@ -15,6 +15,8 @@ export const WELCOME_INTRO =
   'The session takes about 30 minutes and has six short parts. You can skip any part you cannot do, and finish early at any time. Nothing is scored as pass or fail.'
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
+/** After a link that opens a new tab, shown as the notes page and the results show it (UX-011). */
+export const NEW_TAB = ' (opens in a new tab)'
 
 // ------------------------------------------------------------------------------- gate
 
@@ -45,7 +47,7 @@ export const HONOUR_UNCHECKED = 'Tick the box to agree to the honour code.'
 
 export const DEVICE_HEADING = 'Check your device'
 export const DEVICE_INTRO =
-  'We look at your screen and how you will respond, so that response times can be compared fairly. This takes a few seconds. Sit somewhere quiet and keep this window in front.'
+  'We look at your screen and how you will respond, so that response times can be compared fairly. This takes a few seconds. Sit somewhere quiet and keep this browser window open and in front of other windows.'
 export const DEVICE_MEASURING = 'Checking your screen…'
 export const DEVICE_INPUT_LEGEND = 'How will you respond in the reaction tasks?'
 export const DEVICE_INPUT_KEYBOARD = 'Keyboard'
@@ -76,6 +78,16 @@ export const READY_LOAD_HELP = 'Choose a save file, or paste a save code. This a
 export const READY_LOAD_FILE = 'Save file'
 export const READY_LOAD_CODE = 'Or paste a save code'
 export const READY_LOAD_BUTTON = 'Load'
+/** Ready, with earlier sessions loaded: see the profile without starting a new session (UX-010). */
+export const READY_SHOW_RESULTS = 'See my results'
+/** Under the choice of earlier saves: when the newest one was written and what it holds (UX-012a). */
+export const savedAtLine = (when: string, questions: number): string =>
+  questions === 0 ? `Last saved ${when}.` : `Last saved ${when}, ${questions} ${questions === 1 ? 'question' : 'questions'} answered.`
+/** Beside Begin once earlier sessions are loaded. */
+export const addedToLine = (n: number): string => `Your new session will be added to ${n} earlier ${n === 1 ? 'session' : 'sessions'}.`
+/** Begin pressed with a file chosen or a code pasted that is not loaded (UX-012a). */
+export const READY_NOT_LOADED =
+  'You chose a save file or pasted a code, but it is not loaded yet. Press Load to add your new session to it, or clear it to begin without it.'
 /** Shown after a loaded file's notes settings differ from the ones saved on this device (ROADMAP owner decisions 2026-10-01). */
 export const READY_LOAD_PREFS_NOTICE = 'The notes settings in this file will be used in place of the different ones saved on this device.'
 
@@ -86,11 +98,20 @@ export const PRACTICE_INTRO = 'These questions are for practice. They are not co
 export const PRACTICE_CORRECT = 'That was correct.'
 export const PRACTICE_INCORRECT = 'That was not correct.'
 export const PRACTICE_ANSWER = 'The answer was'
+/**
+ * What a screen reader is told when the feedback appears (a hidden status line; the visible feedback is the
+ * two sentences above, which take focus). Worded differently on purpose, so a page search for the visible
+ * sentences finds one element.
+ */
+export const practiceVerdict = (correct: boolean, answer: string): string => `Your answer was ${correct ? 'correct' : 'not correct'}. The right answer is ${answer}.`
 export const PRACTICE_NEXT = 'Next practice question'
 export const PRACTICE_DONE = 'Finish practice'
 export const PRACTICE_DONE_HEADING = 'Practice complete'
 export const PRACTICE_DONE_TEXT = 'The real session is the same, except that it does not tell you whether an answer was right.'
-export const PRACTICE_BACK = 'Back'
+/** On a practice question: leave practice at once (the ready screen). */
+export const PRACTICE_STOP = 'Stop practice'
+/** On "Practice complete": on to the ready screen. */
+export const PRACTICE_DONE_CONTINUE = 'Continue'
 export const PRACTICE_UNAVAILABLE = 'This practice question cannot be shown in your browser.'
 export const PRACTICE_SKIP_ONE = 'Skip this practice question'
 
@@ -101,8 +122,8 @@ export const INTERSTITIAL_SKIP = 'Skip this part'
 
 /** "Up next: Spatial." */
 export const upNext = (title: string): string => `Up next: ${title}`
-/** "About 6 min." */
-export const aboutMinutes = (n: number): string => `About ${n} min.`
+/** "About 6 minutes." */
+export const aboutMinutes = (n: number): string => `About ${n} ${n === 1 ? 'minute' : 'minutes'}.`
 
 // -------------------------------------------------------------------------- confidence
 
@@ -112,13 +133,20 @@ export const CONFIDENCE_CONTINUE = 'Continue'
 export const confidenceHint = (floorPct: number, optionsCount: number | null): string =>
   optionsCount === null
     ? '0% means you have no idea. 100% means you are certain.'
-    : `${floorPct}% is what pure guessing would give among ${optionsCount} options. 100% means you are certain.`
+    : `With ${optionsCount} options, guessing would be right about ${floorPct}% of the time. 100% means you are certain.`
 export const confidenceValue = (pct: number): string => `${pct}% sure`
 
 // ---------------------------------------------------------------------------- controls
 
-export const FINISH_EARLY = 'Finish early'
-export const skipButton = (name: string): string => `Skip ${name}`
+/**
+ * The header buttons keep their full names ("Finish early", "Skip Spatial") and, on a narrow screen, show
+ * only the first word: the rest is visually hidden but still in the name (WCAG 2.5.3, UX-003).
+ */
+export const FINISH_EARLY_HEAD = 'Finish'
+export const FINISH_EARLY_TAIL = ' early'
+export const FINISH_EARLY = FINISH_EARLY_HEAD + FINISH_EARLY_TAIL
+export const SKIP_HEAD = 'Skip'
+export const skipButton = (name: string): string => `${SKIP_HEAD} ${name}`
 export const SKIP_CONFIRM_HEADING = (name: string): string => `Skip ${name}?`
 export const SKIP_CONFIRM_TEXT = 'It will show as not measured on your profile. Answers you already gave for it stay in your save.'
 export const SKIP_CONFIRM_YES = (name: string): string => `Skip ${name}`
@@ -154,22 +182,25 @@ export const CHECKLIST_LATER_LABEL = 'Not in this version'
 export const CHECKLIST_FOCUS_LATER_LABEL = 'Not in this session'
 /** The Estimation cluster has no part of its own: it is measured by the confidence slider after each answer (A15). */
 export const CHECKLIST_EMBEDDED_STATUS = 'With each answer'
-export const CHECKLIST_STATUS: Readonly<Record<'done' | 'current' | 'upcoming' | 'partial' | 'skipped' | 'not_reached', string>> = Object.freeze({
+export const CHECKLIST_STATUS: Readonly<Record<'done' | 'current' | 'upcoming' | 'later' | 'partial' | 'skipped' | 'not_reached', string>> = Object.freeze({
   done: 'Done',
   current: 'Now',
   upcoming: 'Up next',
+  later: 'Later',
   partial: 'Partly done',
   skipped: 'Skipped',
   not_reached: 'Not reached',
 })
-/** "12 of about 28 min" */
+/** "12 of about 30 min" */
 export const progressText = (elapsedMin: number, targetMin: number): string => `${elapsedMin} of about ${targetMin} min`
 export const OVER_TARGET = 'Almost there'
+/** Over the target time with parts still to do (UX-008): "Almost there" is for the last part only. */
+export const OVER_PLANNED = 'Over the planned time'
 
 // ------------------------------------------------------------------------------- break
 
 export const BREAK_OFFER_HEADING = 'Time for a break?'
-export const BREAK_OFFER_TEXT = 'You have been working for about 30 minutes. A short break can help you stay sharp. The clock pauses while you rest.'
+export const BREAK_OFFER_TEXT = 'You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.'
 export const BREAK_TAKE = 'Take a break'
 export const BREAK_DECLINE = 'Keep going'
 export const BREAK_HEADING = 'Break'
@@ -184,7 +215,22 @@ export const FINISHED_REASON: Readonly<Record<'complete' | 'finish_early' | 'har
   finish_early: 'You finished early, so some parts are not measured.',
   hard_stop: 'The session reached its time limit, so it stopped here.',
 })
+/** The heading when nothing was measured: the session ended, but nothing is "complete" (UX-009b). */
+export const FINISHED_EMPTY_HEADING = 'Session ended'
 export const FINISHED_EMPTY = 'Nothing was measured in this session, so there is no profile to show.'
+/** The summary of the save a closed disclosure holds when nothing was measured (UX-009a). */
+export const FINISHED_EMPTY_SAVE = 'Keep a file of this visit anyway'
+/** The heading of the results opened from the ready screen without a new session (UX-010). */
+export const FINISHED_VIEW_HEADING = 'Your results'
+export const viewLine = (k: number): string => `Your profile from ${k} earlier ${k === 1 ? 'session' : 'sessions'}.`
+/** Reached the end, with parts skipped on the way (UX-009a). */
+export const reachedEndLine = (names: readonly string[]): string => {
+  const list = names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  return `You reached the end of the session. You skipped ${names.length} ${names.length === 1 ? 'part' : 'parts'}: ${list}.`
+}
+export const FINISHED_ALL_SKIPPED = 'You skipped every part, so nothing was measured this time.'
+export const combinesLine = (k: number): string => `This profile combines ${k} sessions.`
+export const noNewAnswersLine = (k: number): string => `This visit added no new answers. Your profile below comes from ${k} earlier ${k === 1 ? 'session' : 'sessions'}.`
 export const FINISHED_SAVE_HEADING = 'Your save file'
 export const FINISHED_SAVE_TEXT = 'Download your save file and keep it. It holds your answers, so you can add later sessions to it. It is stored only on your device.'
 export const FINISHED_DOWNLOAD = 'Download save file'
@@ -195,7 +241,7 @@ export const FINISHED_DOWNLOADED = 'Save file downloaded.'
 export const FINISHED_AUTOSAVE_UNAVAILABLE = 'This browser did not allow saving as you went, so download your save file now.'
 export const FINISHED_AGAIN = 'Back to the start'
 export const summaryLine = (items: number, blocks: number, minutes: number): string =>
-  `You answered ${items} ${items === 1 ? 'question' : 'questions'} and completed ${blocks} timed ${blocks === 1 ? 'task' : 'tasks'} in about ${minutes} min.`
+  `You answered ${items} ${items === 1 ? 'question' : 'questions'} and completed ${blocks} timed ${blocks === 1 ? 'task' : 'tasks'} in about ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`
 
 // ----------------------------------------------------------------------------- privacy
 
@@ -234,8 +280,8 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
     heading: 'Where it stays',
     paragraphs: [
-      'In this version everything stays in your browser. It is saved in your browser’s local storage as you go, so a crash does not lose your answers, and you can download it as a save file. Nothing is sent to a server.',
-      'If you clear your browser’s site data, the saved copy is gone. Your downloaded save file is yours to keep or delete.',
+      "In this version everything stays in your browser. It is saved in your browser's local storage as you go, so a crash does not lose your answers, and you can download it as a save file. Nothing is sent to a server.",
+      "If you clear your browser's site data, the saved copy is gone. Your downloaded save file is yours to keep or delete.",
     ],
   },
   {

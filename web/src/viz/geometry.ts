@@ -11,6 +11,11 @@ export const THETA_MIN = -3
 export const THETA_MAX = 3
 /** Inner clamp of the radius as a fraction of R (§9.1); not-measured spokes dip to it (§9.7). */
 export const R_MIN_FRACTION = 0.04
+/**
+ * The lowest θ drawn at its true radius: below it r = R·(θ + 3)/6 would fall under the inner clamp
+ * 0.04R, so every smaller estimate is drawn at the clamp (UX-037: with an off-scale mark).
+ */
+export const THETA_CLAMP_LOW = THETA_MIN + (THETA_MAX - THETA_MIN) * R_MIN_FRACTION
 /** Ring positions in θ (§9.1); θ = 0 is the dashed reference ring. */
 export const RING_THETAS = [-2, -1, 0, 1, 2] as const
 /** z of a central 90% normal interval, Φ⁻¹(0.95): the muting rule (§9.5, A12) and whiskers. */
@@ -36,6 +41,17 @@ export function radiusScale(R: number): (theta: number) => number {
     if (!Number.isFinite(theta)) throw new RangeError(`theta must be finite, got ${theta}`)
     return Math.min(R, Math.max(lo, s(theta)))
   }
+}
+
+/**
+ * Whether an estimate lies beyond the drawn scale: `low` below {@link THETA_CLAMP_LOW} (drawn at the
+ * inner clamp, where not-measured spokes dip too), `high` above +3 SD (drawn at the rim), else
+ * `none`. The radius map itself is untouched (linear, §9.1); the chart adds an arrowhead there.
+ */
+export type OffScale = 'none' | 'low' | 'high'
+export function offScaleOf(theta: number): OffScale {
+  if (!Number.isFinite(theta)) throw new RangeError(`theta must be finite, got ${theta}`)
+  return theta < THETA_CLAMP_LOW ? 'low' : theta > THETA_MAX ? 'high' : 'none'
 }
 
 /** Angle of spoke `i` of `k`, in radians clockwise from 12 o'clock (§9.1: φ_k = 2πk/K). */

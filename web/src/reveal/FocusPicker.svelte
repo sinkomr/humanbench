@@ -2,7 +2,9 @@
   Choosing the parts of a 20-minute focus session (DESIGN §10 "focus sessions of 20 minutes that
   target chosen axes"; ROADMAP M1.R). One checkbox per A15 part, the parts that hold the widest
   ranges ticked to begin with; the person chooses, and starting with none ticked asks for a choice.
-  Used on the results and on the start screen of a returning person.
+  Used on the results and on the start screen of a returning person. Each row is one label around
+  its checkbox, so the whole row (44 px tall) is the target, and the rows keep their own spacing
+  whatever the host screen's `.check` rule says (UX-033).
 -->
 <script lang="ts">
   import { untrack } from 'svelte'
@@ -43,14 +45,14 @@
   }
 </script>
 
-<form onsubmit={submit} novalidate data-focus-form>
+<form class="focus-picker" onsubmit={submit} novalidate data-focus-form>
   <fieldset aria-describedby={problem === '' ? undefined : `${uid}-problem`}>
     <legend>{FOCUS_LEGEND}</legend>
     {#each options as o (o.segment)}
-      <div class="check">
+      <label class="check" for="{uid}-{o.segment}">
         <input id="{uid}-{o.segment}" type="checkbox" checked={chosen.has(o.segment)} onchange={(e) => toggle(o.segment, e.currentTarget.checked)} />
-        <label for="{uid}-{o.segment}">{o.title}{#if o.suggested} <span class="suggested">({FOCUS_SUGGESTED})</span>{/if}</label>
-      </div>
+        <span>{o.title}{#if o.suggested}{' '}<span class="suggested">({FOCUS_SUGGESTED})</span>{/if}</span>
+      </label>
     {/each}
   </fieldset>
   {#if problem !== ''}
@@ -65,10 +67,10 @@
   .suggested {
     color: var(--r-muted);
   }
-  fieldset {
+  .focus-picker fieldset {
     margin: 0.5rem 0;
     padding: 0.5rem 0.75rem;
-    border: 2px solid var(--r-border);
+    border: 1px solid var(--r-border);
     border-radius: 0.5rem;
     min-width: 0;
   }
@@ -76,13 +78,15 @@
     padding: 0 0.25rem;
     font-weight: 600;
   }
-  .check {
+  .focus-picker .check {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     min-height: 2.75rem;
+    margin: 0;
+    cursor: pointer;
   }
-  .check input {
+  .focus-picker .check input {
     flex: none;
     width: 1.5rem;
     height: 1.5rem;

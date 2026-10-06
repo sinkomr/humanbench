@@ -1,0 +1,71 @@
+{
+  "reviewer": "verify",
+  "model": "fable",
+  "summary": "Independent re-run of the reviewers' scenarios on the fixed build (run id verify): every product route toured at 390 and 1280 px in both colour schemes on Chromium and at device width on the iPhone 13 project, one whole ?fast=1 journey per project, and every fix item replayed. Nothing crashed, no route overflows or clips text, the console is clean apart from the expected WebGL error on the no-WebGL route, and the journeys end in a profile with off-scale marks and 'not offered yet' labels in place. Three new problems came out of the sweep: the session checklist now breaks names mid-word in the desktop sidebar and one letter per line at 320 px with 200% text (a side effect of keeping the status column), the welcome screen shows two identical 'Privacy and terms' links (the UX-016 link and the new always-on footer link, which is 24 px tall), and the one-row coding keypad has keys 30 to 38 px wide on phones where the old three-row keypad had 44 px keys.",
+  "coverage": [
+    "tour of all 50 product routes: chromium 390/1280 light/dark, iphone 390 light (web/test-results/ux-review/verify/tour-*/summary.json)",
+    "one ?fast=1 journey on iphone by touch (218 answers, 505 steps, completed) and one on chromium by mouse and keys",
+    "every fix item's scenario replayed on chromium and iphone (web/test-results/ux-review/verify/<item>/<project>/)",
+    "keyboard focus after screen changes: practice, confirm panels, leave panel, welcome/privacy/gate, Stay and save, notes skip link, self-test Start"
+  ],
+  "findings": [
+    {
+      "id": "VER-01",
+      "severity": "minor",
+      "category": "layout",
+      "title": "Checklist names break mid-word in the desktop sidebar and one letter per line at 320 px with 200% text",
+      "route": "item-matrix-series",
+      "env": "chromium 1280x720 light (sidebar on every item screen); chromium 320x568 with text at 200%",
+      "screenshots": [
+        "web/test-results/ux-review/verify/tour-chromium/item-matrix-series/1280-light.png",
+        "web/test-results/ux-review/verify/tour-chromium/item-spatial-no-webgl/1280-light.png",
+        "web/test-results/ux-review/verify/UX-007/chromium/002-320-interstitial-zoom200.png"
+      ],
+      "observed": "UX-007a kept 'With each answer' inside the status column (max-width 7rem) and gave the name column overflow-wrap: break-word. In the 1280 px sidebar the name column is now too narrow for 'Calibration/Metacognition': it renders as 'Calibration/ Metacognitio n' on every item screen (the baseline let the status drop out of its column instead, so the name fitted). At 320 px with the text at 200% the status column takes most of the 288 px row and 'Estimation' and 'Calibration/Metacognition' render one letter per line (the row is 1,530 px tall). At 320 px with 100% text the checklist is fine.",
+      "expected": "No word broken inside a word at any supported width or text size (the UX-007a acceptance); at 200% text the status wraps under the name or the column is dropped rather than squeezing the name to a few pixels.",
+      "suggestion": "Let the status column shrink or wrap under the name when the row is narrow (a container query on the checklist, or grid-template-columns: 1.25rem minmax(0, 1fr) minmax(0, auto) with the status allowed to wrap at 200%), and give the name column a min width of about 9ch; keep <wbr> after '/'.",
+      "files": ["web/src/session/Checklist.svelte"],
+      "spec_refs": ["WCAG 1.4.4", "WCAG 1.4.10", "UX-007a"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VER-02",
+      "severity": "polish",
+      "category": "flow",
+      "title": "Welcome screen shows two identical 'Privacy and terms' links, the footer one 24 px tall",
+      "route": "welcome",
+      "env": "iphone 390x664 light; also chromium 390 and 1280",
+      "screenshots": [
+        "web/test-results/ux-review/verify/tour-iphone/welcome/390-light.png",
+        "web/test-results/ux-review/verify/tour-chromium/welcome/1280-light.png"
+      ],
+      "observed": "UX-016 made the welcome screen's own 'Privacy and terms' link a 44 px block under Start, and UX-011 made the footer always link 'Privacy and terms'. On the welcome screen both are on screen at once: the same link text twice, 700 px apart on a phone, and the footer copy is 115.9 x 24 px (under the 44 px comfortable size on every screen; the before tour had one 24 px link). Playwright's strict getByRole('link', { name: 'Privacy and terms' }) now resolves to two elements on the welcome screen.",
+      "expected": "One privacy link per screen, or a visible difference between the two (the footer one is the global one); touch targets of 44 px on phones where the row allows it.",
+      "suggestion": "Hide the footer link on the welcome screen (where the main link exists), or drop the main link now that the footer always has one and keep the footer link at a 44 px tap height on narrow screens (padding, not font size).",
+      "files": ["web/src/App.svelte", "web/src/session/Welcome.svelte"],
+      "spec_refs": ["WCAG 2.5.8", "UX-011", "UX-016"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "VER-03",
+      "severity": "minor",
+      "category": "layout",
+      "title": "One-row coding keypad: keys 38 px wide on an iPhone 13 and 30 px at 320 px",
+      "route": "coding-running",
+      "env": "iphone 390x664 light; chromium 320x568",
+      "screenshots": [
+        "web/test-results/ux-review/verify/UX-002/iphone/001-390x664-coding-start-viewport.png",
+        "web/test-results/ux-review/verify/UX-002/iphone/005-320x568-coding-start-viewport.png"
+      ],
+      "observed": "UX-002 lays the nine digit keys of the coding block in one row so the table, the target and the keypad fit one phone screen (they do: table, target and keypad are all on screen at 390 x 664 and 320 x 568). The keys are 38 x 50 px at 390 px and 30 x 50 px at 320 px, with 8 px between them. The before build had three rows of keys at 44 px or more (the phone tour listed no small targets on coding-running); the iPhone tour of the fixed build lists all nine keys as under 44 px. This is the one timed block where a person taps as fast as they can.",
+      "expected": "Tap targets of at least 44 px in the one block that rewards fast tapping, or at least the 44 px height with 24 px of horizontal spacing, as the touch-target guidance allows for a row that cannot be wider.",
+      "suggestion": "Two rows of five and four keys when the row would give keys under 40 px (a container query), or keys of 44 px with the 8 px gap removed at 320 px; the budget stays within one screen either way (the strip is 58 px, the target 96 px, two keypad rows 108 px).",
+      "files": ["web/src/render/common/Keypad.svelte", "web/src/render/coding/CodingRenderer.svelte"],
+      "spec_refs": ["WCAG 2.5.8", "UX-002"],
+      "confidence": "medium",
+      "owner_decision": true
+    }
+  ]
+}

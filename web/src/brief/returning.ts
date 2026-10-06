@@ -80,8 +80,23 @@ export const outdatedMessage = (month: string, n = 1): string =>
     ? `A line in notes you made in ${month} has new wording. Re-copy your notes to use it.`
     : `Some lines in notes you made in ${month} have new wording. Re-copy your notes to use it.`
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
+
+/**
+ * A `YYYY-MM` month as a person says it ("January 2025"); the stored month stays `YYYY-MM`. A table, not a
+ * date object: this file reads no clock (R-17.1, `scripts/brief-source.test.ts`) and a month name does not
+ * move with the time zone. Anything that is not a month is returned as it came.
+ *
+ * The review-by sentence uses it (UX-052); the withdrawal and new-wording sentences keep the stored month,
+ * because the approved withdrawal draft is pinned word for word.
+ */
+export function monthName(month: string): string {
+  if (!MONTH_RE.test(month)) return month
+  return `${MONTH_NAMES[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`
+}
+
 export const reviewByMessage = (month: string): string =>
-  `The notes you made in ${month} are due for another look. Check that they still say what you want, and copy them again if you change anything.`
+  `The notes you made in ${monthName(month)} may need another look. Check that they still say what you want, and copy them again if you change anything.`
 
 /**
  * Whether the wording a person copied is now withdrawn: its gate entry blocks that wording version,

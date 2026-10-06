@@ -18,9 +18,14 @@
     readonly sections?: readonly PrivacySection[]
     /** Link to the page where data on the server can be fetched or deleted (the online version). */
     readonly dataLink?: boolean
+    /**
+     * "Back" goes by the browser's history when the notice was opened from a link inside the app (so the screen
+     * it was opened from is where the person lands again); absent, "Back" is a plain link to the start (UX-011).
+     */
+    readonly onback?: () => void
   }
 
-  let { storage = browserStorage, sections = PRIVACY_SECTIONS, dataLink = false }: Props = $props()
+  let { storage = browserStorage, sections = PRIVACY_SECTIONS, dataLink = false, onback }: Props = $props()
 
   let message = $state('')
 
@@ -43,5 +48,15 @@
   {#if dataLink}
     <p><a class="hb-standalone-link" href="#/data">{DATA_LINK}</a></p>
   {/if}
-  <p><a class="hb-standalone-link" href="#/">{PRIVACY_BACK}</a></p>
+  <p>
+    <a
+      class="hb-standalone-link"
+      href="#/"
+      onclick={(e) => {
+        if (onback === undefined) return
+        e.preventDefault()
+        onback()
+      }}>{PRIVACY_BACK}</a
+    >
+  </p>
 </Screen>

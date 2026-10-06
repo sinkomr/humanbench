@@ -1,0 +1,189 @@
+{
+  "area": "reveal",
+  "model": "claude-sonnet-5-5",
+  "items": [
+    {
+      "id": "UX-012b",
+      "outcome": "fixed",
+      "summary": "Every save-loading message in parse.ts now says what is likely wrong and what to do, with no JSON, gzip, schema or version numbers. Not a save: 'This file is not a HumanBench save. Choose the file you downloaded ... or paste a save code.' for a chosen file, and 'This is not a HumanBench save or save code. Choose your downloaded save file, or paste the save code you copied.' for pasted text (the loader now knows which it was). Invalid JSON: 'looks cut off or damaged'. Empty, too large (file, pasted text, unpacked save), newer version, cannot-open, damaged and unreadable paste each have their own next step. The developer reason (migrate.ts message) moved to ParseFailure.details; error codes are unchanged. Every message that is a 'not a save' keeps the substring 'not a HumanBench save'.",
+      "files": ["web/src/save/parse.ts", "web/src/save/parse.test.ts", "web/e2e/session-save.spec.ts"],
+      "tests_added": [
+        "src/save/parse.test.ts 'the messages say what is wrong and what to do (UX-012b)': 25 failing inputs covering all 8 codes; codes unchanged; no /gzip|JSON|schema_version|schema major|major \\d|migrat|base64/ and a next step in every message; 'not a HumanBench save' in every not-a-save message and the file/paste split; the likely cause is named; developer reason is in details and not in the message; a fast-check property over random text, '{...' text, valid JSON and random bytes"
+      ],
+      "tests_changed": [
+        "e2e/session-save.spec.ts: 'not valid JSON' -> 'cut off or damaged' (the cut-off paste)"
+      ],
+      "notes": "The size hint says 'well under a megabyte' (a one-session save is about 8 KB, a multi-session one tens of KB), not 'a few kilobytes'. src/session/components.dom.test.ts:193 ('not a HumanBench save') still passes."
+    },
+    {
+      "id": "UX-018b",
+      "outcome": "fixed",
+      "summary": "FOCUS_TEXT is 'Pick the parts you want measured more precisely. A focus session takes about 20 minutes and covers only the parts you choose.' (it is also shown on the Ready screen of a returning person, which imports it). A reveal copy test lints every exported string and every function's output with the A22 benefit pattern; that lint also caught 'where another session helps most' (RETEST_INTRO, now '... would narrow your ranges most.') and 'the practice you gained' in PRACTICE_ADJUSTED_FIRST (now 'the typical gain from practice', matching the UX-034 wording of the later-session text).",
+      "files": ["web/src/reveal/copy.ts", "web/src/reveal/copy.test.ts"],
+      "tests_added": ["src/reveal/copy.test.ts (new file, 11 tests): benefit lint over all strings, FOCUS_TEXT exact, screens named as they are named, savedAs/SAVE_* wording, no 'no other copy' claim (server mirror), practice-adjusted wording, peaks note shapes not colours, units in words, counts, share card strings"],
+      "tests_changed": [],
+      "notes": "The A13 language lint is not repeated in copy.test.ts (src tests cannot import scripts/ under the app tsconfig); scripts/language-lint.test.ts scans copy.ts and every reveal component and passed in the full run."
+    },
+    {
+      "id": "UX-028",
+      "outcome": "fixed",
+      "summary": "SavePanel exports focusDownload() and focusHeading(); Reveal.stay() waits a tick and focuses the 'Download save file' button (focus() scrolls it into view), falling back to 'Back to the start' when the panel is not there yet. ConfirmPanel is untouched (UX-005b stays with integration).",
+      "files": ["web/src/reveal/Reveal.svelte", "web/src/reveal/SavePanel.svelte", "web/src/reveal/Reveal.dom.test.ts", "web/e2e/reveal.spec.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": ["e2e/ux-reveal.spec.ts '\"Stay and save\" (UX-028)' (chromium, iphone, webkit): focused and in the viewport, still unsaved and guarded"],
+      "tests_changed": [
+        "src/reveal/Reveal.dom.test.ts 'leaving through \"Back to the start\" asks first...': active element is now 'Download save file' inside the save panel",
+        "e2e/reveal.spec.ts '\"Back to the start\" asks first while unsaved...': title and assertion now toBeFocused + toBeInViewport on 'Download save file'"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "UX-029",
+      "outcome": "fixed",
+      "summary": "While not saved, a note at the top of the reveal (above the practice-adjusted badge) says 'Your results are not saved yet. Download your save file to keep them.' with a link 'Go to the save file' that focuses the save panel's heading (tabindex -1, stable id SAVE_HEADING_ID in slots.ts) and scrolls to it. It is a plain div/p/a, not a status. It is in the page from the start but visibility:hidden (taking its room, so the chart does not jump) until the build-up ends, and gone once saved. The unsaved save panel has a surface: 2px accent border, --r-surface fill, padding; once saved it keeps the padding and size (nothing moves), with a plain border and no fill.",
+      "files": ["web/src/reveal/Reveal.svelte", "web/src/reveal/SavePanel.svelte", "web/src/reveal/reveal.css", "web/src/reveal/copy.ts", "web/src/reveal/slots.ts", "web/src/reveal/Reveal.dom.test.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "src/reveal/Reveal.dom.test.ts 'the unsaved results point to the save (UX-029)' (3 tests): present after build-up, before the chart, no role/aria-live, first status still 'Your profile is ready.', link focuses the heading, gone after saving; hidden with no link while building; data-saved on the panel",
+        "e2e/ux-reveal.spec.ts: pointer within two screens and above the chart, link focuses the heading in view with no hash change, keyboard Enter (desktop), panel surface unsaved vs saved with unchanged width/left, 320 px fit and axe in light and dark"
+      ],
+      "tests_changed": [],
+      "notes": "Deviation from the triage text 'show once the build-up ends': the element exists from mount but is hidden until then, to avoid a layout jump at the end of the animation; visible behaviour after the build-up is as specified. Driver check: the first `.reveal [role=status]` is still 'Your profile is ready.'"
+    },
+    {
+      "id": "UX-030",
+      "outcome": "fixed",
+      "summary": "doCopy: message = saved ? FINISHED_COPIED : SAVE_COPIED_NOT_SAVED, so one confirmation per copy; SAVE_COPIED_NOT_SAVED now says where the code is pasted (names the 'Or paste a save code' field and the 'Ready when you are' screen); SAVE_PANEL_REQUIRED says what the file is for; after a download the status stays exactly 'Save file downloaded.' and a separate muted line 'Saved as <name>. Look in your Downloads folder (on an iPhone, the Files app) and keep it.' names the file returned by download() (a share that fell back to a download gets saveFileName(save)); SAVE_DONE adds 'Your share card and notes for your AI are just below.'; 'Download save file' drops hb-primary once saved; the manual save-code textarea has translate=\"no\". Session copy is not edited.",
+      "files": ["web/src/reveal/SavePanel.svelte", "web/src/reveal/copy.ts", "web/src/reveal/Reveal.dom.test.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "src/reveal/Reveal.dom.test.ts 'the save panel says what happened (UX-030)' (5 tests): copy before save confirmed once with where to paste, copy after save is just 'Save code copied.'; download keeps the exact status and adds the file-name line; share fallback names the file, a share to an app does not; primary class dropped after saving; manual code translate=no",
+        "e2e/ux-reveal.spec.ts 'the save panel says what happened (UX-030)' (chromium, iphone, webkit; the clipboard is replaced by a recorder): exactly one 'Save code copied.', file name equals download.suggestedFilename(), not hb-primary after saving, axe, language lint"
+      ],
+      "tests_changed": [],
+      "notes": "'You can leave this page safely' kept (reveal.spec.ts:154, session-save.spec.ts:318, Reveal.dom.test.ts). FINISHED_COPY_FAILED untouched."
+    },
+    {
+      "id": "UX-031",
+      "outcome": "fixed",
+      "summary": "The pending note is now <div class=\"hb-reveal-panel\"><p class=\"note\" data-pending>...</p></div>, so it keeps the panel's auto margins and gets the muted note style.",
+      "files": ["web/src/reveal/Reveal.svelte", "web/src/reveal/Reveal.dom.test.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "src/reveal/Reveal.dom.test.ts: the [data-pending] p is .note inside a .hb-reveal-panel and is not itself the panel",
+        "e2e/ux-reveal.spec.ts: the note's left edge equals the save panel's and its colour and size equal another note's"
+      ],
+      "tests_changed": [],
+      "notes": "[data-pending] text unchanged (reveal.spec.ts:146, Reveal.dom.test.ts)."
+    },
+    {
+      "id": "UX-032",
+      "outcome": "fixed",
+      "summary": "ShareCard: (1) fewer than MIN_CARD_SKILLS skills that can go on a card -> the toggles, colours, count and buttons are replaced by shareNeedsMore(3, n); 'Tick at least 3 skills' remains for 3+ with some unticked (native disabled kept for that case and for a PNG that failed). (2) While the PNG is prepared, the PNG and Share image buttons are aria-disabled (focusable, clicks ignored) with aria-describedby on the 'Preparing the PNG...' note; no longer natively disabled. (3) The count line is mounted empty and filled 100 ms after mount, with its number(s) in <span translate=\"no\"> (a branch swap, not a text-node rewrite, between the count and too-few sentences). (4) 'View the card full size (opens in a new tab)' under the preview: a link to an object URL of the card SVG (ready with the preview), revoked on change and on teardown; omitted where URL.createObjectURL is missing.",
+      "files": ["web/src/reveal/ShareCard.svelte", "web/src/reveal/copy.ts", "web/src/reveal/ShareCard.dom.test.ts", "web/e2e/share-card.spec.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "src/reveal/ShareCard.dom.test.ts: one and two measured skills (explanation, no inputs/fieldsets/buttons/count/preview), three measured skills is a card, 'Tick at least 3' for 4 measured with 2 ticked, withheld Emotion Reading keeps its rule; PNG/Share buttons aria-disabled, tabbable, described by the Preparing note, clicks ignored, plain once ready; count line empty at mount, translate=no number in the same element after a change; full-size link (blob href, target _blank, rel noopener, follows each change, revoked on change/teardown, only link in the panel, absent without object URLs)",
+        "e2e/ux-reveal.spec.ts (chromium, iphone, webkit): a played one-skill session shows the explanation and no checkboxes/buttons; the PNG button is aria-disabled and focusable while the encoder is held back (Tab reaches it in Chromium), a press does nothing, it keeps focus when ready and then downloads; the full-size link opens a blob: SVG document 1200 x 630 in a new tab; the count line's translate=no span follows the ticks"
+      ],
+      "tests_changed": [
+        "ShareCard.dom.test.ts: ready() helper reads disabled or aria-disabled; the preparing assertions (3 places) read aria-disabled; count readings wait for the line to be filled; 'states both sizes' reads the new wording; the no-link assertion kept (no object URLs in jsdom) with a comment",
+        "e2e/share-card.spec.ts: link name 'Talking about your results with an AI' -> 'Read this first' (2 places, UX-034)"
+      ],
+      "notes": "Deviation: the full-size link points at the SVG object URL (always ready) rather than the PNG, so it does not appear and vanish with each PNG rebuild. toBeEnabled()/click() in Playwright treat aria-disabled as disabled, so share-card.spec.ts waits as before. scripts/share-card.test.ts constraints kept (relative imports of ShareCard.svelte unchanged; names imported from ./copy start with SHARE_/share). 'Tick at least 3 skills' for >=3 measured (e2e/routes.ts:691) is kept."
+    },
+    {
+      "id": "UX-033",
+      "outcome": "fixed",
+      "summary": "FocusPicker: '{o.title}{' '}<span>(wide range)</span>' keeps the space; each row is one <label class=\"check\" for=id> around the checkbox (min-height 2.75rem, whole row is the target, ids unchanged); rows scoped under .focus-picker with margin 0 so session.css's '.hb-screen .check { margin: 1rem 0 }' no longer spreads them (60 px pitch -> 44 px); fieldset border 1px.",
+      "files": ["web/src/reveal/FocusPicker.svelte", "web/src/reveal/FocusPicker.dom.test.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "src/reveal/FocusPicker.dom.test.ts: suggested labels read 'Matrix & Series (wide range)' with no '\\S(' anywhere; one label around each checkbox, ids kept, pressing the text ticks the box",
+        "e2e/ux-reveal.spec.ts: six rows >= 43.5 px tall, pitch <= 48 px, '(wide range)' only after a space, clicking the far end of a row toggles its box, axe"
+      ],
+      "tests_changed": [],
+      "notes": "Also used by session/Ready.svelte inside details.focus (session-owned): scoped selectors have higher specificity than session.css's .hb-screen rules."
+    },
+    {
+      "id": "UX-034",
+      "outcome": "fixed",
+      "summary": "Copy: PRACTICE_ADJUSTED_LATER (typical gain, provisional figure, 'each later session is credited' kept), PEAKS_INTRO (profile as a whole), PEAKS_NOTE (hollow and filled markers, no colours), SPACING_TEXT (press Start, the 'Ready when you are' screen), NumbersSection prefix NORMS_LATEST, paceLine in words ('about 45 seconds per question', singular handled), SHARE_SIZES (pixels, 'twice the card size'), SHARE_TALK_LEAD/LINK ('Thinking of asking an AI about your results?' + 'Read this first'), SHARE_INTRO split into short sentences, WORKED_INTRO.",
+      "files": ["web/src/reveal/copy.ts", "web/src/reveal/NumbersSection.svelte", "web/src/reveal/Reveal.dom.test.ts", "web/src/reveal/copy.test.ts", "web/e2e/share-card.spec.ts", "web/e2e/reveal.spec.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "src/reveal/copy.test.ts: the wording checks listed under UX-018b",
+        "e2e/ux-reveal.spec.ts 'the numbers, the practice adjustment and the spacing advice name what they refer to'"
+      ],
+      "tests_changed": [
+        "Reveal.dom.test.ts: talk link text is 'Read this first' inside 'Thinking of asking an AI about your results? Read this first.'",
+        "e2e/share-card.spec.ts: the two link names",
+        "e2e/reveal.spec.ts:132 'each later session is credited for the practice' -> '... for the typical gain from practice' (the triage listed only the shorter literal at :132/:337; :132 asserted the longer one)"
+      ],
+      "notes": "Deviation: NORMS_LATEST is 'From your most recent attempt at each task:' rather than 'From your latest session:' because normFacts takes the latest valid result of each task across all sessions in the save (a focus session on one part would make 'latest session' false). AfterSave.svelte and RetestSection.svelte needed no change (they render the copy constants). The backend copy 'start screen' wording (UX-056) is not touched."
+    },
+    {
+      "id": "UX-035",
+      "outcome": "fixed",
+      "summary": "workedHeading(n) ('Three worked examples', 'Two...', 'One worked example', 'Worked examples' for none); quant solutions print 'subtract x' (via lin) instead of 'subtract 1x' in both_sides and brackets; the quant question is a plain <p class=\"terms\"> (class kept for e2e); the series example is titled 'Sequence' and asks 'What comes next in this sequence?'; a disclosure inside a card is a rule under the text (no box in a box). Optional retry done: pickWorkedItems tries neighbouring strata (matrix 2,3,1; series 3,2,4; quant 2,1) before leaving a kind out, deterministically; a fixed stratum in the third argument still turns the fallback off. Quant has only about a dozen families per stratum, which is how a full session lost one example.",
+      "files": ["web/src/reveal/copy.ts", "web/src/reveal/worked/quant.ts", "web/src/reveal/worked/index.ts", "web/src/reveal/WorkedSection.svelte", "web/src/reveal/reveal.css", "web/src/reveal/worked/worked.test.ts", "web/src/reveal/Reveal.dom.test.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "worked.test.ts: no '1x' in any solution over 6,000 stratum-2 items and 'subtract x from both sides' for c = 1 (the test bites); stratum fallback (quant with every stratum-2 family seen gets a stratum-1 example, deterministic, still avoids seen families, fixed stratum does not widen); FALLBACK_STRATA starts with the kind's own; titles ['Matrix','Sequence','Quantitative']",
+        "Reveal.dom.test.ts 'worked examples: heading, wording (UX-035)': heading for 3/2/1/0 items, 'Example 2: Sequence' and the new prompt, no <strong> in the quant question, no '1x' over 60 sessions",
+        "e2e/ux-reveal.spec.ts: heading equals the number of cards, sequence wording, plain quant question, details border 0/1 px/0 radius"
+      ],
+      "tests_changed": ["worked.test.ts 'leaves a kind out when every family of it was seen': passes { matrix: 2 } so it still tests the no-infinite-search case at that stratum"],
+      "notes": ""
+    },
+    {
+      "id": "UX-036",
+      "outcome": "fixed",
+      "summary": "reveal.css: summaries get list-style none, gap, a CSS chevron (right when closed, down when open; transition only under prefers-reduced-motion: no-preference) and no webkit marker; PeaksSection h2 takes var(--r-fg) at 1.25rem; RevealProfile mounts its status line empty when a build-up will run and announces 'Building your profile, one skill at a time.' 100 ms later (only while still building; a replay announces at once; with nothing to build the line is mounted with 'Your profile is ready.' as before).",
+      "files": ["web/src/reveal/reveal.css", "web/src/reveal/PeaksSection.svelte", "web/src/reveal/RevealProfile.svelte", "web/src/reveal/Reveal.dom.test.ts", "web/e2e/ux-reveal.spec.ts"],
+      "tests_added": [
+        "e2e/ux-reveal.spec.ts: ::before marker present and list-style none on the Pace and worked-solution summaries, its transform differs when open; the peaks h2 colour equals the save and retest h2 colours in light and dark; build-up announced then 'Your profile is ready.'"
+      ],
+      "tests_changed": ["Reveal.dom.test.ts 'starts with the profile at the centre...': now async, asserts the status is empty right after mount and waits for the build-up text"],
+      "notes": "A tick is not enough to separate a live region from its text for assistive technology (both land before the first paint), hence the 100 ms timer; the share card count line uses the same approach."
+    }
+  ],
+  "extra_fixes": [
+    {
+      "id": "GUARD-OVERLAP",
+      "summary": "Found by session-save.spec.ts with the session package's new run guard: SessionApp.svelte (session-owned, UX-011) calls installUnloadGuard() from reveal/guard.ts while the run is in progress. guard.ts used ONE shared listener, so when the results screen mounted its own guard (Reveal.svelte) the second addEventListener was ignored as a duplicate, and when SessionApp lifted its guard it removed the only listener: the results were unguarded ('the tab asks before closing while the file is not saved' failed on all three projects). installUnloadGuard now installs its own listener per call, so overlapping guards are independent.",
+      "files": ["web/src/reveal/guard.ts", "web/src/reveal/guard.test.ts", "web/src/reveal/guard.dom.test.ts"],
+      "tests_added": ["guard.test.ts and guard.dom.test.ts: two overlapping guards, lifting the first leaves the second on (fake target and the real window)"]
+    }
+  ],
+  "integration_requests": [
+    {
+      "id": "UX-056",
+      "file": "web/src/backend/copy.ts (DATA_RESTORE_FOUND)",
+      "change": "Already in the triage: the same 'start screen' wording as the old SPACING_TEXT. Reveal now says 'press Start and load your save file on the \"Ready when you are\" screen'; use the same."
+    },
+    {
+      "id": "REVIEW-HARNESS",
+      "file": "web/ux-review/personas/*.ux.ts, web/ux-review/lib/journey.ts",
+      "change": "Not gates. Any persona that looks for the link name 'Talking about your results with an AI', for the save status text 'Save code copied. Save code copied.', or for the old SAVE_PANEL_REQUIRED wording needs the new text ('Read this first'; one 'Save code copied.')."
+    },
+    {
+      "id": "GUARD-OVERLAP-CHECK",
+      "file": "web/src/session/SessionApp.svelte",
+      "change": "No edit needed. For the integrator: SessionApp's run guard and the results guard both use installUnloadGuard; it is now safe to overlap. If the session package ever lifts its guard later than the results mount, both stay on until each is lifted."
+    }
+  ],
+  "gates": {
+    "check": "npm run check: 0 errors, 0 warnings (svelte-check 1192 files; tsc node and scripts configs pass)",
+    "unit": "npx vitest run src/reveal src/save: all pass. Full npm test: 4521 passed, 2 failed, neither in an owned file or caused by this change. scripts/timing-lint.test.ts (Date.now in src/session/Ready.svelte and src/session/saved-at.test.ts, session package) passed on a re-run once the session package had fixed it. scripts/contrast.test.ts still fails on re-run: 'every colour token of src/ sits in a rule that a sheet above stands for' lists dark-scheme tokens declared under '@media screen and (prefers-color-scheme: dark)' in src/app.css, src/brief/notes.css, src/brief/ui/ResultsTalk.svelte and src/render/common/render.css (other packages' CSS; reveal.css declares no colour tokens). Not fixed, recorded for the integrator.",
+    "build": "npm run build -- --outDir test-results/iso/fix-reveal/dist-gate: ok",
+    "e2e": [
+      { "spec": "e2e/ux-reveal.spec.ts", "project": "chromium", "result": "16 passed" },
+      { "spec": "e2e/ux-reveal.spec.ts", "project": "iphone", "result": "15 passed, 1 skipped (desktop keyboard test)" },
+      { "spec": "e2e/ux-reveal.spec.ts", "project": "webkit", "result": "16 passed" },
+      { "spec": "e2e/reveal.spec.ts", "project": "chromium", "result": "28 passed (after updating the 'credited for' literal)" },
+      { "spec": "e2e/reveal.spec.ts", "project": "iphone", "result": "passed" },
+      { "spec": "e2e/share-card.spec.ts", "project": "chromium", "result": "passed" },
+      { "spec": "e2e/share-card.spec.ts", "project": "iphone", "result": "passed" },
+      { "spec": "e2e/reveal-ai.spec.ts", "project": "chromium", "result": "passed" },
+      { "spec": "e2e/reveal-ai.spec.ts", "project": "iphone", "result": "passed" },
+      { "spec": "e2e/session-save.spec.ts", "project": "chromium", "result": "19 passed" },
+      { "spec": "e2e/session-save.spec.ts", "project": "webkit", "result": "19 passed" },
+      { "spec": "e2e/session-save.spec.ts", "project": "iphone", "result": "19 passed" },
+      { "spec": "e2e/a11y.spec.ts --grep (ready-returning|results|share-card)", "project": "chromium", "result": "74 passed, 1 failed once (results-bars 200% text: sideways scroll by a table.hb-bars, viz area, build taken while the viz package was mid-edit); passed on re-run" },
+      { "spec": "e2e/a11y.spec.ts --grep (ready-returning|results|share-card)", "project": "iphone", "result": "65 passed" }
+    ]
+  }
+}

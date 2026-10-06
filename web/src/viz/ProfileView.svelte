@@ -22,12 +22,17 @@
    * DOM order puts the table before the blob, so a screen reader meets the data first (§9.5 c);
    * the blob is one image. Each chart's text layout is fitted to its rendered width (`fitLayout`).
    *
+   * The text follows the page's text size (UX-044): the root font size reaches `fitLayout`, and when
+   * the labels cannot keep up the page points to the bar view. A click on a wedge brings the facet
+   * panel into view (UX-046); the facet chart is drawn only from three measured facets, and a
+   * cluster with none says so in a line (UX-041).
+   *
    * Nothing here shows a sum, an average or the size of the shape (§9.5 a, CLAUDE.md blob rule).
    */
-  import { onMount, type Snippet } from 'svelte'
+  import { onMount, tick, type Snippet } from 'svelte'
   import BarTable from './BarTable.svelte'
   import BlobChart from './BlobChart.svelte'
-  import { buildBlob, fitLayout, type BlobModel } from './blob'
+  import { buildBlob, fitLayoutDetailed, type BlobModel } from './blob'
   import {
     BARS_NOTE,
     BLOB_DESCRIPTION,
@@ -39,6 +44,10 @@
     facetCaption,
     HATCH_CAPTION,
     facetHeading,
+    facetNone,
+    LARGE_TEXT_HINT,
+    OFF_SCALE_BARS_NOTE,
+    OFF_SCALE_CAPTION,
     PROFILE_HEADING,
     READING_CAPTION,
     RING_CAPTION,
@@ -86,6 +95,9 @@
   const SUB_BLOB_MIN = 3
   const SUB_BLOB_MAX = 24
 
+  /** Spokes of a facet chart that is worth drawing: fewer measured facets are read from the table alone. */
+  const SUB_BLOB_MIN_MEASURED = 3
+
   let view = $state<'blob' | 'bars'>('blob')
   let selected = $state<Cluster | null>(null)
   let prefersDark = $state(false)
@@ -95,10 +107,13 @@
    */
   let blobWidth = $state(0)
   let subWidth = $state(0)
+  /** The page's root font size in CSS px (16 until measured; jsdom never measures): follows the person's text size. */
+  let rootPx = $state(16)
 
   onMount(() => {
     if (typeof window.matchMedia !== 'function') return
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    // Screen only: when the page is printed the query stops matching, and the chart takes the light palette (UX-047).
+    const mq = window.matchMedia('screen and (prefers-color-scheme: dark)')
     prefersDark = mq.matches
     const on = (e: MediaQueryListEvent): void => {
       prefersDark = e.matches
@@ -110,8 +125,22 @@
   const estimates = $derived(axisEstimates(input))
   // Once any chart on the page has laid out, later mounts measure from their first frame.
   const measure = $derived(blobWidth > 0 || subWidth > 0 ? textMeasure() : (pageMeasure ?? undefined))
-  const layout = $derived(fitLayout(estimates, blobWidth, { measure }))
-  const model = $derived(buildBlob(display === undefined ? estimates : display(estimates), { layout, measure }))
+  const fit = $derived(fitLayoutDetailed(estimates, blobWidth, { measure, rootPx }))
+  const layout = $derived(fit.layout)
+  /** Enlarged text and labels that cannot keep up with it: say where the same data is readable (UX-044). */
+  const largeTextHint = $derived(view === 'blob' && rootPx > 16.5 && blobWidth > 0 && !fit.legible)
+  /**
+   * What the blob draws: the final estimates, or a build-up frame (M1.R). A frame grows a spoke from
+   * the centre, so its own off-scale mark would show on every spoke still to come; a spoke keeps the
+   * mark only when the frame and the final estimate agree (UX-037).
+   */
+  const drawn = $derived.by((): AxisEstimate[] => {
+    if (display === undefined) return estimates
+    return display(estimates).map((e, i) => (e.measured && e.offScale !== estimates[i]?.offScale ? { ...e, offScale: 'none' as const } : e))
+  })
+  const model = $derived(buildBlob(drawn, { layout, measure }))
+  const anyOffScale = $derived(model.spokes.some((s) => s.offScale !== undefined))
+  const anyOffScaleFinal = $derived(estimates.some((e) => e.measured && e.offScale !== undefined && e.offScale !== 'none'))
   const clusters = $derived([...new Set(estimates.map((e) => e.cluster))])
   const unmeasured = $derived(unmeasuredReasons(estimates))
   /**
@@ -124,9 +153,12 @@
   const facets: FacetEstimate[] = $derived(
     selected === null ? [] : clusterFacets(input.score, facetObservations, selected, { catalog: facetCatalog, unmeasured, precomputed: facetPrecomputed }),
   )
+  const measuredFacets = $derived(facets.filter((f) => f.measured).length)
+  /** No facet has an estimate and each lacks only answers: one line and the names, not a table of the same stub (UX-041). */
+  const noneYet = $derived(facets.length > 0 && facets.every((f) => f.reason === 'insufficient_data'))
   const facetModel: BlobModel | null = $derived(
-    facets.length >= SUB_BLOB_MIN && facets.length <= SUB_BLOB_MAX
-      ? buildBlob(facets, { layout: fitLayout(facets, subWidth, { measure }), measure })
+    facets.length >= SUB_BLOB_MIN && facets.length <= SUB_BLOB_MAX && measuredFacets >= SUB_BLOB_MIN_MEASURED
+      ? buildBlob(facets, { layout: fitLayoutDetailed(facets, subWidth, { measure, rootPx }).layout, measure })
       : null,
   )
   const style = $derived(
@@ -135,43 +167,72 @@
       .join('; '),
   )
 
-  function toggleCluster(c: string): void {
+  /**
+   * Open or close a cluster's facets. Opened from the chart (a click on a wedge), the panel is
+   * ~700 px further down, so it is scrolled into view and its heading takes focus (UX-046); the
+   * cluster buttons sit beside the panel and behave as before.
+   */
+  async function toggleCluster(c: string, fromChart = false): Promise<void> {
     const cluster = clusters.find((x) => x === c) ?? null
+    const opening = cluster !== null && selected !== cluster
     selected = selected === cluster ? null : cluster
+    if (!fromChart || !opening) return
+    await tick()
+    const heading = document.getElementById(`${uid}-facet-heading`)
+    if (heading === null) return
+    heading.focus({ preventScroll: true })
+    const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const panel = heading.closest('.facet-panel') ?? heading
+    if (typeof panel.scrollIntoView === 'function') panel.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'nearest' })
   }
 </script>
 
 <section class="hb-profile" {style} aria-labelledby="{uid}-heading" data-view={view}>
   <h2 id="{uid}-heading">{PROFILE_HEADING}</h2>
+  <!-- One rem wide: its width is the page's text size (a text-only zoom changes it, not the chart's width). -->
+  <span class="rem" aria-hidden="true" {@attach widthOf((w) => (rootPx = w > 0 ? w : 16))}></span>
 
-  <div class="toolbar" role="group" aria-label={VIEW_GROUP_LABEL}>
-    <button type="button" aria-pressed={view === 'blob'} onclick={() => (view = 'blob')}>{VIEW_BLOB}</button>
-    <button type="button" aria-pressed={view === 'bars'} onclick={() => (view = 'bars')}>{VIEW_BARS}</button>
+  <div class="toolbar-row">
+    <div class="toolbar" role="group" aria-label={VIEW_GROUP_LABEL}>
+      <button type="button" aria-pressed={view === 'blob'} onclick={() => (view = 'blob')}>{VIEW_BLOB}</button>
+      <button type="button" aria-pressed={view === 'bars'} onclick={() => (view = 'bars')}>{VIEW_BARS}</button>
+    </div>
+    {#if largeTextHint}
+      <p class="hint" data-large-text-hint>{LARGE_TEXT_HINT}</p>
+    {/if}
   </div>
 
   <!-- Before the figure: the data table is what a screen reader meets first (§9.5 c). -->
   <BarTable rows={estimates} caption={TABLE_CAPTION} skillHeader={TABLE_SKILL} groupHeader={TABLE_CLUSTER} hidden={view === 'blob'} describedBy={emoNote} />
 
   {#if view === 'blob'}
-    <figure class="blob-figure">
+    <!-- The figure's name is the title; the caption is content, not a name (UX-047). -->
+    <figure class="blob-figure" aria-label={BLOB_TITLE}>
       <div class="chart-box" {@attach widthOf((w) => (blobWidth = w))}>
-        <BlobChart {model} uid="{uid}-blob" title={BLOB_TITLE} description={BLOB_DESCRIPTION} onselect={toggleCluster} {selected} />
+        <BlobChart {model} uid="{uid}-blob" title={BLOB_TITLE} description={BLOB_DESCRIPTION} onselect={(g) => toggleCluster(g, true)} {selected} />
       </div>
       <figcaption>
+        <!-- The warning first: the size of the shape means nothing on its own (UX-039). -->
+        <p>{READING_CAPTION}</p>
         <p>{RING_CAPTION}</p>
         <p>{UNCERTAINTY_CAPTION}</p>
         <p>{STUB_CAPTION}</p>
+        {#if anyOffScale}
+          <p>{OFF_SCALE_CAPTION}</p>
+        {/if}
         <p>{TIER_LEGEND}</p>
         {#if model.hatch.length > 0}
           <p>{HATCH_CAPTION}</p>
         {/if}
-        <p>{READING_CAPTION}</p>
       </figcaption>
     </figure>
   {/if}
 
   {#if view === 'bars'}
     <p class="note">{BARS_NOTE}</p>
+    {#if anyOffScaleFinal}
+      <p class="note">{OFF_SCALE_BARS_NOTE}</p>
+    {/if}
     <p class="note">{TIER_LEGEND}</p>
   {/if}
 
@@ -196,14 +257,24 @@
     {#if selected !== null}
       {#key selected}
         <section class="facet-panel" aria-labelledby="{uid}-facet-heading" data-cluster={selected}>
-          <h3 id="{uid}-facet-heading">{facetHeading(selected)}</h3>
+          <h3 id="{uid}-facet-heading" tabindex="-1">{facetHeading(selected)}</h3>
           {#if facets.length === 0}
             <p>{FACET_EMPTY}</p>
+          {:else if noneYet}
+            <p class="facet-none">{facetNone(selected, facets.length)}</p>
+            <ul class="facet-names">
+              {#each facets as f (f.id)}
+                <li>{f.name}</li>
+              {/each}
+            </ul>
           {:else}
             {#if facetModel !== null}
               <div class="chart-box" {@attach widthOf((w) => (subWidth = w))}>
                 <BlobChart model={facetModel} uid="{uid}-sub" title={facetHeading(selected)} description={facetCaption(selected)} />
               </div>
+              {#if facetModel.spokes.some((x) => x.offScale !== undefined)}
+                <p class="note">{OFF_SCALE_CAPTION}</p>
+              {/if}
             {/if}
             <BarTable rows={facets} caption={facetCaption(selected)} skillHeader={FACET_SKILL} groupHeader={FACET_GROUP} />
           {/if}
@@ -230,11 +301,47 @@
     color: var(--hb-text-strong);
     margin: 0;
   }
+  /* One heading size across the results (UX-047). */
   h2 {
-    font-size: 1.375rem;
+    font-size: 1.25rem;
+    color: var(--r-fg, var(--hb-text-strong));
   }
   h3 {
     font-size: 1.125rem;
+  }
+  h3:focus {
+    outline: none;
+  }
+  h3:focus-visible {
+    outline: 3px solid var(--hb-blob);
+    outline-offset: 2px;
+  }
+  .rem {
+    position: absolute;
+    width: 1rem;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+  }
+  .hint {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--hb-text);
+  }
+  .facet-none {
+    margin: 0;
+  }
+  .facet-names {
+    margin: 0;
+    padding-left: 1.25rem;
+    columns: 2 14rem;
   }
   .toolbar,
   .drill-buttons {

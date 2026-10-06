@@ -153,10 +153,4 @@ export class PracticeRun {
     this.#phase = this.#index >= this.#items.length ? 'done' : 'item'
     this.#emit()
   }
-
-  /** Leave practice. */
-  end(): void {
-    this.#phase = 'done'
-    this.#emit()
-  }
 }

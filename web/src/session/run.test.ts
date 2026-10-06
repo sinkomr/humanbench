@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
 import { createRng } from '../engine/prng'
@@ -858,3 +859,136 @@ describe('focus session (DESIGN §10 "focus sessions of 20 minutes"; ROADMAP M1.
     expect(re.next_ordinals.SPA).toBe(3)
   })
 })
+
+describe('a notice lives for the screen it was raised on and the next one (UX-003)', () => {
+  it('"skipped" is on the next interstitial and gone from the first question after it', () => {
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0001' })
+    bot.run.skipAxis() // reaction time, from its interstitial
+    expect(bot.view().segment?.id).toBe('matrix_series')
+    expect(bot.view().notice).toMatchObject({ kind: 'skipped', axis: 'RT' })
+    bot.run.startSegment()
+    expect(bot.view().phase).toBe('item')
+    expect(bot.view().notice).toBeNull()
+  })
+
+  it('"skipped" told in the middle of a part is told on the next part’s interstitial, and not on its first block', () => {
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0002', skipped: ['MAT', 'SPA', 'QR', 'PS'] })
+    bot.run.startSegment() // reaction time
+    expect(bot.view().phase).toBe('block')
+    bot.run.skipAxis() // the part on screen: skipped, the next part is Working Memory
+    expect(bot.view().phase).toBe('interstitial')
+    expect(bot.view().segment?.id).toBe('memory')
+    expect(bot.view().notice?.kind).toBe('skipped')
+    bot.run.startSegment()
+    expect(bot.view().phase).toBe('block')
+    expect(bot.view().notice).toBeNull()
+  })
+
+  it('a time-out is told on the next question, and a break between the two does not stretch it', () => {
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], breakAtS: 5 })
+    bot.run.startSegment()
+    const first = bot.view().item!
+    bot.wait(first.time_limit_s + 1)
+    bot.run.tick()
+    // The break is offered at the boundary after the timed-out item: it is the screen the notice is told on ...
+    expect(bot.view().phase).toBe('break_offer')
+    expect(bot.view().notice?.kind).toBe('timeout')
+    // ... and the question after it is two screens on.
+    bot.run.declineBreak()
+    expect(bot.view().phase).toBe('item')
+    expect(bot.view().item!.item_id).not.toBe(first.item_id)
+    expect(bot.view().notice).toBeNull()
+  })
+
+  it('a time-out with no break is told on the next question', () => {
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0004', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    bot.run.startSegment()
+    bot.wait(bot.view().item!.time_limit_s + 1)
+    bot.run.tick()
+    expect(bot.view().phase).toBe('item')
+    expect(bot.view().notice?.kind).toBe('timeout')
+  })
+
+  it('a new notice replaces the old one and starts its own life', () => {
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0005' })
+    bot.run.skipAxis() // reaction time
+    const first = bot.view().notice!
+    bot.run.skipAxis() // Matrix & Series, from its interstitial
+    const second = bot.view().notice!
+    expect(second.seq).toBeGreaterThan(first.seq)
+    expect(second).toMatchObject({ kind: 'skipped', axis: 'MAT' })
+    expect(bot.view().segment?.id).toBe('spatial')
+    bot.run.startSegment()
+    expect(bot.view().notice).toBeNull()
+  })
+
+  it('a notice about the question on screen (cannot be drawn, cannot be read) is there while the question is', () => {
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0006', skipped: ['RT', 'MAT', 'WM', 'PS', 'QR'] })
+    bot.run.startSegment()
+    bot.run.itemUnavailable()
+    expect(bot.view().notice?.kind).toBe('unavailable')
+    bot.wait(1)
+    bot.run.tick()
+    expect(bot.view().notice?.kind).toBe('unavailable')
+  })
+
+  it('property: whatever is skipped or timed out, a notice is never seen on more than two screens in a row', () => {
+    /** The screen the person is looking at: a new key is a new screen (the confidence slider belongs to its question). */
+    const screenKey = (v: ReturnType<Bot['view']>): string | null => {
+      switch (v.phase) {
+        case 'interstitial':
+          return `i:${v.segmentIndex}`
+        case 'block':
+          return `b:${v.block?.item_id ?? ''}`
+        case 'item':
+        case 'confidence':
+          return `q:${v.item?.item_id ?? ''}`
+        case 'break_offer':
+        case 'on_break':
+          return v.phase
+        default:
+          return null
+      }
+    }
+    let noticesSeen = 0
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom('none', 'none', 'none', 'skip', 'timeout'), { minLength: 30, maxLength: 90 }),
+        fc.boolean(),
+        (actions, early) => {
+          const bot = new Bot({ sessionId: 's_NOTICEPROP0001', ...(early ? { breakAtS: 60 } : {}) }, { onBreakOffer: 'take' })
+          let screens = -1
+          let last: string | null = null
+          let step = 0
+          const first = new Map<number, number>()
+          const lastSeen = new Map<number, number>()
+          bot.until((v) => {
+            // What happens to the person: a skip now and then, a question left until it times out.
+            const action = actions[step++ % actions.length]
+            if (action === 'skip' && v.skippable !== null && v.phase !== 'break_offer' && v.phase !== 'on_break') bot.run.skipAxis()
+            else if (action === 'timeout' && v.phase === 'item' && v.item !== null) {
+              bot.wait(v.item.time_limit_s + 1)
+              bot.run.tick()
+            }
+            const now = bot.view()
+            const key = screenKey(now)
+            if (key !== null && key !== last) {
+              screens++
+              last = key
+            }
+            if (now.notice !== null) {
+              if (!first.has(now.notice.seq)) first.set(now.notice.seq, screens)
+              lastSeen.set(now.notice.seq, screens)
+            }
+            return now.phase === 'finished'
+          })
+          noticesSeen += first.size
+          for (const [seq, from] of first) expect(lastSeen.get(seq)! - from, `notice ${seq}`).toBeLessThanOrEqual(1)
+        },
+      ),
+      { numRuns: 12 },
+    )
+    expect(noticesSeen, 'the property saw notices at all').toBeGreaterThan(0)
+  })
+})
+

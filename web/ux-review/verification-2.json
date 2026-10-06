@@ -1,0 +1,661 @@
+{
+  "package": "verify-2",
+  "model": "fable",
+  "run": "verify2",
+  "build": "npm run ux:build on wf10/ux at HEAD 5469d40 with the wave-2 packages (w2-sync, w2-session, w2-render, w2-perf) and integration-2 in the working tree (web/test-results/ux-review/_dist, built 2026-10-05 16:55, no source file newer than it), served by vite preview on ports 4770 to 4789, one port per concurrent run; Playwright output under web/test-results/ux-review/_pw/verify2/",
+  "summary": "30 entries checked (28 distinct ids): the 10 wave-2 items (VER-01, VER-02, UX-017a, UX-012a, the pasted-JSON wording, UX-023, the OptionGroup print border, UX-100 and the two dev-merge checks, the self-test page and the RT block) and the 20 major wave-1 items replayed on desktop WebKit and on the Pixel 7 project, which wave 1 had not covered (UX-012a and UX-017a are in both lists and have an entry in each). All 30 verified, 0 partially, 0 not fixed, 0 regressed. Every wave-2 scenario was replayed from the fix notes and the source findings on Chromium and the iPhone 13 project, plus WebKit desktop and Pixel 7 where the item needed them, at 320x568 and 200% text where the finding named them; evidence under web/test-results/ux-review/verify2/<item>/<project>/ with NNN-facts.json. The regression sweep toured all 51 product routes with metrics and axe on Chromium at 390 and 1280 px in light and dark (204 states), on iPhone 13 at 390 px light and dark (102 states) and on desktop WebKit at 1280 px light (51 states): every route opened, no sideways overflow, no clipped text, no serious or critical axe issue, no console or page error beyond the expected WebGL message on the no-WebGL route, and no new small target against the wave-1 verify tours (web/test-results/ux-review/verify2/tour-compare.json: new 0 on each project). One whole ?fast=1 session per project (Chromium 135 answers, iPhone 205, WebKit 196) ended in a profile, downloaded a valid save, came back through a reload to the ready screen with the 'Last saved today at …' line, loaded the file, and 'See my results' showed the same blob marks and bar-view rows. One new finding, VER2-01 (minor, desktop WebKit only): inside an option group the orange focus ring leaves the card as soon as an arrow key moves the focus, because WebKit stops matching :focus-visible there; only the chosen ring remains. Wave-1 coverage gaps closed: desktop WebKit, Pixel 7 and the autosave line.",
+  "counts": {
+    "items": 30,
+    "verified": 30,
+    "partially": 0,
+    "not-fixed": 0,
+    "regressed": 0
+  },
+  "items": [
+    {
+      "id": "VER-01",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/VER-01/chromium/014-facts.json",
+        "web/test-results/ux-review/verify2/VER-01/chromium/005-interstitial-1280-100.png",
+        "web/test-results/ux-review/verify2/VER-01/chromium/007-interstitial-320-200.png",
+        "web/test-results/ux-review/verify2/VER-01/webkit/014-facts.json",
+        "web/test-results/ux-review/verify2/VER-01/iphone/007-facts.json",
+        "web/test-results/ux-review/verify2/VER-01/iphone/004-interstitial-320-200.png",
+        "web/test-results/ux-review/verify2/VER-01/pixel/007-facts.json"
+      ],
+      "facts": {
+        "method": "every word of the checklist measured by its own text range (letters on more than one line = a mid-word break) on three screens (first interstitial, interstitial after a skip, inside a part) at every size",
+        "desktop sizes (chromium, webkit)": "320, 390, 768, 1024, 1280, 1440 px at 100%; 320, 390, 1280 px at 200% text",
+        "phone sizes": "iphone 390 and 320 px, pixel 412 and 320 px, each at 100% and 200% text",
+        "brokenWords": 0,
+        "sidewaysOverflow": 0,
+        "rowsPastTheWindow": 0,
+        "1280 sidebar": "list 240 px wide, status under the name, rows 70 to 91 px",
+        "320 at 200%": "list 256 px wide, rows 142 to 228 px (worst row 228 px against 1,530 px in wave 1)",
+        "320 at 100%": "list 288 px wide, rows 70 to 91 px",
+        "upNextOccurrences": 1,
+        "wbrAfterSlash": 2
+      },
+      "notes": "'Calibration/Metacognition' and 'Estimation' stay whole at every width and text size; in the 1280 px sidebar the status now sits under the name (one line taller than before, as the fix note says). No overflow or clipping anywhere."
+    },
+    {
+      "id": "VER-02",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/VER-02/chromium/003-facts.json",
+        "web/test-results/ux-review/verify2/VER-02/chromium/001-welcome.png",
+        "web/test-results/ux-review/verify2/VER-02/iphone/003-facts.json",
+        "web/test-results/ux-review/verify2/VER-02/iphone/001-welcome.png",
+        "web/test-results/ux-review/verify2/VER-02/iphone/002-gate-footer.png",
+        "web/test-results/ux-review/verify2/VER-02/webkit/003-facts.json",
+        "web/test-results/ux-review/verify2/VER-02/pixel/003-facts.json",
+        "web/test-results/ux-review/verify2/tour-chromium/welcome/390-light.aria.yml"
+      ],
+      "facts": {
+        "welcome privacy links": "1 (the 130 x 44 px link under Start; footer 0) on the first visit, after 'Back to the start' from the end screen, and after Back from the privacy page, on all four projects",
+        "other screens with a footer privacy link": "gate, honour code, device check, ready, interstitial (the 'opens in a new tab' variant in a run), end screen, privacy page: all of them",
+        "footer link height on phones": "44 px (115.9 x 44 on the gate; 251.1 x 44 for 'Privacy and terms (opens in a new tab)' in a run) on iphone and pixel",
+        "footer link height on desktop": "24 px (115.9 x 24, 14 px font) at 1280 px on chromium and webkit",
+        "welcome accessibility tree vs wave 1": "identical except the footer paragraph with the link, which is gone"
+      },
+      "notes": "One privacy link on the welcome on every project and way back to it. The 44 px rule is applied on narrow screens (the fix note's max-width 40rem), which is where the finding placed it; on a 1280 px desktop the footer link stays 24 px tall (the 24 px minimum of WCAG 2.5.8)."
+    },
+    {
+      "id": "UX-017a",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-017a/chromium/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-017a/iphone/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-017a/iphone/003-320x568-100-viewport.png",
+        "web/test-results/ux-review/verify2/UX-017a/iphone/001-390x664-100-viewport.png",
+        "web/test-results/ux-review/verify2/UX-017a/webkit/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-017a/webkit/001-1280x800-100-viewport.png",
+        "web/test-results/ux-review/verify2/UX-017a/pixel/007-facts.json"
+      ],
+      "facts": {
+        "viewports": "desktop 1280x800 (chromium, webkit), iphone 390x664, pixel 412x839, and 320x568 at 100% and at 200% text on every project",
+        "message in the visible text": 1,
+        "message in the accessibility tree": 1,
+        "message in the live-region log": "1 (the panel's status paragraph, recorded by a per-frame watcher of every live region from page load); the renderer's 'could not be drawn' note: 0 in text, tree and log",
+        "header status line": "empty",
+        "renderer": "div.rotation attached but parked (0 client rects); 0 canvases, 0 radios, 0 Confirm",
+        "Skip Spatial": "primary; 320x568 at 100%: top 316, bottom 360 (in the first screen); 1280x800: 242 to 286; 390/412 wide: 252 to 296",
+        "Skip at 320x568 with 200% text": "bottom 1117 px, below the 568 px fold (not part of the acceptance; the panel is still the first thing under the heading)",
+        "after Skip": "'Up next: Working Memory'; panel and renderer gone",
+        "axe serious": 0,
+        "overflow / clipped": "0 / none"
+      },
+      "notes": "The condition is said once: the panel under the heading is the only text, the only node in the tree and the only live announcement; the renderer's own note is parked out of sight and out of the tree. Skip is in the first screen at 320x568 (and at 390, 412 and 1280)."
+    },
+    {
+      "id": "UX-012a",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-012a/chromium/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/chromium/001-1-bad-file.png",
+        "web/test-results/ux-review/verify2/UX-012a/chromium/004-7-good-code.png",
+        "web/test-results/ux-review/verify2/UX-012a/chromium/005-8-second-visit-autosave.png",
+        "web/test-results/ux-review/verify2/UX-012a/iphone/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/pixel/006-facts.json"
+      ],
+      "facts": {
+        "bad file": "1 role=alert paragraph (id <uid>-problem); the file field has aria-invalid=true and aria-describedby pointing at that alert; the status paragraph stays empty",
+        "typing in the code box": "removes the alert",
+        "bad code": "1 alert tied to the code box (aria-invalid=true, aria-describedby = the alert); status empty",
+        "good code": "0 alerts; the role=status paragraph says 'Loaded 1 earlier session. Your new session will be added to it.'",
+        "second visit after an autosaved session": "heading 'Earlier saves on this device'; line 'Last saved today at HH:MM, 1 question answered.' (matches ^Last saved today at …, 1 question answered\\.$); the line is a plain paragraph tied by aria-describedby to the checkbox 'Add my new session to the 1 earlier session saved on this device.'; 0 alerts; loading a code on that visit keeps the line",
+        "same on": "chromium, webkit, iphone, pixel"
+      },
+      "notes": "Errors are one alert each, tied to their field; success is a status; the autosave line (wave 1's uncovered gap) reads as specified and is tied to its checkbox."
+    },
+    {
+      "id": "PARSE-PASTE",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-012a/chromium/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/chromium/003-5-pasted-cut-off.png",
+        "web/test-results/ux-review/verify2/UX-012a/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/iphone/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/pixel/006-facts.json"
+      ],
+      "facts": {
+        "pasted JSON object": "This text is not a HumanBench save or save code. Choose your downloaded save file, or paste the save code you copied.",
+        "pasted cut-off JSON": "This pasted save looks cut off or damaged, so it cannot be read. Copy it again in full, or choose your downloaded save file.",
+        "chosen cut-off file": "This save file looks cut off or damaged, so it cannot be read. Download it again from your results, or paste a save code instead.",
+        "pasted text never called a file": true,
+        "file messages say file": true,
+        "developer words (json, gzip, schema, base64, parse)": "none",
+        "same on": "chromium, webkit, iphone, pixel"
+      },
+      "notes": "Pasted input is worded as text with a next step; a chosen file keeps the file wording."
+    },
+    {
+      "id": "UX-023",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-023/iphone/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-023/iphone/004-320x568-entry-viewport.png",
+        "web/test-results/ux-review/verify2/UX-023/iphone/005-320x568-after-done-viewport.png",
+        "web/test-results/ux-review/verify2/UX-023/iphone/006-320x568-next-entry-viewport.png",
+        "web/test-results/ux-review/verify2/UX-023/iphone/001-390x664-entry-viewport.png",
+        "web/test-results/ux-review/verify2/UX-023/chromium/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-023/webkit/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-023/webkit/004-320x568-entry-viewport.png"
+      ],
+      "facts": {
+        "measured": "390x664 and 320x568 on chromium, webkit and iphone, dev banner hidden, page at its top, every frame sampled through three presses, Done, the pause and the next sequence's entry",
+        "blocks": "9 of exactly 44 px, 0 under 44, 0 overlaps, all inside the board",
+        "board": "344 px at 390 (23 px gap each side, centred); 248 px at 320 (36 px each side, centred)",
+        "Done": "44 px tall; bottom 601 of 664 at 390 and 545 of 568 at 320: in the first screen; over 79 sampled frames at 320 its bottom never passed 544.8 px",
+        "after Done": "scrollY stayed 0; board top, left and height spread 0; document height spread 0; board moved 0 px between the entry and the next sequence's entry",
+        "statuses seen": "Selected 0..3 of 3, Next sequence coming up., Watch the blocks.",
+        "sideways overflow": "none"
+      },
+      "notes": "Wave 1's open point (Done 17 px below the fold at 320x568 and a 17 px shift after Done) is closed on all three engines."
+    },
+    {
+      "id": "OPTIONGROUP-PRINT",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/OptionGroup-print/chromium/003-facts.json",
+        "web/test-results/ux-review/verify2/OptionGroup-print/chromium/001-screen-dark.png",
+        "web/test-results/ux-review/verify2/OptionGroup-print/chromium/002-print-dark.png",
+        "web/test-results/ux-review/verify2/OptionGroup-print/webkit/003-facts.json",
+        "web/test-results/ux-review/verify2/OptionGroup-print/iphone/003-facts.json"
+      ],
+      "facts": {
+        "where": "a real spatial item's option cards",
+        "screen light border": "rgb(118, 118, 118)",
+        "screen dark border": "rgb(141, 139, 149)",
+        "print with a light scheme": "border rgb(118, 118, 118) on rgb(255, 255, 255)",
+        "print with a dark scheme": "border rgb(118, 118, 118) on rgb(255, 255, 255): equal to print light",
+        "same on": "chromium, webkit, iphone"
+      },
+      "notes": "The card border prints light whatever the screen's scheme."
+    },
+    {
+      "id": "UX-100",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-100/chromium/001-speed-facts.json",
+        "web/test-results/ux-review/verify2/UX-100/chromium/speed-1/001-shell-while-loading.png",
+        "web/test-results/ux-review/verify2/UX-100/chromium/013-facts.json",
+        "web/test-results/ux-review/verify2/UX-100/chromium/003-shell-390-dark-before-mount.png",
+        "web/test-results/ux-review/verify2/UX-100/chromium/004-shell-390-dark-after-mount.png",
+        "web/test-results/ux-review/verify2/UX-100/chromium/009-deep-privacy-held.png",
+        "web/test-results/ux-review/verify2/UX-100/chromium/010-deep-privacy-mounted.png",
+        "web/test-results/ux-review/verify2/UX-100/chromium/blocked/005-facts.json",
+        "web/test-results/ux-review/verify2/UX-100/chromium/blocked/002-failed.png",
+        "web/test-results/ux-review/verify2/UX-100/chromium/blocked/004-after-try-again.png",
+        "web/test-results/ux-review/verify2/UX-100/iphone/005-facts.json",
+        "web/test-results/ux-review/verify2/UX-100/iphone/blocked/005-facts.json",
+        "web/test-results/ux-review/verify2/UX-100/webkit/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-100/webkit/blocked/005-facts.json",
+        "web/test-results/ux-review/verify2/journey-chromium/033-facts.json",
+        "web/test-results/ux-review/verify2/journey-iphone/033-facts.json",
+        "web/test-results/ux-review/verify2/journey-webkit/033-facts.json"
+      ],
+      "facts": {
+        "speed (chromium, CDP Fast 3G 562.5 ms / 1.44 Mbps down / 0.675 up, 4x CPU, 3 cold loads, 1280x800)": {
+          "first heading text (Playwright, median)": "651 ms (643 / 651 / 652); skimmer before: 2,401 ms",
+          "first contentful paint (median)": "624 ms (620 / 624 / 648); before: blank until 2,319 ms DOMContentLoaded",
+          "app mounted": "2,200 ms; Start button visible 2,475 ms (before: heading and Start together at 2,401 ms)",
+          "html": "1,650 bytes"
+        },
+        "entry JS": {
+          "index-*.js raw": "360,239 bytes in this build (dev routes on); the plain production build is 345.13 KB per the integration gate",
+          "index-*.js gzip": "124,142 bytes (the preview serves gzip; the skimmer's entry was 152,047 bytes on the wire)",
+          "JS on the landing (on the wire)": "177,020 bytes (index 124,142; copy 31,043; clock 12,717; timing 6,004; spec 3,114); skimmer before: 201,804",
+          "results chunk on the landing": "none (Finished-*.js / .css are fetched later)"
+        },
+        "shell to app (chromium 390 and 1280, iphone 390, webkit 390 and 1280; light and dark)": "with every script held the shell shows the heading, tagline, intro, 'Loading…' and the footer disclaimer; after the mount the boxes of heading, tagline, intro and footer moved 0 px and no colour or font changed (body and main background, h1, intro and footer colour, footer border, h1 font); 0 focusable controls in the shell",
+        "after mount": "1 h1, 1 main, 1 contentinfo, no #hb-shell left, axe serious 0",
+        "deep links #/privacy and #/data (chromium, iphone, webkit)": "while held: 'Loading…' visible, the shell heading hidden, no welcome tagline or intro; mounted: h1 'Privacy and terms' / 'Your data on the server', titles 'Privacy and terms · HumanBench' / 'Your data on the server · HumanBench'. The DOM also holds the welcome's h1 under the notice (display: none, out of the accessibility tree); the privacy route's accessibility snapshot is identical to wave 1's",
+        "results chunk blocked (chromium, iphone, webkit)": "a ?fast=1 session with one answer and Finish now: the pending screen 'Your results' with focus on its heading and the status 'Preparing your results…'; then 'Your results could not be loaded. Your answers are not lost: check the connection and try again, or download your save file to keep them.' with 'Try again' and 'Download my save file' (7 chunk requests: the retries), unload guarded, axe serious 0, no developer words; the download is a valid save (schema 1.0.0, 1 session, 1 response) and lifts the guard; once the chunk is reachable 'Try again' shows 'Session complete' with the profile and the save panel, the Finished stylesheet loaded",
+        "full ?fast=1 session reaches the results": "chromium 135 answers / 291 steps / 53 s, iphone 205 / 456 / 55 s, webkit 196 / 405 / 52 s: 'Session complete', 'You finished every part.', results overflow 0, clipped 0, axe serious 0"
+      },
+      "notes": "The blank time on Fast 3G fell from 2.4 s to 0.62 s and the entry chunk from 152 KB to 124 KB on the wire; the mount itself still takes 2.2 s on that line, which the fix note says too. The shell swap is pixel-stable in both schemes on all three engines, deep links never flash the welcome, and the code-split results degrade to a usable fallback with the save still downloadable."
+    },
+    {
+      "id": "SYNC-SELFTEST",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/selftest/chromium/plain/008-facts.json",
+        "web/test-results/ux-review/verify2/selftest/chromium/offset/008-facts.json",
+        "web/test-results/ux-review/verify2/selftest/webkit/plain/008-facts.json",
+        "web/test-results/ux-review/verify2/selftest/webkit/offset/008-facts.json",
+        "web/test-results/ux-review/verify2/selftest/webkit/offset/007-table-320.png",
+        "web/test-results/ux-review/verify2/selftest/webkit/offset/002-results-1280.png",
+        "web/test-results/ux-review/verify2/selftest/iphone/plain/008-facts.json",
+        "web/test-results/ux-review/verify2/selftest/iphone/offset/008-facts.json",
+        "web/test-results/ux-review/verify2/selftest/iphone/offset/005-table-390.png",
+        "web/test-results/ux-review/verify2/selftest/chromium/plain/001-after-start.png"
+      ],
+      "facts": {
+        "runs": "chromium, webkit and iphone, each plain and with press time stamps emulated 205 ms behind the timer (so the longer verdict and the note are on the page); table measured at 1280, 390 and 320 px",
+        "table": "numbers on one line in every cell (measured by the text's own range), 0 words broken inside, overflow 0, clipped 0 at all 18 width x run combinations; at 390 and 320 the n and Result columns are hidden and the verdict sits under the check name",
+        "rows": "Frame interval (For information), Frame interval jitter (Pass), Timer resolution (Pass), Stimulus onset error (Pass), Wait from onset target to next frame (For information), Key press handling delay (checked only if press time stamps are offset), Pointer press handling delay (checked only if press time stamps are offset): 'For information' plain, 'Fail: offset time stamps' with the offset, 'Skipped' on the iPhone plain run where both press phases were skipped",
+        "offset note above the table": "This browser's press time stamps are offset from its timer by more than 25 ms. So reaction times are timed when the page handles the press, and this delay is checked like the other timing checks.",
+        "report": "rt_selftest_v3; event_lag {max_ms 25, key_rt_source handler, pointer_rt_source handler}, pass false with the offset",
+        "Start focus (chromium Tab, webkit Alt+Tab)": "first Tab lands on the 'HumanBench' home link; Enter on Start keeps the focus on Start (aria-disabled) with the status 'Measuring the display refresh (90 frames)…'; the key phase then focuses its zone 'Press the Space bar 3 times, at your own pace (0 of 3).'; the results focus the h2 'Results'",
+        "Start focus (iphone)": "after a tap no element is focused (iOS taps do not focus buttons; wave 1 recorded the same); the key phase focuses its zone",
+        "wording": "no event.timeStamp, performance.now, dispatch, handler, rAF, null, NaN, quantile or API in the intro or the results on any project; 'RT' only in the title; 'Overall: Pass (p95 below 5 ms on every timing check). Refresh rate: 60 Hz (measured 59.9 Hz).'; report notes read 'For information only: reaction times use the time stamp of the key press or tap itself, so this delay is not part of them.'",
+        "axe serious at 1280": 0,
+        "timing values": "not judged"
+      },
+      "notes": "After the dev merge the page keeps wave 1's phone table and plain words with dev's event-lag rows and the offset verdict. The wave-1 UX-054 spec's 'multiLineNumbers' lists every number cell on WebKit and Pixel (its range method counts the cell's own rects); the text-range method of verify2-selftest and the screenshots show single-line numbers."
+    },
+    {
+      "id": "SYNC-RT",
+      "verdict": "verified",
+      "projects": ["chromium", "webkit", "iphone", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/RT-merge/chromium/005-facts.json",
+        "web/test-results/ux-review/verify2/RT-merge/chromium/001-practice-stage.png",
+        "web/test-results/ux-review/verify2/RT-merge/chromium/003-counted-stage.png",
+        "web/test-results/ux-review/verify2/RT-merge/webkit/005-facts.json",
+        "web/test-results/ux-review/verify2/RT-merge/iphone/005-facts.json",
+        "web/test-results/ux-review/verify2/RT-merge/iphone/001-practice-stage.png",
+        "web/test-results/ux-review/verify2/RT-merge/pixel/005-facts.json"
+      ],
+      "facts": {
+        "intro": "h1 'Reaction time', title 'One position', instructions name the Space bar (keyboard) or 'tap or click the box' (touch) and '3 practice trials, then 30 counted trials'; focus on the h1",
+        "stage": "role=group, tabindex=-1, aria-label 'Reaction stage: press Space when the target appears' (chromium, webkit) / 'Reaction stage: tap the target when it appears' (iphone, pixel); it holds the focus (activeElement is .stage) and is in view, in practice and in the counted block",
+        "trial counter": "'Practice N of N' then 'Trial N of N' (digits in translate=no spans); between the two a Start button holds the focus",
+        "save file": "every project's save records, under the RT block's responses, rt_timestamp_source 'handler' with rt_timestamp_reason 'event_lag_high' (input_type keyboard or touch, device_class)",
+        "harness note": "the driver's play loop lost the counted block part-way under ?fast=1 (the stage facts were taken at trial 3 or 4 of 30 first), so the block was skipped and the session finished early; the save still holds the block's time-stamp record"
+      },
+      "notes": "Stage name, focus, counter and the per-block time-stamp source in the save are as before the merge on all four projects."
+    },
+    {
+      "id": "UX-001",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-001/pixel/019-facts.json",
+        "web/test-results/ux-review/verify2/UX-001/pixel/005-412x839-d-item2-viewport.png",
+        "web/test-results/ux-review/verify2/UX-001/webkit/019-facts.json",
+        "web/test-results/ux-review/verify2/UX-001/webkit/005-390x664-d-item2-viewport.png",
+        "web/test-results/ux-review/verify2/UX-001/webkit/009-390x664-g-memory-entry-viewport.png"
+      ],
+      "facts": {
+        "pixel (wave-1 spec, 412x839 and 320x568, taps at the bottom of the page)": "18 landings, 17 with the h1 in view; the one out is '320x568 G memory entry from bottom'",
+        "webkit (verify2-gaps variant: 390x664 and 320x568 by mouse, page scrolled to the bottom before each press)": "18 landings, 16 with the h1 in view; the two out are the 'G memory entry' landings at both sizes",
+        "the G landings": "the digit-span entry after the renderer's own Start on the same screen: UX-002 scrolls the stage into view inside one screen; not a screen change (wave 1 explained the same two on the iPhone)"
+      },
+      "notes": "New screens open at their heading on desktop WebKit at phone sizes and on the Pixel 7."
+    },
+    {
+      "id": "UX-002",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-002/webkit/009-facts.json",
+        "web/test-results/ux-review/verify2/UX-002/webkit/001-320x568-coding-start-viewport.png",
+        "web/test-results/ux-review/verify2/UX-002/pixel/009-facts.json",
+        "web/test-results/ux-review/verify2/UX-002/pixel/001-412x839-coding-start-viewport.png",
+        "web/test-results/ux-review/verify2/UX-002/pixel/005-320x568-coding-start-viewport.png"
+      ],
+      "facts": {
+        "coding block at the clock start (webkit 320x568 and 1280x800; pixel 412x839 and 320x568)": "legend, timer, stage and keypad all on screen; at 320 the span from the legend to the keypad is 248 px, one keypad row, keys 30 x 50 (VER-03, owner decision, unchanged), legend cells without border or fill, keys with a 2 px border",
+        "digit span after Start": "stage in view (stageTop 31 at 320 on webkit), focus on the stage",
+        "RT stage after Start practice": "in view"
+      },
+      "notes": "Timed blocks start with their stage on screen on both added projects."
+    },
+    {
+      "id": "UX-003",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-003/webkit/008-facts.json",
+        "web/test-results/ux-review/verify2/UX-003/pixel/008-facts.json",
+        "web/test-results/ux-review/verify2/UX-003/pixel/002-2-interstitial-matrix-viewport.png"
+      ],
+      "facts": {
+        "webkit at 320 px": "bar 60 px on interstitials (ring 32 px, 'Finish early' 44 px) and 100 px (two rows) on item screens with Skip and Finish; the notice adds 48 px in a calm colour; 190 px at most with the 81 px dev banner",
+        "pixel at 412 px": "bar 60 px on interstitials and on item screens",
+        "notice sequence": "'Reaction Time skipped. It will show as not measured.' on the Matrix interstitial, gone on the next item screens; 'Matrix & Series skipped…' on the Spatial interstitial; 'Spatial skipped…' on the Working Memory interstitial; none on the memory intro"
+      },
+      "notes": "Header height and notice lifetime as wave 1 found on Chromium and iPhone."
+    },
+    {
+      "id": "UX-004",
+      "verdict": "verified",
+      "projects": ["webkit"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-004/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-004/webkit/002-q1-feedback.png",
+        "web/test-results/ux-review/verify2/UX-004/webkit/003-q2-arrival.png"
+      ],
+      "facts": {
+        "chord": "Alt+Tab (WebKit)",
+        "Q1": "arrival focus on the h1 'Practice'; buttons Confirm and Stop practice, no Back; one Tab to the field",
+        "feedback": "focus on section.feedback; live region role=status 'Your answer was not correct. The right answer is A.'; visible 'That was not correct. The answer was A.'; Tab reaches 'Next practice question'",
+        "Q2": "arrival focus on the h1, counter 'Practice question 2 of 4'",
+        "Stop practice": "reached by Tab; lands on 'Ready when you are' with focus on its h1"
+      },
+      "notes": "Keyboard scenario; the Pixel project has no Tab key (skipped by design)."
+    },
+    {
+      "id": "UX-005a",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-005a/webkit/003-facts.json",
+        "web/test-results/ux-review/verify2/UX-005a/pixel/002-facts.json",
+        "web/test-results/ux-review/verify2/UX-005a/pixel/001-finish-early-double-tap.png"
+      ],
+      "facts": {
+        "webkit": "the Skip panel focuses its h2 'Skip Working Memory?' (608 px wide, margin-top 0); Escape closes it and the entry has the focus back (digits typed before and after are counted: 2 of 3, then 3 of 3); Keep going does the same; the finish panel closes on Escape too",
+        "pixel": "a double tap on Finish early leaves the panel open; a double tap on Keep going closes it and checks nothing underneath"
+      },
+      "notes": "Confirm panels behave on both added projects."
+    },
+    {
+      "id": "UX-009a",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-009-010/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-009-010/webkit/002-a-finished-after-load-top.png",
+        "web/test-results/ux-review/verify2/UX-009-010/webkit/005-d-one-answer-rest-skipped-top.png",
+        "web/test-results/ux-review/verify2/UX-009-010/pixel/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-009-010/pixel/004-c-finished-nothing.png"
+      ],
+      "facts": {
+        "load a file, Begin, Finish early at once": "'Session complete' with 'This visit added no new answers. Your profile below comes from 1 earlier session.'",
+        "nothing measured": "'Session ended', 'You finished early, so some parts are not measured.', 'Back to the start' primary, the save panel inside the closed disclosure 'Keep a file of this visit anyway'",
+        "one answer, every other part skipped": "'Session ended', 'You reached the end of the session. You skipped 6 parts: Reaction Time, Matrix & Series, Spatial, Working Memory, Quantitative Reasoning and Processing & Reading Speed.', no profile",
+        "same on": "webkit, pixel"
+      },
+      "notes": "The first webkit attempt of this scenario failed under the prior session's load (ten runs at once); re-run alone it passed."
+    },
+    {
+      "id": "UX-010",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-009-010/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-009-010/webkit/003-b-results-view-top.png",
+        "web/test-results/ux-review/verify2/UX-009-010/pixel/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-009-010/pixel/001-ready-loaded.png"
+      ],
+      "facts": {
+        "ready after a load": "buttons Begin, See my results, Try practice questions first; 'Your new session will be added to 1 earlier session.'",
+        "See my results": "'Your results' ('Your profile from 1 earlier session.', title 'Your results · HumanBench'); the file downloaded there holds 1 session with 33 responses and the same anon_id as the loaded save (nothing appended)",
+        "same on": "webkit, pixel"
+      },
+      "notes": "See my results opens the profile without a new session on both added projects."
+    },
+    {
+      "id": "UX-011",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-011/webkit/003-facts.json",
+        "web/test-results/ux-review/verify2/UX-011/webkit/002-after-browser-back.png",
+        "web/test-results/ux-review/verify2/UX-011/pixel/003-facts.json",
+        "web/test-results/ux-review/verify2/UX-011/pixel/002-after-browser-back.png"
+      ],
+      "facts": {
+        "welcome": "one privacy link, same tab, not in the footer",
+        "in a session": "beforeunload guarded; the footer link is 'Privacy and terms (opens in a new tab)' with target=_blank; browser Back opens 'Finish now?' on the same item (URL unchanged, item still there); Keep going returns to it; a second Back asks again; the footer link opens a popup with 'HumanBench' while the session's h1 and item stay",
+        "same on": "webkit, pixel"
+      },
+      "notes": "Leaving mid-session is guarded on both added projects."
+    },
+    {
+      "id": "UX-012a (WebKit and Pixel)",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-012a/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/webkit/005-8-second-visit-autosave.png",
+        "web/test-results/ux-review/verify2/UX-012a/pixel/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-012a/pixel/001-1-bad-file.png"
+      ],
+      "facts": {
+        "result": "identical to the Chromium and iPhone facts of UX-012a above: one alert per failure tied to its field, status for success, the autosave line present and tied to its checkbox, pasted wording as specified"
+      },
+      "notes": "The wave-1 coverage gap (desktop WebKit, Pixel 7, the autosave line) is closed for the ready screen."
+    },
+    {
+      "id": "UX-017a (WebKit and Pixel)",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-017a/webkit/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-017a/webkit/003-320x568-100-viewport.png",
+        "web/test-results/ux-review/verify2/UX-017a/pixel/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-017a/pixel/001-412x839-100-viewport.png"
+      ],
+      "facts": {
+        "result": "identical to the Chromium and iPhone facts of UX-017a above: message once in text, tree and live log; Skip in the first screen at 320x568, 1280x800 (webkit) and 412x839 (pixel)"
+      },
+      "notes": "Covered on both added projects."
+    },
+    {
+      "id": "UX-017b",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-017/webkit/005-facts.json",
+        "web/test-results/ux-review/verify2/UX-017/webkit/002-320x568-no-webgl-viewport.png",
+        "web/test-results/ux-review/verify2/UX-017/webkit/004-1280x800-no-webgl-viewport.png",
+        "web/test-results/ux-review/verify2/UX-017/pixel/005-facts.json",
+        "web/test-results/ux-review/verify2/UX-017/pixel/002-412x839-no-webgl-viewport.png"
+      ],
+      "facts": {
+        "without WebGL (webkit 320x568 and 1280x800; pixel 412x839 and 320x568)": "0 option frames, 0 canvases, 0 Confirm, header notice empty; one visible sentence 'This question cannot be shown in your browser (for example, 3D graphics may be switched off).'; the renderer's one-line note exists only inside the parked div.rotation (read by innerText of a display:none element; not visible, not in the tree)",
+        "Skip Spatial": "125 x 44 px at y 316 (320 wide) and y 242 (1280), in the first screen; the panel directly under the h1 (top 166 against the h1's bottom 150)",
+        "console": "the expected THREE.WebGLRenderer context error is the only console error of the whole tour on all three tour projects"
+      },
+      "notes": "Nothing is drawn without WebGL and the panel speaks once; the slow-chunk 'Loading figures…' state of wave 1 is Chromium-only (route throttling) and was not re-checked here."
+    },
+    {
+      "id": "UX-018a",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-016-018/webkit/002-facts.json",
+        "web/test-results/ux-review/verify2/UX-016-018/pixel/002-facts.json"
+      ],
+      "facts": {
+        "break offer": "'Time for a break? You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.' with Take a break and Keep going; no benefit-claim words (sharp, help you, improve and the like) on the screen",
+        "same on": "webkit, pixel"
+      },
+      "notes": "Break-offer copy is the non-claiming wording on both added projects."
+    },
+    {
+      "id": "UX-018b",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-016-018/webkit/002-facts.json",
+        "web/test-results/ux-review/verify2/UX-016-018/webkit/001-welcome-viewport.png",
+        "web/test-results/ux-review/verify2/UX-016-018/pixel/002-facts.json"
+      ],
+      "facts": {
+        "focus session text": "'Or a 20-minute focus session. Pick the parts you want measured more precisely. A focus session takes about 20 minutes and covers only the parts you choose.' with the parts to include listed",
+        "welcome": "the 44 px privacy link sits 16 px under Start, on its own line (webkit and pixel)",
+        "same on": "webkit, pixel"
+      },
+      "notes": "Focus-session and welcome copy as wave 1 verified; no benefit claims."
+    },
+    {
+      "id": "UX-019",
+      "verdict": "verified",
+      "projects": ["webkit"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-019/webkit/004-facts.json",
+        "web/test-results/ux-review/verify2/UX-019/webkit/001-after-enter-on-q1.png",
+        "web/test-results/ux-review/verify2/UX-019/webkit/002-after-submit-with-blanks.png"
+      ],
+      "facts": {
+        "chord": "Alt+Tab",
+        "arrival": "3 questions, legends inside their frames, count line '3 questions not answered yet.'",
+        "Enter on an option": "never submits (the 3 questions stay; the count drops to 2)",
+        "Submit with blanks": "alert '2 questions are not answered yet. Choose Submit answers again to submit anyway, or answer them first.' with the focus on 'Submit answers'; a second Submit ends the block",
+        "all answered": "one Enter on Submit ends the block"
+      },
+      "notes": "Keyboard scenario; skipped on Pixel by design."
+    },
+    {
+      "id": "UX-020",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel", "chromium"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-020-021/webkit/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-020-021/webkit/001-1280-matrix.png",
+        "web/test-results/ux-review/verify2/UX-020-021/webkit/006-320-matrix.png",
+        "web/test-results/ux-review/verify2/UX-020-021/pixel/004-facts.json",
+        "web/test-results/ux-review/verify2/UX-020-021/pixel/001-412-matrix.png",
+        "web/test-results/ux-review/verify2/UX-021-focus/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-021-focus/webkit/001-a-tab-into-group.png",
+        "web/test-results/ux-review/verify2/UX-021-focus/webkit/002-b-arrow-right.png",
+        "web/test-results/ux-review/verify2/UX-021-focus/chromium/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-021-focus/chromium/002-b-arrow-right.png"
+      ],
+      "facts": {
+        "option scale (webkit 1280, 768, 390, 320; pixel 412)": "grid cells and option cells the same size (114.7 px from 768 up and at 412, 114 at 390, 90.7 at 320; ratio 1), same left edge and width",
+        "one primary": "Confirm is the one primary button (blue), disabled until a choice",
+        "pixel double tap on Continue": "nothing leaks into the next item (no radio checked, nothing typed), twice",
+        "focus ring, Tab into the group": "3 px solid orange outline on the card in both engines (webkit Alt+Tab, chromium Tab)",
+        "focus ring, arrow keys": "chromium keeps the ring on each option as the arrows move the focus; webkit drops it (outline none, :focus-visible no longer matches) and the 2 px chosen shadow is the only mark; Shift+Tab back restores the ring in both",
+        "mouse click on an option": "no ring in either engine (webkit does not focus the radio on a click at all)"
+      },
+      "notes": "UX-020 and UX-021 hold on both added projects. The arrow-key ring loss on desktop WebKit is filed as VER2-01 (engine behaviour; the chosen ring still follows the keyboard since the arrows check as they go)."
+    },
+    {
+      "id": "UX-028",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-028-031/webkit/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-028-031/webkit/001-results-top-unsaved.png",
+        "web/test-results/ux-review/verify2/UX-028-031/webkit/003-after-stay-and-save.png",
+        "web/test-results/ux-review/verify2/UX-028-031/webkit/005-save-panel-after-download.png",
+        "web/test-results/ux-review/verify2/UX-028-031/pixel/007-facts.json",
+        "web/test-results/ux-review/verify2/UX-028-031/pixel/003-after-stay-and-save.png"
+      ],
+      "facts": {
+        "unsaved results": "the pointer 'Your results are not saved yet. Download your save file to keep them. Go to the save file' in the first screen (top 161 on webkit, 135 on pixel), linking to #hb-save-heading; the link focuses the h2 'Save your results' with the panel in view",
+        "Stay and save": "focuses 'Download save file' with the panel in view (webkit scrollY 1687, pixel 1935)",
+        "Copy save code before saving": "webkit: 'Save code copied. Keep it in a note to yourself and paste it under \"Or paste a save code\" on the \"Ready when you are\" screen. Downloading the file is still the safest way to keep your results.'; pixel (clipboard blocked in the emulated browser): 'The code could not be copied automatically. Select it below and copy it yourself.'",
+        "after the download": "'Save file downloaded.', 'Saved as humanbench-aaaaaa-2026-10-06.hbsave.json. Look in your Downloads folder (on an iPhone, the Files app) and keep it.', Download no longer primary, the pointer gone, panel border grey; 'Save your file first to see the next steps.' sits inside the panel before that",
+        "ready screen named for loading": "'To add a session later, press Start and load your save file on the \"Ready when you are\" screen.'"
+      },
+      "notes": "Save panel behaviour (UX-028 to UX-031) holds on both added projects; WebKit also offers 'Share or save to an app' (Web Share), Pixel does not."
+    },
+    {
+      "id": "UX-032",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-032/webkit/004-facts.json",
+        "web/test-results/ux-review/verify2/UX-032/webkit/001-a-card-panel.png",
+        "web/test-results/ux-review/verify2/UX-032/webkit/003-c-one-skill-card-panel.png",
+        "web/test-results/ux-review/verify2/UX-032/pixel/003-facts.json",
+        "web/test-results/ux-review/verify2/UX-032/pixel/002-c-one-skill-card-panel.png"
+      ],
+      "facts": {
+        "7 measured skills, Hide all": "'Tick at least 3 skills to make a card (0 ticked).' and the PNG, SVG (and on webkit Share image) buttons disabled; Show all: '7 skills are on the card.'",
+        "full-size link": "'View the card full size (opens in a new tab)', blob: URL, target _blank; preview 798 px on webkit at 1280, 346 px on pixel",
+        "PNG button after a colour change (webkit)": "'preparing' (aria-disabled) for about 300 ms, then ready; Tab order full-size link, PNG, SVG",
+        "one measured skill": "the panel says 'A card needs at least 3 measured skills, and your profile has 1. Play more parts or add another session, then come back to make a card.' with no checkboxes or buttons"
+      },
+      "notes": "Share card gates and controls hold on both added projects."
+    },
+    {
+      "id": "UX-037",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-037/webkit/003-facts.json",
+        "web/test-results/ux-review/verify2/UX-037/webkit/001-dev-offscale-chart.png",
+        "web/test-results/ux-review/verify2/UX-037/webkit/002-dev-offscale-bars.png",
+        "web/test-results/ux-review/verify2/UX-037/pixel/003-facts.json",
+        "web/test-results/ux-review/verify2/UX-037/pixel/001-dev-offscale-chart.png"
+      ],
+      "facts": {
+        "#/dev/blob?profile=offscale": "Reaction Time draws a 'high' arrow at the rim and Processing & Reading Speed a 'low' arrow at the clamp, with no dot and a zero-length whisker; the other measured spokes keep dots and whiskers; the 10 not-measured spokes keep their stubs",
+        "caption": "'An arrow at the centre or the rim of the chart marks an estimate at or past the end of the scale (−3 or +3 SD); the table gives the number.'",
+        "bar view": "measured rows with a dot and a range line (e.g. Matrix & Series '+1.37 ± 0.36'); the off-scale rows are marked; not-measured rows empty",
+        "same on": "webkit, pixel"
+      },
+      "notes": "Off-scale estimates render the same on both added projects; the chromium and iphone journeys also ended with 7 and 5 'off scale' labels in place."
+    },
+    {
+      "id": "UX-038",
+      "verdict": "verified",
+      "projects": ["webkit"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-038/webkit/005-facts.json",
+        "web/test-results/ux-review/verify2/UX-038/webkit/003-light-png-at-600.png",
+        "web/test-results/ux-review/verify2/UX-038/webkit/004-dark-png-at-600.png",
+        "web/test-results/ux-review/verify2/UX-038/downloads/card-light.svg",
+        "web/test-results/ux-review/verify2/UX-038/downloads/card-dark.png"
+      ],
+      "facts": {
+        "downloaded light and dark cards (SVG and PNG)": "smallest text 20 card px, i.e. 10 px at 600 wide; the key present (filled / hollow, SD spelled out, ring note, centre); 'Ranges that overlap are not real differences' once; 'Rough estimates on a provisional scale' present",
+        "preview": "798 px wide at 1280"
+      },
+      "notes": "Desktop downloads scenario; skipped on Pixel by design. Legibility at feed size holds on WebKit."
+    },
+    {
+      "id": "UX-054",
+      "verdict": "verified",
+      "projects": ["webkit", "pixel"],
+      "evidence": [
+        "web/test-results/ux-review/verify2/UX-054-055/webkit/006-facts.json",
+        "web/test-results/ux-review/verify2/UX-054-055/webkit/004-results-table-320.png",
+        "web/test-results/ux-review/verify2/UX-054-055/webkit/003-results-table-390.png",
+        "web/test-results/ux-review/verify2/UX-054-055/pixel/004-facts.json",
+        "web/test-results/ux-review/verify2/UX-054-055/pixel/002-results-table.png",
+        "web/test-results/ux-review/verify2/selftest/webkit/plain/008-facts.json"
+      ],
+      "facts": {
+        "table (webkit 1280, 390, 320; pixel 412)": "no word broken, overflow 0, clipped 0; at 390, 320 and 412 the n and Result columns are hidden and the verdict sits under the check name; the caption 'Timing checks in milliseconds (n is the number of samples)'",
+        "UX-055 on these projects": "home link 44 px; Start keeps the focus (aria-disabled) while measuring; the key phase focuses its zone; 'Run again' a plain button; copy says 'Copying was blocked. The report is selected: copy it yourself.' where the clipboard is blocked; no 'timestamp' or 'RT' outside the title",
+        "wave-1 spec artefact": "its 'multiLineNumbers' lists every number cell on WebKit and Pixel because its range covers the cell's own rects; the verify2 self-test spec (text ranges) finds none on the same engines and the screenshots show single-line numbers"
+      },
+      "notes": "The phone table holds on both added projects (and after the dev merge, see SYNC-SELFTEST)."
+    }
+  ],
+  "regressions": [
+    "VER2-01 Option-card focus ring leaves the card on arrow keys in desktop WebKit (minor, a11y, engine heuristic; the chosen ring still follows the keyboard)"
+  ],
+  "coverage": {
+    "tour": "51 product routes on chromium at 390 and 1280 px, light and dark (204 states), on iphone at 390 px light and dark (102 states) and on webkit at 1280 px light (51 states), metrics and axe on every state; every route opened; summaries in web/test-results/ux-review/verify2/tour-<project>/summary.json; compared state by state with the wave-1 verify tours by web/ux-review/verify2-compare.ts (web/test-results/ux-review/verify2/tour-compare.json): new route failures 0, new overflow 0, new clipped text 0, new small targets 0, new axe serious or critical 0, new console or page errors 0, heading changes 0, on each project (WebKit set against wave 1's Chromium at 1280 light, as there was no wave-1 WebKit tour). Carried over, not new: the THREE WebGL context error on item-spatial-no-webgl; the 18 px 'Make notes for your AI (opens in a new tab)' link on the saved results and share-card routes; on the iPhone the 24 px gate link 'Read the full privacy notice and terms', the 24 px 'Back' link on the privacy page and the 26 px honour-code checkbox (all under 44, all present in wave 1)",
+    "journeys": "one whole ?fast=1 session per project: chromium (mouse and keys, 135 answers), iphone (touch, 205) and webkit (mouse and keys, 196), each to 'Session complete' with results overflow 0, clipped 0, axe serious 0; the save downloaded (1 session; 142 / 212 / 203 responses; rt_timestamp_source recorded), 'Saved as …' line shown; reload to the welcome; through the gate to Ready with 'Earlier saves on this device' and 'Last saved today at HH:MM, N questions answered.'; the file loaded ('Loaded 1 earlier session. Your new session will be added to it.'); 'See my results' showed the same blob marks (measured, off-scale arrows, unmeasured per spoke) and the same bar-view rows as the session's own results; evidence web/test-results/ux-review/verify2/journey-<project>/",
+    "wave-2 items": "every acceptance of the four fix packages and integration-2 replayed on chromium and iphone, plus webkit and pixel for the session and sync items, at 320x568 and 200% text where the finding named them; the speed measurement only on chromium (throttling needs a CDP session)",
+    "wave-1 gaps": "the 20 major wave-1 items replayed on desktop WebKit and on Pixel 7 with the wave-1 verify specs (UX-RUN verify2) plus a desktop variant of UX-001 and a keyboard focus-ring check in verify2-gaps.ux.ts; keyboard-only scenarios (UX-004, UX-019) and the downloads scenario (UX-038) on WebKit only, as their specs skip touch projects; the 'Last saved today at …' line checked on all four projects",
+    "not covered": "the iphone-se project; UX-023 and the OptionGroup print border on pixel (not required; three engines covered); the self-test and the no-WebGL Skip offer at 200% text beyond what the acceptance named (Skip's bottom is at 1117 px at 320x568 with 200% text, recorded as a fact); the timing values of the self-test (not judged); the Chromium-only 'Loading figures…' slow-chunk state of UX-017b; vitest and the isolated e2e suite (the integrator's gates); the wave-1 items outside the 20 (UX-005b to UX-008, UX-013 to UX-016, UX-022, UX-024 to UX-027, UX-033 to UX-036, UX-039 to UX-053) on WebKit and Pixel; a real device (every WebKit and Pixel result is Playwright's desktop WebKit build and device emulation)"
+  },
+  "files": {
+    "specs": [
+      "web/ux-review/personas/verify2-session.ux.ts",
+      "web/ux-review/personas/verify2-render.ux.ts",
+      "web/ux-review/personas/verify2-perf.ux.ts",
+      "web/ux-review/personas/verify2-selftest.ux.ts",
+      "web/ux-review/personas/verify2-tour.ux.ts",
+      "web/ux-review/personas/verify2-gaps.ux.ts",
+      "web/ux-review/verify2-compare.ts"
+    ],
+    "findings": "web/ux-review/findings/verify2-regressions.json",
+    "evidence": "web/test-results/ux-review/verify2/",
+    "compare": "web/test-results/ux-review/verify2/tour-compare.json"
+  }
+}

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../engine/axes'
 import { assertValidSave } from '../save/validate'
-import { buildResults, scoredSessions, skippedIn } from './results'
+import { axisEstimates } from '../viz/profile'
+import { buildResults, OFFERED_AXES, scoredSessions, skippedIn } from './results'
 import { DAY_MS, T0_MS, botSave } from './test-support'
 
 describe('buildResults (M1.Q re-score of the save)', () => {
@@ -104,6 +105,29 @@ describe('buildResults (M1.Q re-score of the save)', () => {
   it('never carries a total, a mean or an area across skills', () => {
     const r = buildResults(botSave('s_RESULTS000000013').save)!
     expect(Object.keys(r).sort()).toEqual(['facetObservations', 'input', 'nSessions', 'practiceAdjusted', 'rescore', 'skipped'])
+  })
+})
+
+describe('the skills this build offers (§9.7, UX-048b)', () => {
+  it('are the axes of the session plan and Calibration, which every rated answer measures', () => {
+    expect([...OFFERED_AXES].sort()).toEqual(['CAL', 'MAT', 'PS', 'QR', 'RT', 'SPA', 'WM'])
+  })
+
+  it('a skill no part measures is "not offered yet"; a skipped one stays skipped; an offered one with no answers has no data', () => {
+    const { save } = botSave('s_RESULTS000000030', {
+      skipped: ['SPA'],
+      drive: (bot) => {
+        bot.until((v) => v.phase === 'block')
+        bot.step()
+        bot.run.finishEarly()
+      },
+    })
+    const r = buildResults(save)!
+    expect(r.input.offered).toBe(OFFERED_AXES)
+    const reason = (code: string): string | undefined => axisEstimates(r.input).find((e) => e.code === code)?.reason
+    for (const code of ['LR', 'LG', 'RC', 'VOC', 'FER', 'KST', 'KHU', 'KAP', 'EMO', 'CRE']) expect(reason(code), code).toBe('not_yet_available')
+    expect(reason('SPA')).toBe('skipped')
+    for (const code of ['MAT', 'WM', 'QR', 'PS']) expect(reason(code), code).toBe('no_data')
   })
 })
 

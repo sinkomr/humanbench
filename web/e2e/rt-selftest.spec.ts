@@ -76,8 +76,8 @@ test.describe('RT timing self-test page (M1.23)', () => {
 
   test('a quick run measures every metric and reports p50/p95/max with a verdict', async ({ page }) => {
     await runAutomaticPart(page)
-    // Focus moves to the key-press instructions (the Start button is disabled during the run).
-    await expect(page.getByText(/^Press the space bar/)).toBeFocused()
+    // Focus moves to the key-press instructions (Start keeps focus during the run, then hands it over).
+    await expect(page.getByText(/^Press the Space bar/)).toBeFocused()
     for (let i = 0; i < 3; i++) await page.keyboard.press('Space')
     // Each new section takes the focus (the old one, with the focused element, is removed).
     await expect(page.getByRole('heading', { name: 'Pointer presses' })).toBeFocused()

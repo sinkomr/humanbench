@@ -25,11 +25,11 @@ function info(id: SegmentId, axes: readonly AxisCode[], title: string, blurb: st
 /** The six A15 segments, in order. */
 export const SEGMENT_INFO: Readonly<Record<SegmentId, SegmentInfo>> = Object.freeze({
   rt: info('rt', ['RT'], 'Reaction time', 'A target appears on the screen. Respond as fast as you can once you see it. A few practice trials come first.'),
-  matrix_series: info('matrix_series', ['MAT'], 'Matrix & Series', 'Find the pattern. Pick the piece that completes a grid, or type the next term of a sequence.'),
-  spatial: info('spatial', ['SPA'], 'Spatial', 'Turn shapes in your mind. Decide which figure is the same shape as the target.'),
-  memory: info('memory', ['WM'], 'Working Memory', 'Repeat short sequences of digits forwards and backwards, then the order of lit-up squares.'),
+  matrix_series: info('matrix_series', ['MAT'], 'Matrix & Series', 'Find the pattern. Pick the cell that completes a grid, or type the next term of a sequence.'),
+  spatial: info('spatial', ['SPA'], 'Spatial', 'Turn objects in your mind. Decide which option is the same object as the target, rotated.'),
+  memory: info('memory', ['WM'], 'Working Memory', 'Repeat short sequences of digits forwards and backwards, then the order in which blocks light up.'),
   quant: info('quant', ['QR'], 'Quantitative Reasoning', 'Solve short number problems and type your answer. Keep paper and a calculator out of reach.'),
-  coding_reading: info('coding_reading', ['PS'], 'Processing & Reading Speed', 'Match symbols to digits against the clock, then read a short passage and answer a few questions about it.'),
+  coding_reading: info('coding_reading', ['PS'], 'Processing & Reading Speed', 'Match shapes to digits against the clock, then read a short passage and answer a few questions about it.'),
 })
 
 /** The segment's name (axis name) for messages such as "Skip Spatial?". */

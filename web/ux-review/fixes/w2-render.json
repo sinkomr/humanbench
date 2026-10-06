@@ -1,0 +1,72 @@
+{
+  "area": "w2-render",
+  "model": "sonnet",
+  "items": [
+    {
+      "id": "UX-023",
+      "outcome": "fixed",
+      "summary": "Corsi on a 320 x 568 phone now has Done in the first screen, in every phase, and the board does not move when Done is pressed. (1) The board's width cap is now min(100%, max(14rem, min(26rem, 52svh, 100svh - 20rem))): on a short screen what is left after 20rem of page above the board and the status line and Undo / Done below it, never above the old 52svh cap, with a 14rem floor, the least width at which the nine 2.75rem blocks lie inside the board's border and none touches another (computed from CORSI_BOARD and pinned in a unit test; a rem narrower fails). The page width (100%) still wins on a narrower page. (2) The row of Undo and Done is a slot (`.hb-actions.slot`, min-height 2.75rem) that is mounted from the first sequence to the end of the block; the buttons are in it only while the taker enters, so the page is as tall during the sequence, the pause and after Done as it is while entering (before, the row appeared and disappeared and the page changed height by about 50 px every trial). (3) On widths up to 40rem the board is centred (margin-inline: auto); on a wide page it stays on the text's left edge, as before. Block size (44 px), the percent positions (--x, --y, --s) and the markup of the blocks are unchanged; no presentation timing, sequence or key code was touched. Measured as the verifier did (banner hidden, page at its top, Done bottom against innerHeight; every animation frame sampled from before the first sequence to after Done): BEFORE 320x568: board 288x288 at y 212.8, Done bottom 584.8 (16.8 px below the fold), page scrolled 17 px to tap Done and the board then sat 17 px higher (y 195.8); 390x664: board 345.3, Done bottom 602.1, left-aligned (16 px left gap, 28.7 px right). AFTER 320x568 (iphone, chromium, webkit identical): board 248x248 at y 212.8 x 36..284 (centred), Undo/Done row y 500.8..544.8 (23.2 px inside the fold) in all 81 sampled frames, board top and height spread 0 px over the whole block, scrollY 0 throughout, page height constant (1143); 390x664: board 344x344 at y 172.8 x 23..367 (centred), Done bottom 600.8 (63 px inside). Blocks 44 x 44, no overlaps, inside the border, centres within 1 px of the spec fractions, no horizontal scroll.",
+      "files": [
+        "web/src/render/span/CorsiRenderer.svelte",
+        "web/src/render/span/span.dom.test.ts",
+        "web/src/render/span/__snapshots__/span.dom.test.ts.snap",
+        "web/e2e/ux2-render.spec.ts",
+        "web/e2e/ux-render.spec.ts"
+      ],
+      "tests_added": [
+        "src/render/span/span.dom.test.ts: 'keeps the row of Undo and Done mounted for the whole block, with the buttons only while the taker enters, so the page is as tall after Done as before it' (same .hb-actions element through present, entry, pause and the end of the block; no Done while the sequence plays; row is the last child of the section)",
+        "src/render/span/span.dom.test.ts: 'the board is never narrower than the least width that holds nine 2.75rem blocks inside it without touching, whatever the screen height' (reads the floor from CorsiRenderer.svelte's two width declarations = 14rem; holds() computed from CORSI_BOARD is true at the floor and false one rem below it)",
+        "e2e/ux2-render.spec.ts 'Corsi board at 390 x 664 / 320 x 568': plays the session on ?fast=1 to the Corsi block, hides the dev banner, page at top, samples the layout on every animation frame from before Start to after Done and the next trial; asserts nine blocks >= 44 px, no overlaps, inside the board's border, centres within 1 px of CORSI_BOARD, board square and centred, no sideways scroll, scrollY 0 and Undo/Done row bottom and Done bottom <= innerHeight in every frame, board top/left/height and page height and row position spread <= 1 px over the whole block, the pause after Done and the next trial's entry seen, second entry equals the first to 1 px. Runs on chromium, iphone and webkit (test.use viewport per describe). Negative control: with the old CSS injected the 320x568 case fails with Done's bottom 584.796875 against 568, the verifier's number",
+        "e2e/ux2-render.spec.ts 'the option cards of a choice item (OptionGroup)': emulateMedia screen/print x light/dark on a real spatial item"
+      ],
+      "tests_changed": [
+        "src/render/span/__snapshots__/span.dom.test.ts.snap: only 'CorsiRenderer > matches its snapshot (entry)' (the row is now `hb-actions slot svelte-...`; its buttons are the same)",
+        "e2e/ux-render.spec.ts: one comment line in the wave 1 UX-023 test pointing at the stricter check; no assertion changed"
+      ],
+      "deviations": [
+        "The acceptance says the board is 'still centred'; it was not (left-aligned in the column, 16 px left gap against 28.7 px right at 390 wide). With the board narrower than the column more often, it is now centred up to 40rem wide; on wide pages it keeps the left edge shared with the heading, status and buttons. Gallery baseline corsi-board-chromium-darwin.png (an element screenshot at a desktop viewport) still matches and was not regenerated.",
+        "The board is 40 px narrower at 320x568 (288 -> 248) and 1 px narrower at 390x664 (345.3 -> 344); no change on screens taller than about 700 px, where the old 52svh or 26rem cap already won."
+      ]
+    },
+    {
+      "id": "OPTIONGROUP-PRINT",
+      "outcome": "fixed",
+      "summary": "OptionGroup.svelte declares its dark --hb-card-border under `@media screen and (prefers-color-scheme: dark)` instead of the plain query, as app.css, render.css, notes.css, ResultsTalk and ProfileView do, so a printed page keeps the light #767676 border on the white card whatever the screen's scheme. scripts/contrast.test.ts (which accepts both forms) still passes, as does the dark-scheme axe on the choice item routes (item-spatial, item-matrix-series: 0 serious or critical, light and dark, 3 projects of the same pass). Verified in a browser: on a real spatial item, screen+light border rgb(118,118,118); screen+dark rgb(141,139,149) on the dark card; print+dark rgb(118,118,118) on rgb(255,255,255), equal to print+light.",
+      "files": [
+        "web/src/render/choice/OptionGroup.svelte",
+        "web/src/render/choice/OptionGroup.dom.test.ts",
+        "web/e2e/ux2-render.spec.ts"
+      ],
+      "tests_added": [
+        "src/render/choice/OptionGroup.dom.test.ts: 'takes its dark card border for screens only' (the component's only colour-scheme query is `@media screen and (prefers-color-scheme: dark)` and it sets --hb-card-border #8d8b95)",
+        "e2e/ux2-render.spec.ts: 'keep the light border on paper, whatever the screen: the dark value is for screens only' (emulateMedia media print + colorScheme dark; token, card border colour and card background on screen light/dark and print light/dark; skips without WebGL)"
+      ],
+      "deviations": []
+    }
+  ],
+  "integration_requests": [
+    {
+      "file": "web/src/session/SessionScreen.svelte (session package, wave 2)",
+      "problem": "The session package now wraps the stage in `<div class=\"stage-host\" hidden={view.unavailable}>`. When a spatial item is unavailable (no WebGL) the whole renderer, including its one-line role=status note (UX-017b), is hidden (display: none). Two things that expect the note to be visible fail: e2e/ux-render.spec.ts 'rotation without WebGL (UX-017b) > nothing is drawn but the one-line note' (div.rotation getByRole('status') not found, 30 s timeout, chromium, iphone, webkit) and every item-spatial-no-webgl case of e2e/a11y.spec.ts (openRoute claim check: 'item-spatial-no-webgl claims render/rotation/RotationRenderer.svelte, which draws div.rotation. Expected: visible, Received: hidden'; 13 failures over chromium and iphone). Neither is in this package's files and neither is touched by the render changes.",
+      "fix_options": "Either keep the note visible (hide only the figures, or park the host only when the renderer has nothing to say) or update the two expectations and the route's claim if the session's own .unavailable group is meant to be the only text on that screen."
+    },
+    {
+      "file": "web/src/App.served.dom.test.ts, web/src/session/SessionApp.flow.dom.test.ts, web/scripts/dev-routes.test.ts (session/sync packages)",
+      "problem": "Full `npx vitest run`: 4561 passed, 3 failed, all in files and code of the other packages of this worktree and none touching Corsi or OptionGroup: (1) src/App.served.dom.test.ts 'with a server the footer links the notice and the data page' got ['#/data'], expected ['#/privacy', '#/data'] (App.svelte/footer change); (2) src/session/SessionApp.flow.dom.test.ts '\"Back to the start\" lands on the welcome heading' got h1 'Your results', expected 'Session ended' (SessionApp.svelte change); (3) scripts/dev-routes.test.ts 'a plain production build ships no dev route, demo page or synthetic profile': the production bundle contains '#/dev/' (App.svelte now has `if (__HB_DEV_ROUTES__ && location.hash.startsWith('#/dev/'))` in a form that is not dead-code-eliminated, or the string comes from main.ts). Re-run once those packages are in."
+    }
+  ],
+  "gates": {
+    "check": "pass (npm run check: svelte-check 1192 files 0 errors 0 warnings; tsc node and scripts configs clean)",
+    "unit": "npx vitest run src/render scripts/contrast.test.ts scripts/timing-lint.test.ts: 25 files, 282 tests pass. Full npx vitest run: 254 files pass, 3 fail, 4561 tests pass, 3 fail, all three in other packages' files (see integration_requests): src/App.served.dom.test.ts, src/session/SessionApp.flow.dom.test.ts, scripts/dev-routes.test.ts",
+    "lint_language": "pass (npm run lint:language: 359 files clean)",
+    "build": "pass (npx vite build --outDir test-results/iso/w2-render/dist-gate --emptyOutDir)",
+    "e2e": [
+      { "spec": "e2e/ux2-render.spec.ts", "project": "iphone", "result": "3 passed (Corsi 390x664, Corsi 320x568, OptionGroup print+dark)" },
+      { "spec": "e2e/ux2-render.spec.ts", "project": "chromium", "result": "3 passed" },
+      { "spec": "e2e/ux2-render.spec.ts", "project": "webkit", "result": "3 passed" },
+      { "spec": "e2e/ux-render.spec.ts", "project": "chromium, iphone, webkit", "result": "all pass except 'rotation without WebGL (UX-017b)' on each of the three (62 passed, 3 failed in the combined run): caused by the session package's hidden stage-host, see integration_requests" },
+      { "spec": "e2e/a11y.spec.ts --grep 'corsi|span|choice|matrix|spatial' (adds the spatial routes: item-spatial is the choice item with form.choice)", "project": "chromium, iphone", "result": "39 passed, 12 skipped, 13 failed; the 13 are all item-spatial-no-webgl (hidden renderer, see integration_requests). memory-corsi, item-matrix-series and item-spatial pass every case: axe light and dark 0 serious/critical, reduced motion, 320 px reflow, 200% zoom and text, text spacing, Tab pass (desktop)" },
+      { "spec": "e2e/gallery.spec.ts + e2e/render-visual.spec.ts (HB_DEV_SERVER=1, E2E_DEV_PORT=4721)", "project": "chromium", "result": "35 passed; the Corsi pixel baseline (corsi-board-chromium-darwin.png) matches unchanged" }
+    ]
+  }
+}

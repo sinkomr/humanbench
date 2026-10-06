@@ -34,8 +34,14 @@ test.describe('start page', () => {
     await page.goto('./')
     const footer = page.getByRole('contentinfo')
     await expect(footer).toBeVisible()
-    await expect(footer).toHaveText(DISCLAIMER)
+    // The footer holds the disclaimer and, since UX-011, the link to the privacy notice that every screen has. The welcome
+    // screen has its own link under Start, so the footer has none there: one link of that name, not two (VER-02).
+    await expect(footer).toContainText(DISCLAIMER)
+    await expect(footer.locator('.disclaimer')).toHaveText(DISCLAIMER)
     await expect(footer.getByText(DISCLAIMER, { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Privacy and terms' })).toHaveCount(1)
+    await expect(footer.getByRole('link', { name: 'Privacy and terms' })).toHaveCount(0)
+    await expect(page.locator('main').getByRole('link', { name: 'Privacy and terms' })).toHaveAttribute('href', '#/privacy')
   })
 
   test('the rendered page passes the language lint (A13)', async ({ page }) => {

@@ -11,8 +11,8 @@ export const EMPTY_NOTE = 'Type an answer first, then submit.'
 
 /** Shown when the family's parser cannot read the entry in this format. */
 export const FORMAT_NOTES: Readonly<Record<EntryFormat, string>> = Object.freeze({
-  integer: 'That entry could not be read as a whole number. Use digits, with a minus sign if needed, for example 42 or -7.',
-  decimal: 'That entry could not be read as a number. Use digits and an optional decimal point, for example 12.5.',
+  integer: 'That entry could not be read as a whole number. Use only the digits 0 to 9, with no spaces or commas, and a minus sign if needed, for example 42 or -7.',
+  decimal: 'That entry could not be read as a number. Use only the digits 0 to 9 and a point (.) for decimals, with no spaces or commas, for example 12.5.',
   fraction: 'That entry could not be read as a number. Use a fraction such as 3/8, or a whole number.',
   letter: 'That entry could not be read as a letter. Type one letter from A to Z.',
 })

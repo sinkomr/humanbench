@@ -5,6 +5,9 @@
    * component only runs it against the real rAF, performance.now() and input events, and shows
    * p50 / p95 / max per metric with the < 5 ms verdict and a copyable JSON report. Nothing is saved
    * or sent.
+   *
+   * Start stays in the Tab order while a run is going (`aria-disabled`, not `disabled`), so pressing
+   * it never drops focus to the body (WCAG 2.4.3); the page has a link back to the app.
    */
   import { onMount, tick } from 'svelte'
   import { DISCLAIMER } from '../copy'
@@ -38,6 +41,9 @@
   let { quick = false }: Props = $props()
   const plan = $derived(quick ? QUICK_PLAN : DEFAULT_PLAN)
 
+  /** The app's start page, under the base path (this page is `<base>rt-selftest.html`). */
+  const HOME_HREF: string = import.meta.env.BASE_URL
+
   type Phase = 'intro' | 'frames' | 'timer' | 'onsets' | 'keys' | 'pointer' | 'done' | 'error'
 
   const METRIC_ROWS: readonly { key: GatedMetric | InfoMetric; label: string }[] = [
@@ -46,8 +52,8 @@
     { key: 'timer_resolution_ms', label: 'Timer resolution' },
     { key: 'onset_error_ms', label: 'Stimulus onset error' },
     { key: 'onset_lag_ms', label: 'Wait from onset target to next frame' },
-    { key: 'key_latency_ms', label: 'Key press event lag (information only unless the event clock is offset)' },
-    { key: 'pointer_latency_ms', label: 'Pointer press event lag (information only unless the event clock is offset)' },
+    { key: 'key_latency_ms', label: 'Key press handling delay (checked only if press time stamps are offset)' },
+    { key: 'pointer_latency_ms', label: 'Pointer press handling delay (checked only if press time stamps are offset)' },
   ]
 
   let phase = $state<Phase>('intro')
@@ -104,6 +110,7 @@
   }
 
   async function start(): Promise<void> {
+    if (running) return // Start stays focusable while a run is going (aria-disabled), so a press can arrive
     frameTimestamps = []
     increments = []
     onsets = []
@@ -135,7 +142,7 @@
       showDot(false)
       phase = 'keys'
       await tick()
-      keyZone?.focus() // the disabled Start button would otherwise drop focus to the body
+      keyZone?.focus() // the key phase takes over from the Start button, which has had focus during the run
     } catch (e) {
       fail(e)
     }
@@ -222,19 +229,28 @@
   async function copyJson(): Promise<void> {
     try {
       await navigator.clipboard.writeText(json)
-      copyStatus = 'Copied to the clipboard.'
+      copyStatus = COPIED
     } catch {
       jsonBox?.select()
-      copyStatus = 'Copying was blocked: the text is selected, so copy it with the keyboard.'
+      copyStatus = COPY_BLOCKED
     }
   }
 
+  const COPIED = 'Report copied.'
+  const COPY_BLOCKED = 'Copying was blocked. The report is selected: copy it yourself.'
+
   const fmt = (v: number): string => (v < 10 ? v.toFixed(2) : v.toFixed(1))
+
+  /** The short verdict of a press delay whose time stamps are offset (the full reason, EVENT_OFFSET_NOTE, is shown above the table). */
+  const OFFSET_VERDICT = 'Fail: offset time stamps'
+
+  /** True when a press delay was checked because its time stamps are offset (then it fails, and the page says why). */
+  const offsetShown = $derived(report !== null && (report.metrics.key_latency_ms.note === EVENT_OFFSET_NOTE || report.metrics.pointer_latency_ms.note === EVENT_OFFSET_NOTE))
 
   function verdictOf(m: MetricReport): string {
     if (m.summary === null) return m.note === 'skipped' ? 'Skipped' : 'Not measured'
     if (m.pass === null) return 'For information'
-    return m.pass ? 'Pass' : m.note === EVENT_OFFSET_NOTE ? `Fail: ${EVENT_OFFSET_NOTE}` : `Over ${SELFTEST_THRESHOLD_MS} ms`
+    return m.pass ? 'Pass' : m.note === EVENT_OFFSET_NOTE ? OFFSET_VERDICT : `Over ${SELFTEST_THRESHOLD_MS} ms`
   }
 
   onMount(() => {
@@ -248,15 +264,25 @@
 
 <svelte:window onkeydown={onKeyDown} />
 
+<header>
+  <a class="home" href={HOME_HREF} translate="no">HumanBench</a>
+</header>
+
 <main>
   <h1>RT timing self-test</h1>
+  <p>This page checks how precisely this browser, display and input devices can time reaction-time trials. Nothing is saved or sent.</p>
+  <p>It measures:</p>
+  <ul>
+    <li>the refresh rate, and how regular the animation frames are;</li>
+    <li>the timer resolution;</li>
+    <li>how closely stimuli appear in the frame they were scheduled for;</li>
+    <li>the delay before key presses and pointer presses are handled.</li>
+  </ul>
+  <p>Each check reports the median (p50), the 95th percentile (p95) and the maximum. A timing check passes when its p95 is below {SELFTEST_THRESHOLD_MS} ms.</p>
   <p>
-    This page checks how precisely this browser, display and input devices can time reaction-time trials. It measures the refresh rate, the
-    regularity of animation frames, the timer resolution, how closely stimuli appear in the frame they were scheduled for, and the delay
-    before key and pointer presses are handled. Each check reports the median (p50), the 95th percentile (p95) and the maximum; a timing
-    check passes when its p95 is below {SELFTEST_THRESHOLD_MS} ms. The press lags are for information only while reaction times use
-    the input event's own timestamp, so that delay is not part of them; if the browser's event timestamps are offset from its timer by more than
-    {MAX_EVENT_LAG_MS} ms, reaction times use the handler clock instead and the lag is checked like the other timing checks. Nothing is saved or sent.
+    The delays before presses are handled are usually for information only. Reaction times use the time stamp of the press itself, so those delays
+    are not part of them. Some browsers' press time stamps are offset from their timer. If the offset is over {MAX_EVENT_LAG_MS} ms, reaction times
+    are timed when the page handles the press. Then the delay is checked like the other timing checks.
   </p>
   <p class="hint">
     Keep this tab in front and the window on the display you want to test, and close other busy tabs. The automatic part takes about
@@ -264,10 +290,16 @@
   </p>
 
   <div class="controls">
-    <button type="button" bind:this={startButton} onclick={start} disabled={running}>{phase === 'done' || phase === 'error' ? 'Run again' : 'Start'}</button>
+    <button
+      type="button"
+      bind:this={startButton}
+      onclick={start}
+      aria-disabled={running ? 'true' : undefined}
+      aria-describedby="selftest-status">{phase === 'done' || phase === 'error' ? 'Run again' : 'Start'}</button
+    >
   </div>
 
-  <p class="status" role="status" aria-live="polite">{statusText}</p>
+  <p class="status" id="selftest-status" role="status" aria-live="polite">{statusText}</p>
 
   <div class="stage" aria-hidden="true">
     <div class="dot" bind:this={dot}></div>
@@ -277,7 +309,7 @@
     <section class="task" aria-labelledby="keys-heading">
       <h2 id="keys-heading">Key presses</h2>
       <p bind:this={keyZone} tabindex="-1" class="zone">
-        Press the space bar {plan.presses} times, at your own pace ({keyCount} of {plan.presses}).
+        Press the <kbd translate="no">Space bar</kbd> {plan.presses} times, at your own pace ({keyCount} of {plan.presses}).
       </p>
       <button type="button" class="secondary" onclick={skipKeys}>Skip: no keyboard</button>
     </section>
@@ -301,35 +333,40 @@
       {#if report.context.hidden_during_run}
         <p class="warn">The tab was hidden during the run, so frame timings are not representative. Run again with the tab in front.</p>
       {/if}
+      {#if offsetShown}
+        <p class="warn">{EVENT_OFFSET_NOTE}</p>
+      {/if}
       <table>
-        <caption>Timing checks in milliseconds</caption>
+        <caption>Timing checks in milliseconds (n is the number of samples)</caption>
         <thead>
           <tr>
-            <th scope="col">Check</th>
-            <th scope="col">p50</th>
-            <th scope="col">p95</th>
-            <th scope="col">Max</th>
-            <th scope="col">n</th>
-            <th scope="col">Result</th>
+            <th scope="col" class="name">Check</th>
+            <th scope="col" class="num">p50</th>
+            <th scope="col" class="num">p95</th>
+            <th scope="col" class="num">Max</th>
+            <th scope="col" class="num n">n</th>
+            <th scope="col" class="result">Result</th>
           </tr>
         </thead>
         <tbody>
           {#each METRIC_ROWS as row (row.key)}
             {@const m = report.metrics[row.key]}
             <tr>
-              <th scope="row">{row.label}</th>
+              <th scope="row" class="name"
+                >{row.label}<span class="verdict" class:pass={m.pass === true} class:over={m.pass === false}>{verdictOf(m)}</span></th
+              >
               {#if m.summary}
-                <td>{fmt(m.summary.p50)}</td>
-                <td>{fmt(m.summary.p95)}</td>
-                <td>{fmt(m.summary.max)}</td>
-                <td>{m.summary.n}</td>
+                <td class="num">{fmt(m.summary.p50)}</td>
+                <td class="num">{fmt(m.summary.p95)}</td>
+                <td class="num">{fmt(m.summary.max)}</td>
+                <td class="num n">{m.summary.n}</td>
               {:else}
-                <td>–</td>
-                <td>–</td>
-                <td>–</td>
-                <td>0</td>
+                <td class="num">–</td>
+                <td class="num">–</td>
+                <td class="num">–</td>
+                <td class="num n">0</td>
               {/if}
-              <td class:pass={m.pass === true} class:over={m.pass === false}>{verdictOf(m)}</td>
+              <td class="result" class:pass={m.pass === true} class:over={m.pass === false}>{verdictOf(m)}</td>
             </tr>
           {/each}
         </tbody>
@@ -350,12 +387,35 @@
 </footer>
 
 <style>
+  header {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 0.5rem 1rem 0;
+  }
+
+  .home {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    font-weight: 600;
+    color: var(--text-strong);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .home:focus-visible {
+    outline: 3px solid var(--text-strong);
+    outline-offset: 2px;
+  }
+
   main {
     flex: 1;
     width: 100%;
     max-width: 48rem;
     margin: 0 auto;
-    padding: 2rem 1rem 3rem;
+    padding: 1rem 1rem 3rem;
     box-sizing: border-box;
   }
 
@@ -396,7 +456,8 @@
     cursor: pointer;
   }
 
-  button:disabled {
+  /* Not `disabled`: a disabled button drops focus to the body; this one stays in the Tab order and ignores presses. */
+  button[aria-disabled='true'] {
     cursor: default;
     opacity: 0.6;
   }
@@ -446,6 +507,16 @@
     border-radius: 0.5rem;
   }
 
+  kbd {
+    padding: 0.0625rem 0.375rem;
+    font: inherit;
+    font-weight: 600;
+    color: var(--text-strong);
+    border: 1px solid var(--text-strong);
+    border-radius: 0.25rem;
+    white-space: nowrap;
+  }
+
   .overall strong {
     color: var(--text-strong);
   }
@@ -455,23 +526,12 @@
     color: var(--text-strong);
   }
 
-  /* No scrolling wrapper (axe scrollable-region-focusable): the table wraps to fit a phone. */
+  /* No scrolling wrapper (axe scrollable-region-focusable): the table fits a phone. Only the check name may break
+     inside a word; a number never wraps, so "17.0" is never stacked one character per line (320 px and up). */
   table {
     width: 100%;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
-    overflow-wrap: anywhere;
-  }
-
-  @media (max-width: 30rem) {
-    table {
-      font-size: 0.875rem;
-    }
-
-    th,
-    td {
-      padding: 0.25rem 0.25rem;
-    }
   }
 
   caption {
@@ -486,19 +546,63 @@
     text-align: right;
   }
 
-  th[scope='row'],
-  th[scope='col']:first-child,
-  td:last-child {
+  .num {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  th.name,
+  th.result,
+  td.result {
     text-align: left;
   }
 
-  td.pass,
-  td.over {
+  th.name {
+    overflow-wrap: anywhere;
+  }
+
+  td.result {
+    overflow-wrap: normal;
+  }
+
+  /* The result also sits under the check name for phones (below); beside the numbers it is a column. */
+  .verdict {
+    display: none;
+  }
+
+  /*
+   * Phones: the sample count (n, also in the JSON report) and the Result column leave the table, and the result goes under the
+   * check name instead (display: none takes the column's cells out of the accessibility tree, so each result is read once).
+   * That leaves the three numbers and the name, which fits 320 px and, with the name breaking where it must, 200% text.
+   */
+  @media (max-width: 30rem) {
+    table {
+      font-size: 0.875rem;
+    }
+
+    th,
+    td {
+      padding: 0.25rem 0.25rem;
+    }
+
+    .n,
+    .result {
+      display: none;
+    }
+
+    .verdict {
+      display: block;
+      font-weight: 400;
+    }
+  }
+
+  .pass,
+  .over {
     font-weight: 600;
     color: var(--text-strong);
   }
 
-  td.over {
+  .over {
     text-decoration: underline;
   }
 

@@ -1,0 +1,99 @@
+{
+  "area": "selftest",
+  "model": "claude-sonnet-5-5",
+  "items": [
+    {
+      "id": "UX-054",
+      "outcome": "fixed",
+      "summary": "The results table no longer stacks digits on phones. Numeric cells (p50, p95, Max, n) are .num: white-space nowrap and overflow-wrap normal; overflow-wrap: anywhere stays only on the check-name row header. Up to 30rem the n column and the Result column are display:none (so they leave the accessibility tree) and each result is shown once more as a .verdict line under the check name inside the row header (display:none beside the numbers on wide windows, display:block on phones), which leaves name + p50/p95/Max in 320 px and in 200% text on an iPhone 13 (the plain 'drop n' variant still overflowed by 146 px in a11y.spec.ts 'fits a phone with the text at 200%'). The 'Key press / Pointer press handling delay' row names lost their '(information only)' tail (the Result cell says 'For information'), so no word is broken inside a word at 320 px. Caption now says 'n is the number of samples'. Table keeps native table display and semantics (no display override), so no ARIA role patching is needed.",
+      "files": [
+        "web/src/selftest/RtSelfTest.svelte",
+        "web/src/selftest/RtSelfTest.dom.test.ts",
+        "web/e2e/ux-selftest.spec.ts"
+      ],
+      "tests_added": [
+        "e2e/ux-selftest.spec.ts (chromium, webkit, iphone): every visible number cell is set in one line at 320, 360 and 390 px, no sideways scroll, name column >= 64 px, n column hidden; no word of the check names or results is broken inside a word at 320 px; on a phone the result is in the row header and read once (3 cells per row), on 1024 px it is the last column (5 cells, n visible, all numbers one line)",
+        "src/selftest/RtSelfTest.dom.test.ts: number cells and the n column carry .num/.n, header classes, 7 rows with 5 cells, row names without '(information only)', the .verdict span equals the Result cell text and class, caption explains n"
+      ],
+      "tests_changed": [],
+      "notes": "Verified against the old component: e2e/ux-selftest.spec.ts fails 7 of 10 on the HEAD RtSelfTest.svelte (incl. the one-line-numbers test). a11y.spec.ts 'rt-selftest-results: fits a phone with the text at 200%' (iphone) passes. The test measures the lines a cell's text is set in with Range.getClientRects, not the cell height, because a table cell is as tall as the tallest cell of its row (the wrapping check name)."
+    },
+    {
+      "id": "UX-055",
+      "outcome": "fixed",
+      "summary": "Start no longer drops focus: it is aria-disabled=\"true\" (not disabled) while a run goes on, start() ignores presses while running, it is aria-describedby the polite status line, and the key phase still takes focus when it begins; 'Run again' is a plain button again afterwards. The two developer notes in the copied report are now INPUT_LATENCY_NOTE 'For information only: reaction times use the time stamp of the key press or tap itself, so this delay is not part of them.' and a new EVENT_CLOCK_NOTE \"This browser's event time stamps use a different clock, so reaction times are timed when the page handles the press, which is less precise.\" (exported in measure.ts; note text only, no change to values, maths, keys or report_version). The 34-word intro is split into a short sentence, a list of what is measured, and short sentences on the p50/p95 rule and the information-only delays (no sentence over 25 words). 'Press the space bar' is now 'Press the <kbd translate=\"no\">Space bar</kbd> N times'. Copy messages are 'Report copied.' and 'Copying was blocked. The report is selected: copy it yourself.' (report still selected). A banner link 'HumanBench' (translate=no, 44 px high, href = import.meta.env.BASE_URL) leads back to the app. rt-selftest.html noscript is 'This page needs JavaScript. Turn it on to continue.'; <title> and h1 'RT timing self-test' are unchanged (routes.ts and rt-selftest.spec.ts match them).",
+      "files": [
+        "web/src/selftest/RtSelfTest.svelte",
+        "web/src/selftest/measure.ts",
+        "web/rt-selftest.html",
+        "web/src/selftest/RtSelfTest.dom.test.ts",
+        "web/src/selftest/measure.test.ts",
+        "web/e2e/rt-selftest.spec.ts",
+        "web/e2e/ux-selftest.spec.ts"
+      ],
+      "tests_added": [
+        "src/selftest/RtSelfTest.dom.test.ts (15 tests, jsdom, fake display): link home under BASE_URL with translate=no; h1 kept and 'Nothing is saved or sent.'; no sentence over 25 words and a list of measures; plain words; Start is a real button described by the status; Start keeps focus, is aria-disabled and not disabled through the run, then the key prompt has focus; extra presses on Start do not start a second run (same number of frame requests); Run again works after results; the key name is 'Space bar' in <kbd translate=no>; report notes in plain words; 'Report copied.'; blocked copy message and selection",
+        "src/selftest/measure.test.ts: an epoch-based event time stamp is reported with EVENT_CLOCK_NOTE; both notes have no developer names or 'RT' and no sentence over 25 words",
+        "e2e/ux-selftest.spec.ts (chromium, webkit, iphone): Start keeps focus by keyboard (Enter, twice) and then the Space bar prompt is focused; banner link to /humanbench/ works and is >= 44 px; page text has no developer words and no long sentences, kbd translate=no; JSON notes are one of the two plain notes; copy success and blocked messages with the report selected; no-JavaScript text"
+      ],
+      "tests_changed": [
+        "e2e/rt-selftest.spec.ts: /^Press the space bar/ -> /^Press the Space bar/ and the comment about Start being disabled (they asserted the old copy and behaviour)",
+        "src/selftest/measure.test.ts: /event timestamp/ -> /time stamp of the key press or tap/ (asserted the old note wording)"
+      ],
+      "notes": "Not done (not in the triage's fix): the optional heading/title rename to 'Reaction-time timing check' (kept, literal in routes.ts:826 and rt-selftest.spec.ts:64-65); the privacy link in the footer from FLOW-10 (owner_decision) and the link from the device check to this page. The README section for the self-test is still accurate (the app does not link to this page)."
+    }
+  ],
+  "integration_requests": [],
+  "gates": {
+    "check": "svelte-check 0 errors / 0 warnings; tsc node and scripts clean for my files (including e2e/ux-selftest.spec.ts). npm run check as a whole is red only from other packages' files in the shared tree: src/viz/card.test.ts 'MIN_TEXT_PX is declared but never read' on one run (gone on re-run) and e2e/ux-session.spec.ts(32,22) TS6133 on the re-run",
+    "unit": "npx vitest run src/selftest: 51 passed (measure.test.ts and RtSelfTest.dom.test.ts). Full npm test: 4515 passed, 5 failed, all in other packages' files and not caused by this change: src/session/SessionScreen.dom.test.ts (2), src/session/components.dom.test.ts (1), scripts/contrast.test.ts (colour tokens no contrast pair reads, app.css and notes.css dark rules), scripts/timing-lint.test.ts (src/session/Ready.svelte:76 and src/session/saved-at.test.ts Date.now). My first test draft used Date.now and was fixed to performance.now(); scripts/pages.test.ts, a11y-static.test.ts, language-lint.test.ts and src/copy.test.ts pass",
+    "build": "npm run build -- --outDir test-results/iso/fix-selftest/dist-gate: ok",
+    "e2e": [
+      {
+        "spec": "e2e/ux-selftest.spec.ts",
+        "project": "chromium",
+        "result": "10 passed"
+      },
+      {
+        "spec": "e2e/ux-selftest.spec.ts",
+        "project": "iphone",
+        "result": "10 passed"
+      },
+      {
+        "spec": "e2e/ux-selftest.spec.ts",
+        "project": "webkit",
+        "result": "10 passed"
+      },
+      {
+        "spec": "e2e/rt-selftest.spec.ts",
+        "project": "chromium",
+        "result": "8 passed"
+      },
+      {
+        "spec": "e2e/rt-selftest.spec.ts",
+        "project": "iphone",
+        "result": "8 passed"
+      },
+      {
+        "spec": "e2e/rt-selftest.spec.ts",
+        "project": "webkit",
+        "result": "8 passed"
+      },
+      {
+        "spec": "e2e/a11y.spec.ts --grep rt-selftest",
+        "project": "chromium",
+        "result": "21 passed, 3 skipped"
+      },
+      {
+        "spec": "e2e/a11y.spec.ts --grep rt-selftest",
+        "project": "iphone",
+        "result": "18 passed, 6 skipped (includes 'fits a phone with the text at 200%')"
+      },
+      {
+        "spec": "e2e/a11y.spec.ts --grep rt-selftest",
+        "project": "webkit",
+        "result": "21 passed, 3 skipped"
+      }
+    ]
+  }
+}

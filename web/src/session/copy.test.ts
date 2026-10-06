@@ -45,7 +45,113 @@ describe('session copy (M1.15; DESIGN §13)', () => {
 
 describe('summaryLine', () => {
   it('counts in the singular and the plural', () => {
-    expect(copy.summaryLine(1, 1, 1)).toBe('You answered 1 question and completed 1 timed task in about 1 min.')
-    expect(copy.summaryLine(0, 7, 28)).toBe('You answered 0 questions and completed 7 timed tasks in about 28 min.')
+    expect(copy.summaryLine(1, 1, 1)).toBe('You answered 1 question and completed 1 timed task in about 1 minute.')
+    expect(copy.summaryLine(0, 7, 28)).toBe('You answered 0 questions and completed 7 timed tasks in about 28 minutes.')
   })
 })
+
+/** Every string the module exports (a constant, a list of them, the result of a function given plain arguments). */
+function allStrings(): [string, string][] {
+  const out: [string, string][] = []
+  const add = (name: string, v: unknown): void => {
+    if (typeof v === 'string') out.push([name, v])
+    else if (Array.isArray(v)) v.forEach((x, i) => add(`${name}[${i}]`, x))
+    else if (typeof v === 'function') {
+      for (const args of [['Spatial'], [3], [25, 4], [0, null], [1, 1, 1], ['a', 1]]) {
+        try {
+          add(`${name}(${args.join(',')})`, (v as (...a: unknown[]) => unknown)(...args))
+        } catch {
+          // a function that takes other arguments is not one of these
+        }
+      }
+    } else if (v !== null && typeof v === 'object') {
+      for (const [k, x] of Object.entries(v)) add(`${name}.${k}`, x)
+    }
+  }
+  for (const [name, v] of Object.entries(copy)) add(name, v)
+  return out
+}
+
+describe('no session copy claims a benefit (A22, R-5.6.4; UX-018a)', () => {
+  /** What a claim of an effect sounds like: the break text said a break "can help you stay sharp". */
+  const BENEFIT = /\b(?:helps?|helped|helpful|improves?|improved|boosts?|sharp(?:en|er)?|better results?|works better|more accurate|learn faster|proven|proves?|guarantee\w*|effective|performs? better|recharge\w*)\b/i
+
+  it('the break offer says what the break does to the clock and nothing about what it does to the person', () => {
+    expect(copy.BREAK_OFFER_TEXT).toBe('You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.')
+    expect(copy.BREAK_OFFER_TEXT).not.toMatch(BENEFIT)
+  })
+
+  it('no string of the session copy does', () => {
+    const strings = allStrings()
+    expect(strings.length).toBeGreaterThan(150)
+    // Left out: the honour code, which is DESIGN §13's sentence word for word ("... or help": a rule about conduct), and the
+    // privacy notice, which says why a server would want answers ("to improve the questions": its purpose, not a claim to the person).
+    for (const [name, text] of strings.filter(([name]) => name !== 'HONOUR_TEXT' && !name.startsWith('PRIVACY_SECTIONS'))) expect(text, name).not.toMatch(BENEFIT)
+  })
+})
+
+describe('the figures the person is told (UX-008)', () => {
+  it('say minutes the same way everywhere', () => {
+    expect(copy.aboutMinutes(1)).toBe('About 1 minute.')
+    expect(copy.aboutMinutes(6)).toBe('About 6 minutes.')
+    expect(copy.progressText(12, 30)).toBe('12 of about 30 min')
+    expect(copy.OVER_PLANNED).toBe('Over the planned time')
+    expect(copy.OVER_TARGET).toBe('Almost there')
+  })
+
+  it('the welcome and ready screens promise the figure the ring shows', () => {
+    expect(copy.WELCOME_INTRO).toContain('about 30 minutes')
+    expect(copy.READY_TEXT).toContain('about 30 minutes')
+  })
+})
+
+describe('the confidence hint (UX-014)', () => {
+  it('says what guessing would give in words, then what the top of the scale means', () => {
+    expect(copy.confidenceHint(17, 6)).toBe('With 6 options, guessing would be right about 17% of the time. 100% means you are certain.')
+    expect(copy.confidenceHint(0, null)).toBe('0% means you have no idea. 100% means you are certain.')
+  })
+})
+
+describe('the ready screen’s lines (UX-012a, UX-010)', () => {
+  it('speak of questions and sessions in the singular and the plural', () => {
+    expect(copy.savedAtLine('today at 14:03', 1)).toBe('Last saved today at 14:03, 1 question answered.')
+    expect(copy.savedAtLine('yesterday at 09:30', 12)).toBe('Last saved yesterday at 09:30, 12 questions answered.')
+    expect(copy.savedAtLine('3 October at 08:00', 0)).toBe('Last saved 3 October at 08:00.')
+    expect(copy.addedToLine(1)).toBe('Your new session will be added to 1 earlier session.')
+    expect(copy.addedToLine(3)).toBe('Your new session will be added to 3 earlier sessions.')
+    expect(copy.viewLine(2)).toBe('Your profile from 2 earlier sessions.')
+    expect(copy.noNewAnswersLine(1)).toBe('This visit added no new answers. Your profile below comes from 1 earlier session.')
+    expect(copy.combinesLine(3)).toBe('This profile combines 3 sessions.')
+  })
+
+  it('names the parts skipped in plain grammar', () => {
+    expect(copy.reachedEndLine(['Reaction Time'])).toBe('You reached the end of the session. You skipped 1 part: Reaction Time.')
+    expect(copy.reachedEndLine(['Reaction Time', 'Spatial'])).toBe('You reached the end of the session. You skipped 2 parts: Reaction Time and Spatial.')
+    expect(copy.reachedEndLine(['A', 'B', 'C'])).toBe('You reached the end of the session. You skipped 3 parts: A, B and C.')
+  })
+
+  it('the practice screens’ new buttons, and the verdict told to a screen reader, never repeat the visible sentences', () => {
+    expect(copy.PRACTICE_STOP).toBe('Stop practice')
+    expect(copy.PRACTICE_DONE_CONTINUE).toBe('Continue')
+    expect(copy.practiceVerdict(true, 'C')).toBe('Your answer was correct. The right answer is C.')
+    expect(copy.practiceVerdict(false, '12')).toBe('Your answer was not correct. The right answer is 12.')
+    for (const t of [copy.practiceVerdict(true, 'C'), copy.practiceVerdict(false, 'C')]) expect(t).not.toMatch(/That was (not )?correct\./)
+  })
+})
+
+describe('the interstitials use the nouns of the questions (UX-016)', () => {
+  it('the blurbs speak of cells, objects, blocks and shapes, as the items do', async () => {
+    const { SEGMENT_INFO } = await import('./segments')
+    expect(SEGMENT_INFO.matrix_series.blurb).toBe('Find the pattern. Pick the cell that completes a grid, or type the next term of a sequence.')
+    expect(SEGMENT_INFO.spatial.blurb).toBe('Turn objects in your mind. Decide which option is the same object as the target, rotated.')
+    expect(SEGMENT_INFO.memory.blurb).toBe('Repeat short sequences of digits forwards and backwards, then the order in which blocks light up.')
+    expect(SEGMENT_INFO.coding_reading.blurb).toBe('Match shapes to digits against the clock, then read a short passage and answer a few questions about it.')
+  })
+
+  it('the privacy notice has straight apostrophes, and keeps its terms version', () => {
+    const text = copy.PRIVACY_SECTIONS.flatMap((x) => x.paragraphs).join('\n')
+    expect(text).not.toContain('\u2019')
+    expect(text).toContain("your browser's local storage")
+  })
+})
+

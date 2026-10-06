@@ -145,6 +145,6 @@ export function deviceRemarks(info: DeviceInfo): string[] {
   const out: string[] = []
   if (info.refresh_hz_est !== null && info.refresh_hz_est < 50) out.push('Your screen updates slowly, so reaction times will be less precise.')
   if (info.viewport[0] > 0 && info.viewport[0] < 320) out.push('Your window is very narrow. Widen it, or turn your phone sideways.')
-  if (info.refresh_hz_est === null) out.push('The screen speed could not be measured. You can still continue.')
+  if (info.refresh_hz_est === null) out.push('The screen refresh rate could not be measured. You can still continue.')
   return out
 }

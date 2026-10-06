@@ -6,7 +6,7 @@
  * 2400 × 1260 with the blob really drawn in it, nothing leaves the page, and the panel passes axe,
  * the language lint and 320 px reflow. Chromium, WebKit and the iPhone 13 emulation run the same
  * specs, downloads included (the iPhone emulation reports a download like the desktop engines; the
- * status the page reports after it has drawn and encoded the PNG, `Image saved: 2400 × 1260 px.`, is
+ * status the page reports after it has drawn and encoded the PNG, `Image saved: 2400 × 1260 pixels.`, is
  * checked in every browser as well).
  * The simulated person (`scripts/e2e-save.ts`) has no Emotion Reading (it is not measured in M1):
  * that rule is covered by the unit and DOM tests (`viz/card.test.ts`, `ShareCard.dom.test.ts`).
@@ -118,7 +118,7 @@ test.describe('the exports', () => {
     await expect(panel(page).locator('[data-preparing]')).toHaveCount(0)
     await expect(panel(page).getByRole('alert')).toHaveCount(0)
     await button(page, 'Download image (PNG)').click()
-    await expect(panel(page).locator('[data-message]')).toHaveText('Image saved: 2400 × 1260 px.')
+    await expect(panel(page).locator('[data-message]')).toHaveText('Image saved: 2400 × 1260 pixels.')
   })
 
   test('the downloaded PNG is 2400 × 1260 with the blob drawn in it on a white card', async ({ page }) => {
@@ -204,7 +204,7 @@ test.describe('what is on the card, and what is not', () => {
 test.describe('the results-talk helper is linked from the card (proposal §8)', () => {
   test('the link takes keyboard focus to the helper, whose copy button and "never paste your save file" line are visible', async ({ page }) => {
     await toCard(page)
-    const link = page.locator('[data-slot="share-card"]').getByRole('link', { name: 'Talking about your results with an AI' })
+    const link = page.locator('[data-slot="share-card"]').getByRole('link', { name: 'Read this first' })
     await expect(link).toBeVisible()
     await link.click()
     const talk = page.getByTestId('results-talk')
@@ -219,7 +219,7 @@ test.describe('the results-talk helper is linked from the card (proposal §8)', 
   test('is reachable by keyboard from the toggles', async ({ page, isMobile }) => {
     test.skip(isMobile, 'keyboard navigation is checked on the desktop projects')
     await toCard(page)
-    const link = page.getByRole('link', { name: 'Talking about your results with an AI' })
+    const link = page.getByRole('link', { name: 'Read this first' })
     await link.focus()
     await expect(link).toBeFocused()
     await page.keyboard.press('Enter')

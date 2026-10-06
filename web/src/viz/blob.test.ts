@@ -2,11 +2,15 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { OVERSHOOT_LIMIT_RINGS } from './curve'
 import {
+  ARROW_LENGTH,
   buildBlob,
   DEFAULT_LAYOUT,
   DEFAULT_R,
+  defaultLayout,
   estimateTextWidth,
   fitLayout,
+  fitLayoutDetailed,
+  textScale,
   FUZZ_MAX_OPACITY,
   FUZZ_Z,
   fuzzOpacity,
@@ -25,8 +29,8 @@ import {
   type TextMeasure,
 } from './blob'
 import { clusterFacets, unmeasuredReasons } from './facets'
-import { R_MIN_FRACTION, radiusScale, spokeAngle, Z90 } from './geometry'
-import { axisEstimates, measuredFields, type AxisEstimate, type SpokeEstimate } from './profile'
+import { offScaleOf, R_MIN_FRACTION, radiusScale, spokeAngle, THETA_CLAMP_LOW, Z90 } from './geometry'
+import { axisEstimates, COMPACT_LABELS, measuredFields, type AxisEstimate, type SpokeEstimate } from './profile'
 import { syntheticProfile, SYNTHETIC_PROFILES } from './synthetic'
 
 function modelOf(id: string): { est: AxisEstimate[]; model: BlobModel } {
@@ -356,9 +360,10 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
   it('gives the 17-spoke blob ≥ 11 px text, no overlaps and a usable circle on a 360–390 px phone', () => {
     for (const p of SYNTHETIC_PROFILES) {
       const { est } = modelOf(p.id)
-      // The chart's width on 360 and 390 px phones (1 rem page margins), and at 320 px (≥ 10 px).
+      // The chart's width on 360 and 390 px phones (1 rem page margins), and at 320 px (≥ 9.5 px: the
+      // compact labels are cuts of the table names, UX-042, a little longer than the old ones).
       for (const [width, minPx, minCircle] of [
-        [288, 10, 1 / 4],
+        [288, 9.5, 1 / 4],
         [328, MIN_TEXT_PX, 1 / 3],
         [358, MIN_TEXT_PX, 1 / 3],
       ] as const) {
@@ -411,7 +416,7 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
       { text: 'Processing &', note: false, glyph: true },
       { text: 'Reading Speed', note: false, glyph: false },
     ])
-    expect(spokeLines(ps, true)).toEqual([{ text: 'Speed', note: false, glyph: true }])
+    expect(spokeLines(ps, true)).toEqual([{ text: 'Processing', note: false, glyph: true }])
     // Every axis has a one-line compact label.
     for (const e of est) expect(spokeLines({ ...e, measured: true }, true).length, e.code).toBe(1)
     // Facet notes: "insufficient data" wraps in compact labels.
@@ -420,5 +425,234 @@ describe('text layout (§13 legibility; M1.16 review)', () => {
     const ratio = qr.find((f) => f.facet === 'ratio')!
     expect(spokeLines(ratio, true).filter((l) => l.note).map((l) => l.text)).toEqual(['insufficient', 'data'])
     expect(spokeLines(ratio, false).filter((l) => l.note).map((l) => l.text)).toEqual(['insufficient data'])
+  })
+})
+
+// ----------------------------------------------------------------------------- UX-037: off scale
+
+/** A measured spoke at θ ± sd, as `measuredFields` makes it. */
+const spokeAt = (i: number, theta: number, sd = 0.4): SpokeEstimate => ({
+  id: `s${i}`,
+  name: `Skill ${i}`,
+  shortLabel: [`Skill ${i}`],
+  group: 'g',
+  tier: 'a',
+  glyph: '',
+  ...measuredFields(theta, sd),
+})
+
+/** The first point of an arrowhead path ("M x,y L ..."), which is its tip. */
+function arrowTip(d: string): [number, number] {
+  const m = /^M(-?[\d.]+),(-?[\d.]+)L/.exec(d)!
+  return [Number(m[1]), Number(m[2])]
+}
+
+describe('estimates beyond the scale get an arrowhead, never the stub (UX-037, §9.1, §9.7)', () => {
+  it('names the end: below the inner clamp is low, above +3 SD is high, else none; the clamp is where the radius stops being linear', () => {
+    expect(THETA_CLAMP_LOW).toBeCloseTo(-2.76, 12)
+    expect(offScaleOf(-3)).toBe('low')
+    expect(offScaleOf(THETA_CLAMP_LOW - 1e-6)).toBe('low')
+    expect(offScaleOf(THETA_CLAMP_LOW)).toBe('none')
+    expect(offScaleOf(3)).toBe('none')
+    expect(offScaleOf(3.01)).toBe('high')
+    expect(() => offScaleOf(Number.NaN)).toThrow(RangeError)
+  })
+
+  it('property: θ below the clamp is "low" with the marker and the arrow tip on the inner clamp; θ above +3 is "high" on the rim; in between the marker is at R(θ + 3)/6', () => {
+    fc.assert(
+      fc.property(fc.array(fc.double({ min: -6, max: 6, noNaN: true }), { minLength: 3, maxLength: 17 }), (thetas) => {
+        const spokes = thetas.map((t, i) => spokeAt(i, t))
+        const model = buildBlob(spokes)
+        model.spokes.forEach((s, i) => {
+          const theta = thetas[i]!
+          expect(s.stub, 'a measured spoke is never drawn as a stub').toBeUndefined()
+          expect(s.gap).toBeUndefined()
+          if (theta < THETA_CLAMP_LOW) {
+            expect(s.offScale).toBe('low')
+            expect(Math.hypot(...s.marker!)).toBeCloseTo(R_MIN_FRACTION * R, 6)
+            expect(Math.hypot(...arrowTip(s.arrow!))).toBeCloseTo(R_MIN_FRACTION * R, 1)
+          } else if (theta > 3) {
+            expect(s.offScale).toBe('high')
+            expect(Math.hypot(...s.marker!)).toBeCloseTo(R, 6)
+            expect(Math.hypot(...arrowTip(s.arrow!))).toBeCloseTo(R, 1)
+          } else {
+            expect(s.offScale).toBeUndefined()
+            expect(s.arrow).toBeUndefined()
+            // Radius stays linear in θ (§9.1): the arrow is an extra mark, never a change of the scale.
+            expect(Math.abs(Math.hypot(...s.marker!) - (R * (theta + 3)) / 6)).toBeLessThan(0.15)
+          }
+        })
+      }),
+      { numRuns: 120 },
+    )
+  })
+
+  it('points off the scale along its spoke: towards the centre when low, outward when high, ARROW_LENGTH long', () => {
+    const model = buildBlob([spokeAt(0, -5), spokeAt(1, 4.5), spokeAt(2, 0.2), spokeAt(3, -4)])
+    const [low, high] = [model.spokes[0]!, model.spokes[1]!]
+    const lowTip = Math.hypot(...arrowTip(low.arrow!))
+    const lowBase = [...low.arrow!.matchAll(/L(-?[\d.]+),(-?[\d.]+)/g)].map((m) => Math.hypot(Number(m[1]), Number(m[2])))
+    for (const b of lowBase) expect(b).toBeGreaterThan(lowTip) // the body is further out than the tip: it points inward
+    const highTip = Math.hypot(...arrowTip(high.arrow!))
+    const highBase = [...high.arrow!.matchAll(/L(-?[\d.]+),(-?[\d.]+)/g)].map((m) => Math.hypot(Number(m[1]), Number(m[2])))
+    for (const b of highBase) expect(b).toBeLessThan(highTip) // pointing outward
+    expect(highTip - Math.min(...highBase)).toBeLessThanOrEqual(ARROW_LENGTH + 6)
+  })
+
+  it('keeps whatever part of the whisker lies inside the scale, and the stub for a spoke that is not measured', () => {
+    // θ = −3.1 ± 0.5: the 90% range reaches up to −2.28, inside the scale.
+    const model = buildBlob([spokeAt(0, -3.1, 0.5), spokeAt(1, 0.2), spokeAt(2, 0.4)])
+    const w = model.spokes[0]!.whisker!
+    expect(Math.hypot(...w[0])).toBeCloseTo(R_MIN_FRACTION * R, 6)
+    expect(Math.hypot(...w[1])).toBeGreaterThan(R_MIN_FRACTION * R + 2)
+    const stub = buildBlob([spokeAt(0, -5), { ...spokeAt(1, 0), measured: false, reason: 'no_data' as const, muted: false, theta: undefined, sd: undefined, lo90: undefined, hi90: undefined, relation: undefined, offScale: undefined }, spokeAt(2, 0.4)])
+    expect(stub.spokes[1]!.stub).toBeDefined()
+    expect(stub.spokes[1]!.arrow).toBeUndefined()
+    expect(stub.spokes[0]!.stub).toBeUndefined()
+  })
+
+  it('says "off scale" under the label, as a stub says "not measured", and not for in-range spokes', () => {
+    const model = buildBlob([spokeAt(0, -4), spokeAt(1, 0.1), spokeAt(2, 3.5)])
+    expect(model.spokes[0]!.lines.at(-1)).toEqual({ text: 'off scale', note: true, glyph: false })
+    expect(model.spokes[1]!.lines.every((l) => !l.note)).toBe(true)
+    expect(model.spokes[2]!.lines.at(-1)).toMatchObject({ text: 'off scale', note: true })
+    // A frame's own mark can be overridden with the final one (the reveal's build-up).
+    expect(buildBlob([{ ...spokeAt(0, -4), offScale: 'none' }, spokeAt(1, 0.1), spokeAt(2, 0.3)]).spokes[0]!.arrow).toBeUndefined()
+  })
+
+  it('measuredFields records where the estimate lies against the scale', () => {
+    expect(measuredFields(-3.4, 0.3).offScale).toBe('low')
+    expect(measuredFields(0, 0.3).offScale).toBe('none')
+    expect(measuredFields(3.2, 0.3).offScale).toBe('high')
+  })
+})
+
+// ------------------------------------------------------------------------ UX-042: label names
+
+/** Do two label boxes come closer than `gap` vertically while overlapping sideways? Boxes as {@link Box}. */
+function boxesTouch(a: Box, b: Box): boolean {
+  return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+}
+
+describe('the narrow-screen labels match the table names (UX-042)', () => {
+  const names: Record<string, string> = Object.fromEntries(axisEstimates(syntheticProfile('m1')!.input).map((e) => [e.code, e.name]))
+  /** Abbreviations that are a documented cut of a longer word of the table name ("comp." of Comprehension). */
+  const ABBREVIATIONS: Record<string, string> = { 'comp.': 'comprehension', 'mem.': 'memory' }
+
+  it('every compact label is made of words of its table name, in order, or a documented abbreviation of one', () => {
+    for (const [code, label] of Object.entries(COMPACT_LABELS)) {
+      const nameWords = names[code]!.toLowerCase().replace(/[^a-z& ]/g, ' ').split(/\s+/).filter(Boolean)
+      const first = label.toLowerCase().split(/\s+/)[0]!
+      const expanded = ABBREVIATIONS[first] ?? first
+      expect(nameWords.some((w) => w === expanded || w.startsWith(expanded.replace(/\.$/, ''))), `${code}: "${label}" of "${names[code]}"`).toBe(true)
+    }
+  })
+
+  it('no two compact labels start with the same word or read as one with a cluster name', () => {
+    const labels = Object.values(COMPACT_LABELS)
+    const heads = labels.map((l) => l.toLowerCase().split(/\s+/)[0]!)
+    expect(new Set(heads).size).toBe(heads.length)
+    // A label never repeats one of the eight cluster names that sit beside it ("Estimation", "Speed").
+    for (const cluster of ['Reasoning', 'Verbal', 'Knowledge', 'Spatial/Memory', 'Social-Creative', 'Speed', 'Estimation', 'Quantitative']) {
+      if (cluster === 'Quantitative' || cluster === 'Spatial/Memory') continue // those two are also skill names on purpose
+      expect(labels, cluster).not.toContain(cluster)
+    }
+    expect(COMPACT_LABELS.FER).not.toBe('Estimation')
+    expect(COMPACT_LABELS.PS).not.toBe('Speed')
+  })
+
+  it('property: at 288 and 358 px, with any mix of measured and not-measured skills, no two label boxes (notes included) touch', () => {
+    const full = axisEstimates(syntheticProfile('full')!.input)
+    const stub = (e: AxisEstimate): AxisEstimate => ({ ...e, measured: false, reason: 'no_data', muted: false, theta: undefined, sd: undefined, lo90: undefined, hi90: undefined, relation: undefined, offScale: undefined })
+    fc.assert(
+      fc.property(fc.array(fc.boolean(), { minLength: 17, maxLength: 17 }), fc.constantFrom(288, 358), (mask, width) => {
+        const est = full.map((e, i) => (mask[i] ? e : stub(e)))
+        const layout = fitLayout(est, width)
+        const got = renderedSizes(est, width, layout)
+        expect(got.collides, `${width}px ${mask.map(Number).join('')}`).toBe(false)
+        // The same through the model's own boxes: a label's whole box, note line included, with a clear gap to the next.
+        const model = buildBlob(est, { layout })
+        for (let i = 0; i < model.labelBoxes.length; i++) {
+          for (let j = i + 1; j < model.labelBoxes.length; j++) {
+            const a = model.labelBoxes[i]!
+            const b = model.labelBoxes[j]!
+            // The model's boxes include the halo, so a gap of 0 here is a gap of the halo between the glyphs.
+            expect(boxesTouch({ ...a, x0: a.x0 + model.text.halo, x1: a.x1 - model.text.halo, y0: a.y0 + model.text.halo, y1: a.y1 - model.text.halo }, { ...b, x0: b.x0 + model.text.halo, x1: b.x1 - model.text.halo, y0: b.y0 + model.text.halo, y1: b.y1 - model.text.halo }), `${est[i]!.code} / ${est[j]!.code}`).toBe(false)
+          }
+        }
+      }),
+      { numRuns: 40 },
+    )
+  })
+})
+
+// ------------------------------------------------------------------------ UX-044: text size
+
+describe('chart text follows the page text size (UX-044)', () => {
+  const { est } = modelOf('m1')
+
+  it('textScale is 1 at the default and below, the ratio above, capped at 4', () => {
+    expect([textScale(undefined), textScale(16), textScale(12), textScale(Number.NaN)]).toEqual([1, 1, 1, 1])
+    expect(textScale(32)).toBe(2)
+    expect(textScale(100)).toBe(4)
+    expect(defaultLayout(1)).toBe(DEFAULT_LAYOUT)
+    expect(defaultLayout(2).fontSize).toBe(2 * LABEL_FONT)
+  })
+
+  it('at 200% text the labels render at least twice as large as at 100%, or the fit reports that it cannot', () => {
+    for (const width of [358, 640, 900, 1200]) {
+      const base = fitLayoutDetailed(est, width, { rootPx: 16 })
+      const big = fitLayoutDetailed(est, width, { rootPx: 32 })
+      expect(base.legible).toBe(true)
+      // Rendered label size: the label font in user units × the screen scale of that layout.
+      const labelPx = (fit: typeof base, rootPx: number): number => (renderedSizes(est, width, fit.layout, { rootPx }).smallPx / 0.88)
+      if (big.legible) expect(labelPx(big, 32), `${width}px`).toBeGreaterThanOrEqual(2 * MIN_TEXT_PX / 0.88 - 1e-6)
+      else expect(big.smallPx, `${width}px`).toBeLessThan(2 * MIN_TEXT_PX)
+      if (width >= 900) expect(big.legible, `${width}px has room for large text`).toBe(true)
+      expect(big.smallPx).toBeGreaterThanOrEqual(base.smallPx - 1e-6)
+    }
+    // A phone cannot hold 17 labels at 200%: it says so (and the page points to the bar view).
+    expect(fitLayoutDetailed(est, 358, { rootPx: 32 }).legible).toBe(false)
+  })
+
+  it('does not change anything at the default size or when the width is unknown', () => {
+    expect(fitLayoutDetailed(est, 640).layout).toEqual(DEFAULT_LAYOUT)
+    expect(fitLayoutDetailed(est, 640, { rootPx: 16 })).toEqual(fitLayoutDetailed(est, 640))
+    expect(fitLayout(est, 0, { rootPx: 32 })).toEqual(defaultLayout(2))
+    expect(fitLayoutDetailed(est, 0, { rootPx: 32 }).legible).toBe(true)
+  })
+
+  it('property: a larger root size never gives smaller chart text', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 288, max: 1200 }), fc.constantFrom(16, 20, 24, 32), (width, rootPx) => {
+        const a = fitLayoutDetailed(est, width, { rootPx: 16 })
+        const b = fitLayoutDetailed(est, width, { rootPx })
+        // A little slack: the best-effort fit walks font sizes in steps.
+        expect(b.smallPx).toBeGreaterThanOrEqual(a.smallPx - 0.05)
+      }),
+      { numRuns: 40 },
+    )
+  })
+})
+
+// ---------------------------------------------------------------- card options of the model
+
+describe('model options for the card (UX-038)', () => {
+  const { est } = modelOf('m1')
+  const shown = est.filter((e) => e.measured)
+
+  it('can leave the in-chart ring note out (the card sets it in its own text), and then the viewBox does not hold it', () => {
+    const withNote = buildBlob(shown)
+    const without = buildBlob(shown, { note: false })
+    expect(withNote.showNote).toBe(true)
+    expect(without.showNote).toBe(false)
+    const h = (m: BlobModel): number => Number(m.viewBox.split(' ')[3])
+    expect(h(without)).toBeLessThan(h(withNote))
+    expect(within(without.noteBox, viewBoxOf(without))).toBe(true)
+  })
+
+  it('can label only −2, 0 and +2 SD whatever the size', () => {
+    expect(buildBlob(shown).rings.filter((x) => x.showLabel)).toHaveLength(5)
+    expect(buildBlob(shown, { ringStep: 2 }).rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '0 SD', '+2 SD'])
   })
 })

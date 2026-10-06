@@ -1,0 +1,323 @@
+{
+  "reviewer": "skimmer",
+  "model": "fable",
+  "summary": "Riley, the impatient skimmer, played the static app on desktop Chromium (1280 x 720, speed at 1280 x 800) and iPhone 13 (390 x 664) with ?fast=1, driving the persona spec web/ux-review/personas/skimmer.ux.ts (five tests: funnel, exits, back and refresh, double clicks, speed; raw numbers in web/test-results/ux-review/skimmer/*/{funnel,exits,back,double,speed}.json). Funnel: 7 clicks, 5 screens and 362 words in the main column from landing to the ready screen in about 1.8 s of real time on both devices, 1.3 s of which is the device check's forced wait; the first practice item is 1 more click away (45 ms) and the first counted screen 2 more clicks (plus 'Start practice' on it: 10 clicks from landing to the first reaction trial); the welcome page does state 'about 30 minutes and six short parts' before Start, but the session header then says 'about 28 min'. Impatience paths: finishing at once gives a 'Session complete' page whose primary button downloads an empty save; one part then finish gives a clearly partial profile (1 of 17 skills measured, 16 'Not measured' rows) on a 4279 px page (5.9 screens at 720 px) with the save section 2.4 screens down; browser Back mid-session leaves the app with no warning and Forward returns to the welcome page; a refresh mid-item restarts at the welcome page, which says nothing, while the answers survive only as 'earlier sessions' offered five presses later, and the results that follow say 'You answered 0 questions'; a returning person has no way to see their results without starting a new session (8 presses, about 1.9 s, same misleading summary line). Double clicks on every Continue, Begin, Confirm, the confidence Continue and Finish early never submitted twice (chromium and iPhone), key mashing and rapid tapping in the reaction block only produce 'Too early' notes, the leave panel scrolls into view, the beforeunload guard fires on reload, and the console stayed clean throughout. Speed: cold load shows the heading after 54 ms with 202 KB of compressed JavaScript on the landing page (index chunk 445 KB raw, whole dist 1.5 MB raw JS, the Three.js chunk lazy); on Fast 3G the page is blank white for 2.4 s because index.html holds nothing but a noscript; the results build-up takes 2.9 s for 7 skills (380 ms per skill) with 'Skip animation' visible above the fold; the results page is 5.6 screens at 1280 x 800 and 6.4 at 390 x 844 (8.5 after saving), the save heading sits at 2.1 screens on both after the skill table and the peaks, and on the phone the blob itself starts below the first screen.",
+  "coverage": [
+    "welcome, gate, honour, device, ready, practice, interstitial, rt-intro (chromium 1280x720 and iPhone 13, ?fast=1, timed and word-counted)",
+    "confirm-finish, finished-nothing, finished-nothing after download, back to start (chromium, iPhone)",
+    "skip Reaction Time, 3-5 items of Matrix & Series, finish early, results (partial), results-leave, reload on results, ready-returning, results again (chromium, iPhone)",
+    "#/privacy then Back; privacy from the gate (new tab) then Back; Back mid-session then Forward; refresh mid-item then the whole start again to the results (chromium, iPhone)",
+    "returning later with one answered session saved and the tab closed: welcome, ready-returning, results via Begin/Finish early (chromium, iPhone)",
+    "double clicks / double taps on gate Continue, honour Continue, device Continue, Begin, Confirm/Submit, confidence Continue, Finish early; Space mashing (chromium) and rapid pad taps (iPhone) in the reaction block",
+    "cold load unthrottled and on Fast 3G via CDP, HTML before the bundle runs, results build-up at real speed, results length at 1280x800 and 390x844 before and after saving (chromium only)",
+    "not covered: WebKit/Safari; 'Leave anyway' on the leave panel; scrolling during the build-up; share card, notes builder, drill-down and the self-test page"
+  ],
+  "findings": [
+    {
+      "id": "SKIM-01",
+      "severity": "major",
+      "category": "flow",
+      "title": "A refresh or Back mid-session restarts at the welcome page with no resume and no word about the lost session",
+      "route": "welcome",
+      "env": "chromium 1280x720 and iPhone 13, ?fast=1; after 2 answered items of Matrix & Series",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/001-before-refresh.png",
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/002-after-refresh.png",
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/003-ready-after-refresh.png",
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/004-interstitial-after-refresh.png",
+        "web/test-results/ux-review/skimmer/back-chromium-mid/003-after-forward-mid-session.png",
+        "web/test-results/ux-review/skimmer/back-iphone-refresh/002-after-refresh.png"
+      ],
+      "observed": "Two items answered, progress '0 of about 28 min'. Reload: the welcome page comes up exactly as for a first visit ('The session takes about 30 minutes...'), nothing mentions a session in progress, although localStorage holds the autosave (hb:save:v1:s_...). The person must press Start, tick the honour code, Continue, wait for the device check (1.3 s), Continue (5 presses) before the ready screen offers 'Earlier saves on this device: Add my new session to the 1 earlier session saved on this device' (ticked). Begin then shows the first interstitial with every part 'Up next' and the clock at 0, as if nothing had happened; the results afterwards read 'You answered 0 questions and completed 0 timed tasks in about 1 min.' above the merged profile. Browser Back mid-session behaves the same: the tab leaves the app (about:blank) without any warning, Forward returns to the welcome page, no resume. Two refreshes make 'the 2 earlier sessions saved on this device', so one interrupted sitting is counted as several sessions and the later ones are practice-adjusted against the earlier ones (§7.8).",
+      "expected": "DESIGN §8 calls the autosave 'crash recovery': after a refresh the person should be told where they were and offered to carry on in the same session (same session_id, same clock), or at least to start the next part with the answered items credited to this session, not to a separate 'earlier session'.",
+      "suggestion": "On the welcome page, when an autosave whose session is not finished exists (say, less than 24 h old): a panel above Start reading 'You have a session in progress from 3 minutes ago: 2 questions answered. [Continue it] [Start over]'. 'Continue it' skips the gate/honour/device screens (consent is kept already) and resumes at the next item of the current part with the elapsed time restored; 'Start over' keeps the autosave as today. Until that exists, change the ready screen's line to say what the earlier save is (see SKIM-12) and mark the finished parts on the interstitial checklist.",
+      "files": ["web/src/session/SessionApp.svelte", "web/src/session/Welcome.svelte", "web/src/session/persist.ts", "web/src/save/autosave.ts", "web/src/session/ready-state.ts"],
+      "spec_refs": ["DESIGN §8 (autosave to localStorage after every item: crash recovery)", "DESIGN §7.8 practice adjustment", "R-8.1", "e2e/session.spec.ts 'a start that was abandoned before any answer is not an earlier session'"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-02",
+      "severity": "major",
+      "category": "data-honesty",
+      "title": "The results summary line counts only the latest visit: 'You answered 0 questions' above a profile with measured skills",
+      "route": "results",
+      "env": "chromium 1280x720 and iPhone 13; after a reload of unsaved results, after a refresh mid-session, and on a return visit",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/exits-chromium-partial/009-results-again.png",
+        "web/test-results/ux-review/skimmer/back-chromium-return/004-results-returning.png",
+        "web/test-results/ux-review/skimmer/speed-chromium-results/004-results-1280-fold.png",
+        "web/test-results/ux-review/skimmer/exits-iphone-partial/009-results-again.png"
+      ],
+      "observed": "Whenever the results are reached through the autosave or a loaded file and the new session is empty (reload of unsaved results then Begin/Finish early; return visit; the e2e 'toResults' path itself), the page reads 'You finished early, so some parts are not measured.' then 'You answered 0 questions and completed 0 timed tasks in about 1 min.' while the table below shows Matrix & Series −1.14 (SD 0.77) and the blob is drawn. The line is summaryLine(items, blocks, minutes) over the current RunResult only; the profile is the re-score of the whole save (Finished.svelte comment: 'a returning person sees all their sessions together').",
+      "expected": "The sentence that introduces the profile describes what the profile rests on. A person who just lost or re-opened their results should not read that they answered nothing.",
+      "suggestion": "In Finished.svelte, when results !== null, replace summaryLine with a line that covers the save: with an empty new session and N earlier sessions: 'This visit added no new answers. Your profile below rests on 1 earlier session (3 questions).'; with both: 'You answered 3 questions and completed 0 timed tasks in about 1 min. They were added to 1 earlier session.'; first session unchanged. Counts come from save.sessions (items per session are in the save).",
+      "files": ["web/src/session/Finished.svelte", "web/src/session/copy.ts"],
+      "spec_refs": ["R-8.1 (sessions merge)", "DESIGN §10 reveal flow", "A12/§9 never a single overall score (the line stays a count, not a score)"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SKIM-03",
+      "severity": "major",
+      "category": "flow",
+      "title": "A returning person cannot see their results without starting (and immediately abandoning) a new session",
+      "route": "ready-returning",
+      "env": "chromium 1280x720 and iPhone 13; one answered session saved to a file, tab closed, new tab",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/back-chromium-return/001-welcome-returning.png",
+        "web/test-results/ux-review/skimmer/back-chromium-return/003-ready-returning-viewport.png",
+        "web/test-results/ux-review/skimmer/back-chromium-return/004-results-returning.png",
+        "web/test-results/ux-review/skimmer/back-iphone-return/003-ready-returning-viewport.png"
+      ],
+      "observed": "The welcome page is identical to a first visit (no mention of earlier results). The ready screen offers 'Earlier saves on this device' (ticked) and 'Or a 20-minute focus session', both about starting something new; there is no 'See my results'. The shortest route to the profile is Begin → Finish early → Finish now: 8 presses and 1.8-1.9 s from landing, through 'Up next: Reaction time' and a 'Finish now?' confirm, ending on a page that says 'You answered 0 questions' (SKIM-02). The notes builder is reachable only from the saved results page.",
+      "expected": "A person who comes back to look at their blob, or to open the notes builder, gets there in one or two presses from the welcome page.",
+      "suggestion": "On the welcome page when an autosave with at least one finished session exists: a secondary button 'See my results (1 session)' under Start, which opens the reveal of the merged autosave (Finished with the save and no new RunResult: no build-up needed, no save required since nothing changed, 'Back to the start' only). The same button on the ready screen next to 'Earlier saves on this device'.",
+      "files": ["web/src/session/Welcome.svelte", "web/src/session/Ready.svelte", "web/src/session/SessionApp.svelte", "web/src/session/Finished.svelte"],
+      "spec_refs": ["DESIGN §10 retest motivation", "R-8.1", "ROADMAP M1.R (focus sessions, returning person)"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-04",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Browser Back during the session leaves the page silently; the leave guard exists only on the results page",
+      "route": "item-matrix-series",
+      "env": "chromium 1280x720 and iPhone 13, ?fast=1, after one answered item",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/back-chromium-mid/001-mid-session-item.png",
+        "web/test-results/ux-review/skimmer/back-chromium-mid/002-after-back-mid-session.png",
+        "web/test-results/ux-review/skimmer/back-chromium-mid/003-after-forward-mid-session.png"
+      ],
+      "observed": "The app pushes no history entry at any screen, so the first Back (a reflex for a skimmer who wants the previous item or thinks Back undoes a tap) leaves the app for the page before it (about:blank in the test, the previous site in life) with no confirmation; no beforeunload is installed during the session (guard.ts is only mounted by the reveal). Forward returns to the welcome page, not to the item. Same on iPhone, where a swipe from the left edge is Back.",
+      "expected": "Leaving a timed session by accident asks first, or Back lands somewhere inside the app.",
+      "suggestion": "When the run starts, history.pushState(null, '', location.href) once and on popstate show the app's own confirm panel ('Leave the session? Your answers so far are kept in this browser.' [Leave] [Stay]) and re-push the state on Stay; or at least install the same beforeunload guard during the run as on the results. Pair with SKIM-01 so that coming back resumes.",
+      "files": ["web/src/session/SessionApp.svelte", "web/src/reveal/guard.ts"],
+      "spec_refs": ["DESIGN §10 (beforeunload warning is specified for the results only)", "DESIGN §8 crash recovery"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-05",
+      "severity": "minor",
+      "category": "copy",
+      "title": "Finishing with nothing measured is headed 'Session complete' and leads with a primary 'Download save file' for an empty save",
+      "route": "finished-nothing",
+      "env": "chromium 1280x720 and iPhone 13 (390x664): Begin → Finish early → Finish now on the first interstitial",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/exits-chromium/002-confirm-finish.png",
+        "web/test-results/ux-review/skimmer/exits-chromium/003-finished-nothing.png",
+        "web/test-results/ux-review/skimmer/exits-chromium/004-finished-nothing-after-download.png",
+        "web/test-results/ux-review/skimmer/exits-iphone/003-finished-nothing.png"
+      ],
+      "observed": "117 words: h1 'Session complete', 'You finished early, so some parts are not measured.', 'You answered 0 questions and completed 0 timed tasks in about 1 min.', 'Nothing was measured in this session, so there is no profile to show.', then the full save panel ('Download your save file before you leave this page. It holds your answers, so it is your copy of the results...', 'This is yours. No employer...') with the primary blue 'Download save file' and 'Copy save code', and only then the quiet 'Back to the start'. The download works and produces humanbench-...hbsave.json for a save with no answers. On the iPhone the page is 883 px at 664 px, so 'Back to the start' is below the fold and the only visible actions save nothing. The heading contradicts the lead ('complete' vs 'finished early'); the same heading tops partial results. No autosave is written and the tab is not guarded, which is right.",
+      "expected": "A page that says plainly that nothing happened and offers the one useful action: start again (or try the practice questions).",
+      "suggestion": "When results === null: heading 'Session ended' (FINISHED_HEADING stays for real results, or change it everywhere to 'Your session' since the lead already says why it ended); drop the summary and save panel, keep 'Nothing was measured in this visit, so there is no profile and nothing to save.' and make 'Back to the start' the primary button, with 'Try the practice questions' as a secondary one. If the empty save must stay downloadable, put it behind a quiet 'Download an empty save file' link.",
+      "files": ["web/src/session/Finished.svelte", "web/src/session/copy.ts", "web/src/reveal/SavePanel.svelte"],
+      "spec_refs": ["DESIGN §10 ('finish early' button at any time: partial blob)", "e2e/session.spec.ts 'Nothing was measured' (asserts the text, not the panel)"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-06",
+      "severity": "minor",
+      "category": "copy",
+      "title": "'About 30 minutes' before Start becomes 'about 28 min' in the session header",
+      "route": "interstitial",
+      "env": "chromium 1280x720 and iPhone 13, ?fast=1",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/funnel-chromium/001-welcome.png",
+        "web/test-results/ux-review/skimmer/funnel-chromium/006-ready.png",
+        "web/test-results/ux-review/skimmer/funnel-chromium-begin/007-interstitial-rt.png"
+      ],
+      "observed": "Welcome: 'The session takes about 30 minutes and has six short parts.' Ready: 'Six short parts, about 30 minutes.' First interstitial header: '0 of about 28 min' (progressText(elapsed, target) with the segments' target). The break offer later says 'You have been working for about 30 minutes'. A skimmer reads the numbers as a promise and notices when they differ.",
+      "expected": "One figure for the time commitment, or a rounded one in the header.",
+      "suggestion": "Either round the header's target to the promise ('0 of about 30 min': progressText(elapsedMin, Math.ceil(targetMin / 5) * 5)) or state the real figure once on the welcome page ('about 28 minutes') and keep the header exact.",
+      "files": ["web/src/session/copy.ts", "web/src/session/segments.ts", "web/src/session/SessionScreen.svelte"],
+      "spec_refs": ["R-7.4 session composition", "ROADMAP M1.15"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SKIM-07",
+      "severity": "minor",
+      "category": "flow",
+      "title": "Seven clicks and five screens before Begin, with a 1.3 s forced wait: the two agreement screens and the device wait can be folded",
+      "route": "gate",
+      "env": "chromium 1280x720 and iPhone 13, ?fast=1; measured with web/ux-review/personas/skimmer.ux.ts 'skimmer: funnel'",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/funnel-chromium/002-gate.png",
+        "web/test-results/ux-review/skimmer/funnel-chromium/003-honour.png",
+        "web/test-results/ux-review/skimmer/funnel-chromium/004-device-measuring.png",
+        "web/test-results/ux-review/skimmer/funnel-chromium/005-device-ready.png",
+        "web/test-results/ux-review/skimmer/funnel-iphone/005-device-ready.png"
+      ],
+      "observed": "Landing → Ready: Start (welcome, 49 words), tick + Continue (gate, 86 words), tick + Continue (honour code, 27 words), 1.32 s with a disabled Continue while the refresh rate is measured, radio + Continue (device check, 69 words), = 7 presses, 362 words, 1.8 s of pure mechanics on both devices; then Begin (ready, 80 words) and Start (interstitial, 33 words) and 'Start practice' (reaction intro, 41 words): 10 presses from landing to the first reaction trial. The 21-word footer disclaimer repeats on all of them. The honour-code screen is a single sentence and a checkbox; the device screen is a facts table the person cannot act on except for the input radio.",
+      "expected": "The consent and the honour code both need a tick (§13), but not two screens; the device measurement needs a few seconds, but not the person's attention.",
+      "suggestion": "Owner decision: (a) one 'Before you start' screen with both checkboxes (the §13 sentence word for word above its own box) and one Continue: −2 presses, −1 screen; (b) start the refresh-rate measurement when the gate is shown and keep it running, so the device screen arrives with Continue enabled and the facts filled in (−1.3 s); (c) pre-select the input radio from the pointer type (touch → 'Tap or click', fine pointer → 'Keyboard') and let the person change it: −1 press. The gate's data sentence and the honour sentence stay as they are.",
+      "files": ["web/src/session/SessionApp.svelte", "web/src/session/ConsentGate.svelte", "web/src/session/Honour.svelte", "web/src/session/DeviceCheck.svelte", "web/src/session/device.ts"],
+      "spec_refs": ["DESIGN §13 honour-code sentence (fixed wording)", "R-7.4 (onboarding + honour code + device check: 3 min)", "DESIGN §10"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-08",
+      "severity": "minor",
+      "category": "layout",
+      "title": "On a phone the first results screen is all text: the blob starts below the fold behind a practice-adjusted note that says there is nothing to adjust",
+      "route": "results",
+      "env": "chromium 390x844 (speed test) and iPhone 13 390x664 (exits test); one-session profile",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/speed-chromium-results/006-results-390-fold.png",
+        "web/test-results/ux-review/skimmer/speed-chromium-results/004-results-1280-fold.png",
+        "web/test-results/ux-review/skimmer/exits-iphone-partial/004-partial-results-viewport.png"
+      ],
+      "observed": "At 390x844 the first screen holds: 'Session complete', two sentences, the boxed 'Practice-adjusted: This profile is practice-adjusted. With one session there is nothing to adjust yet; when you add sessions, later ones are credited...' (32 words), the 'Replay animation' button, 'Your profile is ready.', 'Profile by skill', the Blob/Bar toggles, and the top of the chart; the blob's rings begin at about 560 px. At 1280x800 the same stack takes the top 450 px and the chart is half visible. 'Profile by skill' sits at 0.5 screens on every size (speed.json headings). A skimmer who came for 'the result' sees a paragraph explaining a future feature before the picture.",
+      "expected": "The blob, or at least its top half, on the first screen; explanations after it.",
+      "suggestion": "For a one-session profile render the practice-adjusted note as one quiet line under the chart ('Practice-adjusted: nothing to adjust yet with one session.') or move it into 'About these numbers'; show 'Replay animation' as a small text button beside the view toggles; drop the standalone 'Your profile is ready.' line once the build-up ends (keep it in the live region only). The §7.8 label must stay visible on the profile, so keep the words 'Practice-adjusted' near the chart.",
+      "files": ["web/src/reveal/RevealProfile.svelte", "web/src/reveal/Reveal.svelte", "web/src/reveal/copy.ts", "web/src/reveal/reveal.css"],
+      "spec_refs": ["DESIGN §7.8 (practice-adjusted label)", "DESIGN §9 / A12 blob", "DESIGN §10 reveal flow"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-09",
+      "severity": "minor",
+      "category": "flow",
+      "title": "The required save is 2.1 screens down, after the full skill table and the peaks; a skimmer who closes the tab meets the browser's blank dialog instead",
+      "route": "results",
+      "env": "chromium 1280x800 and 390x844 (speed test, 7 measured skills); chromium 1280x720 and iPhone 13 (exits test, 1 measured skill)",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/speed-chromium-results/003-results-1280.png",
+        "web/test-results/ux-review/skimmer/speed-chromium-results/005-results-390.png",
+        "web/test-results/ux-review/skimmer/speed-chromium-results/007-results-saved-1280.png",
+        "web/test-results/ux-review/skimmer/exits-chromium-partial/006-results-leave-viewport.png"
+      ],
+      "observed": "Results page: 4506 px (5.6 screens) at 1280x800 and 5364 px (6.4 screens) at 390x844; 'Save your results' at 1718 px / 1796 px (2.1 screens) and the download button at 1881 px / 2052 px, after 'Profile by skill' (chart plus a 17-row table) and 'Your most distinctive peaks'. After saving, 6825 px (8.5 screens) with 7 h2 and 8 h3. Nothing above the fold says a save is needed. Closing or reloading the tab triggers beforeunload (verified: the dialog fires), but the browser shows its own generic text, so the page's reason ('Your answers are kept in this browser for now, but clearing its data removes them') is only seen by those who press 'Back to the start', where the leave panel does scroll into view (verified).",
+      "expected": "DESIGN §10: the download is 'prominent, and required before leaving'. For a skimmer, prominent means on the first screen or in a persistent place.",
+      "suggestion": "Add a slim bar under the status line once the build-up ends: 'Your results are not saved yet. [Save now]' (jumps to or triggers the save panel; disappears when saved and is replaced by 'Saved.'); or move the save panel directly under the chart, before the table and the peaks. Keep the beforeunload guard as is.",
+      "files": ["web/src/reveal/Reveal.svelte", "web/src/reveal/SavePanel.svelte", "web/src/reveal/reveal.css"],
+      "spec_refs": ["DESIGN §10 (save prominent and required before leaving)", "ROADMAP M1.R", "e2e/reveal.spec.ts (sections hidden until the build-up ends)"],
+      "confidence": "high",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-10",
+      "severity": "minor",
+      "category": "performance",
+      "title": "On Fast 3G the page is blank white for 2.4 s: index.html holds nothing but a noscript and the landing needs 202 KB of compressed JavaScript",
+      "route": "welcome",
+      "env": "chromium 1280x800, fresh context, CDP Network.emulateNetworkConditions Fast 3G (1.44 Mbps down, 562.5 ms RTT); unthrottled for comparison",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/speed-chromium-noscript/001-html-before-js.png",
+        "web/test-results/ux-review/skimmer/speed-chromium/001-welcome-1280x800.png"
+      ],
+      "observed": "Unthrottled: heading visible after 54 ms, DOMContentLoaded 42 ms, 844 B HTML. The landing loads index-*.js (152 KB compressed, 445 KB raw), copy-*.js (31 KB / 85 KB), clock-*.js (13 KB / 38 KB), timing-*.js (6 KB / 15 KB) and two stylesheets: 202 KB compressed before anything renders. Fast 3G: heading after 2401 ms (DOMContentLoaded 2319 ms); with the scripts blocked the body text is empty, so those 2.4 s are a white page (the noscript only shows when JavaScript is off). The whole dist carries 1.5 MB of raw JavaScript; three-view (534 KB raw) and notes (156 KB) are separate chunks and were not requested on the landing, which is right. Start → gate afterwards is 54 ms (no network).",
+      "expected": "Something to read within the first second on a slow connection: the name, the tagline and the time commitment are static text.",
+      "suggestion": "Put a static shell in index.html inside #app (h1 'HumanBench', the tagline, the intro sentence and a disabled Start) that the app replaces on mount; preload nothing that the welcome screen does not need; and look at what pulls 445 KB raw into the index chunk (D3 and the session engine can load after Start, as the Three.js chunk already does).",
+      "files": ["web/index.html", "web/src/main.ts", "web/vite.config.ts", "web/src/App.svelte"],
+      "spec_refs": ["DESIGN §10", "ROADMAP A1 static MVP"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SKIM-11",
+      "severity": "minor",
+      "category": "data-honesty",
+      "title": "The confidence step accepts the untouched slider: a double click on Continue records 50 without any rating",
+      "route": "confidence",
+      "env": "chromium 1280x720 and iPhone 13, ?fast=1, Matrix & Series item",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/double-chromium/003-after-submit-twice.png",
+        "web/test-results/ux-review/skimmer/double-chromium/004-after-continue-twice.png"
+      ],
+      "observed": "After Confirm the confidence screen appears with the slider at 50 and Continue enabled. A double click on Continue (the skimmer's reflex) submits 50 and lands on the next item with nothing selected (the second click hits nothing, which is good). Nothing distinguishes a considered 50 from an untouched one, so a skimmer's whole calibration record is '50, 50, 50' and feeds the Estimation cluster.",
+      "expected": "A rating that was never given is not counted as a rating, or the person has to make a choice.",
+      "suggestion": "Owner decision: enable Continue only after the slider has been moved or a value chosen (with buttons such as 'Guess', 'Unsure', 'Fairly sure', 'Sure' as the keyboard-friendly alternative), or keep the default but store touched=false and leave untouched ratings out of the calibration estimate, telling the person once: 'Move the slider; an untouched one is not counted.'",
+      "files": ["web/src/session/Confidence.svelte", "web/src/session/run.ts", "web/src/session/calibration.ts"],
+      "spec_refs": ["ROADMAP A15 (confidence slider after each answer)", "DESIGN §7 calibration"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-12",
+      "severity": "minor",
+      "category": "copy",
+      "title": "'Add my new session to the 1 earlier session saved on this device' says nothing about when that session was or what it holds",
+      "route": "ready-returning",
+      "env": "chromium 1280x720 and iPhone 13; after a refresh mid-session and on a return visit",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/003-ready-after-refresh.png",
+        "web/test-results/ux-review/skimmer/back-chromium-return/003-ready-returning-viewport.png",
+        "web/test-results/ux-review/skimmer/back-iphone-return/003-ready-returning-viewport.png"
+      ],
+      "observed": "The ready screen's 'Earlier saves on this device' section is one pre-ticked checkbox labelled 'Add my new session to the 1 earlier session saved on this device.' (or '...the 2 earlier sessions...' after two refreshes). A skimmer who refreshed three minutes ago does not read 'earlier session' as 'the one you just lost', and a returning person cannot tell a finished session from an abandoned one, nor whether the save is theirs on a shared device. The box is ticked by default, so the merge happens unless they read it.",
+      "expected": "The label names what will be merged in plain terms: when, how much, finished or not.",
+      "suggestion": "Label: 'Add my new session to the earlier one on this device (today, 2 questions answered, not finished).' with the list for several: '2 earlier sessions on this device: today 14:02 (2 questions, not finished); 3 days ago (31 questions, finished).' Data: SaveSession has created_utc and the item count. Keep the checkbox ticked for one identifier as now.",
+      "files": ["web/src/session/Ready.svelte", "web/src/session/copy.ts", "web/src/save/autosave.ts"],
+      "spec_refs": ["R-8.1", "ROADMAP M1.17", "DESIGN §8"],
+      "confidence": "high",
+      "owner_decision": false
+    },
+    {
+      "id": "SKIM-13",
+      "severity": "polish",
+      "category": "copy",
+      "title": "The first interstitial after a refresh shows every part as 'Up next' and the clock at 0 although two items were answered minutes ago",
+      "route": "interstitial",
+      "env": "chromium 1280x720 and iPhone 13, ?fast=1; after a refresh mid-item and Begin with the earlier save ticked",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/004-interstitial-after-refresh.png",
+        "web/test-results/ux-review/skimmer/back-chromium-refresh/005-results-after-refresh.png"
+      ],
+      "observed": "The checklist aside reads Speed 'Now', Reasoning 'Up next', Spatial/Memory 'Up next', Quantitative 'Up next'; the header shows '0 of about 28 min'. The two Matrix & Series answers from the autosave are merged into the base but not reflected anywhere in the new session's plan or checklist, so the person is sent through Reaction Time again as if starting fresh (which, without SKIM-01, they are).",
+      "expected": "If the earlier answers count towards the profile (they do: the results show them), the checklist says so.",
+      "suggestion": "When the base holds sessions from today, mark the parts they covered 'Partly done (earlier today)' in the checklist, or add one line under the interstitial text: 'Your 2 answers from earlier today are kept and will be added to this session's results.' Superseded by a real resume (SKIM-01).",
+      "files": ["web/src/session/Checklist.svelte", "web/src/session/SessionScreen.svelte", "web/src/session/copy.ts"],
+      "spec_refs": ["DESIGN §8 crash recovery", "R-8.1"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-14",
+      "severity": "polish",
+      "category": "flow",
+      "title": "Practice is one click from Ready but the first practice item is 1.4-1.8 screens tall, with Confirm below the fold on the phone",
+      "route": "practice",
+      "env": "chromium 1280x720 (1027 px page) and iPhone 13 390x664 (1206 px page), first practice item (matrix)",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/funnel-chromium/007-practice-first.png",
+        "web/test-results/ux-review/skimmer/funnel-iphone/007-practice-first.png"
+      ],
+      "observed": "'Try practice questions first' is a secondary button beside the primary Begin, 45 ms to the first item. That item's screen is 1027 px at a 720 px window and 1206 px at 664 px: heading, a two-sentence note, 'Practice question 1 of 4', the stem, a 3x3 matrix and six options, then Confirm and Back below the fold on both. A skimmer who tries practice to see 'what this is' scrolls before they can answer, and the 'Back' that returns to Ready is the last thing on the page.",
+      "expected": "A practice item that fits one phone screen, or the Confirm within reach.",
+      "suggestion": "Shorten the practice preamble to one line ('Practice: not counted; you will see whether you were right.'), put 'Back' as a quiet link at the top beside 'Practice question 1 of 4', and let the renderer's Confirm stay in view (sticky bottom action row on narrow screens, as the reaction pads already are).",
+      "files": ["web/src/session/PracticeScreen.svelte", "web/src/render/matrix/*", "web/src/session/session.css"],
+      "spec_refs": ["DESIGN §10 optional practice mode", "ROADMAP M1.15"],
+      "confidence": "medium",
+      "owner_decision": true
+    },
+    {
+      "id": "SKIM-15",
+      "severity": "minor",
+      "category": "bug",
+      "title": "On the phone the second tap of a double tap falls through to the next screen: it pre-selects an option after the confidence Continue and closes the Finish early confirm",
+      "route": "confidence",
+      "env": "iPhone 13 (390x664), ?fast=1, two taps 80 ms apart at one spot; chromium 1280x720 for comparison",
+      "screenshots": [
+        "web/test-results/ux-review/skimmer/double-iphone/003-after-submit-twice.png",
+        "web/test-results/ux-review/skimmer/double-iphone/004-after-continue-twice.png",
+        "web/test-results/ux-review/skimmer/double-iphone/005-after-finish-early-twice.png",
+        "web/test-results/ux-review/skimmer/double-chromium/005-after-finish-early-twice.png"
+      ],
+      "observed": "double-iphone/double.json: after a double tap on the confidence Continue (at y 450 of 664) the next item had one radio already checked (nextItemRadioChecked 1; 0 on chromium, where the button sits at y 670 of 720 and the next item's options are elsewhere), because the new item's option list rendered under the finger before the second tap landed; the fast-mode clock then timed that item out before the screenshot, so 004 shows the item after it ('That question ran out of time'). A double tap on 'Finish early' on the phone left no confirm panel (finishEarlyTwice.confirmShown 0; 1 on chromium): the panel opened on the first tap and the second tap closed it again, so to the person nothing happened. Every other double tap (gate, honour code, device Continue, Begin, Confirm, Submit) landed harmlessly on both devices: no answer, rating or finish was submitted twice.",
+      "expected": "A second tap within a few hundred milliseconds of a screen change does nothing (WCAG 2.5.2 pointer cancellation in spirit): no option pre-selected on the next item, the confirm panel stays open.",
+      "suggestion": "Ignore pointer input on a newly rendered item or panel for about 300 ms after it appears (a data-settling attribute on the form that the option labels and the confirm buttons check in their click handlers), or keep the new item's options from under the previous button by rendering the confidence Continue at the bottom action row that stays in place. The pre-selection is harmless only because Confirm is still needed; a hurried person then confirms an option they never chose.",
+      "files": ["web/src/session/Confidence.svelte", "web/src/session/SessionScreen.svelte", "web/src/session/ConfirmPanel.svelte", "web/src/render/common/*"],
+      "spec_refs": ["DESIGN §10 (no feedback, one answer per item)", "WCAG 2.2 2.5.2 (pointer cancellation)", "ROADMAP M1.21 phone input"],
+      "confidence": "medium",
+      "owner_decision": false
+    }
+  ]
+}

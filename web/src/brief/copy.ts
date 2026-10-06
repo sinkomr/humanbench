@@ -5,6 +5,9 @@
  * the notes help; every notes screen carries {@link CLAIM}.
  */
 
+/** The element the page's skip link moves focus to: the warnings before the copy button, then the copy and download buttons. */
+export const COPY_TARGET_ID = 'copy-notes'
+
 /** A22: shown on every notes screen until the effectiveness checks pass. */
 export const CLAIM = 'Designed from research on explanations; not yet shown to help HumanBench users.'
 
@@ -14,6 +17,15 @@ export const COPY = {
   instructionsNotTraits: 'The notes are instructions about wording, depth and checking. They never describe you, and they carry no numbers, levels or labels.',
   trust: "Nothing on this page leaves your device. HumanBench doesn't send, store or log your notes. Copying them into an assistant is your choice.",
   notSaved: 'This page keeps nothing on your device unless you choose to keep your settings, further down. Without that, reloading the page clears them.',
+  /** Top of the page once settings are kept: when they came back from an earlier visit, and when they were kept in this one. */
+  settingsRestored: 'Your settings from last time are here. Only your choices are kept, never what you typed.',
+  settingsKept: 'Your settings are kept on this device. Only your choices are kept, never what you typed.',
+  /** Page frame (UX-049): the way back, the privacy notice, and the link that jumps to the copy button. */
+  homeLink: 'HumanBench',
+  privacyLink: 'Privacy and terms',
+  newTab: ' (opens in a new tab)',
+  skipToCopy: 'Skip to copying your notes',
+  copyGroup: 'Copy your notes',
   providerWarning:
     "Before you paste: anything in an AI assistant's settings goes to that company with every chat. Depending on your settings it may be kept for years, used to train future models, read by reviewers, or used to personalise ads. On work or school accounts, administrators may be able to read it. Check your assistant's data settings, prefer a personal account, and only include lines you'd be fine with anyone reading. (Checked 2026-09.)",
   antiCoercion:
@@ -76,7 +88,7 @@ export const STEPS = {
   where: { heading: 'Where will you use these notes?', hint: 'Pick one. You can keep up to five sets of notes, each for a different use.' },
   topics: {
     heading: 'Which topics come up there?',
-    hint: 'Pick up to five. For each one, say how much you already know, and your notes tell the assistant how to pitch its explanations.',
+    hint: 'Pick up to five. For each one, say how much you already know, and your notes tell the assistant how to adjust its explanations.',
   },
   extras: { heading: 'Anything else?', hint: 'All optional. Each choice becomes one plain line.' },
   preview: { heading: 'Your notes', hint: 'This is exactly what will be pasted. Untick a line to leave it out.' },

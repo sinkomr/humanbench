@@ -19,6 +19,9 @@
 /** The id of the results-talk helper's card, which the share card links to (proposal §8, M1.18). */
 export const TALK_ANCHOR_ID = 'hb-results-talk'
 
+/** The id of the save panel's heading, which the pointer at the top of the results links to (UX-029). */
+export const SAVE_HEADING_ID = 'hb-save-heading'
+
 /** The "Notes for your AI" builder page (AI.5), under the app's base path. */
 export const NOTES_BUILDER_HREF: string = `${import.meta.env.BASE_URL}notes.html`
 

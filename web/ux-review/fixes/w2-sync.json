@@ -1,0 +1,209 @@
+{
+  "area": "sync",
+  "model": "opus",
+  "commits": [
+    {
+      "hash": "ab80f33",
+      "subject": "UX review wave 1 (wf10/ux): fixes for 63 review items, review records, UX-REVIEW.md"
+    },
+    {
+      "hash": "5469d40",
+      "subject": "Merge dev into wf10/ux: RT event-clock guard and self-test v3 (M1.10, M1.23) with the UX-054/UX-055 self-test fixes",
+      "parents": [
+        "ab80f33",
+        "77ab418 (dev)"
+      ]
+    }
+  ],
+  "conflicts": [
+    {
+      "file": "web/src/selftest/measure.ts",
+      "resolution": "Dev's measurement and timing code kept byte for byte: signed lag, rtSourceForLag, MAX_EVENT_LAG_MS, the offset lag gated like the other checks with EVENT_OFFSET_NOTE, the event_lag report block, SELFTEST_REPORT_VERSION 'rt_selftest_v3'. Against dev, only note strings differ: INPUT_LATENCY_NOTE and EVENT_CLOCK_NOTE are wave 1's (the not-on-the-timeline branch returns EVENT_CLOCK_NOTE). EVENT_OFFSET_NOTE stays a separate exported constant for the offset-beyond-the-bound condition, now in plain words and built from MAX_EVENT_LAG_MS."
+    },
+    {
+      "file": "web/src/selftest/RtSelfTest.svelte",
+      "resolution": "Wave 1 decides presentation: UX-054 phone table (.num nowrap, n and Result hidden at 30rem and below, .verdict under the check name), UX-055 aria-disabled Start that keeps focus, home link, intro as a list and short sentences, kbd Space bar. Dev's MAX_EVENT_LAG_MS and EVENT_OFFSET_NOTE imports and the offset branch of verdictOf are kept. Dev's strings are reworded with the same meaning: row labels, a short verdict constant OFFSET_VERDICT 'Fail: offset time stamps' in place of 'Fail: ${EVENT_OFFSET_NOTE}', and intro sentences on the bound. New: when either press delay has EVENT_OFFSET_NOTE, the note is shown as a .warn paragraph above the table, so the short verdict has its explanation on the page."
+    },
+    {
+      "file": "web/src/selftest/measure.test.ts",
+      "resolution": "Both sides' tests kept (wave 1: epoch time stamp gives EVENT_CLOCK_NOTE, notes in plain words; dev: 205 ms offset fails with EVENT_OFFSET_NOTE and handler source, 25 ms bound, keys-only offset). The plain-words test now also covers EVENT_OFFSET_NOTE (no RT/performance.now/dispatch, sentences of 25 words or fewer). New test: EVENT_CLOCK_NOTE and EVENT_OFFSET_NOTE are different conditions, and the offset note names the MAX_EVENT_LAG_MS bound. MAX_EVENT_LAG_MS is imported from tasks/rt/timing."
+    }
+  ],
+  "auto_merged_checked": [
+    {
+      "file": "web/src/render/rt/RtRenderer.svelte",
+      "result": "Dev's BlockTimestampPolicy (observe in practice, decide at practice end, stamp per response, reason passed to ontimestampsource) sits alongside wave 1's focusStage, stage role=group aria-label, kbd/translate=no spans and touch-action: manipulation. No responseTimestampFromEvent left over and nothing duplicated."
+    },
+    {
+      "file": "web/src/render/coding/CodingRenderer.svelte",
+      "result": "Dev's raw responses with both clocks and finalResponses() at finish sit alongside UX-002's one-row keypad, reference strip and focus handling. There is a single press() path, so every response goes through the block clock."
+    },
+    {
+      "file": "web/src/render/coding/coding.dom.test.ts",
+      "result": "Dev's 650 ms / 10 ms lag literal merged; passes with wave 1's tests."
+    },
+    {
+      "file": "web/src/render/rt/rt.dom.test.ts",
+      "result": "Dev's reasons array and the offset, consistent and undecided block tests merged with wave 1's; 306 targeted tests pass."
+    },
+    {
+      "file": "web/src/session/SessionScreen.svelte",
+      "result": "Only dev's ontimestampsource (s, reason) change; wave 1's screen structure is intact."
+    },
+    {
+      "file": "web/src/session/run.ts",
+      "result": "timestampReason is in CurrentBlock, set in blockTimestampSource and written as rt_timestamp_reason; wave 1's #newScreen() call stays in the block start."
+    },
+    {
+      "file": "web/e2e/rt-selftest.spec.ts",
+      "result": "Dev's rt_selftest_v3 and event_lag assertions together with wave 1's 'Press the Space bar' literal; passes on chromium, webkit and iphone."
+    },
+    {
+      "file": "web/src/session/Stage.svelte, web/src/tasks/rt/{timing,timing.test,score,types}.ts",
+      "result": "Dev only; identical to dev."
+    },
+    {
+      "file": "docs/PROGRESS.md, docs/ROADMAP.md",
+      "result": "Taken from dev unchanged (identical to dev)."
+    }
+  ],
+  "strings_changed": [
+    {
+      "old": "Key press event lag (information only unless the event clock is offset)  [dev]  /  Key press handling delay  [wave 1]",
+      "new": "Key press handling delay (checked only if press time stamps are offset)",
+      "where": "web/src/selftest/RtSelfTest.svelte METRIC_ROWS (key_latency_ms)"
+    },
+    {
+      "old": "Pointer press event lag (information only unless the event clock is offset)  [dev]  /  Pointer press handling delay  [wave 1]",
+      "new": "Pointer press handling delay (checked only if press time stamps are offset)",
+      "where": "web/src/selftest/RtSelfTest.svelte METRIC_ROWS (pointer_latency_ms)"
+    },
+    {
+      "old": "Fail: ${EVENT_OFFSET_NOTE}",
+      "new": "Fail: offset time stamps",
+      "where": "web/src/selftest/RtSelfTest.svelte verdictOf (OFFSET_VERDICT); the full EVENT_OFFSET_NOTE is now shown in a .warn paragraph above the table"
+    },
+    {
+      "old": "event timestamps are offset from performance.now() in this browser; RT falls back to the handler clock",
+      "new": "This browser's press time stamps are offset from its timer by more than 25 ms. So reaction times are timed when the page handles the press, and this delay is checked like the other timing checks.",
+      "where": "web/src/selftest/measure.ts EVENT_OFFSET_NOTE (25 comes from MAX_EVENT_LAG_MS); report JSON note and the page"
+    },
+    {
+      "old": "The press lags are for information only while reaction times use the input event's own timestamp, so that delay is not part of them; if the browser's event timestamps are offset from its timer by more than {MAX_EVENT_LAG_MS} ms, reaction times use the handler clock instead and the lag is checked like the other timing checks.  [dev]",
+      "new": "The delays before presses are handled are usually for information only. Reaction times use the time stamp of the press itself, so those delays are not part of them. Some browsers' press time stamps are offset from their timer. If the offset is over {MAX_EVENT_LAG_MS} ms, reaction times are timed when the page handles the press. Then the delay is checked like the other timing checks.",
+      "where": "web/src/selftest/RtSelfTest.svelte intro (the rest of the intro is wave 1's list and short sentences)"
+    },
+    {
+      "old": "event.timeStamp is not on the performance.now() timeline; RT falls back to performance.now() in the handler  [dev, inline]",
+      "new": "EVENT_CLOCK_NOTE (wave 1, unchanged): This browser's event time stamps use a different clock, so reaction times are timed when the page handles the press, which is less precise.",
+      "where": "web/src/selftest/measure.ts inputReport, not-on-the-timeline branch"
+    }
+  ],
+  "tests_changed": [
+    "web/src/selftest/measure.test.ts: both sides merged; plain-words test covers EVENT_OFFSET_NOTE; new 'two clock notes are different conditions' test",
+    "web/src/selftest/RtSelfTest.dom.test.ts: new row names; the copied-report notes may be any of the three plain notes (jsdom's zero pointer time stamp now reads as an offset); new: a 205 ms offset run shows 'Fail: offset time stamps' in the Result cell and the .verdict span, the reason above the table, overall Fail, event_lag handler/handler, rt_selftest_v3, no jargon in main; a 3 ms run stays 'For information' with event/event sources and no reason shown",
+    "web/e2e/ux-selftest.spec.ts: the mid-word-break check now asserts the two longer delay-row names are there and checks them (helper wordsBrokenInside); new test with an emulated 205 ms Event.timeStamp offset (addInitScript): rowheader names with the short Fail, no word broken at 320 px, no sideways scroll, numbers on one line, the reason shown, overall Fail, report sources handler and pass false with the plain note, no jargon in main, the Result column shows the short verdict at 1024 px; the copied-notes test accepts the third (offset) note"
+  ],
+  "gates": {
+    "check": "npm run check: svelte-check 1192 files, 0 errors / 0 warnings; tsc node and scripts clean",
+    "vitest": "npx vitest run: 257 files passed / 1 skipped; 4544 tests passed / 7 skipped / 0 failed",
+    "lint": "npm run lint:language: 358 files clean",
+    "build": "npx vite build --outDir test-results/iso/w2-sync/dist-gate --emptyOutDir: ok (only the usual chunk-size warning)",
+    "e2e": [
+      {
+        "specs": "rt-selftest.spec.ts + ux-selftest.spec.ts",
+        "project": "chromium",
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0,
+        "run": "w2-sync-a :4700"
+      },
+      {
+        "specs": "rt-selftest.spec.ts + ux-selftest.spec.ts",
+        "project": "webkit",
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0,
+        "run": "w2-sync-a :4700"
+      },
+      {
+        "specs": "rt-selftest.spec.ts + ux-selftest.spec.ts",
+        "project": "iphone",
+        "passed": 19,
+        "failed": 0,
+        "skipped": 0,
+        "run": "w2-sync-a :4700"
+      },
+      {
+        "specs": "ux-render.spec.ts + smoke.spec.ts + session.spec.ts",
+        "project": "chromium",
+        "passed": 64,
+        "failed": 0,
+        "skipped": 1,
+        "run": "w2-sync-b :4702"
+      },
+      {
+        "specs": "ux-render.spec.ts + smoke.spec.ts + session.spec.ts",
+        "project": "iphone",
+        "passed": 62,
+        "failed": 0,
+        "skipped": 3,
+        "run": "w2-sync-b :4702"
+      },
+      {
+        "specs": "keyboard-session.spec.ts",
+        "project": "chromium",
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "run": "w2-sync-c :4703"
+      },
+      {
+        "specs": "keyboard-session.spec.ts",
+        "project": "webkit",
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "run": "w2-sync-c2 :4704 (re-run; first run w2-sync-c had 5 passed / 1 failed, see flaky)"
+      },
+      {
+        "specs": "a11y.spec.ts --grep 'selftest|coding|rt'",
+        "project": "chromium",
+        "passed": 51,
+        "failed": 0,
+        "skipped": 7,
+        "run": "w2-sync-d :4705"
+      },
+      {
+        "specs": "a11y.spec.ts --grep 'selftest|coding|rt'",
+        "project": "iphone",
+        "passed": 43,
+        "failed": 0,
+        "skipped": 15,
+        "run": "w2-sync-d :4705"
+      },
+      {
+        "specs": "gallery.spec.ts + render-visual.spec.ts (HB_DEV_SERVER=1, E2E_DEV_PORT=4701)",
+        "project": "chromium",
+        "passed": 35,
+        "failed": 0,
+        "skipped": 0,
+        "run": "w2-sync-e :4706; every coding and RT snapshot matched, no baseline updated"
+      }
+    ]
+  },
+  "flaky": [
+    {
+      "test": "e2e/keyboard-session.spec.ts:470 'Keep going in a running block gives the keys back to the block, and Escape closes the panel'",
+      "project": "webkit",
+      "first_run": "failed after 20 s: '.stage' was not found after Keep going because the page already showed 'Practice done. The counted trials start now.'",
+      "rerun": "passed in 4.8 s (whole spec 6/6 on webkit)",
+      "cause": "The fast-mode (?fast=1) RT practice keeps running while the Skip panel is open, and the test races it with keyboard steps. The first run shared the CPU with the full vitest run and the w2-sync-b e2e run, so the practice trials timed out first. The test makes no responses, so dev's clock decision cannot change this path."
+    }
+  ],
+  "open_issues": [
+    "keyboard-session.spec.ts:470 depends on wall-clock speed: under CPU load the fast-mode practice can end before 'Keep going' returns focus. A later package could make the test wait on the trial state, or pause the block while the Skip panel is open (a product decision).",
+    "dev added rt_timestamp_reason to RT observations (run.ts, tasks/rt/score.ts, types.ts). It is taken as dev wrote it; no wave-1 code reads or writes it.",
+    "web/ux-review/findings/copy-inventory.json still lists the old 'Key/Pointer press handling delay (information only)' strings. It is a review-time record, so it was left as it is."
+  ]
+}

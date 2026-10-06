@@ -144,7 +144,9 @@ describe('buildResults with the server scoring the counted questions', () => {
     expect(scoredSessions(r)).toBe(1)
     const e = axisEstimates(r.input)
     expect(e.find((x) => x.code === 'MAT')).toMatchObject({ measured: true, theta: 0.6 })
-    expect(e.find((x) => x.code === 'SPA')).toMatchObject({ measured: false })
+    // A part of the plan the server published nothing for has no data; it is offered all the same (UX-048b).
+    expect(e.find((x) => x.code === 'SPA')).toMatchObject({ measured: false, reason: 'no_data' })
+    expect(e.find((x) => x.code === 'LR')).toMatchObject({ measured: false, reason: 'not_yet_available' })
   })
 
   it('a session the server does not score (made without it) is scored here, next to the served one', () => {

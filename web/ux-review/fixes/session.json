@@ -1,0 +1,210 @@
+{
+  "area": "session",
+  "model": "claude-sonnet-5-5",
+  "items": [
+    {
+      "id": "UX-001",
+      "outcome": "fixed",
+      "summary": "Screen.svelte focuses the heading with preventScroll and, one frame later, scrolls to the top when the page is scrolled (focus={false} untouched). Also sets document.title (see UX-006).",
+      "files": ["web/src/session/Screen.svelte", "web/src/session/title.ts"],
+      "tests_added": ["web/src/session/Screen.dom.test.ts", "web/e2e/ux-session.spec.ts (iphone 390x664 and 320x568: next question after Continue, Spatial interstitial Start)"],
+      "tests_changed": [],
+      "notes": "The scroll is only issued when scrollY/scrollX is non-zero (no needless call, and no jsdom 'not implemented' noise). Mutation-checked: with the fix removed the three iphone tests fail."
+    },
+    {
+      "id": "UX-003",
+      "outcome": "fixed",
+      "summary": "Header: one row on a phone (32 px ring with smaller text, nowrap actions, buttons show 'Skip' / 'Finish' with the rest in a clip-hidden .narrow-hide span so the names stay 'Skip <axis>' / 'Finish early'); empty status line collapses (.status:empty); skipped and timeout notices are drawn in --r-muted (.calm). run.ts: a notice now lives for the screen it was raised on and the next one (#raise / #newScreen; a loading screen does not count).",
+      "files": ["web/src/session/SessionScreen.svelte", "web/src/session/ProgressRing.svelte", "web/src/session/run.ts", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/run.test.ts (7 tests incl. a fast-check property: no notice is seen on more than two screens in a row; mutation-checked)", "web/src/session/SessionScreen.dom.test.ts (header names, calm class, notice life)", "web/e2e/ux-session.spec.ts (header bottom <= 120 px at 320x568 on interstitial, question and confidence; notice gone one screen later)"],
+      "tests_changed": [],
+      "notes": "Accessible names and the SessionApp.served 'ran out of time' check are unchanged. The text of the leading word uses an expression ({` ${skipName}`}) because Svelte trims a leading space inside an element."
+    },
+    {
+      "id": "UX-004",
+      "outcome": "fixed",
+      "summary": "PracticeScreen: every question is a new Screen ({#key view.number}), so the heading takes focus; the feedback section is tabindex -1 with no aria-live and takes focus when it appears; one always-mounted sr-only role=status line carries the verdict; counter numbers are translate=no; 'Back' replaced by 'Stop practice' (ondone at once) and 'Practice complete' ends with 'Continue'. PRACTICE_BACK removed.",
+      "files": ["web/src/session/PracticeScreen.svelte", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/PracticeScreen.dom.test.ts", "web/e2e/keyboard-session.spec.ts (practice by keys: focus never on the body, feedback focused, one-press leave; chromium and webkit)", "web/e2e/ux-session.spec.ts", "web/e2e/session.spec.ts (practice to its end)"],
+      "tests_changed": ["web/src/session/SessionApp.dom.test.ts", "web/src/session/SessionApp.coverage.dom.test.ts", "web/e2e/session.spec.ts (Back -> Stop practice / Continue)"],
+      "notes": "The sr-only verdict is worded differently from the visible sentences ('Your answer was correct. The right answer is C.') on purpose: e2e/routes.ts:361 and ux-review/lib/journey.ts:86 use getByText(/That was (not )?correct\\./) in strict mode, and an identical hidden sentence would make it match two elements. ux-review/lib/journey.ts:97 still clicks 'Back' in practice (harness, not edited): it needs 'Stop practice'."
+    },
+    {
+      "id": "UX-005a",
+      "outcome": "fixed",
+      "summary": "cancel() hands focus to the running block's .stage/.board (falls back to the opener); ConfirmPanel: Escape = Keep going (stops propagation), repeat-tap guard, primary?: 'yes'|'no' prop (default 'yes', Reveal untouched), specificity of .confirm h2/p raised, max-width 38rem.",
+      "files": ["web/src/session/SessionScreen.svelte", "web/src/session/ConfirmPanel.svelte"],
+      "tests_added": ["web/src/session/ConfirmPanel.dom.test.ts", "web/src/session/SessionScreen.dom.test.ts (digit span: Keep going -> stage focused, digit key reaches the block; Escape)", "web/e2e/ux-session.spec.ts (RT block Escape/Space; iphone double tap)", "web/e2e/keyboard-session.spec.ts"],
+      "tests_changed": [],
+      "notes": "DEVIATION from the triage's double-tap rule ('ignore a touch click less than 350 ms after mount'): e2e/session-driver.ts taps 'Finish now' / 'Skip <axis>' right after the panel opens (touch: isMobile), so a mount-time rule would swallow those taps (and break reveal/session-save/keyboard-style suites on the iphone project). The panel instead ignores a touch press that lands within 350 ms and 32 px of the previous touch anywhere on the page (module-level capture listener on pointerdown), i.e. the second half of a double tap. session-save.spec.ts passes on chromium and iphone with it."
+    },
+    {
+      "id": "UX-006",
+      "outcome": "fixed",
+      "summary": "Welcome takes a focus prop (SessionApp passes focus={visited}); App focuses the visible flow h1 and re-applies the flow's title when the hash leaves #/privacy or #/data; Screen sets document.title ('<Title> · HumanBench', welcome = 'HumanBench'); aria-invalid + aria-describedby (only while the error shows) on the gate and honour checkboxes; translate=no on the welcome h1.",
+      "files": ["web/src/session/Welcome.svelte", "web/src/session/SessionApp.svelte", "web/src/App.svelte", "web/src/session/Screen.svelte", "web/src/session/title.ts", "web/src/session/ConsentGate.svelte", "web/src/session/Honour.svelte"],
+      "tests_added": ["web/src/session/SessionApp.flow.dom.test.ts", "web/src/session/Screen.dom.test.ts", "web/src/App.dom.test.ts", "web/e2e/ux-session.spec.ts"],
+      "tests_changed": [],
+      "notes": ""
+    },
+    {
+      "id": "UX-007a",
+      "outcome": "fixed",
+      "summary": "Checklist: CHECKLIST_STATUS.later = 'Later'; only the first upcoming cluster after the part on screen says 'Up next' (a cluster under way never does); hidden separators ': ' and '. ' make a row read as a sentence; <wbr> after '/'; overflow-wrap: break-word + hyphens; grid layout with a wrapping 7rem status column. data-status is now 'later' for those rows. <nav aria-label='Session checklist'> unchanged.",
+      "files": ["web/src/session/Checklist.svelte", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/components.dom.test.ts (one Up next / Later, sentence reading, wbr)", "web/e2e/ux-session.spec.ts (320 px)"],
+      "tests_changed": ["web/src/session/SessionScreen.dom.test.ts", "web/src/session/SessionApp.dom.test.ts", "web/e2e/session.spec.ts (Speed row 'Later', Spatial/Memory 'Up next')"],
+      "notes": ""
+    },
+    {
+      "id": "UX-008",
+      "outcome": "fixed",
+      "summary": "ProgressRing shows the target to the nearest 5 min in text and aria-valuemax (28 -> 30, 20 stays 20) with the exact target kept for the fill; new lastPart prop (default false; SessionScreen computes it) chooses 'Almost there' (last part) or new OVER_PLANNED 'Over the planned time'; track is --r-border at full opacity; text is translate=no; aboutMinutes/summaryLine say 'minute(s)'.",
+      "files": ["web/src/session/ProgressRing.svelte", "web/src/session/SessionScreen.svelte", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/components.dom.test.ts", "web/src/session/copy.test.ts", "web/src/session/SessionScreen.dom.test.ts", "web/e2e/ux-session.spec.ts"],
+      "tests_changed": ["web/src/session/copy.test.ts (summaryLine)", "web/src/session/SessionApp.dom.test.ts", "web/e2e/session.spec.ts ('of about 30 min', /About \\d+ minutes?\\./, 'Over the planned time' after the break)"],
+      "notes": "The over-target test stays on the exact target (28 min), so 'Over the planned time' appears at 28:00 while the label says about 30."
+    },
+    {
+      "id": "UX-009a",
+      "outcome": "fixed",
+      "summary": "Finished: reason line says 'You reached the end of the session. You skipped N parts: A, B and C.' (or 'You skipped every part, so nothing was measured this time.'); 'This profile combines K sessions.' / 'This visit added no new answers. Your profile below comes from K earlier session(s).' (the run's own and its served session are not counted as earlier); empty state: 'Back to the start' is primary and first, SavePanel stays in the DOM inside a closed <details class='focus'> 'Keep a file of this visit anyway'; Screen wide only with a profile. h1 'Session complete' kept; props backward compatible (result may be null).",
+      "files": ["web/src/session/Finished.svelte", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/Finished.dom.test.ts", "web/e2e/ux-session.spec.ts"],
+      "tests_changed": [],
+      "notes": "'You finished every part.' and 'You finished early' are unchanged where they were true."
+    },
+    {
+      "id": "UX-010",
+      "outcome": "fixed",
+      "summary": "Ready shows 'See my results' after Begin when the chosen earlier saves score to a profile (and not with a server); SessionApp.showSaved() opens Finished with result=null: h1 'Your results', 'Your profile from K earlier session(s).', makeSave = base plus the worked examples' families via mergeAll (no session appended, nothing written); focus sessions can start from it.",
+      "files": ["web/src/session/Ready.svelte", "web/src/session/SessionApp.svelte", "web/src/session/Finished.svelte", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/SessionApp.flow.dom.test.ts", "web/src/session/Ready.dom.test.ts", "web/src/session/Finished.dom.test.ts", "web/e2e/ux-session.spec.ts (2 sessions loaded -> downloaded file has 2 sessions, no autosave key)"],
+      "tests_changed": [],
+      "notes": "Not offered with a server (the served sessions' estimates come from the close step). Leaving still goes through Reveal's 'Leave without saving?' panel, as the triage said the guard behaves as now."
+    },
+    {
+      "id": "UX-011",
+      "outcome": "fixed",
+      "summary": "SessionApp installs reveal/guard once the run holds an answer; pushes one history entry per run and on popstate re-pushes and opens 'Finish now?' (finishRequest prop of SessionScreen); the entry is used up with history.back() when the run ends or restarts; App: Privacy gets onback (history.back() when opened from an in-app link, '#/' when opened directly), footer always links 'Privacy and terms', in a run it is target=_blank with an sr-only ' (opens in a new tab)'; ConsentGate link is same-tab.",
+      "files": ["web/src/session/SessionApp.svelte", "web/src/session/SessionScreen.svelte", "web/src/App.svelte", "web/src/session/Privacy.svelte", "web/src/session/ConsentGate.svelte", "web/src/session/phase.ts"],
+      "tests_added": ["web/src/session/SessionApp.flow.dom.test.ts", "web/src/App.dom.test.ts", "web/e2e/ux-session.spec.ts (goBack -> Finish now?, reload dialog only after an answer, footer link / new tab)"],
+      "tests_changed": ["web/src/App.served.dom.test.ts (footer: the notice link without a server)", "web/e2e/smoke.spec.ts (footer holds the disclaimer plus the link: toContainText + .disclaimer)", "web/e2e/session.spec.ts (gate link same tab, Back returns to the gate with the tick; contentinfo -> footer .disclaimer)"],
+      "notes": "Needs integration: e2e/server.spec.ts:367 `expect(page.locator('footer a')).toHaveCount(0)` (static fallback) no longer holds; see integration_requests."
+    },
+    {
+      "id": "UX-012a",
+      "outcome": "partial",
+      "summary": "Ready: a chosen file loads on change (a repeat of the same file is not read twice; a load under way is shared); a failed file falls back to the pasted code; a file that is not a save is cleared from the field; a stale error is dropped when the field changes, a specific error is not overwritten by 'Choose a save file...'; Begin does not start while a file or code is chosen but unloaded and shows a role=alert (READY_NOT_LOADED, word for word); the message has an id, aria-describedby on the implicated field(s) and aria-invalid on it; 'Last saved today at 14:03, 3 questions answered.' under the earlier-saves label (describedby on its checkbox); 'Your new session will be added to N earlier session(s).' beside Begin once a save is loaded; translate=no on the code box. Labels and the 'Loaded N earlier session(s)...' message are unchanged.",
+      "files": ["web/src/session/Ready.svelte", "web/src/session/copy.ts", "web/src/session/coverage.ts", "web/src/session/saved-at.ts"],
+      "tests_added": ["web/src/session/Ready.dom.test.ts", "web/src/session/saved-at.test.ts (incl. fast-check)", "web/src/session/coverage.test.ts", "web/e2e/ux-session.spec.ts"],
+      "tests_changed": [],
+      "notes": "PARTIAL on one point: the error stays in the role=status element (with class 'error') instead of switching to role=alert, because reveal-owned e2e/session-save.spec.ts:440-449 reads `getByRole('status')` for 'not a HumanBench save' / 'not valid JSON' and toHaveClass(/error/). The status region is mounted empty before its text, so it is announced. e2e/session-save.spec.ts passes unedited on chromium and iphone. 'Last saved' uses the merged save's created_utc (the last write) and counts power items of its newest session; the clock is the save library's wallClockMs (timing-lint)."
+    },
+    {
+      "id": "UX-013",
+      "outcome": "fixed",
+      "summary": "DeviceCheck: the choice and Continue come first, the facts after; Continue is aria-disabled (not disabled) until measured and submit() ignores it; one role=status paragraph mounted empty, its 'Checking your screen…' span added after a tick and removed when done; units spelled out ('60 Hz (screen updates per second)', '1 ms (thousandths of a second)'); remark and intro reworded.",
+      "files": ["web/src/session/DeviceCheck.svelte", "web/src/session/device.ts", "web/src/session/copy.ts", "web/src/session/session.css"],
+      "tests_added": ["web/src/session/DeviceCheck.dom.test.ts", "web/e2e/ux-session.spec.ts (iphone: Continue does not move)"],
+      "tests_changed": ["web/src/session/SessionApp.dom.test.ts"],
+      "notes": "device.test.ts matches /could not be measured/ and still passes."
+    },
+    {
+      "id": "UX-014",
+      "outcome": "fixed",
+      "summary": "Confidence: focus with preventScroll and form.scrollIntoView({block:'nearest'}) one frame later (guarded for jsdom); Enter with repeat is prevented on the slider; output is translate=no; custom track (0.5rem, --r-surface with a --r-border edge) and 1.5rem thumb; max-width 38rem; new hint 'With N options, guessing would be right about P% of the time. 100% means you are certain.'; legend floated inside the frame.",
+      "files": ["web/src/session/Confidence.svelte", "web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/components.dom.test.ts", "web/e2e/ux-session.spec.ts (iphone: Continue fully in view after a low Confirm, 3 questions; mutation-checked on iPhone 13)"],
+      "tests_changed": ["web/src/session/components.dom.test.ts (hint)"],
+      "notes": "The e2e checks the whole Continue button (ratio 1). The track contrast check reads the Chromium pseudo-element style and is skipped where it cannot be read."
+    },
+    {
+      "id": "UX-015",
+      "outcome": "partial",
+      "summary": "session.css: legends float inside their frame (+ legend + * { clear: both }), aria-disabled button style, styled ::file-selector-button. app.css: @media print makes #app a block, keeps the footer in one piece, forces a light colour-scheme and takes the system colours CanvasText/Canvas for the page text and background.",
+      "files": ["web/src/session/session.css", "web/src/app.css", "web/src/session/Confidence.svelte"],
+      "tests_added": ["web/e2e/ux-session.spec.ts (390 px legend inside the fieldset; print + dark: #app block, body text >= 4.5:1, footer below the content)"],
+      "tests_changed": [],
+      "notes": "DEVIATION: `@media screen and (prefers-color-scheme: dark)` was NOT applied to app.css. scripts/contrast.test.ts:212 (not mine) compares the media prelude with the exact string '@media (prefers-color-scheme: dark)' and fails for every token under 'screen and' (app.css, brief/notes.css, ResultsTalk.svelte, render/common/render.css: 26 stray tokens in the full run after my change, none from app.css). session.css has no dark query. Printed .hb-render text still takes render.css's dark tokens on a dark-OS print (render package, UX-027): my e2e only measures the page text."
+    },
+    {
+      "id": "UX-016",
+      "outcome": "fixed",
+      "summary": "segments.ts blurbs use the items' nouns; copy.ts privacy notice uses straight apostrophes (TERMS_VERSION unchanged); Welcome's privacy link is on its own line, 1rem below Start, 44 px tall; index.html noscript says 'HumanBench needs JavaScript. Turn it on to continue.'",
+      "files": ["web/src/session/segments.ts", "web/src/session/copy.ts", "web/src/session/Welcome.svelte", "web/index.html"],
+      "tests_added": ["web/src/session/copy.test.ts", "web/e2e/ux-session.spec.ts (iphone: link target >= 44 px and clear of Start; blurbs)"],
+      "tests_changed": [],
+      "notes": "src/copy.test.ts still finds 'HumanBench needs JavaScript' (it passes in the full run)."
+    },
+    {
+      "id": "UX-017a",
+      "outcome": "fixed",
+      "summary": "SessionScreen: the .unavailable panel (same class, text, primary 'Skip <axis>') is rendered directly under the h1 before the Stage, with a secondary 'Finish early' that opens the finish confirm; the header status stays empty while the panel shows.",
+      "files": ["web/src/session/SessionScreen.svelte"],
+      "tests_added": ["web/src/session/SessionScreen.dom.test.ts", "web/e2e/ux-session.spec.ts (iphone SE: panel and Skip button in view, message once, header status empty, axe)"],
+      "tests_changed": ["web/src/session/SessionScreen.dom.test.ts (status() is now empty while the panel shows)"],
+      "notes": "On that one screen two buttons are named 'Finish early' (header and panel), so a strict button(page,'Finish early') locator would match two there; no existing spec does that on the no-WebGL screen."
+    },
+    {
+      "id": "UX-018a",
+      "outcome": "fixed",
+      "summary": "BREAK_OFFER_TEXT: 'You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.'",
+      "files": ["web/src/session/copy.ts"],
+      "tests_added": ["web/src/session/copy.test.ts (a benefit-claim regex over every exported session string, honour code and privacy notice excluded)", "web/e2e/ux-session.spec.ts"],
+      "tests_changed": [],
+      "notes": "The regex is local (src/brief/testing.ts's BENEFIT_RE pulls in the notes package's fast-check helpers)."
+    }
+  ],
+  "integration_requests": [
+    {
+      "id": "UX-011",
+      "file": "web/e2e/server.spec.ts",
+      "change": "Line 367, in 'the static fallback (the default build) is untouched': `await expect(page.locator('footer a')).toHaveCount(0)` no longer holds, the footer now always links 'Privacy and terms' (#/privacy). Replace it with `await expect(page.locator('footer a[href=\"#/data\"]')).toHaveCount(0)` (the data page link is still only there with a server). I did not run server.spec.ts."
+    },
+    {
+      "id": "UX-015",
+      "file": "web/scripts/contrast.test.ts",
+      "change": "Line 212 (`const DARK = '@media (prefers-color-scheme: dark)'`) and the parsers that read dark overrides compare the media prelude literally, so the triage's `@media screen and (prefers-color-scheme: dark)` (applied by other packages in src/brief/notes.css, src/brief/ui/ResultsTalk.svelte, src/render/common/render.css) fails 'every colour token of src/ sits in a rule that a sheet above stands for' (26 tokens; npm test is otherwise green). Either accept `@media screen and (prefers-color-scheme: dark)` there, or keep the plain query in those files. app.css keeps the plain query and prints through system colours."
+    },
+    {
+      "id": "UX-012a",
+      "file": "web/e2e/session-save.spec.ts",
+      "change": "Optional follow-up: Ready's error message stays in the role=status paragraph (class 'error') because lines 440-449 read it from getByRole('status'). If the reveal package wants role=alert for errors, those lines must read the alert and the status; then Ready.svelte can render the failure in a separate role=alert element."
+    },
+    {
+      "id": "UX-004",
+      "file": "web/ux-review/lib/journey.ts",
+      "change": "Line 97 clicks 'Back' in practice (harness, not a gate). The button is now 'Stop practice' on a question and 'Continue' on 'Practice complete'."
+    },
+    {
+      "id": "UX-005b",
+      "file": "web/src/reveal/Reveal.svelte",
+      "change": "ConfirmPanel now takes primary?: 'yes' | 'no' (default 'yes'). For the leave panel pass primary=\"no\" (Stay and save first and primary). Not passed from here, as instructed."
+    },
+    {
+      "id": "UX-007b",
+      "file": "web/src/session/Checklist.svelte",
+      "change": "Left at <nav aria-label=\"Session checklist\"> as instructed; reveal.spec.ts selects it by role. New: each li carries data-status 'later' (was 'upcoming') for clusters that are not next."
+    }
+  ],
+  "gates": {
+    "check": "npm run check: 0 errors, 0 warnings (also tsc node and scripts configs)",
+    "unit": "npx vitest run src/session src/App scripts/timing-lint.test.ts scripts/language-lint.test.ts scripts/a11y-routes.test.ts: 34 files, 407 tests passed. Full npm test: 4522 passed, 1 failed (scripts/contrast.test.ts, caused by other packages' `screen and (prefers-color-scheme: dark)`, see integration_requests; an earlier full run also had a 30 s timeout in src/render/leak.dom.test.ts under load, which passed on the next full run)",
+    "build": "npm run build -- --outDir test-results/iso/fix-session/dist-gate: ok",
+    "e2e": [
+      { "spec": "e2e/ux-session.spec.ts + e2e/smoke.spec.ts", "project": "chromium", "result": "30 passed, 11 skipped (phone-only)" },
+      { "spec": "e2e/ux-session.spec.ts + e2e/smoke.spec.ts", "project": "iphone", "result": "33 passed, 8 skipped (desktop-only)" },
+      { "spec": "e2e/ux-session.spec.ts", "project": "webkit", "result": "22 passed, 12 skipped" },
+      { "spec": "e2e/session.spec.ts", "project": "chromium", "result": "38 passed (one 60 s timeout of the new 'practice to its end' test in an earlier, loaded run; it passes in 16 s alone and in the final run)" },
+      { "spec": "e2e/session.spec.ts + e2e/smoke.spec.ts", "project": "iphone", "result": "43 passed, 2 skipped" },
+      { "spec": "e2e/keyboard-session.spec.ts", "project": "chromium", "result": "6 passed (incl. the whole-session run)" },
+      { "spec": "e2e/keyboard-session.spec.ts", "project": "webkit", "result": "6 passed (incl. the whole-session run)" },
+      { "spec": "e2e/a11y.spec.ts --grep (welcome, gate, gate-error, gate-under-18, privacy, honour, device, ready, ready-returning, practice, practice-feedback, interstitial, rt-intro, item-matrix-series, confidence, confirm-skip, confirm-finish, item-spatial-no-webgl, break-offer, on-break, finished-nothing, notes, rt-selftest)", "project": "chromium", "result": "168 passed" },
+      { "spec": "e2e/a11y.spec.ts --grep (same routes)", "project": "iphone", "result": "143 passed, 48 skipped (desktop-only)" },
+      { "spec": "e2e/wide-font.spec.ts (read-only)", "project": "chromium", "result": "2 passed" },
+      { "spec": "e2e/session-save.spec.ts (read-only, reveal-owned; matches the Ready literals)", "project": "chromium", "result": "19 passed" },
+      { "spec": "e2e/session-save.spec.ts (read-only)", "project": "iphone", "result": "19 passed" }
+    ]
+  }
+}

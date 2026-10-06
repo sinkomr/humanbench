@@ -535,3 +535,100 @@ describe('coming back', () => {
     return vi.waitFor(() => expect(document.querySelector('[data-testid=returning]')).toBeNull())
   })
 })
+
+describe('focus, errors and the top of the page around keeping (UX-050, UX-052)', () => {
+  it('marks the 18+ box invalid while its error is shown, and clears it once it is ticked', () => {
+    open({ store: fakeStore() })
+    const box = $<HTMLInputElement>('[data-testid=adult]')
+    expect(box.hasAttribute('aria-invalid')).toBe(false)
+    click($('[data-testid=keep-button]'))
+    expect(box.getAttribute('aria-invalid')).toBe('true')
+    expect(box.getAttribute('aria-describedby')).toBe($('[data-testid=adult-error]').id)
+    click(box)
+    expect(box.hasAttribute('aria-invalid')).toBe(false)
+    expect(box.hasAttribute('aria-describedby')).toBe(false)
+  })
+
+  it('marks the 18+ box invalid in the download-only case too', () => {
+    open({ store: fakeStore({ available: false }) })
+    click($('[data-testid=download-settings]'))
+    expect($('[data-testid=adult]').getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('moves focus to the download button that replaces "Keep my settings", so it is not lost to the page', async () => {
+    open({ store: fakeStore() })
+    click($('[data-testid=adult]'))
+    const keepButton = $<HTMLButtonElement>('[data-testid=keep-button]')
+    keepButton.focus()
+    expect(document.activeElement).toBe(keepButton)
+    click(keepButton)
+    await tick()
+    await tick()
+    expect(document.contains(keepButton)).toBe(false)
+    expect(document.activeElement).toBe($('[data-testid=download-settings]'))
+    expect(document.activeElement).not.toBe(document.body)
+  })
+
+  it('moves focus the same way when the question was answered elsewhere (adultKnown)', async () => {
+    open({ store: fakeStore(), adultKnown: true })
+    click($('[data-testid=keep-button]'))
+    await tick()
+    await tick()
+    expect(document.activeElement).toBe($('[data-testid=download-settings]'))
+  })
+
+  it('does not move focus when keeping was refused for the missing tick', async () => {
+    open({ store: fakeStore() })
+    const keepButton = $<HTMLButtonElement>('[data-testid=keep-button]')
+    keepButton.focus()
+    click(keepButton)
+    await tick()
+    await tick()
+    expect(document.activeElement).toBe(keepButton)
+  })
+
+  it('still announces "now kept" to screen readers, but does not show a second line that says what the state line says', async () => {
+    open({ store: fakeStore() })
+    click($('[data-testid=adult]'))
+    click($('[data-testid=keep-button]'))
+    await vi.waitFor(() => expect($('[data-testid=keep-status]').textContent).toBe(COPY.keepNow))
+    const status = $('[data-testid=keep-status]')
+    expect(status.getAttribute('role')).toBe('status')
+    expect(status.classList.contains('visually-hidden')).toBe(true)
+    expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepDone)
+    // anything else it says is shown
+    click($('[data-testid=download-settings]'))
+    await vi.waitFor(() => expect($('[data-testid=keep-status]').textContent).toBe('Downloaded humanbench-abc123-2026-11-03.hbsave.json.'))
+    expect($('[data-testid=keep-status]').classList.contains('visually-hidden')).toBe(false)
+  })
+
+  it('says at the top that nothing is kept until the settings are, then that they are kept, and again that nothing is after removal', async () => {
+    open({ store: fakeStore() })
+    expect($('[data-testid=not-saved]').textContent).toBe(COPY.notSaved)
+    click($('[data-testid=adult]'))
+    click($('[data-testid=keep-button]'))
+    await tick()
+    expect($('[data-testid=not-saved]').textContent).toBe(COPY.settingsKept)
+    expect($('[data-testid=not-saved]').textContent).not.toMatch(/keeps nothing/)
+    click(button('Remove my notes settings'))
+    await tick()
+    expect($('[data-testid=not-saved]').textContent).toBe(COPY.notSaved)
+  })
+
+  it('says at the top that the settings came back from the last visit, and that only choices are kept', () => {
+    let s = initialState('coding')
+    s = toggleTopic(s, 'other/programming')
+    open({ store: fakeStore(), initial: s, keepInitial: true })
+    expect($('[data-testid=not-saved]').textContent).toBe('Your settings from last time are here. Only your choices are kept, never what you typed.')
+    expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepDone)
+  })
+
+  it('does not claim the settings are kept when the browser would not keep them', () => {
+    const store = fakeStore({ status: () => 'unavailable', onStatus: (l) => { l('unavailable'); return () => undefined } })
+    let s = initialState('coding')
+    s = toggleTopic(s, 'other/programming')
+    open({ store, initial: s, keepInitial: true })
+    expect($('[data-testid=not-saved]').textContent).toBe(COPY.notSaved)
+    expect($('[data-testid=keep-state]').textContent).toBe(COPY.keepUnavailable)
+  })
+})

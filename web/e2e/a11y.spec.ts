@@ -26,6 +26,7 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import { expectNoSeriousAxe, formatViolation, nonBlockingAxeViolations } from './axe'
+import { devServerAbsent } from './dev-server'
 import { focusableControls, tabAround } from './keyboard'
 import { DESKTOP_VIEWPORT, expectNoClippedText, expectNoSidewaysScroll, REFLOW_VIEWPORT, setTextSpacingNow, setTextZoomNow, ZOOM_200_VIEWPORT } from './layout'
 import { openRoute, phoneScopes, ROUTES, type Route } from './routes'
@@ -59,6 +60,8 @@ async function startedMotion(page: Page): Promise<string[]> {
 
 /** A fresh page for a route: wide font, the route's motion setting, any set-up it asks for. */
 async function setUp(page: Page, route: Route, viewport?: { width: number; height: number }): Promise<void> {
+  // A route of the dev server, in a run that does not start it (the isolated config without HB_DEV_SERVER=1).
+  test.skip(route.devServer === true && devServerAbsent(), 'a page of the Vite dev server, which this run does not start (run with HB_DEV_SERVER=1)')
   await useWideFont(page)
   await page.addInitScript(RECORD_MOTION)
   await page.emulateMedia({ reducedMotion: route.motion === 'allow' ? 'no-preference' : 'reduce', colorScheme: 'light' })

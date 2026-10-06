@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import App from './App.svelte'
 import { SERVER_PRIVACY_SECTIONS } from './backend/copy'
 import { FakeTransport, fakeBackend } from './backend/testing'
-import { fakeDisplay } from './render/common/testing'
+import { buttonByText, click, fakeDisplay } from './render/common/testing'
 import { fakeEnv } from './session/dom-support'
 import { PRIVACY_SECTIONS } from './session/copy'
 
@@ -58,14 +58,23 @@ describe('the privacy notice with a server', () => {
 })
 
 describe('the footer and the data page', () => {
-  it('with a server the footer links the notice and the data page; without one it has only the disclaimer', () => {
+  it('with a server the footer links the notice and the data page; without one only the notice', () => {
+    const footerLinks = (): (string | null)[] => [...document.querySelectorAll('footer a')].map((a) => a.getAttribute('href'))
     mountApp(true)
-    expect([...document.querySelectorAll('footer a')].map((a) => a.getAttribute('href'))).toEqual(['#/privacy', '#/data'])
+    // The welcome screen has its own notice link under Start, so the footer has only the data page there (VER-02).
+    expect(footerLinks()).toEqual(['#/data'])
+    click(buttonByText(document.body, 'Start'))
+    flushSync()
+    expect(footerLinks()).toEqual(['#/privacy', '#/data'])
     unmount(app!)
     document.body.innerHTML = ''
     mountApp(false)
-    expect(document.querySelectorAll('footer a')).toHaveLength(0)
-    expect(document.querySelectorAll('footer p')).toHaveLength(1)
+    // The notice is linked from every screen but the welcome, with or without a server (UX-011); the data page only has a point with one.
+    expect(footerLinks()).toEqual([])
+    click(buttonByText(document.body, 'Start'))
+    flushSync()
+    expect(footerLinks()).toEqual(['#/privacy'])
+    expect(document.querySelectorAll('footer p.disclaimer')).toHaveLength(1)
   })
 
   it('#/data shows the page for the data on the server, keeps the flow mounted behind it, and goes back', () => {

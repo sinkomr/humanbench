@@ -135,24 +135,29 @@ test.describe('blob demo route (M1.16)', () => {
     await expect(page.locator('svg.lollipop').first()).toBeVisible()
   })
 
-  test('drill-down shows facet estimates only at ≥ 5 items (A12)', async ({ page }) => {
+  test('drill-down shows facet estimates only at ≥ 5 questions (A12), with plain names (UX-040, UX-041)', async ({ page }) => {
     await open(page, 'm1')
     const btn = page.getByRole('button', { name: 'Quantitative', exact: true })
     await btn.click()
     await expect(btn).toHaveAttribute('aria-expanded', 'true')
     const panel = page.locator('.facet-panel')
-    await expect(panel.getByRole('cell', { name: 'Insufficient data (3 items; 5 needed)' })).toBeVisible()
-    await expect(panel.getByRole('cell', { name: 'Insufficient data (2 items; 5 needed)' })).toBeVisible()
-    await expect(panel.getByRole('rowheader', { name: /^Percent/ })).toBeVisible()
+    await expect(panel.getByRole('cell', { name: 'Insufficient data (3 questions; 5 needed)' })).toBeVisible()
+    await expect(panel.getByRole('cell', { name: 'Insufficient data (2 questions; 5 needed)' })).toBeVisible()
+    await expect(panel.getByRole('rowheader', { name: /^Percentages/ })).toBeVisible()
     await expect(panel.locator('tr[data-row="QR:percent"] td').nth(1)).toHaveText(/^[+−]?\d\.\d\d/)
-    await expect(panel.getByRole('img', { name: 'Quantitative: facets' })).toBeVisible()
+    // Two of the four facets are measured: too few for a chart of their own, so the table stands alone.
+    await expect(panel.getByRole('img', { name: 'Quantitative: facets' })).toHaveCount(0)
     await btn.click()
     await expect(panel).toHaveCount(0)
+    // Three or more measured facets get a chart: Knowledge in the every-skill profile.
+    await page.locator('button[data-profile="full"]').click()
+    await page.getByRole('button', { name: 'Knowledge', exact: true }).click()
+    await expect(page.locator('.facet-panel').getByRole('img', { name: 'Knowledge: facets' })).toBeVisible()
   })
 
   test('the page names no aggregate, stays in SD units, and passes the language lint (§9.5 a, A12, A13)', async ({ page }) => {
     await open(page, 'm1')
-    for (const profile of ['m1', 'full', 'skipped', 'sparse']) {
+    for (const profile of ['m1', 'full', 'skipped', 'sparse', 'offscale']) {
       // Switching profile remounts the view (blob view again); a hash-only goto would not reload.
       await page.locator(`button[data-profile="${profile}"]`).click()
       await expect(page.locator(`button[data-profile="${profile}"]`)).toHaveAttribute('aria-pressed', 'true')
@@ -190,7 +195,8 @@ test.describe('blob demo route (M1.16)', () => {
       for (const [width, minPx] of [
         [1280, 11],
         [360, 11],
-        [320, 10],
+        // The narrow-screen labels are cuts of the table names (UX-042), a little longer than the old ones.
+        [320, 9.5],
       ] as const) {
         await page.setViewportSize({ width, height: 900 })
         // A fresh load each time: a hash-only goto would keep the open drill-down.
@@ -225,7 +231,7 @@ test.describe('blob demo route (M1.16)', () => {
     // Two animation frames: long enough for an observer notification and the layout it triggers.
     const settle = (): Promise<unknown> => page.evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))')
     const start = page.viewportSize()!
-    for (const profile of ['m1', 'full', 'skipped', 'sparse']) {
+    for (const profile of ['m1', 'full', 'skipped', 'sparse', 'offscale']) {
       await page.setViewportSize(start)
       await page.goto('about:blank')
       await open(page, profile)

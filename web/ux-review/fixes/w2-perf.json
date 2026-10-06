@@ -1,0 +1,74 @@
+{
+  "area": "w2-perf",
+  "model": "opus",
+  "items": [
+    {
+      "id": "UX-100",
+      "outcome": "fixed",
+      "summary": "Part 1 (static shell): index.html now paints the welcome screen's heading, tagline and intro and the footer disclaimer before any script runs. The words are not copied by hand: index.html holds placeholders (<!--hb-shell:NAME-->) that the new humanbench-static-shell plugin of vite.config.ts fills (transformIndexHtml, order post, dev and build) from the app's own constants WELCOME_HEADING / WELCOME_TAGLINE / WELCOME_INTRO (src/session/copy.ts) and DISCLAIMER (src/copy.ts), read through Vite's runnerImport, HTML-escaped, so they cannot drift. Inline critical CSS repeats what app.css, render.css, session.css and App.svelte's footer give the welcome screen (tokens, font stack, 42rem column, padding incl. the 30rem breakpoint, h1/lead/p sizes, footer border/padding/disclaimer), light and dark under `@media screen and (prefers-color-scheme: dark)`; scripts/static-shell.test.ts compares every one of those declarations with the source files. The plugin also moves Vite's stylesheet links from the head to the end of the body: the browser paints the inline-styled shell without waiting for them, while the app's module script (deferred) still waits for them (script-blocking stylesheets), so the app never mounts unstyled. In place of Start the shell has a non-focusable 'Loading…' line of the button row's height (2.75rem); no link, button or tabindex. main.ts clears #app (replaceChildren) and the shell's classes before mount(App) or the dev route, so after mount there is one h1, one main, one footer. The noscript text is unchanged and moved inside the shell's main (after the intro); without JavaScript the 'Loading…' line and the shell footer stay hidden (they show only under the class a tiny inline head script sets), so the no-JS page reads heading, tagline, intro, 'HumanBench needs JavaScript…', disclaimer. Deep links: the same inline script (GitHub Pages sends no CSP; none in the repo either) adds hb-shell-deep when location.hash is anything but '', '#' or '#/', which hides the welcome text, so #/privacy, #/data or #/dev/* show only 'Loading…' until their page mounts. Part 2 (code split): SessionApp.svelte no longer imports Finished.svelte; new src/session/results-loader.ts loads it with a dynamic import, memoised, and SessionApp starts the fetch when the ready screen is reached (also on practice, opening, run, closing, finished if not loaded yet), so by the end of a session it is in memory and renders synchronously. If it is still on its way when due, the results screen shows 'Your results' with the status 'Preparing your results…'. Failure path: four attempts over about 5.5 s (backoff 0.5, 1.5, 3.5 s), then 'Your results could not be loaded. Your answers are not lost: check the connection and try again, or download your save file to keep them.' with 'Try again' and 'Download my save file' (save/io.ts downloadSave of persister.currentSave(), the same save the reveal hands over); the leave-guard (reveal/guard.ts) stays on from the end of the run until that download (the reveal's own guard takes over once the results show). Browser realities handled: a failed module fetch stays failed in the module map (Chromium always; WebKit after a failed <link rel=modulepreload>, which Vite's preload helper adds), so retries import the chunk URL with a fresh ?retry=n query, the URL taken from Chromium's error message or from the chunk's failed modulepreload link (WebKit's error names none); Vite's helper never re-adds a failed stylesheet, so failed stylesheets are watched (capture 'error') and re-added before each retry; no attempt is made while navigator.onLine is false, so going offline mid-session does not poison the module map and 'Try again' works once back online. All four paths that show Finished work: the static flow, the served flow (Closing -> finished), 'See my results' from the ready screen (UX-010) and the focus-session restart (e2e reveal.spec 'a focus session runs only the chosen part…' passes).",
+      "measurements": {
+        "entry_raw_kb_before": 458.73,
+        "entry_raw_kb_after": 344.87,
+        "entry_gzip_kb_before": 158.37,
+        "entry_gzip_kb_after": 120.31,
+        "fast3g_first_heading_ms_before": 2424,
+        "fast3g_first_heading_ms_after": 620,
+        "notes": "Entry sizes: index-*.js from `npx vite build` (plain production build) of this worktree before the change (test-results/iso/w2-perf/build-before.log) and after (build-gate.log). The results chunk is now Finished-*.js 116.04 KB / 41.11 KB gzip plus Finished-*.css 15.29 KB / 3.40 KB; the entry CSS went from 38.58 KB to 23.99 KB. First heading: first-contentful-paint, median of 3 cold loads per build in Chromium with the skimmer's Fast 3G (562.5 ms latency, 1.44 Mbps down, 0.675 up) plus Emulation.setCPUThrottlingRate 4, served by vite preview (uncompressed), 1280x800. Before: FCP 2412/2424/2424 ms, the heading visible to Playwright at 2427 ms, the app mounted at 2390 ms. After: FCP 620/620/648 ms, heading visible at 650 ms, the app mounted at 2176 ms (2390 before). The e2e build (dev routes and server client compiled in) measured FCP 700 ms, app mount 2219 ms, entry 360137 B raw / 124054 B gzip in e2e/ux2-perf.spec.ts."
+      },
+      "files": [
+        "web/index.html",
+        "web/src/main.ts",
+        "web/vite.config.ts",
+        "web/src/session/SessionApp.svelte",
+        "web/src/session/results-loader.ts",
+        "web/src/session/results-loader.dom.test.ts",
+        "web/src/session/SessionApp.dom.test.ts",
+        "web/src/session/SessionApp.flow.dom.test.ts",
+        "web/src/session/SessionApp.coverage.dom.test.ts",
+        "web/src/session/SessionApp.served.dom.test.ts",
+        "web/scripts/static-shell.test.ts",
+        "web/scripts/results-split.test.ts",
+        "web/e2e/ux2-perf.spec.ts",
+        "web/ux-review/fixes/w2-perf.json"
+      ],
+      "tests_added": [
+        "src/session/results-loader.dom.test.ts (15): failedModuleUrl (Chromium/Firefox messages, WebKit, other origin, CSS); memoised, sync current(); fast-check property over delays x failures (attempts, waits, memo cleared after the last failure); total backoff 3-8 s; cache-busted ?retry=n from an error URL and from the chunk's failed modulepreload; an error naming another file does not redirect the retries; same import retried when neither; nothing requested while offline; restyle before each retry and not before the first; the page loader imports the real component; failedChunkPreload picks only Finished-*.js; restyleFailed re-adds a failed stylesheet in place, keeps crossorigin, drops the old one on load, rejects and keeps it when it fails again",
+        "src/session/SessionApp.flow.dom.test.ts (+4): fetched from the ready screen on, once, never before it; still on its way at the end: pending screen with focus on its heading, status, tab guarded, then the results; never arrives: ready and run failures silent, at the end 'Try again' + 'Download my save file', download of this session's save lifts the guard, 'Try again' brings the results; 'See my results' waits too, no guard (nothing new to save)",
+        "src/session/SessionApp.served.dom.test.ts (+1): served flow closed on the server, pending results, then the results with the server's panels",
+        "SessionApp.{dom,flow,coverage,served}.dom.test.ts: beforeAll awaits the page loader so the existing tests stay synchronous and deterministic",
+        "scripts/static-shell.test.ts (24): one placeholder per text; the plugin's runnerImport read equals the app's constants; filled into h1/lead/intro/footer; escaping (fast-check); unknown placeholder throws; notes.html untouched; stylesheet links moved after the shell in order, scripts and modulepreloads stay in the head; no control or tabindex in the shell; one main/h1/footer, noscript inside main with the disclaimer; the head script's classes for '', '#', '#/' vs deep links, and what they show/hide; 15 CSS parity checks against app.css, render.css, session.css, App.svelte (light, dark, 30rem); 'Loading…' as tall as the Start button",
+        "scripts/results-split.test.ts (8): one real production build: nothing in the entry's static chunk closure holds Finished.svelte, Reveal, SavePanel, ShareCard, worked examples, BlobChart, viz/card or d3-shape; the results chunk is a dynamic import of the entry and matches RESULTS_CHUNK_FILE; entry gzip < 135 KB; built index.html has the filled shell, no stylesheet in the head, stylesheets after the footer, none of Finished; static source scan for value imports of Finished/Reveal/viz svelte in main.ts, App.svelte, SessionApp.svelte, results-loader.ts (and that the scan sees one)",
+        "e2e/ux2-perf.spec.ts (9 per project): shell from the HTML alone with scripts blocked, nothing focusable, axe 0 serious, light and dark; no movement (<= 1 px) or colour change at mount at 390 and 1280 px, light and dark, screenshots before/after attached (Chromium); one h1/main/footer after mount and no shell marks; #/privacy deep link hides the welcome text then shows its page; #/dev/blob mounts; speed on Fast 3G + 4x CPU (Chromium): FCP < app mount, FCP < 2500 ms, entry gzip < 135 KB, numbers attached as perf.json; results chunk blocked (route abort, ?fast=1 session with one answer): retried, fallback, guard on, axe 0 serious, the download is a valid save with the answer, guard off, unblocked 'Try again' shows the results with their stylesheet loaded; offline from the ready screen on: no request for the chunk, back online 'Try again' shows the results"
+      ],
+      "deviations": [
+        "Shell text is generated at build time (runnerImport of the two copy modules) rather than hand-written; the inline CSS is hand-written and pinned declaration by declaration by a unit test.",
+        "Vite's stylesheet <link>s are moved from the head to the end of the body by the same plugin, so the shell paints from the HTML before the stylesheets arrive (Chromium paints content before an in-body stylesheet; module scripts still wait for it, so no unstyled app). Without the move the heading would wait for the CSS round trip.",
+        "The noscript block moved from before #app to inside the shell's main (text unchanged; copy.test.ts and a11y-static.test.ts still pin it).",
+        "The shell footer has the disclaimer only, as the static welcome screen's footer now has (App.svelte's welcome footer drops its links line in this wave). In a server build the welcome footer has a Data link line, so there the disclaimer moves up one line at mount.",
+        "Known limit: a chunk the results chunk imports that the entry does not (today brief-gates-*.js, shared with the notes page) that fails while the browser believes it is online stays failed in the module map; 'Try again' cannot mend that in the page, the save-file download keeps the results and a reload mends it. Offline (navigator.onLine false) is handled without spoiling the module map.",
+        "If the entry script itself fails to load, the shell keeps showing 'Loading…' (before: a blank page).",
+        "The prefetch starts on the ready screen; a person who presses Begin at once on a slow line may have the chunk arrive and evaluate during the first interstitial or part. No timing code was changed."
+      ]
+    }
+  ],
+  "integration_requests": [
+    "src/App.served.dom.test.ts 'with a server the footer links the notice and the data page; without one only the notice' fails in the full vitest run (1 of 4624): it expects ['#/privacy', '#/data'] in the welcome screen's footer and gets ['#/data'], from the in-progress App.svelte footer change (welcomeHasLink) of another package. Not a file of this package; the owner of App.svelte should update that test.",
+    "e2e session-save.spec.ts (whole ?fast=1 session) and keyboard-session.spec.ts:470 failed in runs made while the machine's load average was 40-118 (other workstreams): 'rt_*: valid trials' below the minimum under the ?fast=1 20x clock, and an in-run practice block that ended during the confirm panel. Re-run alone at lower load they pass on Chromium (25/25 with keyboard-session), WebKit (19/19) and iPhone (19/19).",
+    "a11y.spec.ts results routes on Chromium timed out (60 s) during the axe scans at load average ~100; re-run alone: 68/68 passed.",
+    "If App.svelte's welcome-footer change (no links line on the welcome screen) is not integrated, the shell footer needs back a 24 px links line: scripts/static-shell.test.ts compares the footer rules and e2e/ux2-perf.spec.ts 'nothing moves' would fail by 32 px."
+  ],
+  "gates": {
+    "check": "pass: npm run check (svelte-check 1194 files 0 errors 0 warnings; tsc node; tsc scripts incl. e2e)",
+    "vitest_targeted": "pass: results-loader.dom 15/15; SessionApp.flow.dom 13/13 (+4); SessionApp.served.dom 19/19 (+1); SessionApp.dom + coverage pass; scripts/static-shell 24/24; scripts/results-split 8/8; src/copy.test, a11y-static, pages, bundle, language-lint, a11y-routes, dev-routes, backend-bundle, render-bundle, review-build pass",
+    "vitest_full": "1 failed | 4616 passed | 7 skipped (261 files): the one failure is src/App.served.dom.test.ts (another package's App.svelte change; see integration_requests)",
+    "lint_language": "clean (359 files)",
+    "build": "pass: npx vite build --outDir test-results/iso/w2-perf/dist-gate --emptyOutDir; entry index-*.js 345.13 KB / 120.44 KB gzip, Finished-*.js 116.04 KB / 41.11 KB gzip",
+    "e2e": {
+      "chromium": "ux2-perf + smoke 16/16 (final run w2-perf-m); session, session-save, reveal (incl. focus-session restart), ux-reveal, share-card, server, keyboard-session: 131 passed in w2-perf-b, the 2 load failures re-run in w2-perf-h 25/25; a11y --grep 'welcome|results' 68/68 (w2-perf-i)",
+      "iphone": "ux2-perf + smoke pass (w2-perf-m); session, reveal, ux-reveal, share-card, server pass (w2-perf-c, 114 passed); session-save 19/19 (w2-perf-k); a11y --grep 'welcome|results' iPhone half passed (w2-perf-d)",
+      "webkit": "smoke + ux2-perf pass (w2-perf-m); session-save 19/19 (w2-perf-j)",
+      "dev_server": "HB_DEV_SERVER=1 E2E_DEV_PORT=4731: gallery, render-visual, blob (#/dev routes) and ux2-perf on Chromium 57/57 (w2-perf-l); the dev server serves the filled shell",
+      "logs": "web/test-results/iso/w2-perf/*.log; screenshots before/after mount in web/test-results/iso/w2-perf-a/out/ux2-perf-the-static-welcom-27878-and-1280-px-light-and-dark--chromium/"
+    }
+  }
+}

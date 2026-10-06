@@ -12,6 +12,8 @@
  * - Not-measured spokes (§9.7, A15): a dashed spoke, a grey stub at the centre and a gap marker;
  *   every curve dips to the inner clamp there (never interpolated through).
  * - Measured spokes: a marker at θ and a 90% whisker; muted when the interval overlaps 0 (§9.5).
+ *   An estimate beyond the scale (below the inner clamp, or above +3 SD) gets an arrowhead at the
+ *   clamp instead of the dot, never mistaken for a stub (UX-037); the radius map itself is untouched.
  * - Tier (c) spokes: the blob's wedge around the spoke gets a hatch (§9.7); glyphs on labels.
  * - One clickable wedge per contiguous group (cluster) for the drill-down (§9.6, A7).
  * - Muting (§9.5, A12) reaches the crisp curve too: it is split into angular runs, and the runs
@@ -25,9 +27,9 @@
  * Nothing here sums, averages or measures the shape (§9.5 a).
  */
 
-import { RING_NOTE } from './copy'
+import { OFF_SCALE_LABEL, RING_NOTE } from './copy'
 import { chooseCurve, fmt, type CurveKind } from './curve'
-import { polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, Z90, type Point } from './geometry'
+import { offScaleOf, polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, Z90, type Point } from './geometry'
 import { stubLabel, type SpokeEstimate } from './profile'
 
 /** Default outer radius (θ = +3) in SVG user units. */
@@ -119,6 +121,12 @@ export interface SpokeView {
   /** Measured: marker at θ and 90% whisker ends. */
   readonly marker?: Point
   readonly whisker?: readonly [Point, Point]
+  /**
+   * Measured and beyond the scale: which end (UX-037). The marker is then at the clamp radius and
+   * `arrow` (an arrowhead pointing off the scale, tip on the clamp) is drawn in its place.
+   */
+  readonly offScale?: 'low' | 'high'
+  readonly arrow?: string
   /** Not measured: the grey stub from the centre and the gap marker where the curve dips. */
   readonly stub?: Point
   readonly gap?: Point
@@ -207,6 +215,8 @@ export interface BlobModel {
   /** Wedge clip paths for tier (c) measured spokes (§9.7 hatch). */
   readonly hatch: readonly { readonly id: string; readonly d: string }[]
   readonly wedges: readonly WedgeView[]
+  /** Whether the in-chart ring note is drawn (a share card sets it in its own text instead). */
+  readonly showNote: boolean
   /** Where the in-chart ring note (copy.ts RING_NOTE) starts: below the chart, at the left. */
   readonly noteAt: Point
   readonly text: TextSizes
@@ -218,6 +228,23 @@ export interface BlobModel {
 export interface BlobOptions extends FitOptions {
   /** Text layout; {@link DEFAULT_LAYOUT} when omitted (see {@link fitLayout}). */
   readonly layout?: BlobLayout
+}
+
+/** Arrowhead length and half-width in user units (the dot it replaces is 4.5 across). */
+export const ARROW_LENGTH = 12
+export const ARROW_HALF_WIDTH = 6.5
+
+/**
+ * An arrowhead on spoke `angle` whose tip sits on the clamp radius `tipR` and points off the
+ * scale: outward from the rim for `high`, towards the centre for `low` (UX-037). A closed path
+ * starting at the tip; distinct from the grey stub and its ring.
+ */
+export function arrowPath(angle: number, tipR: number, end: 'low' | 'high'): string {
+  const f = (p: Point): string => `${fmt(p[0])},${fmt(p[1])}`
+  const baseR = end === 'high' ? tipR - ARROW_LENGTH : tipR + ARROW_LENGTH
+  const [bx, by] = polar(baseR, angle)
+  const [nx, ny] = [Math.cos(angle) * ARROW_HALF_WIDTH, Math.sin(angle) * ARROW_HALF_WIDTH]
+  return `M${f(polar(tipR, angle))}L${f([bx + nx, by + ny])}L${f([bx - nx, by - ny])}Z`
 }
 
 /** A sector from angle a0 to a1 (clockwise), radius r, as SVG path data. */
@@ -281,8 +308,10 @@ export function spokeLines(s: SpokeEstimate, compact: boolean): LabelLine[] {
     if (g < 0) g = texts.reduce((best, t, i) => (t.length < texts[best]!.length ? i : best), 0)
   }
   const main = texts.map((text, i) => ({ text, note: false, glyph: i === g }))
-  if (s.measured) return main
-  const note = stubLabel(s.reason)
+  // A measured spoke beyond the scale says so under its name (UX-037), like a stub says "not measured".
+  const off = s.measured && s.theta !== undefined && (s.offScale ?? offScaleOf(s.theta)) !== 'none'
+  if (s.measured && !off) return main
+  const note = off ? OFF_SCALE_LABEL : stubLabel(s.reason)
   const notes = compact && note.length > NOTE_WRAP_CHARS ? wrapLine(note, NOTE_WRAP_CHARS) : [note]
   return [...main, ...notes.map((text) => ({ text, note: true, glyph: false }))]
 }
@@ -336,8 +365,9 @@ interface TextLayout {
   readonly ringAngle: number
 }
 
-function overlap(a: Box, b: Box, pad = 0): boolean {
-  return a.x0 - pad < b.x1 && b.x0 - pad < a.x1 && a.y0 - pad < b.y1 && b.y0 - pad < a.y1
+/** Do two boxes come closer than `pad` sideways and `padY` vertically (default: the same)? */
+function overlap(a: Box, b: Box, pad = 0, padY = pad): boolean {
+  return a.x0 - pad < b.x1 && b.x0 - pad < a.x1 && a.y0 - padY < b.y1 && b.y0 - padY < a.y1
 }
 
 /** Labels whose spoke is within 60° of vertical may move outward to clear their neighbours. */
@@ -347,6 +377,14 @@ const MOVE_STEP_EM = 0.25
 const MOVE_STEPS = 24
 /** Clear space kept between two labels, in em. */
 const LABEL_SPACE_EM = 0.1
+/**
+ * Least clear space between two labels above one another (neighbouring spokes near 12 and 6
+ * o'clock), in em of the label size (UX-042: "Quantitative" over "Estimation" read as one label).
+ * Their whole boxes count, a note line ("not measured") included. Twice the side gap; a full line
+ * of clearance would take the 17-spoke labels below 9 CSS px on a 320 px screen, so the rest of the
+ * fix is in the names (`COMPACT_LABELS`: no label that sits above or below another reads as one).
+ */
+export const LABEL_CLEAR_Y_EM = 0.2
 
 /**
  * The bisector the ring labels sit on: the one between two spokes nearest to vertical, so the
@@ -369,9 +407,9 @@ function ringLabelAt(ringR: number, angle: number, size: number): Point {
   return Math.cos(angle) < 0 ? [x, y + GLYPH_ASCENT_EM * size] : [x, y]
 }
 
-/** Do any two label boxes overlap? (K ≤ 24 spokes: all pairs.) */
-export function labelsCollide(boxes: readonly Box[], pad = 0): boolean {
-  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (overlap(boxes[i]!, boxes[j]!, pad)) return true
+/** Do any two label boxes overlap? (K ≤ 24 spokes: all pairs.) `padY`: the least clear space between two boxes above one another. */
+export function labelsCollide(boxes: readonly Box[], pad = 0, padY = pad): boolean {
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (overlap(boxes[i]!, boxes[j]!, pad, padY)) return true
   return false
 }
 
@@ -379,7 +417,7 @@ export function labelsCollide(boxes: readonly Box[], pad = 0): boolean {
  * Where every text goes and the viewBox that holds it: the circle (with the wedges, R + 4) and
  * all label boxes, horizontally symmetric about the centre, then the ring note below.
  */
-function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLayout, measure: TextMeasure): TextLayout {
+function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLayout, measure: TextMeasure, note = true, minRingStep: 1 | 2 = 1): TextLayout {
   const k = spokes.length
   const sizes = textSizes(layout.fontSize)
   const lines = spokes.map((s) => spokeLines(s, layout.compact))
@@ -394,18 +432,19 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
   const order = angles.map((_, i) => i).sort((a, b) => Math.abs(Math.cos(angles[a]!)) - Math.abs(Math.cos(angles[b]!)) || a - b)
   const placed: ({ label: SpokeView['label']; view: Box; glyph: Box } | undefined)[] = new Array<undefined>(k)
   const space = LABEL_SPACE_EM * sizes.label
+  const spaceY = LABEL_CLEAR_Y_EM * sizes.label
   // The ring labels (inside the circle, but large text reaches out) are fixed obstacles.
   // Every ring labelled, or every second one when a label is taller than the vertical step
   // between two ring labels (large text on narrow screens), so ring labels never overlap.
   const ringAngle = ringLabelAngle(k)
   const ringRise = ringSpacing(R) * Math.abs(Math.cos(ringAngle))
-  const ringStep: 1 | 2 = (GLYPH_ASCENT_EM + GLYPH_DESCENT_EM) * sizes.small + space > ringRise ? 2 : 1
+  const ringStep: 1 | 2 = minRingStep === 2 || (GLYPH_ASCENT_EM + GLYPH_DESCENT_EM) * sizes.small + space > ringRise ? 2 : 1
   const r = radiusScale(R)
   const ringBoxes: Box[] = RING_THETAS.filter((t) => t % ringStep === 0).map((t) => {
     const [x, y] = ringLabelAt(r(t), ringAngle, sizes.small)
     return { x0: x, x1: x + measure(ringLabel(t), sizes.small), y0: y - GLYPH_ASCENT_EM * sizes.small, y1: y + GLYPH_DESCENT_EM * sizes.small }
   })
-  const clashes = (b: Box): boolean => placed.some((q) => q !== undefined && overlap(b, q.glyph, space)) || ringBoxes.some((q) => overlap(b, q, space))
+  const clashes = (b: Box): boolean => placed.some((q) => q !== undefined && overlap(b, q.glyph, space, spaceY)) || ringBoxes.some((q) => overlap(b, q, space))
   for (const i of order) {
     let p = place(i, 0)
     if (Math.abs(Math.cos(angles[i]!)) >= MOVABLE_COS) {
@@ -426,12 +465,18 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
     bottom = Math.max(bottom, b.y1)
   }
   const noteW = Math.max(...RING_NOTE.map((t) => measure(t, sizes.small))) + sizes.halo
-  half = Math.max(half, noteW / 2) + VIEW_PAD
+  half = Math.max(half, note ? noteW / 2 : 0) + VIEW_PAD
   const noteX = -half + VIEW_PAD
   const noteY = bottom + (NOTE_LINE_EM + 0.2) * sizes.small
   const noteLast = noteY + (RING_NOTE.length - 1) * NOTE_LINE_EM * sizes.small
-  const noteBox: Box = { x0: noteX, x1: noteX + noteW, y0: noteY - ASCENT_EM * sizes.small, y1: noteLast + DESCENT_EM * sizes.small + sizes.halo / 2 }
+  // Without the note the box is empty, on the chart's bottom edge: it adds nothing to the viewBox.
+  const noteBox: Box = note
+    ? { x0: noteX, x1: noteX + noteW, y0: noteY - ASCENT_EM * sizes.small, y1: noteLast + DESCENT_EM * sizes.small + sizes.halo / 2 }
+    : { x0: noteX, x1: noteX, y0: bottom, y1: bottom }
   const y0 = top - VIEW_PAD
+  // Spoke labels keep a line of clear space above one another; ring labels only need to stay apart.
+  const glyphs = boxes.map((b) => b.glyph)
+  const collides = labelsCollide(glyphs, space, spaceY) || glyphs.some((g) => ringBoxes.some((q) => overlap(g, q, space))) || labelsCollide(ringBoxes, space)
   return {
     sizes,
     lines,
@@ -440,7 +485,7 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
     noteAt: [noteX, noteY],
     noteBox,
     viewBox: [-half, y0, 2 * half, noteBox.y1 + VIEW_PAD - y0],
-    collides: labelsCollide([...boxes.map((b) => b.glyph), ...ringBoxes], space),
+    collides,
     ringStep,
     ringAngle,
   }
@@ -451,6 +496,28 @@ export interface FitOptions {
   readonly R?: number
   /** Text widths; {@link estimateTextWidth} by default (the browser passes canvas measurements). */
   readonly measure?: TextMeasure
+  /**
+   * The page's root font size in CSS px (UX-044): 16 is the browser default. Larger (the person
+   * raised the text size) scales the legibility floor and the font range with it. Below 16 counts as 16.
+   */
+  readonly rootPx?: number
+  /** Draw the in-chart ring note (default true); a share card sets the same words in its own text. */
+  readonly note?: boolean
+  /** Label every ring (1, the default unless the text is large) or only −2, 0 and +2 SD (2). */
+  readonly ringStep?: 1 | 2
+}
+
+/** The root font size the text floors are written for. */
+export const BASE_ROOT_PX = 16
+
+/** How much larger than the default the person's text is (≥ 1, at most 4). */
+export function textScale(rootPx: number | undefined): number {
+  return rootPx !== undefined && Number.isFinite(rootPx) && rootPx > BASE_ROOT_PX ? Math.min(4, rootPx / BASE_ROOT_PX) : 1
+}
+
+/** The default text layout at a text scale (`textScale`): {@link DEFAULT_LAYOUT} at 1. */
+export function defaultLayout(scale = 1): BlobLayout {
+  return scale === 1 ? DEFAULT_LAYOUT : { fontSize: LABEL_FONT * scale, compact: false }
 }
 
 /** At a rendered width: the on-screen size (CSS px) of the smallest chart text and of R, and whether labels overlap. */
@@ -461,9 +528,26 @@ export function renderedSizes(
   opts: FitOptions = {},
 ): { smallPx: number; rPx: number; collides: boolean } {
   const R = opts.R ?? DEFAULT_R
-  const t = textLayout(spokes, R, layout, opts.measure ?? estimateTextWidth)
+  const t = textLayout(spokes, R, layout, opts.measure ?? estimateTextWidth, opts.note ?? true, opts.ringStep ?? 1)
   const scale = widthPx / t.viewBox[2]
   return { smallPx: t.sizes.small * scale, rPx: R * scale, collides: t.collides }
+}
+
+/** The size of a layout in user units, for fitting a chart into a box that is not set by its width alone (the share card). */
+export interface LayoutExtent {
+  /** viewBox width and height. */
+  readonly width: number
+  readonly height: number
+  /** The smallest chart text (ring labels, notes), in user units. */
+  readonly small: number
+  /** Two labels, or a label and a ring label, come closer than they should. */
+  readonly collides: boolean
+}
+
+/** {@link LayoutExtent} of `layout` for these spokes (no paths are built: cheap enough to search with). */
+export function layoutExtent(spokes: readonly SpokeEstimate[], layout: BlobLayout, opts: FitOptions = {}): LayoutExtent {
+  const t = textLayout(spokes, opts.R ?? DEFAULT_R, layout, opts.measure ?? estimateTextWidth, opts.note ?? true, opts.ringStep ?? 1)
+  return { width: t.viewBox[2], height: t.viewBox[3], small: t.sizes.small, collides: t.collides }
 }
 
 /** Bisect for the boundary of a monotone predicate on [lo, hi] (true at the high end): its low edge. */
@@ -474,6 +558,19 @@ function lowestTrue(pred: (f: number) => boolean, lo: number, hi: number): numbe
     else lo = mid
   }
   return hi
+}
+
+/** What {@link fitLayoutDetailed} found. */
+export interface LayoutFit {
+  readonly layout: BlobLayout
+  /** On-screen size (CSS px) of the smallest chart text with this layout. */
+  readonly smallPx: number
+  /**
+   * The smallest chart text reaches {@link MIN_TEXT_PX} (scaled with the page's text size) on
+   * screen with no labels overlapping. False on a very narrow screen or with very large text: the
+   * page then points to the bar view.
+   */
+  readonly legible: boolean
 }
 
 /**
@@ -487,46 +584,62 @@ function lowestTrue(pred: (f: number) => boolean, lo: number, hi: number): numbe
  * labels win over size on a phone, and the bar view is one tap away. Font sizes stay within
  * [{@link LABEL_FONT}, {@link MAX_LABEL_FONT}]. Unknown width (≤ 0, before layout): the default.
  *
+ * With `opts.rootPx` above 16 (the person enlarged the text, UX-044) the floor {@link MIN_TEXT_PX}
+ * and the font range scale with it, so chart text grows with the page's; `legible` says whether
+ * the floor was reached.
+ *
  * Both searches bisect: the on-screen text size grows with the font size (the viewBox grows at
  * most linearly with it, from a positive width), and label boxes grow with it, so overlaps
  * appear as it grows (outward moves near 12 and 6 o'clock make this nearly, not strictly, so:
  * the best-effort size steps down until clear).
  */
-export function fitLayout(spokes: readonly SpokeEstimate[], widthPx: number, opts: FitOptions = {}): BlobLayout {
-  if (!(widthPx > 0) || !Number.isFinite(widthPx) || spokes.length === 0) return DEFAULT_LAYOUT
+export function fitLayoutDetailed(spokes: readonly SpokeEstimate[], widthPx: number, opts: FitOptions = {}): LayoutFit {
+  const k = textScale(opts.rootPx)
+  const def = defaultLayout(k)
+  if (!(widthPx > 0) || !Number.isFinite(widthPx) || spokes.length === 0) return { layout: def, smallPx: 0, legible: true }
+  const minPx = MIN_TEXT_PX * k
+  const minFont = LABEL_FONT * k
+  const maxFont = MAX_LABEL_FONT * k
+  const step = FIT_STEP * k
   const at = (layout: BlobLayout): ReturnType<typeof renderedSizes> => renderedSizes(spokes, widthPx, layout, opts)
-  const d = at(DEFAULT_LAYOUT)
-  if (d.smallPx >= MIN_TEXT_PX && !d.collides) return DEFAULT_LAYOUT
-  let fallback: { layout: BlobLayout; smallPx: number } | null = null
-  const fits: { layout: BlobLayout; rPx: number }[] = []
+  const d = at(def)
+  if (d.smallPx >= minPx && !d.collides) return { layout: def, smallPx: d.smallPx, legible: true }
+  let fallback: { layout: BlobLayout; smallPx: number; collides: boolean } | null = null
+  const fits: { layout: BlobLayout; rPx: number; smallPx: number }[] = []
   for (const compact of [false, true]) {
-    const legible = (f: number): boolean => at({ fontSize: f, compact }).smallPx >= MIN_TEXT_PX
+    const legible = (f: number): boolean => at({ fontSize: f, compact }).smallPx >= minPx
     const overlaps = (f: number): boolean => at({ fontSize: f, compact }).collides
-    const fLegible = legible(MAX_LABEL_FONT) ? lowestTrue(legible, LABEL_FONT, MAX_LABEL_FONT) : MAX_LABEL_FONT
+    const fLegible = legible(maxFont) ? lowestTrue(legible, minFont, maxFont) : maxFont
     if (legible(fLegible)) {
       // Legible from fLegible up; the first size from there without overlaps (outward moves make
       // overlaps only nearly monotone in the size, so step up rather than trust one probe).
       let f = fLegible
-      while (f < MAX_LABEL_FONT && overlaps(f)) f = Math.min(MAX_LABEL_FONT, f + FIT_STEP)
+      while (f < maxFont && overlaps(f)) f = Math.min(maxFont, f + step)
       if (!overlaps(f)) {
         const layout = { fontSize: f, compact }
-        fits.push({ layout, rPx: at(layout).rPx })
+        const r = at(layout)
+        fits.push({ layout, rPx: r.rPx, smallPx: r.smallPx })
         continue
       }
     }
     // Best effort: the largest size below which labels do not overlap (or the smallest size).
-    const fClear = !overlaps(LABEL_FONT) ? (overlaps(MAX_LABEL_FONT) ? lowestTrue(overlaps, LABEL_FONT, MAX_LABEL_FONT) - 0.05 : MAX_LABEL_FONT) : LABEL_FONT
-    let f = Math.max(LABEL_FONT, Math.min(fLegible, fClear))
-    while (f > LABEL_FONT && overlaps(f)) f = Math.max(LABEL_FONT, f - FIT_STEP)
+    const fClear = !overlaps(minFont) ? (overlaps(maxFont) ? lowestTrue(overlaps, minFont, maxFont) - 0.05 : maxFont) : minFont
+    let f = Math.max(minFont, Math.min(fLegible, fClear))
+    while (f > minFont && overlaps(f)) f = Math.max(minFont, f - step)
     const layout = { fontSize: f, compact }
-    const { smallPx } = at(layout)
-    if (fallback === null || smallPx > fallback.smallPx + 1e-9) fallback = { layout, smallPx }
+    const r = at(layout)
+    if (fallback === null || r.smallPx > fallback.smallPx + 1e-9) fallback = { layout, smallPx: r.smallPx, collides: r.collides }
   }
   // Full labels unless compact ones leave a circle more than COMPACT_GAIN larger.
   const [full, compact] = [fits.find((c) => !c.layout.compact), fits.find((c) => c.layout.compact)]
-  if (full && (!compact || compact.rPx <= COMPACT_GAIN * full.rPx)) return full.layout
-  if (compact) return compact.layout
-  return fallback!.layout
+  if (full && (!compact || compact.rPx <= COMPACT_GAIN * full.rPx)) return { layout: full.layout, smallPx: full.smallPx, legible: true }
+  if (compact) return { layout: compact.layout, smallPx: compact.smallPx, legible: true }
+  return { layout: fallback!.layout, smallPx: fallback!.smallPx, legible: fallback!.smallPx >= minPx - 1e-6 && !fallback!.collides }
+}
+
+/** {@link fitLayoutDetailed}'s layout. */
+export function fitLayout(spokes: readonly SpokeEstimate[], widthPx: number, opts: FitOptions = {}): BlobLayout {
+  return fitLayoutDetailed(spokes, widthPx, opts).layout
 }
 
 /** {@link fitLayout} takes compact labels over full ones that also fit only for a circle this much larger. */
@@ -606,7 +719,8 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
     return { ...c, z, opacity: fuzzOpacity(z), band: `${c.d}${inward.d}` }
   })
 
-  const text = textLayout(spokes, R, layout, opts.measure ?? estimateTextWidth)
+  const showNote = opts.note ?? true
+  const text = textLayout(spokes, R, layout, opts.measure ?? estimateTextWidth, showNote, opts.ringStep ?? 1)
   const views: SpokeView[] = spokes.map((s, i) => {
     const a = angles[i]!
     const lines = text.lines[i]!
@@ -624,10 +738,14 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
       label: text.labels[i]!,
     }
     if (!s.measured) return { ...base, stub: polar(STUB_FRACTION * R, a), gap: polar(rMin, a) }
+    // Beyond the scale the dot is an arrowhead on the clamp (UX-037); the whisker keeps whatever part of the range is inside.
+    const end = s.offScale !== undefined ? s.offScale : offScaleOf(s.theta!)
+    const off = end === 'none' ? {} : { offScale: end, arrow: arrowPath(a, end === 'high' ? R : rMin, end) }
     return {
       ...base,
       marker: polar(r(s.theta!), a),
       whisker: [polar(r(s.lo90!), a), polar(r(s.hi90!), a)] as const,
+      ...off,
     }
   })
 
@@ -668,6 +786,7 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
     fuzz,
     hatch,
     wedges,
+    showNote,
     noteAt: text.noteAt,
     text: text.sizes,
     labelBoxes: text.labelBoxes,
