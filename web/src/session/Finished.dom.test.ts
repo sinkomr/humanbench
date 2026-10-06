@@ -154,3 +154,49 @@ describe('Finished: the results of a save, with no new session (UX-010)', () => 
     expect(c.querySelector('[data-section="save"]')).not.toBeNull()
   })
 })
+
+describe('Finished: an interrupted session and its continuation are one session of the profile (UX-064)', () => {
+  const ONLY_MAT = ['RT', 'WM', 'PS', 'SPA', 'QR'] as const
+
+  /** A session interrupted after one Matrix & Series answer (no end recorded), on top of `base`. */
+  function interrupted(base: SaveFileV1 | null): SaveFileV1 {
+    const bot = new Bot({ sessionId: 's_FINISHEDINTR001', startedMs: 1_790_000_500_000, skipped: [...ONLY_MAT] })
+    bot.until((v) => v.phase === 'confidence')
+    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    return saveWithSession(base, bot.run.sessionState(), meta)
+  }
+
+  /** The continuation: `answer` one more Matrix & Series question, then finish. */
+  function continuation(answer: boolean): Bot {
+    const bot = new Bot({ sessionId: 's_FINISHEDCONT001', startedMs: 1_790_000_600_000, continues: { done: [], skipped: [...ONLY_MAT] } })
+    if (answer) {
+      bot.until((v) => v.phase === 'confidence')
+      bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    }
+    bot.run.finishEarly()
+    return bot
+  }
+
+  it('a continuation on top of the session it continues does not say the profile combines two sessions', () => {
+    const c = show(continuation(true), interrupted(null))
+    expect(lines(c)).toContain('You answered 1 question')
+    expect(c.textContent).not.toContain('combines')
+  })
+
+  it('with an earlier session of its own, the profile combines 2 sessions, not 3', () => {
+    const c = show(continuation(true), interrupted(earlierSave()))
+    expect(lines(c)).toMatch(/This profile combines 2 sessions\./)
+  })
+
+  it('a continuation that added nothing says the profile comes from 1 earlier session', () => {
+    const c = show(continuation(false), interrupted(null))
+    expect(lines(c)).toContain('This visit added no new answers. Your profile below comes from 1 earlier session.')
+  })
+
+  it('the results of a save with both, with no new session, come from 1 earlier session', () => {
+    const save = saveWithSession(interrupted(null), continuation(true).run.sessionState(), meta)
+    expect(save.sessions).toHaveLength(2)
+    const c = show(null, save)
+    expect(c.querySelector('main > p.lead')?.textContent).toBe('Your profile from 1 earlier session.')
+  })
+})

@@ -31,7 +31,7 @@ describe('engine barrel (index.ts)', () => {
       'MAP_LP_SLACK', 'EAP_N_GRID', 'EAP_LO', 'EAP_HI',
       // retest.ts
       'RETEST_VERSION', 'RETEST_TAU', 'RHO_MAX_FLUID', 'RHO_MAX_KNOWLEDGE', 'RHO_MAX_BY_CLUSTER', 'RHO_MAX_PRIOR',
-      'resolveRhoMax', 'retestGain', 'adjustObservation', 'orderSessions', 'sessionOrdinals', 'retestAdjust',
+      'resolveRhoMax', 'retestGain', 'adjustObservation', 'orderSessions', 'sessionSittings', 'sessionOrdinals', 'retestAdjust',
       'rescoreRetest', 'nextSessionPrior',
       // types.ts
       'isResponseTuple', 'isJsonValue',

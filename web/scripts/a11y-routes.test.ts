@@ -122,6 +122,7 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
     'gate-under-18',
     'ready',
     'ready-returning',
+    'ready-continue',
     'practice',
     'practice-feedback',
     // the running session

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../engine/axes'
+import { saveWithSession } from '../save/create'
 import { assertValidSave } from '../save/validate'
+import { Bot } from '../session/bot'
+import { SAVE_CTX } from '../session/constants'
 import { axisEstimates } from '../viz/profile'
 import { buildResults, OFFERED_AXES, scoredSessions, skippedIn } from './results'
 import { DAY_MS, T0_MS, botSave } from './test-support'
@@ -142,5 +145,31 @@ describe('scoredSessions (the count a share card states, M1.18)', () => {
     const r = buildResults(empty.save)!
     expect(r.nSessions).toBe(3)
     expect(scoredSessions(r)).toBe(2)
+  })
+})
+
+describe('scoredSessions counts an interrupted session and its continuation once (UX-064)', () => {
+  it('the two are one sitting: "Based on 1 session", and nothing is practice-adjusted between them', () => {
+    const first = new Bot({ sessionId: 's_RESULTS000000095', startedMs: T0_MS })
+    first.until((v) => v.phase === 'interstitial' && v.segment?.id === 'spatial')
+    const base = saveWithSession(null, first.run.sessionState(), { ctx: SAVE_CTX, createdMs: T0_MS + 60_000, anonId: 'hb_' + 'a'.repeat(17) })
+    const cont = botSave('s_RESULTS000000096', { base, startedMs: T0_MS + 600_000, cfg: { continues: { done: ['rt', 'matrix_series'], skipped: [] } } })
+    const r = buildResults(cont.save)!
+    expect(r.nSessions).toBe(2)
+    expect(r.rescore.sessions[1]!.continuation).toBe(true)
+    expect(scoredSessions(r)).toBe(1)
+    expect(r.practiceAdjusted).toBe(false)
+    // A separate session a week later is a second sitting, practice-adjusted against the first.
+    const later = botSave('s_RESULTS000000097', { base: cont.save, startedMs: T0_MS + 8 * DAY_MS })
+    const r2 = buildResults(later.save)!
+    expect(scoredSessions(r2)).toBe(2)
+    expect(r2.practiceAdjusted).toBe(true)
+  })
+
+  it('counts a sitting once when any of its sessions scored, with the device halves paired by sitting', () => {
+    const rescore = (sessions: { session_id: string; n_observations: number; continuation?: true }[]) => ({ rescore: { sessions } }) as unknown as Parameters<typeof scoredSessions>[0]
+    expect(scoredSessions(rescore([{ session_id: 's_a', n_observations: 0 }, { session_id: 's_b', n_observations: 4, continuation: true }]))).toBe(1)
+    expect(scoredSessions(rescore([{ session_id: 's_a', n_observations: 3 }, { session_id: 's_b', n_observations: 4, continuation: true }, { session_id: 's_c', n_observations: 2 }]))).toBe(2)
+    expect(scoredSessions({ ...rescore([{ session_id: 's_a', n_observations: 3 }, { session_id: 's_b', n_observations: 4, continuation: true }]), devicePartSessions: 1, servedSessions: 1 })).toBe(1)
   })
 })

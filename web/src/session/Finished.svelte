@@ -7,7 +7,8 @@
   returning person sees all their sessions together. A save with nothing scored shows no profile and is
   headed "Session ended" (UX-009b); it still offers the file, behind a closed disclosure so that the way
   back is the one obvious action (UX-009a). The lines above the profile say what the profile rests on: the parts skipped on the way,
-  and how many sessions it combines. Opened from the ready screen with no new session (`result` null, UX-010)
+  and how many sessions it combines, counted by sitting: an interrupted session and the continuation that picked it up are one
+  (UX-064, `save/sittings.ts`). Opened from the ready screen with no new session (`result` null, UX-010)
   it is the same results page under the heading "Your results".
 -->
 <script lang="ts">
@@ -21,6 +22,7 @@
   import Reveal from '../reveal/Reveal.svelte'
   import SavePanel from '../reveal/SavePanel.svelte'
   import { buildResults } from '../reveal/results'
+  import { sittingIndex } from '../save/sittings'
   import Screen from './Screen.svelte'
   import {
     FINISHED_AGAIN,
@@ -99,8 +101,23 @@
   const minutes = $derived(result === null ? 1 : Math.max(1, Math.round(result.durationS / 60)))
   /** This run put answers into the save (a question or a timed task). */
   const added = $derived(result !== null && (items > 0 || result.blocks.length > 0))
-  /** Earlier sessions with answers in them: the profile rests on these as well (not this run's own, nor the one it has on the server). */
-  const earlier = $derived(save.sessions.filter((s) => (result === null || s.session_id !== sessionId) && s.session_id !== outcome?.server.sessionId && s.responses.length > 0).length)
+  /**
+   * Earlier sessions with answers in them, counted by sitting (UX-064): the profile rests on these as well (not
+   * this run's own, nor the one it has on the server). An interrupted session this run continued is part of this
+   * run's sitting, not an earlier session ({@link continued}).
+   */
+  const counts = $derived.by((): { earlier: number; continued: boolean } => {
+    const index = sittingIndex(save.sessions)
+    const mine = result === null ? undefined : index.get(sessionId)
+    const sittings = new Set(
+      save.sessions.filter((s) => (result === null || s.session_id !== sessionId) && s.session_id !== outcome?.server.sessionId && s.responses.length > 0).map((s) => index.get(s.session_id)),
+    )
+    const continued = mine !== undefined && sittings.delete(mine)
+    return { earlier: sittings.size, continued }
+  })
+  const earlier = $derived(counts.earlier)
+  /** This run continued an interrupted session that holds answers: the two are one session of the profile. */
+  const continued = $derived(counts.continued)
   /** The parts the person skipped, by name, in the order of the session. */
   const skippedParts = $derived.by((): string[] => {
     if (result === null) return []
@@ -116,7 +133,7 @@
     return FINISHED_REASON[result.reason]
   })
   /** A visit that added nothing to a profile built from earlier sessions says so instead of "you answered 0 questions". */
-  const nothingNew = $derived(results !== null && result !== null && !added && earlier > 0)
+  const nothingNew = $derived(results !== null && result !== null && !added && earlier + (continued ? 1 : 0) > 0)
   let saved = $state(false)
 </script>
 
@@ -124,10 +141,10 @@
   {#if result === null}
     <p class="lead">{viewLine(earlier)}</p>
   {:else if nothingNew}
-    <p class="lead">{noNewAnswersLine(earlier)}</p>
+    <p class="lead">{noNewAnswersLine(earlier + (continued ? 1 : 0))}</p>
   {:else}
     <p class="lead">{reason}</p>
-    <p>{summaryLine(items, result.blocks.length, minutes)}{earlier > 0 ? ` ${combinesLine(earlier + (added ? 1 : 0))}` : ''}</p>
+    <p>{summaryLine(items, result.blocks.length, minutes)}{earlier > 0 ? ` ${combinesLine(earlier + (added || continued ? 1 : 0))}` : ''}</p>
   {/if}
 
   {#if results === null}

@@ -8,12 +8,19 @@
  * θ_{k,s} = θ_k + ρ_k(s), with ρ_k(s) = ρ_k^max · (1 − e^{−(s−1)/1.2}):
  * - θ_k is the person's trait on axis k, the retest-adjusted ("practice-adjusted", §7.8) θ that
  *   is reported;
- * - s is the test number on that axis: the ordinal, in time order, of the session among the
- *   person's sessions that took axis k ({@link sessionOrdinals}): those with a scored observation
- *   on k or with k in `exposed_axes` (items presented on k that gave no observation: pretest
- *   items, ids this build cannot regenerate, unscored or unscorable responses). Practice comes
- *   from exposure, not from scorability, so s does not depend on which build re-scores. The first
- *   test is s = 1, where ρ = 0; a session that skipped the axis is not a retest of it;
+ * - s is the test number on that axis: the ordinal, in time order, of the session's sitting
+ *   among the person's sittings that took axis k ({@link sessionOrdinals}): those with a scored
+ *   observation on k or with k in `exposed_axes` (items presented on k that gave no observation:
+ *   pretest items, ids this build cannot regenerate, unscored or unscorable responses). Practice
+ *   comes from exposure, not from scorability, so s does not depend on which build re-scores. The
+ *   first test is s = 1, where ρ = 0; a session that skipped the axis is not a retest of it;
+ * - a sitting is a session together with the continuation sessions that follow it
+ *   ({@link sessionSittings}). A session with `continuation` true carries on the session just
+ *   before it in time order (an interrupted session picked up again: its finished parts are not
+ *   served again, UX-064) and is not a retest of it: on every axis it gets the test number
+ *   of its sitting, so two parts of one sitting never adjust each other for practice. A
+ *   continuation flag on the first session is ignored. Without continuations every session is its
+ *   own sitting and s counts sessions, as before;
  * - ρ_k^max is the plateau gain. Priors (§7.8): 0.45 for reasoning, spatial and speed, 0.25 for
  *   knowledge (alternate forms). §7.8 names only those clusters; the others are assigned here
  *   [SPEC] ({@link RHO_MAX_BY_CLUSTER}) and every value is provisional until M4.7 estimates ρ
@@ -36,8 +43,10 @@
  *
  * Consequences the tests pin: with ρ^max = 0 the sessions are pooled as if one session; a
  * single-session save re-scores exactly as {@link scoreAll} (s = 1, ρ = 0); ρ_k(s) is 0 at s = 1,
- * nondecreasing in s for ρ^max ≥ 0 and tends to ρ^max; and a larger ρ^max lowers θ̂_k (more of a
- * later session's performance is credited to practice).
+ * nondecreasing in s for ρ^max ≥ 0 and tends to ρ^max; a larger ρ^max lowers θ̂_k (more of a
+ * later session's performance is credited to practice); marking a session as a continuation never
+ * raises a test number; and a sitting split into a session and its continuations scores exactly as
+ * the one session holding all their observations.
  *
  * ## Task-spec mapping (ROADMAP M1.Q)
  *
@@ -154,12 +163,23 @@ export interface RetestSession {
    * and axes that also have observations change nothing.
    */
   readonly exposed_axes?: readonly AxisCode[]
+  /**
+   * The session continues the sitting of the session just before it in time order (module
+   * comment): same test numbers, no practice adjustment between the two. Ignored on the first
+   * session. A save marks it with the session flag `CONTINUATION_FLAG` (`save/types.ts`).
+   */
+  readonly continuation?: boolean
 }
 
 /** Per-session result: the test number and practice gain of each axis it took (observed or exposed). */
 export interface SessionRetest {
   readonly session_id: string
   readonly started_utc: string
+  /**
+   * Present (true) when the session counts as a continuation of the session before it: its input
+   * `continuation` was true and it is not the first session. Absent otherwise.
+   */
+  readonly continuation?: true
   readonly n_observations: number
   /** Test number s per axis the session took (observed or exposed), in canonical axis order. */
   readonly ordinals: Partial<Record<AxisCode, number>>
@@ -202,17 +222,41 @@ function takenAxes(s: RetestSession): AxisCode[] {
 }
 
 /**
+ * The sitting of each session, for sessions already in time order ({@link orderSessions}): 0 for
+ * the first; a session with `continuation` true is in the sitting of the session before it, any
+ * other session starts the next sitting. A continuation flag on the first session is ignored, so
+ * the number of sittings is the last index + 1 (0 for no sessions). Throws a RangeError when
+ * `continuation` is present and not a boolean.
+ */
+export function sessionSittings(ordered: readonly Pick<RetestSession, 'session_id' | 'continuation'>[]): number[] {
+  let sitting = -1
+  return ordered.map((s, i) => {
+    const c: unknown = s.continuation
+    if (c !== undefined && typeof c !== 'boolean') throw new RangeError(`session ${s.session_id}: continuation must be a boolean, got ${String(c)}`)
+    if (i === 0 || c !== true) sitting += 1
+    return sitting
+  })
+}
+
+/**
  * The test number s of each axis each session took (observed or exposed), for sessions already in
- * time order ({@link orderSessions}): 1 + the number of earlier sessions that took that axis.
+ * time order ({@link orderSessions}): 1 + the number of earlier sittings ({@link sessionSittings})
+ * that took that axis. The parts of one sitting share it; without continuations it is 1 + the
+ * number of earlier sessions that took the axis.
  */
 export function sessionOrdinals(ordered: readonly RetestSession[]): Partial<Record<AxisCode, number>>[] {
+  const sittings = sessionSittings(ordered)
   const count = new Map<AxisCode, number>()
-  return ordered.map((s) => {
+  const lastSitting = new Map<AxisCode, number>()
+  return ordered.map((s, i) => {
+    const sitting = sittings[i]!
     const out: Partial<Record<AxisCode, number>> = {}
     for (const k of takenAxes(s)) {
-      const n = (count.get(k) ?? 0) + 1
-      count.set(k, n)
-      out[k] = n
+      if (lastSitting.get(k) !== sitting) {
+        count.set(k, (count.get(k) ?? 0) + 1)
+        lastSitting.set(k, sitting)
+      }
+      out[k] = count.get(k)!
     }
     return out
   })
@@ -224,7 +268,10 @@ export interface RetestAdjusted {
   readonly sessions: SessionRetest[]
   /** Every session's adjusted observations, concatenated in time order. */
   readonly observations: Observation[]
-  /** The test number the next session would be on each axis (1 for axes never taken). */
+  /**
+   * The test number the next session would be on each axis (1 for axes never taken), when it starts
+   * a new sitting: 1 + the number of sittings that took the axis.
+   */
   readonly next_ordinals: Record<AxisCode, number>
 }
 
@@ -232,6 +279,7 @@ export interface RetestAdjusted {
 export function retestAdjust(sessions: readonly RetestSession[], rhoMax: RhoMax = {}): RetestAdjusted {
   const rmax = resolveRhoMax(rhoMax)
   const ordered = orderSessions(sessions)
+  const sittings = sessionSittings(ordered)
   const ordinals = sessionOrdinals(ordered)
   const out: SessionRetest[] = []
   const observations: Observation[] = []
@@ -246,7 +294,15 @@ export function retestAdjust(sessions: readonly RetestSession[], rhoMax: RhoMax 
       next[k] = n + 1
     }
     for (const o of s.observations) observations.push(adjustObservation(o, rho[o.axis]!))
-    out.push({ session_id: s.session_id, started_utc: s.started_utc, n_observations: s.observations.length, ordinals: ord, rho })
+    const continuation = i > 0 && sittings[i] === sittings[i - 1]
+    out.push({
+      session_id: s.session_id,
+      started_utc: s.started_utc,
+      ...(continuation ? { continuation: true as const } : {}),
+      n_observations: s.observations.length,
+      ordinals: ord,
+      rho,
+    })
   })
   return { sessions: out, observations, next_ordinals: next }
 }
@@ -297,7 +353,8 @@ export function rescoreRetest(sessions: readonly RetestSession[], opts: RetestOp
 /**
  * The prior for the next session's in-session estimate (§7.8, §11.2): the retest-adjusted
  * posterior N(θ̂, cov) moved to that session's practice level, μ_k = θ̂_k + ρ_k(s_k) with s_k the
- * next test number on axis k; the covariance is the Laplace covariance. With no earlier sessions
+ * next test number on axis k (a new sitting, `next_ordinals`); the covariance is the Laplace
+ * covariance. With no earlier sessions
  * this is the population prior (s = 1, ρ = 0); with ρ^max = 0 it is the earlier posterior itself.
  * The next session's raw observations are then scored against it as they are (they measure
  * θ_{k,s}).

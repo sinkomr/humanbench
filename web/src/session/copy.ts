@@ -110,8 +110,16 @@ export const READY_SHOW_RESULTS = 'See my results'
 /** Under the choice of earlier saves: when the newest one was written and what it holds (UX-012a). */
 export const savedAtLine = (when: string, questions: number): string =>
   questions === 0 ? `Last saved ${when}.` : `Last saved ${when}, ${questions} ${questions === 1 ? 'question' : 'questions'} answered.`
-/** Beside Begin once earlier sessions are loaded. */
+/** Beside Begin once earlier sessions are loaded. `n` counts sittings: an interrupted session and its continuation are one (UX-064). */
 export const addedToLine = (n: number): string => `Your new session will be added to ${n} earlier ${n === 1 ? 'session' : 'sessions'}.`
+/** Ready, when this browser holds an unfinished session from the last 24 hours (UX-064; provisional default, UX-REVIEW D6 option B). */
+export const READY_CONTINUE = 'Continue your unfinished session'
+/**
+ * What continuing does, said beside the offer: `when` is "today at 14:03" (`saved-at.ts`; '' when the time cannot be
+ * read), `part` the name of the part it goes on from, at that part's start.
+ */
+export const continueLine = (when: string, part: string): string =>
+  `${when === '' ? 'Your last session' : `Your session from ${when}`} was not finished. Continue it to go on from the start of ${part} and keep what you have done so far. Begin starts a new session instead.`
 /** Begin pressed with a file chosen or a code pasted that is not loaded (UX-012a). */
 export const READY_NOT_LOADED =
   'You chose a save file or pasted a code, but it is not loaded yet. Press Load to add your new session to it, or clear it to begin without it.'

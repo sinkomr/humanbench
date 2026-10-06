@@ -14,6 +14,11 @@
   there is one and that the field it belongs to points at with `aria-describedby` and `aria-invalid`
   (UX-012a: no element changes its role while the page is open). The same goes for the backup fetched from the
   server. With earlier results loaded "See my results" shows them without a new session (UX-010).
+  When this browser holds an unfinished session from the last 24 hours (`resume.ts`; provisional default, UX-REVIEW D6
+  option B), the screen offers to continue it, with a line saying what that does: "Continue your unfinished session"
+  is then the primary button and Begin (a new session) the secondary one. The flow decides when it is offered
+  (`SessionApp.svelte`). Every count of earlier sessions here counts sittings, so an interrupted session and its
+  continuation read as one (`save/sittings.ts`).
 -->
 <script lang="ts">
   import type { AxisCode } from '../engine/axes'
@@ -30,13 +35,17 @@
   import { wallClockMs } from '../save/clock'
   import { parseSaveText, readSaveFile, type ParseResult } from '../save/parse'
   import type { RestoreResult } from '../save/autosave'
+  import { sittingCount } from '../save/sittings'
   import type { SaveFileV1 } from '../save/types'
   import Screen from './Screen.svelte'
   import { questionsAnswered } from './coverage'
   import { baseOf, replacesDeviceSettings, type ReadyState } from './ready-state'
+  import type { Unfinished } from './resume'
   import { savedAt } from './saved-at'
+  import { SEGMENT_INFO } from './segments'
   import {
     READY_BEGIN,
+    READY_CONTINUE,
     READY_FOCUS_SUMMARY,
     READY_HEADING,
     READY_LOAD_BUTTON,
@@ -52,6 +61,7 @@
     READY_SHOW_RESULTS,
     READY_TEXT,
     addedToLine,
+    continueLine,
     savedAtLine,
   } from './copy'
 
@@ -75,9 +85,13 @@
     readonly restore?: (anonId: string, phrase: string) => Promise<MirrorGetReply>
     /** The current time in epoch ms, for "last saved": display only, the wall clock of the save library (tests inject). */
     readonly now?: () => number
+    /** The unfinished session the flow offers to continue (UX-064), or null/absent: no offer. */
+    readonly unfinished?: Unfinished | null
+    /** Continue it: a new session that picks up where it stopped. */
+    readonly oncontinue?: () => void
   }
 
-  let { restored, choices, onchoices, onpractice, onbegin, onresults, onfocus, text = READY_TEXT, verify, restore, now = wallClockMs }: Props = $props()
+  let { restored, choices, onchoices, onpractice, onbegin, onresults, onfocus, text = READY_TEXT, verify, restore, now = wallClockMs, unfinished = null, oncontinue }: Props = $props()
 
   const uid = $props.id()
   const found = $derived(restored?.save ?? null)
@@ -97,6 +111,10 @@
     const newest = found.sessions.reduce((a, b) => (b.started_utc > a.started_utc ? b : a))
     return savedAtLine(when, questionsAnswered(newest))
   })
+  /** The offer to continue an unfinished session, with the line that says what it does; null when there is none. */
+  const resume = $derived(unfinished === null || oncontinue === undefined ? null : { line: continueLine(savedAt(unfinished.startedUtc, now()), SEGMENT_INFO[unfinished.next].title) })
+  /** Sittings in a save: an interrupted session and its continuation are one (UX-064). */
+  const sittings = (save: SaveFileV1): number => sittingCount(save.sessions)
   /** What was loaded (the status line). */
   let message = $state('')
   /** Why nothing was loaded (the alert); '' when there is no failure. */
@@ -158,7 +176,7 @@
     }
     loadedFrom = from
     onchoices({ ...choices, loaded: r.save })
-    const n = r.save.sessions.length
+    const n = sittings(r.save)
     message = `Loaded ${n} earlier ${n === 1 ? 'session' : 'sessions'}. Your new session will be added to ${n === 1 ? 'it' : 'them'}.`
     // The file's notes settings win over the ones on this device (owner decision 2026-10-01): say so when they differ.
     if (replacesDeviceSettings(restored, r.save)) message += ` ${READY_LOAD_PREFS_NOTICE}`
@@ -189,15 +207,15 @@
     errorField = null
   }
 
-  /** Begin: not while a file or a code is chosen and left unloaded (the new session would not be added to it). */
-  async function begin(): Promise<void> {
+  /** Begin, or continue the unfinished session: not while a file or a code is chosen and left unloaded (the new session would not be added to it). */
+  async function begin(go: () => void = onbegin): Promise<void> {
     if (pending !== null) await pending
     if (choices.loaded === null && ((fileInput?.files?.length ?? 0) > 0 || code.trim() !== '')) {
       notLoaded = true
       return
     }
     notLoaded = false
-    onbegin()
+    go()
   }
 
   /** Ask the server which sessions of the file it issued and finds unchanged. Never fails the load. */
@@ -228,7 +246,7 @@
         return
       }
       onchoices({ ...choices, loaded: r.save })
-      const n = r.save.sessions.length
+      const n = sittings(r.save)
       restoreMessage = `Loaded your backup with ${n} earlier ${n === 1 ? 'session' : 'sessions'}. Your new session will be added to ${n === 1 ? 'it' : 'them'}.`
       restorePhrase = ''
       void check(r.save)
@@ -242,8 +260,15 @@
 
 <Screen title={READY_HEADING}>
   <p>{text}</p>
+  {#if resume !== null}
+    <p id="{uid}-continue-note">{resume.line}</p>
+  {/if}
   <div class="hb-actions">
-    <button type="button" class="hb-btn hb-primary" onclick={() => void begin()}>{READY_BEGIN}</button>
+    {#if resume !== null && oncontinue !== undefined}
+      <!-- The one primary action while an unfinished session is offered (D27): a person who sees it has just lost their place. -->
+      <button type="button" class="hb-btn hb-primary" aria-describedby="{uid}-continue-note" onclick={() => void begin(oncontinue)}>{READY_CONTINUE}</button>
+    {/if}
+    <button type="button" class={resume === null ? 'hb-btn hb-primary' : 'hb-btn'} onclick={() => void begin()}>{READY_BEGIN}</button>
     {#if onresults !== undefined && earlier !== null}
       <button type="button" class="hb-btn" onclick={onresults}>{READY_SHOW_RESULTS}</button>
     {/if}
@@ -253,7 +278,7 @@
     <p class="error" role="alert">{READY_NOT_LOADED}</p>
   {/if}
   {#if choices.loaded !== null && base !== null}
-    <p class="muted">{addedToLine(base.sessions.length)}</p>
+    <p class="muted">{addedToLine(sittings(base))}</p>
   {/if}
   <p class="muted">{READY_PRACTICE_NOTE}</p>
 
@@ -272,7 +297,7 @@
     <div class="check">
       <input id="{uid}-found" type="checkbox" checked={choices.includeFound} aria-describedby={savedLine === '' ? undefined : `${uid}-found-note`} onchange={(e) => onchoices({ ...choices, includeFound: e.currentTarget.checked })} />
       <label for="{uid}-found">
-        Add my new session to the {found.sessions.length} earlier {found.sessions.length === 1 ? 'session' : 'sessions'} saved on this device{restored !== null && restored.anonIds.length > 1
+        Add my new session to the {sittings(found)} earlier {sittings(found) === 1 ? 'session' : 'sessions'} saved on this device{restored !== null && restored.anonIds.length > 1
           ? ' (they come from more than one save identifier)'
           : ''}.
       </label>

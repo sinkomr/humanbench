@@ -41,6 +41,11 @@
  * only, is still a test of the axis, and the next session's practice gain does not depend on the
  * build that re-scores.
  *
+ * Test numbers count sittings: a session whose flags hold `CONTINUATION_FLAG` = true (`types.ts`)
+ * continues the session before it and is passed on as a continuation (`RetestSession.continuation`),
+ * so the parts of one sitting share their test numbers. Any other value of the flag is not a
+ * continuation.
+ *
  * Not re-exported from the save barrel: this module imports the task registry (every family and
  * the reading passages), and the barrel must stay light (`scripts/bundle.test.ts`). Import
  * `save/rescore` explicitly.
@@ -53,7 +58,7 @@ import { calibrationObservation, type RatedAnswer } from '../tasks/calibration'
 import { MalformedResponseError, type AnyFamily, type ItemInstance } from '../tasks/family'
 import { parseItemId } from '../tasks/ids'
 import { getFamily, resolveItem } from '../tasks/registry'
-import type { PosteriorCache, SaveFileV1 } from './types'
+import { CONTINUATION_FLAG, type PosteriorCache, type SaveFileV1 } from './types'
 
 /** Why a response yields no observation. */
 export type SkipReason = 'pretest' | 'unresolved' | 'unscored' | 'malformed' | 'no_observation'
@@ -185,7 +190,13 @@ export function rescoreSessions(save: SaveFileV1, opts: RescoreOptions = {}): Sa
     const cal = calibrationObservation(rated)
     if (cal !== null) observations.push(cal)
     const exposed_axes = AXIS_CODES.filter((k) => exposed.has(k))
-    return { session_id: s.session_id, started_utc: s.started_utc, observations, ...(exposed_axes.length > 0 ? { exposed_axes } : {}) }
+    return {
+      session_id: s.session_id,
+      started_utc: s.started_utc,
+      observations,
+      ...(exposed_axes.length > 0 ? { exposed_axes } : {}),
+      ...(s.flags[CONTINUATION_FLAG] === true ? { continuation: true } : {}),
+    }
   })
   const score = rescoreRetest(sessions, opts)
   return { ...score, n_scored: sessions.reduce((n, s) => n + s.observations.length, 0), skipped }

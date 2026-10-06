@@ -17,6 +17,7 @@ import {
   retestAdjust,
   retestGain,
   sessionOrdinals,
+  sessionSittings,
   type RetestSession,
 } from './retest'
 import { eapByAxis, mapTheta, scoreAll } from './scorer'
@@ -262,6 +263,178 @@ describe('session order and test numbers', () => {
   })
 })
 
+// ------------------------------------------------------------------ continuation sessions
+
+/** The test numbers as they were before continuation sessions: 1 + earlier sessions that took the axis. */
+function sessionCountOrdinals(ordered: readonly RetestSession[]): Partial<Record<AxisCode, number>>[] {
+  const count = new Map<AxisCode, number>()
+  return ordered.map((s) => {
+    const taken = new Set<AxisCode>([...s.observations.map((x) => x.axis), ...(s.exposed_axes ?? [])])
+    const out: Partial<Record<AxisCode, number>> = {}
+    for (const k of AXIS_CODES.filter((x) => taken.has(x))) {
+      count.set(k, (count.get(k) ?? 0) + 1)
+      out[k] = count.get(k)!
+    }
+    return out
+  })
+}
+
+/** Sessions on a few axes (so sittings overlap), some with exposures, and a continuation mark per session. */
+const fewAxes = fc.constantFrom<AxisCode>('MAT', 'SPA', 'KST', 'RT')
+const markedSessionsArb: fc.Arbitrary<{ sessions: RetestSession[]; marks: boolean[]; more: boolean[] }> = fc
+  .array(fc.record({ obs: fc.array(fc.oneof(twoPlArb(fewAxes), gaussArb(fc.constant<AxisCode>('RT'), [-1, -1.3])), { maxLength: 4 }), exposed: fc.array(fewAxes, { maxLength: 2 }) }), { minLength: 1, maxLength: 6 })
+  .chain((per) =>
+    fc.record({
+      sessions: fc.constant(
+        per.map(({ obs, exposed }, i): RetestSession => ({
+          session_id: `s_${i}`,
+          started_utc: `2026-10-${String(i + 1).padStart(2, '0')}T10:00:00Z`,
+          observations: obs,
+          ...(exposed.length > 0 ? { exposed_axes: exposed } : {}),
+        })),
+      ),
+      marks: fc.array(fc.boolean(), { minLength: per.length, maxLength: per.length }),
+      more: fc.array(fc.boolean(), { minLength: per.length, maxLength: per.length }),
+    }),
+  )
+const withMarks = (sessions: readonly RetestSession[], marks: readonly boolean[]): RetestSession[] =>
+  sessions.map((s, i) => (marks[i] ? { ...s, continuation: true } : s))
+
+describe('continuation sessions (one sitting in several sessions)', () => {
+  const o = (axis: AxisCode, b = 0, y: 0 | 1 = 1): Observation => ({ kind: '2pl', axis, a: 1, b, y })
+  const at = (id: string, utc: string, obs: Observation[], extra: Partial<RetestSession> = {}): RetestSession => ({ session_id: id, started_utc: utc, observations: obs, ...extra })
+
+  it('a continuation shares the test numbers of its sitting on every axis; the next sitting is the next test', () => {
+    const s = [
+      at('s_1', '2026-10-01T09:00:00Z', [o('MAT'), o('SPA')]),
+      at('s_2', '2026-10-01T09:40:00Z', [o('SPA', 0.5, 0), o('KST')], { continuation: true }),
+      at('s_3', '2026-10-01T21:00:00Z', [o('KST', 0.2)], { continuation: true, exposed_axes: ['RT'] }),
+      at('s_4', '2026-10-08T09:00:00Z', [o('MAT'), o('SPA'), o('KST'), o('RT')]),
+    ]
+    expect(sessionSittings(s)).toEqual([0, 0, 0, 1])
+    expect(sessionOrdinals(s)).toEqual([{ MAT: 1, SPA: 1 }, { SPA: 1, KST: 1 }, { RT: 1, KST: 1 }, { MAT: 2, SPA: 2, RT: 2, KST: 2 }])
+    const adj = retestAdjust(s)
+    expect(adj.sessions.map((x) => x.continuation)).toEqual([undefined, true, true, undefined])
+    expect(adj.sessions.slice(0, 3).every((x) => Object.values(x.rho).every((r) => r === 0))).toBe(true) // no practice inside a sitting
+    expect(adj.next_ordinals).toMatchObject({ MAT: 3, SPA: 3, KST: 3, RT: 3, LR: 1 })
+    // Without the marks the parts are retests of each other.
+    expect(sessionOrdinals(s.map(({ continuation: _, ...x }) => x))).toEqual([{ MAT: 1, SPA: 1 }, { SPA: 2, KST: 1 }, { RT: 1, KST: 2 }, { MAT: 2, SPA: 3, RT: 2, KST: 3 }])
+  })
+
+  it('ignores a continuation mark on the first session (in time order, whatever the listed order)', () => {
+    const first = at('s_1', '2026-10-01T09:00:00Z', [o('MAT')], { continuation: true })
+    const second = at('s_2', '2026-10-03T09:00:00Z', [o('MAT')])
+    const adj = retestAdjust([second, first])
+    expect(adj.sessions.map((x) => [x.session_id, x.continuation, x.ordinals])).toEqual([
+      ['s_1', undefined, { MAT: 1 }],
+      ['s_2', undefined, { MAT: 2 }],
+    ])
+    expect(Object.hasOwn(adj.sessions[0]!, 'continuation')).toBe(false)
+    expect(sessionSittings([])).toEqual([])
+    expect(sessionSittings([{ session_id: 'x', continuation: true }])).toEqual([0])
+  })
+
+  it('a continuation continues the session just before it in time order (start time, then id)', () => {
+    const a = at('s_a', '2026-10-02T08:00:00Z', [o('QR')])
+    const b = at('s_b', '2026-10-02T08:00:00Z', [o('QR')], { continuation: true }) // same start: after s_a by id
+    const z = at('s_0', '2026-10-01T08:00:00Z', [o('QR')])
+    expect(retestAdjust([b, a, z]).sessions.map((x) => [x.session_id, x.ordinals.QR, x.continuation])).toEqual([
+      ['s_0', 1, undefined],
+      ['s_a', 2, undefined],
+      ['s_b', 2, true],
+    ])
+  })
+
+  it('rejects a continuation mark that is not a boolean', () => {
+    const bad = { ...at('s_2', '2026-10-02T00:00:00Z', [o('MAT')]), continuation: 1 as unknown as boolean }
+    expect(() => sessionOrdinals([at('s_1', '2026-10-01T00:00:00Z', []), bad])).toThrow(/continuation must be a boolean/)
+    expect(() => rescoreRetest([at('s_1', '2026-10-01T00:00:00Z', []), bad])).toThrow(RangeError)
+  })
+
+  it('property: a save without continuation marks scores exactly as before (test numbers count sessions)', () => {
+    fc.assert(
+      fc.property(markedSessionsArb, ({ sessions }) => {
+        const ordered = orderSessions(sessions)
+        expect(sessionOrdinals(ordered)).toEqual(sessionCountOrdinals(ordered))
+        expect(sessionSittings(ordered)).toEqual(ordered.map((_, i) => i))
+        const plain = rescoreRetest(sessions)
+        expect(plain.sessions.some((x) => 'continuation' in x)).toBe(false)
+        // An explicit false, or a mark on the first session only, is the same save.
+        for (const variant of [sessions.map((s) => ({ ...s, continuation: false })), withMarks(sessions, sessions.map((_, i) => i === 0))]) {
+          const r = rescoreRetest(variant)
+          expect(r.theta).toEqual(plain.theta)
+          expect(r.cov).toEqual(plain.cov)
+          expect(r.eap).toEqual(plain.eap)
+          expect(r.sessions).toEqual(plain.sessions)
+          expect(r.next_ordinals).toEqual(plain.next_ordinals)
+        }
+      }),
+      { numRuns: 60 },
+    )
+  })
+
+  it('property: a continuation never raises a test number (more marks, never higher)', () => {
+    fc.assert(
+      fc.property(markedSessionsArb, ({ sessions, marks, more }) => {
+        const some = withMarks(sessions, marks)
+        const most = withMarks(sessions, marks.map((m, i) => m || more[i]!))
+        for (const [fewer, others] of [
+          [sessions, some],
+          [some, most],
+        ] as const) {
+          const a = retestAdjust(fewer)
+          const b = retestAdjust(others)
+          a.sessions.forEach((x, i) => {
+            const y = b.sessions[i]!
+            expect(Object.keys(y.ordinals)).toEqual(Object.keys(x.ordinals)) // the axes a session took do not change
+            for (const k of Object.keys(x.ordinals) as AxisCode[]) expect(y.ordinals[k]!).toBeLessThanOrEqual(x.ordinals[k]!)
+          })
+          for (const k of AXIS_CODES) expect(b.next_ordinals[k]).toBeLessThanOrEqual(a.next_ordinals[k])
+        }
+      }),
+      { numRuns: 80 },
+    )
+  })
+
+  it('property: a sitting split into a session and its continuations scores exactly as the one session', () => {
+    const caseArb = sessionsArb(fc.oneof(twoPlArb(fewAxes), grmArb(fewAxes))).chain((sessions) =>
+      fc.record({
+        sessions: fc.constant(sessions),
+        which: fc.nat({ max: sessions.length - 1 }),
+        cuts: fc.array(fc.nat({ max: 6 }), { maxLength: 2 }),
+      }),
+    )
+    fc.assert(
+      fc.property(caseArb, ({ sessions, which, cuts }) => {
+        const whole = sessions[which]!
+        const bounds = [0, ...[...new Set(cuts.map((c) => Math.min(c, whole.observations.length)))].sort((x, y) => x - y), whole.observations.length]
+        const parts: RetestSession[] = []
+        for (let p = 0; p + 1 < bounds.length; p++) {
+          parts.push({
+            session_id: `${whole.session_id}_part${p}`,
+            started_utc: whole.started_utc.replace('T10:', `T1${p + 1}:`), // later the same day, before the next session
+            observations: whole.observations.slice(bounds[p], bounds[p + 1]),
+            ...(p > 0 ? { continuation: true } : {}),
+          })
+        }
+        const split = [...sessions.slice(0, which), ...parts, ...sessions.slice(which + 1)]
+        const a = rescoreRetest(sessions)
+        const b = rescoreRetest(split)
+        expect(b.theta).toEqual(a.theta)
+        expect(b.cov).toEqual(a.cov)
+        expect(b.eap).toEqual(a.eap)
+        expect(b.next_ordinals).toEqual(a.next_ordinals)
+        // Each part is numbered as the whole session on the axes it took.
+        const wholeOrd = a.sessions.find((x) => x.session_id === whole.session_id)!.ordinals
+        for (const part of b.sessions.filter((x) => x.session_id.startsWith(`${whole.session_id}_part`))) {
+          for (const [k, n] of Object.entries(part.ordinals)) expect(n).toBe(wholeOrd[k as AxisCode])
+        }
+      }),
+      { numRuns: 60 },
+    )
+  })
+})
+
 // ------------------------------------------------------------------ rescoring properties
 
 describe('rescoreRetest (§7.8 aggregation)', () => {
@@ -371,12 +544,13 @@ interface GoldenSession {
   started_utc: string
   observations: Observation[]
   exposed_axes?: AxisCode[]
+  continuation?: boolean
 }
 interface GoldenCase {
   id: string
   inputs: { sessions: GoldenSession[]; mu?: number[]; sigma?: number[][]; rho_max?: Partial<Record<AxisCode, number>> }
   outputs: {
-    sessions: { session_id: string; started_utc: string; n_observations: number; ordinals: Record<string, number>; rho: Record<string, number> }[]
+    sessions: { session_id: string; started_utc: string; continuation?: true; n_observations: number; ordinals: Record<string, number>; rho: Record<string, number> }[]
     adjusted_observations: Observation[]
     theta_map: number[]
     cov: number[][]
@@ -440,6 +614,22 @@ describe('golden vectors (bank golden/retest_v1.json, ROADMAP M1.Q, A17)', () =>
     expect(exposed.some((s) => s.observations.length === 0)).toBe(true) // exposure only
   })
 
+  it('covers continuation sessions: several axes, exposure, a skipped axis, runs of two, a first-session mark', () => {
+    const marked = golden.cases.filter((c) => c.inputs.sessions.some((s) => s.continuation === true))
+    expect(marked.length).toBeGreaterThanOrEqual(10)
+    // The cases from before continuation sessions have none.
+    const firstMarked = golden.cases.findIndex((c) => c.inputs.sessions.some((s) => s.continuation === true))
+    expect(golden.cases.slice(firstMarked).every((c) => c.inputs.sessions.some((s) => s.continuation === true))).toBe(true)
+    expect(firstMarked).toBe(38)
+    const out = marked.flatMap((c) => c.outputs.sessions)
+    expect(out.filter((s) => s.continuation === true).length).toBeGreaterThanOrEqual(15)
+    expect(marked.some((c) => c.outputs.sessions.some((s, i) => s.continuation === true && c.outputs.sessions[i - 1]?.continuation === true))).toBe(true) // two in a row
+    expect(marked.some((c) => c.inputs.sessions.some((s) => s.continuation === true && s.exposed_axes !== undefined))).toBe(true)
+    expect(marked.some((c) => c.outputs.sessions.some((s) => s.continuation === true && Object.values(s.ordinals).some((n) => n > 1)))).toBe(true)
+    // A mark on the session that is first in time order, dropped in the output.
+    expect(marked.some((c) => c.inputs.sessions.find((s) => s.session_id === c.outputs.sessions[0]?.session_id)?.continuation === true && c.outputs.sessions[0]?.continuation === undefined)).toBe(true)
+  })
+
   it(`every case matches to ${1e-9} (ordinals, gains, adjusted observations, θ, cov, EAP, lp, next prior)`, () => {
     expect(golden.cases.length).toBeGreaterThanOrEqual(30)
     for (const c of golden.cases) {
@@ -448,9 +638,10 @@ describe('golden vectors (bank golden/retest_v1.json, ROADMAP M1.Q, A17)', () =>
       const r = rescoreRetest(c.inputs.sessions, opts)
       const adj = retestAdjust(c.inputs.sessions, rhoMax)
       const want = c.outputs
-      expect(r.sessions.map((s) => [s.session_id, s.started_utc, s.n_observations, s.ordinals]), c.id).toEqual(
-        want.sessions.map((s) => [s.session_id, s.started_utc, s.n_observations, s.ordinals]),
+      expect(r.sessions.map((s) => [s.session_id, s.started_utc, s.continuation, s.n_observations, s.ordinals]), c.id).toEqual(
+        want.sessions.map((s) => [s.session_id, s.started_utc, s.continuation, s.n_observations, s.ordinals]),
       )
+      expect(r.sessions.map((s) => Object.keys(s)), `${c.id} session keys`).toEqual(want.sessions.map((s) => Object.keys(s)))
       expect(closeDeep(r.sessions.map((s) => s.rho), want.sessions.map((s) => s.rho)), `${c.id} rho`).toBe(true)
       expect(closeDeep(adj.observations, want.adjusted_observations), `${c.id} adjusted observations`).toBe(true)
       expect(maxAbs(r.theta, want.theta_map), `${c.id} theta`).toBeLessThanOrEqual(TOL)

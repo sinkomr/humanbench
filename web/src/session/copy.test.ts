@@ -156,6 +156,17 @@ describe('the ready screen’s lines (UX-012a, UX-010)', () => {
     expect(copy.reachedEndLine(['A', 'B', 'C'])).toBe('You reached the end of the session. You skipped 3 parts: A, B and C.')
   })
 
+  it('the offer to continue an unfinished session says what each button does, in plain words (UX-064, D6)', () => {
+    expect(copy.READY_CONTINUE).toBe('Continue your unfinished session')
+    expect(copy.continueLine('today at 14:03', 'Spatial')).toBe(
+      'Your session from today at 14:03 was not finished. Continue it to go on from the start of Spatial and keep what you have done so far. Begin starts a new session instead.',
+    )
+    expect(copy.continueLine('', 'Reaction Time')).toBe(
+      'Your last session was not finished. Continue it to go on from the start of Reaction Time and keep what you have done so far. Begin starts a new session instead.',
+    )
+    for (const text of [copy.READY_CONTINUE, copy.continueLine('yesterday at 09:30', 'Working Memory')]) expect(text).not.toMatch(/TODO|\{|\}|undefined/)
+  })
+
   it('the practice screens’ new buttons, and the verdict told to a screen reader, never repeat the visible sentences', () => {
     expect(copy.PRACTICE_STOP).toBe('Stop practice')
     expect(copy.PRACTICE_DONE_CONTINUE).toBe('Continue')

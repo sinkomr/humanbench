@@ -68,6 +68,15 @@ export type SessionFlags = { [flag: string]: number | boolean | null }
 export const TIMED_TASKS_ONLY_FLAG = 'timed_tasks_only'
 
 /** Server HMAC over the whole file body (the §8 example's file-level `sig`, superseded by A16). */
+/**
+ * Set (true) on a session that continues the session just before it in time order: an interrupted
+ * session picked up again as a new session, its finished parts not served again (UX-064). The two
+ * are one sitting: the retest model gives a continuation the test numbers of its sitting, so its
+ * parts are never practice-adjusted against each other (DESIGN §7.8, `engine/retest.ts`
+ * `RetestSession.continuation`; `rescore.ts` reads it). Ignored on the first session.
+ */
+export const CONTINUATION_FLAG = 'continuation'
+
 export interface SaveSig {
   alg: 'HMAC-SHA256'
   kid: string

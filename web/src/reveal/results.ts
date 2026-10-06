@@ -32,7 +32,7 @@
 
 import type { RescoreReply } from '../backend/replies'
 import { AXES, AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
-import { adjustObservation } from '../engine/retest'
+import { adjustObservation, sessionSittings } from '../engine/retest'
 import { A15_SEGMENTS } from '../engine/selector'
 import type { ResponseTuple } from '../engine/types'
 import { itemAxis, registryObservation, rescoreSessions, type ResolvedResponse, type SaveRescore } from '../save/rescore'
@@ -101,8 +101,9 @@ export interface ResultsModel {
   /** Sessions the server scored that contributed (M2.7): the ones `rescore` holds and verified, when it published anything. Absent without a server. */
   readonly servedSessions?: number
   /**
-   * Sessions that scored something here and are the device's half of an online sitting (the timed
-   * tasks, `TIMED_TASKS_ONLY_FLAG`): the other half is a session the server scored. Absent when none.
+   * Sittings that scored something here through the device's half of an online sitting (the timed
+   * tasks, `TIMED_TASKS_ONLY_FLAG`): the other half is a session the server scored. Counted by sitting
+   * like {@link scoredSessions} (a continuation is not a sitting of its own). Absent when none.
    */
   readonly devicePartSessions?: number
   /** Some session was credited for practice (ρ > 0 on some skill): the profile differs from a plain score. */
@@ -113,10 +114,14 @@ export interface ResultsModel {
  * How many sittings the save's scored sessions come from (the count a share card states, M1.18:
  * "Based on n sessions"). A session finished at once, or with only skipped parts, is not one. An online
  * sitting is two sessions in the file, the timed tasks on the device and the questions the server
- * scored (M2.7), and counts once: a device half pairs with a served session.
+ * scored (M2.7), and counts once: a device half pairs with a served session. An interrupted session and
+ * the continuation that picked it up (`CONTINUATION_FLAG`, UX-064) are one sitting too (the retest
+ * model's sittings, `sessionSittings`): it counts once when any of its sessions scored.
  */
 export function scoredSessions(results: Pick<ResultsModel, 'rescore'> & { readonly servedSessions?: number; readonly devicePartSessions?: number }): number {
-  const local = results.rescore.sessions.filter((s) => s.n_observations > 0).length
+  const sessions = results.rescore.sessions
+  const sit = sessionSittings(sessions)
+  const local = new Set(sessions.flatMap((s, i) => (s.n_observations > 0 ? [sit[i]!] : []))).size
   const halves = Math.min(results.devicePartSessions ?? 0, local)
   return Math.max(1, local - halves + Math.max(results.servedSessions ?? 0, halves))
 }
@@ -164,7 +169,11 @@ export function buildResults(save: SaveFileV1, served?: ServedScores): ResultsMo
     return !rescore.sessions.some((rs) => rs.ordinals[k] !== undefined && !skippedIn(sessionById.get(rs.session_id)!, k))
   })
 
-  const devicePartSessions = rescore.sessions.filter((rs) => rs.n_observations > 0 && sessionById.get(rs.session_id)?.flags[TIMED_TASKS_ONLY_FLAG] === true).length
+  // By sitting, as scoredSessions counts (rescore.sessions are in time order).
+  const sittings = sessionSittings(rescore.sessions)
+  const devicePartSessions = new Set(
+    rescore.sessions.flatMap((rs, i) => (rs.n_observations > 0 && sessionById.get(rs.session_id)?.flags[TIMED_TASKS_ONLY_FLAG] === true ? [sittings[i]!] : [])),
+  ).size
 
   const facetObservations: FacetObservation[] = []
   const rho = new Map(rescore.sessions.map((rs) => [rs.session_id, rs.rho]))
