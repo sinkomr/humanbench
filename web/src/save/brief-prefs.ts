@@ -257,3 +257,15 @@ export function withoutBriefPrefs<T extends { brief_prefs?: BriefPrefsV1 }>(save
   const { brief_prefs: _dropped, ...rest } = save
   return rest
 }
+
+/**
+ * A copy of a save with `extra` notes settings joined into the ones it holds (`mergeBriefPrefs`: the higher edit
+ * count wins per set, fit notes are a union, so nothing the save has is lost). The save itself, not a copy, when
+ * `extra` adds nothing to it (none, or all of it held already). This is how the results page's save takes in the
+ * notes settings kept on the device (D17); a restore of the file (`restoreBriefPrefs`) then gives them back.
+ */
+export function withBriefPrefs<T extends { brief_prefs?: BriefPrefsV1 }>(save: T, extra: BriefPrefsV1 | undefined): T {
+  if (extra === undefined || briefPrefsCovered(save.brief_prefs, extra)) return save
+  const joined = mergeBriefPrefs([save.brief_prefs, extra])
+  return joined === undefined ? save : { ...save, brief_prefs: joined }
+}

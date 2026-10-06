@@ -9,6 +9,7 @@
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { axisName } from '../axis-names'
 import { DISCLAIMER, RESOURCE_LINE } from '../copy'
 import { AXIS_CODES, axis, type AxisCode } from '../engine/axes'
 import { NOTES_LEAK_MARKERS } from '../brief/leak-markers'
@@ -27,6 +28,7 @@ import {
   CARD_W,
   cardAxes,
   cardPeaks,
+  cardSpoke,
   cardSvg,
   cardTextWidth,
   columnTexts,
@@ -42,6 +44,7 @@ import {
 import {
   CARD_BRAND,
   CARD_KEY,
+  CARD_KEY_PEAKS,
   CARD_NO_PEAKS,
   CARD_NOTE_READING,
   CARD_NOTE_SCALE,
@@ -194,7 +197,7 @@ describe('which skills are on the card', () => {
     // The desc lists exactly the shown skills' names.
     const desc = /<desc[^>]*>([^<]*)<\/desc>/.exec(card.svg)![1]!
     const skills = unesc(desc).split(' Skills: ')[1]!.replace(/\.$/, '').split(', ')
-    expect(skills).toEqual(card.shown.map((c) => axis(c).name))
+    expect(skills).toEqual(card.shown.map((c) => axisName(c)))
   })
 
   it('is byte-identical, for the same peaks, whatever a hidden skill estimates: nothing of a hidden value reaches the picture (property)', () => {
@@ -317,7 +320,7 @@ describe('the most distinctive peaks on the card', () => {
     const sorted = [...FULL_PEAKS].sort((a, b) => b.contrast - a.contrast)
     expect(card.peaks.map((p) => p.code)).toEqual(sorted.slice(0, CARD_MAX_PEAKS).map((p) => p.code))
     const names = textsOf(card.svg)
-    for (const p of card.peaks) expect(names).toContain(axis(p.code).name)
+    for (const p of card.peaks) expect(names).toContain(axisName(p.code))
   })
 
   it('leaves out the peak of a hidden skill and lists the next one; a hidden skill is never listed (property over any subset)', () => {
@@ -344,7 +347,7 @@ describe('the most distinctive peaks on the card', () => {
     const p: CardPeak = { code: 'MAT', name: 'ZZ caller-supplied name', contrast: 0.94, lo90: 0.38, hi90: 1.5 }
     const card = buildCard({ estimates: FULL, peaks: [p], sessions: 1 })
     const texts = textsOf(card.svg)
-    expect(texts).toContain(axis('MAT').name)
+    expect(texts).toContain(axisName('MAT'))
     expect(texts).toContain('Stands out by about 0.9 SD')
     expect(texts).toContain(`90% range ${formatTheta(0.38, 1)} to ${formatTheta(1.5, 1)} SD`)
     expect(card.svg).not.toContain('ZZ caller-supplied')
@@ -358,7 +361,7 @@ describe('the most distinctive peaks on the card', () => {
     expect(textsOf(card.svg).join(' ')).toContain(CARD_NO_PEAKS)
     expect(textsOf(card.svg)).not.toContain(CARD_PEAKS_HEADING)
     // The sentence about overlapping ranges is in the small print, once; the peaks line does not repeat it.
-    expect(textsOf(card.svg).join(' ').split('Ranges that overlap are not real differences.')).toHaveLength(2)
+    expect(textsOf(card.svg).join(' ').split('Where ranges overlap, a difference may not be real.')).toHaveLength(2)
   })
 
   it('never lists a low, or a peak whose range does not clear 0, whatever it is given (R-5.6.4)', () => {
@@ -403,11 +406,11 @@ describe('the most distinctive peaks on the card', () => {
 describe('only known words are on the card; notes for an AI never are (proposal §8, M1.18)', () => {
   /** Whether a column text is one of the card\'s own lines. */
   function columnAllowed(t: string, card: CardModel, sessions: number): boolean {
-    if ([CARD_BRAND, CARD_TITLE, cardSessions(sessions), CARD_PEAKS_HEADING, ...RING_NOTE].includes(t)) return true
+    if ([CARD_BRAND, CARD_TITLE, cardSessions(sessions), CARD_PEAKS_HEADING, ...RING_NOTE, CARD_SD_MEANING].includes(t)) return true
     if (/^Stands out by about \d\.\d SD$/.test(t) || /^90% range [+−]\d\.\d to [+−]\d\.\d SD$/.test(t)) return true
-    if (card.peaks.some((p) => axis(p.code).name.includes(t))) return true
+    if (card.peaks.some((p) => axisName(p.code).includes(t))) return true
     // Lines of the wrapped paragraphs: a run of the card's own sentences (the small print flows from one into the next).
-    const flows = [[CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), [CARD_KEY, CARD_SD_MEANING].join(' '), CARD_PEAKS_SUB, CARD_NO_PEAKS]
+    const flows = [[CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), [CARD_KEY, CARD_KEY_PEAKS].join(' '), CARD_PEAKS_SUB, CARD_NO_PEAKS]
     return flows.some((text) => text.includes(t))
   }
 
@@ -632,27 +635,55 @@ describe('the card explains its marks and its scale (UX-038, §9.9, A12)', () =>
   const card = buildCard({ estimates: FULL, peaks: FULL_PEAKS, sessions: 2 })
   const words = textsOf(card.svg).join(' ')
 
-  it('has a one-line key for filled and hollow marks, and spells out SD', () => {
-    expect(CARD_KEY).toBe('Filled: range clear of 0 SD. Hollow: range overlaps 0 SD.')
+  it('has a one-line key for filled, hollow and ringed marks, and spells out SD beside the ring note (D15 A)', () => {
+    expect(CARD_KEY).toBe('Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.')
+    expect(CARD_KEY_PEAKS).toBe('Ringed: a named peak.')
     expect(CARD_SD_MEANING).toBe('SD means standard deviation.')
     expect(words).toContain(CARD_KEY)
     expect(words).toContain(CARD_SD_MEANING)
+    // One row: the key, then the ringed peaks when the card lists any.
+    expect(card.peaks.length).toBeGreaterThan(0)
+    expect(card.texts.map((t) => t.text)).toContain(`${CARD_KEY} ${CARD_KEY_PEAKS}`)
+    const none = buildCard({ estimates: FULL, sessions: 2 })
+    expect(none.peaks).toHaveLength(0)
+    expect(none.texts.map((t) => t.text)).toContain(CARD_KEY)
+    expect(textsOf(none.svg).join(' ')).not.toContain(CARD_KEY_PEAKS)
+    // The last row: the two ring-note lines, then what "SD" is.
+    const last = footerTexts().filter((t) => t.y === CARD_H - 24)
+    expect(last.map((t) => t.text)).toEqual([...RING_NOTE, CARD_SD_MEANING])
+    // With or without peaks the small print has the same rows, so the chart keeps its room.
+    expect(footerTexts(false).length).toBe(footerTexts(true).length)
+  })
+
+  it('says that where ranges overlap a difference "may not be real", never that overlapping ranges are not real differences (UX-071, owner decision 2026-10-05)', () => {
+    expect(CARD_NOTE_SCALE).toBe('Rough estimates on a provisional scale. Where ranges overlap, a difference may not be real.')
+    for (const id of ['full', 'sparse', 'skipped'] as const) {
+      const text = textsOf(buildCard({ estimates: estimatesOf(id), peaks: peaksOf(id), sessions: 2 }).svg).join(' ')
+      expect(text).not.toMatch(/overlap\w*[^.]{0,40}\bnot real\b/i)
+      expect(text).not.toContain('Ranges that overlap are not real differences')
+    }
   })
 
   it('keeps every caveat sentence, the overlap sentence exactly once, and the ring note word for word', () => {
     for (const sentence of [CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE]) expect(words).toContain(sentence)
-    expect(words.split('Ranges that overlap are not real differences.')).toHaveLength(2)
+    expect(words.split('Where ranges overlap, a difference may not be real.')).toHaveLength(2)
     // The ring note is two texts of their own (share-card.spec.ts matches them one by one).
     for (const line of RING_NOTE) expect(textsOf(card.svg)).toContain(line)
     expect(textsOf(card.svg)).toContain('Rings: SD units, provisional')
     expect(textsOf(card.svg)).toContain('Centre: −3 SD')
   })
 
-  it('the key matches what is drawn: hollow marks are the muted ones, filled the credible ones', () => {
+  it('the key matches what is drawn: hollow marks are the muted ones, filled the ranges above 0 SD', () => {
     const sparse = buildCard({ estimates: estimatesOf('sparse'), sessions: 1 })
     expect(sparse.svg).toContain('class="mark muted"')
     expect(sparse.svg).toContain('.muted .marker{fill:#ffffff')
     expect(sparse.svg).toContain('.marker{fill:#0072B2')
+    // Filled exactly where the 90% range lies above 0 SD; hollow where it overlaps 0 SD or lies below it.
+    for (const id of ['m1', 'full', 'skipped', 'sparse', 'offscale'] as const) {
+      const est = estimatesOf(id)
+      const card = buildCard({ estimates: est, peaks: peaksOf(id), sessions: 1 })
+      card.placement.model.spokes.forEach((s) => expect(s.muted, `${id} ${s.id}`).toBe(est.find((e) => e.code === s.id)!.relation !== 'above'))
+    }
   })
 
   it('the peaks line compares with the card\'s skills as a whole, not "the other skills" (UX-047)', () => {
@@ -678,6 +709,75 @@ describe('the card explains its marks and its scale (UX-038, §9.9, A12)', () =>
       const svg = buildCard({ estimates: FULL, sessions: 1, theme }).svg
       expect(svg).toContain(`.band{fill:${t.band};fill-opacity:.12;stroke:${t.band};stroke-opacity:${t.bandEdgeOpacity};stroke-width:1}`)
     }
+  })
+})
+
+describe('the card stresses peaks, never lows (UX review D15 A)', () => {
+  /** The class of each spoke's mark group, by its index in spoke order, from the SVG. */
+  const marks = (svg: string): Map<string, string> => new Map([...svg.matchAll(/<g class="(mark(?: [^"]*)?)">/g)].map((m, i) => [String(i), m[1]!]))
+
+  it('draws a credible low muted: hollow grey marker, grey whisker, grey curve run and label (the page keeps §9.5)', () => {
+    const est = estimatesOf('m1')
+    const rt = est.find((e) => e.code === 'RT')!
+    expect(rt.relation).toBe('below')
+    expect(rt.muted).toBe(false) // on the page a credible low is filled (§9.5)
+    const card = buildCard({ estimates: est, peaks: peaksOf('m1'), sessions: 1 })
+    const spoke = card.placement.model.spokes.find((s) => s.id === 'RT')!
+    expect(spoke.muted).toBe(true)
+    expect(card.placement.model.muteRuns.find((run) => run.spokeIds.includes('RT'))!.muted).toBe(true)
+    const i = card.shown.indexOf('RT')
+    expect(marks(card.svg).get(String(i))).toMatch(/\bmuted\b/)
+    expect(spokeLabels(card.svg)).toHaveLength(card.shown.length)
+    expect([...card.svg.matchAll(/<text class="(label[^"]*)"/g)][i]![1]).toContain('muted')
+  })
+
+  it('property: whatever the estimates, no credible low is strongly coloured on a card, and every credible high is', () => {
+    fc.assert(
+      fc.property(fc.array(fc.record({ theta: fc.double({ min: -3, max: 3, noNaN: true }), sd: fc.double({ min: 0.1, max: 1.2, noNaN: true }) }), { minLength: 17, maxLength: 17 }), (xs) => {
+        const est = FULL.map((e, i) => ({ ...e, ...measuredFields(xs[i]!.theta, xs[i]!.sd) }))
+        const card = buildCard({ estimates: est, sessions: 1 })
+        for (const s of card.placement.model.spokes) {
+          const e = est.find((x) => x.code === s.id)!
+          expect(s.muted).toBe(e.relation !== 'above')
+        }
+      }),
+      { numRuns: 40 },
+    )
+    expect(cardSpoke({ ...FULL[0]!, ...measuredFields(-1.5, 0.2) }).muted).toBe(true)
+    expect(cardSpoke({ ...FULL[0]!, ...measuredFields(1.5, 0.2) }).muted).toBe(false)
+    expect(cardSpoke({ ...FULL[0]!, ...measuredFields(0.1, 0.5) }).muted).toBe(true)
+  })
+
+  it('rings the named peaks and sets their labels bold, and nothing else', () => {
+    for (const id of ['m1', 'full', 'offscale'] as const) {
+      const card = buildCard({ estimates: estimatesOf(id), peaks: peaksOf(id), sessions: 1 })
+      expect(card.peaks.length, id).toBeGreaterThan(0)
+      const named = new Set(card.peaks.map((p) => p.code))
+      card.placement.model.spokes.forEach((s, i) => {
+        expect(Boolean(s.peak), `${id} ${s.id}`).toBe(named.has(s.id as AxisCode))
+        expect(marks(card.svg).get(String(i))!.split(' ').includes('peak'), `${id} ${s.id}`).toBe(named.has(s.id as AxisCode))
+      })
+      expect((card.svg.match(/<circle class="peak-ring"/g) ?? []).length).toBe(named.size)
+      expect((card.svg.match(/<text class="label[^"]*\bpeak\b/g) ?? []).length).toBe(named.size)
+      // Each ring is centred on its marker, around it.
+      for (const m of card.svg.matchAll(/<circle class="(?:marker)" cx="(-?[\d.]+)" cy="(-?[\d.]+)" r="4.5"\/><circle class="peak-ring" cx="(-?[\d.]+)" cy="(-?[\d.]+)" r="9"\/>/g)) {
+        expect([m[3], m[4]]).toEqual([m[1], m[2]])
+      }
+      expect(card.svg).toContain('.peak-ring{fill:none;stroke:')
+      expect(card.svg).toContain('.label.peak{font-weight:700}')
+    }
+    const plain = buildCard({ estimates: estimatesOf('m1'), sessions: 1 })
+    expect(plain.svg).not.toContain('class="peak-ring"')
+    expect(plain.placement.model.spokes.some((s) => s.peak)).toBe(false)
+  })
+
+  it('a named peak whose range overlaps 0 SD is still ringed (the headline and the drawing connect)', () => {
+    const est = estimatesOf('m1')
+    const card = buildCard({ estimates: est, peaks: peaksOf('m1'), sessions: 1 })
+    const mutedPeaks = card.placement.model.spokes.filter((s) => s.peak && s.muted)
+    const credible = card.placement.model.spokes.filter((s) => !s.muted)
+    for (const s of credible) expect(est.find((e) => e.code === s.id)!.relation).toBe('above')
+    for (const s of mutedPeaks) expect(est.find((e) => e.code === s.id)!.relation).toBe('overlaps')
   })
 })
 

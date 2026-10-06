@@ -52,7 +52,8 @@ export interface DeviceInfo {
 }
 
 /**
- * Integrity flag counters (§13), e.g. `visibility_hidden_s`, `paste_events`, `fast_guess_n`.
+ * Integrity flag counters (§13), e.g. `visibility_hidden_s`, `paste_events`, `fast_guess_n`,
+ * `confidence_untouched_n` (answers whose confidence slider was not moved, UX-063).
  * Keys are snake_case; M1.19's `integrityReport().save_flags` (`engine/integrity.ts` SaveFlags)
  * adds `flag_count`, `calibration_eligible` and the session-level kinds as booleans. A merge
  * keeps the copy of a session with the most flag information (`merge.ts` flagRank).
@@ -66,6 +67,15 @@ export type SessionFlags = { [flag: string]: number | boolean | null }
  * sessions") tell the pair from two sittings. Not sent to the server (`serverFlags`).
  */
 export const TIMED_TASKS_ONLY_FLAG = 'timed_tasks_only'
+
+/**
+ * Set (true) on a session that continues the session just before it in time order: an interrupted
+ * session picked up again as a new session, its finished parts not served again (UX-064). The two
+ * are one sitting: the retest model gives a continuation the test numbers of its sitting, so its
+ * parts are never practice-adjusted against each other (DESIGN §7.8, `engine/retest.ts`
+ * `RetestSession.continuation`; `rescore.ts` reads it). Ignored on the first session.
+ */
+export const CONTINUATION_FLAG = 'continuation'
 
 /** Server HMAC over the whole file body (the §8 example's file-level `sig`, superseded by A16). */
 export interface SaveSig {

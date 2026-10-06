@@ -70,6 +70,8 @@ describe('the card makes no request and stores nothing (DESIGN §9.9)', () => {
     const names = [...code('src/reveal/ShareCard.svelte').matchAll(/import\s*\{([^}]*)\}\s*from\s*'\.\/copy'/g)].flatMap((m) => m[1]!.split(',').map((x) => x.trim()).filter((x) => x !== ''))
     expect(names.length).toBeGreaterThan(10)
     for (const n of names) expect(n, n).toMatch(/^SHARE_|^share/)
+    // The label of the downloads that arrived with the UX-review answers (D15 C) is one of them.
+    expect(names).toContain('SHARE_SAVE_COPY')
   })
 })
 

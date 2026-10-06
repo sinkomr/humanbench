@@ -119,11 +119,13 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
    */
   const STATES = [
     // the start of the flow
+    'welcome-returning',
     'gate',
     'gate-error',
     'gate-under-18',
     'ready',
     'ready-returning',
+    'ready-continue',
     'practice',
     'practice-feedback',
     // the running session

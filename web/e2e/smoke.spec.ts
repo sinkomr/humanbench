@@ -7,7 +7,8 @@
 
 import { expect, test } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
-import { DISCLAIMER, HEADING } from '../src/copy'
+import { DISCLAIMER, HEADING, META_DESCRIPTION } from '../src/copy'
+import { WELCOME_INTRO, WELCOME_TAGLINE } from '../src/session/copy'
 import { expectNoSeriousAxe, nonBlockingAxeViolations, seriousAxeViolations } from './axe'
 
 test.describe('start page', () => {
@@ -42,6 +43,15 @@ test.describe('start page', () => {
     await expect(page.getByRole('link', { name: 'Privacy and terms' })).toHaveCount(1)
     await expect(footer.getByRole('link', { name: 'Privacy and terms' })).toHaveCount(0)
     await expect(page.locator('main').getByRole('link', { name: 'Privacy and terms' })).toHaveAttribute('href', '#/privacy')
+  })
+
+  test('says what the session is in plain words, in the page and its description, with no placeholder (UX-REVIEW D26, D1)', async ({ page }) => {
+    await page.goto('./')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING)
+    await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', META_DESCRIPTION)
+    await expect(page.locator('main').getByText(WELCOME_TAGLINE, { exact: true })).toBeVisible()
+    await expect(page.locator('main').getByText(WELCOME_INTRO, { exact: true })).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('TODO')
   })
 
   test('the rendered page passes the language lint (A13)', async ({ page }) => {

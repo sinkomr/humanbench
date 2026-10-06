@@ -91,7 +91,7 @@ test.describe('the checklist does not break a word (VER-01)', () => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await toReady(page)
     await button(page, 'Begin').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
 
     const states: readonly [string, () => Promise<void>][] = [
       ['the first interstitial', async () => undefined],
@@ -196,7 +196,7 @@ test.describe('one privacy link on the welcome, and a footer link on the other s
     await expect(footerLink(page)).not.toHaveAttribute('target', /.+/)
 
     await button(page, 'Begin').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     await expect(footerLink(page)).toHaveCount(1)
     await expect(footerLink(page)).toHaveAccessibleName('Privacy and terms (opens in a new tab)')
     await expect(footerLink(page)).toHaveAttribute('target', '_blank')
@@ -257,7 +257,7 @@ test.describe('one privacy link on the welcome, and a footer link on the other s
       await expect(h1(page)).toHaveText('Ready when you are')
       await tall('the ready screen')
       await button(page, 'Begin').click()
-      await expect(h1(page)).toHaveText('Up next: Reaction time')
+      await expect(h1(page)).toHaveText('Up next: Reaction Time')
       await tall('the run (the link that opens a new tab)')
       await button(page, 'Finish early').click()
       await button(page, 'Finish now').click()
@@ -398,6 +398,11 @@ test.describe('a question the browser cannot draw says so once (UX-017a)', () =>
   test('Skip leaves for the next part; the parked renderer goes with the screen', async ({ page }) => {
     await noWebGlSpatial(page)
     await page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' }).click()
+    // Spatial ends the first half of the plan: the one break offer comes first (UX-066; UX-REVIEW D5), and the parked renderer is gone already.
+    await expect(h1(page)).toHaveText('Time for a break?')
+    await expect(page.locator('.unavailable')).toHaveCount(0)
+    await expect(page.locator('div.rotation')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Keep going', exact: true }).click()
     await expect(h1(page)).toHaveText('Up next: Working Memory')
     await expect(page.locator('.unavailable')).toHaveCount(0)
     await expect(page.locator('div.rotation')).toHaveCount(0)

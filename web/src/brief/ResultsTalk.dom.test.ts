@@ -40,6 +40,26 @@ describe('ResultsTalk', () => {
     expect(document.querySelector('[data-testid=results-talk-badge]')).toBeNull()
   })
 
+  it('says what comes next after "Paste this first." (UX-REVIEW D18) and shows the wording of version 2 of the preamble, not the retired overlap sentence (D2)', () => {
+    show(ResultsTalk)
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('Paste this first. Then describe your results in your own words, or attach your share card picture.')
+    expect(RESULTS_TALK.paste).toBe('Paste this first. Then describe your results in your own words, or attach your share card picture.')
+    expect($('[data-testid=preamble]').textContent).toContain('Where ranges overlap, a difference may not be real.')
+    expect(text).not.toContain('Ranges that overlap are not real differences')
+    expect(text).not.toMatch(/overlap\w*[^.]{0,40}\bnot real\b/i)
+  })
+
+  it('keeps the next-step sentence while the text is still being checked, and drops it with the preamble when the text is blocked (it only makes sense after "Paste this first.")', () => {
+    show(ResultsTalk, { status: 'experimental' })
+    expect(document.body.textContent).toContain('Then describe your results in your own words, or attach your share card picture.')
+    void unmount(app as ReturnType<typeof mount>)
+    document.body.innerHTML = ''
+    show(ResultsTalk, { status: 'blocked' })
+    expect(document.body.textContent).not.toContain('Then describe your results')
+    expect($('[data-testid=never-paste]').textContent).toBe(RESULTS_TALK.neverPaste)
+  })
+
   it('copies exactly the preamble and announces it politely, again on a second press', async () => {
     const copy = vi.fn(async () => true)
     show(ResultsTalk, { copy })
@@ -78,6 +98,31 @@ describe('ResultsTalk', () => {
   it('takes the heading level it is given', () => {
     show(ResultsTalk, { level: 2 })
     expect(document.querySelectorAll('h2')).toHaveLength(1)
+  })
+})
+
+describe('ResultsTalk: the copy button is a secondary one (UX-REVIEW D27, a provisional default, option A)', () => {
+  it('is a plain button, not the primary: the screens it sits on have a primary action of their own', () => {
+    show(ResultsTalk)
+    const button = $<HTMLButtonElement>('[data-testid=copy-preamble]')
+    expect(button.classList.contains('hb-btn')).toBe(true)
+    expect(button.classList.contains('hb-primary')).toBe(false)
+    expect(button.classList.contains('primary')).toBe(false)
+    expect(document.querySelectorAll('.hb-primary')).toHaveLength(0)
+  })
+
+  it('stays a plain button while the text is still being checked, and still copies', async () => {
+    const copy = vi.fn(async () => true)
+    show(ResultsTalk, { status: 'experimental', copy })
+    const button = $<HTMLButtonElement>('[data-testid=copy-preamble]')
+    expect(button.classList.contains('hb-primary')).toBe(false)
+    button.click()
+    await vi.waitFor(() => expect(copy).toHaveBeenCalledWith(PREAMBLE))
+  })
+
+  it('inside the reveal card there is no primary button from the helper either', () => {
+    show(RevealCard, { saved: true, notesHref: './notes.html' })
+    expect(document.querySelectorAll('.hb-primary')).toHaveLength(0)
   })
 })
 

@@ -99,7 +99,8 @@ describe('ProfileView structure (§9, A15)', () => {
     expect(unmeasured.length).toBeGreaterThan(5)
     expect(svg.querySelectorAll('g.mark.unmeasured')).toHaveLength(unmeasured.length)
     expect(svg.querySelectorAll('g.mark.unmeasured line.stub')).toHaveLength(unmeasured.length)
-    expect(svg.querySelectorAll('g.mark.unmeasured circle.gap')).toHaveLength(unmeasured.length)
+    // UX review D13 A: the gap marker is an × (a path) on the 0 SD ring.
+    expect(svg.querySelectorAll('g.mark.unmeasured path.gap')).toHaveLength(unmeasured.length)
     expect(svg.querySelectorAll('line.spoke.unmeasured')).toHaveLength(unmeasured.length)
     expect([...svg.querySelectorAll('text.label.unmeasured')].every((t) => t.textContent?.includes('not measured'))).toBe(true)
     const fuzz = [...svg.querySelectorAll('.fuzz path')]
@@ -282,11 +283,10 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     expect(panel.querySelector('h3')!.textContent).toBe('Quantitative: facets')
     const est = axisEstimates(p.input)
     const rows = clusterFacets(p.input.score, p.facetObservations, 'Quantitative', { catalog: p.catalog, unmeasured: unmeasuredReasons(est) })
+    // The quant templates count as their topic groups (UX review D4): percent 6 + arith 5 + fraction 3, and ratio 2.
     expect(rows.map((r) => [r.facet, r.nItems, r.measured])).toEqual([
-      ['percent', 6, true],
-      ['arith', 5, true],
-      ['fraction', 3, false],
-      ['ratio', 2, false],
+      ['quant/arith_fractions_percent', 14, true],
+      ['quant/ratios_rates_averages', 2, false],
     ])
     for (const r of rows) {
       const tr = panel.querySelector(`tr[data-row="${r.id}"]`)!
@@ -294,9 +294,9 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
       else expect(tr.querySelector('td.stub')!.textContent).toBe(`Insufficient data (${r.nItems} questions; 5 needed)`)
     }
     // Plain names, and no generator code anywhere in the panel (UX-040).
-    expect([...panel.querySelectorAll('tbody th')].map((th) => th.textContent!.trim())).toEqual(['Percentages', 'Arithmetic', 'Fractions', 'Ratios'])
+    expect([...panel.querySelectorAll('tbody th')].map((th) => th.textContent!.trim())).toEqual(['Arithmetic, fractions and percentages', 'Ratios, rates and averages'])
     expect(panel.textContent).not.toMatch(/_|\bPercent\b|\bitems?\b|\bblocks?\b/)
-    // Two of the four are measured: too few for a chart of its own (UX-041), so the table stands alone.
+    // One of the two is measured: too few for a chart of its own (UX-041), so the table stands alone.
     expect(panel.querySelector('svg.hb-blob')).toBeNull()
     click(btn)
     expect(root.querySelector('.facet-panel')).toBeNull()
@@ -337,6 +337,27 @@ describe('drill-down to facets (§9.6, A7, A12: ≥ 5 items)', () => {
     const root = render(syntheticProfile('m1')!)
     const labels = [...root.querySelectorAll('.drill-buttons button')].map((b) => b.textContent)
     expect([...labels].sort()).toEqual([...CLUSTERS].sort())
+  })
+})
+
+describe('layout: the profile chart may grow to 48rem, the facet chart does not (UX-REVIEW D16)', () => {
+  it('the profile chart box is in the blob figure (the CSS that widens it is scoped to it) and the facet chart box is not', () => {
+    const root = render(syntheticProfile('full')!)
+    click(button(root, 'Knowledge'))
+    const main = root.querySelector('figure.blob-figure .chart-box')
+    const facet = root.querySelector('.facet-panel .chart-box')
+    expect(main).not.toBeNull()
+    expect(main!.querySelector('svg.hb-blob')).not.toBeNull()
+    expect(facet).not.toBeNull()
+    expect(facet!.closest('figure.blob-figure')).toBeNull()
+    expect(root.querySelectorAll('.chart-box')).toHaveLength(2)
+  })
+
+  it('the caption under the chart and the heading above it are direct children of the same section, so they share the column edge', () => {
+    const root = render(syntheticProfile('full')!)
+    const section = root.querySelector('section.hb-profile')!
+    expect(section.querySelector(':scope > h2')).not.toBeNull()
+    expect(section.querySelector(':scope > figure.blob-figure > figcaption')).not.toBeNull()
   })
 })
 

@@ -3,16 +3,22 @@
  * from the frame that draws the passage to Done (performance.now), the passage is hidden for the
  * 3 gate questions, options appear in spec order, the response scores with the family's score(),
  * the source is credited after the block, and no authoring data (evidence, rationales) is shown.
+ * A paragraph of more than 150 words is drawn as display paragraphs of about 120 words, cut between
+ * sentences (web/UX-REVIEW.md D11 option A, a provisional default; `split.ts`): the words, their
+ * order, the word count and the reading time are the authored ones.
  */
 
 import { flushSync } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reading, type ReadingItem } from '../../tasks/reading'
 import { AUTHORED_PASSAGES } from '../../tasks/reading/authoring'
-import type { ReadingResponse } from '../../tasks/reading/types'
+import { PASSAGES } from '../../tasks/reading/bank'
+import { countPassageWords } from '../../tasks/reading/text'
+import type { ReadingResponse, RenderPassage } from '../../tasks/reading/types'
 import { normalizeIds } from '../common/leak'
 import { buttonByText, click, fakeDisplay, press, render } from '../common/testing'
 import ReadingRenderer from './ReadingRenderer.svelte'
+import { LONGEST_WORDS, splitParagraphs } from './split'
 
 const FRAME = 1000 / 60
 
@@ -21,6 +27,12 @@ afterEach(() => {
   for (const f of cleanup) f()
   cleanup = []
 })
+
+/** A reading block for bank passage `p` (the questions are those of whatever the seed drew: only the passage is under test). */
+function itemFor(p: RenderPassage, seed: string): ReadingItem {
+  const item = reading.generate(seed)
+  return { ...item, spec: { ...item.spec, passage_id: p.id, paragraphs: p.paragraphs, word_count: p.word_count, source: p.source } }
+}
 
 function mountReading(item: ReadingItem) {
   const display = fakeDisplay()
@@ -36,7 +48,7 @@ describe('ReadingRenderer', () => {
       const item = reading.generate(`render-reading-${i}`)
       const m = mountReading(item)
       click(buttonByText(m.container, 'Show the passage'))
-      expect(m.container.querySelectorAll('.passage p')).toHaveLength(item.spec.paragraphs.length)
+      expect(m.container.querySelectorAll('.passage p')).toHaveLength(splitParagraphs(item.spec.paragraphs).length)
       const done = buttonByText(m.container, 'Done reading')
       expect(done.disabled).toBe(true)
       m.display.advance(FRAME)
@@ -69,6 +81,48 @@ describe('ReadingRenderer', () => {
       expect(m.container.querySelector('.credit')?.textContent).toContain(item.spec.source.author)
       m.destroy()
     }
+  })
+
+  it('draws every passage of the bank as paragraphs of at most 150 words, with the authored words in the authored order (D11)', () => {
+    expect(PASSAGES.length).toBeGreaterThanOrEqual(8)
+    let cut = 0
+    for (const p of PASSAGES) {
+      const m = mountReading(itemFor(p, `render-reading-split-${p.id}`))
+      click(buttonByText(m.container, 'Show the passage'))
+      const drawn = [...m.container.querySelectorAll('.passage p')].map((el) => el.textContent ?? '')
+      // The authored paragraphs are not touched: the same words, in the same order, as one text.
+      expect(drawn.join(' ')).toBe(p.paragraphs.join(' '))
+      expect(drawn).toEqual(splitParagraphs(p.paragraphs))
+      expect(countPassageWords(drawn.join('\n\n'))).toBe(p.word_count)
+      for (const text of drawn) expect(countPassageWords(text), `${p.id}: ${text.slice(0, 40)}`).toBeLessThanOrEqual(LONGEST_WORDS)
+      if (drawn.length > p.paragraphs.length) cut++
+      m.destroy()
+    }
+    // Darwin (one 363-word paragraph) is drawn as three, Dana as three, Bird as three plus the short one.
+    expect(cut).toBeGreaterThanOrEqual(6)
+    const darwin = PASSAGES.find((p) => p.id === 'darwin-beagle-1845') as RenderPassage
+    const m = mountReading(itemFor(darwin, 'render-reading-split-darwin'))
+    click(buttonByText(m.container, 'Show the passage'))
+    expect([...m.container.querySelectorAll('.passage p')].map((el) => countPassageWords(el.textContent ?? ''))).toEqual([136, 111, 116])
+  })
+
+  it('times a split passage as before: from the frame that draws it to Done, whatever the number of display paragraphs', () => {
+    const darwin = PASSAGES.find((p) => p.id === 'darwin-beagle-1845') as RenderPassage
+    const item = itemFor(darwin, 'render-reading-split-time')
+    const m = mountReading(item)
+    click(buttonByText(m.container, 'Show the passage'))
+    expect(m.container.querySelectorAll('.passage p')).toHaveLength(3)
+    const done = buttonByText(m.container, 'Done reading')
+    expect(done.disabled).toBe(true)
+    m.display.advance(FRAME)
+    expect(done.disabled).toBe(false)
+    m.display.advance(123_456)
+    click(done)
+    item.spec.questions.forEach((_, qi) => click(m.container.querySelectorAll('fieldset.question')[qi]?.querySelector('input')))
+    click(buttonByText(m.container, 'Submit answers'))
+    expect(m.responses).toHaveLength(1)
+    expect(m.responses[0]?.reading_time_ms).toBeCloseTo(123_456, 6)
+    expect(m.responses[0]?.choices).toEqual([0, 0, 0])
   })
 
   it('never shows evidence spans or rationales from the authored bank (A14)', () => {
@@ -186,6 +240,14 @@ describe('ReadingRenderer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('matches its snapshot (a long passage drawn as display paragraphs)', () => {
+    const darwin = PASSAGES.find((p) => p.id === 'darwin-beagle-1845') as RenderPassage
+    const m = mountReading(itemFor(darwin, 'render-reading-snap-passage'))
+    click(buttonByText(m.container, 'Show the passage'))
+    m.display.advance(FRAME)
+    expect(normalizeIds(m.container)).toMatchSnapshot()
   })
 
   it('matches its snapshot (questions)', () => {

@@ -8,8 +8,9 @@
 import fc from 'fast-check'
 import { flushSync } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { axisName } from '../axis-names'
 import { RESOURCE_LINE } from '../copy'
-import { AXIS_CODES, AXIS_INDEX, axis, type AxisCode } from '../engine/axes'
+import { AXIS_CODES, AXIS_INDEX, type AxisCode } from '../engine/axes'
 import { buttonByText, click, render } from '../render/common/testing'
 import { buildCard, cardAxes, cardSvg, EMO_CODE, type CardModel } from '../viz/card'
 import type { ImageShareOutcome, Raster } from '../viz/export'
@@ -102,7 +103,7 @@ describe('the skills toggles', () => {
     expect(measured.length).toBeLessThan(est.length)
     for (const box of m.c.querySelectorAll<HTMLInputElement>('input[data-skill]')) expect(box.checked).toBe(true)
     // Each is labelled with the skill's full name.
-    for (const code of measured) expect(checkbox(m.c, code)!.closest('label')!.textContent!.trim()).toBe(axis(code).name)
+    for (const code of measured) expect(checkbox(m.c, code)!.closest('label')!.textContent!.trim()).toBe(axisName(code))
     await counted(m.c)
     expect(status(m.c, 'count')).toBe(`${measured.length} skills are on the card.`)
   })
@@ -151,8 +152,8 @@ describe('the skills toggles', () => {
     click(checkbox(m.c, 'KHU'))
     const svg = svgOf(m.c)
     for (const code of [top.code, 'KHU'] as const) {
-      expect(svg).not.toContain(`>${axis(code).name}<`)
-      expect(preview(m.c)!.getAttribute('alt')).not.toContain(axis(code).name)
+      expect(svg).not.toContain(`>${axisName(code)}<`)
+      expect(preview(m.c)!.getAttribute('alt')).not.toContain(axisName(code))
     }
   })
 
@@ -333,7 +334,7 @@ describe('the PNG and SVG exports', () => {
     await ready(m.c, 'Download image (PNG)')
     click(buttonByText(m.c, 'Download image (PNG)'))
     expect(m.saved).toHaveLength(1)
-    expect(m.saved[0]!.name).toBe('humanbench-card-2026-09-30.png')
+    expect(m.saved[0]!.name).toBe('humanbench-card-light-2026-09-30.png')
     expect(m.saved[0]!.blob.type).toBe('image/png')
     expect(status(m.c, 'message')).toBe('Image saved: 2400 × 1260 pixels.')
   })
@@ -342,7 +343,7 @@ describe('the PNG and SVG exports', () => {
     const m = mountCard()
     click(buttonByText(m.c, 'Download vector image (SVG)'))
     expect(m.saved).toHaveLength(1)
-    expect(m.saved[0]!.name).toBe('humanbench-card-2026-09-30.svg')
+    expect(m.saved[0]!.name).toBe('humanbench-card-light-2026-09-30.svg')
     expect(m.saved[0]!.blob.type).toContain('image/svg+xml')
     expect(await m.saved[0]!.blob.text()).toBe(svgOf(m.c))
     expect(status(m.c, 'message')).toBe('Vector image saved.')
@@ -642,7 +643,204 @@ describe('the share sheet', () => {
     outcome = 'failed'
     click(buttonByText(m.c, 'Share image'))
     await vi.waitFor(() => expect(status(m.c, 'message')).toBe('The image could not be shared. Download it instead.'))
-    expect(shared).toEqual(['humanbench-card-2026-09-30.png', 'humanbench-card-2026-09-30.png', 'humanbench-card-2026-09-30.png'])
+    expect(shared).toEqual(['humanbench-card-light-2026-09-30.png', 'humanbench-card-light-2026-09-30.png', 'humanbench-card-light-2026-09-30.png'])
+  })
+})
+
+describe('the buttons where the browser can share image files, and where it cannot (D15 C)', () => {
+  // The rows of buttons that make the card (not the "Show all / Hide all" row of the skills).
+  const actions = (c: HTMLElement): HTMLElement[] => [...c.querySelectorAll<HTMLElement>('[data-share-actions], [data-save-copy] .hb-actions')]
+  const primaries = (c: HTMLElement): string[] => [...c.querySelectorAll<HTMLButtonElement>('button.hb-primary')].filter((b) => b.closest('fieldset') === null).map((b) => b.textContent!.trim())
+
+  it('with a share sheet: "Share image" is the one primary button and comes first, the downloads sit under "Save a copy"', () => {
+    const m = mountCard({ canShare: true })
+    const share = buttonByText(m.c, 'Share image')
+    const png = buttonByText(m.c, 'Download image (PNG)')
+    const svg = buttonByText(m.c, 'Download vector image (SVG)')
+    expect(primaries(m.c)).toEqual(['Share image'])
+    expect(share.classList.contains('hb-primary')).toBe(true)
+    expect(png.classList.contains('hb-primary')).toBe(false)
+    expect(svg.classList.contains('hb-primary')).toBe(false)
+    expect(before(share, png)).toBe(true)
+    expect(before(png, svg)).toBe(true)
+    // The downloads are one labelled group; the share button is not in it.
+    const group = m.c.querySelector<HTMLElement>('[data-save-copy]')!
+    expect(group.getAttribute('role')).toBe('group')
+    expect(m.c.querySelector(`#${CSS.escape(group.getAttribute('aria-labelledby')!)}`)?.textContent).toBe('Save a copy')
+    expect(group.contains(png) && group.contains(svg)).toBe(true)
+    expect(group.contains(share)).toBe(false)
+    expect(actions(m.c)).toHaveLength(2)
+  })
+
+  it('without a share sheet: today\'s order stays (PNG primary, then SVG), there is no "Share image" and no "Save a copy" label', () => {
+    const m = mountCard({ canShare: false })
+    const png = buttonByText(m.c, 'Download image (PNG)')
+    const svg = buttonByText(m.c, 'Download vector image (SVG)')
+    expect(primaries(m.c)).toEqual(['Download image (PNG)'])
+    expect(before(png, svg)).toBe(true)
+    expect(() => buttonByText(m.c, 'Share image')).toThrow()
+    expect(m.c.querySelector('[data-save-copy]')).toBeNull()
+    expect(m.c.textContent).not.toContain('Save a copy')
+    expect(actions(m.c)).toHaveLength(1)
+    expect([...actions(m.c)[0]!.querySelectorAll('button')].map((b) => b.textContent!.trim())).toEqual(['Download image (PNG)', 'Download vector image (SVG)'])
+  })
+
+  it('takes the share sheet from the browser by default: files must be shareable (navigator.canShare with files), not only navigator.share', () => {
+    const real = Object.getOwnPropertyDescriptor(Navigator.prototype, 'canShare')
+    const realShare = Object.getOwnPropertyDescriptor(Navigator.prototype, 'share')
+    const set = (canShare: unknown, share: unknown): void => {
+      Object.defineProperty(Navigator.prototype, 'canShare', { configurable: true, value: canShare })
+      Object.defineProperty(Navigator.prototype, 'share', { configurable: true, value: share })
+    }
+    try {
+      // The browser takes files: Share is primary and first.
+      set((d?: ShareData) => (d?.files?.length ?? 0) > 0, async () => undefined)
+      let m = mountCard({ canShare: undefined })
+      expect(primaries(m.c)).toEqual(['Share image'])
+      cleanup?.()
+      // It can share text and links only (canShare says no to files): the downloads stay first.
+      set((d?: ShareData) => (d?.files?.length ?? 0) === 0, async () => undefined)
+      m = mountCard({ canShare: undefined })
+      expect(primaries(m.c)).toEqual(['Download image (PNG)'])
+      expect(() => buttonByText(m.c, 'Share image')).toThrow()
+      cleanup?.()
+      // It has share but not canShare (older engines): no way to know files work, so no Share button.
+      set(undefined, async () => undefined)
+      m = mountCard({ canShare: undefined })
+      expect(primaries(m.c)).toEqual(['Download image (PNG)'])
+      cleanup?.()
+      // canShare throws on files: treated as "no".
+      set(() => {
+        throw new TypeError('bad data')
+      }, async () => undefined)
+      m = mountCard({ canShare: undefined })
+      expect(primaries(m.c)).toEqual(['Download image (PNG)'])
+    } finally {
+      for (const [name, d] of [['canShare', real], ['share', realShare]] as const) {
+        if (d === undefined) delete (Navigator.prototype as unknown as Record<string, unknown>)[name]
+        else Object.defineProperty(Navigator.prototype, name, d)
+      }
+    }
+  })
+
+  it('every button keeps its job in both layouts: the PNG waits for its image, the SVG never waits, the share is the same', async () => {
+    for (const canShare of [true, false]) {
+      const m = mountCard({ canShare })
+      await ready(m.c, 'Download image (PNG)')
+      click(buttonByText(m.c, 'Download image (PNG)'))
+      click(buttonByText(m.c, 'Download vector image (SVG)'))
+      expect(m.saved.map((f) => f.name)).toEqual(['humanbench-card-light-2026-09-30.png', 'humanbench-card-light-2026-09-30.svg'])
+      if (canShare) {
+        click(buttonByText(m.c, 'Share image'))
+        await vi.waitFor(() => expect(m.shared).toHaveLength(1))
+      }
+      cleanup?.()
+      cleanup = undefined
+    }
+  })
+
+  it('the "Preparing" note describes the share button and the PNG button in the grouped layout too', async () => {
+    let finish: (r: Raster) => void = () => undefined
+    const makePng = vi.fn(() => new Promise<Raster>((resolve) => (finish = resolve)))
+    const m = mountCard({ makePng, canShare: true })
+    await vi.waitFor(() => expect(makePng).toHaveBeenCalled())
+    for (const name of ['Share image', 'Download image (PNG)']) {
+      const b = buttonByText(m.c, name)
+      expect(b.getAttribute('aria-disabled')).toBe('true')
+      expect(m.c.querySelector(`#${CSS.escape(b.getAttribute('aria-describedby')!)}`)?.textContent).toBe('Preparing the PNG…')
+    }
+    finish({ blob: new Blob(['png']), width: 2400, height: 1260 })
+    await ready(m.c, 'Share image')
+  })
+
+  it('"Hide all" turns every button off in both layouts, and "Show all" brings them back', async () => {
+    for (const canShare of [true, false]) {
+      const m = mountCard({ canShare })
+      await ready(m.c, 'Download image (PNG)')
+      click(buttonByText(m.c, 'Hide all'))
+      expect(buttonByText(m.c, 'Download image (PNG)').disabled).toBe(true)
+      expect(buttonByText(m.c, 'Download vector image (SVG)').disabled).toBe(true)
+      if (canShare) expect(buttonByText(m.c, 'Share image').disabled).toBe(true)
+      click(buttonByText(m.c, 'Show all'))
+      await ready(m.c, 'Download image (PNG)')
+      if (canShare) await ready(m.c, 'Share image')
+      cleanup?.()
+      cleanup = undefined
+    }
+  })
+})
+
+describe('the file names carry the colours and the person\'s local date (D19)', () => {
+  it('light and dark cards are named for their colours, for the PNG, the SVG and the share sheet', async () => {
+    const m = mountCard()
+    await ready(m.c, 'Download image (PNG)')
+    click(buttonByText(m.c, 'Download image (PNG)'))
+    click(buttonByText(m.c, 'Download vector image (SVG)'))
+    click(buttonByText(m.c, 'Share image'))
+    await vi.waitFor(() => expect(m.shared).toHaveLength(1))
+    click(m.c.querySelector<HTMLInputElement>('input[type=radio][value=dark]'))
+    expect(svgOf(m.c)).toBe(expectedCard(inputOf('full'), { theme: 'dark' }).svg)
+    await ready(m.c, 'Download image (PNG)')
+    click(buttonByText(m.c, 'Download image (PNG)'))
+    click(buttonByText(m.c, 'Download vector image (SVG)'))
+    click(buttonByText(m.c, 'Share image'))
+    await vi.waitFor(() => expect(m.shared).toHaveLength(2))
+    expect(m.saved.map((f) => f.name)).toEqual([
+      'humanbench-card-light-2026-09-30.png',
+      'humanbench-card-light-2026-09-30.svg',
+      'humanbench-card-dark-2026-09-30.png',
+      'humanbench-card-dark-2026-09-30.svg',
+    ])
+    expect(m.shared.map((f) => f.name)).toEqual(['humanbench-card-light-2026-09-30.png', 'humanbench-card-dark-2026-09-30.png'])
+    // The names differ, so two cards saved on one day do not overwrite each other.
+    expect(new Set(m.saved.map((f) => f.name)).size).toBe(4)
+    // Back to light: the light name again.
+    click(m.c.querySelector<HTMLInputElement>('input[type=radio][value=light]'))
+    click(buttonByText(m.c, 'Download vector image (SVG)'))
+    expect(m.saved.at(-1)!.name).toBe('humanbench-card-light-2026-09-30.svg')
+  })
+
+  describe('with the clock and the time zone under control (the page\'s own clock, no injected date)', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllEnvs()
+    })
+
+    // Local midnight of 6 October 2026: 07:00:00 UTC in Los Angeles (PDT), 11:00:00 UTC on the 5th in Auckland (NZDT).
+    const ZONES: readonly [string, number][] = [
+      ['America/Los_Angeles', Date.UTC(2026, 9, 6, 7, 0, 0)],
+      ['Pacific/Auckland', Date.UTC(2026, 9, 5, 11, 0, 0)],
+    ]
+
+    for (const [tz, midnight] of ZONES) {
+      it(`${tz}: a card made one second before local midnight is dated that day, one made at midnight the next`, async () => {
+        vi.stubEnv('TZ', tz)
+        // Only Date is faked: the PNG is prepared on real timers.
+        vi.useFakeTimers({ toFake: ['Date'] })
+        for (const [at, day] of [[midnight - 1000, '2026-10-05'], [midnight, '2026-10-06']] as const) {
+          vi.setSystemTime(at)
+          const m = mountCard({ today: undefined })
+          await ready(m.c, 'Download image (PNG)')
+          click(buttonByText(m.c, 'Download image (PNG)'))
+          click(buttonByText(m.c, 'Download vector image (SVG)'))
+          expect(m.saved.map((f) => f.name), `${tz} at ${new Date(at).toISOString()}`).toEqual([`humanbench-card-light-${day}.png`, `humanbench-card-light-${day}.svg`])
+          cleanup?.()
+          cleanup = undefined
+        }
+      })
+    }
+
+    it('is read when the button is pressed: a card kept open across midnight gets the new day\'s name', async () => {
+      vi.stubEnv('TZ', 'America/Los_Angeles')
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(Date.UTC(2026, 9, 6, 6, 59, 0))
+      const m = mountCard({ today: undefined })
+      await ready(m.c, 'Download image (PNG)')
+      click(buttonByText(m.c, 'Download vector image (SVG)'))
+      vi.setSystemTime(Date.UTC(2026, 9, 6, 7, 1, 0))
+      click(buttonByText(m.c, 'Download vector image (SVG)'))
+      expect(m.saved.map((f) => f.name)).toEqual(['humanbench-card-light-2026-10-05.svg', 'humanbench-card-light-2026-10-06.svg'])
+    })
   })
 })
 

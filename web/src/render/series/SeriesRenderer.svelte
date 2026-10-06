@@ -8,7 +8,7 @@
   import { onMount } from 'svelte'
   import '../common/render.css'
   import NumericEntry from '../common/NumericEntry.svelte'
-  import { FORMAT_HINTS } from '../common/entry-copy'
+  import { FORMAT_HINTS, type EntryVerdict } from '../common/entry-copy'
   import { browserTiming, type EntryRendererProps } from '../common/props'
   import { parseIntegerResponse, parseLetterResponse } from '../../tasks/series/score'
   import type { SeriesResponse, SeriesSpec } from '../../tasks/series/types'
@@ -19,9 +19,10 @@
   const clock = $derived((timing ?? browserTiming()).clock)
   // One noun for the whole item: the prompt, the field and the hidden text all say number or all say letter.
   const noun = $derived(spec.input_format === 'letter' ? 'letter' : 'number')
-  const accepts = $derived(
+  const reads = $derived(
     spec.input_format === 'letter' ? (t: string) => parseLetterResponse(t) !== undefined : (t: string) => parseIntegerResponse(t) !== undefined,
   )
+  const check = (t: string): EntryVerdict => (reads(t) ? 'ok' : 'format')
 
   onMount(() => {
     if (!onshown) return
@@ -43,7 +44,7 @@
     format={spec.input_format}
     hint={FORMAT_HINTS[spec.input_format]}
     label="Next {noun}"
-    {accepts}
+    {check}
     onsubmit={(text) => onrespond(text)}
     onpaste={() => onpaste?.({ t_ms: clock.now() })}
     {disabled}

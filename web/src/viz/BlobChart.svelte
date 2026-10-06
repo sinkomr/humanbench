@@ -7,9 +7,12 @@
    * Colours come from the `--hb-*` custom properties of `palette.ts` set by the parent. Font
    * sizes come from the model (`fitLayout`), and every text has a halo in the page background, so
    * it keeps the palette's ≥ 4.5:1 text contrast over the band, fuzz and curve (§9.8).
+   * UX review D13 (provisional defaults): a not-measured spoke leaves a gap in the curve with an ×
+   * on the 0 SD ring; when the layout leaves those spokes without labels (narrow screens), a line
+   * under the chart names them. D15 A: a share card's named peaks are ringed, their labels bold.
    */
   import { LABEL_LINE_EM, NOTE_LINE_EM, type BlobModel } from './blob'
-  import { RING_NOTE } from './copy'
+  import { RING_NOTE, stubListText } from './copy'
 
   interface Props {
     model: BlobModel
@@ -27,6 +30,7 @@
   const f = (v: number): string => v.toFixed(2)
   const mutedRuns = $derived(model.muteRuns.filter((r) => r.muted))
   const credibleRuns = $derived(model.muteRuns.filter((r) => !r.muted))
+  const stubs = $derived(model.spokes.filter((s) => !s.measured))
 </script>
 
 <svg class="hb-blob" viewBox={model.viewBox} role="img" aria-labelledby="{uid}-title" aria-describedby="{uid}-desc" data-spokes={model.spokes.length}>
@@ -68,6 +72,23 @@
     {/each}
   </g>
 
+  {#if stubs.length > 0}
+    <!-- D13 A: the stub and the gap marker (an × on the 0 SD ring, over a halo in the page background) of each
+         not-measured spoke. Placeholders, not data: under the ring labels, so a label's halo may cover part of an ×
+         and the label stays readable. -->
+    <g class="stubs">
+      {#each stubs as s (s.id)}
+        <g class="mark unmeasured" data-spoke={s.id} data-tier={s.tier}>
+          {#if s.stub && s.gapMark}
+            <line class="stub" x1="0" y1="0" x2={f(s.stub[0])} y2={f(s.stub[1])} />
+            <path class="gap-halo" d={s.gapMark} />
+            <path class="gap" d={s.gapMark} />
+          {/if}
+        </g>
+      {/each}
+    </g>
+  {/if}
+
   <!-- Under the data (UX-045): a ring label's halo knocks out the grid only, never the curve, a marker or a whisker. -->
   <g class="ring-labels" font-size={f(model.text.small)} stroke-width={f(model.text.halo)}>
     {#each model.rings.filter((x) => x.showLabel) as ring (ring.theta)}
@@ -83,7 +104,7 @@
     {/each}
   </g>
   {#each model.hatch as h, i (h.id)}
-    <path class="hatch" d={model.crisp.d} fill="url(#{uid}-hatch)" clip-path="url(#{uid}-clip-{i})" />
+    <path class="hatch" d={model.hatchFill} fill="url(#{uid}-hatch)" clip-path="url(#{uid}-clip-{i})" />
   {/each}
   <path class="crisp" d={model.crisp.d} data-curve={model.crisp.kind} clip-path={mutedRuns.length > 0 ? `url(#${uid}-credible)` : undefined} />
   {#if mutedRuns.length > 0}
@@ -91,8 +112,8 @@
   {/if}
 
   <g class="marks">
-    {#each model.spokes as s (s.id)}
-      <g class="mark" class:muted={s.muted} class:unmeasured={!s.measured} data-spoke={s.id} data-tier={s.tier}>
+    {#each model.spokes.filter((x) => x.measured) as s (s.id)}
+      <g class="mark" class:muted={s.muted} class:peak={s.peak} data-spoke={s.id} data-tier={s.tier}>
         {#if s.whisker && s.marker}
           <line class="whisker" x1={f(s.whisker[0][0])} y1={f(s.whisker[0][1])} x2={f(s.whisker[1][0])} y2={f(s.whisker[1][1])} />
           {#if s.arrow}
@@ -101,9 +122,10 @@
           {:else}
             <circle class="marker" cx={f(s.marker[0])} cy={f(s.marker[1])} r="4.5" />
           {/if}
-        {:else if s.stub && s.gap}
-          <line class="stub" x1="0" y1="0" x2={f(s.stub[0])} y2={f(s.stub[1])} />
-          <circle class="gap" cx={f(s.gap[0])} cy={f(s.gap[1])} r="3" />
+          {#if s.peak}
+            <!-- D15 A: a named peak of a share card, ringed. -->
+            <circle class="peak-ring" cx={f(s.marker[0])} cy={f(s.marker[1])} r="9" />
+          {/if}
         {/if}
       </g>
     {/each}
@@ -118,8 +140,8 @@
   {/if}
 
   <g class="labels" font-size={f(model.text.label)} stroke-width={f(model.text.halo)}>
-    {#each model.spokes as s (s.id)}
-      <text class="label" class:muted={s.muted} class:unmeasured={!s.measured} x={f(s.label.at[0])} y={f(s.label.at[1])} text-anchor={s.label.anchor}>
+    {#each model.spokes.filter((x) => x.lines.length > 0) as s (s.id)}
+      <text class="label" class:muted={s.muted} class:unmeasured={!s.measured} class:peak={s.peak} x={f(s.label.at[0])} y={f(s.label.at[1])} text-anchor={s.label.anchor}>
         {#each s.lines as line, li (li)}
           <tspan
             x={f(s.label.at[0])}
@@ -132,6 +154,12 @@
     {/each}
   </g>
 </svg>
+{#if model.stubList.length > 0}
+  <!-- D13 B: the not-measured spokes have no labels on this narrow chart; this line names them. -->
+  <p class="stub-list" data-stub-list>
+    {#each model.stubList as g, gi (g.lead)}{gi > 0 ? ' ' : ''}{stubListText(g.lead, g.names)}{/each}
+  </p>
+{/if}
 
 <style>
   .hb-blob {
@@ -212,7 +240,8 @@
     pointer-events: none;
   }
 
-  .marks {
+  .marks,
+  .stubs {
     pointer-events: none;
   }
   .whisker {
@@ -248,10 +277,22 @@
     stroke-width: 3;
     stroke-linecap: round;
   }
+  .gap-halo {
+    fill: none;
+    stroke: var(--hb-bg);
+    stroke-width: 5;
+    stroke-linecap: round;
+  }
   .gap {
-    fill: var(--hb-bg);
+    fill: none;
     stroke: var(--hb-stub);
-    stroke-width: 1.5;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .peak-ring {
+    fill: none;
+    stroke: var(--hb-blob);
+    stroke-width: 2;
   }
 
   /* A halo in the page background behind every chart text (paint-order: stroke first), so the
@@ -284,5 +325,16 @@
   }
   .label .note {
     font-style: italic;
+  }
+  .label.peak {
+    font-weight: 700;
+  }
+
+  /* HTML text: it grows with the page's text size (UX-044), like the captions under the chart. */
+  .stub-list {
+    max-width: 40rem;
+    margin: 0.25rem auto 0;
+    font-size: 0.875rem;
+    color: var(--hb-text-muted);
   }
 </style>

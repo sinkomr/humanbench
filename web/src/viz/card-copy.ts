@@ -30,14 +30,18 @@ export function cardPeakRange(lo: string, hi: string): string {
 export const CARD_NO_PEAKS = 'No skill stands out clearly among those shown.'
 
 /** The card's small print: the scale is provisional, the shape carries no total, and the choice of skills is mine. */
-export const CARD_NOTE_SCALE = 'Rough estimates on a provisional scale. Ranges that overlap are not real differences.'
+export const CARD_NOTE_SCALE = 'Rough estimates on a provisional scale. Where ranges overlap, a difference may not be real.'
 export const CARD_NOTE_READING = 'Compare spokes one at a time; the size of the shape means nothing. Only skills I chose are shown.'
 export const CARD_PURPOSE = 'For curiosity and self-reflection.'
 /**
- * The key to the marks, and what "SD" is (UX-038): a card travels without its page. Filled marks
- * are the credible ones (§9.5); "range" is the 90% range the thin lines show.
+ * The key to the marks, and what "SD" is (UX-038): a card travels without its page; "range" is the
+ * 90% range the thin lines show. On a card only a range above 0 SD is filled: a credible low is drawn
+ * hollow and grey like a range that overlaps 0 SD (UX review D15 A, a provisional default), so the
+ * only strong colour on a picture people post is never a low.
  */
-export const CARD_KEY = 'Filled: range clear of 0 SD. Hollow: range overlaps 0 SD.'
+export const CARD_KEY = 'Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.'
+/** D15 A: the card's named peaks are ringed on the chart (only on a card that lists peaks). */
+export const CARD_KEY_PEAKS = 'Ringed: a named peak.'
 export const CARD_SD_MEANING = 'SD means standard deviation.'
 
 /** The picture's title and its text alternative's first sentence (the shown skills follow). */

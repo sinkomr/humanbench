@@ -9,7 +9,10 @@ import { scaleLinear } from 'd3-scale'
 
 export const THETA_MIN = -3
 export const THETA_MAX = 3
-/** Inner clamp of the radius as a fraction of R (§9.1); not-measured spokes dip to it (§9.7). */
+/**
+ * Inner clamp of the radius as a fraction of R (§9.1). Not-measured spokes no longer dip to it: the
+ * curve breaks there instead (UX review D13 A, a provisional default; `blob.ts`).
+ */
 export const R_MIN_FRACTION = 0.04
 /**
  * The lowest θ drawn at its true radius: below it r = R·(θ + 3)/6 would fall under the inner clamp
@@ -45,7 +48,7 @@ export function radiusScale(R: number): (theta: number) => number {
 
 /**
  * Whether an estimate lies beyond the drawn scale: `low` below {@link THETA_CLAMP_LOW} (drawn at the
- * inner clamp, where not-measured spokes dip too), `high` above +3 SD (drawn at the rim), else
+ * inner clamp), `high` above +3 SD (drawn at the rim), else
  * `none`. The radius map itself is untouched (linear, §9.1); the chart adds an arrowhead there.
  */
 export type OffScale = 'none' | 'low' | 'high'

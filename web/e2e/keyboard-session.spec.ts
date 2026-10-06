@@ -20,7 +20,7 @@
  */
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { focusInfo, focusIsOnPlainTarget, press, tabTo } from './keyboard'
+import { focusInfo, focusIsOnPlainTarget, focusTarget, press, tabTo, type FocusTarget } from './keyboard'
 import { partsPlayedProblems } from './parts'
 import { SEGMENT_TITLES } from './routes'
 import { useWideFont } from './wide-font'
@@ -42,6 +42,16 @@ const POINTER_GUARD = `(() => {
 /** Progress lines for a failing run on CI or a slow machine: `KB_DEBUG=1 npm run e2e:a11y`. */
 function debug(...parts: unknown[]): void {
   if (process.env.KB_DEBUG) console.log(new Date().toISOString().slice(14, 23), ...parts)
+}
+
+/**
+ * A counted question as it appeared (UX-REVIEW D21, a provisional default): where focus was, and how many Tab presses it
+ * took to reach the answer field from there.
+ */
+interface Arrival {
+  readonly part: string
+  readonly focus: FocusTarget
+  tabs: number
 }
 
 type Kind = 'finished' | 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'coding' | 'reading' | 'interstitial' | 'break' | 'other'
@@ -71,6 +81,9 @@ class Taker {
   readonly segments: string[] = []
   /** The kinds of screen played in each part, by the part's title. */
   readonly played = new Map<string, Set<string>>()
+  /** Every counted question of the session, in order, with where focus was when it appeared. */
+  readonly arrivals: Arrival[] = []
+  private arrival: Arrival | null = null
 
   constructor(
     readonly page: Page,
@@ -82,8 +95,9 @@ class Taker {
     await press(this.page, target, this.browserName, key)
   }
 
-  async tabTo(target: Locator): Promise<void> {
-    await tabTo(this.page, target, this.browserName)
+  /** Press Tab until the target has focus; how many presses it took. */
+  async tabTo(target: Locator): Promise<number> {
+    return tabTo(this.page, target, this.browserName)
   }
 
   /** Focus is on the page and shows where it is. Recorded, and reported at the end, with the screen it was on. */
@@ -170,6 +184,12 @@ class Taker {
     this.note(kind)
     // Every screen of the session, on arrival: focus is on the page and shows where it is (the results are checked below).
     if (kind !== 'finished' && kind !== 'other') await this.checkFocus(where)
+    // A counted question: the heading has focus on the first of a part and its own labelled group on every later one (D21).
+    this.arrival = null
+    if (kind === 'choice' || kind === 'entry') {
+      this.arrival = { part: this.segment, focus: await focusTarget(page), tabs: -1 }
+      this.arrivals.push(this.arrival)
+    }
     switch (kind) {
       case 'finished':
         return false
@@ -212,8 +232,10 @@ class Taker {
   /** A multiple-choice item: Tab to the options, pick B with its key, Enter to answer. */
   private async answerChoice(): Promise<void> {
     const { page } = this
-    // The heading holds focus when the item appears; one Tab reaches the options (a radio group is one stop).
-    await this.tabTo(page.locator('form.choice input[type=radio]').first())
+    // The heading (first question of a part) or the question's own region (a later one) holds focus when the item appears;
+    // either way one Tab reaches the options (a radio group is one stop).
+    const tabs = await this.tabTo(page.locator('form.choice input[type=radio]').first())
+    if (this.arrival !== null) this.arrival.tabs = tabs
     await this.checkFocus('multiple choice item')
     await page.keyboard.press('b')
     await expect(page.locator('form.choice input[type=radio]:checked')).toHaveCount(1)
@@ -225,7 +247,8 @@ class Taker {
   private async answerEntry(): Promise<void> {
     const { page } = this
     const box = page.locator('form.entry input[type=text]')
-    await this.tabTo(box)
+    const tabs = await this.tabTo(box)
+    if (this.arrival !== null) this.arrival.tabs = tabs
     await this.checkFocus('typed item')
     await page.keyboard.type('1')
     await page.keyboard.press('Enter')
@@ -261,7 +284,7 @@ class Taker {
     await this.page.waitForFunction(`(() => { const r = document.querySelector('section.hb-render.${kind}'); return !r || r.getAttribute('aria-labelledby') !== ${JSON.stringify(id)} })()`, undefined, { polling: 'raf', timeout: 20_000 })
   }
 
-  /** Reaction time, simple or four positions: read the target from the live region and press its key. */
+  /** Reaction Time, simple or four positions: read the target from the live region and press its key. */
   private async playRt(): Promise<void> {
     const { page } = this
     const rt = page.locator('section.hb-render.rt')
@@ -475,7 +498,7 @@ test.describe('practice by keyboard alone (UX-004, WCAG 2.4.3, 4.1.3)', () => {
     // time they last about ten seconds, far longer than these few presses.
     await taker.toReady('./')
     await taker.activate(control(page, 'button', 'Start'))
-    await expect(heading(page)).toHaveText('Reaction time')
+    await expect(heading(page)).toHaveText('Reaction Time')
     await taker.activate(control(page, 'button', 'Start practice'))
     const stage = page.locator('section.hb-render.rt .stage')
     await expect(stage).toBeVisible()
@@ -555,5 +578,30 @@ test.describe('a whole session by keyboard alone (?fast=1)', () => {
     expect(await page.evaluate<number>('window.__hbPointer')).toBe(0)
     expect(taker.lostFocus, 'screens where nothing had focus').toEqual([])
     expect(taker.noIndicator, 'focused controls with no focus indicator').toEqual([])
+
+    // UX-REVIEW D21 (provisional default, option B): the part's heading took focus on the first question of each part
+    // and the question's own group ("Question 2", "Question 3" ...) on every later one, and the first Tab from either
+    // still reached the answer field, so the one press per question is what it was.
+    const parts = new Map<string, Arrival[]>()
+    for (const a of taker.arrivals) parts.set(a.part, [...(parts.get(a.part) ?? []), a])
+    expect(parts.size, 'parts that showed counted questions').toBeGreaterThanOrEqual(3)
+    let later = 0
+    for (const [part, list] of parts) {
+      let last = 1
+      list.forEach((a, i) => {
+        const where = `${part}, question ${i + 1}`
+        if (i === 0) expect(a.focus, `${where}: focus on arrival`).toEqual({ kind: 'heading', name: part })
+        else {
+          // The number counts the questions shown in the part, one that ran out of its time between two steps of this driver included.
+          const n = Number(/^Question (\d+)$/.exec(a.focus.name)?.[1] ?? NaN)
+          expect(a.focus.kind, `${where}: focus on arrival`).toBe('group')
+          expect(n, `${where}: the number in its name "${a.focus.name}"`).toBeGreaterThan(last)
+          last = n
+          later++
+        }
+        expect(a.tabs, `${where}: Tab presses to the answer field`).toBe(1)
+      })
+    }
+    expect(later, 'questions that were not the first of their part').toBeGreaterThan(taker.arrivals.length / 2)
   })
 })

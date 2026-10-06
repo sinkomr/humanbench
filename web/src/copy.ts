@@ -39,3 +39,11 @@ export const EMO_TOOLTIP =
 
 /** The product name: the heading of the start screen (ROADMAP M0.1 hello page, replaced by the M1.15 session flow). */
 export const HEADING = 'HumanBench'
+
+/**
+ * The page's meta description (index.html `<meta name="description">`, pinned by copy.test.ts so the
+ * language lint, which reads src/, covers it). Plain and literal: what the session is, not what it says
+ * about the person (provisional default, UX-REVIEW D26; web/HOUSE-STYLE.md).
+ */
+export const META_DESCRIPTION =
+  'HumanBench: short tasks of reasoning, memory and speed, about 30 minutes. Your results are shown as a profile with ranges, not as a single score.'

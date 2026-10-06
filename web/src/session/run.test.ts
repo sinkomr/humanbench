@@ -1,16 +1,18 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
+import { AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
 import { createRng } from '../engine/prng'
-import { A15_TARGET_S, STOP_SD, type SegmentId } from '../engine/selector'
+import { A15_TARGET_S, STOP_SD, planSession, type SegmentId } from '../engine/selector'
 import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
 import { rescoreSessions } from '../save/rescore'
 import { parseItemId } from '../tasks/ids'
 import { CAL_NORMS } from '../tasks/priors'
 import { RT_NORMS_VERSION } from '../tasks/rt'
-import { BREAK_AT_S, HARD_STOP_S, SAVE_CTX } from './constants'
+import { CONTINUATION_FLAG } from '../save/types'
+import { HARD_STOP_S, SAVE_CTX } from './constants'
 import { priorItemCounts } from './coverage'
+import { COMPLETED_FLAG, doneFlag, findUnfinished } from './resume'
 import { SessionRun } from './run'
 import { Bot, TEST_DEVICE } from './bot'
 
@@ -69,6 +71,9 @@ describe('the A15 flow (M1.15)', () => {
     const bot = new Bot({ sessionId: 's_FLOWPROGRESS01' })
     expect(bot.view().targetS).toBe(A15_TARGET_S)
     expect(bot.view().elapsedS).toBe(0)
+    bot.wait(90) // on the first "Up next" screen: the clock waits for Start (UX-066)
+    expect(bot.view().elapsedS).toBe(0)
+    bot.run.startSegment()
     bot.wait(90)
     expect(bot.view().elapsedS).toBe(90)
   })
@@ -100,6 +105,17 @@ describe('the A15 flow (M1.15)', () => {
 /** The power (CAT) axes of the M1 session. */
 const CAT: readonly AxisCode[] = ['MAT', 'SPA', 'QR']
 
+/**
+ * Run to Working Memory's first block and spend `s` seconds on it (the clock runs during a block,
+ * not on an "Up next" screen), then on to the Quantitative interstitial: the parts after it have no
+ * budget left when `s` is the whole target.
+ */
+function slowMemoryThenQuant(bot: Bot, s: number): void {
+  bot.until((v) => v.phase === 'block' && v.segment?.id === 'memory')
+  bot.wait(s)
+  bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
+}
+
 describe('coverage floor and the session clock (M1.15 known issue)', () => {
   it('every CAT axis reaches 3 items in session 1 even when the blocks before it ran very long', () => {
     // Memory blocks (and the rest) taking 6× their model time: the time budget of Quant is gone
@@ -126,10 +142,9 @@ describe('coverage floor and the session clock (M1.15 known issue)', () => {
   }, 120_000)
 
   it('a segment with no budget left gets exactly the floor, not more', () => {
-    // Jump the timeline past the target while the person is at the Quant interstitial: budget 0.
+    // A Working Memory block that took the whole target: Quant starts with a budget of 0.
     const bot = new Bot({ sessionId: 's_FLOORZERO00001' })
-    bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
-    bot.wait(A15_TARGET_S) // 27.5 more minutes: the budget of the rest is gone
+    slowMemoryThenQuant(bot, A15_TARGET_S) // 27.5 more minutes: the budget of the rest is gone
     bot.run.tick()
     const before = bot.run.result().itemsByAxis.QR ?? 0
     expect(before).toBe(0)
@@ -148,8 +163,7 @@ describe('coverage floor and the session clock (M1.15 known issue)', () => {
 
   it('an axis that earlier sessions covered (3 items) has no floor: a segment without budget serves nothing', () => {
     const bot = new Bot({ sessionId: 's_FLOORSESS200001', priorItemCounts: { MAT: 3, SPA: 3, QR: 3 } })
-    bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
-    bot.wait(A15_TARGET_S)
+    slowMemoryThenQuant(bot, A15_TARGET_S)
     bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
     expect(bot.run.result().itemsByAxis.QR ?? 0).toBe(0)
   })
@@ -204,8 +218,7 @@ describe('the coverage floor follows the axes covered, not the session number (M
 
   it('earlier items count toward the 3: an axis with 2 before needs only 1 more, and one with 3 needs none', () => {
     const one = new Bot({ sessionId: 's_FLOORSHORT0001', priorItemCounts: { QR: 2 } })
-    one.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
-    one.wait(A15_TARGET_S) // the budget of the rest is gone
+    slowMemoryThenQuant(one, A15_TARGET_S) // the budget of the rest is gone
     one.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
     expect(one.run.result().itemsByAxis.QR).toBe(1)
   })
@@ -237,7 +250,8 @@ describe('per-axis early stop (SD < 0.3)', () => {
 
 describe('skip axis (§13)', () => {
   it('skipping at the interstitial removes the segment; nothing is asked for that axis', () => {
-    const bot = new Bot({ sessionId: 's_SKIPINTER00001' })
+    // The break goes before Matrix & Series here, so the skip leads straight to the next "Up next" screen.
+    const bot = new Bot({ sessionId: 's_SKIPINTER00001', breakAtS: 0 })
     bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'spatial')
     expect(bot.view().skippable).toBe('SPA')
     bot.run.skipAxis()
@@ -366,15 +380,14 @@ describe('finish early and the hard stop (§7.4)', () => {
     expect(bot.run.sessionState().durationS).toBe(HARD_STOP_S)
   })
 
-  it('pins the limits of the spec: a break at 30 active minutes and the hard stop at 57 (DESIGN §7.4, §10)', () => {
-    expect(BREAK_AT_S).toBe(30 * 60)
+  it('pins the hard stop of the spec: 57 active minutes (DESIGN §7.4)', () => {
     expect(HARD_STOP_S).toBe(57 * 60)
   })
 
   it('does not stop a second early: at 56:59 the session is still going, and at 57:00 it ends', () => {
     const bot = new Bot({ sessionId: 's_HARDSTOP000002' })
-    bot.until((v) => v.phase === 'item')
-    bot.wait(HARD_STOP_S - 1 - bot.run.view().elapsedS) // the session has already run a few seconds
+    bot.until((v) => v.phase === 'block') // a block has no time cap of its own, so the part is still on at 56:59
+    bot.wait(HARD_STOP_S - 1 - bot.run.view().elapsedS)
     bot.run.tick()
     expect(bot.run.view().elapsedS).toBeCloseTo(HARD_STOP_S - 1, 3)
     expect(bot.run.view().ended).not.toBe('hard_stop')
@@ -404,6 +417,7 @@ describe('finish early and the hard stop (§7.4)', () => {
     b.wait(900)
     b.run.resume()
     expect(b.view().elapsedS).toBeCloseTo(paused, 3)
+    b.run.startSegment() // the next part: the clock runs again
     b.wait(2 * 3600)
     b.run.tick()
     expect(b.run.view().ended).toBe('hard_stop')
@@ -429,6 +443,7 @@ describe('finish early and the hard stop (§7.4)', () => {
 
   it('finishing early records the real duration (the cap is for the hard stop only)', () => {
     const bot = new Bot({ sessionId: 's_FINISHNOCAP001', hardStopS: 100 })
+    bot.run.startSegment()
     bot.wait(400)
     bot.run.finishEarly()
     expect(bot.run.view().ended).toBe('finish_early')
@@ -463,32 +478,135 @@ describe('finish early and the hard stop (§7.4)', () => {
   })
 })
 
-describe('the 30-minute break (§10)', () => {
-  it('is offered once, at a boundary, after 30 active minutes; declining carries on', () => {
-    const bot = new Bot({ sessionId: 's_BREAKDECLINE01' }, { blockScale: 2, itemScale: 1.5, onBreakOffer: 'decline' })
-    let offers = 0
-    let prev = ''
+/** The parts of a plan with their planned seconds, in order (block E[T] or the CAT segment's planned share). */
+function plannedParts(sessionId: string, opts: { skipped?: readonly AxisCode[]; focus?: readonly AxisCode[]; targetS?: number } = {}): { id: SegmentId; s: number }[] {
+  const weights: Partial<Record<AxisCode, number>> = {}
+  for (const k of opts.skipped ?? []) weights[k] = 0
+  if (opts.focus !== undefined) for (const k of AXIS_CODES) if (!opts.focus.includes(k)) weights[k] = 0
+  const parts: { id: SegmentId; s: number }[] = []
+  for (const st of planSession({ sessionSeed: sessionId, weights, targetS: opts.targetS ?? A15_TARGET_S })) {
+    const s = st.kind === 'block' ? st.item.expected_time_s : st.budget_s
+    const last = parts.at(-1)
+    if (last?.id === st.segment) last.s += s
+    else parts.push({ id: st.segment, s })
+  }
+  return parts
+}
+
+/** The part whose interstitial the break precedes: the boundary nearest `atS` in planned time (earlier on a tie), or null. */
+function halfWayPart(parts: readonly { id: SegmentId; s: number }[], atS: number): SegmentId | null {
+  let best: SegmentId | null = null
+  let gap = Infinity
+  let cum = 0
+  for (let i = 1; i < parts.length; i++) {
+    cum += parts[i - 1]!.s
+    if (Math.abs(cum - atS) < gap) {
+      gap = Math.abs(cum - atS)
+      best = parts[i]!.id
+    }
+  }
+  return best
+}
+
+describe('the clock waits between parts (UX-066, §10)', () => {
+  it('stands still on every "Up next" screen, the first one after Begin included, until Start', () => {
+    const bot = new Bot({ sessionId: 's_CLOCKWAITS0001' }, { interstitialS: 240 })
+    let interstitials = 0
     for (let i = 0; i < 3000; i++) {
       const v = bot.view()
       if (v.phase === 'finished') break
+      if (v.phase === 'interstitial') {
+        interstitials++
+        expect(v.clockHeld).toBe(true)
+        const at = v.elapsedS
+        bot.wait(240)
+        bot.run.tick()
+        expect(bot.view().elapsedS, `${v.segment?.id}`).toBe(at)
+        bot.run.startSegment()
+        expect(bot.view().clockHeld).toBe(false)
+        continue
+      }
+      bot.run.tick()
+      bot.step()
+    }
+    expect(interstitials).toBe(6)
+    // Four minutes on each of six screens left out: the session is as long as one that started each part at once.
+    const quick = new Bot({ sessionId: 's_CLOCKWAITS0001' })
+    quick.finish()
+    expect(bot.run.sessionState().durationS).toBeCloseTo(quick.run.sessionState().durationS, 6)
+  })
+
+  it('Skip on an interstitial moves to the next one with the clock still held', () => {
+    const bot = new Bot({ sessionId: 's_CLOCKSKIP00001', breakAtS: 1e9 })
+    bot.wait(100)
+    bot.run.skipAxis() // reaction time
+    expect(bot.view().phase).toBe('interstitial')
+    bot.wait(100)
+    bot.run.skipAxis() // Matrix & Series
+    bot.wait(100)
+    expect(bot.view().segment?.id).toBe('spatial')
+    expect(bot.view().elapsedS).toBe(0)
+    bot.run.startSegment()
+    bot.wait(7)
+    expect(bot.view().elapsedS).toBe(7)
+  })
+
+  it('a hard stop cannot come while the clock waits, and comes on time once a part runs', () => {
+    const bot = new Bot({ sessionId: 's_CLOCKSTOP00001', hardStopS: 600 })
+    bot.wait(3600)
+    bot.run.tick()
+    expect(bot.view().phase).toBe('interstitial')
+    bot.run.startSegment()
+    bot.wait(601)
+    bot.run.tick()
+    expect(bot.view().ended).toBe('hard_stop')
+    expect(bot.run.sessionState().durationS).toBe(600)
+  })
+})
+
+describe('the break, at the part boundary nearest half-way (UX-066, §10)', () => {
+  it('goes before the part whose planned start is nearest half the target: Working Memory in the A15 plan', () => {
+    for (const id of ['s_BREAKHALF00001', 's_BREAKHALF00002', 's_BREAKHALF00003']) {
+      const parts = plannedParts(id)
+      const bot = new Bot({ sessionId: id })
+      expect(bot.view().breakAtS).toBe(A15_TARGET_S / 2)
+      expect(bot.view().breakBefore).toBe(halfWayPart(parts, A15_TARGET_S / 2))
+      expect(bot.view().breakBefore).toBe('memory')
+    }
+  })
+
+  it('is offered once, between two parts, before that part’s "Up next" screen; declining carries on', () => {
+    const bot = new Bot({ sessionId: 's_BREAKDECLINE01' }, { blockScale: 2, itemScale: 1.5, onBreakOffer: 'decline' })
+    let offers = 0
+    let prev = ''
+    let after: string | null = null
+    for (let i = 0; i < 3000; i++) {
+      const v = bot.view()
+      if (v.phase === 'finished') break
+      if (after === 'next' && v.phase !== 'break_offer') after = v.phase === 'interstitial' ? (v.segment?.id ?? '') : v.phase
       if (v.phase === 'break_offer') {
         offers++
-        expect(v.elapsedS).toBeGreaterThanOrEqual(BREAK_AT_S)
-        // Never mid-unit: it comes right after a unit ended (an answer rated, a block done, an item timed out), with nothing on screen.
+        // At the end of a part (an answer rated, a block done, an item timed out), with nothing on screen and the clock held.
         expect(['confidence', 'block', 'item'], `phase before the offer`).toContain(prev)
         expect(v.item).toBeNull()
         expect(v.block).toBeNull()
+        expect(v.clockHeld).toBe(true)
+        const at = v.elapsedS
+        bot.wait(120)
+        expect(bot.view().elapsedS).toBe(at)
+        after = 'next'
       }
       prev = v.phase
       bot.run.tick()
       bot.step()
     }
     expect(offers).toBe(1)
+    expect(after).toBe('memory')
     expect(bot.run.view().phase).toBe('finished')
   })
 
-  it('a break pauses the clock; the time on it is not session time', () => {
-    const bot = new Bot({ sessionId: 's_BREAKTAKE00004' }, { blockScale: 2, itemScale: 1.5, onBreakOffer: 'take', breakS: 1200 })
+  it('a break holds the clock; the time on it is not session time, and the clock waits on until Start', () => {
+    const bot = new Bot({ sessionId: 's_BREAKTAKE00004' }, { onBreakOffer: 'take', breakS: 1200 })
     const v = bot.until((x) => x.phase === 'break_offer')
     const at = v.elapsedS
     bot.run.takeBreak()
@@ -496,40 +614,62 @@ describe('the 30-minute break (§10)', () => {
     bot.wait(1200)
     expect(bot.view().elapsedS).toBeCloseTo(at, 3)
     bot.run.resume()
-    expect(['interstitial', 'item', 'block']).toContain(bot.view().phase)
+    expect(bot.view().phase).toBe('interstitial')
+    expect(bot.view().segment?.id).toBe('memory')
+    bot.wait(60)
     expect(bot.view().elapsedS).toBeCloseTo(at, 3)
+    bot.run.startSegment()
+    bot.wait(5)
+    expect(bot.view().elapsedS).toBeCloseTo(at + 5, 3)
     expect(bot.run.sessionState().flags.breaks).toBe(1)
   })
 
-  it('the offer waits for the end of an item in progress', () => {
+  it('never comes in the middle of a part, however long it runs', () => {
     const bot = new Bot({ sessionId: 's_BREAKWAITS0001' })
     const v = bot.until((x) => x.phase === 'item')
-    bot.wait(BREAK_AT_S - 10 - v.elapsedS) // 10 s before the 30th minute
-    bot.run.itemShown(bot.t)
-    bot.wait(20) // the item is on screen when the 30th minute passes
+    bot.wait(40 * 60 - v.elapsedS) // 40 minutes into the session, inside Matrix & Series
     bot.run.tick()
-    expect(bot.view().phase).toBe('item') // not interrupted
-    const full = bot.fullItem(bot.view().item!.item_id)
-    bot.run.itemResponded(full.options_count === undefined ? '1' : 0)
-    expect(bot.view().phase).toBe('confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
-    expect(bot.view().phase).toBe('break_offer')
-    expect(bot.view().elapsedS).toBeGreaterThan(BREAK_AT_S)
+    expect(bot.view().phase).toBe('item') // timed out, and the part goes on (its floor)
+    bot.until((x) => x.phase === 'interstitial' && x.segment?.id === 'spatial')
+    expect(bot.phases).not.toContain('break_offer')
   })
 
-  it('is not offered in a short session, nor once the hard stop has come first', () => {
-    const short = new Bot({ sessionId: 's_BREAKSHORT0001' })
-    short.finish()
-    expect(short.phases).not.toContain('break_offer')
-    expect(short.run.view().elapsedS).toBeLessThan(BREAK_AT_S)
-    // A hard stop earlier than the break time ends the session first, and never offers a break after it.
-    const early = new Bot({ sessionId: 's_BREAKSTOP00001', hardStopS: 600, breakAtS: 1200 }, { blockScale: 2, itemScale: 2 })
+  it('a skipped half-way part moves the offer to the next "Up next" screen shown', () => {
+    const bot = new Bot({ sessionId: 's_BREAKSKIPHALF1', skipped: ['WM'] })
+    const parts = plannedParts('s_BREAKSKIPHALF1', { skipped: ['WM'] })
+    const half = halfWayPart(parts, A15_TARGET_S / 2)
+    expect(bot.view().breakBefore).toBe(half)
+    // Skip the part the break goes before, mid-session: the offer comes before the next one after it.
+    const b2 = new Bot({ sessionId: 's_BREAKSKIPHALF2' })
+    b2.until((x) => x.phase === 'block' && x.segment?.id === 'rt')
+    b2.run.skipAxis('WM') // Working Memory, the half-way part, before it is reached
+    const offer = b2.until((x) => x.phase === 'break_offer')
+    expect(offer.segment?.id).toBe('spatial') // the part that just ended
+    b2.run.declineBreak()
+    expect(b2.view().phase).toBe('interstitial')
+    expect(b2.view().segment?.id).toBe('quant')
+  })
+
+  it('is not offered in a plan of one part, nor once the hard stop has come first, nor when every part after it is skipped', () => {
+    const one = new Bot({ sessionId: 's_BREAKONEPART01', focus: ['QR'] })
+    expect(one.view().breakBefore).toBeNull()
+    one.finish()
+    expect(one.phases).not.toContain('break_offer')
+    // A hard stop before half-way ends the session first, and never offers a break after it.
+    const early = new Bot({ sessionId: 's_BREAKSTOP00001', hardStopS: 600 }, { blockScale: 2, itemScale: 2 })
     early.finish()
     expect(early.run.view().ended).toBe('hard_stop')
     expect(early.phases).not.toContain('break_offer')
     early.run.takeBreak()
     expect(early.run.view().phase).toBe('finished')
     expect(early.run.sessionState().flags.breaks).toBeUndefined()
+    // Every part from the half-way one on skipped: the session ends without an offer.
+    const rest = new Bot({ sessionId: 's_BREAKRESTSKIP1', skipped: ['WM', 'QR', 'PS'] }, {})
+    expect(rest.view().breakBefore).toBe('spatial')
+    rest.until((x) => x.phase === 'block' && x.segment?.id === 'rt')
+    rest.run.skipAxis('SPA')
+    rest.finish()
+    expect(rest.phases).not.toContain('break_offer')
   })
 
   it('a break cannot be taken when none is offered', () => {
@@ -539,6 +679,150 @@ describe('the 30-minute break (§10)', () => {
     bot.run.resume()
     expect(bot.view().phase).toBe('interstitial')
   })
+
+  it('a 20-minute focus session with two or more parts gets its break at its own half-way boundary', () => {
+    const focus: AxisCode[] = ['MAT', 'WM', 'QR']
+    const bot = new Bot({ sessionId: 's_BREAKFOCUS0001', focus, targetS: 20 * 60 })
+    const parts = plannedParts('s_BREAKFOCUS0001', { focus, targetS: 20 * 60 })
+    expect(parts.map((p) => p.id)).toEqual(['matrix_series', 'memory', 'quant'])
+    expect(bot.view().breakBefore).toBe(halfWayPart(parts, 10 * 60))
+    bot.finish()
+    expect(bot.phases.filter((p) => p === 'break_offer')).toHaveLength(1)
+  })
+})
+
+/** What the property tests below do at each step of a session. */
+type Act = 'go' | 'skip_here' | 'skip_other' | 'slow' | 'timeout'
+
+describe('clock, break, part caps and floor: properties over plans and skip patterns (UX-066)', () => {
+  /** A plan (focus, skipped from the start), a seed, and what the taker does: waits on screens, skips, slow items. */
+  const scenario = fc.record({
+    seed: fc.integer({ min: 0, max: 9999 }),
+    focus: fc.option(fc.subarray(['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] as AxisCode[], { minLength: 1 }), { nil: undefined }),
+    skipped: fc.subarray(['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] as AxisCode[], { maxLength: 3 }),
+    acts: fc.array(fc.constantFrom<Act>('go', 'go', 'go', 'go', 'skip_here', 'skip_other', 'slow', 'timeout'), { minLength: 20, maxLength: 80 }),
+    waitS: fc.integer({ min: 0, max: 900 }),
+    take: fc.boolean(),
+  })
+
+  it('the clock is held on every interstitial and the break offer; the break is offered once, at the planned half-way boundary; no part starts with more than its planned share', () => {
+    fc.assert(
+      fc.property(scenario, ({ seed, focus, skipped, acts, waitS, take }) => {
+        const sessionId = `s_PROPCLOCK${String(seed).padStart(6, '0')}`
+        const bot = new Bot({ sessionId, skipped, ...(focus === undefined ? {} : { focus }) }, { onBreakOffer: take ? 'take' : 'decline', breakS: waitS })
+        const parts = plannedParts(sessionId, { skipped, ...(focus === undefined ? {} : { focus }) })
+        const half = halfWayPart(parts, A15_TARGET_S / 2)
+        expect(bot.view().breakBefore).toBe(half)
+        const halfIdx = half === null ? Infinity : parts.findIndex((p) => p.id === half)
+        const order = parts.map((p) => p.id)
+        let offers = 0
+        let offeredBeforeIdx = -1
+        let pendingOffer = false
+        let step = 0
+        for (let n = 0; n < 4000; n++) {
+          const v = bot.view()
+          if (v.phase === 'finished') break
+          const act = acts[step++ % acts.length]!
+          if (v.phase === 'interstitial' || v.phase === 'break_offer') {
+            expect(v.clockHeld, v.phase).toBe(true)
+            const at = v.elapsedS
+            bot.wait(waitS)
+            bot.run.tick()
+            expect(bot.view().elapsedS, `${v.phase} ${v.segment?.id}`).toBe(at)
+          }
+          if (v.phase === 'interstitial') {
+            const idx = order.indexOf(v.segment!.id)
+            if (pendingOffer) {
+              offeredBeforeIdx = idx
+              pendingOffer = false
+            }
+            // An interstitial at or after the half-way part comes only after the one offer.
+            if (idx >= halfIdx) expect(offers, `offer before ${v.segment?.id}`).toBe(1)
+            if (act === 'skip_here') bot.run.skipAxis()
+            else bot.run.startSegment()
+            continue
+          }
+          if (v.phase === 'break_offer') {
+            offers++
+            pendingOffer = true
+          }
+          if (act === 'skip_here' && v.skippable !== null && v.phase !== 'break_offer') {
+            bot.run.skipAxis()
+            continue
+          }
+          if (act === 'skip_other') {
+            const later = v.segments.slice(v.segmentIndex + 1).find((s) => s.status === 'upcoming')
+            const k = later?.axes.find((a) => !v.skipped.includes(a))
+            if (k !== undefined) bot.run.skipAxis(k)
+          }
+          if ((act === 'slow' || act === 'timeout') && v.phase === 'item' && v.item !== null) {
+            bot.wait(act === 'timeout' ? v.item.time_limit_s + 1 : v.item.time_limit_s / 2)
+            bot.run.tick()
+            if (bot.view().phase !== 'item') continue
+          }
+          bot.run.tick()
+          bot.step()
+        }
+        expect(bot.view().phase).toBe('finished')
+        expect(offers).toBeLessThanOrEqual(1)
+        if (offers === 1 && offeredBeforeIdx >= 0) {
+          // The offer came right before the first interstitial shown at or after the half-way part.
+          expect(offeredBeforeIdx).toBeGreaterThanOrEqual(halfIdx)
+        }
+        // No CAT part starts with more than its planned share, whatever was skipped before it.
+        for (const b of bot.run.result().budgets) expect(b.budgetS, b.segment).toBeLessThanOrEqual(b.plannedS + 1e-9)
+      }),
+      { numRuns: 40 },
+    )
+  }, 120_000)
+
+  it('a skip never makes a later part longer: every CAT part’s budget and its "About N min" are at most the plan’s, and skipping shortens the session', () => {
+    for (let i = 0; i < 8; i++) {
+      const id = `s_CAPSKIP${String(i).padStart(7, '0')}`
+      const plain = new Bot({ sessionId: id }).finish()
+      for (const skip of ['RT', 'MAT', 'SPA'] as AxisCode[]) {
+        const bot = new Bot({ sessionId: id })
+        const shown: Partial<Record<SegmentId, number>> = {}
+        bot.until((v) => {
+          if (v.phase === 'interstitial' && v.segment !== null) {
+            shown[v.segment.id] ??= v.segment.minutes
+            if (v.segment.axes.includes(skip) && !v.skipped.includes(skip)) bot.run.skipAxis()
+          }
+          return v.phase === 'finished'
+        })
+        const parts = plannedParts(id)
+        for (const id2 of ['matrix_series', 'spatial', 'quant'] as SegmentId[]) {
+          const planned = parts.find((p) => p.id === id2)!.s
+          if (shown[id2] !== undefined) expect(shown[id2], `${skip} → ${id2}`).toBeLessThanOrEqual(Math.max(1, Math.round(planned / 60)))
+        }
+        for (const b of bot.run.result().budgets) expect(b.budgetS).toBeLessThanOrEqual(b.plannedS + 1e-9)
+        expect(bot.run.result().itemsByAxis.QR ?? 0, `QR floor after skipping ${skip}`).toBeGreaterThanOrEqual(3)
+        expect(bot.run.sessionState().durationS, `skipping ${skip} shortens the session`).toBeLessThan(plain.sessionState().durationS)
+      }
+    }
+  }, 120_000)
+
+  it('the coverage floor holds for any skip pattern: every power skill not skipped whose part ran gets 3 items', () => {
+    fc.assert(
+      fc.property(scenario, ({ seed, skipped, acts }) => {
+        const sessionId = `s_PROPFLOOR${String(seed).padStart(6, '0')}`
+        const bot = new Bot({ sessionId, skipped: skipped.filter((k) => k !== 'QR') }, { blockScale: 1 + (seed % 7) / 3 })
+        let step = 0
+        bot.until((v) => {
+          const act = acts[step++ % acts.length]!
+          if (act === 'skip_other' && v.phase === 'interstitial') {
+            const later = v.segments.slice(v.segmentIndex + 1).find((s) => s.status === 'upcoming' && !s.axes.includes('QR'))
+            const k = later?.axes.find((a) => !v.skipped.includes(a))
+            if (k !== undefined) bot.run.skipAxis(k)
+          }
+          return v.phase === 'finished'
+        })
+        const r = bot.run.result()
+        if (r.reason === 'complete') for (const k of CAT) if (!r.skipped.includes(k)) expect(r.itemsByAxis[k] ?? 0, k).toBeGreaterThanOrEqual(3)
+      }),
+      { numRuns: 25 },
+    )
+  }, 120_000)
 })
 
 describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', () => {
@@ -614,6 +898,74 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     const rated = bot.run.sessionState().responses.filter((t) => t[5] !== null)
     const wrong = rated.filter((t) => t[3] === 0).length
     expect(r.calibration!.brier).toBeCloseTo(wrong / rated.length, 12)
+  })
+
+  it('an untouched slider is recorded as not rated: null in the tuple, counted in confidence_untouched_n, and left out of the calibration (UX-063)', () => {
+    const bot = new Bot({ sessionId: 's_UNTOUCHED00001', skipped: ['RT', 'WM', 'PS'] }, { touch: 'random', confidence: 'max' })
+    bot.finish()
+    const st = bot.run.sessionState()
+    const items = st.responses.filter((t) => t[0].startsWith('i:') && t[3] !== null)
+    const unrated = items.filter((t) => t[5] === null)
+    const rated = items.filter((t) => t[5] !== null)
+    expect(unrated.length).toBeGreaterThan(2)
+    expect(rated.length).toBeGreaterThan(2)
+    expect(st.flags.confidence_untouched_n).toBe(unrated.length)
+    // A touched rating keeps its value; the untouched ones are not in the calibration at all.
+    for (const t of rated) expect(t[5]).toBe(100)
+    const r = bot.run.result()
+    expect(r.calibration!.n).toBe(rated.length)
+    expect(r.calibration!.mean_confidence).toBe(1)
+    // The save re-scores to the same calibration: the stored null is "no rating" there too.
+    const save = saveWithSession(null, st, { ctx: SAVE_CTX, createdMs: st.startedMs + 3_600_000, anonId: newAnonId() })
+    const re = rescoreSessions(save)
+    expect(re.n_scored).toBe(r.observations.length)
+    expect(re.theta[AXIS_INDEX.CAL]).toBeCloseTo(r.score!.theta[AXIS_INDEX.CAL]!, 9)
+  })
+
+  it('no untouched rating, no flag; every rating untouched, no calibration at all', () => {
+    const touched = new Bot({ sessionId: 's_UNTOUCHED00002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    touched.finish()
+    expect(touched.run.sessionState().flags.confidence_untouched_n).toBeUndefined()
+    expect(touched.run.result().calibration!.n).toBeGreaterThan(0)
+    const never = new Bot({ sessionId: 's_UNTOUCHED00003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] }, { touch: 'never' })
+    never.finish()
+    const st = never.run.sessionState()
+    expect(st.responses.every((t) => t[5] === null)).toBe(true)
+    expect(st.flags.confidence_untouched_n).toBe(st.responses.length)
+    expect(never.run.result().calibration).toBeNull()
+    expect(never.run.result().observations.some((o) => o.axis === 'CAL')).toBe(false)
+  })
+
+  it('property: untouched gives null and one count, touched gives the value, whatever the order', () => {
+    fc.assert(
+      fc.property(fc.array(fc.tuple(fc.boolean(), fc.integer({ min: 0, max: 100 })), { minLength: 1, maxLength: 12 }), (ratings) => {
+        const bot = new Bot({ sessionId: 's_UNTOUCHPROP001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], stopSd: 0.01 })
+        const given: (number | null)[] = []
+        for (const [touched, raw] of ratings) {
+          const v = bot.until((x) => x.phase === 'confidence' || x.phase === 'finished')
+          if (v.phase === 'finished') break
+          const floor = v.confidence!.floorPct
+          const pct = Math.max(floor, raw)
+          bot.run.confirmConfidence(pct, touched)
+          given.push(touched ? pct : null)
+        }
+        const st = bot.run.sessionState()
+        expect(st.responses.map((t) => t[5])).toEqual(given)
+        const n = given.filter((g) => g === null).length
+        expect(st.flags.confidence_untouched_n).toBe(n === 0 ? undefined : n)
+        expect(bot.run.result().calibration?.n ?? 0).toBe(given.length - n)
+      }),
+      { numRuns: 30 },
+    )
+  })
+
+  it('an invalid percentage is refused whether or not the slider was touched', () => {
+    const bot = new Bot({ sessionId: 's_UNTOUCHED00004', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    bot.until((x) => x.phase === 'confidence')
+    bot.run.confirmConfidence(101, false)
+    bot.run.confirmConfidence(-1, false)
+    expect(bot.view().phase).toBe('confidence')
+    expect(bot.run.sessionState().flags.confidence_untouched_n).toBeUndefined()
   })
 
   it('below 10 rated answers there is no calibration observation', () => {
@@ -754,6 +1106,8 @@ describe('the record the save library takes (§8, M1.17, M1.Q)', () => {
 
   it('the session state carries the device, an id and the active duration', () => {
     const bot = new Bot({ sessionId: 's_SAVESTATE00001' })
+    bot.wait(20) // the first "Up next" screen is not session time
+    bot.run.startSegment()
     bot.wait(75.4)
     const st = bot.run.sessionState()
     expect(st.sessionId).toBe('s_SAVESTATE00001')
@@ -872,7 +1226,8 @@ describe('a notice lives for the screen it was raised on and the next one (UX-00
   })
 
   it('"skipped" told in the middle of a part is told on the next part’s interstitial, and not on its first block', () => {
-    const bot = new Bot({ sessionId: 's_NOTICELIFE0002', skipped: ['MAT', 'SPA', 'QR', 'PS'] })
+    // Three parts, the break before the last: none between reaction time and Working Memory.
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0002', skipped: ['MAT', 'SPA', 'QR'], breakAtS: 1e9 })
     bot.run.startSegment() // reaction time
     expect(bot.view().phase).toBe('block')
     bot.run.skipAxis() // the part on screen: skipped, the next part is Working Memory
@@ -884,19 +1239,21 @@ describe('a notice lives for the screen it was raised on and the next one (UX-00
     expect(bot.view().notice).toBeNull()
   })
 
-  it('a time-out is told on the next question, and a break between the two does not stretch it', () => {
-    const bot = new Bot({ sessionId: 's_NOTICELIFE0003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], breakAtS: 5 })
+  it('a time-out that ends a part is told on the break offer after it, and the break does not stretch it', () => {
+    // Two parts, the break between them; Matrix & Series has no floor (covered before), so the time-out
+    // that runs it past its budget ends the part.
+    const bot = new Bot({ sessionId: 's_NOTICELIFE0003', skipped: ['RT', 'WM', 'PS', 'QR'], priorItemCounts: { MAT: 3 } })
     bot.run.startSegment()
     const first = bot.view().item!
-    bot.wait(first.time_limit_s + 1)
+    bot.wait(Math.max(first.time_limit_s + 1, A15_TARGET_S))
     bot.run.tick()
-    // The break is offered at the boundary after the timed-out item: it is the screen the notice is told on ...
+    // The break is offered at the end of the part: it is the screen the notice is told on ...
     expect(bot.view().phase).toBe('break_offer')
     expect(bot.view().notice?.kind).toBe('timeout')
-    // ... and the question after it is two screens on.
+    // ... and the "Up next" screen after it is two screens on.
     bot.run.declineBreak()
-    expect(bot.view().phase).toBe('item')
-    expect(bot.view().item!.item_id).not.toBe(first.item_id)
+    expect(bot.view().phase).toBe('interstitial')
+    expect(bot.view().segment?.id).toBe('spatial')
     expect(bot.view().notice).toBeNull()
   })
 
@@ -992,3 +1349,92 @@ describe('a notice lives for the screen it was raised on and the next one (UX-00
   })
 })
 
+
+describe('a continuation of an interrupted session (UX-064; provisional default, D6 option B)', () => {
+  it('shows the parts finished earlier as done, starts at the first part left, and is flagged as a continuation', () => {
+    const bot = new Bot({ sessionId: 's_CONTINUE000001', continues: { done: ['rt', 'matrix_series'], skipped: [] } })
+    const v = bot.view()
+    expect(v.phase).toBe('interstitial')
+    expect(v.segment?.id).toBe('spatial')
+    expect(v.segments.map((x) => x.status)).toEqual(['done', 'done', 'current', 'upcoming', 'upcoming', 'upcoming'])
+    expect(v.skipped).toEqual([])
+    expect(bot.run.sessionState().flags[CONTINUATION_FLAG]).toBe(true)
+    const seen: SegmentId[] = []
+    for (let i = 0; i < 3000; i++) {
+      const w = bot.view()
+      if (w.phase === 'interstitial' && w.segment !== null && seen.at(-1) !== w.segment.id) seen.push(w.segment.id)
+      if (w.phase === 'finished') break
+      bot.run.tick()
+      bot.step()
+    }
+    expect(seen).toEqual(['spatial', 'memory', 'quant', 'coding_reading'])
+    const end = bot.view()
+    expect(end.ended).toBe('complete')
+    expect(end.segments.map((x) => x.status)).toEqual(ORDER.map(() => 'done'))
+    expect(end.counts.blocks).toBe(5) // span ×3, coding, reading: no reaction-time block
+    const st = bot.run.sessionState()
+    const families = new Set(st.responses.map(([id]) => parseItemId(id)!.family))
+    for (const f of ['rt_simple', 'rt_choice4']) expect(families.has(f)).toBe(false)
+    expect(bot.run.result().itemsByAxis.MAT).toBeUndefined()
+    // Its own parts are done here; the ones done earlier are the interrupted session's.
+    expect(st.flags[doneFlag('rt')]).toBeUndefined()
+    expect(st.flags[doneFlag('matrix_series')]).toBeUndefined()
+    for (const id of ['spatial', 'memory', 'quant', 'coding_reading'] as const) expect(st.flags[doneFlag(id)]).toBe(true)
+    expect(st.flags[COMPLETED_FLAG]).toBe(true)
+    expect(st.flags[CONTINUATION_FLAG]).toBe(true)
+    expect(bot.run.serverFlags()).not.toHaveProperty(CONTINUATION_FLAG)
+  })
+
+  it('a skill skipped earlier stays skipped: on the checklist, in the flags, and never run', () => {
+    const bot = new Bot({ sessionId: 's_CONTINUE000002', continues: { done: ['rt'], skipped: ['MAT'] } })
+    expect(bot.view().segment?.id).toBe('spatial')
+    expect(bot.view().segments.map((x) => x.status)).toEqual(['done', 'skipped', 'current', 'upcoming', 'upcoming', 'upcoming'])
+    expect(bot.view().skipped).toEqual(['MAT'])
+    bot.finish()
+    expect(bot.run.sessionState().flags.skipped_mat).toBe(true)
+    expect(bot.run.result().itemsByAxis.MAT).toBeUndefined()
+  })
+
+  it('its target is the planned time of the parts it runs, and its parts keep their planned shares', () => {
+    const id = 's_CONTINUE000003'
+    const parts = plannedParts(id)
+    const planned = (ids: readonly SegmentId[]): number => parts.filter((p) => ids.includes(p.id)).reduce((t, p) => t + p.s, 0)
+    expect(new Bot({ sessionId: id, continues: { done: [], skipped: [] } }).view().targetS).toBeCloseTo(A15_TARGET_S, 6)
+    const bot = new Bot({ sessionId: id, continues: { done: ['rt', 'matrix_series'], skipped: [] } })
+    expect(bot.view().targetS).toBeCloseTo(planned(['spatial', 'memory', 'quant', 'coding_reading']), 6)
+    expect(bot.view().targetS).toBeLessThan(A15_TARGET_S)
+    bot.finish()
+    for (const b of bot.run.result().budgets) expect(b.budgetS).toBeLessThanOrEqual(b.plannedS + 1e-9)
+  })
+
+  it('offers the break only between two of its own parts, never before its first one', () => {
+    const late = new Bot({ sessionId: 's_CONTINUE000004', continues: { done: ['rt', 'matrix_series', 'spatial'], skipped: [] } }, { onBreakOffer: 'decline' })
+    expect(late.view().breakBefore).toBeNull()
+    expect(late.view().segment?.id).toBe('memory')
+    late.finish()
+    expect(late.phases).not.toContain('break_offer')
+    const early = new Bot({ sessionId: 's_CONTINUE000005', continues: { done: ['rt'], skipped: [] } }, { onBreakOffer: 'decline' })
+    expect(early.view().breakBefore).toBe('memory')
+    early.finish()
+    expect(early.phases.filter((p) => p === 'break_offer')).toHaveLength(1)
+  })
+
+  it('re-scores with the interrupted session as one sitting: the part run in both is not practice-adjusted', () => {
+    const anonId = newAnonId()
+    const first = new Bot({ sessionId: 's_CONTINUE000006', startedMs: 1_790_000_000_000 })
+    first.until((v) => v.phase === 'confidence' && v.segment?.id === 'spatial')
+    first.step() // one Spatial answer recorded, then the tab is reloaded
+    const base = saveWithSession(null, first.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId })
+    const u = findUnfinished(base, 1_790_000_200_000)!
+    expect(u.next).toBe('spatial')
+    const cont = new Bot({ sessionId: 's_CONTINUE000007', startedMs: 1_790_000_300_000, continues: { done: u.done, skipped: u.skipped }, seenFamilies: base.seen_families })
+    cont.finish()
+    const save = saveWithSession(base, cont.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_400_000, anonId })
+    const r = rescoreSessions(save)
+    expect(r.sessions.map((x) => x.session_id)).toEqual(['s_CONTINUE000006', 's_CONTINUE000007'])
+    expect(r.sessions[1]!.continuation).toBe(true)
+    expect(r.sessions[1]!.ordinals.SPA).toBe(1)
+    expect(r.sessions[1]!.rho.SPA ?? 0).toBe(0)
+    expect(Object.values(r.sessions[1]!.rho).every((x) => x === 0)).toBe(true)
+  })
+})

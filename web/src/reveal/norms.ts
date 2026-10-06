@@ -18,6 +18,7 @@
  * rewarding speed there changes the construct and penalises careful people; it is shown apart.
  */
 
+import { axisName } from '../axis-names'
 import { AXES, type AxisCode } from '../engine/axes'
 import { orderSessions } from '../engine/retest'
 import { blockResponseOf } from '../save/rescore'
@@ -163,6 +164,6 @@ export function paceByAxis(save: SaveFileV1, minAnswers = PACE_MIN_ANSWERS): Pac
     const e = took.get(a.code)
     if (e === undefined || e.s.length < minAnswers) return []
     const ratio = median(e.ratio)
-    return [{ code: a.code, name: a.name, n: e.s.length, medianS: median(e.s), typicalS: median(e.expected), ratio, label: paceLabel(ratio) }]
+    return [{ code: a.code, name: axisName(a.code), n: e.s.length, medianS: median(e.s), typicalS: median(e.expected), ratio, label: paceLabel(ratio) }]
   })
 }

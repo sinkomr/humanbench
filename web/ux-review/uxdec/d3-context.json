@@ -1,0 +1,143 @@
+{
+  "package": "d3-context",
+  "summary_plain": "Every skill on the results page sits on a scale whose middle mark, 0 SD, is a starting guess set from expected question difficulty and published figures, not from other HumanBench takers. The page never says so, yet every 'Above / Below / Overlaps 0 SD' label and greyed-out spoke rests on it. For reaction time the guess is also narrow: a 470 ms simple median, common on touch screens because of device delay, scores about −3 SD, where only about 0.1% of people should land. D3 asks which sentence should explain 0 SD (triage: option B) and whether to review the reaction-time width once real data exist.",
+  "what_0sd_means": "SD (standard deviation) is the usual spread between people. 0 SD is each skill's reference middle: the dashed ring on the blob, the dashed tick on each bar. With no taker data yet, each 0 is set in advance (DESIGN §7.3, ROADMAP A12): for question-based skills from estimated question difficulty anchored to published ICAR figures (M1.P); for reaction time from a fixed web reference of 300 ms (simple) and 450 ms (choice): published lab times of about 200–250 ms plus an allowance for device delay (prior.ts).",
+  "why_it_matters": "Each skill has a 90% range (where its true value very likely lies). Range wholly above 0: 'Above 0 SD'; wholly below: 'Below 0 SD'; straddling 0: 'Overlaps 0 SD', and the spoke is greyed out (muted, §9.5). Move 0 and every label moves. Peaks compare skills with the person's own average, but one skill pushed far down drags that average down and can make others look like peaks. Readers will take 'Below 0 SD' as 'below most people'.",
+  "rt_example": {
+    "formula": "x = median ln(RT in ms) of the valid trials; theta = (beta − x) / s, beta = ln 300 ms (simple) or ln 450 ms (choice), s = 0.15. In words: each 16% slower median is 1 SD lower.",
+    "table": [
+      {
+        "median_ms": 250,
+        "mode": "simple",
+        "theta": 1.22
+      },
+      {
+        "median_ms": 300,
+        "mode": "simple",
+        "theta": 0.0
+      },
+      {
+        "median_ms": 350,
+        "mode": "simple",
+        "theta": -1.03
+      },
+      {
+        "median_ms": 400,
+        "mode": "simple",
+        "theta": -1.92
+      },
+      {
+        "median_ms": 470,
+        "mode": "simple",
+        "theta": -2.99
+      },
+      {
+        "median_ms": 550,
+        "mode": "simple",
+        "theta": -4.04
+      },
+      {
+        "median_ms": 650,
+        "mode": "simple",
+        "theta": -5.15
+      },
+      {
+        "median_ms": 250,
+        "mode": "choice4",
+        "theta": 3.92
+      },
+      {
+        "median_ms": 300,
+        "mode": "choice4",
+        "theta": 2.7
+      },
+      {
+        "median_ms": 350,
+        "mode": "choice4",
+        "theta": 1.68
+      },
+      {
+        "median_ms": 400,
+        "mode": "choice4",
+        "theta": 0.79
+      },
+      {
+        "median_ms": 470,
+        "mode": "choice4",
+        "theta": -0.29
+      },
+      {
+        "median_ms": 550,
+        "mode": "choice4",
+        "theta": -1.34
+      },
+      {
+        "median_ms": 650,
+        "mode": "choice4",
+        "theta": -2.45
+      }
+    ],
+    "interval_note": "Estimate: one simple block (30 trials) gives a 90% range of about ±0.8 SD, assuming the trial-to-trial spread the bank's simulation uses. So 470 ms means roughly −3.8 to −2.2 SD; the shown value is pulled a little toward 0 (estimate: about −2.4 after one block). The label is 'Below 0 SD' either way.",
+    "why_touch_screens": "Web times include device delay: tens of ms (§7.3), more on some devices and on touch screens (§11.6). One table serves every device today, though §11.6 asks for norms per device class. Width matters too: with s = 0.20, 470 ms would be −2.2 SD, not −3.0 (calculation, not data)."
+  },
+  "options": [
+    {
+      "id": "A",
+      "current_text": {
+        "RING_CAPTION": "Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability.",
+        "BARS_NOTE": "Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD."
+      },
+      "proposed_text": {
+        "RING_CAPTION": "Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability. 0 SD marks where we expect a typical adult to land on each skill, and 1 SD is the usual spread between people. For now these points come from the expected difficulty of the questions and from published figures, not from other people's results, so the scale is provisional and may shift.",
+        "BARS_NOTE": "Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD. 0 SD marks where we expect a typical adult to land on each skill, and 1 SD is the usual spread between people. For now these points come from the expected difficulty of the questions and from published figures, not from other people's results, so the scale is provisional and may shift."
+      },
+      "what_changes_for_people": "Two more sentences under the blob and the bars: what 0 SD and 1 SD mean, and that the scale may shift.",
+      "cost": "Longest. 'Typical adult' is a population claim the numbers cannot back yet (A12 withholds even 'typical HumanBench taker'). Small copy edit plus pinned tests."
+    },
+    {
+      "id": "B",
+      "current_text": {
+        "RING_CAPTION": "Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability.",
+        "BARS_NOTE": "Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD."
+      },
+      "proposed_text": {
+        "RING_CAPTION": "Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability. 0 SD is a provisional reference point, set from question difficulty and published figures, not from other takers.",
+        "BARS_NOTE": "Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD. 0 SD is a provisional reference point, set from question difficulty and published figures, not from other takers."
+      },
+      "what_changes_for_people": "One sentence: 0 SD is a provisional reference, not other takers' average.",
+      "cost": "Does not say what 1 SD is; 'published figures' is loose for reaction time. Same small edit."
+    },
+    {
+      "id": "C",
+      "current_text": {
+        "RING_CAPTION": "Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability.",
+        "BARS_NOTE": "Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD."
+      },
+      "proposed_text": null,
+      "what_changes_for_people": "Nothing until M4 norms replace the guesses.",
+      "cost": "No work, but 'Below 0 SD' stays unexplained and is read as 'below other people'."
+    }
+  ],
+  "rt_prior_review": {
+    "what": "Check whether 300/450 ms and s = 0.15 match how real web takers spread out, per device class. A wider real spread means a larger s and fewer ordinary times at −3 SD. Any change is mirrored in web/src/tasks/rt/prior.ts and the bank's src/hb/gen/rt.py (norms tag 'rt-web-v0'), with parity fixtures.",
+    "data_needed": "Reaction-time blocks uploaded by real takers (needs the M2 backend), with device class and input type (§11.6); at least 300 people per class (DESIGN §16 F10); some people measured twice, so the bank's M4.8 estimator (tested on simulated data only) can separate between-person spread from block noise.",
+    "when": "Estimate: at M4.8 with real data, published via M4.10 after M2. Until then the numbers stay provisional."
+  },
+  "recommended": "Triage: option B now; separately, review the reaction-time width against web data when M4 norms exist.",
+  "owner_questions": [
+    "Which wording: A, B, C, or B plus A's clause '1 SD is the usual spread between people'?",
+    "Is 'published figures' acceptable for reaction time, where 0 is a guess built on published lab times?",
+    "Keep s = 0.15 until real data, or make an interim change (say a touch-screen reference) before a public link? That is also a guess and touches pub and bank.",
+    "Wait for M4.8, or collect real web times earlier in a small pilot?"
+  ],
+  "sources": [
+    "web/UX-REVIEW.md §2 D3",
+    "web/ux-review/findings/data.json (DATA-01, DATA-03)",
+    "docs/DESIGN.md §7.3, §9.1, §9.5, §11.6, §16 (F10)",
+    "docs/ROADMAP.md A10, A12, M1.P, M4.8, M4.10",
+    "web/src/viz/copy.ts (RING_CAPTION, BARS_NOTE)",
+    "web/src/tasks/rt/prior.ts, web/src/tasks/rt/score.ts, web/src/tasks/rt/types.ts",
+    "web/src/viz/profile.ts, web/src/reveal/peaks.ts, web/src/reveal/copy.ts (PEAKS_NOTE)",
+    "humanbench-bank src/hb/gen/rt.py, src/hb/calib/gauss_factor.py, src/hb/calib/norms_sim.py"
+  ]
+}

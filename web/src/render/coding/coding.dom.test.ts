@@ -207,6 +207,17 @@ describe('CodingRenderer', () => {
     expect(keypad.querySelectorAll('button')).toHaveLength(9)
   })
 
+  it('the keypad may fold into rows of five and four on a narrow keypad (D9): the same nine buttons in the same order, only the layout differs', () => {
+    const m = mountCoding(coding.generate('render-coding-fold'))
+    click(buttonByText(m.container, 'Start'))
+    const keypad = m.container.querySelector('.keypad') as HTMLElement
+    // The fold is the keypad's own container query: the markup says how long the first row is, and nothing else changes.
+    expect(keypad.classList.contains('split')).toBe(true)
+    expect(keypad.style.getPropertyValue('--cols-narrow')).toBe('5')
+    expect([...keypad.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    expect([...keypad.children].every((c) => c.tagName === 'BUTTON' && (c as HTMLButtonElement).type === 'button')).toBe(true)
+  })
+
   it('matches its snapshots (intro and running)', () => {
     const item = coding.generate('render-coding-snap')
     const m = mountCoding(item)

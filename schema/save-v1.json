@@ -113,18 +113,19 @@
       "pattern": "^[A-Za-z][A-Za-z _-]{0,31}$"
     },
     "flags": {
-      "description": "Integrity flag counters (§13); M1.19 adds more, so unknown snake_case flags are allowed.",
+      "description": "Integrity flag counters (§13); M1.19 adds more, so unknown snake_case flags are allowed. confidence_untouched_n counts the answers whose confidence slider was not moved (their confidence_pct is null). Session flags that are not counters: timed_tasks_only (true: the device half of an online sitting); continuation (true: the session continues the session just before it in time order, an interrupted session picked up again; the two are one sitting and share their test numbers in the §7.8 retest model; ignored on the first session); and how far the session got: done_<part> (true: the part ended normally in this session), completed (true: the session reached its end; finished_early and hard_stop are the other ends) and focus_session (true: a focus session).",
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
       "properties": {
         "visibility_hidden_s": { "type": "number", "minimum": 0 },
         "paste_events": { "type": "integer", "minimum": 0 },
-        "fast_guess_n": { "type": "integer", "minimum": 0 }
+        "fast_guess_n": { "type": "integer", "minimum": 0 },
+        "confidence_untouched_n": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": { "type": ["number", "boolean", "null"] }
     },
     "response": {
-      "description": "[item_id, pretest (0/1), response, correct (0/1/null), rt_ms, confidence_pct, extra?] (§8).",
+      "description": "[item_id, pretest (0/1), response, correct (0/1/null), rt_ms, confidence_pct, extra?] (§8). confidence_pct is null when no confidence was asked or the slider was not moved.",
       "type": "array",
       "minItems": 6,
       "maxItems": 7,

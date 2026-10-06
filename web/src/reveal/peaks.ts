@@ -19,7 +19,8 @@
  * above 0 SD, and the copy says so (`copy.ts` PEAKS_NOTE).
  */
 
-import { AXIS_INDEX, axis as axisDef, type AxisCode } from '../engine/axes'
+import { axisName } from '../axis-names'
+import { AXIS_INDEX, type AxisCode } from '../engine/axes'
 import { Z90 } from '../viz/geometry'
 import type { ProfileScore } from '../viz/profile'
 
@@ -60,7 +61,7 @@ export function withinPersonContrasts(score: ProfileScore, measured: readonly Ax
     const variance = cov(i, i) - (2 / m) * rowSums[i]! + all / (m * m)
     const sd = Math.sqrt(Math.max(0, variance)) // −1e-17 from rounding is 0
     const contrast = (theta[i] as number) - mean
-    return { code, name: axisDef(code).name, contrast, sd, lo90: contrast - Z90 * sd, hi90: contrast + Z90 * sd }
+    return { code, name: axisName(code), contrast, sd, lo90: contrast - Z90 * sd, hi90: contrast + Z90 * sd }
   })
 }
 

@@ -10,11 +10,24 @@ import { HEADING } from '../copy'
 // ---------------------------------------------------------------------------- welcome
 
 export const WELCOME_HEADING = HEADING
-export const WELCOME_TAGLINE = 'A jagged profile of how you think: short tasks, one honest picture.'
+/**
+ * The tagline and the intro say what the session is, in plain words (provisional default, UX-REVIEW D26):
+ * what you do, how long it takes, what you get and what you keep. They never describe the person and
+ * claim no benefit (A13, R-5.6.x; web/HOUSE-STYLE.md). index.html's static shell is filled with both at
+ * build time (UX-100), so they stay plain text: no markup and no "&" or "<".
+ */
+export const WELCOME_TAGLINE = 'Short tasks of reasoning, memory and speed. Your results are shown as a profile with ranges, not as a single score.'
 export const WELCOME_INTRO =
-  'The session takes about 30 minutes and has six short parts. You can skip any part you cannot do, and finish early at any time. Nothing is scored as pass or fail.'
+  'The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.'
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
+/**
+ * The row for a browser that already holds HumanBench data (provisional default, UX-REVIEW D22): its name for
+ * assistive technology, and the notes link. The door to earlier results is the ready screen's own wording
+ * (READY_SHOW_RESULTS), so the same words lead to the same screen from either place.
+ */
+export const WELCOME_RETURNING_LABEL = 'Earlier results and notes on this device'
+export const WELCOME_NOTES = 'Notes for your AI'
 /** After a link that opens a new tab, shown as the notes page and the results show it (UX-011). */
 export const NEW_TAB = ' (opens in a new tab)'
 
@@ -33,12 +46,26 @@ export const GATE_UNDER_18 = 'I am under 18'
 export const GATE_UNCHECKED = 'Tick the box to confirm that you are 18 or older and agree to the terms.'
 export const BLOCKED_HEADING = 'HumanBench is for adults'
 export const BLOCKED_TEXT = 'You must be 18 or older to take part. Nothing has been stored on this device. You can close this page.'
+/** A quiet way back from a mis-tap on "I am under 18": the gate again, with its box unticked (provisional default, UX-REVIEW D24). */
+export const BLOCKED_MISTAKE = 'I chose this by mistake'
 
 // ----------------------------------------------------------------------------- honour
 
 export const HONOUR_HEADING = 'Honour code'
 /** DESIGN §13 "Honour code (checkbox at start)", word for word. */
 export const HONOUR_TEXT = "No AI tools, search, calculators (except where provided), or help. Your blob is only meaningful if it's yours."
+/**
+ * Before the honour sentence: says what "your blob" is, three screens before any blob is drawn
+ * (provisional default, UX-REVIEW D26). HONOUR_TEXT itself stays word for word.
+ */
+export const HONOUR_LEAD = 'At the end of the session, your results are drawn as a shape we call your blob. Before you start, please agree to the following.'
+/**
+ * Under the honour sentence (owner decision 2026-10-05, UX-REVIEW D10): paper and pencil are fine;
+ * calculators and AI chatbots are not. Screen readers and other accessibility settings are named as
+ * fine, so that "no AI tools" is never read as "no screen reader".
+ */
+export const HONOUR_TOOLS =
+  'You may want scratch paper and a pencil ready: writing things down is allowed. Please do not use a calculator or an AI chatbot. Screen readers, zoom and other accessibility settings are fine to use.'
 export const HONOUR_AGREE = 'I agree to the honour code.'
 export const HONOUR_CONTINUE = 'Continue'
 export const HONOUR_UNCHECKED = 'Tick the box to agree to the honour code.'
@@ -83,8 +110,16 @@ export const READY_SHOW_RESULTS = 'See my results'
 /** Under the choice of earlier saves: when the newest one was written and what it holds (UX-012a). */
 export const savedAtLine = (when: string, questions: number): string =>
   questions === 0 ? `Last saved ${when}.` : `Last saved ${when}, ${questions} ${questions === 1 ? 'question' : 'questions'} answered.`
-/** Beside Begin once earlier sessions are loaded. */
+/** Beside Begin once earlier sessions are loaded. `n` counts sittings: an interrupted session and its continuation are one (UX-064). */
 export const addedToLine = (n: number): string => `Your new session will be added to ${n} earlier ${n === 1 ? 'session' : 'sessions'}.`
+/** Ready, when this browser holds an unfinished session from the last 24 hours (UX-064; provisional default, UX-REVIEW D6 option B). */
+export const READY_CONTINUE = 'Continue your unfinished session'
+/**
+ * What continuing does, said beside the offer: `when` is "today at 14:03" (`saved-at.ts`; '' when the time cannot be
+ * read), `part` the name of the part it goes on from, at that part's start.
+ */
+export const continueLine = (when: string, part: string): string =>
+  `${when === '' ? 'Your last session' : `Your session from ${when}`} was not finished. Continue it to go on from the start of ${part} and keep what you have done so far. Begin starts a new session instead.`
 /** Begin pressed with a file chosen or a code pasted that is not loaded (UX-012a). */
 export const READY_NOT_LOADED =
   'You chose a save file or pasted a code, but it is not loaded yet. Press Load to add your new session to it, or clear it to begin without it.'
@@ -124,6 +159,8 @@ export const INTERSTITIAL_SKIP = 'Skip this part'
 export const upNext = (title: string): string => `Up next: ${title}`
 /** "About 6 minutes." */
 export const aboutMinutes = (n: number): string => `About ${n} ${n === 1 ? 'minute' : 'minutes'}.`
+/** Under "About N minutes." on every "Up next" screen: the session clock is held there until Start (UX-066; D5). */
+export const INTERSTITIAL_CLOCK = 'The clock waits until you press Start.'
 
 // -------------------------------------------------------------------------- confidence
 
@@ -200,7 +237,13 @@ export const OVER_PLANNED = 'Over the planned time'
 // ------------------------------------------------------------------------------- break
 
 export const BREAK_OFFER_HEADING = 'Time for a break?'
-export const BREAK_OFFER_TEXT = 'You have been working for about 30 minutes. You can take a short break now. The clock pauses while you rest.'
+/**
+ * The one break offer, at the part boundary nearest half-way through the planned session (owner decision 2026-10-05,
+ * UX-REVIEW D5): where in the session it is and what the clock does; no time named, and no claim about what a break
+ * does for the person (UX-018a).
+ */
+export const BREAK_OFFER_TEXT =
+  'You are about half-way through the planned session. You can take a short break now if you like. The clock waits until you press Start on the next part.'
 export const BREAK_TAKE = 'Take a break'
 export const BREAK_DECLINE = 'Keep going'
 export const BREAK_HEADING = 'Break'
@@ -257,17 +300,18 @@ export interface PrivacySection {
 }
 
 /**
- * The M1 privacy notice and terms (DESIGN §13). The controller's name and contact are the user's
- * to fill in (`TODO(user)`, ROADMAP M1.15), and so is the sign-off on retention and the legal
- * basis before any online, data-collecting version. In this static version nothing leaves the
- * device, and the text says exactly that.
+ * The M1 privacy notice and terms (DESIGN §13). It says plainly that no personally identifiable
+ * information is collected and that all responses are anonymous (owner decision 2026-10-05, UX-REVIEW
+ * D1); by the owner's choice it names no controller and no contact. In this static version nothing
+ * leaves the device unless the person shares their own save file, and the text says exactly that.
+ * A change of substance here bumps `TERMS_VERSION` (`constants.ts`), so consent is asked again.
  */
 export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
-    heading: 'Who runs this site',
+    heading: 'In short',
     paragraphs: [
-      'Controller: TODO(user): name of the person or organisation responsible for this site.',
-      'Contact: TODO(user): an email address for questions and requests about your data.',
+      'HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts.',
+      'In this version your answers stay on your device. They leave it only if you share them yourself, for example by sending someone your save file.',
     ],
   },
   {
@@ -281,14 +325,15 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
     heading: 'Where it stays',
     paragraphs: [
       "In this version everything stays in your browser. It is saved in your browser's local storage as you go, so a crash does not lose your answers, and you can download it as a save file. Nothing is sent to a server.",
+      'The web host that serves these pages sees your network address when your browser loads them, as every web host does. It never receives your answers.',
       "If you clear your browser's site data, the saved copy is gone. Your downloaded save file is yours to keep or delete.",
     ],
   },
   {
     heading: 'When there is an online version',
     paragraphs: [
-      'An online version may send your answers to a server to improve the questions. It would ask for your consent again and this notice would be updated first.',
-      'Draft terms for that version, to be confirmed: TODO(user): retention period (draft: 24 months), legal basis (draft: consent), and where the data is held.',
+      'An online version may send your answers to a server to improve the questions. Before it does, this notice will be updated and you will be asked for your consent again.',
+      'The plan for that version is the same: no name and no email address, answers stored only under a random identifier, and answers kept for at most 24 months.',
     ],
   },
   {

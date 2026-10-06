@@ -6,6 +6,7 @@
 
 import { flushSync } from 'svelte'
 import { afterEach, describe, expect, it } from 'vitest'
+import { axisName } from '../../axis-names'
 import { EMO_AXIS_NAME, EMO_TOOLTIP } from '../../copy'
 import { ENTRY_COPY, FACET_NOTE, progressText, SCALE_LABELS } from '../../tasks/sjt/copy'
 import { demoSjtItem } from '../../tasks/sjt/demo'
@@ -61,6 +62,7 @@ describe('SjtRenderer, rate mode', () => {
     expect(section.classList.contains('hb-render') && section.classList.contains('sjt')).toBe(true)
     const title = section.querySelector('.title') as HTMLElement
     expect(title.textContent).toBe(EMO_AXIS_NAME)
+    expect(title.textContent).toBe(axisName('EMO')) // the display-name layer (UX review D25)
     expect(section.getAttribute('aria-labelledby')).toBe(title.id)
     expect(m.container.querySelector('.hb-instructions')?.textContent).toBe('Read the situation, then rate how well each response would work.')
     expect(m.container.querySelector('.scenario')?.textContent).toBe(SPEC.scenario)

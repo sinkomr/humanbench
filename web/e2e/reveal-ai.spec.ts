@@ -71,6 +71,21 @@ test.describe('the preamble and the warning are visible on both screens', () => 
     await expect(page.getByRole('heading', { level: 2, name: RESULTS_TALK.heading })).toBeVisible()
   })
 
+  // UX-REVIEW D18 (provisional default): "Paste this first." is followed by what comes next. D2 (owner decision 2026-10-05):
+  // the preamble says where ranges overlap a difference "may not be real", never that overlapping ranges are not real differences.
+  for (const [name, url] of [
+    ['reveal', `${REVEAL}?saved=1`],
+    ['share-card', SHARE],
+  ] as const) {
+    test(`${name} screen: says what comes after "Paste this first.", and shows the corrected overlap sentence only`, async ({ page }) => {
+      await open(page, url)
+      await expect(page.getByTestId('results-talk')).toContainText('Paste this first. Then describe your results in your own words, or attach your share card picture.')
+      await expect(page.getByTestId('preamble')).toContainText('Where ranges overlap, a difference may not be real.')
+      await expect(page.locator('body')).not.toContainText('Ranges that overlap are not real differences')
+      expect(PREAMBLE.length).toBe(346)
+    })
+  }
+
   // The demo's card is a placeholder box with fixed text, so the check of the real card against the notes strings
   // (leak-markers.ts) is on the M1.18 renderer's output: share-card.spec.ts ("has no notes text …") and viz/card.test.ts.
 })

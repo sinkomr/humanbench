@@ -13,6 +13,8 @@
   then three worked examples, what another session would buy (with 20-minute focus sessions and the
   7-day advice), rough external norms and the separate Pace note, and the results footer with the
   R-5.6.5 resource line (the allow-listed constant, here and nowhere else; never on a share card).
+  The top of the page is compact and the page is one column (UX-REVIEW D16, `RevealProfile`, `reveal.css`): the h1,
+  the lines under it and every panel share one left edge. The save panel keeps its place in this order.
   The §13 disclaimer is in the page footer of every screen (`App.svelte`).
   Nothing here shows a total, an average or a single score for the person (CLAUDE.md blob rule).
 -->
@@ -151,6 +153,10 @@
       <p>{SAVE_POINTER}</p>
       {#if built}
         <a href="#{SAVE_HEADING_ID}" onclick={goToSave}>{SAVE_POINTER_LINK}</a>
+      {:else}
+        <!-- No link yet (there is nothing to follow while the line is hidden), but the room it will take: the chart under it
+             must not move when the build-up ends (D16). -->
+        <span class="link-room" aria-hidden="true">{SAVE_POINTER_LINK}</span>
       {/if}
     </div>
   {/if}
@@ -235,7 +241,8 @@
     margin: 0;
     padding: 0.5rem 0;
   }
-  .save-pointer a {
+  .save-pointer a,
+  .save-pointer .link-room {
     display: inline-flex;
     align-items: center;
     min-height: 2.75rem;

@@ -7,7 +7,9 @@ import { newAnonId } from '../save/ids'
 import { saveText } from '../save/io'
 import type { SaveFileV1 } from '../save/types'
 import { SAVE_CTX } from './constants'
-import { READY_NOT_LOADED } from './copy'
+import { READY_CONTINUE, READY_NOT_LOADED, continueLine } from './copy'
+import { findUnfinished, type Unfinished } from './resume'
+import { utcSeconds } from '../save/clock'
 import { Bot } from './bot'
 import { defaultReadyState, type ReadyState } from './ready-state'
 import Ready from './Ready.svelte'
@@ -330,5 +332,95 @@ describe('Ready: what Begin adds to, and what is already here (UX-012a, UX-010)'
     // No handler (a server version): no button.
     const noHandler = ready({ restored, choices: defaultReadyState(restored) })
     expect([...noHandler.c.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('See my results')
+  })
+})
+
+describe('Ready: the offer to continue an unfinished session (UX-064; provisional default, D6 option B)', () => {
+  const now = (): number => new Date(2026, 9, 5, 15, 0, 0).getTime()
+  const unfinished: Unfinished = { sessionId: 's_READYUNFIN00001', startedUtc: utcSeconds(new Date(2026, 9, 5, 14, 3, 20).getTime()), done: ['rt', 'matrix_series'], skipped: [], next: 'spatial' }
+  const actions = (c: HTMLElement): HTMLButtonElement[] => [...c.querySelectorAll<HTMLButtonElement>('.hb-actions')[0]!.querySelectorAll('button')]
+
+  it('is the one primary button, with a plain line on what it does; Begin stays, as the secondary one', () => {
+    const go = vi.fn()
+    const { c, begun } = ready({ unfinished, oncontinue: go, now })
+    const buttons = actions(c)
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual([READY_CONTINUE, 'Begin', 'Try practice questions first'])
+    expect(buttons[0]!.classList.contains('hb-primary')).toBe(true)
+    expect(buttons[1]!.classList.contains('hb-primary')).toBe(false)
+    expect(c.querySelectorAll('.hb-primary')).toHaveLength(1)
+    const line = c.querySelector<HTMLElement>(`[id="${buttons[0]!.getAttribute('aria-describedby')!}"]`)!
+    expect(line.textContent).toBe(continueLine('today at 14:03', 'Spatial'))
+    expect(line.textContent).toBe(
+      'Your session from today at 14:03 was not finished. Continue it to go on from the start of Spatial and keep what you have done so far. Begin starts a new session instead.',
+    )
+    click(buttons[0]!)
+    return vi.waitFor(() => {
+      expect(go).toHaveBeenCalledTimes(1)
+      expect(begun).not.toHaveBeenCalled()
+    })
+  })
+
+  it('Begin still starts a new session', async () => {
+    const go = vi.fn()
+    const { c, begun } = ready({ unfinished, oncontinue: go, now })
+    click(buttonByText(c, 'Begin'))
+    await vi.waitFor(() => expect(begun).toHaveBeenCalledTimes(1))
+    expect(go).not.toHaveBeenCalled()
+  })
+
+  it('nothing changes without an unfinished session, or without a way to continue it', () => {
+    const a = ready({ now })
+    expect(actions(a.c).map((b) => b.textContent?.trim())).toEqual(['Begin', 'Try practice questions first'])
+    expect(actions(a.c)[0]!.classList.contains('hb-primary')).toBe(true)
+    expect(a.c.textContent).not.toContain('was not finished')
+    cleanup?.()
+    const b = ready({ unfinished, now })
+    expect(b.c.textContent).not.toContain(READY_CONTINUE)
+    expect(b.c.textContent).not.toContain('was not finished')
+  })
+
+  it('like Begin, it waits while a pasted code is not loaded', async () => {
+    const go = vi.fn()
+    const { c } = ready({ unfinished, oncontinue: go, now })
+    paste(c, 'something pasted')
+    click(buttonByText(c, READY_CONTINUE))
+    await vi.waitFor(() => expect(alertOf(c)?.textContent).toBe(READY_NOT_LOADED))
+    expect(go).not.toHaveBeenCalled()
+  })
+
+  it('an unreadable start time still gives a plain line', () => {
+    const { c } = ready({ unfinished: { ...unfinished, startedUtc: 'not a time', next: 'rt' }, oncontinue: () => undefined, now })
+    expect(c.textContent).toContain('Your last session was not finished. Continue it to go on from the start of Reaction Time and keep what you have done so far.')
+  })
+})
+
+describe('Ready: counts of earlier sessions count an interrupted session and its continuation once (UX-064)', () => {
+  /** An interrupted session and the continuation that picked it up, in one save. */
+  async function sitting(): Promise<SaveFileV1> {
+    const first = new Bot({ sessionId: 's_READYSITTING001', startedMs: 1_790_000_000_000 })
+    first.until((v) => v.phase === 'interstitial' && v.segment?.id === 'spatial')
+    const anonId = newAnonId()
+    const base = saveWithSession(null, first.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId })
+    const u = findUnfinished(base, 1_790_000_200_000)!
+    const cont = new Bot({ sessionId: 's_READYSITTING002', startedMs: 1_790_000_300_000, continues: { done: u.done, skipped: u.skipped } })
+    cont.until((v) => v.phase === 'interstitial' && v.segment?.id === 'memory')
+    return saveWithSession(base, cont.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_400_000, anonId })
+  }
+
+  it('the saves found here, the line beside Begin and a loaded file all say 1 earlier session', async () => {
+    const file = await sitting()
+    expect(file.sessions).toHaveLength(2)
+    const restored = { save: file, keys: ['k'], failures: [], anonIds: [file.anon_id] }
+    const { c } = ready({ restored, choices: defaultReadyState(restored) })
+    const label = [...c.querySelectorAll('label')].find((l) => (l.textContent ?? '').includes('saved on this device'))!
+    expect((label.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe('Add my new session to the 1 earlier session saved on this device.')
+    cleanup?.()
+    const loaded = ready({ choices: { includeFound: false, loaded: file } })
+    const line = [...loaded.c.querySelectorAll('p')].find((p) => (p.textContent ?? '').startsWith('Your new session will be added to'))
+    expect(line?.textContent).toBe('Your new session will be added to 1 earlier session.')
+    cleanup?.()
+    const read = ready()
+    chooseFile(read.c, new File([saveText(file)], 'humanbench.txt', { type: 'text/plain' }))
+    await vi.waitFor(() => expect(status(read.c).textContent).toBe('Loaded 1 earlier session. Your new session will be added to it.'))
   })
 })

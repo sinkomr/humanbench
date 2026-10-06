@@ -9,6 +9,18 @@ import type { EntryFormat } from '../../tasks/family'
 /** Shown when a submit is empty. */
 export const EMPTY_NOTE = 'Type an answer first, then submit.'
 
+/**
+ * Shown when a number is written with thousands commas (`1,500`): a person who writes decimals
+ * with a comma may mean 1.5, so the box asks for 1500 or 1.5 instead of guessing (UX-079).
+ */
+export const THOUSANDS_NOTE = 'Write thousands without a comma (1500) and decimals with a point (1.5).'
+
+/**
+ * A family's verdict on a typed entry (the box's `check`): `'ok'` submits it, `'format'` shows the
+ * format's note ({@link FORMAT_NOTES}), `'thousands'` shows {@link THOUSANDS_NOTE}.
+ */
+export type EntryVerdict = 'ok' | 'format' | 'thousands'
+
 /** Shown when the family's parser cannot read the entry in this format. */
 export const FORMAT_NOTES: Readonly<Record<EntryFormat, string>> = Object.freeze({
   integer: 'That entry could not be read as a whole number. Use only the digits 0 to 9, with no spaces or commas, and a minus sign if needed, for example 42 or -7.',

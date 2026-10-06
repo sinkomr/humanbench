@@ -7,7 +7,7 @@
  */
 
 import type { RtInputMode } from '../render/rt/keys'
-import { measureRefreshRate, type Clock, type FrameSource } from '../tasks/rt/timing'
+import { measureRefreshRate, type Clock, type FrameCallback, type FrameSource } from '../tasks/rt/timing'
 import type { DeviceClass, DeviceInfo } from '../save/types'
 
 /** What the browser tells about itself, injectable for tests. */
@@ -106,7 +106,7 @@ export interface CheckDeps {
 }
 
 /** A refresh-rate measurement that gives up after `timeoutMs` (null then). */
-async function measureHz(deps: CheckDeps): Promise<number | null> {
+export async function measureHz(deps: Pick<CheckDeps, 'frames' | 'timeoutMs' | 'setTimeout' | 'clearTimeout'>): Promise<number | null> {
   const set = deps.setTimeout ?? ((fn, ms) => globalThis.setTimeout(fn, ms))
   const clear = deps.clearTimeout ?? ((h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>))
   let handle: unknown
@@ -122,13 +122,13 @@ async function measureHz(deps: CheckDeps): Promise<number | null> {
 }
 
 /**
- * Run the device check: the coarse facts, the refresh rate from 60 animation-frame deltas (about
- * a second) and the timer resolution. A measurement that fails leaves its field null; the check
- * itself never throws (a person on an unusual browser can still take part).
+ * The facts of the device check once the refresh rate is known: the coarse facts, the timer resolution (a
+ * moment's work) and the window as it is now. {@link checkDevice} is this after its own measurement; the
+ * device screen calls it with the rate a {@link RefreshProbe} measured earlier, so the result is the same
+ * {@link DeviceInfo} either way.
  */
-export async function checkDevice(deps: CheckDeps, input: RtInputMode = defaultRtInput(deps.env)): Promise<DeviceInfo> {
+export function describeDevice(deps: Pick<CheckDeps, 'env' | 'clock'>, hz: number | null, input: RtInputMode = defaultRtInput(deps.env)): DeviceInfo {
   const { env } = deps
-  const hz = await measureHz(deps)
   return {
     class: deviceClass(env),
     input,
@@ -138,6 +138,116 @@ export async function checkDevice(deps: CheckDeps, input: RtInputMode = defaultR
     timer_res_ms: timerResolutionMs(deps.clock),
     viewport: [Math.max(0, Math.round(env.viewport[0])), Math.max(0, Math.round(env.viewport[1]))],
   }
+}
+
+/**
+ * Run the device check: the coarse facts, the refresh rate from 60 animation-frame deltas (about
+ * a second) and the timer resolution. A measurement that fails leaves its field null; the check
+ * itself never throws (a person on an unusual browser can still take part).
+ */
+export async function checkDevice(deps: CheckDeps, input: RtInputMode = defaultRtInput(deps.env)): Promise<DeviceInfo> {
+  return describeDevice(deps, await measureHz(deps), input)
+}
+
+// ------------------------------------------------------------------------------ the refresh probe
+
+/** What the probe needs to know about the page being in view: a hidden page draws no frames. */
+export interface PageVisibility {
+  hidden(): boolean
+  /** Call `cb` whenever the page is shown or hidden; returns the way to stop. */
+  onChange(cb: () => void): () => void
+}
+
+/** The page's own visibility (`document.visibilityState`). Only 'hidden' counts as hidden. */
+export const browserVisibility: PageVisibility = Object.freeze({
+  hidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+  onChange: (cb: () => void) => {
+    if (typeof document === 'undefined') return () => undefined
+    document.addEventListener('visibilitychange', cb)
+    return () => document.removeEventListener('visibilitychange', cb)
+  },
+})
+
+/**
+ * The refresh-rate measurement, started while the 18+ gate and the honour screen are shown, so the device
+ * check does not make the person wait for it (provisional default, UX-REVIEW D23). It keeps its result in
+ * memory only: nothing is stored, and the flow drops it when the person says they are under 18.
+ */
+export interface RefreshProbe {
+  /** undefined while it measures; then the rate in Hz, or null when there is no usable measurement. */
+  readonly hz: number | null | undefined
+  /** When it settled, on the clock it was given; null while it measures. */
+  readonly settledAt: number | null
+  /** Settles with {@link hz}; never rejects. */
+  readonly done: Promise<number | null>
+  /** Stop and drop the measurement (the pending frame is cancelled; `done` settles with null at once). */
+  cancel(): void
+}
+
+/** A measurement older than this is made again: the window may have moved to another screen since. */
+export const PROBE_MAX_AGE_MS = 2 * 60_000
+
+export interface ProbeDeps extends Pick<CheckDeps, 'frames' | 'clock' | 'timeoutMs' | 'setTimeout' | 'clearTimeout'> {
+  /** Default {@link browserVisibility}. */
+  readonly visibility?: PageVisibility
+}
+
+/**
+ * Start measuring the refresh rate in the background (rAF and the real clock, as {@link measureHz}). Null when
+ * the page is hidden now: no frames would come, and the device check measures as it always did. A page that
+ * is hidden while it measures ends it with null, and so does `cancel()`. The result is the same estimate
+ * {@link checkDevice} would make.
+ */
+export function startRefreshProbe(deps: ProbeDeps): RefreshProbe | null {
+  const visibility = deps.visibility ?? browserVisibility
+  if (visibility.hidden()) return null
+  let value: number | null | undefined
+  let settledAt: number | null = null
+  let handle: number | null = null
+  let stop: () => void = () => undefined
+  const abandoned = new Promise<null>((resolve) => {
+    stop = () => resolve(null)
+  })
+  // The frame source the measurement uses, so the one frame that is pending can be cancelled.
+  const frames: FrameSource = {
+    request: (cb: FrameCallback) => (handle = deps.frames.request(cb)),
+    cancel: (h: number) => deps.frames.cancel(h),
+  }
+  const unwatch = visibility.onChange(() => {
+    if (visibility.hidden()) cancel()
+  })
+  function cancel(): void {
+    if (value !== undefined) return
+    if (handle !== null) deps.frames.cancel(handle)
+    stop()
+  }
+  const done = Promise.race([measureHz({ ...deps, frames }), abandoned]).then((hz) => {
+    value = hz
+    settledAt = deps.clock.now()
+    unwatch()
+    return hz
+  })
+  return {
+    get hz() {
+      return value
+    },
+    get settledAt() {
+      return settledAt
+    },
+    done,
+    cancel,
+  }
+}
+
+/**
+ * What a probe tells the device screen at `now` (the clock the probe was given): undefined while it still
+ * measures (wait for `done`), a rate when it has one that is not too old, else null (measure again).
+ */
+export function probeHz(probe: RefreshProbe | null | undefined, now: number): number | null | undefined {
+  if (probe === null || probe === undefined) return null
+  const hz = probe.hz
+  if (hz === undefined) return undefined
+  return hz !== null && probe.settledAt !== null && now - probe.settledAt <= PROBE_MAX_AGE_MS ? hz : null
 }
 
 /** Plain-language remarks for the device screen, none of them about the person. */

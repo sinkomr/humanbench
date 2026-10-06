@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest'
 import { example } from '../src/tasks/_example'
 import type { AnyFamily } from '../src/tasks/family'
 import { FAMILIES } from '../src/tasks/registry'
+import { ENTRY_VECTORS_FILE, serializeEntryVectors } from '../src/tasks/quant/entry-vectors'
 import { serializeAnalysisFixture } from '../src/tasks/series/analysis-fixture'
 import { PUB_ROOT, UsageError, bankDumpsDir, buildDump, dumpDrift, familiesFromModule, serializeDump } from './dump-lib'
 
@@ -35,6 +36,7 @@ const WEB = join(PUB_ROOT, 'web')
 const TASKS_DIR = join(WEB, 'src', 'tasks')
 
 const SERIES_ANALYSIS_REFRESH = `npx tsx -e "import('./src/tasks/series/analysis-fixture.ts').then((m) => process.stdout.write(m.serializeAnalysisFixture()))" > ${join(DIR, 'series.analysis.json')}`
+const QUANT_ENTRY_REFRESH = `npx tsx -e "import('./src/tasks/quant/entry-vectors.ts').then((m) => process.stdout.write(m.serializeEntryVectors()))" > ${join(DIR, ENTRY_VECTORS_FILE)}`
 
 /**
  * The files in the bank's `golden/ts_dumps/` that are not family dumps, each with the test
@@ -45,6 +47,7 @@ const PARITY_FILES: Readonly<Record<string, string>> = {
   'rt_simple_scores.json': 'scripts/rt-scores-dump.test.ts',
   'rt_choice4_scores.json': 'scripts/rt-scores-dump.test.ts',
   'series.analysis.json': 'scripts/ts-dumps-sync.test.ts',
+  [ENTRY_VECTORS_FILE]: 'scripts/ts-dumps-sync.test.ts',
 }
 
 interface Known {
@@ -137,6 +140,13 @@ describe('A17: bank golden/ts_dumps match what this repo produces', () => {
     const stale = `stale ${path}: run (from web/) ${SERIES_ANALYSIS_REFRESH}, then update ANALYSIS_FIXTURE_DIGEST in series.test.ts`
     expect(readFileSync(path, 'utf8') === serializeAnalysisFixture(), stale).toBe(true)
   }, 60_000)
+
+  it('the quant entry-grammar vectors are current (entry-vectors.ts)', ({ skip }) => {
+    skip(!present, NO_BANK)
+    const path = join(DIR, ENTRY_VECTORS_FILE)
+    expect(existsSync(path), `${path} is missing: run (from web/) ${QUANT_ENTRY_REFRESH}`).toBe(true)
+    expect(readFileSync(path, 'utf8') === serializeEntryVectors(), `stale ${path}: run (from web/) ${QUANT_ENTRY_REFRESH}`).toBe(true)
+  })
 })
 
 describe('dumpDrift (the A17 staleness check itself)', () => {

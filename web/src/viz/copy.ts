@@ -32,8 +32,22 @@ export const RING_NOTE: readonly string[] = ['Rings: SD units, provisional', 'Ce
 export const UNCERTAINTY_CAPTION =
   'The solid line is the most likely profile. The light band shows each estimate ± its uncertainty. The soft edge fades out across each 90% range: the darker the shading, the more likely that value. The thin lines through the markers show the 90% ranges; where one crosses 0 SD, the marker is hollow and the line turns grey.'
 
-/** §9.7, A15. */
-export const STUB_CAPTION = 'Dashed grey spokes are skills that were not measured; the line drops to the centre there.'
+/**
+ * §9.7, A15, with the gap of UX review D13 A (a provisional default): the line breaks at a skill that
+ * was not measured, and the × it leaves on the 0 SD ring is a marker, not an estimate.
+ */
+export const STUB_CAPTION = 'Dashed grey spokes are skills that were not measured. The line breaks there, and a small × on the 0 SD ring marks the gap; it is not an estimate.'
+
+/**
+ * D13 B (a provisional default): on a narrow screen with many skills not measured, their spokes carry
+ * no label and one line under the chart names them: "Not measured: Logic Games, …".
+ */
+export function stubListLead(reason: NotMeasuredReason | undefined): string {
+  return reason === 'insufficient_data' ? 'Insufficient data' : 'Not measured'
+}
+export function stubListText(lead: string, names: readonly string[]): string {
+  return `${lead}: ${names.join(', ')}.`
+}
 
 /** §9.5 a, b: read spokes one at a time; the shape's size carries no meaning. */
 export const READING_CAPTION =
@@ -104,8 +118,13 @@ export const DRILL_PROMPT = 'Explore a cluster:'
 export function facetHeading(cluster: string): string {
   return `${cluster}: facets`
 }
+/**
+ * The facet chart's description and the facet table's caption. Its last sentence says why a facet's range sits on its
+ * skill's: the leave-facet-out prior (UX-REVIEW D4 A, a provisional default; `facets.ts`), which gives facets no spread of
+ * their own until the model has one. Drop it with that change.
+ */
 export function facetCaption(cluster: string): string {
-  return `Facets of ${cluster}, in SD units on a provisional scale. A facet needs ${FACET_MIN_ITEMS} scored questions or timed tasks before it gets an estimate.`
+  return `Facets of ${cluster}, in SD units on a provisional scale. A facet needs ${FACET_MIN_ITEMS} scored questions or timed tasks before it gets an estimate. Each facet's range also draws on the rest of its skill, so for now a facet sits close to its skill.`
 }
 /** UX-041: one line instead of an empty chart, when no facet of the cluster has enough data yet. */
 export function facetNone(cluster: string, n: number): string {

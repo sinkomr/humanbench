@@ -14,7 +14,7 @@ import type { ResponseTuple } from '../engine/types'
 import type { ItemInstance } from '../tasks/family'
 import { matrices } from '../tasks/matrices'
 import { rotation } from '../tasks/rotation'
-import { BRIEF_DESTINATIONS, BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS, FIT_KEEP_PER_TOPIC, briefPrefsCovered, isRemovedContext, mergeBriefPrefs, raiseBriefPrefs, replacedBriefSets, restoreBriefPrefs, withoutBriefPrefs } from './brief-prefs'
+import { BRIEF_DESTINATIONS, BRIEF_FORMS, BRIEF_LENGTHS, BRIEF_MODES, BRIEF_PRESETS, BRIEF_SETTINGS, BRIEF_TIERS, BRIEF_VERDICTS, FIT_KEEP_PER_TOPIC, briefPrefsCovered, isRemovedContext, mergeBriefPrefs, raiseBriefPrefs, replacedBriefSets, restoreBriefPrefs, withBriefPrefs, withoutBriefPrefs } from './brief-prefs'
 import { saveWithSession } from './create'
 import { jcs } from './jcs'
 import { mergeAll, normalizeSave, subsumes } from './merge'
@@ -387,6 +387,69 @@ describe('raiseBriefPrefs and replacedBriefSets (the file’s settings win when 
         expect(replacedBriefSets(page, loaded)).toBe(want)
       }),
       { numRuns: 500 },
+    )
+  })
+})
+
+describe('withBriefPrefs (the results page\'s save takes in the notes settings kept on the device; D17)', () => {
+  it('is the save itself when there is nothing to add, or all of it is held already', () => {
+    const s = save(prefs({ contexts: [context(1, 4)] }))
+    expect(withBriefPrefs(s, undefined)).toBe(s)
+    expect(withBriefPrefs(s, prefs({ contexts: [context(1, 4)] }))).toBe(s)
+    expect(withBriefPrefs(s, prefs({ contexts: [context(1, 2, { length: 'short' })] }))).toBe(s)
+    const none = save()
+    expect(withBriefPrefs(none, undefined)).toBe(none)
+  })
+
+  it('gives a save without settings the device\'s settings (a prefs-only copy of them, in normal form), and changes nothing else', () => {
+    const device = prefs({ contexts: [context(2, 1, { lines_on: ['b', 'a', 'b'] }), context(1, 3)], fit_log: [fit('00a1b2c3', 'quant/probability_counting', '2026-09')] })
+    const plain = save()
+    const out = withBriefPrefs(plain, device)
+    expect(out).not.toBe(plain)
+    expect(j(out.brief_prefs)).toBe(j(mergeBriefPrefs([device])))
+    expect(out.brief_prefs?.contexts.map((c) => c.slot)).toEqual([1, 2])
+    expect(tsOk(out)).toBe(true)
+    expect(plain.brief_prefs).toBeUndefined()
+    expect(jcs(withoutBriefPrefs(out))).toBe(jcs(withoutBriefPrefs(plain)))
+  })
+
+  it('keeps the save\'s own settings and lets the higher edit count win per slot', () => {
+    const own = save(prefs({ notes_as_of: '2026-09', contexts: [context(1, 5, { length: 'detailed' }), context(3, 1)] }))
+    const out = withBriefPrefs(own, prefs({ notes_as_of: '2026-10', contexts: [context(1, 2, { length: 'short' }), context(2, 1)] }))
+    expect(out.brief_prefs?.contexts.map((c) => [c.slot, c.rev])).toEqual([[1, 5], [2, 1], [3, 1]])
+    expect((out.brief_prefs?.contexts[0] as BriefContextV1).length).toBe('detailed')
+    expect(out.brief_prefs?.notes_as_of).toBe('2026-10')
+    expect(own.brief_prefs?.contexts).toHaveLength(2)
+  })
+
+  it('holds both, changes no other field, validates, and a second join changes nothing (property)', () => {
+    fc.assert(
+      fc.property(fc.option(arbBriefPrefs, { nil: undefined }), fc.option(arbBriefPrefs, { nil: undefined }), (own, extra) => {
+        const base = save(own)
+        const out = withBriefPrefs(base, extra)
+        expect(briefPrefsCovered(out.brief_prefs, extra)).toBe(true)
+        expect(briefPrefsCovered(out.brief_prefs, own)).toBe(true)
+        expect(jcs(withoutBriefPrefs(out))).toBe(jcs(withoutBriefPrefs(base)))
+        expect(tsOk(out)).toBe(true)
+        expect(withBriefPrefs(out, extra)).toBe(out)
+        // The same as the notes page\'s own join of the two.
+        if (out !== base) expect(j(out.brief_prefs)).toBe(j(mergeBriefPrefs([own, extra])))
+      }),
+      RUNS,
+    )
+  })
+
+  it('what a second device restores from the file is the device\'s settings (a restore, not a rev race)', () => {
+    fc.assert(
+      fc.property(arbBriefPrefs, (device) => {
+        const file = withBriefPrefs(save(), device)
+        // The second device has nothing: loading takes everything.
+        const fresh = restoreBriefPrefs(undefined, file.brief_prefs as BriefPrefsV1)
+        expect(j(fresh.prefs)).toBe(j(mergeBriefPrefs([device])))
+        // Loading it again is "unchanged".
+        expect(restoreBriefPrefs(fresh.prefs, file.brief_prefs as BriefPrefsV1).changed).toBe(false)
+      }),
+      RUNS,
     )
   })
 })

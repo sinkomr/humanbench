@@ -51,6 +51,12 @@ const RT_HOLD_TOUCH_MS = 12
  */
 const ACTION_MS = 20_000
 
+/** The heading of the break offer (`SessionScreen`). */
+const BREAK_OFFER_HEADING = 'Time for a break?'
+
+/** What can follow a skip on an "Up next" screen: the next one, the break offer before the half-way part, or the end. */
+const AFTER_SKIP = /^(Up next: .+|Time for a break\?|Session complete|Session ended)$/
+
 export interface DriverOptions {
   /** A finger on a phone: taps, and the on-screen keypads. Otherwise a mouse and the keyboard. */
   readonly touch: boolean
@@ -63,7 +69,12 @@ export class SessionDriver {
   readonly played = new Map<string, Set<string>>()
   /** Items answered (a choice or a typed answer, each followed by its confidence rating). */
   answered = 0
+  /** Break offers met: one at most, between two parts (UX-066). The driver declines each ("Keep going"). */
+  breakOffers = 0
+  /** The part whose "Up next" screen came right after the break offer (the half-way part of the plan), or null. */
+  breakBefore: string | null = null
   #segment = ''
+  #afterBreak = false
 
   constructor(
     readonly page: Page,
@@ -112,14 +123,26 @@ export class SessionDriver {
   /** From the ready screen into the first part. */
   async begin(): Promise<void> {
     await this.press(button(this.page, 'Begin'))
-    await expect(h1(this.page)).toHaveText('Up next: Reaction time')
+    await expect(h1(this.page)).toHaveText('Up next: Reaction Time')
   }
 
-  /** Skip the part on the interstitial (it asks first, like the skip during an item). */
-  async skipPart(): Promise<void> {
+  /**
+   * Skip the part on the interstitial (it asks first, like the skip during an item). Skipping into the half-way part
+   * brings the one break offer first (UX-066): unless `keepBreakOffer`, it is declined ("Keep going"), so the next
+   * screen is the next "Up next" screen (or the end) either way.
+   */
+  async skipPart(keepBreakOffer = false): Promise<void> {
     const { page } = this
     await this.press(button(page, 'Skip this part'))
     await this.press(page.locator('section.confirm').getByRole('button', { name: /^Skip / }))
+    if (keepBreakOffer) return
+    await expect(h1(page)).toHaveText(AFTER_SKIP, { timeout: ACTION_MS })
+    if (((await h1(page).textContent()) ?? '').trim() === BREAK_OFFER_HEADING) {
+      this.breakOffers++
+      await this.press(button(page, 'Keep going'))
+      await expect(h1(page)).toHaveText(/^Up next: /, { timeout: ACTION_MS })
+      this.breakBefore = ((await h1(page).textContent()) ?? '').replace(/^Up next:\s*/, '').trim()
+    }
   }
 
   /**
@@ -184,6 +207,8 @@ export class SessionDriver {
       this.#segment = ((await h1(page).textContent()) ?? '').replace(/^Up next:\s*/, '').trim()
       this.segments.push(this.#segment)
       this.played.set(this.#segment, new Set())
+      if (this.#afterBreak) this.breakBefore = this.#segment
+      this.#afterBreak = false
     }
     if (this.#segment !== '' && kind !== 'finished') this.played.get(this.#segment)?.add(kind)
     switch (kind) {
@@ -193,6 +218,9 @@ export class SessionDriver {
         await this.press(button(page, 'Start'))
         break
       case 'break':
+        // The offer comes once, at the end of a part, before the "Up next" screen of the half-way part (UX-066).
+        this.breakOffers++
+        this.#afterBreak = true
         await this.press(button(page, 'Keep going'))
         break
       case 'choice':
@@ -282,7 +310,7 @@ export class SessionDriver {
   }
 
   /**
-   * Reaction time, simple or four positions: wait for each target (the box that lights up), then press
+   * Reaction Time, simple or four positions: wait for each target (the box that lights up), then press
    * its key or tap it. A target that is gone by the time the press arrives is a miss, as for any taker.
    *
    * Under `?fast=1` the block's clock runs 20 times faster, so a person's 200 to 600 ms is 10 to 30 ms of

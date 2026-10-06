@@ -35,7 +35,7 @@
     readonly names: string
   }
 
-  /** Calibration is measured with every rated answer, in the Estimation cluster (A15, `run.ts`). */
+  /** Confidence Calibration (CAL) is measured with every rated answer, in the Estimation cluster (A15, `run.ts`). */
   const EMBEDDED = axisDef('CAL')
 
   /** The status of a cluster from its segments' statuses (module comment). */
@@ -75,7 +75,7 @@
   const later = $derived(CLUSTERS.filter((c) => c !== EMBEDDED.cluster && !segments.some((s) => s.cluster === c)))
 </script>
 
-<!-- A line may break after a slash ("Calibration/<wbr>Metacognition"), so a long name does not split mid-word on a narrow screen. -->
+<!-- A line may break after a slash ("Spatial/<wbr>Memory"), so a long name does not split mid-word on a narrow screen. -->
 {#snippet breakable(text: string)}
   {#each text.split('/') as part, i (i)}{#if i > 0}/<wbr />{/if}{part}{/each}
 {/snippet}
@@ -111,8 +111,8 @@
   }
 
   /*
-   * Narrow, and where container queries are not known: the name has the full width of the list (the longest word, "Metacognition",
-   * is about 7 rem in bold, so it must never share its row), and the mark sits on the line below, beside the status.
+   * Narrow, and where container queries are not known: the name has the full width of the list (a long word such as "Quantitative"
+   * is 6 to 7 rem in bold, so it must never share its row), and the mark sits on the line below, beside the status.
    */
   li {
     display: grid;

@@ -54,7 +54,7 @@ describe('buildDump', () => {
   })
 
   it('carries the results-talk preamble for the E22 arm: its id, wording version and exact text', () => {
-    expect(dump.results_talk).toEqual({ id: 'RT', v: '1', text: PREAMBLE, chars: 340 })
+    expect(dump.results_talk).toEqual({ id: 'RT', v: '2', text: PREAMBLE, chars: 346 })
     expect(serializeDump(dump)).toContain('"results_talk"')
   })
 

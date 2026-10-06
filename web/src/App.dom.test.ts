@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App.svelte'
 import { HEADING } from './copy'
 import { buttonByText, click, fakeDisplay } from './render/common/testing'
-import { PRIVACY_SECTIONS, WELCOME_TAGLINE } from './session/copy'
+import { HONOUR_LEAD, HONOUR_TEXT, HONOUR_TOOLS, PRIVACY_SECTIONS, WELCOME_INTRO, WELCOME_TAGLINE } from './session/copy'
 import { fakeEnv } from './session/dom-support'
 
 // Literal DESIGN §13 text, deliberately not imported from ./copy, so that a change to
@@ -31,6 +31,50 @@ describe('App (jsdom)', () => {
     expect([...document.querySelectorAll('button')].map((b) => b.textContent?.trim())).toContain('Start')
   })
 
+  it('renders no "TODO" on any screen it can reach without a run: welcome, gate, honour, device, ready, privacy, data (UX-REVIEW D1)', async () => {
+    const fake = fakeEnv(fakeDisplay())
+    app = mount(App, { target: document.body, props: { env: fake.env } })
+    flushSync()
+    const seen: string[] = []
+    const look = (): void => {
+      const text = document.body.textContent ?? ''
+      seen.push(document.querySelector('.flow:not([hidden]) h1, .flow + main h1')?.textContent ?? '')
+      expect(text, seen.at(-1)).not.toMatch(/TODO/)
+    }
+    look()
+    expect(document.body.textContent).toContain(WELCOME_TAGLINE)
+    expect(document.body.textContent).toContain(WELCOME_INTRO)
+    click(buttonByText(document.body, 'Start'))
+    look()
+    for (const label of [/18 or older/, /honour code/]) {
+      const box = [...document.querySelectorAll('label')].find((l) => label.test(l.textContent ?? ''))!.control as HTMLInputElement
+      if (label.source === 'honour code') {
+        // The honour screen: the lead-in, the §13 sentence and the paper and tools rule, in that order (UX-REVIEW D10, D26).
+        const paras = [...document.querySelectorAll('main p')].map((p) => p.textContent)
+        expect(paras.indexOf(HONOUR_LEAD)).toBeGreaterThanOrEqual(0)
+        expect(paras.indexOf(HONOUR_TEXT)).toBe(paras.indexOf(HONOUR_LEAD) + 1)
+        expect(paras.indexOf(HONOUR_TOOLS)).toBe(paras.indexOf(HONOUR_TEXT) + 1)
+      }
+      click(box)
+      click(buttonByText(document.body, 'Continue'))
+      look()
+    }
+    fake.display.advance(1200)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    flushSync()
+    look()
+    click(buttonByText(document.body, 'Continue'))
+    flushSync()
+    look()
+    for (const hash of ['#/privacy', '#/data']) {
+      location.hash = hash
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+      flushSync()
+      look()
+    }
+    expect(seen).toEqual(['HumanBench', 'Before you start', 'Honour code', 'Check your device', 'Check your device', 'Ready when you are', 'Privacy and terms', 'Your data on the server'])
+  })
+
   it('renders exactly the DESIGN §13 disclaimer in the footer', () => {
     app = mount(App, { target: document.body })
     flushSync()
@@ -53,7 +97,7 @@ describe('App (jsdom)', () => {
     }
   })
 
-  it('shows the privacy notice at #/privacy, with the controller placeholders marked TODO(user), and the disclaimer', () => {
+  it('shows the privacy notice at #/privacy: no personally identifiable information, no placeholder, and the disclaimer', () => {
     location.hash = '#/privacy'
     app = mount(App, { target: document.body })
     flushSync()
@@ -63,8 +107,10 @@ describe('App (jsdom)', () => {
     expect(notice?.querySelector('h1')?.textContent).toBe('Privacy and terms')
     expect(document.querySelector('.flow')?.hasAttribute('hidden')).toBe(true)
     const text = notice?.textContent ?? ''
-    expect(text).toContain('Controller: TODO(user)')
-    expect(text).toContain('Contact: TODO(user)')
+    // Owner decision 2026-10-05 (UX-REVIEW D1): the notice says it plainly and names no controller or contact.
+    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(text).not.toContain('TODO')
+    expect(text).not.toContain('Controller:')
     for (const s of PRIVACY_SECTIONS) expect(text).toContain(s.heading)
     expect(document.querySelector('footer .disclaimer')?.textContent?.trim()).toBe(DESIGN_13_DISCLAIMER)
   })

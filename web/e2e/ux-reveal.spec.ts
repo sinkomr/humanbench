@@ -266,7 +266,7 @@ test.describe('the share card (UX-032)', () => {
     await expect(png).not.toHaveAttribute('aria-disabled', 'true')
     await expect(png).toBeFocused()
     const [download] = await Promise.all([page.waitForEvent('download'), png.press('Enter')])
-    expect(download.suggestedFilename()).toMatch(/^humanbench-card-\d{4}-\d{2}-\d{2}\.png$/)
+    expect(download.suggestedFilename()).toMatch(/^humanbench-card-light-\d{4}-\d{2}-\d{2}\.png$/)
     await expect(card.locator('[data-message]')).toHaveText('Image saved: 2400 × 1260 pixels.')
   })
 
@@ -397,7 +397,7 @@ test.describe('wording, worked examples and markers (UX-034, UX-035, UX-036)', (
   test('the numbers, the practice adjustment and the spacing advice name what they refer to', async ({ page }) => {
     await still(page)
     await toResults(page, 2)
-    await expect(page.locator('[data-practice-adjusted]')).toContainText('each later session is credited for the typical gain from practice (a provisional figure)')
+    await expect(page.locator('[data-practice-adjusted]')).toContainText('Each later session is credited for the typical gain from practice (a provisional figure)')
     await expect(section(page, 'numbers')).toContainText('From your most recent attempt at each task:')
     await openDetails(page)
     await expect(section(page, 'numbers').locator('li[data-pace]').first()).toContainText(/about \d+ seconds? per question/)

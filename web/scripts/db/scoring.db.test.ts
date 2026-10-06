@@ -1,8 +1,8 @@
 /**
  * M2.1 (ROADMAP M2.1; DESIGN §3 row 6, §4.2; ROADMAP A18): the server scores numeric entry with the
  * same grammar and the same exact arithmetic as the app (tasks/quant/numeric.ts) and the bank
- * (hb.gen.quant.entry). The expected values here come from the app's own parseEntry and
- * withinTolerance.
+ * (hb.gen.quant.entry), the decimal comma of UX-079 included (20261007000200_parse_entry_decimal_comma.sql).
+ * The expected values here come from the app's own parseEntry and withinTolerance.
  */
 
 import fc from 'fast-check'
@@ -38,6 +38,8 @@ const entryText: fc.Arbitrary<string> = fc.oneof(
         fc.oneof(
           digits(1, 6),
           fc.tuple(digits(0, 5), digits(0, 4)).map(([i, d]) => `${i}.${d}`),
+          // a decimal comma and its near misses (UX-079): one or two digits after the comma are read, three are the thousands form
+          fc.tuple(digits(0, 4), digits(0, 4)).map(([i, d]) => `${i},${d}`),
           digits(1, 3).chain((h) => fc.array(digits(3, 3), { minLength: 1, maxLength: 3 }).map((rest) => [h, ...rest].join(','))),
           fc.tuple(digits(1, 4), digits(1, 4)).map(([n, d]) => `${n}/${d}`),
           fc.tuple(digits(1, 3), WS, digits(1, 3), WS, digits(1, 3)).map(([w, a, n, b, d]) => `${w}${a || ' '}${n}${b}/${d}`),
@@ -56,7 +58,7 @@ const sameFraction = (ts: Fraction | null, sql: { o_num: string | null; o_den: s
 
 describe('hb.parse_entry', () => {
   it('reads every entry the way the app does (2,000 random entries and the documented examples)', async () => {
-    const documented = ['42', '-7', '+3', '12.5', '.5', '3.', '1,533', '12,345.5', '0,5', '-3/8', '6/4', '2 1/3', '-2 1/3', '$5', '5%', '$ 5', '- 5', '1/0', '', ' ', '.', '1,23', '1e3', '１２', '0x10']
+    const documented = ['42', '-7', '+3', '12.5', '.5', '3.', '1,533', '12,345.5', '0,5', '-3/8', '6/4', '2 1/3', '-2 1/3', '$5', '5%', '$ 5', '- 5', '1/0', '', ' ', '.', '1,23', '1e3', '１２', '0x10', '3,5', '-1,5', '0,25', '$1,50', '1,5%', '1,500', ',5', '1,', '1,2345', '1,5.5']
     const sample = [...documented, ...fc.sample(entryText, 2000)]
     const { rows } = await db.owner.query<{ i: number; o_num: string | null; o_den: string | null }>(
       `select t.i::int as i, p.o_num::text, p.o_den::text from unnest($1::text[]) with ordinality as t (s, i) cross join lateral hb.parse_entry(t.s) p order by t.i`,

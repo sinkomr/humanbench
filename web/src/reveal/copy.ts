@@ -20,10 +20,13 @@ export const revealNow = (name: string, index: number, count: number): string =>
 
 /** DESIGN §7.8: "show 'practice-adjusted' in the UI". */
 export const PRACTICE_ADJUSTED_LABEL = 'Practice-adjusted'
-export const PRACTICE_ADJUSTED_FIRST =
-  'This profile is practice-adjusted. With one session there is nothing to adjust yet; when you add sessions, later ones are credited for the typical gain from practice.'
-export const PRACTICE_ADJUSTED_LATER =
-  'This profile is practice-adjusted: each later session is credited for the typical gain from practice (a provisional figure), so repeating the test inflates the estimates less.'
+/**
+ * The practice note is one line (D16): the label "Practice-adjusted", then one short sentence about this profile. What
+ * the adjustment does for a second session is said where the person decides on one, in the advice on when to come
+ * back (`SPACING_TEXT`).
+ */
+export const PRACTICE_ADJUSTED_FIRST = 'Nothing to adjust yet.'
+export const PRACTICE_ADJUSTED_LATER = 'Each later session is credited for the typical gain from practice (a provisional figure).'
 
 // --------------------------------------------------------------------------------- peaks
 
@@ -31,7 +34,7 @@ export const PEAKS_HEADING = 'Your most distinctive peaks'
 export const PEAKS_INTRO =
   'A peak is a skill that stands out from your profile as a whole, with a range that stays clearly above it. It is not a comparison with other people.'
 export const PEAKS_NONE =
-  'No skill stands out clearly from your others yet. That is common after one session. Ranges that overlap are not real differences.'
+  'No skill stands out clearly from your others yet. That is common after one session: the ranges are still wide.'
 export const PEAKS_TOO_FEW = 'Too few skills were measured to compare them with each other.'
 export const PEAKS_NOTE =
   'Peaks compare each skill with your profile as a whole. The hollow and filled markers in the chart compare each skill with 0 SD instead, so the two can differ.'
@@ -50,6 +53,12 @@ export const SAVE_PANEL_REQUIRED =
 export const SAVE_SHARE = 'Share or save to an app'
 export const SAVE_SHARED = 'Save file shared.'
 export const SAVE_SHARE_CANCELLED = 'Sharing was cancelled. Nothing was saved yet.'
+/**
+ * Said under the save panel after a download or a share whose file holds the notes settings kept on this
+ * device (UX-REVIEW D17 A, a provisional default; R-17.12: choices only, never typed text). It tells the
+ * person what else is in the file they may hand on.
+ */
+export const SAVE_HOLDS_NOTES = 'The file also holds the notes settings kept on this device: your choices, never text you typed.'
 export const SAVE_DONE = 'Your results are saved in your file. You can leave this page safely. Your share card and notes for your AI are just below.'
 /** The file name returned by the download, and where to look for it (the status line stays "Save file downloaded."). */
 export const savedAs = (name: string): string => `Saved as ${name}. Look in your Downloads folder (on an iPhone, the Files app) and keep it.`
@@ -104,6 +113,12 @@ export const shareNeedsMore = (min: number, n: number): string =>
 export const SHARE_PNG = 'Download image (PNG)'
 export const SHARE_SVG = 'Download vector image (SVG)'
 export const SHARE_SHARE = 'Share image'
+/**
+ * The label of the downloads (PNG and SVG) when "Share image" is the primary button, that is where the browser
+ * can hand image files to its share sheet (UX-REVIEW D15 C, a provisional default). Where it cannot, the
+ * downloads stay the first buttons and carry no group label.
+ */
+export const SHARE_SAVE_COPY = 'Save a copy'
 export const SHARE_PREPARING = 'Preparing the PNG…'
 export const SHARE_SIZES = 'The PNG is 2400 × 1260 pixels (twice the card size, for sharp screens). The SVG is 1200 × 630 pixels and stays sharp at any size.'
 /** A link to the card itself (the SVG) at full size: the preview is too small to read on a phone. */
@@ -159,7 +174,7 @@ export const FOCUS_SAVE_FIRST = 'Save your file above first. Then you can start 
 export const FOCUS_SUGGESTED = 'wide range'
 export const SPACING_HEADING = 'When to come back'
 export const SPACING_TEXT =
-  'Leave at least 7 days between sessions. A gap keeps practice effects small, and the practice adjustment then has less to correct. To add a session later, press Start and load your save file on the "Ready when you are" screen.'
+  'Leave at least 7 days between sessions. A gap keeps practice effects small, and the practice adjustment then has less to correct. Each later session is credited for the typical gain from practice (a provisional figure). To add a session later, press Start and load your save file on the "Ready when you are" screen.'
 
 // ----------------------------------------------------------------------------- the numbers
 
@@ -170,7 +185,7 @@ export const NORMS_LATEST = 'From your most recent attempt at each task:'
 
 /** DESIGN §7.3: external norms, worded as rough context (Brysbaert 2019; digit span; web-relative RT). */
 export const readingNorm = (wpm: number): string =>
-  `You read a passage at about ${wpm} words per minute. A review of 190 studies found that silent reading averages about 238 words per minute for non-fiction and 260 for fiction, and the studies differed widely (SD 51). One passage is a rough guide.`
+  `You read a passage at about ${wpm} words per minute. A review of 190 studies found that silent reading averages about 238 words per minute for non-fiction and 260 for fiction, and the studies differed widely (SD 51). One passage is a rough guide. The comparison figures are for people reading in their first language.`
 export const spanNorm = (forward: number | null, backward: number | null): string => {
   const parts: string[] = []
   if (forward !== null) parts.push(`${forward} digits forwards`)

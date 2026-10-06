@@ -34,7 +34,7 @@ async function toReadyOnline(page: Page, query = SERVER_QUERY): Promise<void> {
 /** From the ready screen to the first served item (the reaction-time part skipped). */
 async function toFirstServedItem(page: Page): Promise<void> {
   await button(page, 'Begin').click()
-  await expect(h1(page)).toHaveText('Up next: Reaction time')
+  await expect(h1(page)).toHaveText('Up next: Reaction Time')
   await button(page, 'Skip this part').click()
   await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()
   await expect(h1(page)).toHaveText('Up next: Matrix & Series')
@@ -195,7 +195,7 @@ test.describe('the flow with a server', () => {
     await expectNoSeriousAxe(page)
     await overflow(page, 'the opening screen')
     await button(page, 'Use this device only').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     await button(page, 'Skip this part').click()
     await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()
     await button(page, 'Start').click()
@@ -360,7 +360,7 @@ test.describe('the static fallback (the default build) is untouched', () => {
     await expect(h1(page)).toHaveText('Ready when you are')
     await expect(page.getByText('Get a backup from the server')).toHaveCount(0)
     await button(page, 'Begin').click()
-    await expect(h1(page)).toHaveText('Up next: Reaction time')
+    await expect(h1(page)).toHaveText('Up next: Reaction Time')
     await finishNow(page)
     await expect(h1(page)).toHaveText('Session ended') // nothing answered, nothing measured (UX-009b)
     await expect(online(page)).toHaveCount(0)

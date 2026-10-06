@@ -25,6 +25,10 @@
  *   over [−3, 3] (§9.1), the crisp mean curve, the ±1 SD band, the §9.3 fuzz and the 90% whiskers,
  *   the tier hatch, the muting rule, and the ring note ("Rings: SD units, provisional"), which the
  *   card sets in its own small print rather than inside the chart, at a size that survives a feed.
+ *   A card has no not-measured spoke, so the gaps of UX review D13 A never appear on it.
+ * - **Emphasis only on peaks (UX review D15 A, a provisional default).** A credible low (its 90%
+ *   range below 0 SD) is drawn muted, like a range that overlaps 0 SD, so the only strong colour is
+ *   a credible high; the named peaks are ringed and their labels bold, and the key says so.
  * - **No other text.** Every text is an axis label, a ring label, the ring note, or a line of
  *   `card-copy.ts`. Notes for an AI (Phase AI), the R-5.6.5 resource line and the save file are
  *   never inputs of this module, and `card.test.ts` scans the output for them.
@@ -38,11 +42,13 @@
  * Colours are inlined from the palette (§9.8): a picture cannot read the page's CSS variables.
  */
 
+import { axisName } from '../axis-names'
 import { AXIS_INDEX, axis, type AxisCode } from '../engine/axes'
 import { buildBlob, CHAR_EM, estimateTextWidth, fitLayout, LABEL_FONT, LABEL_LINE_EM, layoutExtent, MAX_LABEL_FONT, MIN_TEXT_PX, NOTE_LINE_EM, wrapLine, type BlobLayout, type BlobModel } from './blob'
 import {
   CARD_BRAND,
   CARD_KEY,
+  CARD_KEY_PEAKS,
   CARD_NO_PEAKS,
   CARD_NOTE_READING,
   CARD_NOTE_SCALE,
@@ -121,17 +127,26 @@ export function cardAxes(estimates: readonly AxisEstimate[], hidden: Iterable<Ax
 }
 
 /**
- * The estimate with every drawn word taken from the registry by axis code (the numbers stay the
- * caller's): a card's texts are then a closed list, whatever the estimate objects carry.
+ * The estimate with every drawn word taken by axis code from the registry and its on-screen names
+ * (`axis-names.ts`; the numbers stay the caller's): a card's texts are then a closed list, whatever
+ * the estimate objects carry.
  */
 function canonical(e: AxisEstimate): AxisEstimate {
   const def = axis(e.code)
-  return { ...e, name: def.name, glyph: def.glyph, tier: def.tier, shortLabel: SHORT_LABELS[e.code], compactLabel: COMPACT_LABELS[e.code] }
+  return { ...e, name: axisName(e.code), glyph: def.glyph, tier: def.tier, shortLabel: SHORT_LABELS[e.code], compactLabel: COMPACT_LABELS[e.code] }
+}
+
+/**
+ * How a skill is drawn on a card (D15 A): a credible low (its 90% range below 0 SD) is muted, like a
+ * range that overlaps 0 SD, so the card's strong colour only ever marks a credible high.
+ */
+export function cardSpoke(e: AxisEstimate): AxisEstimate {
+  return e.measured && e.relation === 'below' ? { ...e, muted: true } : e
 }
 
 /**
  * The peak shape the card needs (`reveal/peaks.ts` `Contrast` fits it). The card writes the skill's
- * name from the registry by `code`: no caller-supplied string is ever drawn.
+ * on-screen name by `code` (`axis-names.ts`): no caller-supplied string is ever drawn.
  */
 export interface CardPeak {
   readonly code: AxisCode
@@ -168,9 +183,9 @@ export interface CardText {
   readonly fill: keyof Pick<VizTheme, 'text' | 'textStrong' | 'textAccent' | 'textMuted'>
 }
 
-/** The registry's name of a peak's skill (the card never draws a name a caller supplies). */
+/** The on-screen name of a peak's skill, by code (`axis-names.ts`; the card never draws a name a caller supplies). */
 export function peakName(p: Pick<CardPeak, 'code'>): string {
-  return axis(p.code).name
+  return axisName(p.code)
 }
 
 /** The right-hand column: brand, title, sessions, then the peaks (or a plain sentence). */
@@ -211,27 +226,29 @@ export function columnTexts(sessions: number, allPeaks: readonly CardPeak[]): Ca
 
 /**
  * The small print, full width at the bottom (UX-038): the caveats and the purpose as one paragraph,
- * the key to the marks with what "SD" is, and the ring note (A12) as the last row, its two lines
- * side by side. Every line is {@link CARD_MIN_TEXT} px; the last baseline is 24 px from the edge.
+ * the key to the marks (with the ringed peaks when the card lists any, D15 A), and the ring note (A12)
+ * as the last row, its two lines side by side and then what "SD" is. Every line is
+ * {@link CARD_MIN_TEXT} px; the last baseline is 24 px from the edge.
  */
-export function footerTexts(): CardText[] {
+export function footerTexts(peaks = true): CardText[] {
   const chars = Math.floor(CARD_FOOT_W / (CHAR_EM * FOOT_SIZE))
-  const rows = [...wrapLine([CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), chars), ...wrapLine(`${CARD_KEY} ${CARD_SD_MEANING}`, chars)]
+  const key = peaks ? `${CARD_KEY} ${CARD_KEY_PEAKS}` : CARD_KEY
+  const rows = [...wrapLine([CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE].join(' '), chars), ...wrapLine(key, chars)]
   const lastRow = CARD_H - FOOT_BOTTOM
   const first = lastRow - rows.length * FOOT_LINE
   const out: CardText[] = rows.map((text, i) => ({ text, x: FOOT_X, y: first + i * FOOT_LINE, size: FOOT_SIZE, weight: 400, fill: 'textMuted' }))
-  // The ring note: its two lines on one row, the second after the first.
+  // The ring note: its two lines on one row, the second after the first, then what "SD" is.
   const gap = 2 * FOOT_SIZE
   let x = FOOT_X
-  for (const text of RING_NOTE) {
+  for (const text of [...RING_NOTE, CARD_SD_MEANING]) {
     out.push({ text, x, y: lastRow, size: FOOT_SIZE, weight: 400, fill: 'textMuted' })
     x += estimateTextWidth(text, FOOT_SIZE) + gap
   }
   return out
 }
 
-/** Top of the small print: the chart and the column end above it. */
-export const CARD_FOOT_TOP = footerTexts().reduce((top, t) => Math.min(top, t.y - 0.8 * t.size), CARD_H) - 8
+/** Top of the small print: the chart and the column end above it (the key is one row with or without peaks). */
+export const CARD_FOOT_TOP = Math.min(...[true, false].map((peaks) => footerTexts(peaks).reduce((top, t) => Math.min(top, t.y - 0.8 * t.size), CARD_H))) - 8
 
 /** Where the chart sits: the left part of the card, above the small print. */
 export const CARD_BLOB_REGION = { x: 12, y: 8, w: 704, h: CARD_FOOT_TOP - 8 - 6 } as const
@@ -255,7 +272,7 @@ export interface BlobPlacement {
  * so text size wins over circle size, and among the layouts that reach the target the largest
  * circle wins. Deterministic: widths are estimated, never measured.
  */
-export function placeBlob(spokes: readonly SpokeEstimate[]): BlobPlacement {
+export function placeBlob(spokes: readonly SpokeEstimate[], peaks: readonly string[] = []): BlobPlacement {
   const opts = { note: false, ringStep: 2 } as const
   // Every collision-free layout (one-line or full labels, font sizes from the page's to MAX_LABEL_FONT)
   // with the scale it gets in the region and the smallest text that scale gives.
@@ -278,7 +295,7 @@ export function placeBlob(spokes: readonly SpokeEstimate[]): BlobPlacement {
   }
   // Nothing clear of overlaps reaches the floor (a very full circle): the fit for the floor, as before.
   const layout = chosen?.layout ?? fitLayout(spokes, (BLOB_REGION.w * MIN_TEXT_PX) / MIN_TEXT_PX, opts)
-  const model = buildBlob(spokes, { layout, ...opts })
+  const model = buildBlob(spokes, { layout, ...opts, peaks })
   const [vx, vy, vw, vh] = model.viewBox.split(' ').map(Number) as [number, number, number, number]
   const scale = Math.min(BLOB_REGION.w / vw, BLOB_REGION.h / vh)
   return {
@@ -318,12 +335,14 @@ function styleSheet(t: VizTheme): string {
     `.muted .marker{fill:${t.bg};stroke:${t.muted};stroke-width:2}`,
     `.arrow{fill:${t.blob};stroke:${t.bg};stroke-width:1.5;stroke-linejoin:round}`,
     `.muted .arrow{fill:${t.bg};stroke:${t.muted};stroke-width:2}`,
+    `.peak-ring{fill:none;stroke:${t.blob};stroke-width:2}`,
     `.ring-label{fill:${t.textMuted}}`,
     `.ring-label.reference{font-weight:600}`,
     `.ring-note{fill:${t.textMuted}}`,
     `.label{fill:${t.textStrong}}`,
     `.label.muted{fill:${t.text}}`,
     `.label .note{font-style:italic}`,
+    `.label.peak{font-weight:700}`,
   ].join('')
 }
 
@@ -360,7 +379,7 @@ export function blobMarkup(model: BlobModel, id: string): string {
   p.push('<g class="fuzz">')
   for (const c of model.fuzz) p.push(`<path d="${c.band}" fill-rule="evenodd" fill-opacity="${c.opacity.toFixed(3)}"/>`)
   p.push('</g>')
-  model.hatch.forEach((_, i) => p.push(`<path class="hatch" d="${model.crisp.d}" fill="url(#${id}-hatch)" clip-path="url(#${id}-clip-${i})"/>`))
+  model.hatch.forEach((_, i) => p.push(`<path class="hatch" d="${model.hatchFill}" fill="url(#${id}-hatch)" clip-path="url(#${id}-clip-${i})"/>`))
   p.push(`<path class="crisp" d="${model.crisp.d}"${mutedRuns.length > 0 ? ` clip-path="url(#${id}-credible)"` : ''}/>`)
   if (mutedRuns.length > 0) p.push(`<path class="crisp-muted" d="${model.crisp.d}" clip-path="url(#${id}-muted)"/>`)
 
@@ -368,8 +387,10 @@ export function blobMarkup(model: BlobModel, id: string): string {
   for (const s of model.spokes) {
     if (!s.whisker || !s.marker) throw new RangeError('a card draws measured skills only')
     const mark = s.arrow !== undefined ? `<path class="arrow" d="${s.arrow}"/>` : `<circle class="marker" cx="${f2(s.marker[0])}" cy="${f2(s.marker[1])}" r="4.5"/>`
+    // D15 A: a named peak is ringed.
+    const ring = s.peak ? `<circle class="peak-ring" cx="${f2(s.marker[0])}" cy="${f2(s.marker[1])}" r="9"/>` : ''
     p.push(
-      `<g class="mark${s.muted ? ' muted' : ''}"><line class="whisker" x1="${f2(s.whisker[0][0])}" y1="${f2(s.whisker[0][1])}" x2="${f2(s.whisker[1][0])}" y2="${f2(s.whisker[1][1])}"/>${mark}</g>`,
+      `<g class="mark${s.muted ? ' muted' : ''}${s.peak ? ' peak' : ''}"><line class="whisker" x1="${f2(s.whisker[0][0])}" y1="${f2(s.whisker[0][1])}" x2="${f2(s.whisker[1][0])}" y2="${f2(s.whisker[1][1])}"/>${mark}${ring}</g>`,
     )
   }
   p.push('</g>')
@@ -383,7 +404,7 @@ export function blobMarkup(model: BlobModel, id: string): string {
 
   p.push(`<g class="labels" font-size="${f2(model.text.label)}" stroke-width="${f2(model.text.halo)}">`)
   for (const s of model.spokes) {
-    p.push(`<text class="label${s.muted ? ' muted' : ''}" x="${f2(s.label.at[0])}" y="${f2(s.label.at[1])}" text-anchor="${s.label.anchor}">`)
+    p.push(`<text class="label${s.muted ? ' muted' : ''}${s.peak ? ' peak' : ''}" x="${f2(s.label.at[0])}" y="${f2(s.label.at[1])}" text-anchor="${s.label.anchor}">`)
     s.lines.forEach((line, i) => {
       // U+00A0 (the page's &nbsp;) keeps the tier glyph on its label's line.
       // A note line ("off scale") is set smaller and in italics, as on the page.
@@ -434,12 +455,13 @@ export interface CardModel {
 export function buildCard(input: CardInput): CardModel {
   if (!Number.isInteger(input.sessions) || input.sessions < 1) throw new RangeError('a card rests on at least one session')
   const axes = cardAxes(input.estimates, input.hidden)
-  const spokes = axes.filter((a) => a.status === 'shown').map((a) => canonical(a.estimate))
+  // D15 A: a credible low is drawn muted on a card (module comment).
+  const spokes = axes.filter((a) => a.status === 'shown').map((a) => cardSpoke(canonical(a.estimate)))
   if (spokes.length < MIN_CARD_SKILLS) throw new RangeError(`a card needs at least ${MIN_CARD_SKILLS} skills`)
   const shown = spokes.map((s) => s.code)
   const peaks = cardPeaks(input.peaks ?? [], shown)
-  const placement = placeBlob(spokes)
-  const texts = [...columnTexts(input.sessions, peaks), ...footerTexts()]
+  const placement = placeBlob(spokes, peaks.map((p) => p.code))
+  const texts = [...columnTexts(input.sessions, peaks), ...footerTexts(peaks.length > 0)]
   const theme = input.theme ?? 'light'
   const t = THEMES[theme]
   const alt = cardAlt(shown.length, peaks.map(peakName))

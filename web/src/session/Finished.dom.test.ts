@@ -135,10 +135,15 @@ describe('Finished: nothing measured offers the way back, and keeps the file out
     expect(c.querySelector('h1')?.textContent).toBe('Session ended')
   })
 
-  it('a profile on screen keeps the wide page', () => {
+  it('a profile on screen is one column, not the wide page: the reveal is a direct child of the main block, under its h1 and lines (D16)', () => {
     const bot = new Bot({ sessionId: 's_FINISHEDWIDE001' }, { theta: new Array<number>(17).fill(0.5) })
     bot.finish()
-    expect(show(bot, null).querySelector('main')?.classList.contains('wide')).toBe(true)
+    const main = show(bot, null).querySelector('main')!
+    // The 52rem column is `.hb-screen:has(> .hb-reveal)` in reveal.css (a real browser measures it, e2e/uxdec-reveal.spec.ts): its two parts are these.
+    expect(main.classList.contains('wide')).toBe(false)
+    expect(main.querySelector(':scope > .hb-reveal')).not.toBeNull()
+    expect(main.querySelector(':scope > h1')).not.toBeNull()
+    expect(main.querySelector(':scope > p.lead')).not.toBeNull()
   })
 })
 
@@ -152,5 +157,51 @@ describe('Finished: the results of a save, with no new session (UX-010)', () => 
     expect(c.textContent).not.toContain('You finished')
     expect(c.querySelector('svg.hb-blob')).not.toBeNull()
     expect(c.querySelector('[data-section="save"]')).not.toBeNull()
+  })
+})
+
+describe('Finished: an interrupted session and its continuation are one session of the profile (UX-064)', () => {
+  const ONLY_MAT = ['RT', 'WM', 'PS', 'SPA', 'QR'] as const
+
+  /** A session interrupted after one Matrix & Series answer (no end recorded), on top of `base`. */
+  function interrupted(base: SaveFileV1 | null): SaveFileV1 {
+    const bot = new Bot({ sessionId: 's_FINISHEDINTR001', startedMs: 1_790_000_500_000, skipped: [...ONLY_MAT] })
+    bot.until((v) => v.phase === 'confidence')
+    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    return saveWithSession(base, bot.run.sessionState(), meta)
+  }
+
+  /** The continuation: `answer` one more Matrix & Series question, then finish. */
+  function continuation(answer: boolean): Bot {
+    const bot = new Bot({ sessionId: 's_FINISHEDCONT001', startedMs: 1_790_000_600_000, continues: { done: [], skipped: [...ONLY_MAT] } })
+    if (answer) {
+      bot.until((v) => v.phase === 'confidence')
+      bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    }
+    bot.run.finishEarly()
+    return bot
+  }
+
+  it('a continuation on top of the session it continues does not say the profile combines two sessions', () => {
+    const c = show(continuation(true), interrupted(null))
+    expect(lines(c)).toContain('You answered 1 question')
+    expect(c.textContent).not.toContain('combines')
+  })
+
+  it('with an earlier session of its own, the profile combines 2 sessions, not 3', () => {
+    const c = show(continuation(true), interrupted(earlierSave()))
+    expect(lines(c)).toMatch(/This profile combines 2 sessions\./)
+  })
+
+  it('a continuation that added nothing says the profile comes from 1 earlier session', () => {
+    const c = show(continuation(false), interrupted(null))
+    expect(lines(c)).toContain('This visit added no new answers. Your profile below comes from 1 earlier session.')
+  })
+
+  it('the results of a save with both, with no new session, come from 1 earlier session', () => {
+    const save = saveWithSession(interrupted(null), continuation(true).run.sessionState(), meta)
+    expect(save.sessions).toHaveLength(2)
+    const c = show(null, save)
+    expect(c.querySelector('main > p.lead')?.textContent).toBe('Your profile from 1 earlier session.')
   })
 })

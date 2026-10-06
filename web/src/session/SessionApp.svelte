@@ -7,6 +7,23 @@
   fetched). Without one (the default build) neither exists and the flow is exactly that of M1.
   Screens keep their state in memory until the person passes the gate: the under-18 path never touches
   storage, and the consent, the autosaver and the restore of earlier saves all come after it.
+  Three shortcuts of the start funnel (provisional defaults, UX-REVIEW D22 to D24):
+  - A browser that already holds data shows a row on the welcome screen (`returning.ts`): "See my results" and
+    "Notes for your AI". "See my results" goes straight to the earlier results (the ready screen's UX-010 path)
+    when the consent kept here is for the current terms, and through the 18+ gate first when it is not; it never
+    asks for the honour code or the device check, which belong to a session. A focus session started from those
+    results does: honour code and device check first, then the first part.
+  - The device check's refresh-rate measurement starts when the gate (or the honour screen, where the gate is
+    skipped) comes up, so the device screen does not make the person wait for it. It lives in memory only and is
+    dropped when the person says they are under 18.
+  - The under-18 screen has a way back to the gate, with its box unticked.
+  Picking up an interrupted session (UX-064; provisional default, UX-REVIEW D6 option B; `resume.ts`): when the newest
+  session this browser holds has no recorded end and started less than 24 hours ago, the ready screen offers to continue
+  it. Continuing starts a NEW session flagged as a continuation that skips the parts the interrupted one finished and
+  starts the part it was in from its beginning; it is added to the saves found here, so it comes right after the
+  session it continues. Not offered with a server (the server would practice-adjust the two against each other: its
+  rescore does not read the flag), when the found saves come from more than one identifier or are not to be added to,
+  or when this page asked for consent again (no record, or one for other terms: never across a change of terms).
   Leaving by accident (UX-011): once a run holds an answer, closing or reloading the tab asks first (the
   reveal's guard, `reveal/guard.ts`); while it runs, the browser's Back button or an edge swipe lands on a
   history entry the run pushed and opens "Finish now?" instead of leaving.
@@ -17,6 +34,7 @@
   already), and the tab asks before it is closed until the save is downloaded.
 -->
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { closeServedRun, type ServedOutcome } from '../backend/flow'
   import { problemOf, type LoadProblem } from '../backend/errors'
   import Closing from '../backend/Closing.svelte'
@@ -41,6 +59,7 @@
   import SessionScreen from './SessionScreen.svelte'
   import Welcome from './Welcome.svelte'
   import { SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
+  import { startRefreshProbe, type RefreshProbe } from './device'
   import { browserSessionEnv, type SessionEnv } from './env'
   import { FAST_BANNER } from './fast'
   import type { FlowPhase } from './phase'
@@ -49,6 +68,8 @@
   import { SessionPersister, type AutosaveStatus } from './persist'
   import { PracticeRun } from './practice'
   import { baseOf, defaultReadyState, type ReadyState } from './ready-state'
+  import { continuationStartMs, findUnfinished, type Unfinished } from './resume'
+  import { holdsResults, readReturning, type Returning } from './returning'
   import {
     RESULTS_DOWNLOAD,
     RESULTS_FAILED,
@@ -89,11 +110,30 @@
   const banner = $derived(__HB_DEV_ROUTES__ && env.scale > 1 ? FAST_BANNER : '')
 
   let phase: Phase = $state('welcome')
+  /** What the welcome screen's row for a returning visitor shows, or null (D22); read when the welcome screen comes up. */
+  let returning: Returning | null = $state.raw(null)
+  /** Where the gate leads once it is passed: a session (the honour code comes next), or the earlier results (D22). */
+  let afterGate: 'session' | 'results' = 'session'
+  /** The refresh-rate measurement started on the gate, for the device check to take over (D23). In memory only. */
+  let probe: RefreshProbe | null = $state.raw(null)
+  /** A focus session asked for from results opened on the welcome screen: it waits for the honour code and the device check. */
+  let pendingFocus: readonly AxisCode[] | null = null
   let device: DeviceInfo | null = $state.raw(null)
   let rtInput: RtInputMode = $state('keyboard')
   let restored: RestoreResult | null = $state.raw(null)
   let readyState: ReadyState = $state.raw(defaultReadyState(null))
   const base: SaveFileV1 | null = $derived(baseOf(restored, readyState))
+  /** The consent was asked for in this page (none was kept, or one for other terms): no continuation is offered (UX-064). */
+  let askedConsent = $state(false)
+  /**
+   * The unfinished session the ready screen offers to continue, or null (UX-064, module comment): the newest session
+   * of the base, from this browser's autosaves of one identifier, added to; static version only.
+   */
+  const unfinished: Unfinished | null = $derived.by(() => {
+    if (backend !== null || askedConsent || restored?.save == null || restored.anonIds.length > 1 || !readyState.includeFound) return null
+    const u = findUnfinished(base, env.wallClockMs())
+    return u !== null && restored.save.sessions.some((s) => s.session_id === u.sessionId) ? u : null
+  })
   let practice: PracticeRun | null = $state.raw(null)
   let practiceFamilies: string[] = []
   let run: SessionRun | null = $state.raw(null)
@@ -125,6 +165,10 @@
   let resultsFailed = $state(false)
   /** The fallback's download went through: the file name, and the leave-guard is lifted. */
   let fallbackSaved: string | null = $state(null)
+
+  refreshReturning()
+
+  onDestroy(() => probe?.cancel())
 
   $effect(() => {
     onphase?.(phase)
@@ -171,25 +215,88 @@
     if (history.state?.hb === 'run') history.back()
   }
 
+  /** Read what this browser holds for the welcome row (D22): nothing at all unless an adult consent record is stored. */
+  function refreshReturning(): void {
+    returning = readReturning(env.storage(), backend === null)
+  }
+
+  /** Start measuring the refresh rate while the gate and the honour screen are shown (D23); nothing is stored. */
+  function startProbe(): void {
+    if (probe === null) probe = startRefreshProbe({ frames: env.realFrames, clock: env.realClock })
+  }
+
+  function dropProbe(): void {
+    probe?.cancel()
+    probe = null
+  }
+
   function start(): void {
     visited = true
+    afterGate = 'session'
     // Reading is allowed; nothing is written before the gate is passed.
     phase = readConsent(env.storage(), terms) !== null ? 'honour' : 'gate'
+    startProbe()
+  }
+
+  /**
+   * "See my results" on the welcome screen (D22): the earlier results of this browser with no new session, as
+   * from the ready screen (UX-010). The 18+ gate comes first unless the consent kept here is for these terms.
+   */
+  function seeResults(): void {
+    visited = true
+    afterGate = 'results'
+    if (readConsent(env.storage(), terms) !== null) openSaved()
+    else phase = 'gate'
+  }
+
+  /** The gate is passed for the earlier results: read the saves and show them, or go on as a session would. */
+  function openSaved(): void {
+    afterGate = 'session'
+    restored = restoreAutosaves(SAVE_CTX, env.storage())
+    readyState = defaultReadyState(restored)
+    if (base !== null && holdsResults(base)) {
+      showSaved()
+      return
+    }
+    // Nothing to look at after all (the saves changed since the welcome screen): the usual way in.
+    phase = 'honour'
+    startProbe()
   }
 
   function agree(): void {
+    askedConsent = true
     recordConsent(env.storage(), terms)
+    if (afterGate === 'results') {
+      openSaved()
+      return
+    }
+    startProbe()
     phase = 'honour'
   }
 
   function under18(): void {
-    // The under-18 path keeps nothing: no consent record, no autosave, no flag.
+    // The under-18 path keeps nothing: no consent record, no autosave, no flag, and no measurement.
+    dropProbe()
     phase = 'blocked'
+  }
+
+  /** "I chose this by mistake" (D24): the gate again; the screen cleared its box, and nothing was stored. */
+  function mistake(): void {
+    phase = 'gate'
+    if (afterGate === 'session') startProbe()
   }
 
   function deviceDone(info: DeviceInfo, input: RtInputMode): void {
     device = info
     rtInput = input
+    probe = null
+    if (pendingFocus !== null) {
+      // A focus session asked for from the results opened on the welcome screen: its saves are the base already.
+      const axes = pendingFocus
+      pendingFocus = null
+      startRun(axes)
+      return
+    }
     restored = restoreAutosaves(SAVE_CTX, env.storage())
     readyState = defaultReadyState(restored)
     phase = 'ready'
@@ -204,6 +311,13 @@
 
   function begin(): void {
     startRun()
+  }
+
+  /** "Continue your unfinished session" (UX-064): a new session that picks it up, added to the saves found here. */
+  function continueRun(): void {
+    const u = unfinished
+    if (u === null || device === null || backend !== null) return
+    launch(undefined, null, u)
   }
 
   /**
@@ -233,12 +347,13 @@
     }
   }
 
-  function launch(focus: readonly AxisCode[] | undefined, s: ServerSession | null): void {
+  function launch(focus: readonly AxisCode[] | undefined, s: ServerSession | null, continues?: Unfinished): void {
     if (device === null) return
     server = s
     outcome = null
     closeFailed = false
-    const startedMs = env.wallClockMs()
+    // A continuation starts after the session it continues, to the second, so it comes right after it in time order.
+    const startedMs = continues === undefined ? env.wallClockMs() : continuationStartMs(env.wallClockMs(), continues.startedUtc)
     const sessionId = newSessionId(startedMs)
     const r = new SessionRun({
       sessionId,
@@ -250,6 +365,7 @@
       priorItemCounts: priorItemCounts(base),
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
       ...(focus === undefined ? {} : { focus, targetS: FOCUS_TARGET_S }),
+      ...(continues === undefined ? {} : { continues: { done: continues.done, skipped: continues.skipped } }),
       ...(s === null ? {} : { cat: s }),
       onChange: (kind: ChangeKind) => onChange(kind),
     })
@@ -322,10 +438,10 @@
    * A 20-minute focus session on the chosen skills (DESIGN §10, ROADMAP M1.R): the session just
    * finished, with everything it holds, is the base of the new one, so the results afterwards are
    * the practice-adjusted re-score of both (R-8.1, §7.8). The gate, the honour code and the device
-   * check were done in this visit, so it goes straight to the first part.
+   * check were done in this visit, so it goes straight to the first part. From results opened on the
+   * welcome screen (D22) the honour code and the device check were not: they come first.
    */
   function startFocus(axes: AxisCode[]): void {
-    if (device === null) return
     // The session just finished, or the results of the loaded save when no session was run (UX-010), with everything it holds.
     const finished = viewing ? viewSave() : persister?.currentSave()
     if (finished === undefined) return
@@ -333,6 +449,12 @@
     viewing = false
     restored = null
     readyState = { includeFound: false, loaded: finished }
+    if (device === null) {
+      pendingFocus = axes
+      phase = 'honour'
+      startProbe()
+      return
+    }
     startRun(axes)
   }
 
@@ -391,18 +513,22 @@
     practiceFamilies = []
     restored = null
     readyState = defaultReadyState(null)
+    afterGate = 'session'
+    pendingFocus = null
+    dropProbe()
     phase = 'welcome'
+    refreshReturning()
   }
 </script>
 
 {#if phase === 'welcome'}
-  <Welcome onstart={start} focus={visited} />
+  <Welcome onstart={start} focus={visited} {returning} onresults={backend === null ? seeResults : undefined} />
 {:else if phase === 'gate' || phase === 'blocked'}
-  <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} points={backend === null ? undefined : SERVER_GATE_POINTS} />
+  <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} onmistake={mistake} points={backend === null ? undefined : SERVER_GATE_POINTS} />
 {:else if phase === 'honour'}
   <Honour onagree={() => (phase = 'device')} />
 {:else if phase === 'device'}
-  <DeviceCheck {env} ondone={deviceDone} />
+  <DeviceCheck {env} {probe} ondone={deviceDone} />
 {:else if phase === 'ready'}
   <Ready
     {restored}
@@ -411,6 +537,8 @@
     onpractice={startPractice}
     onbegin={begin}
     onresults={backend === null ? showSaved : undefined}
+    {unfinished}
+    oncontinue={backend === null ? continueRun : undefined}
     onfocus={(axes) => startRun(axes)}
     text={backend === null ? undefined : SERVER_READY_TEXT}
     verify={backend === null ? undefined : (save) => backend.api.verifySave(save)}

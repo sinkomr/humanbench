@@ -16,7 +16,7 @@ import * as saveBarrel from './index'
 import { isUsableCache } from './merge'
 import { blockResponseOf, itemAxis, posteriorCacheOf, registryObservation, rescoreSessions, type ResponseResolver } from './rescore'
 import { TEST_CTX } from './testing'
-import { SCHEMA_URL, SCHEMA_VERSION, type SaveFileV1, type SaveSession } from './types'
+import { CONTINUATION_FLAG, SCHEMA_URL, SCHEMA_VERSION, type SaveFileV1, type SaveSession, type SessionFlags } from './types'
 import { assertValidSave } from './validate'
 
 type AnyItem = ItemInstance<object, object>
@@ -243,6 +243,82 @@ describe('rescoreSessions (§7.8 re-scoring of a multi-session save, M1.Q)', () 
         zero.theta.forEach((v, i) => expect(v).toBeCloseTo(plain.theta[i]!, 12))
       }),
       { numRuns: 25 },
+    )
+  })
+})
+
+describe('rescoreSessions: continuation sessions (CONTINUATION_FLAG, §7.8)', () => {
+  const first = ['a', 'b', 'c'].map((x) => rot(`ct1-${x}`))
+  const rest = ['a', 'b', 'c'].map((x) => rot(`ct2-${x}`))
+  const m = mat('ct-m')
+  /** `session()` at `hour` on `day`, with `flags`. */
+  const at = (id: string, day: number, hour: number, responses: ResponseTuple[], flags: SessionFlags = {}): SaveSession => ({
+    ...session(id, day, responses),
+    started_utc: `2026-10-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00Z`,
+    flags,
+  })
+  const firstPart = first.map((it) => mcTuple(it, 1))
+  const secondPart = [...rest.map((it, i) => mcTuple(it, i % 2 === 0 ? 1 : 0)), mcTuple(m, 1)]
+
+  it('a session flagged as a continuation shares its sitting’s test numbers: no practice adjustment between the parts', () => {
+    const save = saveOf([at(S2, 1, 11, secondPart, { [CONTINUATION_FLAG]: true }), at(S1, 1, 10, firstPart), at('s_0000000z', 8, 10, firstPart)])
+    const r = rescoreSessions(save)
+    expect(r.sessions.map((s) => [s.session_id, s.continuation, s.ordinals])).toEqual([
+      [S1, undefined, { SPA: 1 }],
+      [S2, true, { MAT: 1, SPA: 1 }],
+      ['s_0000000z', undefined, { SPA: 2 }],
+    ])
+    expect(r.sessions[1]!.rho).toEqual({ MAT: 0, SPA: 0 })
+    expect(r.next_ordinals).toMatchObject({ SPA: 3, MAT: 2 })
+    // The two parts score exactly as one session holding both.
+    const whole = rescoreSessions(saveOf([at(S1, 1, 10, [...firstPart, ...secondPart]), at('s_0000000z', 8, 10, firstPart)]))
+    expect(r.theta).toEqual(whole.theta)
+    expect(r.cov).toEqual(whole.cov)
+    expect(r.eap).toEqual(whole.eap)
+    // Without the flag the second part is a retest of the first.
+    const unflagged = rescoreSessions(saveOf([at(S1, 1, 10, firstPart), at(S2, 1, 11, secondPart), at('s_0000000z', 8, 10, firstPart)]))
+    expect(unflagged.sessions.map((s) => s.ordinals)).toEqual([{ SPA: 1 }, { MAT: 1, SPA: 2 }, { SPA: 3 }])
+  })
+
+  it('only `true` marks a continuation, and the flag on the first session is ignored', () => {
+    const plain = rescoreSessions(saveOf([at(S1, 1, 10, firstPart), at(S2, 1, 11, secondPart)]))
+    const variants: [SessionFlags, SessionFlags][] = [
+      [{}, { [CONTINUATION_FLAG]: false }],
+      [{}, { [CONTINUATION_FLAG]: 1 }],
+      [{}, { [CONTINUATION_FLAG]: null }],
+      [{ [CONTINUATION_FLAG]: true }, {}],
+    ]
+    for (const [f1, f2] of variants) {
+      const r = rescoreSessions(saveOf([at(S1, 1, 10, firstPart, f1), at(S2, 1, 11, secondPart, f2)]))
+      expect(r.sessions, JSON.stringify([f1, f2])).toEqual(plain.sessions)
+      expect(r.theta).toEqual(plain.theta)
+      expect(r.cov).toEqual(plain.cov)
+    }
+  })
+
+  it('property: a save without continuation flags scores as before; a continuation flag never raises a test number', () => {
+    const pool = [...first, ...rest, m]
+    const flagArb = fc.constantFrom<SessionFlags>({}, { [CONTINUATION_FLAG]: false }, { [CONTINUATION_FLAG]: 0 }, { [CONTINUATION_FLAG]: null }, { [CONTINUATION_FLAG]: true })
+    const sessionArb = fc.record({ rs: fc.array(fc.tuple(fc.integer({ min: 0, max: pool.length - 1 }), fc.constantFrom<0 | 1>(0, 1)), { maxLength: 4 }), flags: flagArb })
+    fc.assert(
+      fc.property(fc.array(sessionArb, { minLength: 1, maxLength: 5 }), (per) => {
+        const build = (flags: (f: SessionFlags) => SessionFlags): SaveFileV1 =>
+          saveOf(per.map(({ rs, flags: f }, i) => at(`s_${String(90 - i).padStart(8, '0')}`, 1 + Math.floor(i / 2), 10 + i, rs.map(([j, y]) => mcTuple(pool[j]!, y)), flags(f))))
+        const none = rescoreSessions(build(() => ({})))
+        const notTrue = rescoreSessions(build((f) => (f[CONTINUATION_FLAG] === true ? {} : f)))
+        expect(notTrue.sessions).toEqual(none.sessions)
+        expect(notTrue.theta).toEqual(none.theta)
+        expect(none.sessions.some((s) => s.continuation !== undefined)).toBe(false)
+        const marked = rescoreSessions(build((f) => f))
+        marked.sessions.forEach((s, i) => {
+          const before = none.sessions[i]!
+          expect(s.session_id).toBe(before.session_id)
+          expect(Object.keys(s.ordinals)).toEqual(Object.keys(before.ordinals))
+          for (const [k, n] of Object.entries(s.ordinals)) expect(n).toBeLessThanOrEqual(before.ordinals[k as keyof typeof before.ordinals]!)
+        })
+        for (const k of AXIS_CODES) expect(marked.next_ordinals[k]).toBeLessThanOrEqual(none.next_ordinals[k])
+      }),
+      { numRuns: 30 },
     )
   })
 })

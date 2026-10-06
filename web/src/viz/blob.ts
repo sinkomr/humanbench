@@ -9,8 +9,15 @@
  *   θ_k + z·SD_k for z spread evenly over ±1.645, each filling the band toward the mean with
  *   opacity ∝ the normal density φ(z) ({@link FUZZ_Z}, {@link fuzzOpacity}); every curve is chosen
  *   by the overshoot rule (§9.2, `curve.ts`).
- * - Not-measured spokes (§9.7, A15): a dashed spoke, a grey stub at the centre and a gap marker;
- *   every curve dips to the inner clamp there (never interpolated through).
+ * - Not-measured spokes (§9.7, A15): a dashed spoke, a grey stub at the centre and a gap marker,
+ *   never interpolated through. UX review D13 A (a provisional default, amending the §9.7 dip):
+ *   the crisp curve, the band and the fuzz break there instead of dipping to the inner clamp, where
+ *   −3 SD is drawn; each run of measured neighbours is an open curve (`curve.ts`), a lone measured
+ *   spoke keeps its marker and 90% whisker, and the gap marker is a small × on the 0 SD ring. With
+ *   every spoke measured the curves are closed, as before.
+ * - D13 B (provisional default): on a narrow screen (where the default text layout does not fit)
+ *   with at least {@link STUB_LIST_MIN} not-measured spokes, those spokes lose their label and the
+ *   model lists them ({@link BlobModel.stubList}), which the chart prints under itself.
  * - Measured spokes: a marker at θ and a 90% whisker; muted when the interval overlaps 0 (§9.5).
  *   An estimate beyond the scale (below the inner clamp, or above +3 SD) gets an arrowhead at the
  *   clamp instead of the dot, never mistaken for a stub (UX-037); the radius map itself is untouched.
@@ -27,8 +34,8 @@
  * Nothing here sums, averages or measures the shape (§9.5 a).
  */
 
-import { OFF_SCALE_LABEL, RING_NOTE } from './copy'
-import { chooseCurve, fmt, type CurveKind } from './curve'
+import { OFF_SCALE_LABEL, RING_NOTE, stubListLead } from './copy'
+import { chooseCurve, CURVE_CHAIN, fmt, pathData, pathEnd, reversedSegmentsData, type CurveKind, type RecordedPath } from './curve'
 import { offScaleOf, polar, R_MIN_FRACTION, radiusScale, ringLabel, ringSpacing, RING_THETAS, spokeAngle, Z90, type Point } from './geometry'
 import { stubLabel, type SpokeEstimate } from './profile'
 
@@ -36,6 +43,10 @@ import { stubLabel, type SpokeEstimate } from './profile'
 export const DEFAULT_R = 180
 /** The grey stub at the centre of a not-measured spoke, as a fraction of R (§9.7). */
 const STUB_FRACTION = 0.14
+/** Half the length of each arm of the × on the 0 SD ring of a not-measured spoke (D13 A), in user units. */
+export const GAP_MARK_ARM = 4.5
+/** D13 B: on a narrow screen, this many not-measured spokes or more lose their labels to a list under the chart. */
+export const STUB_LIST_MIN = 5
 /** Room between the wedges (R + 4) and the spoke labels. */
 const LABEL_GAP = 12
 /** Padding inside the viewBox edge. */
@@ -127,9 +138,15 @@ export interface SpokeView {
    */
   readonly offScale?: 'low' | 'high'
   readonly arrow?: string
-  /** Not measured: the grey stub from the centre and the gap marker where the curve dips. */
+  /**
+   * Not measured: the grey stub from the centre, and the gap marker (D13 A): `gap` is its centre on
+   * the 0 SD ring, `gapMark` the × drawn there (two strokes, turned with the spoke).
+   */
   readonly stub?: Point
   readonly gap?: Point
+  readonly gapMark?: string
+  /** A share card's named peak (D15 A): its marker is ringed and its label bold. */
+  readonly peak?: boolean
 }
 
 export interface CurveView {
@@ -174,6 +191,13 @@ export interface TextSizes {
   readonly halo: number
 }
 
+/**
+ * How the not-measured spokes are labelled: `full` (the name and the stub note, "not measured") or
+ * `none` (no label, and a list under the chart names them: D13 B). Short names alone were measured
+ * too: they free no width, because the labels of the measured spokes set it.
+ */
+export type StubLabels = 'full' | 'none'
+
 /** The text layout {@link fitLayout} chooses for a given on-screen width. */
 export interface BlobLayout {
   /** Spoke-label size in user units ({@link LABEL_FONT} at full width). */
@@ -183,6 +207,19 @@ export interface BlobLayout {
    * {@link WRAP_CHARS} (facets), and long stub notes wrapped.
    */
   readonly compact: boolean
+  /**
+   * Labels of the not-measured spokes; `full` when absent. With `none` (D13 B) the viewBox fits the
+   * labels that are left on each side, so the circle may sit off centre and grows.
+   */
+  readonly stubLabels?: StubLabels
+}
+
+/** One line of the list under a chart whose not-measured spokes carry no stub note (D13 B). */
+export interface StubGroup {
+  /** "Not measured" or "Insufficient data". */
+  readonly lead: string
+  /** The skills (or facets), full names, in spoke order. */
+  readonly names: readonly string[]
 }
 
 export const DEFAULT_LAYOUT: BlobLayout = Object.freeze({ fontSize: LABEL_FONT, compact: false })
@@ -201,14 +238,23 @@ export interface BlobModel {
   readonly ring: number
   readonly rings: readonly RingView[]
   readonly spokes: readonly SpokeView[]
-  /** The crisp posterior curve (§9.3). */
+  /** The crisp posterior curve (§9.3): closed, or one open curve per run of measured spokes (D13 A). */
   readonly crisp: CurveView
+  /**
+   * The region the tier (c) hatch fills, clipped to each hatched wedge: the crisp curve when it is
+   * closed; with gaps (D13 A), each run's curve closed through the centre, and a narrow sector up to
+   * the marker for a lone measured spoke.
+   */
+  readonly hatchFill: string
   /**
    * The crisp curve's angular runs (§9.5): runs with `muted` are drawn in the muted tone, the
    * others in the blob colour. One run (not muted) when no spoke is muted.
    */
   readonly muteRuns: readonly MuteRun[]
-  /** ±1 SD band: outer then inner closed curve, drawn with fill-rule evenodd. */
+  /**
+   * ±1 SD band: outer then inner closed curve, drawn with fill-rule evenodd; with gaps (D13 A), one
+   * closed region per run (its outer curve, then its inner curve backwards).
+   */
   readonly band: { readonly d: string; readonly outer: CurveView; readonly inner: CurveView }
   /** The §9.3 fuzz, in {@link FUZZ_Z} order (inside out). */
   readonly fuzz: readonly FuzzView[]
@@ -223,11 +269,15 @@ export interface BlobModel {
   /** Estimated box of each spoke label (same order as `spokes`) and of the ring note. */
   readonly labelBoxes: readonly Box[]
   readonly noteBox: Box
+  /** D13 B: the not-measured spokes the layout leaves without a label, by stub note; empty otherwise. */
+  readonly stubList: readonly StubGroup[]
 }
 
 export interface BlobOptions extends FitOptions {
   /** Text layout; {@link DEFAULT_LAYOUT} when omitted (see {@link fitLayout}). */
   readonly layout?: BlobLayout
+  /** Ids of spokes to mark as named peaks (the share card, D15 A); none on the page. */
+  readonly peaks?: Iterable<string>
 }
 
 /** Arrowhead length and half-width in user units (the dot it replaces is 4.5 across). */
@@ -265,6 +315,63 @@ function curveView(points: readonly Point[], ring: number): CurveView {
   return { d: c.d, kind: c.kind, overshootRings: c.overshootRings }
 }
 
+/** A run of measured spokes between two gaps (D13 A): its first index and length (indices mod K). */
+interface Run {
+  readonly start: number
+  readonly len: number
+}
+
+/**
+ * One curve of the blob (the crisp curve, a band edge or a fuzz curve): its view, and the recorded
+ * open curve of each run (null for a lone spoke, which has no curve), when there are gaps.
+ */
+interface Curve {
+  readonly view: CurveView
+  readonly runs: readonly (RecordedPath | null)[] | null
+}
+
+/**
+ * The curve through `points` (one per spoke): closed when `runs` is null (every spoke measured),
+ * else one open curve per run of two or more spokes, each chosen by the overshoot rule on its own;
+ * the view reports the last fallback any run needed and the largest overshoot.
+ */
+function blobCurve(points: readonly Point[], runs: readonly Run[] | null, ring: number): Curve {
+  if (runs === null) return { view: curveView(points, ring), runs: null }
+  const k = points.length
+  const chosen = runs.map((run) => (run.len < 2 ? null : chooseCurve(Array.from({ length: run.len }, (_, j) => points[(run.start + j) % k]!), ring, undefined, false)))
+  const drawn = chosen.filter((c) => c !== null)
+  const kind = drawn.reduce<CurveKind>((worst, c) => (CURVE_CHAIN.indexOf(c.kind) > CURVE_CHAIN.indexOf(worst) ? c.kind : worst), 'catmullRom')
+  return {
+    view: { d: drawn.map((c) => c.d).join(''), kind, overshootRings: Math.max(0, ...drawn.map((c) => c.overshootRings)) },
+    runs: chosen.map((c) => c?.path ?? null),
+  }
+}
+
+/**
+ * The band between two curves of the same spokes, `a` then `b` (fill-rule evenodd): both closed
+ * curves one after the other; with gaps, per run, a's curve, across to b's end, b's curve backwards.
+ */
+function bandBetween(a: Curve, b: Curve): string {
+  if (a.runs === null || b.runs === null) return `${a.view.d}${b.view.d}`
+  const f = (p: Point): string => `${fmt(p[0])},${fmt(p[1])}`
+  return a.runs
+    .map((pa, j) => {
+      const pb = b.runs![j]
+      return pa === null || pb === null || pb === undefined ? '' : `${pathData(pa)}L${f(pathEnd(pb))}${reversedSegmentsData(pb)}Z`
+    })
+    .join('')
+}
+
+/** The two strokes of an × centred on `at`, its arms at 45° to the spoke at `angle` (D13 A gap marker). */
+export function gapMarkPath(at: Point, angle: number, arm = GAP_MARK_ARM): string {
+  const f = (p: Point): string => `${fmt(p[0])},${fmt(p[1])}`
+  const u: Point = [Math.sin(angle), -Math.cos(angle)] // outward along the spoke
+  const t: Point = [Math.cos(angle), Math.sin(angle)] // along the ring
+  const d = arm / Math.SQRT2
+  const end = (su: number, st: number): Point => [at[0] + d * (su * u[0] + st * t[0]), at[1] + d * (su * u[1] + st * t[1])]
+  return `M${f(end(-1, -1))}L${f(end(1, 1))}M${f(end(-1, 1))}L${f(end(1, -1))}`
+}
+
 /** The label of the spoke at `angle`, `extra` user units further out than the default place. */
 function labelFor(angle: number, R: number, nLines: number, extra = 0): SpokeView['label'] {
   const at = polar(R + LABEL_GAP + extra, angle)
@@ -296,9 +403,10 @@ export function wrapLine(text: string, max = WRAP_CHARS): string[] {
  * The label lines of a spoke: its short label (compact: the one-line compact label, or the label
  * wrapped to {@link WRAP_CHARS}) with the tier glyph, then the stub note if not measured ("not
  * measured" stays one line so it reads as one; a longer note wraps at {@link NOTE_WRAP_CHARS} when
- * compact).
+ * compact). `stubs` (D13 B): with `none` a not-measured spoke has no label.
  */
-export function spokeLines(s: SpokeEstimate, compact: boolean): LabelLine[] {
+export function spokeLines(s: SpokeEstimate, compact: boolean, stubs: StubLabels = 'full'): LabelLine[] {
+  if (!s.measured && stubs === 'none') return []
   const texts = !compact ? [...s.shortLabel] : s.compactLabel !== undefined ? [s.compactLabel] : wrapLine(s.shortLabel.join(' '))
   // The glyph goes on the first line it does not make the widest, else on the shortest line.
   let g = -1
@@ -420,10 +528,17 @@ export function labelsCollide(boxes: readonly Box[], pad = 0, padY = pad): boole
 function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLayout, measure: TextMeasure, note = true, minRingStep: 1 | 2 = 1): TextLayout {
   const k = spokes.length
   const sizes = textSizes(layout.fontSize)
-  const lines = spokes.map((s) => spokeLines(s, layout.compact))
+  const lines = spokes.map((s) => spokeLines(s, layout.compact, layout.stubLabels))
   const angles = spokes.map((_, i) => spokeAngle(i, k))
+  // A spoke without a label (D13 B) has an empty box on the circle: it takes no room and never collides.
+  const labelled = lines.map((l) => l.length > 0)
   const place = (i: number, extra: number): { label: SpokeView['label']; view: Box; glyph: Box } => {
-    const label = labelFor(angles[i]!, R, lines[i]!.length, extra)
+    const label = labelFor(angles[i]!, R, Math.max(1, lines[i]!.length), extra)
+    if (!labelled[i]) {
+      const [x, y] = polar(R, angles[i]!)
+      const at: Box = { x0: x, x1: x, y0: y, y1: y }
+      return { label, view: at, glyph: at }
+    }
     return { label, ...labelBoxes(label, lines[i]!, spokes[i]!.glyph, sizes, measure) }
   }
   // Height is free (the chart's height follows its width), width is not: labels towards 12 and
@@ -444,10 +559,10 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
     const [x, y] = ringLabelAt(r(t), ringAngle, sizes.small)
     return { x0: x, x1: x + measure(ringLabel(t), sizes.small), y0: y - GLYPH_ASCENT_EM * sizes.small, y1: y + GLYPH_DESCENT_EM * sizes.small }
   })
-  const clashes = (b: Box): boolean => placed.some((q) => q !== undefined && overlap(b, q.glyph, space, spaceY)) || ringBoxes.some((q) => overlap(b, q, space))
+  const clashes = (b: Box): boolean => placed.some((q, j) => q !== undefined && labelled[j] && overlap(b, q.glyph, space, spaceY)) || ringBoxes.some((q) => overlap(b, q, space))
   for (const i of order) {
     let p = place(i, 0)
-    if (Math.abs(Math.cos(angles[i]!)) >= MOVABLE_COS) {
+    if (labelled[i] && Math.abs(Math.cos(angles[i]!)) >= MOVABLE_COS) {
       for (let n = 1; n <= MOVE_STEPS && clashes(p.glyph); n++) p = place(i, n * MOVE_STEP_EM * sizes.label)
     }
     placed[i] = p
@@ -456,17 +571,28 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
   const labels = boxes.map((b) => b.label)
   const viewBoxes = boxes.map((b) => b.view)
   const outer = R + 4
-  let half = outer
+  let left = outer
+  let right = outer
   let top = -outer
   let bottom = outer
-  for (const b of viewBoxes) {
-    half = Math.max(half, -b.x0, b.x1)
+  for (const [i, b] of viewBoxes.entries()) {
+    if (!labelled[i]) continue
+    left = Math.max(left, -b.x0)
+    right = Math.max(right, b.x1)
     top = Math.min(top, b.y0)
     bottom = Math.max(bottom, b.y1)
   }
+  // Centred on the circle, unless the not-measured spokes are bare (D13 B): then each side holds
+  // only its own labels, and the note at the left edge widens the right side if it must.
+  if ((layout.stubLabels ?? 'full') === 'full') left = right = Math.max(left, right)
   const noteW = Math.max(...RING_NOTE.map((t) => measure(t, sizes.small))) + sizes.halo
-  half = Math.max(half, note ? noteW / 2 : 0) + VIEW_PAD
-  const noteX = -half + VIEW_PAD
+  if (note) {
+    const spare = noteW - (left + right)
+    if (spare > 0) [left, right] = left === right ? [left + spare / 2, right + spare / 2] : [left, right + spare]
+  }
+  left += VIEW_PAD
+  right += VIEW_PAD
+  const noteX = -left + VIEW_PAD
   const noteY = bottom + (NOTE_LINE_EM + 0.2) * sizes.small
   const noteLast = noteY + (RING_NOTE.length - 1) * NOTE_LINE_EM * sizes.small
   // Without the note the box is empty, on the chart's bottom edge: it adds nothing to the viewBox.
@@ -475,7 +601,7 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
     : { x0: noteX, x1: noteX, y0: bottom, y1: bottom }
   const y0 = top - VIEW_PAD
   // Spoke labels keep a line of clear space above one another; ring labels only need to stay apart.
-  const glyphs = boxes.map((b) => b.glyph)
+  const glyphs = boxes.filter((_, i) => labelled[i]).map((b) => b.glyph)
   const collides = labelsCollide(glyphs, space, spaceY) || glyphs.some((g) => ringBoxes.some((q) => overlap(g, q, space))) || labelsCollide(ringBoxes, space)
   return {
     sizes,
@@ -484,7 +610,7 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
     labelBoxes: viewBoxes,
     noteAt: [noteX, noteY],
     noteBox,
-    viewBox: [-half, y0, 2 * half, noteBox.y1 + VIEW_PAD - y0],
+    viewBox: [-left, y0, left + right, noteBox.y1 + VIEW_PAD - y0],
     collides,
     ringStep,
     ringAngle,
@@ -598,43 +724,63 @@ export function fitLayoutDetailed(spokes: readonly SpokeEstimate[], widthPx: num
   const def = defaultLayout(k)
   if (!(widthPx > 0) || !Number.isFinite(widthPx) || spokes.length === 0) return { layout: def, smallPx: 0, legible: true }
   const minPx = MIN_TEXT_PX * k
-  const minFont = LABEL_FONT * k
-  const maxFont = MAX_LABEL_FONT * k
-  const step = FIT_STEP * k
   const at = (layout: BlobLayout): ReturnType<typeof renderedSizes> => renderedSizes(spokes, widthPx, layout, opts)
   const d = at(def)
   if (d.smallPx >= minPx && !d.collides) return { layout: def, smallPx: d.smallPx, legible: true }
-  let fallback: { layout: BlobLayout; smallPx: number; collides: boolean } | null = null
-  const fits: { layout: BlobLayout; rPx: number; smallPx: number }[] = []
-  for (const compact of [false, true]) {
-    const legible = (f: number): boolean => at({ fontSize: f, compact }).smallPx >= minPx
-    const overlaps = (f: number): boolean => at({ fontSize: f, compact }).collides
-    const fLegible = legible(maxFont) ? lowestTrue(legible, minFont, maxFont) : maxFont
-    if (legible(fLegible)) {
-      // Legible from fLegible up; the first size from there without overlaps (outward moves make
-      // overlaps only nearly monotone in the size, so step up rather than trust one probe).
-      let f = fLegible
-      while (f < maxFont && overlaps(f)) f = Math.min(maxFont, f + step)
-      if (!overlaps(f)) {
-        const layout = { fontSize: f, compact }
-        const r = at(layout)
-        fits.push({ layout, rPx: r.rPx, smallPx: r.smallPx })
-        continue
-      }
-    }
-    // Best effort: the largest size below which labels do not overlap (or the smallest size).
-    const fClear = !overlaps(minFont) ? (overlaps(maxFont) ? lowestTrue(overlaps, minFont, maxFont) - 0.05 : maxFont) : minFont
-    let f = Math.max(minFont, Math.min(fLegible, fClear))
-    while (f > minFont && overlaps(f)) f = Math.max(minFont, f - step)
-    const layout = { fontSize: f, compact }
-    const r = at(layout)
-    if (fallback === null || r.smallPx > fallback.smallPx + 1e-9) fallback = { layout, smallPx: r.smallPx, collides: r.collides }
-  }
+  // D13 B: too narrow for the default and many not-measured spokes: those spokes lose their labels
+  // to a list under the chart, which leaves the measured ones (and the circle) the room. (Whether
+  // compact labels are needed depends on the font, so it is not the test of "narrow".)
+  const stubs: StubLabels | undefined = spokes.filter((s) => !s.measured).length >= STUB_LIST_MIN ? 'none' : undefined
+  const [full, compact] = [fitMode(spokes, widthPx, opts, false, stubs), fitMode(spokes, widthPx, opts, true, stubs)]
   // Full labels unless compact ones leave a circle more than COMPACT_GAIN larger.
-  const [full, compact] = [fits.find((c) => !c.layout.compact), fits.find((c) => c.layout.compact)]
-  if (full && (!compact || compact.rPx <= COMPACT_GAIN * full.rPx)) return { layout: full.layout, smallPx: full.smallPx, legible: true }
-  if (compact) return { layout: compact.layout, smallPx: compact.smallPx, legible: true }
-  return { layout: fallback!.layout, smallPx: fallback!.smallPx, legible: fallback!.smallPx >= minPx - 1e-6 && !fallback!.collides }
+  let chosen: ModeFit
+  if (full.fits && (!compact.fits || compact.rPx <= COMPACT_GAIN * full.rPx)) chosen = full
+  else if (compact.fits) chosen = compact
+  else chosen = compact.smallPx > full.smallPx + 1e-9 ? compact : full
+  return { layout: chosen.layout, smallPx: chosen.smallPx, legible: chosen.fits || (chosen.smallPx >= minPx - 1e-6 && !chosen.collides) }
+}
+
+/** What {@link fitMode} found for one label mode. */
+interface ModeFit {
+  readonly layout: BlobLayout
+  readonly smallPx: number
+  readonly rPx: number
+  readonly collides: boolean
+  /** The floor is reached with no labels overlapping. */
+  readonly fits: boolean
+}
+
+/**
+ * For one label mode (full or compact labels, and how not-measured spokes are labelled), the smallest
+ * font size that reaches the floor with no overlaps; failing that, the largest clear size (best effort).
+ */
+function fitMode(spokes: readonly SpokeEstimate[], widthPx: number, opts: FitOptions, compact: boolean, stubLabels?: StubLabels): ModeFit {
+  const k = textScale(opts.rootPx)
+  const minPx = MIN_TEXT_PX * k
+  const minFont = LABEL_FONT * k
+  const maxFont = MAX_LABEL_FONT * k
+  const step = FIT_STEP * k
+  const layoutAt = (fontSize: number): BlobLayout => (stubLabels === undefined ? { fontSize, compact } : { fontSize, compact, stubLabels })
+  const at = (f: number): ReturnType<typeof renderedSizes> => renderedSizes(spokes, widthPx, layoutAt(f), opts)
+  const legible = (f: number): boolean => at(f).smallPx >= minPx
+  const overlaps = (f: number): boolean => at(f).collides
+  const fLegible = legible(maxFont) ? lowestTrue(legible, minFont, maxFont) : maxFont
+  if (legible(fLegible)) {
+    // Legible from fLegible up; the first size from there without overlaps (outward moves make
+    // overlaps only nearly monotone in the size, so step up rather than trust one probe).
+    let f = fLegible
+    while (f < maxFont && overlaps(f)) f = Math.min(maxFont, f + step)
+    if (!overlaps(f)) {
+      const r = at(f)
+      return { layout: layoutAt(f), smallPx: r.smallPx, rPx: r.rPx, collides: false, fits: true }
+    }
+  }
+  // Best effort: the largest size below which labels do not overlap (or the smallest size).
+  const fClear = !overlaps(minFont) ? (overlaps(maxFont) ? lowestTrue(overlaps, minFont, maxFont) - 0.05 : maxFont) : minFont
+  let f = Math.max(minFont, Math.min(fLegible, fClear))
+  while (f > minFont && overlaps(f)) f = Math.max(minFont, f - step)
+  const r = at(f)
+  return { layout: layoutAt(f), smallPx: r.smallPx, rPx: r.rPx, collides: r.collides, fits: false }
 }
 
 /** {@link fitLayoutDetailed}'s layout. */
@@ -690,36 +836,45 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
   const angles = spokes.map((_, i) => spokeAngle(i, k))
   const half = Math.PI / k
 
+  // D13 A: with every spoke measured the curves are closed; otherwise they break at each
+  // not-measured spoke (null: no gaps). A not-measured spoke's point is never drawn.
+  const runs: Run[] | null = spokes.every((s) => s.measured)
+    ? null
+    : cyclicRuns(spokes.map((s) => s.measured))
+        .filter((run) => run.key)
+        .map(({ start, len }) => ({ start, len }))
   const radiiOf = (thetaOf: (s: SpokeEstimate, i: number) => number): Point[] =>
     spokes.map((s, i) => polar(s.measured ? r(thetaOf(s, i)) : rMin, angles[i]!))
+  const curveOf = (thetaOf: (s: SpokeEstimate, i: number) => number): Curve => blobCurve(radiiOf(thetaOf), runs, ring)
 
-  const crisp = curveView(
-    radiiOf((s) => s.theta!),
-    ring,
-  )
-  const outer = curveView(
-    radiiOf((s) => s.theta! + s.sd!),
-    ring,
-  )
-  const inner = curveView(
-    radiiOf((s) => s.theta! - s.sd!),
-    ring,
-  )
+  const crispCurve = curveOf((s) => s.theta!)
+  const outerCurve = curveOf((s) => s.theta! + s.sd!)
+  const innerCurve = curveOf((s) => s.theta! - s.sd!)
+  const crisp = crispCurve.view
   // §9.3: nested curves at θ + z·SD; each fills the band toward the mean with opacity ∝ φ(z).
-  const fuzzCurves = FUZZ_Z.map((z) =>
-    curveView(
-      radiiOf((s) => s.theta! + z * s.sd!),
-      ring,
-    ),
-  )
+  const fuzzCurves = FUZZ_Z.map((z) => curveOf((s) => s.theta! + z * s.sd!))
   const mid = N_FUZZ / 2 // fuzz[mid − 1] and fuzz[mid] are the innermost pair (z = ∓Z90/10)
   const fuzz: FuzzView[] = FUZZ_Z.map((z, j) => {
     const c = fuzzCurves[j]!
-    const inward = j === mid - 1 || j === mid ? crisp : fuzzCurves[z < 0 ? j + 1 : j - 1]!
-    return { ...c, z, opacity: fuzzOpacity(z), band: `${c.d}${inward.d}` }
+    const inward = j === mid - 1 || j === mid ? crispCurve : fuzzCurves[z < 0 ? j + 1 : j - 1]!
+    return { ...c.view, z, opacity: fuzzOpacity(z), band: bandBetween(c, inward) }
   })
+  // What the tier (c) hatch fills (clipped to its wedges): the closed crisp curve, or per run the
+  // curve closed through the centre, and a narrow sector up to the marker of a lone spoke.
+  const hatchFill =
+    runs === null || crispCurve.runs === null
+      ? crisp.d
+      : runs
+          .map((run, j) => {
+            const path = crispCurve.runs![j]
+            if (path) return `M0,0L${pathData(path).slice(1)}Z`
+            const i = run.start % k
+            return sectorPath(angles[i]! - half / 2, angles[i]! + half / 2, r(spokes[i]!.theta!))
+          })
+          .join('')
 
   const showNote = opts.note ?? true
+  const peaks = new Set(opts.peaks ?? [])
   const text = textLayout(spokes, R, layout, opts.measure ?? estimateTextWidth, showNote, opts.ringStep ?? 1)
   const views: SpokeView[] = spokes.map((s, i) => {
     const a = angles[i]!
@@ -728,6 +883,7 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
       id: s.id,
       name: s.name,
       lines,
+      ...(peaks.has(s.id) ? { peak: true } : {}),
       glyph: s.glyph,
       tier: s.tier,
       group: s.group,
@@ -737,7 +893,11 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
       outer: polar(R, a),
       label: text.labels[i]!,
     }
-    if (!s.measured) return { ...base, stub: polar(STUB_FRACTION * R, a), gap: polar(rMin, a) }
+    if (!s.measured) {
+      // D13 A: the gap marker is an × on the 0 SD ring, not a point at the centre (−3 SD).
+      const gap = polar(r(0), a)
+      return { ...base, stub: polar(STUB_FRACTION * R, a), gap, gapMark: gapMarkPath(gap, a) }
+    }
     // Beyond the scale the dot is an arrowhead on the clamp (UX-037); the whisker keeps whatever part of the range is inside.
     const end = s.offScale !== undefined ? s.offScale : offScaleOf(s.theta!)
     const off = end === 'none' ? {} : { offScale: end, arrow: arrowPath(a, end === 'high' ? R : rMin, end) }
@@ -781,8 +941,9 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
     rings,
     spokes: views,
     crisp,
+    hatchFill,
     muteRuns,
-    band: { d: `${outer.d}${inner.d}`, outer, inner },
+    band: { d: bandBetween(outerCurve, innerCurve), outer: outerCurve.view, inner: innerCurve.view },
     fuzz,
     hatch,
     wedges,
@@ -791,5 +952,21 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
     text: text.sizes,
     labelBoxes: text.labelBoxes,
     noteBox: text.noteBox,
+    stubList: stubList(spokes, layout),
   }
+}
+
+/**
+ * D13 B: the not-measured spokes a layout leaves without a label (`none`), grouped by the note they
+ * would carry ("Not measured", "Insufficient data"), in spoke order; empty otherwise.
+ */
+export function stubList(spokes: readonly SpokeEstimate[], layout: BlobLayout): StubGroup[] {
+  if ((layout.stubLabels ?? 'full') === 'full') return []
+  const groups = new Map<string, string[]>()
+  for (const s of spokes) {
+    if (s.measured) continue
+    const lead = stubListLead(s.reason)
+    groups.set(lead, [...(groups.get(lead) ?? []), s.name])
+  }
+  return [...groups].map(([lead, names]) => ({ lead, names }))
 }

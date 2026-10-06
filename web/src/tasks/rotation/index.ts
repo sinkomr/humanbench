@@ -3,8 +3,10 @@
  * polycubes, axis SPA, facet `3d_rotation`, item type `mc_image_spec`, four options → 3PL with
  * c = 1/4 (A9), kind 'item'.
  *
- * "Which figure is the same object as the target, rotated? (Not mirror-imaged.)" The target is a
- * chiral chain of 8–10 cubes with ≥ 3 arms; the options are the target rotated, its mirror image
+ * "Which option shows the same object as the target, rotated? A mirror image does not count." (the
+ * renderer's stem, `render/rotation/copy.ts`, UX-085; the §12 example item still has an older
+ * wording, "Which figure is the same object as the one on the left, rotated? (Not mirror-imaged.)").
+ * The target is a chiral chain of 8–10 cubes with ≥ 3 arms; the options are the target rotated, its mirror image
  * (exactly one, A11), a one-cube-moved variant and that variant's mirror image (two enantiomer
  * pairs, so pairing options up gives no edge), all pairwise distinct under the 24 rotations.
  * Strata 2–6 are the angle bins of the display rotation between the target and the correct

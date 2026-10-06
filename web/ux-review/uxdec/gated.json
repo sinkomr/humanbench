@@ -1,0 +1,131 @@
+{
+  "package": "gated",
+  "decisions": [
+    {
+      "id": "D2",
+      "status": "owner-decision",
+      "option": "A",
+      "what_changed": "The statistically wrong sentence 'Ranges that overlap are not real differences.' is gone from all three places. Share card small print (CARD_NOTE_SCALE) and the gated results-talk preamble (PREAMBLE) now say 'Where ranges overlap, a difference may not be real.'; the reveal's no-peaks note (PEAKS_NONE) says why instead ('...: the ranges are still wide.'). The preamble is a gated line (ADR A22), so this is one gated change: RESULTS_TALK_V '1' -> '2', v2 pin added under RT in wording-pins.json (v1 pin kept, never edited), brief-gates.json RT entry set to v '2' status 'shipped' (ships before its check, per the header of results-talk.ts), preamble length 340 -> 346 in the module and test comments and checks. The v1 proposal fixtures are unchanged; the tests now say v1 = proposal text (340 chars, hash still equals the v1 pin), v2 = owner decision 2026-10-05 (346 chars). New tests: the old sentence appears nowhere in the code or strings of the app (a raw-source scan of every non-test .ts and .svelte file under src plus web/*.html, with comments stripped, mutation-checked), nowhere in the rendered card for the full, sparse and skipped profiles, nowhere in the reveal copy module, nowhere in the rendered results-talk helper or the reveal's no-peaks note, and on both dev screens in Chromium. Card legibility (UX-038): the card note paragraph still wraps to the same 3 rows (now 91, 90 and 41 characters per row, at most 96; before 93, 93 and 30), so the footer height and the chart region are unchanged; viz/card.ts needs no change.",
+      "strings": [
+        {
+          "before": "Rough estimates on a provisional scale. Ranges that overlap are not real differences.",
+          "after": "Rough estimates on a provisional scale. Where ranges overlap, a difference may not be real."
+        },
+        {
+          "before": "These are rough, uncertain self-reflection results from a free online test. Ranges that overlap are not real differences. Don't turn them into ...",
+          "after": "These are rough, uncertain self-reflection results from a free online test. Where ranges overlap, a difference may not be real. Don't turn them into ..."
+        },
+        {
+          "before": "No skill stands out clearly from your others yet. That is common after one session. Ranges that overlap are not real differences.",
+          "after": "No skill stands out clearly from your others yet. That is common after one session: the ranges are still wide."
+        }
+      ],
+      "files": [
+        "web/src/viz/card-copy.ts",
+        "web/src/reveal/copy.ts",
+        "web/src/brief/results-talk.ts",
+        "web/src/brief/brief-gates.json",
+        "web/src/brief/__fixtures__/wording-pins.json"
+      ],
+      "tests": [
+        "web/src/brief/results-talk.test.ts (v2 text, 346 chars, v1 = proposal fixture, v1 pin still equals the fixture's hash and differs from v2, gate entry v '2' shipped, status follows v '2' and ignores v '1', source scan for the retired sentence)",
+        "web/src/viz/card.test.ts (new note, overlap sentence exactly once, retired sentence absent on three profiles)",
+        "web/src/reveal/copy.test.ts (PEAKS_NONE exact text, retired sentence absent from every exported string)",
+        "web/src/reveal/Reveal.dom.test.ts (no-peaks note; preamble is 346 chars)",
+        "web/src/brief/ResultsTalk.dom.test.ts (rendered helper)",
+        "web/e2e/reveal-ai.spec.ts (both screens, chromium)"
+      ],
+      "deviations": [
+        "src/reveal/slots.ts still says TALK_PREAMBLE_MAX_CHARS = 340 (the proposal's limit for v1). It is not a file this package owns, so Reveal.dom.test.ts no longer asserts the cap and pins the preamble length (346) directly instead; see requests."
+      ],
+      "open_issues": [
+        "DESIGN section 17.7 row 'results-preamble' and the line 'The results-preamble is exactly 340 characters' (and ROADMAP AI.6b line 277 '340 characters') still carry v1 (see spec_out_of_step); scripts/docs-phase-ai.test.ts compares the DESIGN row with the v1 proposal fixture and was left alone, so it stays green.",
+        "The diagnostic script web/ux-review/personas/verify-viz.ux.ts counts the retired sentence on the card (overlapCaveatCount); it will report 0 now (see requests)."
+      ]
+    },
+    {
+      "id": "D18",
+      "status": "provisional-default",
+      "option": "A",
+      "what_changed": "After 'Paste this first.' the helper now says what comes next: 'Then describe your results in your own words, or attach your share card picture.' It is part of RESULTS_TALK.paste, so it shows in the same paragraph above the text to paste, with no change to ResultsTalk.svelte (and the 'Still being checked' badge follows it). It is in RESULTS_TALK_TEXT too (so the leak markers and the card leak checks cover it). Same v2 change as D2: one version bump, one gate entry. The pin hashes the preamble only (the test formula, unchanged), so the screen sentence is pinned by exact-text assertions in results-talk.test.ts instead. When the text to paste is blocked the whole paragraph is not offered (the warning stays), as before. The sentence passes BENEFIT_RE, A13 lint and the ASCII/digit checks.",
+      "strings": [
+        {
+          "before": "Paste this first.",
+          "after": "Paste this first. Then describe your results in your own words, or attach your share card picture."
+        },
+        {
+          "before": "Talking about your results with an AI? Paste this first. Never paste your save file: it holds your raw answers, and assistants may keep or learn from what you paste.",
+          "after": "Talking about your results with an AI? Paste this first. Then describe your results in your own words, or attach your share card picture. Never paste your save file: it holds your raw answers, and assistants may keep or learn from what you paste."
+        }
+      ],
+      "files": [
+        "web/src/brief/results-talk.ts"
+      ],
+      "tests": [
+        "web/src/brief/results-talk.test.ts (RESULTS_TALK.paste and RESULTS_TALK_TEXT exact text, derived from the proposal draft line in __fixtures__/proposal/ui-copy.txt)",
+        "web/src/brief/ResultsTalk.dom.test.ts (shown in the rendered helper; kept when experimental, dropped when blocked)",
+        "web/e2e/reveal-ai.spec.ts (reveal and share-card screens)"
+      ],
+      "deviations": [],
+      "open_issues": [
+        "The sentence sits above the quoted text to paste (it reads as one instruction paragraph: 'Paste this first. Then describe ...'). If the owner prefers it after the copy button as its own line, RESULTS_TALK.paste would split into two keys and ResultsTalk.svelte (package screen) would render the second one; not needed for the default.",
+        "DESIGN section 17.7 row 'results-talk' still has the v1 screen text (see spec_out_of_step)."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/src/reveal/slots.ts",
+      "change": "TALK_PREAMBLE_MAX_CHARS = 340 -> 346 (and the comment 'proposal §3.3' -> 'proposal §3.3; 346 since wording version 2'). Then Reveal.dom.test.ts line ~552 can regain: expect(TALK_PREAMBLE.length).toBeLessThanOrEqual(TALK_PREAMBLE_MAX_CHARS) and expect(TALK_PREAMBLE_MAX_CHARS).toBe(346), with TALK_PREAMBLE_MAX_CHARS back in the './slots' import.",
+      "why": "The v2 preamble is 346 characters, so the slot cap of 340 is stale; nothing else reads the constant, so the only effect today is that the test assertion against it (which I replaced with a direct length pin) would fail."
+    },
+    {
+      "file": "web/ux-review/personas/verify-viz.ux.ts",
+      "change": "line 143: overlapCaveatCount counts /Ranges that overlap are not real differences\\./; change the pattern to /Where ranges overlap, a difference may not be real\\./",
+      "why": "A diagnostic script of the UX review; it would report 0 for the caveat now. Optional (not part of any test)."
+    }
+  ],
+  "shared_files_touched": [
+    "web/scripts/dump-briefs.test.ts (one assertion: dump.results_talk is now { id: 'RT', v: '2', chars: 346 }; the text is still PREAMBLE)"
+  ],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md section 17.7, table row 'results-preamble'",
+      "what": "Still has 'Ranges that overlap are not real differences.' (v1). The owner approved D2 (2026-10-05): the row should read '... from a free online test. Where ranges overlap, a difference may not be real. Don't turn them into ...' (wording version 2, 346 characters). The lead updates DESIGN later; scripts/docs-phase-ai.test.ts compares this row with the v1 proposal fixture, so it must be updated together with the DESIGN row (it and the fixture are not part of this change)."
+    },
+    {
+      "where": "docs/DESIGN.md section 17.7, line 'The results-preamble is exactly 340 characters of ASCII text (tested)', and docs/ROADMAP.md AI.6b acceptance ('results-preamble, 340 characters')",
+      "what": "Now 346 characters (wording version 2); the 340 is the proposal's version 1. scripts/docs-phase-ai.test.ts line 243 asserts 340 against the DESIGN text and stays green only while DESIGN is unchanged."
+    },
+    {
+      "where": "docs/DESIGN.md section 17.7, table row 'results-talk'",
+      "what": "Screen text lacks the D18 sentence. If the owner confirms D18 (it is a provisional default now), the row becomes 'Talking about your results with an AI? Paste this first. Then describe your results in your own words, or attach your share card picture. Never paste your save file: ...'."
+    },
+    {
+      "where": "docs/ROADMAP.md ADR A22 / the gates file lines (RT entry), and the bank's copy of the gates statuses (A17)",
+      "what": "RT is now at wording version 2 with status 'shipped'. Any bank-side gates file or E22 smoke arm (AI.12a) that names RT v1 or the 340-character text needs the v2 text; the bank holds only the v1 proposal text in docs/proposals/ai-notes-v2.md, which is historical and was not touched. The web/src/brief/dump.ts 'results_talk' block (id, v, text, chars) now reports v '2', 346."
+    },
+    {
+      "where": "docs/DESIGN.md section 9.9 / section 10 (card small print, peaks note) and ROADMAP A12, A20, A22",
+      "what": "No text in these sections quotes the retired sentence (grep found it only in DESIGN section 17.7), so nothing else is out of step; D2's 'Touches' list names them for review by the lead."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/brief src/viz/card src/reveal scripts/docs-phase-ai.test.ts scripts/brief-source.test.ts scripts/dump-briefs.test.ts scripts/contrast.test.ts",
+      "result": "all of my files green (results-talk, gates, copy, leak-markers, ResultsTalk.dom, card, card.dom, reveal copy, Reveal.dom, docs-phase-ai, brief-source, dump-briefs after the one-assertion fix). 3 failures remain, all in src/reveal/ShareCard.dom.test.ts and from another package's in-flight work (D19 card file names 'humanbench-card-light-<date>.png'; D15 share-sheet button order): not caused by this package."
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "clean (360 files)"
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "no errors in this package's files; 6 errors, all in src/viz/export.test.ts ('Expected 3 arguments, but got 2.'), from another package's in-flight change to viz/export.ts (D19). npx tsc -p tsconfig.node.json and tsconfig.scripts.json: clean."
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4727 E2E_DEV_PORT=4728 HB_DEV_SERVER=1 HB_RUN=uxdec-gated npx playwright test -c ux-review/playwright.iso.config.ts e2e/reveal-ai.spec.ts e2e/share-card.spec.ts --project=chromium --workers=2",
+      "result": "23 passed, 2 failed. e2e/reveal-ai.spec.ts: all green (incl. 2 new tests). e2e/share-card.spec.ts: 2 failures (lines 124 and 152) are the file-name pattern /^humanbench-card-\\d{4}-\\d{2}-\\d{2}\\.png$/ against 'humanbench-card-light-2026-10-05.png', from package D19's in-flight change; the card note renders and the card checks pass. share-card.spec.ts is not mine and was not edited."
+    }
+  ]
+}

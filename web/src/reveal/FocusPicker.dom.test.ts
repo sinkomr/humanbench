@@ -5,9 +5,12 @@
  */
 
 import { flushSync } from 'svelte'
-import { afterEach, describe, expect, it } from 'vitest'
-import { render } from '../render/common/testing'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buttonByText, render } from '../render/common/testing'
 import { axisEstimates, type AxisEstimate } from '../viz/profile'
+import { FOCUS_START } from './copy'
+import FocusPicker from './FocusPicker.svelte'
+import type { FocusOption } from './next'
 import RetestSection from './RetestSection.svelte'
 import { reactiveProps } from './reactive.svelte'
 import { buildResults } from './results'
@@ -83,5 +86,35 @@ describe('FocusPicker rows (UX-033)', () => {
     quant.closest('label')!.querySelector('span')!.click()
     flushSync()
     expect(quant.checked).toBe(!before)
+  })
+})
+
+describe('FocusPicker: the start button is a secondary one (UX-REVIEW D27, a provisional default, option A)', () => {
+  const options: FocusOption[] = [
+    { segment: 'matrix_series', title: 'Matrix & Series', axes: ['MAT'], suggested: true },
+    { segment: 'spatial', title: 'Spatial', axes: ['SPA'], suggested: false },
+  ]
+
+  it('is a plain button, not the primary, and still starts the session on the ticked parts', () => {
+    const onstart = vi.fn()
+    const r = render(FocusPicker, { options, onstart })
+    cleanup = r.destroy
+    const start = buttonByText(r.container, FOCUS_START)
+    expect(start.getAttribute('type')).toBe('submit')
+    expect(start.classList.contains('hb-btn')).toBe(true)
+    expect(start.classList.contains('hb-primary')).toBe(false)
+    expect(r.container.querySelectorAll('.hb-primary')).toHaveLength(0)
+    start.click()
+    flushSync()
+    expect(onstart).toHaveBeenCalledWith(['MAT'])
+  })
+
+  it('on the results, inside the retest section, it adds no primary of its own to the screen', () => {
+    const base = axisEstimates(buildResults(botSave('s_FOCUSPRIMARY0001', { level: 0.5 }).save)!.input)
+    const r = render(RetestSection, { estimates: widest(base, ['MAT']), sessions: 1, onfocus: () => undefined, focusLocked: false })
+    cleanup = r.destroy
+    const form = r.container.querySelector<HTMLElement>('form[data-focus-form]')!
+    expect(form.querySelectorAll('button.hb-primary')).toHaveLength(0)
+    expect(buttonByText(form, FOCUS_START).classList.contains('hb-btn')).toBe(true)
   })
 })

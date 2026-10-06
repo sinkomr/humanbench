@@ -21,6 +21,9 @@ import { COPY as NOTES_COPY } from '../src/brief/copy'
 import { ENTRY_COPY as FERMI_COPY, MAGNITUDE_NOTES } from '../src/tasks/fermi/copy'
 import { ENTRY_COPY as EMOTION_COPY } from '../src/tasks/emotion/copy'
 import { demoFermiItem } from '../src/tasks/fermi/demo'
+import { AUTOSAVE_PREFIX } from '../src/save/autosave'
+import { READY_CONTINUE, WELCOME_RETURNING_LABEL } from '../src/session/copy'
+import { CONSENT_KEY, TERMS_VERSION } from '../src/session/constants'
 import { REVIEW_URL, visualGalleryUrl } from './dev-server'
 import { agreeGate, answerItem, button, h1, loadSave, simulatedSave, toReady, toResults } from './flow'
 import { AUT_ROUTES } from './routes-aut'
@@ -99,7 +102,7 @@ export async function openRoute(page: Page, route: Route, claimTimeout = 10_000)
 // ----------------------------------------------------------------------------------- helpers
 
 /** The six session segments in A15 order: their interstitial titles (`session/segments.ts`). */
-export const SEGMENT_TITLES = ['Reaction time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'] as const
+export const SEGMENT_TITLES = ['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'] as const
 
 /** From the start page to the gate. */
 export async function toGate(page: Page): Promise<void> {
@@ -129,15 +132,34 @@ export async function skipPart(page: Page): Promise<void> {
   await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()
 }
 
-/** To the interstitial of segment `index` (0 = reaction time), skipping the ones before it. */
+/**
+ * To the interstitial of segment `index` (0 = Reaction Time), skipping the ones before it. Skipping into the half-way
+ * part of the plan (Working Memory) brings the one break offer first (UX-066, UX-REVIEW D5): it is declined ("Keep
+ * going"), as `session-driver.ts` does.
+ */
 export async function toInterstitial(page: Page, index: number): Promise<void> {
   await toReady(page)
   await button(page, 'Begin').click()
   for (let i = 0; i < index; i++) {
     await expect(h1(page)).toHaveText(`Up next: ${SEGMENT_TITLES[i]}`)
     await skipPart(page)
+    await expect(h1(page)).toHaveText(new RegExp(`^(Up next: ${escapeRe(SEGMENT_TITLES[i + 1]!)}|Time for a break\\?)$`))
+    if ((await h1(page).textContent())?.trim() === 'Time for a break?') await button(page, 'Keep going').click()
   }
   await expect(h1(page)).toHaveText(`Up next: ${SEGMENT_TITLES[index]}`)
+}
+
+/** A string as a literal inside a regular expression ("Matrix & Series" has no special characters, but a title might). */
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** The index of Working Memory, the half-way part of every A15 plan: the break offer comes before its interstitial. */
+const HALF_WAY = SEGMENT_TITLES.indexOf('Working Memory')
+
+/** To the break offer: skip every part before the half-way one (UX-066, UX-REVIEW D5: the offer is at the part boundary nearest half-way). */
+async function toBreakOffer(page: Page): Promise<void> {
+  await toInterstitial(page, HALF_WAY - 1)
+  await skipPart(page)
+  await expect(h1(page)).toHaveText('Time for a break?')
 }
 
 /** Into segment `index` past its interstitial: the first block or item is on screen. */
@@ -269,6 +291,30 @@ export const ROUTES: readonly Route[] = [
     },
   },
   {
+    id: 'welcome-returning',
+    group: 'start',
+    state: 'start page of a browser that holds earlier results (UX-REVIEW D22): the row under Start',
+    covers: ['session/Welcome.svelte'],
+    // An adult consent record and one earlier autosave, written before the page's first script (`uxdec-funnel.spec.ts`).
+    prepare: async (page) => {
+      const { save } = simulatedSave(1)
+      const doc = save as { sessions: { session_id: string }[] }
+      await page.addInitScript(
+        (a) => {
+          if (localStorage.getItem(a.consentKey) !== null) return
+          localStorage.setItem(a.consentKey, JSON.stringify({ v: 1, terms: a.terms, adult: true }))
+          localStorage.setItem(a.saveKey, a.text)
+        },
+        { consentKey: CONSENT_KEY, terms: TERMS_VERSION, saveKey: AUTOSAVE_PREFIX + doc.sessions[0]!.session_id, text: JSON.stringify(doc) },
+      )
+    },
+    open: async (page) => {
+      await page.goto('./')
+      await expect(h1(page)).toHaveText('HumanBench')
+      await expect(page.getByRole('group', { name: WELCOME_RETURNING_LABEL })).toBeVisible()
+    },
+  },
+  {
     id: 'gate',
     group: 'start',
     state: 'consent and 18+ gate',
@@ -341,6 +387,34 @@ export const ROUTES: readonly Route[] = [
       await loadSave(page, simulatedSave(1).save)
       await page.locator('details.focus > summary').click()
       await expect(page.locator('details.focus')).toHaveAttribute('open', '')
+    },
+  },
+  {
+    id: 'ready-continue',
+    group: 'start',
+    state: 'ready screen with the offer to continue an unfinished session (UX-064; UX-REVIEW D6)',
+    covers: ['session/Ready.svelte'],
+    open: async (page) => {
+      // One answer in Matrix & Series, a reload (the page asks first: leave), and the way back to the ready screen.
+      page.on('dialog', (d) => void d.accept())
+      await toInterstitial(page, 1)
+      await button(page, 'Start').click()
+      await answerItem(page)
+      await expect
+        .poll(() => page.evaluate((prefix) => Object.keys(localStorage).filter((k) => k.startsWith(prefix)).length, AUTOSAVE_PREFIX))
+        .toBe(1)
+      await page.reload()
+      await expect(h1(page)).toHaveText('HumanBench')
+      // The consent is kept in this browser, so Start goes straight to the honour code.
+      await button(page, 'Start').click()
+      await expect(h1(page)).toHaveText('Honour code')
+      await page.getByRole('checkbox', { name: /honour code/ }).check()
+      await button(page, 'Continue').click()
+      await expect(button(page, 'Continue')).toBeEnabled({ timeout: 20_000 })
+      await page.getByRole('radio', { name: 'Keyboard' }).check()
+      await button(page, 'Continue').click()
+      await expect(h1(page)).toHaveText('Ready when you are')
+      await expect(button(page, READY_CONTINUE)).toBeVisible()
     },
   },
   {
@@ -561,30 +635,17 @@ export const ROUTES: readonly Route[] = [
   {
     id: 'break-offer',
     group: 'session',
-    state: 'the offer of a break at 30 minutes',
+    state: 'the offer of a break, before the half-way part (Working Memory)',
     covers: ['session/SessionScreen.svelte'],
-    prepare: async (page) => {
-      await page.clock.install()
-    },
-    open: async (page) => {
-      await toInterstitial(page, 0)
-      await page.clock.fastForward('31:00')
-      await skipPart(page)
-      await expect(h1(page)).toHaveText('Time for a break?')
-    },
+    open: toBreakOffer,
   },
   {
     id: 'on-break',
     group: 'session',
     state: 'on a break (clock paused)',
     covers: ['session/SessionScreen.svelte'],
-    prepare: async (page) => {
-      await page.clock.install()
-    },
     open: async (page) => {
-      await toInterstitial(page, 0)
-      await page.clock.fastForward('31:00')
-      await skipPart(page)
+      await toBreakOffer(page)
       await button(page, 'Take a break').click()
       await expect(h1(page)).toHaveText('Break')
     },

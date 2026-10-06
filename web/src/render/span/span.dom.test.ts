@@ -110,6 +110,18 @@ describe('DigitSpanRenderer', () => {
     expect(slots()).toEqual(['1', '2', '3'])
   })
 
+  it('the digit span keypad keeps its layout: as many 2.75rem keys as fit, no fixed row and no folding (D9 only folds the coding keypad)', () => {
+    const m = mountSpan(spanFwd.generate('render-span-keypad-layout'), DigitSpanRenderer)
+    click(buttonByText(m.container, 'Start'))
+    until(m.display, () => inEntry(m.container))
+    const keypad = m.container.querySelector('.keypad') as HTMLElement
+    expect(keypad.getAttribute('aria-label')).toBe('Digit keypad')
+    expect(keypad.classList.contains('fixed')).toBe(false)
+    expect(keypad.classList.contains('split')).toBe(false)
+    expect(keypad.style.getPropertyValue('--cols')).toBe('')
+    expect(keypad.style.getPropertyValue('--cols-narrow')).toBe('')
+  })
+
   it('failing both trials at length 3 ends the block with category 0', () => {
     const item = spanFwd.generate('render-span-fail')
     const m = mountSpan(item, DigitSpanRenderer)

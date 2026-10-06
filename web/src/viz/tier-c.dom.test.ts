@@ -150,7 +150,8 @@ describe('the Social-Creative drill-down carries the M6 facet labels (§5.4, §9
     expect(sub.getAttribute('data-spokes')).toBe('4')
     expect(sub.querySelectorAll('path.hatch')).toHaveLength(3)
     const labels = [...sub.querySelectorAll('text.label')].map((t) => labelText(t).replace(/\s+/g, ' ').trim())
-    expect(labels.some((t) => t.startsWith(`Unusual uses (experimental) ${GLYPH_C}`))).toBe(true)
+    // The name takes two chart lines (`facetLabelLines`, UX review D4); the glyph sits on the first, which it does not make the widest.
+    expect(labels.some((t) => t.startsWith(`Unusual uses ${GLYPH_C}`) && t.replace(` ${GLYPH_C}`, ' ').replace(/\s+/g, ' ') === 'Unusual uses (experimental)')).toBe(true)
     expect(labels.some((t) => t.startsWith(`Word links ${GLYPH_C}`))).toBe(true)
     expect(labels.filter((t) => /experimental/.test(t))).toHaveLength(1)
     const stub = [...sub.querySelectorAll('text.label.unmeasured')].map(labelText)

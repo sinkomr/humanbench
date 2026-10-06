@@ -12,7 +12,12 @@
   On a phone the whole block (the table of shapes and digits, the target and the keypad) has to be
   on screen when the clock starts, because every scroll costs score (UX-002): the table is a
   one-row reference strip (not a row of keys), the target is smaller below 30rem, the keypad is one
-  row of nine keys, and starting scrolls the table to the top of the screen.
+  row of nine keys, and starting scrolls the table to the top of the screen. Where the nine keys would
+  be under about 40 px wide (a keypad narrower than 24.5rem: a phone under about 420 px wide, or larger
+  text) the keypad folds into rows of five and four with keys of 44 px or more (a container query in
+  `Keypad.svelte`, `narrowColumns`); the block is about 55 px taller then (about 300 px from the top of
+  the table to the last key, 250 px unfolded) and still fits the shortest phone. Only the layout differs:
+  the same nine buttons, handlers and response path (§11.6).
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
@@ -28,6 +33,9 @@
   let { spec, onrespond, timing }: RendererProps<CodingSpec, CodingResponses> = $props()
 
   type Phase = 'intro' | 'running' | 'done'
+
+  /** Keys in the first row of the folded keypad (nine keys: five and four). */
+  const KEYPAD_FOLDED_COLUMNS = Math.ceil(CODING_DIGITS.length / 2)
 
   const uid = $props.id()
   let phase: Phase = $state('intro')
@@ -174,7 +182,7 @@
       {/if}
     </div>
     <p class="hb-sr-only" aria-live="assertive" aria-atomic="true">{visible && current !== undefined ? GLYPHS[current].name : ''}</p>
-    <Keypad digits={CODING_DIGITS} label="Digit keypad" columns={CODING_DIGITS.length} onpress={press} />
+    <Keypad digits={CODING_DIGITS} label="Digit keypad" columns={CODING_DIGITS.length} narrowColumns={KEYPAD_FOLDED_COLUMNS} onpress={press} />
   {/if}
   <p class="hb-status" aria-live="polite" tabindex="-1" bind:this={statusEl}>{phase === 'done' ? doneText : ''}</p>
 </section>
@@ -240,7 +248,7 @@
     touch-action: manipulation;
   }
 
-  /* A phone: key, target and keypad together stay under about 310 px of height. */
+  /* A phone: key, target and keypad together stay under about 310 px of height (a folded keypad included). */
   @media (max-width: 29.99rem) {
     .title {
       margin-bottom: 0.5rem;

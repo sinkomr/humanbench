@@ -303,6 +303,9 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
 
     // Every part of the session was played, in the order of the plan (A15), each showing its own kind of screen.
     expect(driver.segments, 'the parts of the session, by their interstitials').toEqual([...SEGMENT_TITLES])
+    // One break offer, at the part boundary nearest half-way: before Working Memory (UX-066; owner decision 2026-10-05, UX-REVIEW D5).
+    expect(driver.breakOffers, 'break offers in the session').toBe(1)
+    expect(driver.breakBefore, 'the part the break offer came before').toBe('Working Memory')
     // Each part showed the kinds of screen it cannot do without (`parts.ts`: the Matrix & Series part serves both a matrix and a series item, because the selector balances the two families).
     expect(partsPlayedProblems(driver.played), 'screens a part of the session did not show').toEqual([])
 
@@ -645,8 +648,9 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
     await driver.finishEarly()
     await driver.resultsReady()
     const after = await downloadSave(page, driver)
-    // The session was built from the file alone: its own set, one rev above the device's, and nothing of the device's second set.
-    expect(after.file.brief_prefs!.contexts).toEqual([{ ...fileFirst, rev: mineFirst.rev + 1 }])
+    // The session was built from the file alone: its own set, one rev above the device's. The download also takes in the notes
+    // settings kept on this device under the same identifier, read at the click (D17): the device's second set comes with it.
+    expect(after.file.brief_prefs!.contexts).toEqual([{ ...fileFirst, rev: mineFirst.rev + 1 }, mineSecond])
 
     // The device keeps its own save of the second set, and the session's save holds the file's first set at the higher rev.
     // Joined, the device has the file's settings in slot 1 and still its own second set.

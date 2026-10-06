@@ -1,0 +1,1083 @@
+{
+ "package": "commit",
+ "workstream": "uxdec",
+ "wave": 2,
+ "date": "2026-10-06",
+ "base": {
+  "pub": "9f68f49",
+  "bank": "0d2a60e"
+ },
+ "head": {
+  "pub": "71a242f",
+  "bank": "7722f46"
+ },
+ "commits": {
+  "pub": [
+   {
+    "sha": "45b0e82",
+    "subject": "UX-REVIEW D25: part and skill names in Title Case (provisional default)",
+    "files": [
+     "web/e2e/flow.ts",
+     "web/e2e/keyboard-session.spec.ts",
+     "web/e2e/parts.ts",
+     "web/e2e/server.spec.ts",
+     "web/e2e/session-driver.ts",
+     "web/e2e/session.spec.ts",
+     "web/e2e/ux-render.spec.ts",
+     "web/e2e/ux-session.spec.ts",
+     "web/e2e/ux2-session.spec.ts",
+     "web/e2e/uxdec-names.spec.ts",
+     "web/scripts/e2e-parts.test.ts",
+     "web/src/axis-names.dom.test.ts",
+     "web/src/axis-names.test.ts",
+     "web/src/axis-names.ts",
+     "web/src/backend/copy.ts",
+     "web/src/reveal/ShareCard.dom.test.ts",
+     "web/src/reveal/norms.ts",
+     "web/src/reveal/peaks.ts",
+     "web/src/session/Checklist.svelte",
+     "web/src/session/SessionApp.coverage.dom.test.ts",
+     "web/src/session/SessionApp.dom.test.ts",
+     "web/src/session/SessionApp.flow.dom.test.ts",
+     "web/src/viz/BarTable.svelte",
+     "web/src/viz/card.test.ts",
+     "web/src/viz/profile.test.ts",
+     "web/src/viz/profile.ts",
+     "web/ux-review/lib/journey.ts"
+    ],
+    "group": "names"
+   },
+   {
+    "sha": "d465e7d",
+    "subject": "UX-REVIEW D1, D10, D20, D26: privacy notice without PII, paper and tools rule, sight note, house style",
+    "files": [
+     "web/HOUSE-STYLE.md",
+     "web/e2e/session.spec.ts",
+     "web/e2e/smoke.spec.ts",
+     "web/index.html",
+     "web/src/App.dom.test.ts",
+     "web/src/App.served.dom.test.ts",
+     "web/src/backend/copy.ts",
+     "web/src/copy.test.ts",
+     "web/src/copy.ts",
+     "web/src/no-todo.test.ts",
+     "web/src/session/Honour.svelte",
+     "web/src/session/Privacy.svelte",
+     "web/src/session/constants.ts",
+     "web/src/session/copy.test.ts",
+     "web/src/session/copy.ts",
+     "web/src/session/segments.ts"
+    ],
+    "group": "start-copy"
+   },
+   {
+    "sha": "5bf2496",
+    "subject": "UX-REVIEW D22, D23, D24: welcome row, early refresh probe, under-18 way back (provisional defaults)",
+    "files": [
+     "web/e2e/session.spec.ts",
+     "web/e2e/uxdec-funnel.spec.ts",
+     "web/scripts/a11y-routes.test.ts",
+     "web/src/session/ConsentGate.svelte",
+     "web/src/session/DeviceCheck.dom.test.ts",
+     "web/src/session/DeviceCheck.svelte",
+     "web/src/session/SessionApp.dom.test.ts",
+     "web/src/session/Welcome.svelte",
+     "web/src/session/copy.ts",
+     "web/src/session/device.test.ts",
+     "web/src/session/device.ts",
+     "web/src/session/env.ts",
+     "web/src/session/gate.test.ts",
+     "web/src/session/gate.ts",
+     "web/src/session/returning.test.ts",
+     "web/src/session/returning.ts",
+     "web/src/test-support/ResultsStub.svelte"
+    ],
+    "group": "funnel"
+   },
+   {
+    "sha": "fb50c3e",
+    "subject": "UX-REVIEW D6: continue an unfinished session, tests counted by sitting (provisional default)",
+    "files": [
+     "web/e2e/uxdec-resume.spec.ts",
+     "web/scripts/a11y-routes.test.ts",
+     "web/src/engine/__fixtures__/retest_v1.json",
+     "web/src/engine/index.test.ts",
+     "web/src/engine/retest.test.ts",
+     "web/src/engine/retest.ts",
+     "web/src/reveal/results.test.ts",
+     "web/src/reveal/results.ts",
+     "web/src/save/rescore.test.ts",
+     "web/src/save/rescore.ts",
+     "web/src/save/sittings.test.ts",
+     "web/src/save/sittings.ts",
+     "web/src/save/types.ts",
+     "web/src/session/Finished.dom.test.ts",
+     "web/src/session/Finished.svelte",
+     "web/src/session/Ready.dom.test.ts",
+     "web/src/session/Ready.svelte",
+     "web/src/session/SessionApp.resume.dom.test.ts",
+     "web/src/session/SessionApp.svelte",
+     "web/src/session/copy.test.ts",
+     "web/src/session/copy.ts",
+     "web/src/session/resume.test.ts",
+     "web/src/session/resume.ts"
+    ],
+    "group": "D6",
+    "pairs_with_bank": "9b4046a"
+   },
+   {
+    "sha": "487ce2c",
+    "subject": "UX-REVIEW D5, D7: session clock and half-way break (owner decision 2026-10-05), untouched slider (provisional default)",
+    "files": [
+     "schema/save-v1.json",
+     "web/e2e/routes.ts",
+     "web/e2e/session-driver.ts",
+     "web/e2e/session-save.spec.ts",
+     "web/e2e/session.spec.ts",
+     "web/e2e/ux-session.spec.ts",
+     "web/e2e/ux2-session.spec.ts",
+     "web/package.json",
+     "web/scripts/sim-session.test.ts",
+     "web/scripts/sim-session.ts",
+     "web/src/save/schema.test.ts",
+     "web/src/save/types.ts",
+     "web/src/save/validate.ts",
+     "web/src/session/Confidence.svelte",
+     "web/src/session/SessionApp.served.dom.test.ts",
+     "web/src/session/bot.ts",
+     "web/src/session/clock.test.ts",
+     "web/src/session/clock.ts",
+     "web/src/session/components.dom.test.ts",
+     "web/src/session/constants.ts",
+     "web/src/session/copy.test.ts",
+     "web/src/session/copy.ts",
+     "web/src/session/run.served.test.ts",
+     "web/src/session/run.test.ts",
+     "web/src/session/run.ts"
+    ],
+    "group": "run"
+   },
+   {
+    "sha": "5c954a9",
+    "subject": "UX-REVIEW D21, D27: focus on a later question, one primary button (provisional defaults)",
+    "files": [
+     "web/e2e/keyboard-session.spec.ts",
+     "web/e2e/keyboard.ts",
+     "web/e2e/ux-session.spec.ts",
+     "web/e2e/uxdec-screen.spec.ts",
+     "web/src/brief/ui/ResultsTalk.svelte",
+     "web/src/reveal/FocusPicker.dom.test.ts",
+     "web/src/reveal/FocusPicker.svelte",
+     "web/src/session/ConfirmPanel.dom.test.ts",
+     "web/src/session/ConfirmPanel.svelte",
+     "web/src/session/Screen.dom.test.ts",
+     "web/src/session/Screen.svelte",
+     "web/src/session/SessionScreen.dom.test.ts",
+     "web/src/session/SessionScreen.svelte",
+     "web/src/session/question-focus.test.ts",
+     "web/src/session/question-focus.ts"
+    ],
+    "group": "screen"
+   },
+   {
+    "sha": "e0f675f",
+    "subject": "UX-REVIEW D2, D18: overlap sentence (owner decision 2026-10-05), results-talk preamble v2",
+    "files": [
+     "web/e2e/reveal-ai.spec.ts",
+     "web/scripts/dump-briefs.test.ts",
+     "web/src/brief/ResultsTalk.dom.test.ts",
+     "web/src/brief/__fixtures__/wording-pins.json",
+     "web/src/brief/brief-gates.json",
+     "web/src/brief/results-talk.test.ts",
+     "web/src/brief/results-talk.ts",
+     "web/src/reveal/Reveal.dom.test.ts",
+     "web/src/reveal/copy.test.ts",
+     "web/src/reveal/copy.ts",
+     "web/src/reveal/slots.ts",
+     "web/src/viz/card-copy.ts",
+     "web/src/viz/card.test.ts",
+     "web/ux-review/personas/verify-viz.ux.ts"
+    ],
+    "group": "gated"
+   },
+   {
+    "sha": "90f3611",
+    "subject": "UX-REVIEW D13, D14, D15 A: blob gaps at not-measured spokes, label floor, card marks (provisional defaults)",
+    "files": [
+     "web/e2e/blob.spec.ts",
+     "web/e2e/uxdec-viz.spec.ts",
+     "web/src/viz/BlobChart.dom.test.ts",
+     "web/src/viz/BlobChart.svelte",
+     "web/src/viz/ProfileView.dom.test.ts",
+     "web/src/viz/blob.test.ts",
+     "web/src/viz/blob.ts",
+     "web/src/viz/card-copy.ts",
+     "web/src/viz/card.dom.test.ts",
+     "web/src/viz/card.test.ts",
+     "web/src/viz/card.ts",
+     "web/src/viz/copy.ts",
+     "web/src/viz/curve.test.ts",
+     "web/src/viz/curve.ts",
+     "web/src/viz/geometry.ts"
+    ],
+    "group": "viz-blob"
+   },
+   {
+    "sha": "ec00443",
+    "subject": "UX-REVIEW D4: leave-facet-out prior and quant topic groups, app and server (provisional default)",
+    "files": [
+     "supabase/migrations/20261007000100_rescore_facets.sql",
+     "web/scripts/db/facets.test.ts",
+     "web/scripts/db/rescore.db.test.ts",
+     "web/src/viz/ProfileView.dom.test.ts",
+     "web/src/viz/ProfileView.ux.dom.test.ts",
+     "web/src/viz/blob.test.ts",
+     "web/src/viz/copy.ts",
+     "web/src/viz/facets-groups.test.ts",
+     "web/src/viz/facets-prior.test.ts",
+     "web/src/viz/facets.test.ts",
+     "web/src/viz/facets.ts"
+    ],
+    "group": "facets"
+   },
+   {
+    "sha": "6598601",
+    "subject": "UX-REVIEW D15 C, D17, D19: share sheet first, notes settings in the save, local-date file names (provisional defaults)",
+    "files": [
+     "web/e2e/session-save.spec.ts",
+     "web/e2e/share-card.spec.ts",
+     "web/e2e/ux-reveal.spec.ts",
+     "web/e2e/uxdec-share-save.spec.ts",
+     "web/scripts/share-card.test.ts",
+     "web/src/reveal/SavePanel.svelte",
+     "web/src/reveal/ShareCard.dom.test.ts",
+     "web/src/reveal/ShareCard.svelte",
+     "web/src/reveal/copy.ts",
+     "web/src/reveal/share-save.dom.test.ts",
+     "web/src/save/brief-prefs.test.ts",
+     "web/src/save/brief-prefs.ts",
+     "web/src/save/io.dom.test.ts",
+     "web/src/save/io.ts",
+     "web/src/save/local-date.test.ts",
+     "web/src/viz/export.dom.test.ts",
+     "web/src/viz/export.test.ts",
+     "web/src/viz/export.ts"
+    ],
+    "group": "share-save"
+   },
+   {
+    "sha": "d66699f",
+    "subject": "UX-REVIEW D16, D11: compact top of the results, reading display paragraphs and first-language note (provisional defaults)",
+    "files": [
+     "web/e2e/reveal.spec.ts",
+     "web/e2e/ux-reveal.spec.ts",
+     "web/e2e/uxdec-reading.spec.ts",
+     "web/e2e/uxdec-reveal.spec.ts",
+     "web/e2e/uxdec-reveal.ts",
+     "web/src/render/reading/ReadingRenderer.svelte",
+     "web/src/render/reading/__snapshots__/reading.dom.test.ts.snap",
+     "web/src/render/reading/reading.dom.test.ts",
+     "web/src/render/reading/split.test.ts",
+     "web/src/render/reading/split.ts",
+     "web/src/reveal/Reveal.dom.test.ts",
+     "web/src/reveal/Reveal.svelte",
+     "web/src/reveal/RevealProfile.svelte",
+     "web/src/reveal/copy.test.ts",
+     "web/src/reveal/copy.ts",
+     "web/src/reveal/reveal.css",
+     "web/src/session/Finished.dom.test.ts",
+     "web/src/session/Finished.svelte",
+     "web/src/viz/ProfileView.dom.test.ts",
+     "web/src/viz/ProfileView.svelte"
+    ],
+    "group": "reveal-reading",
+    "pairs_with_bank": "dfe0046"
+   },
+   {
+    "sha": "61f726b",
+    "subject": "UX-REVIEW D9, D12, D28: coding keypad rows, fixation cross in the target, rotation stem (provisional defaults)",
+    "files": [
+     "web/e2e/ux-render.spec.ts",
+     "web/e2e/uxdec-render.spec.ts",
+     "web/src/render/coding/CodingRenderer.svelte",
+     "web/src/render/coding/__snapshots__/coding.dom.test.ts.snap",
+     "web/src/render/coding/coding.dom.test.ts",
+     "web/src/render/common/Keypad.svelte",
+     "web/src/render/rotation/__snapshots__/RotationRenderer.dom.test.ts.snap",
+     "web/src/render/rotation/copy.ts",
+     "web/src/render/rt/RtRenderer.svelte",
+     "web/src/render/rt/__snapshots__/rt.dom.test.ts.snap",
+     "web/src/render/rt/rt.dom.test.ts",
+     "web/src/render/span/span.dom.test.ts",
+     "web/src/tasks/rotation/index.ts"
+    ],
+    "group": "render"
+   },
+   {
+    "sha": "cfdb321",
+    "subject": "UX-REVIEW D8: decimal comma and whole-number hints, app, bank and server (provisional default)",
+    "files": [
+     "README.md",
+     "supabase/README.md",
+     "supabase/migrations/20261007000200_parse_entry_decimal_comma.sql",
+     "web/e2e/uxdec-quant-entry.spec.ts",
+     "web/scripts/bundle.test.ts",
+     "web/scripts/db/migrations.test.ts",
+     "web/scripts/db/rescore.db.test.ts",
+     "web/scripts/db/scoring.db.test.ts",
+     "web/scripts/db/session.db.test.ts",
+     "web/scripts/ts-dumps-sync.test.ts",
+     "web/src/render/common/NumericEntry.svelte",
+     "web/src/render/common/entry-copy.ts",
+     "web/src/render/quant/QuantRenderer.svelte",
+     "web/src/render/quant/__snapshots__/quant.dom.test.ts.snap",
+     "web/src/render/quant/entry-grammar.dom.test.ts",
+     "web/src/render/quant/quant.dom.test.ts",
+     "web/src/render/series/SeriesRenderer.svelte",
+     "web/src/tasks/family.ts",
+     "web/src/tasks/quant/entry-vectors.ts",
+     "web/src/tasks/quant/hints.test.ts",
+     "web/src/tasks/quant/numeric.test.ts",
+     "web/src/tasks/quant/numeric.ts",
+     "web/src/tasks/quant/templates.ts"
+    ],
+    "group": "quant-entry",
+    "pairs_with_bank": "7722f46"
+   },
+   {
+    "sha": "0b93c50",
+    "subject": "UX-REVIEW: decisions round package handoffs (web/ux-review/uxdec)",
+    "files": [
+     "web/ux-review/uxdec/d3-context.json",
+     "web/ux-review/uxdec/engine-retest.json",
+     "web/ux-review/uxdec/facets.json",
+     "web/ux-review/uxdec/funnel.json",
+     "web/ux-review/uxdec/gated.json",
+     "web/ux-review/uxdec/integrate.json",
+     "web/ux-review/uxdec/names.json",
+     "web/ux-review/uxdec/quant-entry.json",
+     "web/ux-review/uxdec/reading.json",
+     "web/ux-review/uxdec/render.json",
+     "web/ux-review/uxdec/resume.json",
+     "web/ux-review/uxdec/reveal.json",
+     "web/ux-review/uxdec/run.json",
+     "web/ux-review/uxdec/screen.json",
+     "web/ux-review/uxdec/share-save.json",
+     "web/ux-review/uxdec/start-copy.json",
+     "web/ux-review/uxdec/viz-blob.json"
+    ],
+    "group": "handoffs"
+   },
+   {
+    "sha": "71a242f",
+    "subject": "UX-REVIEW: decisions round record and verification 3",
+    "files": [
+     "web/UX-REVIEW.md",
+     "web/ux-review/personas/uxdec-verify-defaults.ux.ts",
+     "web/ux-review/personas/uxdec-verify-owner.ux.ts",
+     "web/ux-review/personas/uxdec-verify-shared.ux.ts",
+     "web/ux-review/personas/uxdec-verify-sweep.ux.ts",
+     "web/ux-review/uxdec/verification.json"
+    ],
+    "group": "final"
+   }
+  ],
+  "bank": [
+   {
+    "sha": "9b4046a",
+    "subject": "UX-REVIEW D6: continue an unfinished session, tests counted by sitting (provisional default)",
+    "files": [
+     "README.md",
+     "golden/retest_v1.json",
+     "src/hb/calib/golden.py",
+     "src/hb/calib/rescore.py",
+     "src/hb/calib/retest.py",
+     "src/hb/calib/retest_fit.py",
+     "tests/test_rescore.py",
+     "tests/test_retest.py",
+     "tests/test_retest_fit.py"
+    ],
+    "group": "D6",
+    "pairs_with_pub": "fb50c3e"
+   },
+   {
+    "sha": "dfe0046",
+    "subject": "UX-REVIEW D16, D11: compact top of the results, reading display paragraphs and first-language note (provisional defaults)",
+    "files": [
+     "README.md"
+    ],
+    "group": "reveal-reading",
+    "pairs_with_pub": "d66699f"
+   },
+   {
+    "sha": "7722f46",
+    "subject": "UX-REVIEW D8: decimal comma and whole-number hints, app, bank and server (provisional default)",
+    "files": [
+     "README.md",
+     "golden/ts_dumps/quant.json",
+     "golden/ts_dumps/quant_entry.json",
+     "src/hb/gen/quant/entry.py",
+     "src/hb/gen/quant/spec.py",
+     "tests/gen/test_quant.py",
+     "tests/gen/test_quant_entry.py"
+    ],
+    "group": "quant-entry",
+    "pairs_with_pub": "cfdb321"
+   }
+  ]
+ },
+ "skipped_groups": [
+  {
+   "group": "integration",
+   "why": "no files (integrate.json: kept as a group name only); no commit made"
+  }
+ ],
+ "shared_files_split": [
+  {
+   "repo": "pub",
+   "file": "web/e2e/keyboard-session.spec.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     287,
+     501
+    ]
+   },
+   "rest_in": "screen"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/session-driver.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     126,
+     313
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/session-save.spec.ts",
+   "hunks_by_group_new_line": {
+    "run": [
+     306
+    ]
+   },
+   "rest_in": "share-save"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/session.spec.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     63,
+     383,
+     528,
+     711,
+     826
+    ],
+    "start-copy": [
+     4,
+     235,
+     242,
+     273
+    ],
+    "funnel": [
+     191
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/ux-render.spec.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     116,
+     127
+    ]
+   },
+   "rest_in": "render"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/ux-reveal.spec.ts",
+   "hunks_by_group_new_line": {
+    "share-save": [
+     269
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/ux-session.spec.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     24,
+     272,
+     300,
+     524,
+     594
+    ],
+    "run": [
+     13,
+     753,
+     757,
+     764
+    ]
+   },
+   "rest_in": "screen"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/ux2-session.spec.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     94,
+     199,
+     260
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/scripts/a11y-routes.test.ts",
+   "hunks_by_group_new_line": {
+    "funnel": [
+     119
+    ]
+   },
+   "rest_in": "D6"
+  },
+  {
+   "repo": "pub",
+   "file": "web/scripts/db/rescore.db.test.ts",
+   "hunks_by_group_new_line": {
+    "facets": [
+     4,
+     16,
+     20,
+     136,
+     175,
+     184,
+     188,
+     192,
+     202,
+     998
+    ]
+   },
+   "rest_in": "quant-entry"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/backend/copy.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     217
+    ]
+   },
+   "rest_in": "start-copy"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/reveal/Reveal.dom.test.ts",
+   "hunks_by_group_new_line": {
+    "gated": [
+     148,
+     556,
+     558
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/reveal/ShareCard.dom.test.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     11,
+     13,
+     106,
+     155
+    ]
+   },
+   "rest_in": "share-save"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/reveal/copy.test.ts",
+   "hunks_by_group_new_line": {
+    "gated": [
+     59
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/reveal/copy.ts",
+   "hunks_by_group_new_line": {
+    "gated": [
+     37
+    ],
+    "share-save": [
+     56,
+     116
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/save/types.ts",
+   "hunks_by_group_new_line": {
+    "D6": [
+     71
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/Finished.dom.test.ts",
+   "hunks_by_group_new_line": {
+    "D6": [
+     162
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/Finished.svelte",
+   "hunks_by_group_new_line": {
+    "D6": [
+     10,
+     25,
+     104,
+     136,
+     145,
+     148
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/SessionApp.dom.test.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     224,
+     252,
+     274
+    ]
+   },
+   "rest_in": "funnel"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/constants.ts",
+   "hunks_by_group_new_line": {
+    "start-copy": [
+     14,
+     16,
+     21,
+     24
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/copy.test.ts",
+   "hunks_by_group_new_line": {
+    "start-copy": [
+     21,
+     28,
+     189,
+     203
+    ],
+    "D6": [
+     159
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/copy.ts",
+   "hunks_by_group_new_line": {
+    "start-copy": [
+     13,
+     21,
+     57,
+     303,
+     311,
+     313,
+     328,
+     335
+    ],
+    "funnel": [
+     24,
+     49
+    ],
+    "D6": [
+     113,
+     115
+    ]
+   },
+   "rest_in": "run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/ProfileView.dom.test.ts",
+   "hunks_by_group_new_line": {
+    "viz-blob": [
+     102
+    ],
+    "facets": [
+     286,
+     288,
+     297,
+     299
+    ]
+   },
+   "rest_in": "reveal-reading"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/blob.test.ts",
+   "hunks_by_group_new_line": {
+    "viz-blob": [
+     17,
+     27,
+     46,
+     64,
+     73,
+     77,
+     127,
+     136,
+     140,
+     152,
+     214,
+     238,
+     253,
+     309,
+     311,
+     314,
+     317,
+     353,
+     356,
+     360,
+     393,
+     402,
+     405,
+     409,
+     548,
+     553,
+     618
+    ]
+   },
+   "rest_in": "facets"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/card-copy.ts",
+   "hunks_by_group_new_line": {
+    "gated": [
+     33
+    ]
+   },
+   "rest_in": "viz-blob"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/card.test.ts",
+   "hunks_by_group_new_line": {
+    "names": [
+     12,
+     200,
+     323,
+     350,
+     411
+    ],
+    "gated": [
+     364,
+     669
+    ]
+   },
+   "rest_in": "viz-blob"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/copy.ts",
+   "hunks_by_group_new_line": {
+    "viz-blob": [
+     35
+    ]
+   },
+   "rest_in": "facets"
+  },
+  {
+   "repo": "bank",
+   "file": "README.md",
+   "hunks_by_group_new_line": {
+    "D6": [
+     103
+    ],
+    "reveal-reading": [
+     142
+    ]
+   },
+   "rest_in": "quant-entry",
+   "note": "integrate.json put +103 under reveal-reading; reading it shows the D6 retest paragraph (as its which_hunks says), so +103 went to D6 and +142 to reveal-reading."
+  }
+ ],
+ "mapping_corrections": [
+  {
+   "file": "web/scripts/db/rescore.db.test.ts",
+   "integrate_said": "quant-entry 4, 16, 184, 188, 202, 986",
+   "by_reading": "only +986 (the response_fits \"3,5\" case) is D8; +4, +16, +184, +188, +202 are the leave-facet-out parity reference (D4) and went to facets"
+  },
+  {
+   "file": "web/src/session/copy.ts",
+   "integrate_said": "run 21, 24, 115, 328",
+   "by_reading": "+21 WELCOME_INTRO and +328 the web-host privacy sentence are start-copy (D26, D1); +24 the welcome row strings is funnel (D22); +115 READY_CONTINUE/continueLine is D6; run keeps +162 INTERSTITIAL_CLOCK and +240 BREAK_OFFER_TEXT"
+  },
+  {
+   "file": "web/src/session/copy.test.ts",
+   "integrate_said": "run 21, 28, 189",
+   "by_reading": "+21, +28 (privacy and honour pins) and +189 (Spatial sight note) are start-copy"
+  },
+  {
+   "file": "web/src/session/constants.ts",
+   "integrate_said": "run 14, 21",
+   "by_reading": "+14 and +21 are the TERMS_VERSION comments (D1), start-copy; run keeps +7 (BREAK_AT_S removed)"
+  },
+  {
+   "file": "web/e2e/session.spec.ts",
+   "integrate_said": "run 4, 235",
+   "by_reading": "+4 (file comment on the privacy notice) and +235 (privacy test title) are start-copy (D1)"
+  },
+  {
+   "file": "web/e2e/ux-session.spec.ts",
+   "integrate_said": "screen 764",
+   "by_reading": "+764 is the break-offer text, the clock-waits test and the untouched-slider test: run (D5, D7); screen keeps +94"
+  },
+  {
+   "file": "web/src/reveal/ShareCard.dom.test.ts",
+   "integrate_said": "share-save 13",
+   "by_reading": "+13 drops the axis import that the names hunks no longer use: names"
+  },
+  {
+   "file": "web/src/viz/ProfileView.dom.test.ts",
+   "integrate_said": "reveal-reading 299",
+   "by_reading": "+299 (one of the two quant groups is measured) is facets (D4)"
+  },
+  {
+   "file": "web/src/viz/blob.test.ts",
+   "integrate_said": "facets 46, 64, 73, 77, 238, 309, 311, 317, 356, 360, 405, 409, 553, 612",
+   "by_reading": "all but +612 are the D13 gap helpers and assertions or the D14 label floor: viz-blob; facets keeps +612 (quant/ratios_rates_averages)"
+  },
+  {
+   "file": "web/src/session/Ready.svelte",
+   "integrate_said": "staged whole in screen; screen hunks 17, 45, 94, 218, 267",
+   "by_reading": "every hunk is the D6 continue offer (module comment, SEGMENT_INFO for its line, the unfinished/oncontinue props, go(), the Continue button); the button follows the D27 one-primary rule. Staged whole in D6 instead of screen."
+  }
+ ],
+ "shared_files_staged_whole": [
+  {
+   "repo": "pub",
+   "file": "schema/save-v1.json",
+   "in": "run",
+   "also_carries": "D6",
+   "why": "the flags description is one line holding the D6 continuation sentence and the run text"
+  },
+  {
+   "repo": "pub",
+   "file": "supabase/README.md",
+   "in": "quant-entry",
+   "also_carries": "facets",
+   "why": "the migrations table hunk holds both new rows"
+  },
+  {
+   "repo": "pub",
+   "file": "web/HOUSE-STYLE.md",
+   "in": "start-copy",
+   "also_carries": "names",
+   "why": "new file; names added one bullet"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/routes.ts",
+   "in": "run",
+   "also_carries": "names, funnel, D6",
+   "why": "the +24 import hunk serves funnel and D6, and the funnel route has no hunk of its own"
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/uxdec-screen.spec.ts",
+   "in": "screen",
+   "also_carries": "names",
+   "why": "new file; names changed one literal"
+  },
+  {
+   "repo": "pub",
+   "file": "web/scripts/db/migrations.test.ts",
+   "in": "quant-entry",
+   "also_carries": "facets",
+   "why": "the list hunk holds both migration entries"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/brief/ResultsTalk.dom.test.ts",
+   "in": "gated",
+   "also_carries": "screen",
+   "why": "no screen hunk could be told apart"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/Ready.dom.test.ts",
+   "in": "D6",
+   "also_carries": "names",
+   "why": "no names hunk could be told apart"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/SessionApp.served.dom.test.ts",
+   "in": "run",
+   "also_carries": "names, start-copy, funnel",
+   "why": "no funnel hunk could be told apart (mapping unclear)"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/SessionApp.svelte",
+   "in": "D6",
+   "also_carries": "funnel",
+   "why": "hunks +10 and +71 (module comment, imports) hold both"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/SessionScreen.dom.test.ts",
+   "in": "screen",
+   "also_carries": "names, run",
+   "why": "the +8 import hunk serves run and screen, and +252/+474 labelled screen are run"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/SessionScreen.svelte",
+   "in": "screen",
+   "also_carries": "run",
+   "why": "the D7 slider wiring (onconfirm with touched) sits inside a screen hunk that moves the stage markup"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/bot.ts",
+   "in": "run",
+   "also_carries": "D6",
+   "why": "no D6 hunk could be told apart"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/components.dom.test.ts",
+   "in": "run",
+   "also_carries": "names, start-copy, funnel",
+   "why": "no funnel hunk could be told apart (mapping unclear)"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/run.test.ts",
+   "in": "run",
+   "also_carries": "D6",
+   "why": "the +12 import hunk and the continuation tests (+1352, labelled run) are D6; run.ts is whole in run too"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/run.ts",
+   "in": "run",
+   "also_carries": "D6",
+   "why": "the constructor hunks (+493 to +538) mix both"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/session/segments.ts",
+   "in": "start-copy",
+   "also_carries": "names",
+   "why": "the SEGMENT_INFO hunk (+41) holds the names title argument and the start-copy blurbs"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/card.ts",
+   "in": "viz-blob",
+   "also_carries": "names",
+   "why": "the +136 hunk holds axisName (names) and cardSpoke (D15 A)"
+  },
+  {
+   "repo": "pub",
+   "file": "web/src/viz/facets.ts",
+   "in": "facets",
+   "also_carries": "names",
+   "why": "the +54 import hunk and the +275 label hunk hold both"
+  }
+ ],
+ "tree_equality": {
+  "pub": {
+   "target_tree": "e14818d11e74d024ff51b9367a6b78505c219829",
+   "head_tree": "e14818d11e74d024ff51b9367a6b78505c219829",
+   "equal": true
+  },
+  "bank": {
+   "target_tree": "04f863e2c41c5f00de918f6648bed6cd3fddd09c",
+   "head_tree": "04f863e2c41c5f00de918f6648bed6cd3fddd09c",
+   "equal": true
+  },
+  "status_porcelain_empty": {
+   "pub": true,
+   "bank": true
+  },
+  "note": "Target trees recorded before staging with a throwaway index (read-tree HEAD, add -A, write-tree). No extra commit was needed."
+ },
+ "scan": "Added lines checked before staging: no absolute local paths, no answer keys, item_keys data, service-role secrets or bank items. The only hits are the item_keys table name in the new SQL migrations and the service_role role in a revoke, as the existing migrations have. Nothing ignored (web/test-results, node_modules, .venv) was added.",
+ "intermediate_builds": {
+  "gated": "Only the final head (tree identical to the tree the lead gated). Intermediate commits were not built.",
+  "likely_not_to_build_or_pass_alone": [
+   {
+    "sha": "45b0e82",
+    "group": "names",
+    "why": "segments.ts (titles from axisName), card.ts and facets.ts land later whole, so some Title Case expectations fail until start-copy, viz-blob and facets"
+   },
+   {
+    "sha": "5bf2496",
+    "group": "funnel",
+    "why": "the funnel wiring in SessionApp.svelte lands whole in D6"
+   },
+   {
+    "sha": "fb50c3e",
+    "group": "D6",
+    "why": "the continuation in run.ts and bot.ts lands whole in run, so SessionApp.svelte and the D6 tests do not type-check until 487ce2c"
+   },
+   {
+    "sha": "487ce2c",
+    "group": "run",
+    "why": "the D7 slider wiring in SessionScreen.svelte lands whole in screen"
+   },
+   {
+    "sha": "ec00443",
+    "group": "facets",
+    "why": "migrations.test.ts and supabase/README.md (facets entries) land whole in quant-entry; db tests are not part of npm test"
+   },
+   {
+    "sha": "6598601 .. 61f726b",
+    "group": "share-save, reveal-reading, render",
+    "why": "inherit the migrations.test.ts gap above until cfdb321 (test:db only)"
+   }
+  ]
+ },
+ "check_after_commit": "cd web && npm run check on the committed head: svelte-check 1218 files, 0 errors, 0 warnings; tsc node and scripts clean (exit 0). No full re-gate: the trees equal the ones the lead gated.",
+ "problems": [
+  "integrate.json hunks_by_group_new_line is a keyword classification and was wrong in eleven files (ten pub files in mapping_corrections, and bank README.md +103); every split was checked by reading the hunks.",
+  "The computed task ends with a generic line \"Do NOT commit (the integrator commits)\"; this package's own instruction is to make the commits, so it did. commit.json itself is left uncommitted for merge-dev."
+ ]
+}

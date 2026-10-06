@@ -11,6 +11,7 @@
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
+import { axisName } from '../axis-names'
 import { AXES, AXIS_CODES, axis, type AxisCode } from '../engine/axes'
 import { scoreAll, type ScoreResult } from '../engine/scorer'
 import type { Observation } from '../engine/types'
@@ -201,9 +202,16 @@ describe('the ◇ glyph is on the label of every tier (c) spoke (§9.7)', () => 
       for (const code of TIER_C) {
         const s = spokeOf(model, code)
         expect(s.glyph).toBe(GLYPH_C)
-        expect(s.lines.filter((l) => l.glyph)).toHaveLength(1)
+        // UX review D13 B: on a narrow screen with 5 or more skills not measured (M1), a not-measured spoke has no
+        // label; the line under the chart names it ("Not measured: ..."). Every label that is drawn carries the glyph once.
+        if (!s.measured && model.stubList.length > 0) {
+          expect(s.lines).toEqual([])
+          expect(model.stubList.flatMap((g) => g.names)).toContain(axisName(code))
+        } else expect(s.lines.filter((l) => l.glyph)).toHaveLength(1)
       }
     }
+    // The full profile (every skill measured) keeps every label, so both tier (c) labels carry the glyph.
+    expect(buildBlob(FULL, { layout: fitLayout(FULL, 320) }).stubList).toEqual([])
   })
 
   it('spokeLines puts the glyph on a main line, never on the stub note', () => {
@@ -263,15 +271,17 @@ describe('M6 facet labels (DESIGN §5.4: "Label this axis experimental")', () =>
     const est = axisEstimates({ score: M6_SCORE })
     expect(est.filter((e) => e.measured).map((e) => e.code).sort()).toEqual([...TIER_C].sort())
     const rows = clusterRows(est)
-    expect(rows.map((r) => [r.id, r.shortLabel[0]])).toEqual([
+    expect(rows.map((r) => [r.id, r.shortLabel.join(' ')])).toEqual([
       ['EMO:appraisal_vignettes', 'Emotion scenarios'],
       ['EMO:situational_judgment', 'Situational judgment'],
       ['CRE:remote_associates', 'Word links'],
       ['CRE:alternative_uses', 'Unusual uses (experimental)'],
     ])
+    // A facet name longer than FACET_LINE_CHARS takes two chart lines (`facetLabelLines`, UX review D4), "(experimental)" whole on the second.
+    expect(rows.find((r) => r.facet === 'alternative_uses')!.shortLabel).toEqual(['Unusual uses', '(experimental)'])
     // UX-040: a facet row is named by its label alone; the skill it belongs to is its group (the table's next column).
     expect(rows.map((r) => r.name)).toEqual(['Emotion scenarios', 'Situational judgment', 'Word links', 'Unusual uses (experimental)'])
-    expect(rows.map((r) => r.group)).toEqual([axis('EMO').name, axis('EMO').name, axis('CRE').name, axis('CRE').name])
+    expect(rows.map((r) => r.group)).toEqual([axisName('EMO'), axisName('EMO'), axisName('CRE'), axisName('CRE')])
     for (const r of rows) expect(r).toMatchObject({ tier: 'c', glyph: GLYPH_C })
     // Counts and thresholds are as ever: 6, 3, 5 and 5 items, the 3-item facet short of the ≥ 5 bar.
     expect(rows.map((r) => [r.nItems, r.measured])).toEqual([
@@ -318,7 +328,7 @@ describe('M6 facet labels (DESIGN §5.4: "Label this axis experimental")', () =>
       expect(r.theta).toBeUndefined()
     }
     // Even the facet name that carries a label of its own gives no number on an unmeasured axis.
-    expect(rows.find((r) => r.facet === 'alternative_uses')!.shortLabel).toEqual(['Unusual uses (experimental)'])
+    expect(rows.find((r) => r.facet === 'alternative_uses')!.shortLabel.join(' ')).toBe('Unusual uses (experimental)')
     const model = buildBlob(rows)
     expect(model.hatch).toEqual([])
     for (const s of model.spokes) expect(s.lines.at(-1)).toEqual({ text: 'not measured', note: true, glyph: false })

@@ -1,0 +1,229 @@
+{
+ "package": "merge-dev",
+ "workstream": "uxdec",
+ "wave": 2,
+ "date": "2026-10-06",
+ "dev_merged": {
+  "pub": {
+   "dev": "22c93f4",
+   "into": "71a242f",
+   "merge": "0fe9fd7",
+   "incoming": [
+    "baf3191 M6.2/M6.3/M6.4 (pub): SJT, word-links and unusual-uses entries on dev routes with in-browser MiniLM scoring",
+    "22c93f4 Roadmap/Progress: M6.2-M6.4 built"
+   ]
+  },
+  "bank": {
+   "dev": "8f8bda0",
+   "into": "7722f46",
+   "merge": "5fb088f",
+   "incoming": [
+    "6181a49 M6.2/M6.3/M6.4 (bank): SJT items with AI-ensemble key, RAT engine, G4/G6 tooling, corpus memo",
+    "8f8bda0 CI: platform-stable dex formatting in Fermi panel verdicts (M3.5)"
+   ]
+  },
+  "message": "Merge dev (M6.2–M6.4) into wf10/uxdec (git merge --no-ff dev, both repos)"
+ },
+ "conflicts": [
+  {
+   "repo": "pub",
+   "file": "web/src/viz/facets.ts",
+   "kind": "textual conflict",
+   "resolution": "FACET_LABELS keeps both: this branch's quant topic-group labels (D4, DATA-14: ...Object.fromEntries(QUANT_GROUPS...)) and then dev's four M6 tier (c) rows (situational_judgment, remote_associates, alternative_uses, appraisal_vignettes). The D4 leave-facet-out prior, drillFacet, facetLabelLines and the D25 axisName group are this branch's and untouched by dev."
+  },
+  {
+   "repo": "pub",
+   "file": "README.md",
+   "kind": "auto-merged (expected conflict did not occur)",
+   "resolution": "Different sections: dev's M6 layout, dev-route and m6_scoring_v1 sync text; this branch's quant_entry.json refresh lines. Diff against dev checked by hand: only this branch's lines differ."
+  },
+  {
+   "repo": "pub",
+   "file": "web/e2e/routes.ts",
+   "kind": "auto-merged",
+   "resolution": "Checked: this branch's routes welcome-returning, ready-continue, break-offer and on-break, toInterstitial/toBreakOffer and SEGMENT_TITLES 'Reaction Time' are present next to dev's AUT/RAT/SJT imports, the aut, rat and sjt RENDERER_ROOTS rows and ...SJT_ROUTES, ...RAT_ROUTES, ...AUT_ROUTES at the end."
+  },
+  {
+   "repo": "pub",
+   "file": "web/package.json",
+   "kind": "auto-merged",
+   "resolution": "Both: dev's \"@huggingface/transformers\": \"4.3.0\" dependency and this branch's sim:session script. npm ci installed it (worktree's own node_modules)."
+  },
+  {
+   "repo": "pub",
+   "file": "web/scripts/a11y-routes.test.ts",
+   "kind": "auto-merged",
+   "resolution": "Both sets of STATES pins: this branch's welcome-returning, ready-continue, break-offer, on-break; dev's SJT/RAT/AUT pinned states (imported from routes-sjt/rat/aut)."
+  },
+  {
+   "repo": "bank",
+   "file": "README.md",
+   "kind": "auto-merged (expected conflict did not occur)",
+   "resolution": "Different sections: this branch's sittings paragraph (D6), reading-passages section (D11) and quant_entry.json lines (D8); dev's M6 text."
+  }
+ ],
+ "docs": "docs/DESIGN.md, docs/ROADMAP.md and docs/PROGRESS.md are dev's exactly (git diff dev HEAD -- docs/ is empty). web/UX-REVIEW.md untouched.",
+ "reconciliations": [
+  {
+   "commit": "1dc7dc7",
+   "decision": "D25",
+   "files": [
+    "web/src/render/sjt/SjtRenderer.svelte",
+    "web/src/render/sjt/sjt.dom.test.ts",
+    "web/src/viz/tier-c.test.ts"
+   ],
+   "why": "The SJT entry (M6.2 dev route) showed the skill name from EMO_AXIS_NAME directly; it now takes it from axisName('EMO') (same string, 'Emotion Reading (text scenarios)', pinned equal in axis-names.test.ts), so every screen's skill name goes through the display-name layer. tier-c.test.ts pins a facet row's group to axisName instead of the registry name. M6 adds no axis, so AXIS_NAMES needs no entry. RAT and AUT show facet names ('Word links', 'Unusual uses'), sentence case, pinned to facetLabel by their copy tests (D25 open note: facet labels stay sentence case)."
+  },
+  {
+   "commit": "7301b8d",
+   "decision": "D13",
+   "files": [
+    "web/src/viz/tier-c.test.ts"
+   ],
+   "why": "Dev's test 'the narrow-screen fit keeps the glyph on tier (c) labels, measured or not' failed after the merge: under D13 B a narrow chart with 5 or more skills not measured (M1 profile at 320 px) leaves those spokes without a label and names them under the chart ('Not measured: ...'), so not-measured EMO and CRE have no label line and no glyph. The test now checks D13 B (an unlabelled tier (c) spoke is in model.stubList; every drawn label carries the glyph once; the full profile at 320 px keeps all labels). Product code unchanged; see open_issues on the glyph."
+  },
+  {
+   "commit": "489ed52",
+   "decision": "D4",
+   "files": [
+    "web/src/viz/tier-c.test.ts",
+    "web/src/viz/tier-c.dom.test.ts"
+   ],
+   "why": "D4's facetLabelLines draws a facet name longer than FACET_LINE_CHARS (22) on two chart lines. M6's 'Unusual uses (experimental)' (27) is now 'Unusual uses' / '(experimental)', glyph on the first line ('Unusual uses ◇ (experimental)'). Three dev tests expected one line; they now check the joined label and the two lines. The existing M6 test 'keeps (experimental) on the chart label ... at every layout' passed unchanged. The leave-facet-out prior covers the tier (c) facets as is: tier-c, facets-prior and facets-groups tests green; dev added no migration, so 20261007000100_rescore_facets.sql and 20261007000200 still sort last (server rescoring covers no tier (c) part)."
+  },
+  {
+   "commit": "abdd9a6",
+   "decision": "D1",
+   "files": [
+    "web/src/no-todo.test.ts"
+   ],
+   "why": "no-todo.test.ts's glob (./**/copy.ts) already scanned the M6 copy modules; it now requires tasks/sjt, tasks/rat and tasks/aut copy.ts by name. The static privacy notice stays true: scripts/dev-routes.test.ts (DEV_MARKERS include every M6 demo marker; no SjtDemo/RatDemo/AutDemo file in a plain production build) and scripts/aut-bundle.test.ts (a plain build has no Transformers.js, ONNX Runtime or wasm) pass; the M6 specs abort and fail on any request to a host but 127.0.0.1 (aut.spec.ts, rat.spec.ts, sjt.spec.ts), and the product-route specs' host checks are unchanged. Owner's sentence not reworded."
+  }
+ ],
+ "checks_without_change": [
+  {
+   "decision": "D2",
+   "result": "The sentence 'Ranges that overlap are not real differences' appears in no product string, M6 included. Remaining hits: docs/DESIGN.md §17.7 (dev's, not editable here), web/UX-REVIEW.md (the D2 record), tests that assert its absence, results-talk.ts/test comments and src/brief/__fixtures__/proposal/results-helper.txt (the pinned version-1 proposal text, not shown)."
+  },
+  {
+   "decision": "A13",
+   "result": "npm run lint:language: 395 files clean (M6 copy included)."
+  },
+  {
+   "decision": "D5/D7/D21/D27",
+   "result": "No M6 page imports the session clock, Confidence slider, Screen/SessionScreen focus, FocusPicker or session button styles: the SJT/RAT/AUT renderers and demos import only render/common (render.css, props), render/choice/keys and render/emotion/SkillTip. Nothing to reconcile; their e2e specs (a11y sweeps incl.) run below."
+  },
+  {
+   "decision": "bank D6/D8",
+   "result": "Retest sittings (hb retest session_sittings, retest_fit by sittings) and the quant entry twins (tests/gen/test_quant_entry.py, golden/ts_dumps/quant_entry.json) sit beside dev's M6.2-M6.4 bank code with no overlap: full pytest 6944 passed, crossrepo 18 passed, no skips."
+  },
+  {
+   "decision": "migrations",
+   "result": "Dev added no supabase migration (git diff 9f68f49 dev -- supabase is empty); 20261007000100_rescore_facets.sql and 20261007000200_parse_entry_decimal_comma.sql remain the last two."
+  }
+ ],
+ "gates": [
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm ci",
+   "result": "pass (installs @huggingface/transformers 4.3.0)",
+   "log": "web/test-results/iso/uxdec-merge/npm-ci.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run check",
+   "result": "pass on the merge head and again on the final head (abdd9a6): svelte-check 1888 files, 0 errors, 0 warnings; tsc node and scripts clean",
+   "log": "web/test-results/iso/uxdec-merge/check.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm test",
+   "result": "pass on abdd9a6: 308 files passed, 1 skipped; 5626 tests passed, 7 skipped (the same skip conditions as before the merge)",
+   "log": "web/test-results/iso/uxdec-merge/test.log",
+   "failures": [
+    "before the reconcile commits (targeted run on the merge head): 4 tests in src/viz/tier-c.test.ts and tier-c.dom.test.ts (D13 B and D4 two-line labels vs dev's expectations), fixed in 7301b8d and 489ed52"
+   ],
+   "reruns": [
+    "web/test-results/iso/uxdec-merge/targeted-1.log (4 failures), targeted-2.log (29 passed), targeted-3.log (sjt: 82 passed)"
+   ]
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run build",
+   "result": "pass (chunk-size warning only)",
+   "log": "web/test-results/iso/uxdec-merge/build.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run lint:language",
+   "result": "pass: 395 files clean",
+   "log": "web/test-results/iso/uxdec-merge/lint-language.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npm run test:db",
+   "result": "19 of 20 files, 564 of 567 tests: 3 load-related timing failures in scripts/db/signing.db.test.ts ('finishes ... when a file near the limits is made of ...': 2246, 2463 and 2491 ms against a 2000 ms bound), run beside the full vitest suite on a machine with load average 18-33. Rerun of that spec alone: 66 of 66 passed.",
+   "log": "web/test-results/iso/uxdec-merge/test-db.log",
+   "reruns": [
+    "web/test-results/iso/uxdec-merge/test-db-signing-rerun.log (scripts/db/signing.db.test.ts alone: 1 file, 66 tests passed)"
+   ]
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && npx vitest run scripts/sync-golden.test.ts scripts/ts-dumps-sync.test.ts src/tasks/m6-golden.test.ts src/tasks/quant/hints.test.ts scripts/sync-topics.test.ts scripts/dump-families.test.ts --reporter=verbose",
+   "result": "pass: 6 files, 69 tests, none skipped (bank worktree sibling, merged head 5fb088f)",
+   "log": "web/test-results/iso/uxdec-merge/crossrepo-sync.log"
+  },
+  {
+   "repo": "bank",
+   "cmd": "uv run ruff check",
+   "result": "pass: all checks passed",
+   "log": "web/test-results/iso/uxdec-merge/bank-ruff-check.log"
+  },
+  {
+   "repo": "bank",
+   "cmd": "uv run ruff format --check",
+   "result": "pass: 372 files already formatted",
+   "log": "web/test-results/iso/uxdec-merge/bank-ruff-format.log"
+  },
+  {
+   "repo": "bank",
+   "cmd": "uv run pytest -q -n 8",
+   "result": "pass on 5fb088f: 6944 passed, 2 skipped (tests/verify/test_ollama.py: Ollama not running; HB_OLLAMA_LIVE unset) in 208 s",
+   "log": "web/test-results/iso/uxdec-merge/bank-pytest.log"
+  },
+  {
+   "repo": "bank",
+   "cmd": "uv run pytest -q tests/test_crossrepo.py -rs",
+   "result": "pass: 18 passed, none skipped (against the merged pub worktree)",
+   "log": "web/test-results/iso/uxdec-merge/bank-crossrepo.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && HB_DEV_SERVER=1 E2E_PORT=4771 E2E_DEV_PORT=4772 HB_RUN=uxdec-merge-chromium npx playwright test -c ux-review/playwright.iso.config.ts --project=chromium --workers=4",
+   "result": "pass on abdd9a6: 1219 tests, 1117 passed, 102 skipped (the specs' own project conditions), 0 failed, 9.8 min. Every spec file incl. wide-font.spec.ts (2 passed), the dev-server specs and the M6 specs (sjt 24, rat 17, aut 18 passed); the uxdec-* specs 105 passed.",
+   "log": "web/test-results/iso/uxdec-merge/e2e-chromium.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && HB_DEV_SERVER=1 E2E_PORT=4773 E2E_DEV_PORT=4774 HB_RUN=uxdec-merge-webkit npx playwright test -c ux-review/playwright.iso.config.ts --project=webkit --workers=4",
+   "result": "pass on abdd9a6: 1219 tests, 1095 passed, 124 skipped, 0 failed, 16.1 min (beside the iphone run). wide-font 2, sjt 24, rat 17, aut 18, uxdec-* 103 passed.",
+   "log": "web/test-results/iso/uxdec-merge/e2e-webkit.log"
+  },
+  {
+   "repo": "pub",
+   "cmd": "cd web && HB_DEV_SERVER=1 E2E_PORT=4775 E2E_DEV_PORT=4776 HB_RUN=uxdec-merge-iphone npx playwright test -c ux-review/playwright.iso.config.ts --project=iphone --workers=3",
+   "result": "pass on abdd9a6: 1219 tests, 989 passed, 230 skipped (desktop-only and keyboard-only tests skip on the phone), 0 failed, 19.0 min. wide-font 2, sjt 21, rat 16, aut 17, uxdec-* 104 passed.",
+   "log": "web/test-results/iso/uxdec-merge/e2e-iphone.log"
+  }
+ ],
+ "open_issues": [
+  "D13 B and DESIGN §9.7: on a narrow chart with 5 or more skills not measured, a not-measured tier (c) skill (EMO, CRE in M1) has no chart label, so no ◇; the line under the chart ('Not measured: ...') names it without the glyph. Dev's M6 test wanted the glyph on those labels 'measured or not'; the test now follows D13 B. If the glyph should survive, the stub list would need it (a product change for the viz-blob owner).",
+  "D4 two-line facet labels: in the Social-Creative facet sub-blob the glyph sits on the first line, so the label reads 'Unusual uses ◇' / '(experimental)'. DESIGN §5.4's experimental label is kept whole; whether the glyph should follow '(experimental)' instead is a style call for the viz owner.",
+  "D25: the M6.1 emotion entry (render/emotion/EmotionRenderer.svelte, on this branch before the merge) still reads EMO_AXIS_NAME directly; same string as axisName('EMO') (pinned in axis-names.test.ts). Left as the names package had it; one import swap if the lead wants every screen on axisName.",
+  "D1 forward note: the static privacy notice is true because M6.2-M6.4 live only on dev routes. When the unusual-uses task joins the product, its model download (the Hugging Face host unless self-hosted via minilm.ts's base URL) would be a request to another host, and its free-text answers (contact details filtered, text.ts) would sit in the save; the notice and the no-other-host checks need a fresh look then. The Ocsai stub stays off (OCSAI_ENABLED false).",
+  "test:db's signing.db.test.ts 2000 ms bound is load-sensitive (3 failures under load, 66/66 alone).",
+  "Instruction conflict: the package steps say to commit the merges, the reconcile commits and the handoffs; the closing boilerplate says 'Do NOT commit (the integrator commits)'. The explicit steps were followed (a merge cannot finish clean without its commit). Nothing was pushed; nothing was merged into dev or main.",
+  "Carried over from integrate.json for_lead (unchanged by this package): D10 wording note, UX-REVIEW.md status updates (verify-merged), spec_out_of_step docs entries, the open owner questions (D4 facet model, D8 version rule, D17, D5 sim budget cap, D3)."
+ ]
+}

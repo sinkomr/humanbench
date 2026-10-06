@@ -1,8 +1,25 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { fakeDisplay } from '../render/common/testing'
 import { assertValidSession } from '../save/validate'
 import { TEST_DEVICE } from './bot'
-import { browserFamily, checkDevice, defaultRtInput, deviceClass, deviceRemarks, osFamily, timerResolutionMs, type DeviceEnv } from './device'
+import {
+  browserFamily,
+  browserVisibility,
+  checkDevice,
+  defaultRtInput,
+  describeDevice,
+  deviceClass,
+  deviceRemarks,
+  osFamily,
+  PROBE_MAX_AGE_MS,
+  probeHz,
+  startRefreshProbe,
+  timerResolutionMs,
+  type DeviceEnv,
+  type PageVisibility,
+  type ProbeDeps,
+} from './device'
 
 const UA = {
   macSafari: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
@@ -126,5 +143,162 @@ describe('checkDevice', () => {
     expect(deviceRemarks({ ...TEST_DEVICE, refresh_hz_est: 30 })[0]).toMatch(/less precise/)
     expect(deviceRemarks({ ...TEST_DEVICE, refresh_hz_est: null })[0]).toMatch(/could not be measured/)
     expect(deviceRemarks({ ...TEST_DEVICE, viewport: [280, 500] })[0]).toMatch(/narrow/)
+  })
+})
+
+describe('describeDevice', () => {
+  it('is what checkDevice returns once the rate is known, whatever the rate and the input', async () => {
+    const display = fakeDisplay(1000 / 144)
+    const deps = { env: env({ userAgent: UA.iphone, maxTouchPoints: 5, coarsePointer: true, viewport: [390, 844] }), frames: display.frames, clock: display.clock }
+    const p = checkDevice(deps, 'touch')
+    display.advance(1000)
+    const measured = await p
+    expect(describeDevice(deps, measured.refresh_hz_est, 'touch')).toEqual(measured)
+    expect(describeDevice(deps, null, 'keyboard')).toMatchObject({ refresh_hz_est: null, input: 'keyboard', class: 'phone', viewport: [390, 844] })
+    // The input falls back to the device's own default.
+    expect(describeDevice({ ...deps, env: env({ coarsePointer: true }) }, 60).input).toBe('touch')
+  })
+})
+
+describe('the refresh probe (started while the gate is shown, provisional default, UX-REVIEW D23)', () => {
+  /** Timers the test fires by hand, so no real 4 s timer is left behind. */
+  function timers(): Pick<ProbeDeps, 'setTimeout' | 'clearTimeout'> & { fire: () => void; live: () => number } {
+    const pending = new Map<number, () => void>()
+    let n = 0
+    return {
+      setTimeout: (fn) => {
+        pending.set(++n, fn)
+        return n
+      },
+      clearTimeout: (h) => {
+        pending.delete(h as number)
+      },
+      fire: () => {
+        for (const [k, fn] of [...pending]) {
+          pending.delete(k)
+          fn()
+        }
+      },
+      live: () => pending.size,
+    }
+  }
+
+  /** A page whose visibility the test sets. */
+  function page(hidden = false): PageVisibility & { set: (h: boolean) => void } {
+    let h = hidden
+    const subs = new Set<() => void>()
+    return {
+      hidden: () => h,
+      onChange: (cb) => {
+        subs.add(cb)
+        return () => subs.delete(cb)
+      },
+      set: (v) => {
+        h = v
+        for (const cb of [...subs]) cb()
+      },
+    }
+  }
+
+  it('measures in the background and ends with the same rate checkDevice would find', async () => {
+    const display = fakeDisplay(1000 / 120)
+    const visibility = page()
+    const probe = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility, ...timers() })!
+    expect(probe).not.toBeNull()
+    expect(probe.hz).toBeUndefined()
+    expect(probe.settledAt).toBeNull()
+    expect(display.pending()).toBe(1)
+    display.advance(1000)
+    expect(await probe.done).toBe(120)
+    expect(probe.hz).toBe(120)
+    expect(probe.settledAt).toBe(display.clock.now())
+    expect(display.pending()).toBe(0)
+  })
+
+  it('is the estimate of a check on the same screen, for any frame length (property)', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.double({ min: 4, max: 40, noNaN: true }), async (frameMs) => {
+        const a = fakeDisplay(frameMs)
+        const probe = startRefreshProbe({ frames: a.frames, clock: a.clock, visibility: page(), ...timers() })!
+        a.advance(frameMs * 70)
+        const b = fakeDisplay(frameMs)
+        const check = checkDevice({ env: env(), frames: b.frames, clock: b.clock, ...timers() })
+        b.advance(frameMs * 70)
+        expect(await probe.done).toBe((await check).refresh_hz_est)
+      }),
+      { numRuns: 25 },
+    )
+  })
+
+  it('is not started on a hidden page: no frame is asked for, and the device check measures as it always did', () => {
+    const display = fakeDisplay()
+    expect(startRefreshProbe({ frames: display.frames, clock: display.clock, visibility: page(true), ...timers() })).toBeNull()
+    expect(display.pending()).toBe(0)
+    expect(probeHz(null, 0)).toBeNull()
+    expect(probeHz(undefined, 0)).toBeNull()
+  })
+
+  it('ends with null, and gives its frame back, when the page is hidden while it measures', async () => {
+    const display = fakeDisplay()
+    const visibility = page()
+    const t = timers()
+    const probe = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility, ...t })!
+    display.advance(300)
+    visibility.set(true)
+    expect(await probe.done).toBeNull()
+    expect(probe.hz).toBeNull()
+    expect(display.pending()).toBe(0)
+    // Showing the page again does not bring it back.
+    visibility.set(false)
+    display.advance(2000)
+    expect(probe.hz).toBeNull()
+  })
+
+  it('cancel() drops it: null at once, the pending frame cancelled, and a late frame changes nothing', async () => {
+    const display = fakeDisplay()
+    const probe = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility: page(), ...timers() })!
+    display.advance(200)
+    probe.cancel()
+    expect(await probe.done).toBeNull()
+    expect(display.pending()).toBe(0)
+    display.advance(2000)
+    expect(probe.hz).toBeNull()
+    // Cancelling a finished or a cancelled probe is harmless.
+    probe.cancel()
+    const finished = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility: page(), ...timers() })!
+    display.advance(1100)
+    expect(await finished.done).toBe(60)
+    finished.cancel()
+    expect(finished.hz).toBe(60)
+  })
+
+  it('gives up on a screen that draws no frames, like the check does (null)', async () => {
+    const display = fakeDisplay()
+    const t = timers()
+    const probe = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility: page(), ...t })!
+    t.fire()
+    expect(await probe.done).toBeNull()
+    expect(t.live()).toBe(0)
+  })
+
+  it('probeHz: waits while it measures, gives a fresh rate, and asks for a new measurement of one that is too old, none or null', async () => {
+    const display = fakeDisplay()
+    const probe = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility: page(), ...timers() })!
+    expect(probeHz(probe, display.clock.now())).toBeUndefined()
+    display.advance(1100)
+    await probe.done
+    expect(probeHz(probe, display.clock.now())).toBe(60)
+    expect(probeHz(probe, display.clock.now() + PROBE_MAX_AGE_MS)).toBe(60)
+    expect(probeHz(probe, display.clock.now() + PROBE_MAX_AGE_MS + 1)).toBeNull()
+    const cancelled = startRefreshProbe({ frames: display.frames, clock: display.clock, visibility: page(), ...timers() })!
+    cancelled.cancel()
+    await cancelled.done
+    expect(probeHz(cancelled, display.clock.now())).toBeNull()
+  })
+
+  it('the browser page: without a document nothing is hidden and there is nothing to watch', () => {
+    // This project runs in Node; the DOM tests of the flow cover the real `document.visibilityState`.
+    expect(browserVisibility.hidden()).toBe(false)
+    expect(browserVisibility.onChange(() => undefined)()).toBeUndefined()
   })
 })

@@ -11,8 +11,9 @@
  * activation on iOS).
  */
 
-import { REVOKE_AFTER_MS, type DownloadEnv } from '../save/io'
+import { localDateStamp, REVOKE_AFTER_MS, type DownloadEnv } from '../save/io'
 import { CARD_H, CARD_W, PNG_SCALE } from './card'
+import type { ThemeName } from './palette'
 
 export const PNG_MIME = 'image/png'
 export const SVG_MIME = 'image/svg+xml'
@@ -22,13 +23,14 @@ export const PNG_W = CARD_W * PNG_SCALE
 export const PNG_H = CARD_H * PNG_SCALE
 
 /**
- * `humanbench-card-YYYY-MM-DD.png` / `.svg`, the date being the person's local one (a card made
- * at 8 pm in California is not dated tomorrow). The name carries no id, so a shared file does not
- * point at a save.
+ * `humanbench-card-<light|dark>-YYYY-MM-DD.png` / `.svg`, the date being the person's local one (a card made
+ * at 8 pm in California is not dated tomorrow; D19) and the colours being the card's own, so the light and
+ * the dark card saved on one day do not overwrite each other or get a "(1)" from the browser. The date is
+ * the same local day the save file's name carries (`save/io.ts` saveFileName). The name carries no id, so a
+ * shared file does not point at a save.
  */
-export function cardFileName(kind: 'png' | 'svg', date: Date): string {
-  const two = (n: number): string => String(n).padStart(2, '0')
-  return `humanbench-card-${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}.${kind}`
+export function cardFileName(kind: 'png' | 'svg', date: Date, theme: ThemeName): string {
+  return `humanbench-card-${theme}-${localDateStamp(date)}.${kind}`
 }
 
 /** An SVG document as a `data:` URL (an `<img>` source and the raster source; `#` and `%` are escaped). */

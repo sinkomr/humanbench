@@ -6,6 +6,8 @@
   user rates straight away. Nothing about right or wrong is shown for a counted item (§10).
   On a phone the whole form is scrolled into view when it appears, "Continue" included (UX-014); a
   held or repeated Enter on the slider does not submit (it is usually the key that answered the item).
+  The slider may be confirmed where it starts, but `onconfirm` says whether it was moved: the session
+  records an unmoved slider as not rated, so it stays out of the calibration (UX-063).
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
@@ -15,7 +17,8 @@
     readonly floorPct: number
     readonly startPct: number
     readonly optionsCount: number | null
-    readonly onconfirm: (pct: number) => void
+    /** `touched`: the person moved the slider (pointer, touch or keys) before confirming. */
+    readonly onconfirm: (pct: number, touched: boolean) => void
   }
 
   let { floorPct, startPct, optionsCount, onconfirm }: Props = $props()
@@ -24,6 +27,8 @@
   // The starting position of this answer only; the slider then belongs to the person.
   // svelte-ignore state_referenced_locally
   let value = $state(startPct)
+  /** The slider was moved at least once (an `input` event), even if it ended where it started. */
+  let touched = false
   let slider: HTMLInputElement | undefined = $state()
   let form: HTMLFormElement | undefined = $state()
 
@@ -41,7 +46,7 @@
 
   function submit(event: SubmitEvent): void {
     event.preventDefault()
-    onconfirm(Math.round(value))
+    onconfirm(Math.round(value), touched)
   }
 </script>
 
@@ -61,6 +66,7 @@
         aria-valuetext={confidenceValue(value)}
         aria-describedby="{uid}-hint"
         onkeydown={keydown}
+        oninput={() => (touched = true)}
       />
       <output for="{uid}-range" class="value" translate="no">{value}%</output>
     </div>

@@ -540,9 +540,10 @@ describe('scoring the other key shapes', () => {
     await db2.close()
   })
 
-  it('numeric entry: exact rationals, thousands commas, signs, currency and percent marks, tolerance abs and rel', async () => {
+  it('numeric entry: exact rationals, thousands commas, a decimal comma, signs, currency and percent marks, tolerance abs and rel', async () => {
     const id = items[0]!.itemId
-    for (const [entry, right] of [['3.5', 1], ['7/2', 1], ['3 1/2', 1], ['3.52', 1], ['3.56', 0], ['$3.50', 1], ['  3.5 ', 1], ['3,5', 0], ['x', 0], ['', 0], [null, 0], [3.5, 1], [{ v: 1 }, 0]] as const) {
+    // '3,5' is 3.5 since UX-079 (20261007000200_parse_entry_decimal_comma.sql), as the app reads it
+    for (const [entry, right] of [['3.5', 1], ['7/2', 1], ['3 1/2', 1], ['3.52', 1], ['3.56', 0], ['$3.50', 1], ['  3.5 ', 1], ['3,5', 1], ['3,52', 1], ['3,6', 0], ['x', 0], ['', 0], [null, 0], [3.5, 1], [{ v: 1 }, 0]] as const) {
       expect(await score(id, entry), String(entry)).toMatchObject({ o_correct: right })
     }
     const big = items[1]!.itemId

@@ -7,6 +7,7 @@
 import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AXIS_CODES } from '../engine/axes'
+import { distinctivePeaks } from '../reveal/peaks'
 import BlobChart from './BlobChart.svelte'
 import { buildCard, CARD_H, CARD_W, cardSvg, PNG_SCALE } from './card'
 import { axisEstimates, measuredFields, type AxisEstimate } from './profile'
@@ -120,6 +121,26 @@ describe('the blob on the card is the blob on the page', () => {
 
     expect(cardNodes).toEqual(pageNodes)
     expect(cardNodes.length).toBeGreaterThan(5)
+  })
+
+  it.each(['m1', 'full', 'offscale'])('%s with its named peaks ringed and a credible low muted: still the same elements (D15 A)', (id) => {
+    const input = syntheticProfile(id)!.input
+    const est = axisEstimates(input)
+    const peaks = distinctivePeaks(input.score, est.filter((e) => e.measured).map((e) => e.code), { max: AXIS_CODES.length })
+    const card = buildCard({ estimates: est, peaks, sessions: 1 })
+    expect(card.peaks.length).toBeGreaterThan(0)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    app = mount(BlobChart, { target, props: { model: card.placement.model, uid: 'page-chart', title: 't', description: 'd' } })
+    flushSync()
+    const page = target.querySelector('svg.hb-blob')!
+    const pageNodes = [...page.children].filter((c) => !['title', 'desc'].includes(c.localName)).map((c) => describe_(c, 'page-chart'))
+    const cardNodes = [...parse(card.svg).querySelector('g.blob')!.children].map((c) => describe_(c, 'hb-card'))
+    expect(cardNodes).toEqual(pageNodes)
+    expect(page.querySelectorAll('circle.peak-ring')).toHaveLength(card.peaks.length)
+    expect(page.querySelectorAll('text.label.peak')).toHaveLength(card.peaks.length)
+    // A credible low is muted on the card's model, so on both.
+    for (const e of est.filter((x) => x.measured && x.relation === 'below')) expect(page.querySelector(`g.mark[data-spoke="${e.code}"]`)!.classList.contains('muted')).toBe(true)
   })
 
   it('off-scale arrowheads, the outlined band and the ring labels under the data are the same on both (UX-037, UX-045, UX-047)', () => {

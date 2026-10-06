@@ -30,7 +30,7 @@ export interface JourneyOptions {
   readonly maxSteps?: number
   /** Real-time budget (default 8 minutes). */
   readonly limitMs?: number
-  /** Titles of parts to skip from their interstitial (e.g. 'Reaction time'). */
+  /** Titles of parts to skip from their interstitial (e.g. 'Reaction Time'). */
   readonly skipParts?: readonly string[]
 }
 

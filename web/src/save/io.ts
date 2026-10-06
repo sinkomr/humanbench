@@ -6,6 +6,10 @@
  *   it (best on iOS), else a download;
  * - {@link copySaveCode}: the gzip + base64url "copy save code" on the clipboard, returned as well
  *   so the UI can show it for manual copying when the clipboard is refused.
+ * - {@link withDeviceBriefPrefs}: the save with the notes settings kept on this device joined in, which the
+ *   results page does when the person presses one of those buttons (D17);
+ * - {@link saveFileName}: the name carries the person's local day (D19).
+ *
  * The file body is the RFC 8785 canonical JSON: deterministic bytes for a given save. The session
  * flow (M1.15) and reveal (M1.R) wire these to buttons; the WebKit/iOS e2e is M1.22.
  *
@@ -13,19 +17,83 @@
  * (share, clipboard) before their first `await`, so the user activation still holds.
  */
 
+import { autosaveKeys, browserStorage, type StorageLike } from './autosave'
+import { mergeBriefPrefs, withBriefPrefs } from './brief-prefs'
 import { encodeSaveCode, type CodecOptions } from './codec'
+import { parseUtcSeconds } from './clock'
 import { jcs } from './jcs'
-import type { SaveFileV1 } from './types'
+import { loadSaveDocument } from './parse'
+import type { BriefPrefsV1, SaveFileV1 } from './types'
+import { validateSave } from './validate'
 
 export const SAVE_MIME = 'application/json'
 
 /** How long a download's object URL stays alive (iOS reads it after the click returns). */
 export const REVOKE_AFTER_MS = 60_000
 
-/** `humanbench-<shortid>-<YYYY-MM-DD>.hbsave.json` (§8); shortid = the first 6 characters of the id. */
+/**
+ * `YYYY-MM-DD` in the person's own time zone (the calendar day on their wall clock), for the names of the
+ * files they download: a save or a card made at 8 pm in California is not dated tomorrow. It formats the
+ * `Date` it is given and reads no clock, so the caller decides what moment it is (a save's `created_utc`,
+ * or `wallClockMs()` for a card). A `Date` that is not a real time (NaN) throws a RangeError.
+ */
+export function localDateStamp(date: Date): string {
+  if (!Number.isFinite(date.getTime())) throw new RangeError('localDateStamp: not a real time')
+  const two = (n: number): string => String(n).padStart(2, '0')
+  return `${String(date.getFullYear()).padStart(4, '0')}-${two(date.getMonth() + 1)}-${two(date.getDate())}`
+}
+
+/**
+ * `humanbench-<shortid>-<YYYY-MM-DD>.hbsave.json` (§8); shortid = the first 6 characters of the id, and the
+ * date is the person's own calendar day at `created_utc` (the moment the save was made, which is the moment it
+ * is handed over), not the UTC one: a save made at 8 pm in California is not dated tomorrow, and it carries
+ * the same day as the share card's file name (`viz/export.ts` cardFileName). A `created_utc` that cannot be
+ * read as a time (a hand-edited file) keeps the UTC date it has.
+ */
 export function saveFileName(save: SaveFileV1): string {
   const shortId = save.anon_id.replace(/^hb_/, '').slice(0, 6)
-  return `humanbench-${shortId}-${save.created_utc.slice(0, 10)}.hbsave.json`
+  const ms = parseUtcSeconds(save.created_utc)
+  const day = Number.isNaN(ms) ? save.created_utc.slice(0, 10) : localDateStamp(new Date(ms))
+  return `humanbench-${shortId}-${day}.hbsave.json`
+}
+
+/**
+ * The notes settings kept on this device (`brief_prefs`, R-17.1; the notes page's own autosave and the copy that
+ * every session autosave carries), joined exactly as the notes page joins them when it opens (`prefs-store`
+ * `load()`: {@link mergeBriefPrefs} over every readable autosave), so that a restore of the saved file gives that
+ * page back what it shows. Notes settings belong to the device, as on that page, whichever identifier an autosave
+ * carries. Reads storage and never writes it; `undefined` when there are none, or storage is blocked.
+ */
+export function deviceBriefPrefs(storage: StorageLike | null = browserStorage()): BriefPrefsV1 | undefined {
+  if (storage === null) return undefined
+  const found: BriefPrefsV1[] = []
+  for (const key of autosaveKeys(storage)) {
+    let doc: unknown
+    try {
+      const text = storage.getItem(key)
+      if (text === null) continue
+      doc = JSON.parse(text)
+    } catch {
+      continue
+    }
+    const r = loadSaveDocument(doc, 'json')
+    if (r.ok && r.save.brief_prefs !== undefined) found.push(r.save.brief_prefs)
+  }
+  return mergeBriefPrefs(found)
+}
+
+/**
+ * The save with the device's notes settings joined into its own (D17: one file per person, so a second device
+ * that loads it gets the notes settings back instead of "That save has no notes settings."). `device` is what
+ * {@link deviceBriefPrefs} read at the click. The join is the save module's
+ * (`mergeBriefPrefs`: the higher edit count wins per set, fit notes are a union), so nothing the save already
+ * holds is lost; the content is what `brief_prefs` always is (R-17.12: enums, ids, versions and months, never
+ * text the person typed). It is the save itself, not a copy, when the device adds nothing, and when the joined
+ * file would not pass the save schema. A file-level `sig` stays: the notes settings are outside its scope (R-17.1).
+ */
+export function withDeviceBriefPrefs(save: SaveFileV1, device: BriefPrefsV1 | undefined): SaveFileV1 {
+  const out = withBriefPrefs(save, device)
+  return out === save || validateSave(out).ok ? out : save
 }
 
 /** The file body: RFC 8785 JSON (UTF-8 when written into a Blob). */

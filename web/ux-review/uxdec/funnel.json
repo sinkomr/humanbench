@@ -1,0 +1,161 @@
+{
+  "package": "funnel",
+  "decisions": [
+    {
+      "id": "D22",
+      "status": "provisional-default",
+      "option": "B (the returning-visitor row only). Option A ('What you get / what you need' block) skipped: it waits for approved copy.",
+      "what_changed": "The welcome screen gets one row under Start when this browser holds an adult consent record (of any terms version) and earlier data: a secondary button 'See my results' (the ready screen's own label and UX-010 path: the earlier results with no new session) and, when notes settings are kept, a link 'Notes for your AI (opens in a new tab)' to notes.html. The row is a role=group named 'Earlier results and notes on this device'. A first visit sees nothing new; Start is still the only primary button. Reads: with no adult record the page reads exactly one key (the consent record, which Start already read); only with a record are the autosaves read (restoreAutosaves, about 1 ms), nothing is written, nothing is scored (the quick look is 'some session holds an answer'; buildResults takes 120 to 300 ms and runs when the button is pressed). 'See my results' goes straight to the results when readConsent honours the record (current terms), and through the 18+ gate first when it does not; after the gate it records the consent, restores the saves and shows the results, never the honour code or the device check. If the saves hold nothing scorable at that point (all answers on skipped skills, or saves changed in another tab) it goes the usual way in (honour code) instead of to an empty page. A focus session asked for from results opened this way needs a device record and the honour code, which that path never had: startFocus (it used to return silently when device was null) now sends the person through the honour code and the device check first and starts the part afterwards (pendingFocus). With a server (backend) the results button is not offered (the ready screen does not offer it either, R-11.1); the notes link is. Autosaves of several identifiers (the person chooses on the ready screen) give no results button. 'Back to the start' reads the row again. CHOICE ON OLDER RECORDS (made by this package within the provisional default, open to the owner): an adult record of ANY terms version (new gate.ts hasAdultRecord: v 1, adult true, terms a string) may reveal the row. Reason: it proves that the 18+ gate was passed in this browser, and the row is only a door; it is not consent for the current terms, so readConsent (which lets the flow skip the gate) is unchanged and 'See my results' with such a record shows the new gate first, before any autosave is read or written. Under-18 path: it reads the consent key and nothing else, writes nothing (tests assert the exact storage calls). The static first-paint shell (index.html) is untouched.",
+      "strings": [
+        {
+          "before": "(no row on the welcome screen)",
+          "after": "See my results (READY_SHOW_RESULTS, reused)"
+        },
+        {
+          "before": "(none)",
+          "after": "Notes for your AI (opens in a new tab)  [WELCOME_NOTES + the existing NEW_TAB]"
+        },
+        {
+          "before": "(none)",
+          "after": "Earlier results and notes on this device  [WELCOME_RETURNING_LABEL, the accessible name of the row]"
+        }
+      ],
+      "files": [
+        "web/src/session/Welcome.svelte",
+        "web/src/session/SessionApp.svelte",
+        "web/src/session/returning.ts (new)",
+        "web/src/session/gate.ts (hasAdultRecord, header comment)",
+        "web/src/session/copy.ts (WELCOME_NOTES, WELCOME_RETURNING_LABEL)",
+        "web/src/test-support/ResultsStub.svelte (new, test-only stand-in for the results screen)"
+      ],
+      "tests": [
+        "web/src/session/returning.test.ts (new, 11)",
+        "web/src/session/gate.test.ts (hasAdultRecord, 4)",
+        "web/src/session/SessionApp.dom.test.ts (D22 block, 14: first visit reads one key; results; notes; both; nothing; two identifiers; under-18 reads/writes; See my results with current terms; older terms goes via the gate first; under-18 at that gate and the way back; Back to the start; nothing scorable; focus session asks honour code and device check)",
+        "web/src/session/SessionApp.served.dom.test.ts (row with a server, 2; also start-copy's request: literal old terms replaced by TERMS_VERSION)",
+        "web/src/session/components.dom.test.ts (Welcome, 7)",
+        "web/e2e/uxdec-funnel.spec.ts (D22: first visit, results, Start, older record via the gate, notes link in a new tab, 320 and 390 px with 200% text and 44 px targets, wide font at 320 px with axe): chromium, webkit, iphone green"
+      ],
+      "deviations": [
+        "The row's 'results' test is a quick look (some session holds an answer), not buildResults: scoring takes 120 to 300 ms on a laptop for a two-session save and would block the first paint of the welcome screen. The exact test (holdsResults) runs when the button is pressed.",
+        "The gate that 'See my results' shows is the ordinary gate, headed 'Before you start' (copy not changed: not in this package's strings).",
+        "startFocus no longer returns silently without a device record (needed so the welcome path does not leave a dead button); this goes a little beyond the brief."
+      ],
+      "open_issues": [
+        "Option A (what you get / what you need) waits for approved copy; the Safari keyboard hint (option C) was not done.",
+        "The row is read once when the welcome screen comes up; a change made in another tab shows after a reload.",
+        "The static first-paint shell shows no row; a returning visitor gets it when the app mounts (the Svelte render already includes it, so there is no second shift)."
+      ]
+    },
+    {
+      "id": "D23",
+      "status": "provisional-default",
+      "option": "B (start the refresh-rate measurement while the gate is shown). A (merging gate and honour screen) not chosen.",
+      "what_changed": "The flow starts the existing measurement (measureRefreshRate on rAF frames, the real clock, the 4 s give-up, the same estimate) as a RefreshProbe when Start leads to the gate, or to the honour screen where the gate is skipped, and hands it to the device check. Done when the device screen opens: its facts are in at once (no 'Checking your screen', Continue enabled, no frames asked for again). Still under way: the screen waits for what is left of it, once. Hidden at the start: no probe (null); hidden while measuring: the probe cancels its pending frame and ends with null; cancelled, too old (more than 2 minutes: the window may have moved to another screen) or without a rate: the screen measures itself, as before. The device record is built by the new describeDevice from the probe's rate, the timer resolution and the window as they are when the screen opens, so the DeviceInfo is the same as today (checkDevice is describeDevice after measureHz; field-for-field equality is tested). In memory only: nothing is stored or read; the under-18 choice cancels it (no more frames), 'I chose this by mistake' starts it again, restart and unmount cancel it. 'See my results' with no session coming starts none. No change to timing code: rAF and performance.now only.",
+      "strings": [],
+      "files": [
+        "web/src/session/device.ts (measureHz exported, describeDevice, PageVisibility, browserVisibility, RefreshProbe, startRefreshProbe, probeHz, PROBE_MAX_AGE_MS)",
+        "web/src/session/DeviceCheck.svelte (probe prop)",
+        "web/src/session/SessionApp.svelte (startProbe, dropProbe, onDestroy)"
+      ],
+      "tests": [
+        "web/src/session/device.test.ts (describeDevice, 1; probe, 8: result equals checkDevice's, property over frame lengths; hidden; hidden while measuring; cancel; give-up; probeHz; browserVisibility without a document)",
+        "web/src/session/DeviceCheck.dom.test.ts (6: done probe used at once and the DeviceInfo equal to the screen's own; under way; dropped; dropped while under way; too old; leaving)",
+        "web/src/session/SessionApp.dom.test.ts (D23 block, 9: starts on the gate, nothing stored; reused; same facts; still under way; honour screen; under-18 drops it; mistake restarts and unmount cancels; hidden page; hidden while measuring)",
+        "web/e2e/uxdec-funnel.spec.ts (D23: about 60 frames on the gate with nothing stored, device facts at once, words of the wait never shown, no second measurement; a quick person still gets the same screen; under-18 stops the frames): chromium, webkit, iphone green"
+      ],
+      "deviations": [
+        "The 2-minute age limit on a finished measurement is an addition (not in the brief).",
+        "A probe that ended with null (no frames) leads to a second measurement on the device screen (up to 4 s more), as 'measures as today' reads; only a hidden page or a very slow screen reaches it."
+      ],
+      "open_issues": []
+    },
+    {
+      "id": "D24",
+      "status": "provisional-default",
+      "option": "A (a quiet 'I chose this by mistake' link back to the gate with the box unticked).",
+      "what_changed": "The under-18 screen gets a button styled as a link, 'I chose this by mistake' (44 px target, accent colour, underlined, not a primary button), which returns to the 18+ gate. ConsentGate clears its box and its message when it is pressed (the component instance stays mounted across the gate and the blocked screen, so a ticked box would otherwise come back ticked); the gate is a new Screen, so the heading takes focus and the tab title follows. It stores nothing and reads nothing (the tests assert every storage call). The block itself and its words are unchanged; the button shows only where the flow passes onmistake. The choice can be made and taken back repeatedly. Where the gate was reached through 'See my results' (D22) the way back leads on to the results, not to a session.",
+      "strings": [
+        {
+          "before": "(none: the under-18 screen had no control)",
+          "after": "I chose this by mistake  [BLOCKED_MISTAKE]"
+        }
+      ],
+      "files": [
+        "web/src/session/ConsentGate.svelte",
+        "web/src/session/SessionApp.svelte",
+        "web/src/session/copy.ts (BLOCKED_MISTAKE)"
+      ],
+      "tests": [
+        "web/src/session/SessionApp.dom.test.ts (D24 block, 5; the under-18 test now expects the one button)",
+        "web/src/session/components.dom.test.ts (ConsentGate, 3)",
+        "web/e2e/uxdec-funnel.spec.ts (D24: back to an unticked gate with focus on the heading and nothing stored, then the gate still needs its box; keyboard; 320 and 390 px, 44 px, quiet, 200% text): chromium, webkit, iphone green",
+        "web/e2e/a11y.spec.ts routes gate-under-18 (axe light and dark with a wide font, 320 px, 200% zoom and text, text spacing, keyboard): green on three projects"
+      ],
+      "deviations": [],
+      "open_issues": []
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/e2e/ux2-session.spec.ts",
+      "change": "Line 398 ('Skip leaves for the next part; the parked renderer goes with the screen'): after clicking 'Skip Spatial' the screen is now 'Time for a break?' (the run package's UX-066 break offer, run.ts and segments.ts in this worktree), not 'Up next: Working Memory'. Accept the break offer first (button 'Keep going') or assert either heading.",
+      "why": "Fails on chromium, webkit and iphone with the in-flight run package; unrelated to the funnel. Not changed here: the assertion is about the other package's change."
+    },
+    {
+      "file": "web/src/session/env.ts",
+      "change": "Reword the comment on SessionEnv.storage ('Called only after the person passed the gate'): the flow reads the consent record from the welcome screen on (as it already did at Start) and, only when an adult record is found, the autosaves.",
+      "why": "The comment is out of step with the code (it was already, since Start reads the consent key before the gate)."
+    },
+    {
+      "file": "web/e2e/routes.ts",
+      "change": "Optional: a route 'welcome-returning' (prepare: seed hb:consent:v1 and one autosave before the first script, as holdEarlierUse in e2e/uxdec-funnel.spec.ts does; open: ./ and wait for the row) so the route sweeps (axe in both schemes, 320 px, 200% zoom, text spacing, keyboard stops) also see the row; covers: ['session/Welcome.svelte'].",
+      "why": "The funnel spec checks axe, 320 px, 200% text, wide font and targets for the row, but the sweeps in a11y.spec.ts only know the first-visit welcome."
+    }
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    {
+      "where": "web/src/session/env.ts SessionEnv.storage comment",
+      "what": "Says storage is called only after the gate; the welcome screen now reads the consent record (and, with an adult record, the autosaves) at page load. See requests."
+    },
+    {
+      "where": "docs/DESIGN.md §13 'Consent and age gate' (and CLAUDE.md 'under-18: no data stored')",
+      "what": "No conflict with the text ('blocked with no data stored'): the under-18 path still writes nothing and reads one key. Worth stating in §13 that the welcome screen reads the consent record, and that an adult record of older terms is only a door to the gate, never a consent."
+    },
+    {
+      "where": "web/UX-REVIEW.md D23 'Seven presses, five screens and 1.8 s of mechanics'",
+      "what": "The 1.3 s device wait is now measured while the gate is shown; the press count and screen count are unchanged (option A not chosen)."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/session",
+      "result": "pass: 33 files, 511 tests (includes the in-flight work of the other packages in src/session)"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/App.dom.test.ts src/App.served.dom.test.ts src/backend/panels.dom.test.ts src/session/SessionApp.coverage.dom.test.ts src/session/results-loader.dom.test.ts scripts/a11y-routes.test.ts scripts/timing-lint.test.ts scripts/language-lint.test.ts scripts/static-shell.test.ts scripts/results-split.test.ts scripts/item-tags.test.ts src/session/copy.test.ts src/no-todo.test.ts",
+      "result": "pass (a11y-routes needed the test stub out of src/session: it is in src/test-support)"
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "pass: svelte-check 1213 files, 0 errors, 0 warnings; tsc node and scripts clean (an earlier run showed errors in src/viz/blob.test.ts and src/viz/__scratch/order.test.ts, other packages' files, gone by the final run)"
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "pass: 366 files clean"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4723 HB_RUN=uxdec-funnel npx playwright test -c ux-review/playwright.iso.config.ts e2e/uxdec-funnel.spec.ts --project=chromium --project=webkit --project=iphone --workers=2",
+      "result": "pass: 45 of 45 (final run, after the last source change)"
+    },
+    {
+      "cmd": "same, e2e/ux2-session.spec.ts on the three projects",
+      "result": "43 passed, 2 skipped, 3 failed: the one test at line 398 on each project, from the run package's break offer ('Time for a break?' after Spatial), see requests; every other test, including VER-02's one privacy link on the welcome, passes"
+    },
+    {
+      "cmd": "same, e2e/a11y.spec.ts and e2e/wide-font.spec.ts filtered to welcome, gate, gate-error, gate-under-18, honour, device and the wide-font blob route, three projects",
+      "result": "pass: 126 passed, 24 skipped by the specs' own conditions (the keyboard sweep and the phone-at-200% variants run only where they apply)"
+    }
+  ]
+}

@@ -53,7 +53,7 @@
     return PAD + ((t - THETA_MIN) / (THETA_MAX - THETA_MIN)) * (W - 2 * PAD)
   }
   const f = (v: number): string => v.toFixed(1)
-  /** A line-break opportunity after "/" ("Calibration/Metacognition" is one long word otherwise). */
+  /** A line-break opportunity after "/" ("Spatial/Memory" is one long word otherwise). */
   const wrap = (s: string): string => s.replaceAll('/', '/\u200b')
   /** Arrowhead at a track end (tip on the end, pointing off the line): the estimate is beyond the scale. */
   const arrow = (end: 'low' | 'high'): string => {

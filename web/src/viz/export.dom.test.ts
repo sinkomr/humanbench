@@ -31,10 +31,10 @@ describe('downloadBlob', () => {
       setTimeout: (fn, ms) => timers.push([fn, ms]),
     }
     const png = new Blob(['x'], { type: PNG_MIME })
-    downloadBlob(png, 'humanbench-card-2026-09-30.png', env)
+    downloadBlob(png, 'humanbench-card-light-2026-09-30.png', env)
     expect(clicks).toHaveLength(1)
     const a = clicks[0]!
-    expect(a.download).toBe('humanbench-card-2026-09-30.png')
+    expect(a.download).toBe('humanbench-card-light-2026-09-30.png')
     expect(a.getAttribute('href')).toBe('blob:card/1')
     expect(a.isConnected).toBe(false)
     expect(blobs).toEqual([png])

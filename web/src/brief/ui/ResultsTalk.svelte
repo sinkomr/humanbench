@@ -14,6 +14,9 @@
    * - `level`: the heading level of the title (default 3, for use inside a card or a page section).
    * - `anchorId`: an id for the helper, so a link elsewhere on the page can jump to it and move focus
    *   there (the share card's link on the reveal screen, M1.18; the helper is then focusable by script).
+   *
+   * The copy button is a secondary one: the screens the helper sits on have a primary action of their own
+   * (the save, the download of the card), and a screen has one (UX-REVIEW D27, a provisional default).
    */
   import { copyText } from '../browser'
   import { RESULTS_TALK, PREAMBLE } from '../results-talk'
@@ -61,7 +64,7 @@
     </p>
     <blockquote id="{uid}-preamble" class="preamble" data-testid="preamble">{PREAMBLE}</blockquote>
     <div class="row">
-      <button type="button" class="primary hb-btn hb-primary" data-testid="copy-preamble" onclick={() => void onCopy()}>{RESULTS_TALK.copyButton}</button>
+      <button type="button" class="hb-btn" data-testid="copy-preamble" onclick={() => void onCopy()}>{RESULTS_TALK.copyButton}</button>
     </div>
   {:else}
     <p data-testid="results-talk-blocked">{RESULTS_TALK.blockedNote}</p>

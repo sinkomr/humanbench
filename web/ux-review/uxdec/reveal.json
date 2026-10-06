@@ -1,0 +1,708 @@
+{
+  "package": "reveal",
+  "decisions": [
+    {
+      "id": "D16",
+      "status": "provisional-default",
+      "option": "A (keep the section 10 order; compact the top; one 52rem column; chart up to 48rem). Option B (save panel under the chart) not done: the save panel keeps its place.",
+      "what_changed": [
+        "Practice note: one paragraph, [data-practice-adjusted], the bold label \"Practice-adjusted.\" and one short sentence, no box (RevealProfile.svelte, copy.ts). The old long sentence is shortened: the one-session wording is now \"Nothing to adjust yet.\" and the part that said what happens with a second session (\"each later session is credited for the typical gain from practice (a provisional figure)\") moved into the \"When to come back\" advice (SPACING_TEXT), where the person decides on a second session.",
+        "Replay / Skip animation: a small text button (link colour, underlined, no box, 44 px target, text on the column edge) in a row of its own under the note, only while there is a button to show (no empty row with the motion off); print hides the row. The caption \"Now showing: ...\" stays beside Skip while the row is 20rem or wider and is left out of a narrower row (320 px phone, large text), so the row is the same height building and built.",
+        "\"Your profile is ready.\" (and \"Building your profile, one skill at a time.\") stay in the same role=status element, now visually hidden with the shared .hb-sr-only class (1 px, clipped, out of the layout) and in the accessibility tree; the first status of .reveal is unchanged, so the drivers still read it.",
+        "One column: Finished.svelte no longer passes wide to Screen for a profile; reveal.css sets .hb-screen:has(> .hb-reveal) to 54rem (52rem of content + the screen's 1rem padding each side), so the h1, the lines under it, the pointer, the note, the heading, the toggle, the chart caption and every panel share one left edge, and the column is centred. ProfileView.svelte: the profile chart box may be 48rem (the facet chart under a cluster stays 40rem), the SVG inside it follows (BlobChart.svelte caps .hb-blob at 40rem; ProfileView lifts that cap from outside with :global in the profile figure only), and the chart caption is on the column edge instead of centred in 44rem.",
+        "Layout stability: the save pointer keeps the room of its link (a hidden copy, aria-hidden, no <a>) while it is hidden during the build-up, because the link row appearing moved the chart by 12 px on a phone (44 px once the controls no longer masked it)."
+      ],
+      "strings": [
+        {
+          "before": "This profile is practice-adjusted. With one session there is nothing to adjust yet; when you add sessions, later ones are credited for the typical gain from practice.",
+          "after": "Practice-adjusted. Nothing to adjust yet."
+        },
+        {
+          "before": "This profile is practice-adjusted: each later session is credited for the typical gain from practice (a provisional figure), so repeating the test inflates the estimates less.",
+          "after": "Practice-adjusted. Each later session is credited for the typical gain from practice (a provisional figure)."
+        },
+        {
+          "before": "Leave at least 7 days between sessions. A gap keeps practice effects small, and the practice adjustment then has less to correct. To add a session later, press Start and load your save file on the \"Ready when you are\" screen.",
+          "after": "Leave at least 7 days between sessions. A gap keeps practice effects small, and the practice adjustment then has less to correct. Each later session is credited for the typical gain from practice (a provisional figure). To add a session later, press Start and load your save file on the \"Ready when you are\" screen."
+        },
+        {
+          "before": "Practice-adjusted (bold, own line, inside a bordered box)",
+          "after": "Practice-adjusted. (bold, same line as the sentence, no box)"
+        },
+        {
+          "before": "Replay animation / Skip animation (bordered buttons)",
+          "after": "same words, small text buttons"
+        },
+        {
+          "before": "Your profile is ready. (visible status line)",
+          "after": "same words, visually hidden status (still announced)"
+        }
+      ],
+      "files": [
+        "web/src/reveal/RevealProfile.svelte",
+        "web/src/reveal/Reveal.svelte",
+        "web/src/reveal/reveal.css",
+        "web/src/reveal/copy.ts",
+        "web/src/viz/ProfileView.svelte",
+        "web/src/session/Finished.svelte",
+        "web/src/reveal/Reveal.dom.test.ts",
+        "web/src/reveal/copy.test.ts",
+        "web/src/viz/ProfileView.dom.test.ts",
+        "web/src/session/Finished.dom.test.ts",
+        "web/e2e/reveal.spec.ts",
+        "web/e2e/ux-reveal.spec.ts",
+        "web/e2e/uxdec-reveal.spec.ts (new)",
+        "web/e2e/uxdec-reveal.ts (new: the measuring script the spec shares)"
+      ],
+      "tests": [
+        "Reveal.dom.test.ts: the practice note is one <p> with the label and one sentence, no break/list/disclosure/button/link, before the chart (both wordings, <= 110 characters); the status has role=status, the hb-sr-only class and nothing in or above it that takes it out of the tree (hidden, aria-hidden, display none, visibility hidden), the sentence is in the page once; the animation row exists only while there is a button (Skip while building with the caption, Replay once built, none with the motion off); the results page is not the wide screen and the reveal is the main block's child; the save pointer keeps the room of its link while hidden; the reading line ends with the first-language sentence.",
+        "copy.test.ts: the practice note texts are one sentence each, no semicolon, <= 110 characters with the label; SPACING_TEXT holds the moved sentence; readingNorm ends with the first-language sentence.",
+        "ProfileView.dom.test.ts: the profile chart box is inside figure.blob-figure and the facet chart box is not; the heading and the caption are children of one section. Finished.dom.test.ts: a profile is not the wide page and the reveal is a direct child of main (replaces \"keeps the wide page\").",
+        "e2e/uxdec-reveal.spec.ts (chromium, iphone, webkit): one left edge for 8 blocks at 1280, 1440, 768, 390, 320 and the column is 52rem and centred; chart 768 px at 1280, 736 at 768, the column on a phone, facet chart <= 640; the note is 1 line (first wording on phones and desktop, later wording on a desktop); status is 1 px, in the accessibility tree (aria snapshot) and announces build and ready; Skip and Replay >= 44 px and text-button styled; no animation row with the motion off; the chart does not move while it builds or when built (390, 320, 1280, 768, 200% text); the first screen shows >= 150 px of the chart at 390 x 664, >= 30 px at 320 x 568, >= 330 px at 1280 x 800; 8 settings (320, 320 at 200% text, 390 at 200% text, 320 wide font, 390 dark, 1280 at 200% text, 1280 wide font, 1280 dark): no sideways scroll, no clipped text, 0 serious axe, controls >= 44 px; print: no Replay, no overflow, light tokens; D11 B reading line.",
+        "Changed assertions: e2e/reveal.spec.ts (3 lines) and e2e/ux-reveal.spec.ts (1 line) for \"Nothing to adjust yet\" / \"Each later session is credited ...\" (capital letter)."
+      ],
+      "deviations": [
+        "The column is 52rem of content (the width the panels always had) and the main box 54rem including its padding; the review text says \"one 52rem column\".",
+        "The note is one line on a desktop for both wordings and on a phone (390 and 320 px) for the one-session wording. The two-session wording is 3 lines (68 px, was 5 lines and 142 px) on a 390 px phone: the sentence keeps \"typical\" and \"(a provisional figure)\" from UX-034, which cost the length. Cutting it to one line on a phone would mean dropping one of them from the note.",
+        "Replay is in a row of its own under the note at every width. Side by side with the note it would have been on one row or two depending on width, text size and the length of the caption, and the chart under it moved (measured: 45 px at 1280 px with the text at 200%, where the building row no longer fitted beside the note but the Replay row did; a tablet width is the same case); one row below costs about 24 px at 1280 px.",
+        "The caption \"Now showing: ...\" is left out of a row narrower than 20rem (320 px phone, text at 200% on a phone). It is aria-hidden and repeats what the chart draws.",
+        "Moved a sentence: \"Each later session is credited for the typical gain from practice (a provisional figure).\" is now also in SPACING_TEXT, because the one-session note no longer says that later sessions are credited.",
+        "The save pointer got a hidden placeholder for its link (Reveal.svelte), outside the brief, to keep the chart still when the build-up ends.",
+        "The chart limit is lifted from ProfileView.svelte with :global(.hb-blob) because BlobChart.svelte (package viz-blob) sets max-width: 40rem on the SVG itself.",
+        "A print rule hides the Replay row; not asked for, nothing to replay on paper.",
+        "The chart at 1280 x 800 is now 649 px tall (541 px before): 362 px of it are in the first window (231 px before), the whole chart no longer fits next to the heading."
+      ],
+      "open_issues": [
+        "Text at 200%: the chart is not on the first screen at 390 x 664 or at 1280 x 800 (the h1, the lead line and the save pointer, 184 to 384 px tall at that text size, take it); it was lower before (starts at 1605 px and 946 px, was 2221 px and 1207 px).",
+        "On a 320 px phone only the first 42 px of the chart (labels, top ring) are in the first window; the h1, the two lead lines and the save pointer (140 px) are 298 px of the 568.",
+        "The Finished lead lines (\"This visit added no new answers. ...\", package resume) and the save pointer's own link row are the next largest things above the chart on a phone.",
+        "The profile heading and the Blob/Bar toggle could share one row at 390 px (saves about 60 px); not done, ProfileView would need a wrapper around the h2 and the toolbar."
+      ]
+    },
+    {
+      "id": "D11",
+      "status": "provisional-default",
+      "option": "B (the first-language sentence on the reading line; option A, splitting passages, is package reading's)",
+      "what_changed": [
+        "readingNorm in reveal/copy.ts ends with \" The comparison figures are for people reading in their first language.\" It is the last sentence of the \"About these numbers\" reading line, after \"One passage is a rough guide.\""
+      ],
+      "strings": [
+        {
+          "before": "You read a passage at about {wpm} words per minute. A review of 190 studies found that silent reading averages about 238 words per minute for non-fiction and 260 for fiction, and the studies differed widely (SD 51). One passage is a rough guide.",
+          "after": "You read a passage at about {wpm} words per minute. A review of 190 studies found that silent reading averages about 238 words per minute for non-fiction and 260 for fiction, and the studies differed widely (SD 51). One passage is a rough guide. The comparison figures are for people reading in their first language."
+        }
+      ],
+      "files": [
+        "web/src/reveal/copy.ts",
+        "web/src/reveal/copy.test.ts",
+        "web/src/reveal/Reveal.dom.test.ts",
+        "web/e2e/uxdec-reveal.spec.ts"
+      ],
+      "tests": [
+        "copy.test.ts (starts with the old first sentence, ends with the new one, \"One passage is a rough guide. The comparison figures\" in between); Reveal.dom.test.ts (NumbersSection: the line ends with it, the phrase \"first language\" occurs once on the section); e2e/uxdec-reveal.spec.ts (the reading line of the simulated save in a real browser). lint:language clean (the A13 lint has no first-language rule; the notes brief lint, brief/lint.ts, does not read the results page)."
+      ],
+      "deviations": [],
+      "open_issues": [
+        "Only the reading line gets the sentence; the span line and the reaction-time line do not need it (digit span norms and web reaction times are not language-bound)."
+      ]
+    }
+  ],
+  "measurements_d16": {
+    "how": "e2e/uxdec-reveal.spec.ts \"measure\" block (HB_REVEAL_MEASURE=before|after), a one-session simulated save, the profile built (Skip animation pressed), CSS px from the top of the page; chart_px_in_first_screen = how much of the chart lies inside the first window height. \"before\" is the tree before this package (other packages' in-flight work included); screenshots and one JSON per scenario are in web/test-results/ux-review/uxdec-reveal/{before,after}/ (<project>-<scenario>-{building,ready}.png).",
+    "scenarios": {
+      "390 x 664 phone (iPhone 13 emulation)": {
+        "before": {
+          "chart_top_px": 654.8,
+          "chart_width_px": 358,
+          "chart_px_in_first_screen": 9.2,
+          "chart_share_in_first_screen": 0.03,
+          "practice_note_lines": 5,
+          "practice_note_height_px": 142,
+          "page_height_px": 5987,
+          "save_heading_top_px": 2042.4,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "saveHeading": 38
+          }
+        },
+        "after": {
+          "chart_top_px": 475.3,
+          "chart_width_px": 358,
+          "chart_px_in_first_screen": 188.7,
+          "chart_share_in_first_screen": 0.54,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 6060,
+          "save_heading_top_px": 2019.8,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "caption": 16,
+            "savePanel": 16,
+            "saveHeading": 38
+          }
+        }
+      },
+      "320 x 568 phone": {
+        "before": {
+          "chart_top_px": 729.8,
+          "chart_width_px": 288,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 6,
+          "practice_note_height_px": 166,
+          "page_height_px": 6510,
+          "save_heading_top_px": 2157.6,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "saveHeading": 38
+          }
+        },
+        "after": {
+          "chart_top_px": 526.3,
+          "chart_width_px": 288,
+          "chart_px_in_first_screen": 41.7,
+          "chart_share_in_first_screen": 0.15,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 6653,
+          "save_heading_top_px": 2180.8,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "caption": 16,
+            "savePanel": 16,
+            "saveHeading": 38
+          }
+        }
+      },
+      "1280 x 800 desktop": {
+        "before": {
+          "chart_top_px": 569.2,
+          "chart_width_px": 640,
+          "chart_px_in_first_screen": 230.8,
+          "chart_share_in_first_screen": 0.43,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 94,
+          "page_height_px": 4808,
+          "save_heading_top_px": 1838.4,
+          "left_edges": {
+            "h1": 80,
+            "lead": 80,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "saveHeading": 246
+          }
+        },
+        "after": {
+          "chart_top_px": 437.7,
+          "chart_width_px": 768,
+          "chart_px_in_first_screen": 362.3,
+          "chart_share_in_first_screen": 0.56,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 4854,
+          "save_heading_top_px": 1836.2,
+          "left_edges": {
+            "h1": 224,
+            "lead": 224,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "caption": 224,
+            "savePanel": 224,
+            "saveHeading": 246
+          }
+        }
+      },
+      "1440 x 900 desktop": {
+        "before": {
+          "chart_top_px": 569.2,
+          "chart_width_px": 640,
+          "chart_px_in_first_screen": 330.8,
+          "chart_share_in_first_screen": 0.61,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 94,
+          "page_height_px": 4784,
+          "save_heading_top_px": 1838.4,
+          "left_edges": {
+            "h1": 160,
+            "lead": 160,
+            "pointer": 304,
+            "practice": 304,
+            "profileHeading": 304,
+            "toolbar": 304,
+            "saveHeading": 326
+          }
+        },
+        "after": {
+          "chart_top_px": 437.7,
+          "chart_width_px": 768,
+          "chart_px_in_first_screen": 462.3,
+          "chart_share_in_first_screen": 0.71,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 4854,
+          "save_heading_top_px": 1836.2,
+          "left_edges": {
+            "h1": 304,
+            "lead": 304,
+            "pointer": 304,
+            "practice": 304,
+            "profileHeading": 304,
+            "toolbar": 304,
+            "caption": 304,
+            "savePanel": 304,
+            "saveHeading": 326
+          }
+        }
+      },
+      "390 x 664 phone, text at 200%": {
+        "before": {
+          "chart_top_px": 2221.2,
+          "chart_width_px": 326,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 11,
+          "practice_note_height_px": 570,
+          "page_height_px": 20758,
+          "save_heading_top_px": 6430.7,
+          "left_edges": {
+            "h1": 32,
+            "lead": 32,
+            "pointer": 32,
+            "practice": 32,
+            "profileHeading": 32,
+            "toolbar": 32,
+            "saveHeading": 74
+          }
+        },
+        "after": {
+          "chart_top_px": 1605.2,
+          "chart_width_px": 326,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 2,
+          "practice_note_height_px": 90,
+          "page_height_px": 20977,
+          "save_heading_top_px": 6410.4,
+          "left_edges": {
+            "h1": 32,
+            "lead": 32,
+            "pointer": 32,
+            "practice": 32,
+            "profileHeading": 32,
+            "toolbar": 32,
+            "caption": 32,
+            "savePanel": 32,
+            "saveHeading": 74
+          }
+        }
+      },
+      "320 x 568 phone, text at 200%": {
+        "before": {
+          "chart_top_px": 2615.2,
+          "chart_width_px": 256,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 16,
+          "practice_note_height_px": 810,
+          "page_height_px": 24230,
+          "save_heading_top_px": 7555.6,
+          "left_edges": {
+            "h1": 32,
+            "lead": 32,
+            "pointer": 32,
+            "practice": 32,
+            "profileHeading": 32,
+            "toolbar": 32,
+            "saveHeading": 74
+          }
+        },
+        "after": {
+          "chart_top_px": 1712.2,
+          "chart_width_px": 256,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 135,
+          "page_height_px": 24768,
+          "save_heading_top_px": 7374.4,
+          "left_edges": {
+            "h1": 32,
+            "lead": 32,
+            "pointer": 32,
+            "practice": 32,
+            "profileHeading": 32,
+            "toolbar": 32,
+            "caption": 32,
+            "savePanel": 32,
+            "saveHeading": 74
+          }
+        }
+      },
+      "1280 x 800, text at 200%": {
+        "before": {
+          "chart_top_px": 1206.8,
+          "chart_width_px": 1216,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 186,
+          "page_height_px": 9815,
+          "save_heading_top_px": 3774.4,
+          "left_edges": {
+            "h1": 32,
+            "lead": 32,
+            "pointer": 32,
+            "practice": 32,
+            "profileHeading": 32,
+            "toolbar": 32,
+            "saveHeading": 74
+          }
+        },
+        "after": {
+          "chart_top_px": 945.8,
+          "chart_width_px": 1216,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 45,
+          "page_height_px": 9692,
+          "save_heading_top_px": 3555.4,
+          "left_edges": {
+            "h1": 32,
+            "lead": 32,
+            "pointer": 32,
+            "practice": 32,
+            "profileHeading": 32,
+            "toolbar": 32,
+            "caption": 32,
+            "savePanel": 32,
+            "saveHeading": 74
+          }
+        }
+      },
+      "390 x 664 phone, wide font": {
+        "before": {
+          "chart_top_px": 729.8,
+          "chart_width_px": 358,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 6,
+          "practice_note_height_px": 166,
+          "page_height_px": 6612,
+          "save_heading_top_px": 2219.3,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "saveHeading": 38
+          }
+        },
+        "after": {
+          "chart_top_px": 548.8,
+          "chart_width_px": 358,
+          "chart_px_in_first_screen": 115.2,
+          "chart_share_in_first_screen": 0.33,
+          "practice_note_lines": 2,
+          "practice_note_height_px": 45,
+          "page_height_px": 6787,
+          "save_heading_top_px": 2274.2,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "caption": 16,
+            "savePanel": 16,
+            "saveHeading": 38
+          }
+        }
+      },
+      "320 x 568 phone, wide font": {
+        "before": {
+          "chart_top_px": 804.8,
+          "chart_width_px": 288,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 8,
+          "practice_note_height_px": 214,
+          "page_height_px": 7588,
+          "save_heading_top_px": 2506.6,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "saveHeading": 38
+          }
+        },
+        "after": {
+          "chart_top_px": 575.8,
+          "chart_width_px": 288,
+          "chart_px_in_first_screen": 0,
+          "chart_share_in_first_screen": 0,
+          "practice_note_lines": 2,
+          "practice_note_height_px": 45,
+          "page_height_px": 7707,
+          "save_heading_top_px": 2529.7,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "caption": 16,
+            "savePanel": 16,
+            "saveHeading": 38
+          }
+        }
+      },
+      "1280 x 800, wide font": {
+        "before": {
+          "chart_top_px": 609.2,
+          "chart_width_px": 640,
+          "chart_px_in_first_screen": 190.8,
+          "chart_share_in_first_screen": 0.35,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 94,
+          "page_height_px": 5029,
+          "save_heading_top_px": 1941.2,
+          "left_edges": {
+            "h1": 80,
+            "lead": 80,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "saveHeading": 246
+          }
+        },
+        "after": {
+          "chart_top_px": 477.7,
+          "chart_width_px": 768,
+          "chart_px_in_first_screen": 322.3,
+          "chart_share_in_first_screen": 0.5,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 5102,
+          "save_heading_top_px": 1917.9,
+          "left_edges": {
+            "h1": 224,
+            "lead": 224,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "caption": 224,
+            "savePanel": 224,
+            "saveHeading": 246
+          }
+        }
+      },
+      "390 x 664 phone, dark mode": {
+        "before": {
+          "chart_top_px": 654.8,
+          "chart_width_px": 358,
+          "chart_px_in_first_screen": 9.2,
+          "chart_share_in_first_screen": 0.03,
+          "practice_note_lines": 5,
+          "practice_note_height_px": 142,
+          "page_height_px": 5939,
+          "save_heading_top_px": 2042.4,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "saveHeading": 38
+          }
+        },
+        "after": {
+          "chart_top_px": 475.3,
+          "chart_width_px": 358,
+          "chart_px_in_first_screen": 188.7,
+          "chart_share_in_first_screen": 0.54,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 6084,
+          "save_heading_top_px": 2019.8,
+          "left_edges": {
+            "h1": 16,
+            "lead": 16,
+            "pointer": 16,
+            "practice": 16,
+            "profileHeading": 16,
+            "toolbar": 16,
+            "caption": 16,
+            "savePanel": 16,
+            "saveHeading": 38
+          }
+        }
+      },
+      "1280 x 800, dark mode": {
+        "before": {
+          "chart_top_px": 569.2,
+          "chart_width_px": 640,
+          "chart_px_in_first_screen": 230.8,
+          "chart_share_in_first_screen": 0.43,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 94,
+          "page_height_px": 4784,
+          "save_heading_top_px": 1838.4,
+          "left_edges": {
+            "h1": 80,
+            "lead": 80,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "saveHeading": 246
+          }
+        },
+        "after": {
+          "chart_top_px": 437.7,
+          "chart_width_px": 768,
+          "chart_px_in_first_screen": 362.3,
+          "chart_share_in_first_screen": 0.56,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 4854,
+          "save_heading_top_px": 1836.2,
+          "left_edges": {
+            "h1": 224,
+            "lead": 224,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "caption": 224,
+            "savePanel": 224,
+            "saveHeading": 246
+          }
+        }
+      },
+      "1280 x 800 print emulation": {
+        "before": {
+          "chart_top_px": 569.2,
+          "chart_width_px": 640,
+          "chart_px_in_first_screen": 230.8,
+          "chart_share_in_first_screen": 0.43,
+          "practice_note_lines": 3,
+          "practice_note_height_px": 94,
+          "page_height_px": 4808,
+          "save_heading_top_px": 1838.4,
+          "left_edges": {
+            "h1": 80,
+            "lead": 80,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "saveHeading": 246
+          }
+        },
+        "after": {
+          "chart_top_px": 393.7,
+          "chart_width_px": 768,
+          "chart_px_in_first_screen": 406.3,
+          "chart_share_in_first_screen": 0.63,
+          "practice_note_lines": 1,
+          "practice_note_height_px": 22.5,
+          "page_height_px": 4786,
+          "save_heading_top_px": 1792.2,
+          "left_edges": {
+            "h1": 224,
+            "lead": 224,
+            "pointer": 224,
+            "practice": 224,
+            "profileHeading": 224,
+            "toolbar": 224,
+            "caption": 224,
+            "savePanel": 224,
+            "saveHeading": 246
+          }
+        }
+      }
+    },
+    "first_screen_390x664": {
+      "before": "h1 \"Session complete\"; lead line; save pointer with its link; boxed \"Practice-adjusted\" paragraph of 5 lines (142 px); \"Replay animation\" button; \"Your profile is ready.\"; \"Profile by skill\"; Blob/Bar toggle; the chart starts at 655 px, 9 px of it inside the 664 px window (the start of the chart does not appear)",
+      "after": "h1; lead line; save pointer with its link; one line \"Practice-adjusted. Nothing to adjust yet.\"; \"Replay animation\" (text button); \"Profile by skill\"; Blob/Bar toggle; the chart starts at 475 px, 189 px of it (54%) inside the window"
+    },
+    "first_screen_320x568": {
+      "before": "the stack stops at \"Your profile is ready.\" at 548 px: no heading, toggle or chart in the window",
+      "after": "the pointer, the one-line note, Replay, \"Profile by skill\", the toggle and the first 42 px of the chart (labels and the top ring) in the window; the chart starts at 526 px"
+    },
+    "first_screen_1280x800": {
+      "before": "h1, lead, pointer, 3-line boxed practice note, Replay button, \"Your profile is ready.\", \"Profile by skill\", toggle, then the chart from 569 px (231 px of a 541 px chart in the window; 640 px wide)",
+      "after": "h1, lead, pointer, the one-line note, Replay, \"Profile by skill\", toggle, then the chart from 438 px (362 px of a 649 px chart in the window; 768 px wide)"
+    },
+    "one_left_edge": {
+      "before": "1280 px: h1 and lead at x=80, everything in the reveal at x=224 (two left edges); 1440 px: 160 and 304",
+      "after": "every block at one x: 224 at 1280 px, 304 at 1440 px, 16 on phones; the column is 832 px = 52rem of content"
+    },
+    "no_chart_jump": {
+      "before": "chart top moved 12 px on phones (4 px at 1280, 44 px with the wide font, 88 px at 200% text) between \"building\" and \"built\"",
+      "after": "within 2 px at 390, 320, 768 and 1280 and with 200% text (sampled every 150 ms while it builds and once built; e2e \"the chart does not move\")"
+    },
+    "limits": [
+      "200% text: the chart does not reach the first screen at 390 x 664 (starts at 1605 px) or 1280 x 800 (starts at 946 px); the h1, the lead line and the pointer already take the screen (the chart started at 2221 px and 1207 px before)",
+      "320 px in the wide font and 320 px at 200% text: the chart is below the first screen (576 px and 1712 px)",
+      "the two-session note is 3 lines (68 px) on a 390 px phone, 1 line from tablet width up; before: 5 lines (142 px)"
+    ]
+  },
+  "requests": [
+    "viz-blob / integrate: BlobChart.svelte sets .hb-blob { max-width: 40rem }. ProfileView.svelte lifts it for the profile figure with \".blob-figure .chart-box :global(.hb-blob) { max-width: 48rem }\". If the viz package raises or removes the cap in BlobChart.svelte, that rule can go (ProfileView.svelte, 4 lines).",
+    "session (Screen.svelte / session.css): a width option for Screen (for example size=\"column\") would replace the \":has(> .hb-reveal)\" rule in reveal.css that sets the results page to 54rem. Without :has the page keeps the plain 42rem screen column, which holds the same panels.",
+    "resume (Finished lead lines): on a 390 px phone the lead and summary lines above the chart take 54-90 px; if they can be one shorter line, the chart gets that room.",
+    "integrate: web/test-results/ is not committed; if the before/after screenshots and JSON under web/test-results/ux-review/uxdec-reveal/ should be kept as evidence, copy them where the other UX evidence lives. The \"chromium-phone-*\" files in .../after/ and .../before/ are leftovers of a first run of the measure block on a desktop-Chromium window at phone size; the iphone-* files are the ones to read.",
+    "docs (not edited here): see spec_out_of_step."
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    "DESIGN section 7.3 (the reading norm against Brysbaert 2019, line 566) does not say that the figures are for people reading in their first language; the results line now does (D11 B, provisional).",
+    "DESIGN section 10 \"Reveal flow\" and section 9 do not say how the top of the results is laid out; nothing contradicts D16 A: the order (build-up, peaks, drill-down, save, share card) and the \"practice-adjusted\" label of section 7.8 are kept. If D16 A is confirmed, section 10 could name the one-line practice note, the hidden live status, the one 52rem column and the 48rem chart.",
+    "ROADMAP M1.R says the results copy has the \"practice-adjusted\" label; the note under it is now one short sentence and the explanation of what a later session is credited with is in the retest advice (SPACING_TEXT)."
+  ],
+  "gates": [
+    "web_vitest_targeted: pass (src/reveal, src/viz/ProfileView*, src/session/Finished*, scripts/a11y-static, results-split, share-card, timing-lint, language-lint: 22 files, 376 tests)",
+    "web_check: pass (svelte-check 0 errors 0 warnings, tsc node and scripts projects; e2e files are in the scripts project)",
+    "web_lint_language: pass (366 files clean)",
+    "web_e2e: pass 181, skipped 68 (project-specific skips and the measure block): e2e/uxdec-reveal.spec.ts, reveal.spec.ts, ux-reveal.spec.ts, wide-font.spec.ts on chromium, iphone and webkit (E2E_PORT=4741 HB_RUN=uxdec-reveal, -c ux-review/playwright.iso.config.ts, --workers=2)",
+    "axe: 0 serious in the 8 settings of uxdec-reveal.spec.ts and in the existing reveal and ux-reveal specs",
+    "not_run: full npm test, npm run build as its own step (the e2e builds ran it), test:db, the other e2e specs (session, share-card, keyboard-session, reveal-ai): left to the integrate package; they read the results page (status, Replay, pointer) and were not changed",
+    "logs: web/test-results/iso/uxdec-reveal/logs/"
+  ]
+}

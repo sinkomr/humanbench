@@ -25,7 +25,11 @@ export interface SessionEnv {
   /** Real (unscaled) frames and clock, for the device check. */
   readonly realFrames: FrameSource
   readonly realClock: Clock
-  /** localStorage, or null when unavailable. Called only after the person passed the gate. */
+  /**
+   * localStorage, or null when unavailable. From the welcome screen on, the flow reads the consent record (as Start
+   * always did); only when an adult record is found does it read the autosaves (UX-REVIEW D22). Nothing else is read,
+   * and nothing is written, before the person passes the gate.
+   */
   readonly storage: () => StorageLike | null
   /** Wall-clock epoch ms (save metadata only). */
   readonly wallClockMs: () => number

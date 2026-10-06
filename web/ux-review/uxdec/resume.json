@@ -1,0 +1,164 @@
+{
+  "package": "resume",
+  "decisions": [
+    {
+      "id": "D6",
+      "status": "provisional-default (part 2 of 2: the flow; part 1, the retest model, is package engine-retest)",
+      "option": "B: continue an interrupted session (< 24 h) as a NEW session flagged as a continuation; option A (true resume: same session id, clock and next item) is left for later",
+      "what_changed": "(1) What a session records (run.ts #flags): done_<part> = true for each part that ended normally in this session (done_rt, done_matrix_series, done_spatial, done_memory, done_quant, done_coding_reading; not for a skipped part or one cut off by the end), completed = true for the end reason 'complete' (finished_early and hard_stop were already recorded), focus_session = true for a focus session, continuation = true (CONTINUATION_FLAG) for a continuation. All snake_case booleans, as the save schema's flags allow; at most 10 more flags, far under hb.valid_flags' 40. serverFlags() leaves these progress flags out (resume.ts isProgressFlag), so what the server receives is unchanged. (2) Detection (new src/session/resume.ts findUnfinished): the newest session of the save (orderSessions), with answers and no recorded end (completed / finished_early / hard_stop), started less than 24 h from now (|now - started_utc| < 24 h: a clock set back does not hide it), not a focus session, not a session of the online version (sig, or timed_tasks_only on it or on a session started in the same second), and with a part left to run. Parts finished = the union over its whole sitting (it may itself be a continuation) of the done_ flags and of what the answers show: a part also counts as finished when a later part has answers, or when every timed task of a part of timed tasks has its answer (so an older autosave of a session that reached its end, which has no completed flag, is not offered). A part whose skills were all skipped (skipped_<skill>) is finished and stays skipped. (3) The flow (SessionApp.svelte): the ready screen gets the offer when findUnfinished finds one in the base AND the session is one of this browser's autosaves AND the static version (backend null) AND the found saves come from one identifier AND they are to be added to (the 'Add my new session to ...' box ticked) AND this page did not ask for consent (askedConsent: the gate was not shown because the consent kept here is for the current terms). 'Continue your unfinished session' starts a new SessionRun with continues: { done, skipped } on the same base (the found saves, plus a loaded file), so the save keeps both. Its wall-clock start is now, or one second after the interrupted start when now is not a later second (resume.ts continuationStartMs), so it always comes right after the session it continues in time order, as the retest model requires. Begin still starts a fresh session. (4) The continuation run (run.ts RunConfig.continues): the plan is drawn as usual; then the parts done earlier are marked done and the skills skipped earlier are marked skipped (after the plan, so they stay on the checklist as Done / Skipped instead of 'Not in this version'); the first interstitial is the first part left, which starts from its beginning (its earlier answers stay in the interrupted session); the target (progress ring and CAT budgets) is the planned time of the parts it runs, so each part keeps its planned share; the break is offered only when the half-way boundary lies after its first part (never as its first screen). (5) Counts by sitting (new src/save/sittings.ts sittingIndex / sittingCount over engine/retest orderSessions + sessionSittings): Ready 'Add my new session to the n earlier sessions saved on this device', 'Your new session will be added to n earlier sessions', 'Loaded n earlier sessions', 'Loaded your backup with n earlier sessions'; Finished 'This profile combines k sessions' (earlier sittings plus this run's own sitting), 'This visit added no new answers. Your profile below comes from k earlier sessions' (a continuation that added nothing counts the session it continued), 'Your profile from k earlier sessions'; reveal/results.ts scoredSessions (share card 'Based on n sessions') counts a sitting once when any of its sessions scored, and devicePartSessions is counted by sitting too, so the pairing of online halves is unchanged. PRIMARY BUTTON (D27, one primary per screen): while the offer shows, 'Continue your unfinished session' is the primary button and Begin the secondary one. Why: the offer appears only right after a reload or crash within 24 h, so picking up is the likely intent; it also keeps the profile one session with no practice adjustment between the halves, while Begin re-runs parts already done and is then practice-adjusted against them. Begin stays next to it, and the line under the heading says what each does. SERVER VARIANT: no offer when backend is not null (recorded choice): the server's SQL rescore (rpc_rescore) numbers tests with row_number() over every session and does not read flags.continuation, so a served continuation would be practice-adjusted against the session it continues; serverFlags() does not send the flag either. CONSENT TERMS: no offer when this page showed the 18+ gate (no consent kept, or one for other terms), so a session started under other terms is not continued in the visit that asked again.",
+      "strings": [
+        {
+          "before": "(none)",
+          "after": "Continue your unfinished session"
+        },
+        {
+          "before": "(none)",
+          "after": "Your session from today at 14:03 was not finished. Continue it to go on from the start of Spatial and keep what you have done so far. Begin starts a new session instead."
+        },
+        {
+          "before": "(none; the start time unreadable)",
+          "after": "Your last session was not finished. Continue it to go on from the start of Reaction time and keep what you have done so far. Begin starts a new session instead."
+        },
+        {
+          "before": "Your new session will be added to 2 earlier sessions. (an interrupted session and its continuation)",
+          "after": "Your new session will be added to 1 earlier session."
+        },
+        {
+          "before": "Add my new session to the 2 earlier sessions saved on this device.",
+          "after": "Add my new session to the 1 earlier session saved on this device."
+        },
+        {
+          "before": "Loaded 2 earlier sessions. Your new session will be added to them.",
+          "after": "Loaded 1 earlier session. Your new session will be added to it."
+        },
+        {
+          "before": "This profile combines 2 sessions. (a continuation on top of the session it continues)",
+          "after": "(no combines line: one session)"
+        },
+        {
+          "before": "Your profile from 2 earlier sessions.",
+          "after": "Your profile from 1 earlier session."
+        },
+        {
+          "before": "Based on 2 sessions (share card)",
+          "after": "Based on 1 session"
+        }
+      ],
+      "files": [
+        "web/src/session/resume.ts (new: flag names, findUnfinished, partsFinished, continuationStartMs)",
+        "web/src/save/sittings.ts (new: sittingIndex, sittingCount, isContinuation)",
+        "web/src/session/run.ts (done_<part>, completed, focus_session, continuation flags; serverFlags leaves them out; RunConfig.continues; #nextLive and #enterNextSegment pass over parts done earlier; continuation target and break placement; module comment)",
+        "web/src/session/SessionApp.svelte (askedConsent, the unfinished derivation, continueRun, launch(..., continues) with continuationStartMs; module comment)",
+        "web/src/session/Ready.svelte (the offer, its line, primary button; counts by sitting)",
+        "web/src/session/Finished.svelte (earlier sessions counted by sitting; a continued session belongs to this run's sitting)",
+        "web/src/session/copy.ts (READY_CONTINUE, continueLine; addedToLine comment)",
+        "web/src/reveal/results.ts (scoredSessions and devicePartSessions by sitting)"
+      ],
+      "tests": [
+        "web/src/session/resume.test.ts (new, 19 tests incl. a fast-check property): the flags a real run writes (finished, interrupted, skipped, focus, finish early); serverFlags without them; detection: the 24-hour boundary (last second in, the boundary out, clock set back), the three ends, a newer finished session, focus / online / signed sessions, a skipped part, nothing left; older autosaves without done_ flags (a later part with answers; every timed task answered, the last part included, so an older finished session is not offered; a CAT part with no later answers is run again); property: the flags give exactly the part the run was in and the parts done, an older autosave never goes on past it; a sitting picked up twice; continuationStartMs",
+        "web/src/save/sittings.test.ts (new, 5 tests incl. a property): sittings by time order, flag on the first session ignored, only true counts, counting with a filter, ties",
+        "web/src/session/run.test.ts (+5): a continuation shows earlier parts done, starts at the first part left, never runs reaction time, is flagged, ends completed with done_ only for its own parts; a skill skipped earlier stays skipped (checklist, flag, not run); its target is the planned time of its parts and no part gets more than its share; the break never before its first part, once between its own parts; re-scored with the interrupted session as one sitting (ordinal 1, rho 0 on the part run in both)",
+        "web/src/session/Ready.dom.test.ts (+6): the offer is the one primary button with its line tied by aria-describedby, Begin secondary, clicks go to the right handler; nothing changes without an unfinished session or a handler; it waits like Begin while a pasted code is not loaded; unreadable time; the three counts and the loaded-file message count an interrupted session and its continuation once",
+        "web/src/session/Finished.dom.test.ts (+4): no combines line for a continuation on top of the session it continues; with an earlier session of its own, 'combines 2 sessions', not 3; a continuation that added nothing comes from 1 earlier session; the results view of a save with both: 1 earlier session",
+        "web/src/reveal/results.test.ts (+2): an interrupted session and its continuation are 'Based on 1 session' with nothing practice-adjusted, a later separate session makes 2; sittings counted once when any session scored, device halves paired by sitting",
+        "web/src/session/SessionApp.resume.dom.test.ts (new, 8 tests): the real flow with an interrupted autosave in storage: the offer, Continue starts a continuation at the interrupted part with the earlier part done, the save after finishing holds both sessions in order with the second flagged, no combines line, the old autosave pruned; a return in the same second starts one second after; Begin still starts fresh and unflagged; no offer at 24 h, across a change of terms, with no consent kept, with two identifiers, with the box unticked, after an ended session, with a server",
+        "web/e2e/uxdec-resume.spec.ts (new): a ?fast=1 session played through reaction time and one Matrix & Series question, the tab reloaded (beforeunload accepted), the offer checked (primary, the line, 44 px target, axe 0 serious, language lint), Continue, the continuation played to the end (parts Matrix & Series to Processing & Reading Speed, no reaction time), then: no 'combines' line, practice note 'Nothing to adjust yet.', the downloaded save valid with two sessions (the first unchanged and without continuation/completed, the second continuation + completed + done_matrix_series, no done_rt, a later start), the share card 'Based on 1 session', one autosave left holding both"
+      ],
+      "deviations": [
+        "A continuation's target is the planned time of the parts it runs, not the 27.5-minute A15 target, so its ring reads 'n of about m min' for what is left; the hard stop is still 57 active minutes of the continuation itself (not of the sitting).",
+        "The 'Add my new session to the n earlier sessions saved on this device' box also governs the offer: unticked, there is no offer (a continuation is always added to the session it continues).",
+        "A focus session is recorded (focus_session) and is never offered for continuation: the save does not say which skills were chosen."
+      ],
+      "open_issues": [
+        "Consent terms across visits: the offer is withheld in the visit that shows the gate again. A narrow case remains: terms change, a visit passes the new gate and leaves from the ready screen without answering, and a later visit within 24 h of the interrupted start then offers it (the consent kept is now current). Closing it needs a marker of the terms on the session (a flag can only be a number or boolean, e.g. a numeric date of the terms) or a time in the consent record (gate.ts, which keeps none by design).",
+        "Older autosaves (written before this change, within their 24 h): a finished focus session or a finished session whose reading passage was dropped (every passage seen) has no completed flag and can be offered as unfinished; Begin is still there. Only autosaves less than a day old at deploy time are affected.",
+        "The Finished summary line ('You answered n questions and completed m timed tasks in about k minutes') counts this visit only, not the whole sitting; the profile and every session count use the sitting.",
+        "The server variant offers nothing. Before it does, the served SQL rescore must count sittings (engine-retest open issue) and serverFlags would have to send continuation.",
+        "The interrupted part's earlier answers stay in the interrupted session and count (same sitting, no practice adjustment); the part is run again from its start with new items (seen families excluded), so the sitting can hold, for example, two digit-span-forward blocks.",
+        "True resume (option A) is not done."
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "file": "web/e2e/routes.ts",
+      "change": "Optional: a route 'ready-continue' (prepare: seed hb:consent:v1 for TERMS_VERSION and one autosave of an interrupted session started less than 24 h ago, e.g. built like interruptedSave in src/session/SessionApp.resume.dom.test.ts; open: ./ then Start, honour code, device check, wait for 'Continue your unfinished session'); covers: ['session/Ready.svelte'].",
+      "why": "So the route sweeps (axe in both schemes, 320 px, 200% text, text spacing, keyboard stops) see the ready screen with the offer; uxdec-resume.spec.ts checks axe and the 44 px target in the default scheme only."
+    },
+    {
+      "file": "schema/save-v1.json (flags description)",
+      "change": "Name the session flags of how far a session got: done_<part> (true: the part ended normally in this session), completed (true: it reached its end; finished_early and hard_stop are the other ends), focus_session (true: a focus session). They are booleans, so the schema rules are unchanged.",
+      "why": "The description already names timed_tasks_only and continuation; readers of a save should find the others there too."
+    },
+    {
+      "file": "web/src/session/copy.test.ts",
+      "change": "Optional: pin READY_CONTINUE and continueLine (A13-clean, no clinical words) beside the other ready-screen strings.",
+      "why": "Ready.dom.test.ts pins the rendered text; copy.test.ts is where the other strings are pinned."
+    }
+  ],
+  "shared_files_touched": [],
+  "spec_out_of_step": [
+    {
+      "where": "docs/DESIGN.md §8 (save file: flags; the 'Also autosave to localStorage after every item (crash recovery)' bullet)",
+      "what": "The flags now include done_<part>, completed, focus_session and continuation, and crash recovery offers, for 24 hours, to continue an unfinished session as a new session flagged continuation (provisional default, D6 option B). §8 lists only the integrity counters and the autosave."
+    },
+    {
+      "where": "docs/DESIGN.md §10 (UX and engagement)",
+      "what": "The ready screen can offer 'Continue your unfinished session' (the primary action while it shows); nothing in §10 describes it."
+    },
+    {
+      "where": "docs/DESIGN.md §7.8 and the share card's 'Based on n sessions' (M1.18)",
+      "what": "Every count of sessions the person reads now counts sittings (a session plus its continuations), as the retest model does."
+    }
+  ],
+  "gates": [
+    {
+      "cmd": "cd web && npx vitest run src/session src/reveal/results src/save",
+      "result": "pass after the fix of one test (Spatial is not renderable in jsdom, so the flow test now continues at Matrix & Series): 51 files, 815 tests; the fixed file re-run alone: 8 passed"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/session/resume.test.ts src/save/sittings.test.ts",
+      "result": "pass: 2 files, 23 tests"
+    },
+    {
+      "cmd": "cd web && npx vitest run src/session/run.test.ts src/session/run.served.test.ts src/session/run.fuzz.test.ts",
+      "result": "pass (before the new tests: 114; the 5 continuation tests pass alone and in the targeted run)"
+    },
+    {
+      "cmd": "cd web && npm run check",
+      "result": "pass: svelte-check 1218 files, 0 errors, 0 warnings; tsc node and scripts clean"
+    },
+    {
+      "cmd": "cd web && npm run lint:language",
+      "result": "pass: 368 files clean"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4745 HB_RUN=uxdec-resume npx playwright test -c ux-review/playwright.iso.config.ts e2e/uxdec-resume.spec.ts --project=chromium --workers=2",
+      "result": "pass: 1 passed (51.7 s)"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4745 HB_RUN=uxdec-resume npx playwright test -c ux-review/playwright.iso.config.ts e2e/uxdec-resume.spec.ts --project=iphone --project=webkit --workers=2",
+      "result": "pass: 2 passed (iphone 54.9 s, webkit 50.3 s)"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4745 HB_RUN=uxdec-resume npx playwright test -c ux-review/playwright.iso.config.ts e2e/session-save.spec.ts e2e/ux-session.spec.ts --project=chromium --workers=2 (read-only)",
+      "result": "pass: 45 passed, 11 skipped (2.4 min)"
+    },
+    {
+      "cmd": "cd web && E2E_PORT=4745 HB_RUN=uxdec-resume npx playwright test -c ux-review/playwright.iso.config.ts e2e/session-save.spec.ts e2e/ux-session.spec.ts --project=iphone --workers=2 (read-only)",
+      "result": "pass: 48 passed, 8 skipped (2.1 min)"
+    },
+    {
+      "cmd": "re-validation 2026-10-06 04:2x (no file changed since the handoff): cd web && npx vitest run src/session src/reveal/results src/save",
+      "result": "pass: 51 files, 815 tests"
+    },
+    {
+      "cmd": "re-validation: cd web && npm run check && npm run lint:language",
+      "result": "pass: svelte-check 1218 files 0 errors 0 warnings, tsc clean; language lint 368 files clean"
+    },
+    {
+      "cmd": "re-validation: cd web && E2E_PORT=4745 HB_RUN=uxdec-resume npx playwright test -c ux-review/playwright.iso.config.ts e2e/uxdec-resume.spec.ts --project=chromium --project=iphone --workers=2",
+      "result": "pass: 2 passed (chromium 55.1 s, iphone 57.6 s)"
+    }
+  ]
+}

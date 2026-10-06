@@ -17,6 +17,7 @@
  * No function here returns or combines anything across axes (no total, mean or area: §9.5 a).
  */
 
+import { axisName } from '../axis-names'
 import { AXES, isAxisCode, N_AXES, type AxisCode, type AxisDef, type Cluster, type GoldTier } from '../engine/axes'
 import type { ScoreResult } from '../engine/scorer'
 import { offScaleOf, Z90, type OffScale } from './geometry'
@@ -40,7 +41,7 @@ export type Relation = 'above' | 'below' | 'overlaps'
 export interface SpokeEstimate {
   /** Axis code, or `<axis>:<facet>` for a facet. */
   readonly id: string
-  /** Full user-facing name (the table's row header). */
+  /** Full user-facing name (the table's row header): an axis's is its `axis-names.ts` name. */
   readonly name: string
   /** One or two short lines for the chart label. */
   readonly shortLabel: readonly string[]
@@ -74,7 +75,10 @@ export interface AxisEstimate extends SpokeEstimate {
   readonly cluster: Cluster
 }
 
-/** Short chart labels (the full names stay in the table; A7: EMO keeps its R-5.6.2 name). */
+/**
+ * Short chart labels, in the Title Case of the names (`axis-names.ts`; the full names stay in the
+ * table; A7: EMO keeps its R-5.6.2 name).
+ */
 export const SHORT_LABELS: Readonly<Record<AxisCode, readonly string[]>> = Object.freeze({
   MAT: ['Matrix &', 'Series'],
   LR: ['Logical', 'Reasoning'],
@@ -87,7 +91,7 @@ export const SHORT_LABELS: Readonly<Record<AxisCode, readonly string[]>> = Objec
   RT: ['Reaction', 'Time'],
   PS: ['Processing &', 'Reading Speed'],
   FER: ['Fermi', 'Estimation'],
-  CAL: ['Calibration'],
+  CAL: ['Confidence', 'Calibration'],
   KST: ['STEM', 'Knowledge'],
   KHU: ['Humanities', 'Knowledge'],
   KAP: ['Arts & Practical', 'Knowledge'],
@@ -98,26 +102,28 @@ export const SHORT_LABELS: Readonly<Record<AxisCode, readonly string[]>> = Objec
 /**
  * One-line chart labels for narrow screens, where 17 full labels cannot all fit around the circle
  * at a legible size (M1.16 review). Plain words; the table and the full labels keep the names.
- * Each is a cut of its table name, so a spoke can be matched to its row (UX-042): the first word(s)
- * of the name, or a documented abbreviation ("comp.", "mem."); no label is also a cluster name that
- * could sit next to it ("Estimation", "Speed").
+ * Each is a cut of its table name, so a spoke can be matched to its row (UX-042): word(s) of the
+ * name, or a documented abbreviation ("Comp.", "Mem."); no label is also a cluster name that could
+ * sit next to it ("Estimation", "Speed"). Title Case, like the names (`axis-names.ts`). Confidence
+ * Calibration is cut to "Calibration", the thing measured: "Confidence" alone would read as how
+ * confident the person is.
  */
 export const COMPACT_LABELS: Readonly<Record<AxisCode, string>> = Object.freeze({
   MAT: 'Matrix & Series',
   LR: 'Logical',
-  LG: 'Logic games',
-  RC: 'Reading comp.',
+  LG: 'Logic Games',
+  RC: 'Reading Comp.',
   VOC: 'Vocabulary',
   QR: 'Quantitative',
   SPA: 'Spatial',
-  WM: 'Working mem.',
+  WM: 'Working Mem.',
   RT: 'Reaction',
   PS: 'Processing',
   FER: 'Fermi',
   CAL: 'Calibration',
   KST: 'STEM',
   KHU: 'Humanities',
-  KAP: 'Arts & practical',
+  KAP: 'Arts & Practical',
   EMO: 'Emotion',
   CRE: 'Creative',
 })
@@ -173,7 +179,7 @@ export function axisEstimates(input: ProfileInput): AxisEstimate[] {
     const base = {
       id: code,
       code,
-      name: a.name,
+      name: axisName(code),
       shortLabel: SHORT_LABELS[code],
       compactLabel: COMPACT_LABELS[code],
       group: a.cluster,

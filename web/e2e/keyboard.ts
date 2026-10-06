@@ -110,6 +110,28 @@ export async function focusIsOnPlainTarget(page: Page): Promise<boolean> {
   })()`)
 }
 
+/** What a screen moved focus to, in the terms a screen reader announces it: a heading, a named group, or something else. */
+export interface FocusTarget {
+  readonly kind: 'heading' | 'group' | 'other' | 'none'
+  /** The heading's text, the group's `aria-label`, or the tag name. */
+  readonly name: string
+}
+
+/**
+ * Where focus is, as a person who listens would meet it (UX-REVIEW D21): the first question of a part has the heading
+ * ("Matrix & Series"), a later one its own labelled group ("Question 2"). A group is only counted when it is a script
+ * target (`tabindex="-1"`): one in the tab order would be a stop of its own, which a region must not be.
+ */
+export async function focusTarget(page: Page): Promise<FocusTarget> {
+  return page.evaluate<FocusTarget>(`(() => {
+    const el = document.activeElement
+    if (!el || el === document.body || el === document.documentElement) return { kind: 'none', name: '' }
+    if (/^H[1-6]$/.test(el.tagName)) return { kind: 'heading', name: (el.textContent || '').trim() }
+    if (el.getAttribute('role') === 'group' && el.getAttribute('tabindex') === '-1') return { kind: 'group', name: el.getAttribute('aria-label') || '' }
+    return { kind: 'other', name: el.tagName.toLowerCase() }
+  })()`)
+}
+
 /** Press Tab until `target` has focus; returns how many presses it took. Throws, naming the stops, if it never does. */
 export async function tabTo(page: Page, target: Locator, browserName: string, max = 80): Promise<number> {
   // A target that is not on the page must not stall the run until the test times out: a short wait, then keep pressing Tab.

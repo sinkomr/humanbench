@@ -1,9 +1,10 @@
 <!--
   Typed-entry box of the series and quant renderers (ROADMAP M1.13, A18; DESIGN §4.2, §13). The
   answer format comes from `spec.input_format` (integer | decimal | fraction | letter). A submit is
-  checked with the family's own score() parser (`accepts`), so an entry the renderer lets through
-  is exactly one score() can read; anything else gets a neutral note about the format (never about
-  right or wrong) and is not submitted. What `onsubmit` receives is the typed text with its digits
+  checked by the family (`check`, built on its own score() parser), so an entry the renderer lets
+  through is one score() can read; anything else gets a neutral note about the format (never about
+  right or wrong) and is not submitted: the format's note, or for a number written with thousands
+  commas (quant's `1,500`, which score() still reads in saved answers) the thousands note (UX-079). What `onsubmit` receives is the typed text with its digits
   and spacing normalised to the ASCII the parsers read (`normalize-digits.ts`). A number pad in a
   comma-decimal language has no point, so decimal entries get a point key beside the sign key.
 -->
@@ -11,7 +12,7 @@
   import './render.css'
   import type { EntryFormat } from '../../tasks/family'
   import { flushSync } from 'svelte'
-  import { FORMAT_NOTES, EMPTY_NOTE, INPUT_MODES } from './entry-copy'
+  import { FORMAT_NOTES, EMPTY_NOTE, INPUT_MODES, THOUSANDS_NOTE, type EntryVerdict } from './entry-copy'
   import { normalizeEntry, usesDecimalComma } from './normalize-digits'
 
   interface Props {
@@ -20,15 +21,15 @@
     readonly hint: string
     /** Accessible name of the box. */
     readonly label: string
-    /** True iff the family's score() parser reads `text` as an answer of this format. */
-    readonly accepts: (text: string) => boolean
+    /** The family's verdict on `text`: 'ok' iff its score() parser reads it as a new answer of this format. */
+    readonly check: (text: string) => EntryVerdict
     readonly onsubmit: (text: string) => void
     readonly onpaste?: () => void
     /** No typing or submitting (e.g. while the session is paused). */
     readonly disabled?: boolean
   }
 
-  let { format, hint, label, accepts, onsubmit, onpaste, disabled = false }: Props = $props()
+  let { format, hint, label, check, onsubmit, onpaste, disabled = false }: Props = $props()
 
   const uid = $props.id()
   let text = $state('')
@@ -48,8 +49,9 @@
       note = EMPTY_NOTE
       return
     }
-    if (!accepts(entry)) {
-      note = FORMAT_NOTES[format]
+    const verdict = check(entry)
+    if (verdict !== 'ok') {
+      note = verdict === 'thousands' ? THOUSANDS_NOTE : FORMAT_NOTES[format]
       return
     }
     note = ''

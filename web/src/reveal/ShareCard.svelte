@@ -12,6 +12,11 @@
   buttons act inside the click, where iOS wants them. The SVG is always ready. While the PNG is
   being prepared its buttons are `aria-disabled` (still in the Tab order, clicks ignored, the
   "Preparing" note as their description) rather than `disabled`, which Tab would skip (UX-032).
+  Where the browser can hand image files to its share sheet (`canShare`), "Share image" is the primary
+  button and the two downloads sit under a "Save a copy" label (D15 C: on a phone the share sheet is
+  the way to a message or a post); where it cannot, the downloads stay first, the PNG primary. The files
+  are named `humanbench-card-<light|dark>-<local date>.<png|svg>` (D19), so the two colours never
+  overwrite each other.
   With fewer than the minimum of measured skills there is nothing to tick: the panel says what a
   card needs instead. A link opens the card at full size in a new tab (the preview is a thumbnail on
   a phone). The count line is mounted empty and filled a moment later, with its number in a
@@ -35,6 +40,7 @@
     SHARE_PNG,
     SHARE_PNG_FAILED,
     SHARE_PREPARING,
+    SHARE_SAVE_COPY,
     SHARE_SHARE,
     SHARE_SHARE_CANCELLED,
     SHARE_SHARE_FAILED,
@@ -72,7 +78,7 @@
     readonly canShare?: boolean
     /** Wait after a change before the PNG is made, in ms. */
     readonly prepareMs?: number
-    /** Injectable for tests: the date in the file names. */
+    /** Injectable for tests: the moment whose local date goes in the file names. */
     readonly today?: () => Date
   }
 
@@ -173,20 +179,20 @@
 
   function savePng(): void {
     if (png === null) return
-    download(png.blob, cardFileName('png', today()))
+    download(png.blob, cardFileName('png', today(), theme))
     message = sharePngDone(png.width, png.height)
   }
 
   function saveSvg(): void {
     if (card === null) return
-    download(svgBlob(card.svg), cardFileName('svg', today()))
+    download(svgBlob(card.svg), cardFileName('svg', today(), theme))
     message = SHARE_SVG_DONE
   }
 
   // Straight into the share sheet: the first statement reaches it before any await.
   async function sharePng(): Promise<void> {
     if (png === null) return
-    const outcome = await shareFile(png.blob, cardFileName('png', today()))
+    const outcome = await shareFile(png.blob, cardFileName('png', today(), theme))
     message = outcome === 'shared' ? SHARE_SHARED : outcome === 'cancelled' ? SHARE_SHARE_CANCELLED : SHARE_SHARE_FAILED
   }
 </script>
@@ -253,27 +259,44 @@
       {/if}
     {/if}
 
-    <div class="hb-actions">
+    {#snippet pngButton(primary: boolean)}
       <button
         type="button"
-        class="hb-btn hb-primary"
+        class="hb-btn"
+        class:hb-primary={primary}
         disabled={card === null || pngFailed}
         aria-disabled={preparing ? 'true' : undefined}
         aria-describedby={preparing ? `${uid}-preparing` : undefined}
         onclick={savePng}>{SHARE_PNG}</button
       >
+    {/snippet}
+    {#snippet svgButton()}
       <button type="button" class="hb-btn" disabled={card === null} onclick={saveSvg}>{SHARE_SVG}</button>
-      {#if canShare}
+    {/snippet}
+    {#if canShare}
+      <div class="hb-actions" data-share-actions>
         <button
           type="button"
-          class="hb-btn"
+          class="hb-btn hb-primary"
           disabled={card === null || pngFailed}
           aria-disabled={preparing ? 'true' : undefined}
           aria-describedby={preparing ? `${uid}-preparing` : undefined}
           onclick={() => void sharePng()}>{SHARE_SHARE}</button
         >
-      {/if}
-    </div>
+      </div>
+      <div class="copies" role="group" aria-labelledby="{uid}-copies" data-save-copy>
+        <p class="copies-label" id="{uid}-copies">{SHARE_SAVE_COPY}</p>
+        <div class="hb-actions">
+          {@render pngButton(false)}
+          {@render svgButton()}
+        </div>
+      </div>
+    {:else}
+      <div class="hb-actions" data-share-actions>
+        {@render pngButton(true)}
+        {@render svgButton()}
+      </div>
+    {/if}
     {#if preparing}
       <p class="note" id="{uid}-preparing" data-preparing>{SHARE_PREPARING}</p>
     {/if}
@@ -344,6 +367,16 @@
   .hb-btn[aria-disabled='true'] {
     cursor: not-allowed;
     opacity: 0.6;
+  }
+  .copies {
+    margin: 0.5rem 0;
+  }
+  .copies-label {
+    margin: 0;
+    font-weight: 600;
+  }
+  .copies .hb-actions {
+    margin: 0.25rem 0 0;
   }
   .fullsize {
     margin: 0 0 0.5rem;
