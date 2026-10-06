@@ -140,7 +140,7 @@ test('verify UX-038 share card legibility at feed size', async ({ page }, testIn
     facts[`${theme} card texts`] = texts.out
     facts[`${theme} smallest card text px (at 1200 wide)`] = Math.min(...sizes)
     facts[`${theme} smallest at 600 wide`] = Math.round((Math.min(...sizes) / 2) * 10) / 10
-    facts[`${theme} key present`] = { filled: /Filled:/.test(svg), hollow: /Hollow:/.test(svg), sdSpelled: /SD means standard deviation/.test(svg), ringNote: /Rings: SD units, provisional/.test(svg), centre: /Centre: .3 SD/.test(svg), overlapCaveatCount: (svg.match(/Ranges that overlap are not real differences\./g) ?? []).length, roughEstimates: /Rough estimates/.test(svg) }
+    facts[`${theme} key present`] = { filled: /Filled:/.test(svg), hollow: /Hollow:/.test(svg), sdSpelled: /SD means standard deviation/.test(svg), ringNote: /Rings: SD units, provisional/.test(svg), centre: /Centre: .3 SD/.test(svg), overlapCaveatCount: (svg.match(/Where ranges overlap, a difference may not be real\./g) ?? []).length, roughEstimates: /Rough estimates/.test(svg) }
     facts[`${theme} ring label order`] = await page.evaluate((src) => { const doc = new DOMParser().parseFromString(src, 'image/svg+xml'); const svg = doc.querySelector('svg.hb-blob, svg [class*=blob], g.blob') ?? doc.documentElement; const ids = [...svg.querySelectorAll('g')].map((g) => g.getAttribute('class') ?? '').filter((c) => c !== ''); return ids.slice(0, 20) }, svg)
     facts[`${theme} files`] = { svg: path.relative(REPO_ROOT, svgFile), png: path.relative(REPO_ROOT, pngFile) }
     // The preview on the page, and a 600 px wide rendering of the PNG (what a feed shows).

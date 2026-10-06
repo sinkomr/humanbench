@@ -25,5 +25,5 @@ export const SAVE_HEADING_ID = 'hb-save-heading'
 /** The "Notes for your AI" builder page (AI.5), under the app's base path. */
 export const NOTES_BUILDER_HREF: string = `${import.meta.env.BASE_URL}notes.html`
 
-/** The most characters the results-talk preamble may have (proposal §3.3). */
-export const TALK_PREAMBLE_MAX_CHARS = 340
+/** The most characters the results-talk preamble may have (proposal §3.3; 346 since wording version 2, UX-REVIEW D2). */
+export const TALK_PREAMBLE_MAX_CHARS = 346

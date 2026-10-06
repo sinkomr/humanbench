@@ -359,7 +359,7 @@ describe('the most distinctive peaks on the card', () => {
     expect(textsOf(card.svg).join(' ')).toContain(CARD_NO_PEAKS)
     expect(textsOf(card.svg)).not.toContain(CARD_PEAKS_HEADING)
     // The sentence about overlapping ranges is in the small print, once; the peaks line does not repeat it.
-    expect(textsOf(card.svg).join(' ').split('Ranges that overlap are not real differences.')).toHaveLength(2)
+    expect(textsOf(card.svg).join(' ').split('Where ranges overlap, a difference may not be real.')).toHaveLength(2)
   })
 
   it('never lists a low, or a peak whose range does not clear 0, whatever it is given (R-5.6.4)', () => {
@@ -642,7 +642,7 @@ describe('the card explains its marks and its scale (UX-038, §9.9, A12)', () =>
 
   it('keeps every caveat sentence, the overlap sentence exactly once, and the ring note word for word', () => {
     for (const sentence of [CARD_NOTE_SCALE, CARD_NOTE_READING, CARD_PURPOSE]) expect(words).toContain(sentence)
-    expect(words.split('Ranges that overlap are not real differences.')).toHaveLength(2)
+    expect(words.split('Where ranges overlap, a difference may not be real.')).toHaveLength(2)
     // The ring note is two texts of their own (share-card.spec.ts matches them one by one).
     for (const line of RING_NOTE) expect(textsOf(card.svg)).toContain(line)
     expect(textsOf(card.svg)).toContain('Rings: SD units, provisional')

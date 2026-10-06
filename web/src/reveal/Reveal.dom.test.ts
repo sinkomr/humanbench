@@ -145,6 +145,9 @@ describe('distinctive peaks', () => {
     const peaks = section(mountFinished(b).c, 'peaks')!
     expect(peaks.querySelectorAll('li[data-peak]')).toHaveLength(0)
     expect(peaks.textContent).toContain('No skill stands out clearly')
+    // UX-071 (owner decision 2026-10-05): the note says why, and never that overlapping ranges are not real differences.
+    expect(peaks.textContent).toContain('That is common after one session: the ranges are still wide.')
+    expect(peaks.textContent).not.toContain('not real differences')
   })
 
   it('lists exactly the credible peaks, each with a range that starts above 0; never a mean or total', () => {
@@ -547,9 +550,11 @@ describe('after the save: the card slots (Phase AI, M1.18)', () => {
     const after = section(m.c, 'after-save')!
     expect(after.textContent).not.toContain(RESOURCE_LINE)
     expect(TALK_PREAMBLE.length).toBeLessThanOrEqual(TALK_PREAMBLE_MAX_CHARS)
-    expect(TALK_PREAMBLE_MAX_CHARS).toBe(340)
+    expect(TALK_PREAMBLE_MAX_CHARS).toBe(346)
+    expect(TALK_PREAMBLE.length).toBe(346)
     expect(/\d/.test(TALK_PREAMBLE)).toBe(false)
   })
+    // Wording version 2 of the preamble (owner decision 2026-10-05, UX-071) is 346 characters; the proposal's 340 was version 1.
 })
 
 describe('the share card in the reveal (M1.18)', () => {

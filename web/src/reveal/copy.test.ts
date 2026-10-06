@@ -56,6 +56,14 @@ describe('the results copy', () => {
     for (const [key, text] of strings) expect(text, key).not.toMatch(claim)
   })
 
+  it('says the ranges are still wide when no peak stands out, and never that overlapping ranges are not real differences (UX-071, owner decision 2026-10-05)', () => {
+    expect(copy.PEAKS_NONE).toBe('No skill stands out clearly from your others yet. That is common after one session: the ranges are still wide.')
+    for (const [key, text] of strings) {
+      expect(text, key).not.toMatch(/overlap\w*[^.]{0,40}\bnot real\b/i)
+      expect(text, key).not.toContain('Ranges that overlap are not real differences')
+    }
+  })
+
   it('the focus session is about measuring more precisely, not about getting better at anything', () => {
     expect(copy.FOCUS_TEXT).toBe('Pick the parts you want measured more precisely. A focus session takes about 20 minutes and covers only the parts you choose.')
     expect(copy.FOCUS_TEXT).not.toMatch(/sharpen|improve|practice/i)

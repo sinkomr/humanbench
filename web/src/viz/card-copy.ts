@@ -30,7 +30,7 @@ export function cardPeakRange(lo: string, hi: string): string {
 export const CARD_NO_PEAKS = 'No skill stands out clearly among those shown.'
 
 /** The card's small print: the scale is provisional, the shape carries no total, and the choice of skills is mine. */
-export const CARD_NOTE_SCALE = 'Rough estimates on a provisional scale. Ranges that overlap are not real differences.'
+export const CARD_NOTE_SCALE = 'Rough estimates on a provisional scale. Where ranges overlap, a difference may not be real.'
 export const CARD_NOTE_READING = 'Compare spokes one at a time; the size of the shape means nothing. Only skills I chose are shown.'
 export const CARD_PURPOSE = 'For curiosity and self-reflection.'
 /**
