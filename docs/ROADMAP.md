@@ -496,3 +496,7 @@ Numbered as in proposal §11. The defaults apply until the user decides otherwis
   - Opus or Fable disagrees, or 2 or more disagree → **hard flag**, blocked until rewritten or human-reviewed.
 
   The solves run as Claude Code subagents (no API keys, $0 extra). Ollama is optional, an extra check for later. **Follow-up code change:** update M3.3's G4 rule and adapters to match.
+- **RAT word resources (owner decision 2026-10-06; bank docs/rat-corpus.md §7, all recommended options):**
+  - **Use the permissive set**, cached outside both repos: Google Books Ngram v3 (CC BY 3.0), Open English WordNet (CC BY 4.0), the Moby compound list (public domain) and VarCon (MIT-like). Only per-item evidence goes in the bank, and the app gets a credits line.
+  - **wordfreq (CC BY-SA)** is allowed as a secondary signal, with per-item values only.
+  - **Not used:** COCA/iWeb and Norvig/Web1T. SUBTLEX is used only via wordfreq.
