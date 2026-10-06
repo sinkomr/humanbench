@@ -10,9 +10,14 @@ branch head, appendix B). Waves 1 and 2 are on `dev` (commit `f6fb7fa`).
 the owner answered D1, D2, D5 and D10 and asked for more context on D3; for the other decisions the owner asked the
 team to follow the recommended actions without recording them as decisions. Fifteen packages built the answers and
 the recommended defaults, one more wrote up the context for D3, an integration pass joined them and ran every gate of
-both repos, and a third independent verifier replayed each decision (§1, §2, §3). This round is not merged into `dev`
-or `main`; the lead merges. `dev` has since moved on (M6.2 to M6.4), so the gates in appendix B are of this branch
-alone.
+both repos, and a third independent verifier replayed each decision (§1, §2, §3). The round is committed on
+`wf10/uxdec`, one commit per decision group (pub `45b0e82` to `71a242f`, bank `9b4046a` to `7722f46`;
+[commit.json](ux-review/uxdec/commit.json)), and `dev` has been merged into it at `0fe9fd7` (pub; bank `5fb088f`),
+which brings in M6.2 to M6.4 (the situational judgment, word links and unusual uses entries on dev routes), with four
+reconciliation commits (D25, D13, D4, D1) and every gate of both repos re-run on the merged head (appendix B;
+[merge-dev.json](ux-review/uxdec/merge-dev.json)). A fourth verification then replayed every decision on that head and
+found nothing regressed (§1; [verification-merged.json](ux-review/uxdec/verification-merged.json)). This round is
+still not merged into `dev` or `main`; the lead merges.
 
 Source records (all in `web/ux-review/`): [findings](ux-review/findings/) (one JSON per reviewer),
 [triage.json](ux-review/triage.json), [fixes](ux-review/fixes/) (one JSON per fix package),
@@ -24,7 +29,9 @@ Source records (all in `web/ux-review/`): [findings](ux-review/findings/) (one J
 [verify2-regressions.json](ux-review/findings/verify2-regressions.json); for the decisions round the records in
 [ux-review/uxdec/](ux-review/uxdec/): one handoff per package (for example
 [start-copy.json](ux-review/uxdec/start-copy.json)), [integrate.json](ux-review/uxdec/integrate.json),
-[verification.json](ux-review/uxdec/verification.json) and [d3-context.json](ux-review/uxdec/d3-context.json).
+[verification.json](ux-review/uxdec/verification.json) and [d3-context.json](ux-review/uxdec/d3-context.json), then
+[commit.json](ux-review/uxdec/commit.json) (the commit split), [merge-dev.json](ux-review/uxdec/merge-dev.json) (the
+merge of dev and its gates) and [verification-merged.json](ux-review/uxdec/verification-merged.json) (verification 4).
 Every count below is taken from them.
 Spec references are to [DESIGN.md](../docs/DESIGN.md) (§x, R-x.y) and [ROADMAP.md](../docs/ROADMAP.md) (Ax, Mx.y).
 Screenshot paths are relative to the repo root and exist only on the machine that ran the review (see §6).
@@ -71,6 +78,22 @@ branch and ran every gate of both repos; all passed, the Chromium e2e after a fi
 of its group (appendix B). Unlike waves 1 and 2, this round changes the save schema (optional additions; still
 `save-v1`), the bank (D6 and D8, and a README section for D11) and the server SQL (two new migrations, D4 and D8).
 DESIGN.md and ROADMAP.md were not edited; the lines now out of step are listed for the lead in §4.
+
+**Verification 4 (after the merge of `dev`).** The round was committed one commit per decision group, `dev` (M6.2 to
+M6.4) was merged into the branch with one conflict settled and four test-only reconciliations, and every gate of both
+repos passed on the merged head (appendix B). Verification 4 then replayed every decision again on a fresh production
+build of that head in Chromium, desktop WebKit and iPhone 13: 25 verified, 1 partly (D22, as before), 5 unchanged as
+required, 0 not fixed, 0 regressed. Every replay fact that failed had failed in verification 3 for the same
+pre-existing reason (the 24 px standalone links, the 26 px checkbox), except D23 on WebKit, where the review machine's
+headless WebKit now draws about three frames a second and verification 3's own build fails the same check today
+(UXDEC-VER4-01, §4; the session code is unchanged). The sweep grew to 335 routes in 874 states: the 12 new M6 dev
+routes joined the dev tour, and the 15 M6 routes (emotion, situational judgment, word links, unusual uses) were toured
+at 390 and 1280 px in both schemes on Chromium and WebKit with no sideways overflow, clipped text, axe issue, small
+target or console entry. No route failed to open anywhere, and no state showed overflow, clipped text, a serious axe
+issue, a rendered "TODO" or score wording. The M6 entries name the skill and the facets through the D25 display layer,
+and the blob demo's tier (c) marks (hatched wedges, ◇, caption) show at both widths. A plain production build holds no
+dev route and no Transformers.js or ONNX Runtime code (the dist scan plus `scripts/dev-routes.test.ts` and
+`aut-bundle.test.ts`). Two new findings, neither a regression (UXDEC-VER4-01 and -02, §4).
 
 **Headline results** (111 triage items; no reviewer filed a blocker; counts after wave 2):
 
@@ -531,7 +554,9 @@ in each decision's status line in §2.
 | D31 | integration-2 note | skipped (no recommendation) | — | unchanged |
 
 Totals: 4 owner decisions, 22 provisional defaults (6 of them partly), 1 not changed, 4 skipped. Verification 3:
-25 verified, 1 partly, 5 unchanged, 0 not fixed, 0 regressed.
+25 verified, 1 partly, 5 unchanged, 0 not fixed, 0 regressed. Verification 4, on the merged head
+([verification-merged.json](ux-review/uxdec/verification-merged.json)): the same verdict for every decision (25
+verified, 1 partly, 5 unchanged, 0 not fixed, 0 regressed).
 
 **Fixed at integration** ([integrate.json](ux-review/uxdec/integrate.json) changes). Four problems of the combined
 branch, each found by a gate:
@@ -608,6 +633,21 @@ Verification 3 also saw the small targets above again, all over WCAG 2.5.8's 24 
 gate, the honour code and the ready screen's "Add my new session to the …" (each inside a 44 px label row), and the
 notes page's 40 px "Show all topics" and "Why this line?". Its only console message was three.js failing to create a
 WebGL context on the route that turns WebGL off on purpose.
+
+**Merged head: new findings of verification 4** ([verification-merged.json](ux-review/uxdec/verification-merged.json)
+new_findings). Neither is a regression of the merge; the six findings above all stand as recorded:
+
+| Id | Sev. | Decision | What | Suggested next step |
+| --- | --- | --- | --- | --- |
+| UXDEC-VER4-01 | polish | D23 (harness environment) | Headless WebKit on the review machine (desktop and the iPhone 13 emulation) now delivers about three animation frames a second (the device screen reads "3 Hz"; the RT self-test reads 30 Hz where verification 3 read 60), so the 60-frame refresh probe that starts on the gate cannot finish at a person's pace and "Checking your screen" shows for 150 to 240 ms before Continue is enabled. Chromium is as before (2 ms, no text, 60 Hz). The same test against verification 3's own build gives the same numbers today, and `src/session` is byte for byte the verified head: the environment, not the product. | None for the product; re-run D23 on WebKit on another machine or real Safari when convenient. |
+| UXDEC-VER4-02 | polish | D13 with M6 | On the blob demo's M1-like profile at 390 px the not-measured tier (c) skills (Emotion Reading, Creative Thinking) are named in the "Not measured: …" list without their ◇, while at 1280 px their chart labels carry the ◇ and "not measured", and the table rows carry the ◇ at both widths (the merge-dev open issue, seen on screen in Chromium and WebKit). | A line for the viz owner: accept (the table keeps the mark) or carry the glyph into the stub list. |
+
+Verification 4 saw the same small targets as verification 3 and nothing new, none on an M6 route; its only console
+message was the same three.js one. Not covered by verification 4 beyond verification 3's list: the M6 dev routes on
+the phone project (the dev tours are desktop pages); the Social-Creative facet sub-blob with the M6 facets measured (a
+test-only profile, pinned by `viz/tier-c.dom.test.ts`); the unusual uses scorer with its real model (the demo was
+toured with the test scorer, so nothing was downloaded); `npm run check`, `npm test`, `test:db`, the bank gates and
+the isolated e2e, which merge-dev ran on the same product code (appendix B).
 
 **Decisions round: questions left for the owner** (from the handoffs and integrate.json for_lead; none was decided in
 this round, and each provisional default stays open):
@@ -779,9 +819,12 @@ document. Each package wrote its own handoff; the integration and the verificati
 | integrate | all | Requests, four fixes, review, gates, commit split | pub, bank | [integrate.json](ux-review/uxdec/integrate.json) |
 | verify | all | Replay, route sweep, six new findings; four harness files `ux-review/personas/uxdec-verify-*.ux.ts` | pub (harness) | [verification.json](ux-review/uxdec/verification.json) |
 | docs | — | This update of `web/UX-REVIEW.md` | pub | this document |
+| commit | all | The round committed one commit per decision group, hunks split by reading (not by the integration's keyword map) | pub, bank | [commit.json](ux-review/uxdec/commit.json) |
+| merge-dev | — | `dev` (M6.2 to M6.4) merged into the branch, one conflict settled, four reconciliations, every gate | pub, bank | [merge-dev.json](ux-review/uxdec/merge-dev.json) |
+| verify-merged | all | Verification 4 on the merged head: the replay again, the sweep with the M6 dev routes, the dist scan; this document brought up to date | pub (harness, docs) | [verification-merged.json](ux-review/uxdec/verification-merged.json) |
 
-The handoffs do not record which model ran each package, so the table names none; this update (docs) was written by
-Opus 5.5.
+The handoffs do not record which model ran each package, so the table names none; the decisions-round update of this
+document (docs) was written by Opus 5.5, and the verification 4 update (verify-merged) by Fable 5.1.
 
 **Reviewers** (model as recorded in each findings file; counts are findings filed, before triage):
 
@@ -844,7 +887,10 @@ and `web/test-results/ux-review/verify2/` (wave 2, with `tour-compare.json`). In
 `web/test-results/iso/w2-int/`, final-integration logs in `web/test-results/iso/final-int/logs/`. For the decisions
 round the handoffs, `integrate.json`, `verification.json` and `d3-context.json` are in `web/ux-review/uxdec/`; the
 integration logs are in `web/test-results/iso/uxdec-integrate/logs/`, and verification 3's facts, screenshots and logs
-in `web/test-results/ux-review/uxdec-verify/` (local, like the others).
+in `web/test-results/ux-review/uxdec-verify/` (local, like the others). After the merge of `dev`: `commit.json`,
+`merge-dev.json` and `verification-merged.json` beside them in `web/ux-review/uxdec/`; the merge gate logs in
+`web/test-results/iso/uxdec-merge/`, and verification 4's facts, screenshots, tour summaries and logs in
+`web/test-results/ux-review/uxdec-verify4/` (local).
 
 ## 7. Appendix
 
@@ -917,6 +963,20 @@ failed to open; no sideways overflow, clipped text, serious axe issue, rendered 
 corrected after a first pass were harness mistakes, never product code, and were re-run. 25 verified, 1 partly
 (D22), 5 unchanged as required; six new findings (UXDEC-VER-01 to UXDEC-VER-06, §4).
 
+**verify-merged (Fable 5.1).** Verification 4 ([verification-merged.json](ux-review/uxdec/verification-merged.json)):
+the same harness on a fresh production build of the merged head (`cd07fdf`; product code as in `abdd9a6`), the three
+engines again, the 29 replay tests per engine green on the first pass. The sweep persona gained two tests: a tour of
+the 15 M6 dev routes at 390 and 1280 px in both schemes with axe and the 44 px measure, and a check that the M6
+entries name the skill and the facets through the display layer (D25) and that the blob demo's tier (c) marks show
+(hatch, ◇, caption; full and M1-like profiles at 1280 and 390 px); no existing check was changed. Swept 335 routes in
+874 states (the 53 product routes as before, 22 preview dev routes, the 15 M6 routes, the 17 layout routes at 320 px
+and 200% text, the RT self-test): no route failed to open; no overflow, clipped text, serious axe issue, rendered
+"TODO" or score wording; no M6 state with any of those, a small target or a console entry. A plain production build
+scanned for dev-route, Transformers.js and ONNX Runtime markers and wasm: none. One harness mistake (the new test moved
+between dev demos by a hash change) was fixed and re-run. 25 verified, 1 partly (D22), 5 unchanged as required, 0
+regressed; two new findings (UXDEC-VER4-01, -02, §4), one of them the review machine's headless WebKit frame rate
+(confirmed against verification 3's build).
+
 ### B. Gate results at integration
 
 **Wave 1.** From [integration.json](ux-review/integration.json). The build used its own output directory
@@ -985,8 +1045,8 @@ file changed in this workstream.
 
 **Decisions round.** From [integrate.json](ux-review/uxdec/integrate.json) gates, on the head of `wf10/uxdec` in
 both repos (pub on dev `9f68f49`, bank on `0d2a60e`), before this document's update; logs in
-`web/test-results/iso/uxdec-integrate/logs/`. Both `dev` branches have since moved on (M6.2 to M6.4), so these are
-the gates of this branch alone: after the lead's merge or rebase they need a re-run. integrate.json lists the files
+`web/test-results/iso/uxdec-integrate/logs/`. Both `dev` branches had moved on (M6.2 to M6.4) by then, so these are
+the gates of the round alone; the gates after the merge of `dev` are in the next block. integrate.json lists the files
 both sides changed (pub `README.md`, `e2e/routes.ts`, `package.json`, `scripts/a11y-routes.test.ts`,
 `src/viz/facets.ts`; bank `README.md`); the hunks look separate.
 
@@ -1009,3 +1069,43 @@ both sides changed (pub `README.md`, `e2e/routes.ts`, `package.json`, `scripts/a
 The skips are the specs' own project and dev-only conditions. Nothing was reverted. Verification 3 then ran its own
 checks on a fresh build: language lint clean (367 files), `tsc -p tsconfig.scripts.json` clean, no retired overlap
 sentence and no "TODO(" in the built assets, and its 29 replay and 9 sweep tests per project green.
+
+**Merge with dev (M6.2 to M6.4).** From [merge-dev.json](ux-review/uxdec/merge-dev.json) gates: `git merge --no-ff dev`
+in both repos (pub `22c93f4` into `71a242f`, merge `0fe9fd7`; bank `8f8bda0` into `7722f46`, merge `5fb088f`), one
+textual conflict (`src/viz/facets.ts`: this round's quant topic-group labels and dev's four M6 facet rows, both kept),
+four reconciliation commits that changed tests only (`1dc7dc7` D25: the SJT entry takes its skill name from
+`axisName`; `7301b8d` D13 and `489ed52` D4: dev's tier (c) tests follow the D13 B stub list and the D4 two-line facet
+labels; `abdd9a6` D1: `no-todo.test.ts` names the M6 copy modules), and these gates on the final head `abdd9a6`
+(bank `5fb088f`); logs in `web/test-results/iso/uxdec-merge/`. `docs/` is dev's exactly.
+
+| Gate | Result |
+| --- | --- |
+| `npm ci` | pass (installs `@huggingface/transformers` 4.3.0) |
+| `npm run check` | pass on the merge head and on `abdd9a6`: svelte-check 1,888 files, 0 errors, 0 warnings; tsc node and scripts clean |
+| `npm test` | 308 files passed, 1 skipped; 5,626 tests passed, 7 skipped, 0 failed. Before the reconcile commits 4 tests in `viz/tier-c.test.ts` and `tier-c.dom.test.ts` failed (dev's expectations against D13 B and D4), fixed in `7301b8d` and `489ed52` |
+| `npm run build` | pass (chunk-size warning only) |
+| Language lint | pass: 395 files clean (the M6 copy included) |
+| `test:db` | 564 of 567: three load-related timing failures in `scripts/db/signing.db.test.ts` (2,246 to 2,491 ms against a 2,000 ms bound, beside the full vitest suite at load average 18 to 33); the spec alone: 66 of 66 passed |
+| Cross-repo sync, pub side | pass: 6 files, 69 tests, none skipped (bank worktree at `5fb088f`) |
+| Bank `uv run ruff check && uv run ruff format --check` | pass: 372 files already formatted |
+| Bank `uv run pytest -q -n 8` | pass: 6,944 passed, 2 skipped (Ollama not running), 208 s |
+| Bank `tests/test_crossrepo.py` | pass: 18 passed, none skipped (against the merged pub worktree) |
+| e2e chromium (isolated, dev server, 4 workers) | 1,219 tests: 1,117 passed, 102 skipped, 0 failed (9.8 min); every spec file, the M6 specs (sjt 24, rat 17, aut 18) and the `uxdec-*` specs (105) included |
+| e2e webkit | 1,219 tests: 1,095 passed, 124 skipped, 0 failed (16.1 min) |
+| e2e iphone | 1,219 tests: 989 passed, 230 skipped, 0 failed (19.0 min) |
+
+The skips are the specs' own project conditions. Nothing was reverted. Verification 4 then ran its own checks on a
+fresh build of the merged head (`cd07fdf`, the head after the handoffs; product code as in `abdd9a6`); logs in
+`web/test-results/ux-review/uxdec-verify4/logs/`, details in
+[verification-merged.json](ux-review/uxdec/verification-merged.json):
+
+| Check | Result |
+| --- | --- |
+| Harness build (`ux-review/build.ts`, dev routes on) and a plain `vite build` | both pass |
+| Dist scan of the plain build | 15 asset files, no `.wasm`; none holds a dev-route marker (the six M6 demo markers, `#/dev/`, the blob and fast-mode markers), a Transformers.js or ONNX Runtime marker, the retired overlap sentence or `TODO(` |
+| `scripts/dev-routes.test.ts`, `scripts/aut-bundle.test.ts` | 2 files, 15 tests passed |
+| `tsc -p tsconfig.scripts.json` (after the persona edit) | clean |
+| Language lint on `UX-REVIEW.md` directly | clean |
+| Replay (owner 7 + defaults 22 tests per engine) | green on Chromium, WebKit and iPhone at the first pass; 92 facts files, 676 facts ok, 63 measured, 11 failed (the six pre-existing D1 link sizes, the three pre-existing D10 checkbox sizes, D23 on WebKit and iPhone: UXDEC-VER4-01) |
+| Sweep (11 tests per desktop engine, 8 + 3 skipped on the phone) | green after one harness fix (the M6-names test, re-run on Chromium and WebKit); 335 routes, 874 states, 0 failed to open, 0 overflow, 0 clipped, 0 serious axe, 0 rendered "TODO", 0 score wording |
+| D23 control against verification 3's build (WebKit, iPhone) | the same 3 Hz and the same failure today, so not a change of the merged head |
