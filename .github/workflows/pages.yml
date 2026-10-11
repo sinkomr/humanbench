@@ -32,7 +32,7 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v6
 
-      - run: npm ci
+      - run: npm ci || npm ci
 
       # A deploy must pass the same gates as CI: typecheck (incl. a11y warnings) and tests.
       - run: npm run check

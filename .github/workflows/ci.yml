@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
 
 permissions:
@@ -29,7 +29,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - run: npm ci
+      - run: npm ci || npm ci
       - run: npm run check
       - run: npm test
       - run: npm run build
@@ -53,7 +53,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - run: npm ci
+      - run: npm ci || npm ci
       - run: npm run test:db
 
   e2e:
@@ -82,7 +82,7 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - run: npm ci
+      - run: npm ci || npm ci
 
       # Browser binaries are keyed on the exact Playwright version in the lockfile.
       - id: playwright
