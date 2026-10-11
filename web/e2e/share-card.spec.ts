@@ -40,6 +40,9 @@ async function previewSvg(page: Page): Promise<string> {
   return decodeURIComponent(src.slice(src.indexOf(',') + 1))
 }
 
+/** A text that names the reference level "0 SD" (not a figure such as "1.0 SD"): the card's key, title and description included. */
+const NAMES_ZERO_SD = /(?<![\d.])[+−]?0 ?SD/
+
 /** The text of every drawn label / text of an SVG, unescaped. */
 function svgTexts(svg: string): string[] {
   return [...svg.matchAll(/<(?:text|tspan|title|desc)\b[^>]*>([^<]+)<\//g)].map((m) => m[1]!.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'"))
@@ -69,6 +72,12 @@ test.describe('the card and its toggles', () => {
     for (const name of sim.peaks) expect(texts).toContain(name)
     expect(texts).toContain('Based on 1 session')
     expect(texts).toContain('Rings: SD units, provisional')
+    // D3 (owner decision 2026-10-11): the dashed reference ring is drawn, and its "0 SD" scale label is gone.
+    expect(svg.match(/<circle class="ring reference"/g)).toHaveLength(1)
+    expect(texts.filter((t) => NAMES_ZERO_SD.test(t))).toEqual([])
+    expect(texts.filter((t) => /^[+−]?\d SD$/.test(t))).toEqual(['−2 SD', '+2 SD'])
+    // The key tells which ring the marks are measured against, in words the picture can show.
+    expect(texts.join(' ')).toContain('Filled: range above the dashed ring. Hollow: range overlaps or is below.')
   })
 
   test('unticking a skill takes its name, spoke and marker off the picture; ticking it puts it back', async ({ page }) => {
@@ -160,6 +169,9 @@ test.describe('the exports', () => {
     expect(svg).toBe(shown)
     expect(svg).toMatch(/^<\?xml version="1\.0" encoding="UTF-8"\?>\n<svg [^>]*width="1200" height="630" viewBox="0 0 1200 630"/)
     expect(svg).not.toMatch(/<script|<image|<a\b|href=|foreignObject/i)
+    // The exported file keeps the reference ring and has no "0 SD" scale label (D3, owner decision 2026-10-11).
+    expect(svg.match(/<circle class="ring reference"/g)).toHaveLength(1)
+    expect(svgTexts(svg).filter((t) => NAMES_ZERO_SD.test(t))).toEqual([])
     // Opens as an SVG document in the browser, at its own size (Playwright's temp name has no extension).
     const saved = testInfo.outputPath(file.suggestedFilename())
     await file.saveAs(saved)

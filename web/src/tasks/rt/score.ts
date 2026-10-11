@@ -23,7 +23,7 @@
  * clock-resolution check and any SE floor belong to the device check / M4.8 calibration.
  */
 
-import { MalformedResponseError, blockScore, gaussianObservationSigma, type BlockScore, type ItemInstance } from '../family'
+import { MalformedResponseError, blockScore, gaussianObservationSigma, type BlockScore, type BlockScoreContext, type ItemInstance } from '../family'
 import { RT_NORMS_VERSION, rtNorm, rtParamsOfNorm } from './prior'
 import {
   RT_MODE_CONFIG,
@@ -184,16 +184,23 @@ export function rtBlockObservation(item: ItemInstance<RtSpec, RtKey>, response: 
  * `score()` of an RT block family (M1.F2 {@link BlockScore}): the Gaussian observation, or none
  * with the reason (`too_few_valid_trials`). No integrity flags yet (anticipations and misses are
  * counted in {@link rtBlockObservation}'s `meta`). The device class only annotates the
- * observation, which does not depend on it; the input type picks the norm (touch vs keyboard/mouse),
- * and this context-free path has none, so it uses the keyboard/mouse norm.
+ * observation, which does not depend on it; the input type picks the norm (touch vs
+ * keyboard/mouse), so SD scores always compare like with like (owner decision 2026-10-11,
+ * UX-REVIEW D3).
  *
- * The block `score(item, response)` contract has no device or input mode, so once the norms are
- * per device (§11.6, §13 "normed separately", M4.8) this function cannot pick the right one: the
- * session must then call {@link rtBlockObservation} with its `device.class` and `device.input`,
- * or the contract gains a score context (ROADMAP M4.8).
+ * The input type reaches this function in the optional `context` ({@link BlockScoreContext}): the
+ * session stores it with every block (`extra.input_type`, §8), and a re-score from a save
+ * (`save/rescore.ts`, which feeds the reveal's blob) passes it back. Without a context, or with
+ * no input type in it (an older save, a device that reported none), the keyboard/mouse norm is
+ * used, as before. That default matches the session's own observation too, because a block with
+ * no recorded input type was scored with it live.
  */
-export function rtBlockScore(item: ItemInstance<RtSpec, RtKey>, response: RtResponse): BlockScore {
-  const r = rtBlockObservation(item, response, { device_class: 'unspecified' })
+export function rtBlockScore(item: ItemInstance<RtSpec, RtKey>, response: RtResponse, context?: BlockScoreContext): BlockScore {
+  const device: RtDevice = {
+    device_class: context?.device_class !== undefined && context.device_class.length > 0 ? context.device_class : 'unspecified',
+    ...(context?.input_type === undefined ? {} : { input_type: context.input_type }),
+  }
+  const r = rtBlockObservation(item, response, device)
   return r.status === 'ok' ? blockScore(r.observation) : blockScore(null, [], [r.reason])
 }
 

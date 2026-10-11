@@ -35,11 +35,14 @@ export const CARD_NOTE_READING = 'Compare spokes one at a time; the size of the 
 export const CARD_PURPOSE = 'For curiosity and self-reflection.'
 /**
  * The key to the marks, and what "SD" is (UX-038): a card travels without its page; "range" is the
- * 90% range the thin lines show. On a card only a range above 0 SD is filled: a credible low is drawn
- * hollow and grey like a range that overlaps 0 SD (UX review D15 A, a provisional default), so the
- * only strong colour on a picture people post is never a low.
+ * 90% range the thin lines show. On a card only a range above the dashed ring (0 SD) is filled: a
+ * credible low is drawn hollow and grey like a range that overlaps the ring (UX review D15 A, a
+ * provisional default), so the only strong colour on a picture people post is never a low. The key
+ * names the ring by how it looks, not by "0 SD": the ring carries no scale label (owner decision of
+ * 2026-10-11, UX review D3), and a picture that names the level it does not label would leave the
+ * reader looking for it.
  */
-export const CARD_KEY = 'Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.'
+export const CARD_KEY = 'Filled: range above the dashed ring. Hollow: range overlaps or is below.'
 /** D15 A: the card's named peaks are ringed on the chart (only on a card that lists peaks). */
 export const CARD_KEY_PEAKS = 'Ringed: a named peak.'
 export const CARD_SD_MEANING = 'SD means standard deviation.'

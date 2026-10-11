@@ -92,7 +92,7 @@
   <!-- Under the data (UX-045): a ring label's halo knocks out the grid only, never the curve, a marker or a whisker. -->
   <g class="ring-labels" font-size={f(model.text.small)} stroke-width={f(model.text.halo)}>
     {#each model.rings.filter((x) => x.showLabel) as ring (ring.theta)}
-      <text class="ring-label" class:reference={ring.reference} x={f(ring.labelAt[0])} y={f(ring.labelAt[1])}>{ring.label}</text>
+      <text class="ring-label" x={f(ring.labelAt[0])} y={f(ring.labelAt[1])}>{ring.label}</text>
     {/each}
   </g>
 
@@ -189,7 +189,7 @@
   }
   .ring.reference {
     stroke: var(--hb-stub);
-    stroke-width: 1.75; /* REFERENCE_RING_STROKE_WIDTH (geometry.ts): a slightly heavier 0 SD ring, no label of its own */
+    stroke-width: 1.75; /* REFERENCE_RING_STROKE_WIDTH (geometry.ts): a slightly heavier reference ring, no label of its own */
     stroke-dasharray: 5 4;
   }
   .spoke {
@@ -310,9 +310,6 @@
   }
   .ring-note {
     fill: var(--hb-text-muted);
-  }
-  .ring-label.reference {
-    font-weight: 600;
   }
   .label {
     fill: var(--hb-text-strong);

@@ -132,7 +132,7 @@ describe('named peaks of a share card are ringed and bold (D15 A)', () => {
   })
 })
 
-describe('the 0 SD reference ring is visually distinct and says nothing (owner decision 2026-10-06, D3)', () => {
+describe('the reference ring is visually distinct and says nothing: no "0 SD" label (owner decisions 2026-10-06 and 2026-10-11, D3)', () => {
   const css = readFileSync('src/viz/BlobChart.svelte', 'utf8')
   const widthOf = (selector: string): number => {
     const m = css.match(new RegExp(`\\n  ${selector.replace(/\./g, '\\.')} \\{[^}]*?stroke-width: ([0-9.]+)`))
@@ -157,9 +157,34 @@ describe('the 0 SD reference ring is visually distinct and says nothing (owner d
     expect(refs[0]!.querySelector('title, desc, text')).toBeNull()
     expect(refs[0]!.getAttribute('aria-label')).toBeNull()
     expect(root.querySelector('g.grid')!.querySelector('text, title, desc')).toBeNull()
-    // The only "0 SD" text of its own is the scale label the chart already had; nothing new is said about the ring.
+    // Owner decision 2026-10-11: the line stays, its "0 SD" scale label is gone, and no chart text names the ring.
     const texts = [...root.querySelectorAll('svg text')].map((t) => t.textContent?.replace(/\s+/g, ' ').trim() ?? '')
-    expect(texts.filter((t) => t === ringLabel(0))).toHaveLength(model.rings.filter((r) => r.reference && r.showLabel).length)
-    expect(texts.filter((t) => /reference|typical|average|norm|middle/i.test(t))).toEqual([])
+    expect(ringLabel(0)).toBe('')
+    expect(texts.filter((t) => /(^|\s)0\s?SD/.test(t))).toEqual([])
+    expect(texts.filter((t) => t === '')).toEqual([])
+    expect(texts.filter((t) => /reference|typical|average|norm|middle|dashed/i.test(t))).toEqual([])
+    expect(root.querySelectorAll('text.ring-label.reference')).toHaveLength(0)
+    // The other rings keep their labels, at the usual size (nothing moved to fill the gap).
+    expect([...root.querySelectorAll('text.ring-label')].map((t) => t.textContent)).toEqual(['−2 SD', '−1 SD', '+1 SD', '+2 SD'])
+    // The model carries no label for the ring either, so no other view can draw one.
+    expect(model.rings.filter((r) => r.reference).map((r) => [r.label, r.showLabel])).toEqual([['', false]])
+    // The hidden text of the figure (title and description) does not name the ring.
+    const svg = root.querySelector('svg.hb-blob')!
+    expect(svg.querySelector('title')!.textContent).not.toMatch(/0 SD|reference ring/i)
+  })
+
+  it('draws each labelled ring at the position the model gives, and only those four', () => {
+    const est = estimatesOf('full')
+    const model = buildBlob(est)
+    expect(model.rings.filter((r) => r.showLabel)).toHaveLength(4)
+    const root = draw(model)
+    const labels = [...root.querySelectorAll('g.ring-labels text')]
+    expect(labels).toHaveLength(4)
+    // Each label starts where the model says, just outside its own ring.
+    for (const [i, t] of labels.entries()) {
+      const ring = model.rings.filter((r) => r.showLabel)[i]!
+      expect(Number(t.getAttribute('x'))).toBeCloseTo(ring.labelAt[0], 1)
+      expect(Number(t.getAttribute('y'))).toBeCloseTo(ring.labelAt[1], 1)
+    }
   })
 })

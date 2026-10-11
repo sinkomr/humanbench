@@ -76,8 +76,9 @@ describe('layout helpers', () => {
     expect(y2).toBeCloseTo(0, 12)
   })
 
-  it('labels rings in SD units (A12)', () => {
-    expect(RING_THETAS.map(ringLabel)).toEqual(['−2 SD', '−1 SD', '0 SD', '+1 SD', '+2 SD'])
+  it('labels rings in SD units (A12), the reference ring (0) not at all (owner decision 2026-10-11, D3)', () => {
+    expect(RING_THETAS.map(ringLabel)).toEqual(['−2 SD', '−1 SD', '', '+1 SD', '+2 SD'])
+    expect(ringLabel(0)).toBe('')
   })
 
   it('formats signed estimates with a typographic minus and no negative zero', () => {

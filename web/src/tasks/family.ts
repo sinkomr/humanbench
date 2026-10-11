@@ -139,6 +139,10 @@
  *   skipped or timed-out item is the session's record (§13), not a `score()` call.
  * - Items return `{ correct: 0 | 1 }`. Blocks return a {@link BlockScore}: the observation
  *   when the block yields one, otherwise no observation and ≥ 1 reason.
+ * - A block's `score(item, response, context?)` may take a {@link BlockScoreContext}: what the
+ *   session recorded about how the block was given (the RT input type). Only a family that norms by
+ *   it reads it (RT: touch against keyboard/mouse, owner decision 2026-10-11, UX-REVIEW D3); every
+ *   other block family ignores it, and a missing context means "not recorded".
  */
 
 import {
@@ -307,6 +311,21 @@ export interface ItemScore {
   readonly value?: number
 }
 
+/**
+ * What the session recorded about how a block was given, passed to a block's `score()` beside the
+ * response (owner decision 2026-10-11, UX-REVIEW D3: scores always compare like with like, so the
+ * RT family needs the input type to pick its reference). These are the `device_class` and
+ * `input_type` the session stores in the response tuple's `extra` (§8); `save/rescore.ts`
+ * `blockContextOf` reads them back. Absent fields mean "not recorded" (an older save, or a device
+ * that reported none) and score as the family's default.
+ */
+export interface BlockScoreContext {
+  /** e.g. "desktop", "phone". */
+  readonly device_class?: string
+  /** "keyboard", "mouse" or "touch" (§11.6 item 5, §13). */
+  readonly input_type?: string
+}
+
 /** The engine observation a block yields: GRM (span) or Gaussian (RT, coding, reading) (A10). */
 export type BlockObservation = Extract<Observation, { kind: 'grm' } | { kind: 'gaussian' }>
 
@@ -428,8 +447,11 @@ export interface ItemFamily<Spec extends object = JsonObject, Key extends object
 /** A fixed-block family (kind 'block'): run whole by the session (A10, A15), never selected adaptively. */
 export interface BlockFamily<Spec extends object = JsonObject, Key extends object = JsonObject, Resp = unknown> extends FamilyCore<Spec, Key> {
   readonly kind: 'block'
-  /** Throws a {@link MalformedResponseError} on a response that is not of the family's type. */
-  score(item: ItemInstance<Spec, Key>, response: Resp): BlockScore
+  /**
+   * Throws a {@link MalformedResponseError} on a response that is not of the family's type. The
+   * optional context says how the block was given ({@link BlockScoreContext}); the RT family norms by it.
+   */
+  score(item: ItemInstance<Spec, Key>, response: Resp, context?: BlockScoreContext): BlockScore
 }
 
 /** A procedural family (A1, A11): an item family or a block family, told apart by `kind`. */
@@ -530,7 +552,7 @@ export interface ItemFamilyDefinition<Spec extends object, Key extends object, R
 /** Everything a block family implements when using {@link defineFamily}. */
 export interface BlockFamilyDefinition<Spec extends object, Key extends object, Resp> extends DefinitionCore<Spec, Key> {
   readonly kind: 'block'
-  score(item: ItemInstance<Spec, Key>, response: Resp): BlockScore
+  score(item: ItemInstance<Spec, Key>, response: Resp, context?: BlockScoreContext): BlockScore
 }
 
 export type FamilyDefinition<Spec extends object, Key extends object, Resp> =
@@ -628,7 +650,11 @@ export function defineFamily<Spec extends object, Key extends object, Resp>(def:
     return { ...core, kind: 'item', score: (item: ItemInstance<Spec, Key>, response: Resp): ItemScore => itemDef.score(item, response) }
   }
   const blockDef = def
-  return { ...core, kind: 'block', score: (item: ItemInstance<Spec, Key>, response: Resp): BlockScore => blockDef.score(item, response) }
+  return {
+    ...core,
+    kind: 'block',
+    score: (item: ItemInstance<Spec, Key>, response: Resp, context?: BlockScoreContext): BlockScore => blockDef.score(item, response, context),
+  }
 }
 
 const REQUIRED_FIELDS = [

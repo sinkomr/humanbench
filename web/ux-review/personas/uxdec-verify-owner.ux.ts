@@ -179,7 +179,7 @@ test('uxdec-verify D2: the overlap sentence on the share card, the no-peaks note
     const svg = await download(page, () => press(f.touch, button(page, 'Download vector image (SVG)')))
     f.check('card SVG: new sentence present', svg.text.includes(NEW_OVERLAP))
     f.check('card SVG: old sentence absent', !svg.text.includes(OLD_OVERLAP))
-    f.check('D15 A card key: filled above 0 SD, hollow overlaps or below', svg.text.includes('Filled: range above 0 SD. Hollow: range overlaps or is below 0 SD.'))
+    f.check('D15 A card key: filled above the dashed ring, hollow overlaps or below', svg.text.includes('Filled: range above the dashed ring. Hollow: range overlaps or is below.'))
     f.check('D15 A card key: ringed peaks named when the card lists peaks', sim.peaks.length === 0 || svg.text.includes('Ringed: a named peak.'), { peaks: sim.peaks, ringedKey: svg.text.includes('Ringed: a named peak.') })
     f.check('card SVG: "SD means standard deviation." still there', svg.text.includes('SD means standard deviation.'))
     f.check('card SVG: no total area or single score', !/total area|overall score|single score|IQ/.test(svg.text))
