@@ -158,4 +158,23 @@ describe('the median-against-reference line uses the reference of the person\'s 
     expect(f.simpleRtMs).toBe(480)
     expect(f.simpleRtReference).toBe('touch')
   })
+
+  it.each(['keyboard', 'mouse'] as const)('and the other way round: touch first, then %s, reads against the keyboard/mouse reference (the earlier touch block does not stick)', (input) => {
+    const early = rtTuple('simple', 470, 'touch', 'rtref-early2')
+    const late = rtTuple('simple', 300, input, 'rtref-late2')
+    const save = {
+      sessions: [
+        { ...saveOf([early]).sessions[0]!, session_id: 's_RTREF00000000004', started_utc: '2026-10-01T10:00:00Z' },
+        { ...saveOf([late]).sessions[0]!, session_id: 's_RTREF00000000005', started_utc: '2026-10-09T10:00:00Z' },
+      ],
+    } as unknown as SaveFileV1
+    const f = normFacts(save)
+    expect(f.simpleRtMs).toBe(300)
+    expect(f.simpleRtReference).toBe('keyboard_mouse')
+    // The same two blocks in one session, the touch one first: the later block still decides.
+    const both = saveOf([early, late])
+    const g = normFacts(both)
+    expect(g.simpleRtMs).toBe(300)
+    expect(g.simpleRtReference).toBe('keyboard_mouse')
+  })
 })

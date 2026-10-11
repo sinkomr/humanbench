@@ -361,6 +361,59 @@ describe('layout: the profile chart may grow to 48rem, the facet chart does not 
   })
 })
 
+/** A text that names the reference level "0 SD" (and not a figure such as "1.0 SD"). */
+const NAMES_ZERO_SD = /(?<![\d.])[+−]?0 ?SD/
+
+describe('no drawn part of the chart names the reference "0 SD" (D3, owner decision 2026-10-11: the ring and the tick keep their line, not a label)', () => {
+  /** The words an SVG carries: its text, spans, title and description (which the exported files and screen readers see). */
+  const wordsOf = (svg: Element): string[] => [...svg.querySelectorAll('text, tspan, title, desc')].map((n) => n.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+
+  for (const p of SYNTHETIC_PROFILES) {
+    it(`${p.id}: the blob (with its title and description), the facet blob and the bar view's lollipops carry no "0 SD", though the table and captions still may`, () => {
+      const root = render(p)
+      const est = axisEstimates(p.input)
+      const blobs = (): Element[] => [...root.querySelectorAll('svg.hb-blob')]
+      expect(blobs().length).toBeGreaterThan(0)
+      for (const svg of blobs()) {
+        expect(svg.querySelector('desc'), 'the figure has a description').not.toBeNull()
+        expect(wordsOf(svg).filter((w) => NAMES_ZERO_SD.test(w))).toEqual([])
+      }
+      for (const c of new Set(est.map((e) => e.cluster))) {
+        click(button(root, c))
+        for (const svg of blobs()) expect(wordsOf(svg).filter((w) => NAMES_ZERO_SD.test(w)), `drill ${c}`).toEqual([])
+      }
+      click(button(root, 'Bar view'))
+      const lollipops = [...root.querySelectorAll('svg.lollipop')]
+      expect(lollipops.length).toBeGreaterThan(0)
+      for (const svg of lollipops) {
+        // A lollipop is drawn from lines, a dot and an arrow: no text at all, and the zero tick has no label or title.
+        expect(svg.querySelectorAll('text, tspan, title, desc')).toHaveLength(0)
+        expect(svg.querySelector('.zero')!.getAttribute('aria-label')).toBeNull()
+      }
+    })
+  }
+
+  it('the check is not vacuous: it sees a "0 SD" text added to the figure, its description or a lollipop, and not "1.0 SD"', () => {
+    const p = syntheticProfile('m1')!
+    const root = render(p)
+    const svg = root.querySelector('svg.hb-blob')!
+    const mk = (tag: string, text: string): SVGElement => {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', tag)
+      el.textContent = text
+      return el
+    }
+    expect(wordsOf(svg).filter((w) => NAMES_ZERO_SD.test(w))).toEqual([])
+    svg.appendChild(mk('text', '0 SD'))
+    svg.querySelector('desc')!.textContent += ' The dashed ring is 0 SD.'
+    svg.appendChild(mk('text', 'Stands out by about 1.0 SD'))
+    expect(wordsOf(svg).filter((w) => NAMES_ZERO_SD.test(w))).toHaveLength(2)
+    click(button(root, 'Bar view'))
+    const lolli = root.querySelector('svg.lollipop')!
+    lolli.appendChild(mk('text', '0 SD'))
+    expect(lolli.querySelectorAll('text, tspan, title, desc')).toHaveLength(1)
+  })
+})
+
 describe('no area, total or single score anywhere (§9.5 a, CLAUDE.md blob rule, A12)', () => {
   for (const p of SYNTHETIC_PROFILES) {
     it(`${p.id}: every view and drill-down shows only per-skill numbers and no aggregate words`, () => {
