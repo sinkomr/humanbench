@@ -52,7 +52,11 @@ function click(el: Element | null | undefined): void {
 const button = (root: HTMLElement, text: string): HTMLButtonElement | undefined => [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)
 
 /** Words that would present a sum, a size of the shape, one number for a person, or a norm (§9.5 a, A12). */
-const AGGREGATE_WORDS = /\b(areas?|totals?|overall|sum(?:med|s)?|composite|aggregate|average|mean|combined|g[- ]factor|general ability|percentiles?|rank(?:ed|ing)?|IQ)\b/i
+/** The reference is called "the mean" (owner decision 2026-10-11); only that phrase is allowed, not a mean of the skills. */
+const REFERENCE_MEAN = /\bthe[\s\u00a0]mean\b(?!\s+(?:score|of)\b)/gi
+const AGGREGATE_RE = /\b(areas?|totals?|overall|sum(?:med|s)?|composite|aggregate|average|mean|combined|g[- ]factor|general ability|percentiles?|rank(?:ed|ing)?|IQ)\b/i
+const AGGREGATE_WORDS = AGGREGATE_RE
+const withoutReference = (t: string): string => t.replace(REFERENCE_MEAN, '')
 
 /** Every number a reader can see must be one of these: per-spoke values, ring labels, fixed copy numbers. */
 function allowedNumbers(rows: readonly (SpokeEstimate & { nItems?: number })[], facetCount = 0): Set<string> {
@@ -136,9 +140,9 @@ describe('ProfileView structure (§9, A15)', () => {
     for (const e of est) {
       const row = root.querySelector(`tr[data-row="${e.id}"]`)!
       expect(row.classList.contains('muted')).toBe(e.muted)
-      // "0 SD" is held together by non-breaking spaces (UX-043); the words are the same.
-      expect(row.textContent!.replace(/\u00a0/g, ' ')).toContain(e.muted ? 'Overlaps 0 SD' : e.relation === 'above' ? 'Above 0 SD' : 'Below 0 SD')
-      expect(row.querySelector('td.relation')!.textContent).toMatch(/\u00a0\d\u00a0SD$/)
+      // "the mean" is held together by a non-breaking space (UX-043); the words are the same.
+      expect(row.textContent!.replace(/\u00a0/g, ' ')).toContain(e.muted ? 'Overlaps the mean' : e.relation === 'above' ? 'Above the mean' : 'Below the mean')
+      expect(row.querySelector('td.relation')!.textContent).toMatch(/the\u00a0mean$/)
     }
   })
 
@@ -430,8 +434,8 @@ describe('no area, total or single score anywhere (§9.5 a, CLAUDE.md blob rule,
         const facetRows = selected ? clusterFacets(p.input.score, p.facetObservations, selected as (typeof CLUSTERS)[number], { catalog: p.catalog, unmeasured: unmeasuredReasons(est) }) : []
         const allowed = allowedNumbers([...est, ...facetRows], facetRows.length)
         const { text, attrs } = textAndAttributes(root)
-        expect(text.match(AGGREGATE_WORDS), `${name}: text`).toBeNull()
-        for (const a of attrs) expect(a.match(AGGREGATE_WORDS), `${name}: ${a}`).toBeNull()
+        expect(withoutReference(text).match(AGGREGATE_WORDS), `${name}: text`).toBeNull()
+        for (const a of attrs) expect(withoutReference(a).match(AGGREGATE_WORDS), `${name}: ${a}`).toBeNull()
         const stray = numbersIn(text.replace(/−/g, '-')).filter((n) => !allowed.has(n))
         expect(stray, `${name}: numbers that are not a per-skill value`).toEqual([])
       }
@@ -445,9 +449,9 @@ describe('no area, total or single score anywhere (§9.5 a, CLAUDE.md blob rule,
     extra.textContent = 'Overall profile 7.77'
     root.querySelector('section.hb-profile')!.appendChild(extra)
     const { text } = textAndAttributes(root)
-    expect(text.match(AGGREGATE_WORDS)).not.toBeNull()
+    expect(withoutReference(text).match(AGGREGATE_WORDS)).not.toBeNull()
     expect(numbersIn(text).filter((n) => !allowedNumbers(axisEstimates(p.input)).has(n))).toEqual(['7.77'])
-    for (const w of ['Blob area', 'Total: 3', 'your average', 'the mean skill', '84th percentile', 'combined result']) expect(w.match(AGGREGATE_WORDS), w).not.toBeNull()
+    for (const w of ['Blob area', 'Total: 3', 'your average', 'the mean of skills', '84th percentile', 'combined result']) expect(withoutReference(w).match(AGGREGATE_WORDS), w).not.toBeNull()
   })
 })
 

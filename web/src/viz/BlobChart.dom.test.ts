@@ -71,7 +71,7 @@ describe('a not-measured spoke is a gap with an × on the 0 SD ring (D13 A)', ()
   })
 
   it('says in the caption that the line breaks there and the × is not an estimate', () => {
-    expect(STUB_CAPTION).toBe('Dashed grey spokes are skills that were not measured. The line breaks there, and a small × on the 0 SD ring marks the gap; it is not an estimate.')
+    expect(STUB_CAPTION).toBe('Dashed grey spokes are skills that were not measured. The line breaks there, and a small × at the mean marks the gap; it is not an estimate.')
     expect(STUB_CAPTION).not.toMatch(/centre/)
   })
 })

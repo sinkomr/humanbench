@@ -268,7 +268,7 @@ describe('Emotion Reading and the card (R-5.6.4)', () => {
     expect(checkbox(m.c, 'EMO')).toBeNull()
     const note = m.c.querySelector('[data-emo-rule][data-withheld="EMO"]')!
     expect(note.textContent).toContain('Emotion Reading (text scenarios)')
-    expect(note.textContent).toContain('Only put on a card when it is at or above the 0 SD ring')
+    expect(note.textContent).toContain('Only put on a card when it is at or above the mean')
     expect(svgOf(m.c)).not.toMatch(/Emotion|scenarios/)
     expect(preview(m.c)!.getAttribute('alt')).not.toMatch(/Emotion/)
     // "Show all" and "Hide all" cannot put it on.

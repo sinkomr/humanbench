@@ -464,7 +464,7 @@ describe('only known words are on the card; notes for an AI never are (proposal 
     for (const id of profiles) {
       const card = buildCard({ estimates: estimatesOf(id), peaks: peaksOf(id), sessions: 1 })
       const text = textsOf(card.svg).join('\n')
-      expect(text).not.toMatch(/\b(total|overall|average|mean|score|scores|rank|percentile|area|iq)\b/i)
+      expect(text.replace(/\bthe mean\b(?!\s+(?:score|of)\b)/gi, '')).not.toMatch(/\b(total|overall|average|mean|score|scores|rank|percentile|area|iq)\b/i)
       expect(card.svg).not.toMatch(/data-|<a\b|href=|<script|<image|<foreignObject/i)
     }
   })
@@ -639,7 +639,7 @@ describe('the card explains its marks and its scale (UX-038, §9.9, A12)', () =>
   const words = textsOf(card.svg).join(' ')
 
   it('has a one-line key for filled, hollow and ringed marks, and spells out SD beside the ring note (D15 A)', () => {
-    expect(CARD_KEY).toBe('Filled: range above the dashed ring. Hollow: range overlaps or is below.')
+    expect(CARD_KEY).toBe('Filled: range above the mean. Hollow: range overlaps or is below the mean.')
     expect(CARD_KEY_PEAKS).toBe('Ringed: a named peak.')
     expect(CARD_SD_MEANING).toBe('SD means standard deviation.')
     expect(words).toContain(CARD_KEY)
@@ -823,7 +823,7 @@ describe('the reference ring on the card and in the exported SVG: kept, with no 
     // The scale label "0 SD" is gone from the picture: no text of its own, and no ring-label of the reference ring.
     expect(texts.filter((x) => /^[+−]?0 ?SD$/.test(x))).toEqual([])
     // Nor does any other text of the picture name the ring "0 SD" (the key, the title and description that
-    // the exported SVG carries): the key says "the dashed ring". A figure like "1.0 SD" is not a mention.
+    // the exported SVG carries): the key says "the mean". A figure like "1.0 SD" is not a mention.
     expect(texts.filter((x) => NAMES_ZERO_SD.test(x))).toEqual([])
     expect(svg).not.toContain('class="ring-label reference"')
     expect(svg).not.toContain('.ring-label.reference')
@@ -838,7 +838,7 @@ describe('the reference ring on the card and in the exported SVG: kept, with no 
         expect(textsOf(svg).filter((x) => NAMES_ZERO_SD.test(x)), `${id} ${theme}`).toEqual([])
         expect(svg).toContain('<circle class="ring reference"')
         // The key tells which ring the filled and hollow marks are measured against, in words the picture can show.
-        expect(textsOf(svg).join(' ')).toContain('the dashed ring')
+        expect(textsOf(svg).join(' ')).toContain('the mean')
       }
     }
   })

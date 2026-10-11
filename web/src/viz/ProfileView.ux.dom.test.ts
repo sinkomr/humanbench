@@ -132,7 +132,7 @@ describe('chart and table copy means one thing (UX-039)', () => {
 
   it('says "range" for the 90% quantity everywhere, and SD only as the scale unit', () => {
     const root = render(m1)
-    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Skill', 'Cluster', TABLE_ESTIMATE, TABLE_INTERVAL, 'Compared with 0 SD'])
+    expect([...root.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['Skill', 'Cluster', TABLE_ESTIMATE, TABLE_INTERVAL, 'Compared with the mean'])
     expect(TABLE_ESTIMATE).toBe('Estimate (SD units)')
     expect(TABLE_INTERVAL).toBe('90% range (SD)')
     expect(TABLE_CAPTION).toBe('Estimates by skill, in standard-deviation (SD) units on a provisional scale, each ± its uncertainty, with 90% ranges.')
@@ -155,12 +155,12 @@ describe('chart and table copy means one thing (UX-039)', () => {
     expect(paragraphs[2]).toBe(UNCERTAINTY_CAPTION)
     expect(paragraphs).toContain(TIER_LEGEND)
     // A12 content kept word for word.
-    expect(RING_CAPTION).toBe('Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability.')
+    expect(RING_CAPTION).toBe('Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is the mean. The centre is −3 SD, not zero ability.')
   })
 
   it('explains the band and the marks in plain words, with no research jargon', () => {
     expect(UNCERTAINTY_CAPTION).toBe(
-      'The solid line is the most likely profile. The light band shows each estimate ± its uncertainty. The soft edge fades out across each 90% range: the darker the shading, the more likely that value. The thin lines through the markers show the 90% ranges; where one crosses 0 SD, the marker is hollow and the line turns grey.',
+      'The solid line is the most likely profile. The light band shows each estimate ± its uncertainty. The soft edge fades out across each 90% range: the darker the shading, the more likely that value. The thin lines through the markers show the 90% ranges; where one crosses the mean, the marker is hollow and the line turns grey.',
     )
     const all = [UNCERTAINTY_CAPTION, READING_CAPTION, TIER_LEGEND, HATCH_CAPTION, BARS_NOTE].join(' ')
     expect(all).not.toMatch(/consensus|norms|whisker|interval|plausible/i)

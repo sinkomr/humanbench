@@ -193,7 +193,8 @@ test.describe('blob demo route (M1.16)', () => {
       for (const view of ['Blob view', 'Bar view']) {
         await page.getByRole('button', { name: view }).click()
         const text = await page.locator('body').innerText()
-        expect(text, `${profile} ${view}`).not.toMatch(/\b(areas?|totals?|overall|sum|composite|aggregate|average|mean|combined|percentiles?|IQ score)\b/i)
+        // "the mean" is the reference (owner decision 2026-10-11); a mean of the skills would still fail.
+        expect(text.replace(/\bthe[\s\u00a0]mean\b(?!\s+(?:score|of)\b)/gi, ''), `${profile} ${view}`).not.toMatch(/\b(areas?|totals?|overall|sum|composite|aggregate|average|mean|combined|percentiles?|IQ score)\b/i)
         expect(text).toContain('provisional')
         expect(text).toContain(DISCLAIMER)
         const html = (await page.content()).replace(/\/assets\/[^"'\s)]+/g, '/assets/')

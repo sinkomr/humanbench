@@ -151,7 +151,7 @@ test.describe('a not-measured spoke is a gap with an × on the 0 SD ring (D13 A)
     // Three runs of measured neighbours in the first-session profile, none closed.
     expect(m1.crispRuns).toBe(3)
     expect(m1.crispClosed).toBe(false)
-    await expect(page.locator('figcaption')).toContainText('The line breaks there, and a small × on the 0 SD ring marks the gap; it is not an estimate.')
+    await expect(page.locator('figcaption')).toContainText('The line breaks there, and a small × at the mean marks the gap; it is not an estimate.')
     // The × is drawn in the stub colour over a halo in the page background.
     const colours = await page.evaluate<{ gap: string; halo: string; stub: string; bg: string }>(`(() => {
       const g = document.querySelector('figure svg.hb-blob g.mark.unmeasured')
@@ -283,7 +283,7 @@ test.describe('the share card stresses peaks, never lows (D15 A)', () => {
       })()`)
       expect(facts.rings, theme).toEqual(peaks.map((p) => String(shown.findIndex((e) => e.code === p.code))).sort())
       expect(facts.bold, theme).toBe(peaks.length)
-      // The credible low is hollow (filled with the card's background), and every filled mark is a range above 0 SD.
+      // The credible low is hollow (filled with the card's background), and every filled mark is a range above the mean.
       expect(facts.lowMuted, theme).toBe(true)
       expect(facts.lowFill, theme).toBe(facts.bg)
       expect(facts.strong, theme).toBe(shown.filter((e) => e.relation === 'above').length)

@@ -61,8 +61,8 @@
     const base = end === 'low' ? tip + 9 : tip - 9
     return `M${f(tip)},8L${f(base)},2.5L${f(base)},13.5Z`
   }
-  /** "Overlaps 0 SD" with "0 SD" kept together on a line (a non-breaking space), so a narrow cell breaks before it. */
-  const keepUnit = (s: string): string => s.replace(/ (\d+) SD$/, '\u00a0$1\u00a0SD')
+  /** "Overlaps the mean" with "the mean" kept together on a line (a non-breaking space), so a narrow cell breaks before it. */
+  const keepUnit = (s: string): string => s.replace(/ the mean$/, ' the\u00a0mean')
   /** Whether the drawn part of a range has any length (a range wholly beyond the end is not drawn). */
   const drawn = (lo: number, hi: number): boolean => x(hi) - x(lo) >= 0.5
 </script>
