@@ -37,7 +37,7 @@ export const PEAKS_NONE =
   'No skill stands out clearly from your others yet. That is common after one session: the ranges are still wide.'
 export const PEAKS_TOO_FEW = 'Too few skills were measured to compare them with each other.'
 export const PEAKS_NOTE =
-  'Peaks compare each skill with your profile as a whole. The hollow and filled markers in the chart compare each skill with 0 SD instead, so the two can differ.'
+  'Peaks compare each skill with your profile as a whole. The hollow and filled markers in the chart compare each skill with the mean instead, so the two can differ.'
 /** "stands out by about 0.9 SD from your profile as a whole (90% range +0.4 to +1.4 SD)" */
 export const peakDetail = (contrast: string, lo: string, hi: string): string =>
   `stands out by about ${contrast} SD from your profile as a whole (90% range ${lo} to ${hi} SD)`
@@ -93,7 +93,7 @@ export const SHARE_HIDE_ALL = 'Hide all'
  * R-5.6.4: said about Emotion Reading whenever it was measured, whatever its estimate: a card carries
  * it only at or above the 0 SD ring (so the note does not say where it is).
  */
-export const SHARE_EMO_RULE = 'Only put on a card when it is at or above the 0 SD ring. Scores here depend a lot on vocabulary, culture and familiarity with tests.'
+export const SHARE_EMO_RULE = 'Only put on a card when it is at or above the mean. Scores here depend a lot on vocabulary, culture and familiarity with tests.'
 export const SHARE_COLOURS_LEGEND = 'Card colours'
 export const SHARE_LIGHT = 'Light'
 export const SHARE_DARK = 'Dark'

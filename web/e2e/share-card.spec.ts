@@ -77,7 +77,7 @@ test.describe('the card and its toggles', () => {
     expect(texts.filter((t) => NAMES_ZERO_SD.test(t))).toEqual([])
     expect(texts.filter((t) => /^[+−]?\d SD$/.test(t))).toEqual(['−2 SD', '+2 SD'])
     // The key tells which ring the marks are measured against, in words the picture can show.
-    expect(texts.join(' ')).toContain('Filled: range above the dashed ring. Hollow: range overlaps or is below.')
+    expect(texts.join(' ')).toContain('Filled: range above the mean. Hollow: range overlaps or is below the mean.')
   })
 
   test('unticking a skill takes its name, spoke and marker off the picture; ticking it puts it back', async ({ page }) => {

@@ -23,20 +23,20 @@ export const BLOB_DESCRIPTION =
 
 /** §9.1 + A12: ring units, "provisional", and the centre. */
 export const RING_CAPTION =
-  'Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is 0 SD. The centre is −3 SD, not zero ability.'
+  'Rings are standard-deviation (SD) units on a provisional scale. The dashed ring is the mean. The centre is −3 SD, not zero ability.'
 
 /** In-chart ring note (A12, §9.1), so the SVG alone (M1.18 export) still says it. */
 export const RING_NOTE: readonly string[] = ['Rings: SD units, provisional', 'Centre: \u22123 SD']
 
 /** §9.3: fuzz + band; §9.5: muting (markers and the line). */
 export const UNCERTAINTY_CAPTION =
-  'The solid line is the most likely profile. The light band shows each estimate ± its uncertainty. The soft edge fades out across each 90% range: the darker the shading, the more likely that value. The thin lines through the markers show the 90% ranges; where one crosses 0 SD, the marker is hollow and the line turns grey.'
+  'The solid line is the most likely profile. The light band shows each estimate ± its uncertainty. The soft edge fades out across each 90% range: the darker the shading, the more likely that value. The thin lines through the markers show the 90% ranges; where one crosses the mean, the marker is hollow and the line turns grey.'
 
 /**
  * §9.7, A15, with the gap of UX review D13 A (a provisional default): the line breaks at a skill that
  * was not measured, and the × it leaves on the 0 SD ring is a marker, not an estimate.
  */
-export const STUB_CAPTION = 'Dashed grey spokes are skills that were not measured. The line breaks there, and a small × on the 0 SD ring marks the gap; it is not an estimate.'
+export const STUB_CAPTION = 'Dashed grey spokes are skills that were not measured. The line breaks there, and a small × at the mean marks the gap; it is not an estimate.'
 
 /**
  * D13 B (a provisional default): on a narrow screen with many skills not measured, their spokes carry
@@ -71,10 +71,10 @@ export const TABLE_SKILL = 'Skill'
 export const TABLE_CLUSTER = 'Cluster'
 export const TABLE_ESTIMATE = 'Estimate (SD units)'
 export const TABLE_INTERVAL = '90% range (SD)'
-export const TABLE_RELATION = 'Compared with 0 SD'
+export const TABLE_RELATION = 'Compared with the mean'
 
 /** Bar view note: how to read a lollipop. */
-export const BARS_NOTE = 'Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick 0 SD.'
+export const BARS_NOTE = 'Each line runs from −3 SD to +3 SD. The dot is the estimate, the bar its 90% range, and the dashed tick the mean.'
 
 /** UX-037: the word under a spoke whose estimate is beyond the drawn scale, and what its arrow means. */
 export const OFF_SCALE_LABEL = 'off scale'
@@ -88,9 +88,9 @@ export const OFF_SCALE_CELL = '(off scale)'
 export const LARGE_TEXT_HINT = 'Large text: the bar view shows the same data in text.'
 
 export const RELATION_TEXT: Readonly<Record<Relation, string>> = Object.freeze({
-  above: 'Above 0 SD',
-  below: 'Below 0 SD',
-  overlaps: 'Overlaps 0 SD',
+  above: 'Above the mean',
+  below: 'Below the mean',
+  overlaps: 'Overlaps the mean',
 })
 
 /** What a count counts, in the person's words: a scored question, or a timed task (a block). */

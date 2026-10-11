@@ -169,7 +169,7 @@ describe('distinctive peaks', () => {
       expect(Number(m![2])).toBeGreaterThanOrEqual(0)
     }
     expect(peaks.textContent).toContain('It is not a comparison with other people')
-    expect(peaks.textContent).not.toMatch(/\b(total|overall|average|mean|score)\b/i)
+    expect((peaks.textContent ?? '').replace(/\bthe mean\b(?!\s+(?:score|of)\b)/gi, '')).not.toMatch(/\b(total|overall|average|mean|score)\b/i)
   })
 
   it('says so when a session measured only one part', () => {

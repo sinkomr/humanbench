@@ -404,7 +404,7 @@ test.describe('wording, worked examples and markers (UX-034, UX-035, UX-036)', (
     await expect(section(page, 'retest').locator('[data-spacing]')).toContainText('press Start and load your save file on the "Ready when you are" screen')
     await expect(section(page, 'retest')).not.toContainText('sharpen')
     await expect(section(page, 'retest')).toContainText('Pick the parts you want measured more precisely.')
-    await expect(section(page, 'peaks')).toContainText('The hollow and filled markers in the chart compare each skill with 0 SD instead')
+    await expect(section(page, 'peaks')).toContainText('The hollow and filled markers in the chart compare each skill with the mean instead')
     await button(page, 'Download save file').click()
     await expect(page.locator('[data-talk-link]')).toHaveText('Thinking of asking an AI about your results? Read this first.')
     await expect(panel(page)).toContainText('twice the card size, for sharp screens')

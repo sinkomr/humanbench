@@ -399,7 +399,7 @@ test.describe('about these numbers (§7.3, §7.1)', () => {
       // The same axis of the same table for both input types: the estimate is 0.00 and the range overlaps 0 SD.
       const row = page.locator('table.hb-bars tbody tr[data-row="RT"]')
       await expect(row.locator('td.estimate')).toHaveText(/^0\.00\u00a0±/)
-      await expect(row.locator('td.relation')).toHaveText(/^Overlaps\u00a00\u00a0SD$/)
+      await expect(row.locator('td.relation')).toHaveText(/^Overlaps the\u00a0mean$/)
       await expectNoSeriousAxe(page)
     })
   }
