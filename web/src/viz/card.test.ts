@@ -421,7 +421,7 @@ describe('only known words are on the card; notes for an AI never are (proposal 
     const sessions = 3
     const card = buildCard({ estimates: est, peaks: peaksOf(id), sessions })
     const shown = est.filter((e) => card.shown.includes(e.code))
-    const allowed = new Set<string>([...RING_THETAS.map(ringLabel), ...RING_NOTE, CARD_TITLE, 'off scale'])
+    const allowed = new Set<string>([...RING_THETAS.map(ringLabel).filter((x) => x !== ''), ...RING_NOTE, CARD_TITLE, 'off scale'])
     for (const e of shown) for (const line of [...e.shortLabel, e.compactLabel!]) [line, `${line} ${e.glyph}`].forEach((x) => allowed.add(x))
     const column = new Set(card.texts.map((t) => t.text))
     const strays: string[] = []
@@ -692,9 +692,9 @@ describe('the card explains its marks and its scale (UX-038, §9.9, A12)', () =>
     expect(words).not.toContain('the other skills')
   })
 
-  it('labels only −2, 0 and +2 SD on the rings, at the chart text size', () => {
+  it('labels only −2 and +2 SD on the rings, at the chart text size (the reference ring has no label, D3 2026-10-11)', () => {
     const rings = textsOf(card.svg).filter((x) => /^[+−]?\d SD$/.test(x))
-    expect(rings).toEqual(['−2 SD', '0 SD', '+2 SD'])
+    expect(rings).toEqual(['−2 SD', '+2 SD'])
   })
 
   it('draws the ring labels before the band, curve, whiskers and markers, so no halo erases the data (UX-045)', () => {
@@ -802,7 +802,7 @@ describe('an estimate beyond the scale is marked on the card too (UX-037)', () =
   })
 })
 
-describe('the 0 SD reference ring on the card and in the exported SVG (owner decision 2026-10-06, D3)', () => {
+describe('the reference ring on the card and in the exported SVG: kept, with no "0 SD" label (owner decisions 2026-10-06 and 2026-10-11, D3)', () => {
   it.each(['light', 'dark'] as const)('is dashed and slightly heavier than the other rings in the %s scheme, with no label of its own', (theme) => {
     const t = THEMES[theme]
     const { svg } = buildCard({ estimates: FULL, peaks: FULL_PEAKS, sessions: 2, theme })
@@ -814,7 +814,21 @@ describe('the 0 SD reference ring on the card and in the exported SVG (owner dec
     // No text, title or caption inside the ring element, and the texts are the same known set as before.
     expect(svg).toMatch(/<circle class="ring reference"[^>]*\/>/)
     const texts = textsOf(svg)
-    expect(texts.filter((x) => x === ringLabel(0)).length).toBeLessThanOrEqual(1) // the scale label the card already had
+    expect(ringLabel(0)).toBe('')
+    expect(texts.filter((x) => x === '')).toEqual([])
     expect(texts.filter((x) => /reference|typical|average|norm\b|middle/i.test(x))).toEqual([])
+    // The scale label "0 SD" is gone from the picture: no text of its own, and no ring-label of the reference ring.
+    expect(texts.filter((x) => /^[+−]?0 ?SD$/.test(x))).toEqual([])
+    expect(svg).not.toContain('class="ring-label reference"')
+    expect(svg).not.toContain('.ring-label.reference')
+    // The other labels are unchanged: −2 and +2 SD on the card, at the chart text size.
+    expect(texts.filter((x) => /^[+−]?\d SD$/.test(x))).toEqual(['−2 SD', '+2 SD'])
+  })
+
+  it('draws the same set of rings with and without the label: the reference ring is still the middle circle', () => {
+    const { svg } = buildCard({ estimates: FULL, peaks: FULL_PEAKS, sessions: 2, theme: 'light' })
+    const radii = [...svg.matchAll(/<circle class="ring( reference)?" r="([0-9.]+)"\/>/g)].map((m) => [m[1] === ' reference', Number(m[2])] as const)
+    expect(radii.map((r) => r[0])).toEqual([false, false, true, false, false])
+    expect(radii[2]![1]).toBeCloseTo((radii[1]![1] + radii[3]![1]) / 2, 5)
   })
 })

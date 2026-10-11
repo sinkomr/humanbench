@@ -4,7 +4,7 @@
  * `BlobChart.svelte` only maps this model to SVG elements.
  *
  * - Radius linear in θ over [−3, 3] (§9.1, `geometry.ts`); rings at −2 … +2 SD, "provisional"
- *   (A12); the θ = 0 ring dashed.
+ *   (A12); the θ = 0 ring dashed and heavier, and without a label (owner decision 2026-10-11, D3).
  * - Crisp posterior curve + the ±1 SD band + the fuzz (§9.3): 20 nested closed curves at
  *   θ_k + z·SD_k for z spread evenly over ±1.645, each filling the band toward the mean with
  *   opacity ∝ the normal density φ(z) ({@link FUZZ_Z}, {@link fuzzOpacity}); every curve is chosen
@@ -97,13 +97,15 @@ export function fuzzOpacity(z: number): number {
 export interface RingView {
   readonly theta: number
   readonly r: number
+  /** The ring's label in SD units; empty for the reference ring, which has none (D3, 2026-10-11). */
   readonly label: string
-  /** θ = 0: dashed reference ring (§9.1). */
+  /** θ = 0: dashed, slightly heavier reference ring (§9.1), drawn without a label. */
   readonly reference: boolean
   readonly labelAt: Point
   /**
-   * Whether this ring is labelled: every ring, or every second one (−2, 0, +2 SD) when the text is
-   * too large for one ring spacing (narrow screens), so ring labels never overlap.
+   * Whether this ring is labelled: every ring but the reference ring, or every second one (−2 and
+   * +2 SD; the reference ring in between is never labelled) when the text is too large for one ring
+   * spacing (narrow screens), so ring labels never overlap.
    */
   readonly showLabel: boolean
 }
@@ -555,7 +557,8 @@ function textLayout(spokes: readonly SpokeEstimate[], R: number, layout: BlobLay
   const ringRise = ringSpacing(R) * Math.abs(Math.cos(ringAngle))
   const ringStep: 1 | 2 = minRingStep === 2 || (GLYPH_ASCENT_EM + GLYPH_DESCENT_EM) * sizes.small + space > ringRise ? 2 : 1
   const r = radiusScale(R)
-  const ringBoxes: Box[] = RING_THETAS.filter((t) => t % ringStep === 0).map((t) => {
+  // The reference ring has no label (`ringLabel(0)` is empty, D3), so it is no obstacle either.
+  const ringBoxes: Box[] = RING_THETAS.filter((t) => ringLabel(t) !== '' && t % ringStep === 0).map((t) => {
     const [x, y] = ringLabelAt(r(t), ringAngle, sizes.small)
     return { x0: x, x1: x + measure(ringLabel(t), sizes.small), y0: y - GLYPH_ASCENT_EM * sizes.small, y1: y + GLYPH_DESCENT_EM * sizes.small }
   })
@@ -930,7 +933,7 @@ export function buildBlob(spokes: readonly SpokeEstimate[], opts: BlobOptions = 
     label: ringLabel(t),
     reference: t === 0,
     labelAt: ringLabelAt(r(t), text.ringAngle, text.sizes.small),
-    showLabel: t % text.ringStep === 0,
+    showLabel: ringLabel(t) !== '' && t % text.ringStep === 0,
   }))
 
   const viewBox = text.viewBox.map((v) => fmt(v)).join(' ')

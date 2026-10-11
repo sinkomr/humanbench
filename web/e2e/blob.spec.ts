@@ -144,6 +144,26 @@ test.describe('blob demo route (M1.16)', () => {
     await expect(page.locator('svg.lollipop').first()).toBeVisible()
   })
 
+  test('the dashed reference ring is drawn with no "0 SD" label; the other rings keep theirs (D3, owner decision 2026-10-11)', async ({ page }) => {
+    await open(page, 'full')
+    for (const profile of ['full', 'm1']) {
+      // Switching profile remounts the view (blob view again); a hash-only goto would not reload.
+      await page.locator(`button[data-profile="${profile}"]`).click()
+      await expect(page.locator(`button[data-profile="${profile}"]`)).toHaveAttribute('aria-pressed', 'true')
+      const blob = page.getByRole('img', { name: 'Skill profile blob' })
+      await expect(blob.locator('circle.ring')).toHaveCount(5)
+      await expect(blob.locator('circle.ring.reference')).toHaveCount(1)
+      const labels = await blob.locator('text.ring-label').allTextContents()
+      expect(labels, profile).toContain('−2 SD')
+      expect(labels, profile).toContain('+2 SD')
+      expect(labels.filter((t) => /^[+−]?0\s?SD$/.test(t.trim())), profile).toEqual([])
+      // The chart's own text never names the ring ("0 SD", "dashed", "reference"); the table and captions are unchanged.
+      const chartText = (await blob.locator('text').allTextContents()).join(' ')
+      expect(chartText).not.toMatch(/(^|\s)0\s?SD|reference|dashed/i)
+      expect(await blob.locator('text.ring-label.reference').count()).toBe(0)
+    }
+  })
+
   test('drill-down shows facet estimates only at ≥ 5 questions (A12), with plain names (UX-040, UX-041)', async ({ page }) => {
     await open(page, 'm1')
     const btn = page.getByRole('button', { name: 'Quantitative', exact: true })

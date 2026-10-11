@@ -41,15 +41,20 @@ export interface SimulatedSave {
   readonly measured: readonly string[]
 }
 
-const cache = new Map<number, SimulatedSave>()
+const cache = new Map<string, SimulatedSave>()
 
-/** Run the simulation once per worker (a few seconds). */
-export function simulatedSave(sessions: 1 | 2 = 1): SimulatedSave {
-  const hit = cache.get(sessions)
+/**
+ * Run the simulation once per worker (a few seconds). `rt` gives the reaction-time blocks that input
+ * type and a median exactly at its own reference (`scripts/e2e-save.ts --rt`).
+ */
+export function simulatedSave(sessions: 1 | 2 = 1, rt?: 'touch' | 'keyboard'): SimulatedSave {
+  const key = `${sessions}-${rt ?? 'default'}`
+  const hit = cache.get(key)
   if (hit !== undefined) return hit
-  const out = execFileSync('npx', ['tsx', 'scripts/e2e-save.ts', '--sessions', String(sessions)], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  const args = ['tsx', 'scripts/e2e-save.ts', '--sessions', String(sessions), ...(rt === undefined ? [] : ['--rt', rt])]
+  const out = execFileSync('npx', args, { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
   const parsed = JSON.parse(out) as SimulatedSave
-  cache.set(sessions, parsed)
+  cache.set(key, parsed)
   return parsed
 }
 
@@ -61,8 +66,8 @@ export async function loadSave(page: Page, save: unknown): Promise<void> {
 }
 
 /** Load a simulated earlier session and finish at once: the results of that person. */
-export async function toResults(page: Page, sessions: 1 | 2 = 1): Promise<SimulatedSave> {
-  const sim = simulatedSave(sessions)
+export async function toResults(page: Page, sessions: 1 | 2 = 1, rt?: 'touch' | 'keyboard'): Promise<SimulatedSave> {
+  const sim = simulatedSave(sessions, rt)
   await toReady(page)
   await loadSave(page, sim.save)
   await button(page, 'Begin').click()

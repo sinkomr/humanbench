@@ -9,7 +9,9 @@
  *   4–5 backwards [EST†]);
  * - simple reaction time: the median of the valid trials, in ms. Web times carry tens of ms of
  *   device lag, so the reference shown is web-relative only (§7.3): the provisional web median of
- *   the RT norm table (`rt/prior.ts`, A10), never a lab figure.
+ *   the RT norm table (`rt/prior.ts`, A10), never a lab figure. Always like with like (owner
+ *   decision 2026-10-11, UX-REVIEW D3): the reference is the one for the input type the block was
+ *   given with, touch or keyboard/mouse, the same rule that picks the norm of its SD score.
  * Percentiles "among HumanBench takers" are NOT here: A12 allows them only after M4 linking with
  * N ≥ 500, and the wording is kept hidden until then (`TAKER_COMPARISON`).
  *
@@ -21,14 +23,14 @@
 import { axisName } from '../axis-names'
 import { AXES, type AxisCode } from '../engine/axes'
 import { orderSessions } from '../engine/retest'
-import { blockResponseOf } from '../save/rescore'
+import { blockContextOf, blockResponseOf } from '../save/rescore'
 import type { SaveFileV1 } from '../save/types'
 import { MalformedResponseError } from '../tasks/family'
 import { parseItemId } from '../tasks/ids'
 import { readingBlockObservation } from '../tasks/reading/score'
 import type { ReadingKey, ReadingResponse, ReadingSpec } from '../tasks/reading/types'
 import { getFamily, resolveItem } from '../tasks/registry'
-import { RT_WEB_NORMS } from '../tasks/rt/prior'
+import { RT_TOUCH_NORMS, RT_WEB_NORMS, rtNormsOf, rtReferenceOf, type RtReference } from '../tasks/rt/prior'
 import { median, scoreRtResponse } from '../tasks/rt/score'
 import type { RtKey, RtResponse } from '../tasks/rt/types'
 import { runBlock } from '../tasks/span/score'
@@ -39,8 +41,15 @@ import { skippedIn } from './results'
 /** A12: percentiles "among HumanBench takers" wait for M4 linking and N ≥ 500. Hidden in M1. */
 export const TAKER_COMPARISON = Object.freeze({ enabled: false, minTakers: 500 })
 
-/** The provisional web reference for a simple RT, in ms (§7.3 web-relative; `rt/prior.ts`). */
+/** The provisional web reference for a simple RT with a keyboard or mouse, in ms (§7.3 web-relative; `rt/prior.ts`). */
 export const WEB_SIMPLE_RT_MEDIAN_MS = RT_WEB_NORMS.simple.median_rt_ms
+/** The provisional web reference for a simple RT on a touch screen, in ms (owner decision 2026-10-06, D3; `rt/prior.ts`). */
+export const TOUCH_SIMPLE_RT_MEDIAN_MS = RT_TOUCH_NORMS.simple.median_rt_ms
+
+/** The reference figure a simple RT is compared with: that of the person's own input type (like with like). */
+export function simpleRtReferenceMs(reference: RtReference = 'keyboard_mouse'): number {
+  return rtNormsOf(reference).simple.median_rt_ms
+}
 
 export interface NormFacts {
   /** Words per minute of the latest reading block that passed its gate and was not skimmed. */
@@ -49,6 +58,12 @@ export interface NormFacts {
   readonly digitsBackward: number | null
   /** Median valid simple reaction time, ms. */
   readonly simpleRtMs: number | null
+  /**
+   * Which reference `simpleRtMs` is compared with: that of the input type the block was given with
+   * (touch, or keyboard/mouse, which is also what an older save with no input type gets). Absent
+   * means keyboard/mouse.
+   */
+  readonly simpleRtReference?: RtReference
 }
 
 /** Whether there is anything to compare. */
@@ -72,6 +87,7 @@ export function normFacts(save: SaveFileV1): NormFacts {
   let digitsForward: number | null = null
   let digitsBackward: number | null = null
   let simpleRtMs: number | null = null
+  let simpleRtReference: RtReference = 'keyboard_mouse'
   for (const s of orderSessions(save.sessions)) {
     for (const t of s.responses) {
       if (t[1] === 1) continue
@@ -99,10 +115,19 @@ export function normFacts(save: SaveFileV1): NormFacts {
         }
         case 'rt_simple': {
           if (skippedIn(s, 'RT')) break
+          // The block's own record of how it was given (`extra.input_type`): the median does not depend on
+          // it, the reference it is compared with does.
+          const ctx = blockContextOf(t)
           const r = tolerant(() =>
-            scoreRtResponse('simple', (item as ItemInstance<object, RtKey>).key.positions, response as unknown as RtResponse, { device_class: 'unspecified' }),
+            scoreRtResponse('simple', (item as ItemInstance<object, RtKey>).key.positions, response as unknown as RtResponse, {
+              device_class: ctx.device_class ?? 'unspecified',
+              ...(ctx.input_type === undefined ? {} : { input_type: ctx.input_type }),
+            }),
           )
-          if (r !== null && r.status === 'ok') simpleRtMs = Math.round(Math.exp(r.observation.x))
+          if (r !== null && r.status === 'ok') {
+            simpleRtMs = Math.round(Math.exp(r.observation.x))
+            simpleRtReference = rtReferenceOf(ctx.input_type)
+          }
           break
         }
         default:
@@ -110,7 +135,7 @@ export function normFacts(save: SaveFileV1): NormFacts {
       }
     }
   }
-  return { readingWpm, digitsForward, digitsBackward, simpleRtMs }
+  return { readingWpm, digitsForward, digitsBackward, simpleRtMs, simpleRtReference }
 }
 
 // ---------------------------------------------------------------------------------- pace

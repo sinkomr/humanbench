@@ -345,6 +345,11 @@ test.describe('a whole ?fast=1 session, its save and the way back in', () => {
       expect(meta?.input_type, id).toBe(touch ? 'touch' : 'keyboard')
       expect(meta?.n_valid ?? 0, `${id}: valid trials of ${meta?.n_trials}`).toBeGreaterThanOrEqual(meta?.min_valid ?? Infinity)
     }
+    // The reveal compares that reaction time with the reference of the input it was given with, and scores it
+    // against the same one (UX-REVIEW D3, owner decision 2026-10-11): touch against the touch reference, keys against keyboard/mouse.
+    const rtLine = page.locator('[data-section="numbers"] [data-norm="rt"]')
+    await expect(rtLine).toHaveAttribute('data-reference', touch ? 'touch' : 'keyboard_mouse')
+    await expect(rtLine).toContainText(touch ? 'for a touch screen is about 470 ms' : 'for a keyboard or mouse is about 300 ms')
     expect(session.responses.length).toBeGreaterThan(60)
     expect(file.seen_items.length).toBeGreaterThan(60)
     expect(file.sig).toBeUndefined()

@@ -25,6 +25,7 @@ import { PEAKS_HEADING, TAKER_COMPARISON_TEXT } from './copy'
 import { REVEAL_AXIS_MS } from './frames'
 import { distinctivePeaks, withinPersonContrasts } from './peaks'
 import { buildResults, scoredSessions } from './results'
+import type { NormFacts } from './norms'
 import { NOTES_BUILDER_HREF, TALK_ANCHOR_ID, TALK_PREAMBLE_MAX_CHARS } from './slots'
 import { DAY_MS, T0_MS, botSave, type BotSave } from './test-support'
 
@@ -831,6 +832,31 @@ describe('about these numbers (§7.3, §7.1)', () => {
     // Hidden until A12 allows percentiles.
     expect(m.c.textContent).not.toContain('vs other HumanBench takers')
     expect(m.c.textContent).not.toContain('self-selected')
+  })
+
+  it('compares a reaction time with the reference of its own input type: 470 ms for a touch screen, 300 ms for a keyboard or mouse (D3, 2026-10-11)', () => {
+    const base = { readingWpm: null, digitsForward: null, digitsBackward: null }
+    const line = (facts: NormFacts): string => {
+      const r = render(NumbersSection, { facts, pace: [] })
+      const li = r.container.querySelector('[data-norm="rt"]')!
+      const text = li.textContent ?? ''
+      const reference = li.getAttribute('data-reference')
+      r.destroy()
+      return `${reference}|${text}`
+    }
+    const touch = line({ ...base, simpleRtMs: 480, simpleRtReference: 'touch' })
+    expect(touch).toMatch(/^touch\|Your typical simple reaction time was about 480 ms\. /)
+    expect(touch).toContain('on a touch screen')
+    expect(touch).toContain('for the same kind of input only')
+    expect(touch).toContain('Our provisional reference for a touch screen is about 470 ms')
+    expect(touch).not.toContain('300 ms')
+    for (const facts of [{ ...base, simpleRtMs: 310, simpleRtReference: 'keyboard_mouse' as const }, { ...base, simpleRtMs: 310 }]) {
+      const kb = line(facts)
+      expect(kb).toMatch(/^keyboard_mouse\|Your typical simple reaction time was about 310 ms\. Times on the web run tens of milliseconds slower than in a lab/)
+      expect(kb).toContain('for the same kind of input only')
+      expect(kb).toContain('Our provisional web reference for a keyboard or mouse is about 300 ms')
+      expect(kb).not.toContain('470 ms')
+    }
   })
 
   it('says what a reading speed and a digit span are compared with', () => {

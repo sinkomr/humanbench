@@ -2,7 +2,9 @@
  * Blob geometry (DESIGN §9.1, §7.3; CLAUDE.md blob rule): K spokes at φ_k = 2πk/K, clockwise from
  * 12 o'clock; radius LINEAR in θ over [−3, 3], r = R·(θ + 3)/6 clamped to [0.04R, R]. The centre
  * is θ = −3, not zero ability. Rings sit at θ = −2 … +2 and are one SD apart (R/6), labelled in SD
- * units and marked "provisional" until M4 linking (A12).
+ * units and marked "provisional" until M4 linking (A12). The θ = 0 reference ring is drawn (dashed,
+ * slightly heavier) but has no label: nothing on the chart, the card or an export names it (owner
+ * decision 2026-10-11, UX-REVIEW D3).
  */
 
 import { scaleLinear } from 'd3-scale'
@@ -23,10 +25,12 @@ export const THETA_CLAMP_LOW = THETA_MIN + (THETA_MAX - THETA_MIN) * R_MIN_FRACT
 export const RING_THETAS = [-2, -1, 0, 1, 2] as const
 
 /**
- * Stroke widths of the rings, in chart px. The 0 SD ring, the provisional reference (owner
- * decision 2026-10-06, UX-REVIEW D3), is slightly heavier than the other rings, as well as dashed
- * and darker; it carries no number, label or caption of its own. `BlobChart.svelte` and the share
- * card's stylesheet (`card.ts`) both use these values (a test pins the component's CSS to them).
+ * Stroke widths of the rings, in chart px. The reference ring (θ = 0), the provisional reference
+ * (owner decision 2026-10-06, UX-REVIEW D3), is slightly heavier than the other rings, as well as
+ * dashed and darker; it carries no number, label or caption of its own, and since the owner
+ * decision of 2026-10-11 not even the "0 SD" scale label it once had ({@link ringLabel}).
+ * `BlobChart.svelte` and the share card's stylesheet (`card.ts`) both use these values (a test
+ * pins the component's CSS to them).
  */
 export const RING_STROKE_WIDTH = 1
 export const REFERENCE_RING_STROKE_WIDTH = 1.75
@@ -76,9 +80,13 @@ export function polar(r: number, angle: number): Point {
   return [r * Math.sin(angle), -r * Math.cos(angle)]
 }
 
-/** The ring label in SD units (A12): "−2 SD", "0 SD", "+1 SD" (typographic minus). */
+/**
+ * The ring label in SD units (A12): "−2 SD", "−1 SD", "+1 SD" (typographic minus). The reference
+ * ring (θ = 0) has none: the empty string, so no chart, card or export can draw a "0 SD" label
+ * (owner decision 2026-10-11, UX-REVIEW D3: keep the line, remove the label).
+ */
 export function ringLabel(theta: number): string {
-  if (theta === 0) return '0 SD'
+  if (theta === 0) return ''
   return `${theta > 0 ? '+' : '−'}${Math.abs(theta)} SD`
 }
 

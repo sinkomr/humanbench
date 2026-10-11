@@ -73,8 +73,11 @@ export {
   rtExpectedTimeS,
   rtItemParams,
   rtNorm,
+  rtNormsOf,
   rtParamsOfNorm,
+  rtReferenceOf,
   rtStructure,
+  type RtReference,
 } from './prior'
 export { MAD_TO_SD, SE_MEDIAN_FACTOR, classifyTrial, expectedOf, median, rtBlockObservation, rtBlockScore, rtEstimate, rtResponseProblems, scoreRtResponse } from './score'
 export * from './timing'

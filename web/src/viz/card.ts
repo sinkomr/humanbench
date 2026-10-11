@@ -337,7 +337,6 @@ function styleSheet(t: VizTheme): string {
     `.muted .arrow{fill:${t.bg};stroke:${t.muted};stroke-width:2}`,
     `.peak-ring{fill:none;stroke:${t.blob};stroke-width:2}`,
     `.ring-label{fill:${t.textMuted}}`,
-    `.ring-label.reference{font-weight:600}`,
     `.ring-note{fill:${t.textMuted}}`,
     `.label{fill:${t.textStrong}}`,
     `.label.muted{fill:${t.text}}`,
@@ -371,7 +370,7 @@ export function blobMarkup(model: BlobModel, id: string): string {
   // Under the data (UX-045), as on the page: a ring label's halo knocks out the grid only.
   p.push(`<g class="ring-labels" font-size="${f2(model.text.small)}" stroke-width="${f2(model.text.halo)}">`)
   for (const r of model.rings.filter((x) => x.showLabel)) {
-    p.push(`<text class="ring-label${r.reference ? ' reference' : ''}" x="${f2(r.labelAt[0])}" y="${f2(r.labelAt[1])}">${esc(r.label)}</text>`)
+    p.push(`<text class="ring-label" x="${f2(r.labelAt[0])}" y="${f2(r.labelAt[1])}">${esc(r.label)}</text>`)
   }
   p.push('</g>')
 

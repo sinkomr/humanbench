@@ -720,7 +720,7 @@ $$N_{\text{families/stratum}} \approx 6S \times 0.5 \times 2 = 6S, \qquad N_{\te
 1. **Layout:** K spokes at angles $\phi_k = 2\pi k/K$. Radius $r_k = R\,(\theta_k + 3)/6$, clamped to [0.04R, R].
    - Rings are drawn at θ = −2, −1, 0, +1, +2 and labelled with user-population percentiles (2%, 16%, 50%, 84%, 98%).
    - **The centre is θ = −3, not zero ability**, and the caption says so.
-   - The dashed ring θ = 0 is labelled "typical HumanBench taker".
+   - The dashed ring θ = 0 is labelled "typical HumanBench taker". *Superseded: A12 withholds that wording until M4 linking, and the owner decision of 2026-10-11 (web/UX-REVIEW.md D3) keeps the ring, heavier and dashed, with no label at all on the blob, the card or an export.*
 2. **Curve:** closed Catmull-Rom spline (`d3.curveCatmullRomClosed.alpha(0.5)`) through the $(r_k, \phi_k)$ points. It must not overshoot beyond ±0.1 of a ring between spokes; if it does, fall back to `curveCardinalClosed.tension(0.6)`.
 3. **Uncertainty:**
    - 20 nested closed curves at radii $\theta_k \pm z\,SD_k$ for z ∈ [−1.64, 1.64], filled with opacity ∝ normal density, giving a fuzzy edge.

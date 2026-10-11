@@ -2,14 +2,15 @@
   "About these numbers" (DESIGN §7.3 tooltips, §7.1 (3); ROADMAP M1.R): rough external comparisons
   for the parts the person did, and the separate Pace note. Nothing here changes the profile.
   - External norms, worded as rough context: reading speed against Brysbaert (2019), digit span,
-    and a reaction time against web-relative figures only (`norms.ts`).
+    and a reaction time against web-relative figures only, those of its own input type, touch or
+    keyboard/mouse (`norms.ts`).
   - Pace: how long the person took per question against the typical time (a disclosure, so it is
     reachable by keyboard and touch; a hover-only tooltip would not be, WCAG 1.4.13).
   - "vs other HumanBench takers (a self-selected, likely above-average group)" is HIDDEN until A12
     allows percentiles (after M4 linking, N >= 500): it renders only if `takerComparison` is true.
 -->
 <script lang="ts">
-  import { hasNorms, TAKER_COMPARISON, WEB_SIMPLE_RT_MEDIAN_MS, type NormFacts, type PaceRow } from './norms'
+  import { hasNorms, simpleRtReferenceMs, TAKER_COMPARISON, type NormFacts, type PaceRow } from './norms'
   import {
     NORMS_LATEST,
     NORMS_NONE,
@@ -51,7 +52,7 @@
       {#if facts.digitsForward !== null || facts.digitsBackward !== null}
         <li data-norm="span">{spanNorm(facts.digitsForward, facts.digitsBackward)}</li>
       {/if}
-      {#if facts.simpleRtMs !== null}<li data-norm="rt">{rtNorm(facts.simpleRtMs, WEB_SIMPLE_RT_MEDIAN_MS)}</li>{/if}
+      {#if facts.simpleRtMs !== null}<li data-norm="rt" data-reference={facts.simpleRtReference ?? 'keyboard_mouse'}>{rtNorm(facts.simpleRtMs, simpleRtReferenceMs(facts.simpleRtReference), facts.simpleRtReference)}</li>{/if}
     </ul>
   {:else}
     <p>{NORMS_NONE}</p>

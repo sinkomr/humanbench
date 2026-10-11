@@ -192,8 +192,15 @@ export const spanNorm = (forward: number | null, backward: number | null): strin
   if (backward !== null) parts.push(`${backward} digits backwards`)
   return `You repeated up to ${parts.join(' and ')}. Typical adults manage about 6 to 7 digits forwards and 4 to 5 backwards.`
 }
-export const rtNorm = (ms: number, webMedianMs: number): string =>
-  `Your typical simple reaction time was about ${ms} ms. Times on the web run tens of milliseconds slower than in a lab, because of screens and input devices, so compare them with web-based times only. Our provisional web reference is about ${webMedianMs} ms until enough people have taken part.`
+/**
+ * The reaction-time line (owner decision 2026-10-11, D3: always like with like). `referenceMs` is the
+ * provisional reference for the person's own input type, `reference` says which: a touch screen adds
+ * more delay than a keyboard or mouse, so each is compared only with its own kind.
+ */
+export const rtNorm = (ms: number, referenceMs: number, reference: 'touch' | 'keyboard_mouse' = 'keyboard_mouse'): string =>
+  reference === 'touch'
+    ? `Your typical simple reaction time was about ${ms} ms. Times on the web run slower than in a lab, and more so on a touch screen than with a keyboard or mouse, because of screens and input devices, so compare them with web-based times for the same kind of input only. Our provisional reference for a touch screen is about ${referenceMs} ms until enough people have taken part.`
+    : `Your typical simple reaction time was about ${ms} ms. Times on the web run tens of milliseconds slower than in a lab, because of screens and input devices, so compare them with web-based times for the same kind of input only. Our provisional web reference for a keyboard or mouse is about ${referenceMs} ms until enough people have taken part.`
 export const NORMS_NONE = 'There are no published comparisons for the parts you did this time.'
 
 /** DESIGN §7.3: shown only when A12 allows percentiles (after M4 linking, N ≥ 500). Hidden in M1. */

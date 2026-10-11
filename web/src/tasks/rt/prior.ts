@@ -56,12 +56,30 @@ export const RT_TOUCH_NORMS: Readonly<Record<RtMode, RtNorm>> = Object.freeze({
 })
 
 /**
+ * Which reference group a block is compared with (owner decision 2026-10-11, UX-REVIEW D3: always
+ * like with like): `touch` for touch input, `keyboard_mouse` for keyboard, mouse and an unknown or
+ * unrecorded input type (the older saves). Every comparison with a reference, the SD score of a
+ * block and the reveal's "your median against the reference" line, picks its figure by this one rule.
+ */
+export type RtReference = 'touch' | 'keyboard_mouse'
+
+/** The reference group of an input type ({@link RtReference}); `undefined` and anything but 'touch' is keyboard/mouse. */
+export function rtReferenceOf(inputType?: string): RtReference {
+  return inputType === 'touch' ? 'touch' : 'keyboard_mouse'
+}
+
+/** The norm table of a reference group. */
+export function rtNormsOf(reference: RtReference): Readonly<Record<RtMode, RtNorm>> {
+  return reference === 'touch' ? RT_TOUCH_NORMS : RT_WEB_NORMS
+}
+
+/**
  * The norm for a mode and input type (§11.6: normed separately by input). 'touch' uses
  * {@link RT_TOUCH_NORMS}; keyboard, mouse and an unknown input type use {@link RT_WEB_NORMS}.
  * Device class does not change the norm yet (M4.8).
  */
 export function rtNorm(mode: RtMode, _deviceClass?: string, inputType?: string): RtNorm {
-  return inputType === 'touch' ? RT_TOUCH_NORMS[mode] : RT_WEB_NORMS[mode]
+  return rtNormsOf(rtReferenceOf(inputType))[mode]
 }
 
 /** The A10 Gaussian parameters of a norm row: lam = −s, d = β, sigma = τ_res. */

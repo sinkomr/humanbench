@@ -22,8 +22,10 @@
  *   first family that has testlet items. When the stored response is not one the family accepts
  *   (e.g. a time-out with no answer, `MalformedResponseError`), the stored `correct` stands (§8:
  *   stored for offline re-scoring); with no stored `correct` either, the response is skipped;
- * - a block (kind 'block', A10) is scored with the family's `score()`: its GRM or Gaussian
- *   observation, or `no_observation` with the block's reasons (e.g. too few valid RT trials).
+ * - a block (kind 'block', A10) is scored with the family's `score()`, given the block's
+ *   {@link blockContextOf context} (the input type the session recorded: RT norms touch apart from
+ *   keyboard/mouse): its GRM or Gaussian observation, or `no_observation` with the block's
+ *   reasons (e.g. too few valid RT trials).
  *   Writers put the block's response object (e.g. `RtResponse`) in the tuple's `response`; the
  *   §8 example's layout, `response` = "trials" with the trial data in `extra`, is read too
  *   ({@link blockResponseOf}; convention in `engine/types.ts` `ResponseTuple`).
@@ -55,7 +57,7 @@ import { AXIS_CODES, N_AXES, type AxisCode } from '../engine/axes'
 import { rescoreRetest, type RetestOptions, type RetestScore, type RetestSession } from '../engine/retest'
 import type { JsonValue, Observation, ResponseTuple } from '../engine/types'
 import { calibrationObservation, type RatedAnswer } from '../tasks/calibration'
-import { MalformedResponseError, type AnyFamily, type ItemInstance } from '../tasks/family'
+import { MalformedResponseError, type AnyFamily, type BlockScoreContext, type ItemInstance } from '../tasks/family'
 import { parseItemId } from '../tasks/ids'
 import { getFamily, resolveItem } from '../tasks/registry'
 import { CONTINUATION_FLAG, type PosteriorCache, type SaveFileV1 } from './types'
@@ -119,6 +121,25 @@ export function blockResponseOf(t: ResponseTuple): JsonValue {
 }
 
 /**
+ * How a block was given, as the session stored it in the tuple's `extra` (§8; `session/run.ts`
+ * writes the scorer's own record: `device_class`, `input_type`, ...). Only those two strings are
+ * read, from `extra` when it is an object, whatever the response layout; anything else (no extra,
+ * an older save, a non-string value) leaves the field out, which scores as the family's default.
+ * Passed to a block family's `score()` so a re-score norms the way the session did (the RT
+ * family's touch against keyboard/mouse reference, owner decision 2026-10-11, UX-REVIEW D3).
+ */
+export function blockContextOf(t: ResponseTuple): BlockScoreContext {
+  const extra = t[6]
+  if (extra === null || extra === undefined || typeof extra !== 'object' || Array.isArray(extra)) return {}
+  const device_class = extra['device_class']
+  const input_type = extra['input_type']
+  return {
+    ...(typeof device_class === 'string' && device_class.length > 0 ? { device_class } : {}),
+    ...(typeof input_type === 'string' && input_type.length > 0 ? { input_type } : {}),
+  }
+}
+
+/**
  * The axis of the family named in `itemId` (every item of a family is on the family's axis), or
  * undefined for a malformed id or an unregistered family. Unlike {@link resolveItem} it ignores the
  * generator version: exposure to an item does not depend on this build being able to rebuild it.
@@ -133,7 +154,7 @@ function scoreWith(family: AnyFamily, item: ItemInstance<object, object>, t: Res
   if (family.kind === 'block') {
     let s
     try {
-      s = family.score(item, blockResponseOf(t))
+      s = family.score(item, blockResponseOf(t), blockContextOf(t))
     } catch (e) {
       if (e instanceof MalformedResponseError) return { skip: 'malformed', detail: e.message }
       throw e

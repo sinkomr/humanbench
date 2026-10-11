@@ -5,7 +5,7 @@ import { createRng } from '../engine/prng'
 import { A15_TARGET_S, STOP_SD, planSession, type SegmentId } from '../engine/selector'
 import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
-import { rescoreSessions } from '../save/rescore'
+import { registryObservation, rescoreSessions } from '../save/rescore'
 import { parseItemId } from '../tasks/ids'
 import { CAL_NORMS } from '../tasks/priors'
 import { RT_NORMS_VERSION } from '../tasks/rt'
@@ -1014,6 +1014,38 @@ describe('blocks and RT input (A18)', () => {
     const obs = bot.run.result().observations
     expect(obs).toHaveLength(1)
     expect(obs[0]).toMatchObject({ kind: 'gaussian', axis: 'RT' })
+  })
+
+  it.each([
+    ['touch', 470],
+    ['mouse', 300],
+    ['keyboard', 300],
+    [undefined, 300],
+  ] as const)('a block given by %s at its own reference median is 0 SD, and the save re-scores to the very same observation (like with like, D3)', (input, median) => {
+    const bot = new Bot({ sessionId: 's_BLOCKRTREFERENCE', skipped: ['MAT', 'SPA', 'WM', 'QR', 'PS'] })
+    bot.step()
+    const item = bot.fullItem(bot.view().block!.item_id)
+    const spec = item.spec as { positions: number[]; practice_positions: number[] }
+    if (input !== undefined) bot.run.blockInputType(input)
+    const n = spec.positions.length
+    bot.run.blockResponded({
+      // Half the trials faster, half slower than the median, so its median log-RT is exactly ln(median).
+      rt_ms: spec.positions.map((_, i) => median * Math.exp(0.012 * (i < n / 2 ? -(n / 2 - i) : i - n / 2 + 1))),
+      choice: spec.positions.map(() => 0),
+      practice_rt_ms: spec.practice_positions.map(() => 300),
+      practice_choice: spec.practice_positions.map(() => 0),
+    })
+    const obs = bot.run.result().observations
+    expect(obs).toHaveLength(1)
+    const o = obs[0]!
+    if (o.kind !== 'gaussian') throw new Error('expected a Gaussian observation')
+    expect(Math.abs((o.x - o.d) / o.lam)).toBeLessThan(1e-9)
+    expect(o.d).toBe(Math.log(median))
+    // The save keeps the raw block and the input type, and a re-score from it (what the reveal draws)
+    // builds the observation the session did: no path norms a block against the other kind of input.
+    const tuple = bot.run.sessionState().responses[0]!
+    const re = registryObservation(tuple)
+    expect('observation' in re && re.observation).toEqual(o)
   })
 
   it('without an input type from the renderer, none is recorded (the RtDevice carries none)', () => {

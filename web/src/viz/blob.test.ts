@@ -433,16 +433,18 @@ describe('blob render model (§9)', () => {
     expect(modelOf('full').model.muteRuns.some((run) => run.muted)).toBe(true)
   })
 
-  it('rings sit at −2 … +2 SD, labelled in SD units, the 0 SD ring the dashed reference (A12)', () => {
+  it('rings sit at −2 … +2 SD, labelled in SD units, the 0 ring the dashed reference without a label (A12, D3 2026-10-11)', () => {
     const { model } = modelOf('m1')
-    expect(model.rings.map((x) => x.label)).toEqual(['−2 SD', '−1 SD', '0 SD', '+1 SD', '+2 SD'])
+    expect(model.rings.map((x) => x.label)).toEqual(['−2 SD', '−1 SD', '', '+1 SD', '+2 SD'])
     expect(model.rings.map((x) => x.r)).toEqual([30, 60, 90, 120, 150])
     expect(model.rings.filter((x) => x.reference).map((x) => x.theta)).toEqual([0])
     expect(model.ring).toBe(30)
-    expect(model.rings.every((x) => x.showLabel)).toBe(true)
-    // Text too large for one ring spacing (narrow screens): only −2, 0 and +2 SD are labelled.
+    // Every ring but the reference ring is labelled; the reference ring is drawn and never labelled.
+    expect(model.rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '−1 SD', '+1 SD', '+2 SD'])
+    expect(model.rings.find((x) => x.reference)!.showLabel).toBe(false)
+    // Text too large for one ring spacing (narrow screens): only −2 and +2 SD are labelled (the 0 ring has none).
     const big = buildBlob(modelOf('m1').est, { layout: { fontSize: 36, compact: true } })
-    expect(big.rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '0 SD', '+2 SD'])
+    expect(big.rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '+2 SD'])
   })
 
   it('hatches only measured tier (c) spokes, and glyphs follow the tier (§9.7)', () => {
@@ -924,8 +926,8 @@ describe('model options for the card (UX-038)', () => {
     expect(within(without.noteBox, viewBoxOf(without))).toBe(true)
   })
 
-  it('can label only −2, 0 and +2 SD whatever the size', () => {
-    expect(buildBlob(shown).rings.filter((x) => x.showLabel)).toHaveLength(5)
-    expect(buildBlob(shown, { ringStep: 2 }).rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '0 SD', '+2 SD'])
+  it('can label only −2 and +2 SD whatever the size (the reference ring is never labelled)', () => {
+    expect(buildBlob(shown).rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '−1 SD', '+1 SD', '+2 SD'])
+    expect(buildBlob(shown, { ringStep: 2 }).rings.filter((x) => x.showLabel).map((x) => x.label)).toEqual(['−2 SD', '+2 SD'])
   })
 })

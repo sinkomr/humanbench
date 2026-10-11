@@ -116,7 +116,7 @@ describe('ProfileView structure (§9, A15)', () => {
   it('labels rings in SD units, marks them provisional, and says the centre is −3 SD (§9.1, A12)', () => {
     const root = render(syntheticProfile('m1')!)
     const rings = [...root.querySelectorAll('text.ring-label')].map((t) => t.textContent)
-    expect(rings).toEqual(['−2 SD', '−1 SD', '0 SD', '+1 SD', '+2 SD'])
+    expect(rings).toEqual(['−2 SD', '−1 SD', '+1 SD', '+2 SD']) // the reference ring is drawn, with no label (D3, 2026-10-11)
     expect(root.querySelectorAll('circle.ring.reference')).toHaveLength(1)
     // In the SVG itself too, so an exported chart (M1.18) keeps it.
     expect(root.querySelector('svg.hb-blob text.ring-note')!.textContent).toBe('Rings: SD units, provisionalCentre: \u22123 SD')

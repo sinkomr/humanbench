@@ -284,7 +284,11 @@ export interface BlockAnswer {
   readonly timeS: number
 }
 
-/** Run a fixed block as a taker with θ on its axis, score it with the family's `score()` and time it. */
+/**
+ * Run a fixed block as a taker with θ on its axis, score it with the family's `score()` and time it.
+ * A simulated RT taker answers around the keyboard/mouse reference (`rt/prior.ts` `RT_WEB_NORMS`), so
+ * the context-free `score()` (which uses that same reference) is the like-with-like one here.
+ */
 export function answerBlock(family: AnyFamily, item: AnyItem, theta: number, rng: Rng): BlockAnswer {
   if (family.kind !== 'block') throw new RangeError(`${family.name} is an item family`)
   const response = blockResponse(item, theta, rng)

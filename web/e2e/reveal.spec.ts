@@ -366,6 +366,7 @@ test.describe('about these numbers (§7.3, §7.1)', () => {
     const n = section(page, 'numbers')
     await expect(n.locator('[data-norm="rt"]')).toContainText('Times on the web run tens of milliseconds slower than in a lab')
     await expect(n.locator('[data-norm="rt"]')).toContainText('about 300 ms')
+    await expect(n.locator('[data-norm="rt"]')).toContainText('for a keyboard or mouse')
     await expect(n.locator('[data-norm="span"]')).toContainText('Typical adults manage about 6 to 7 digits forwards and 4 to 5 backwards')
     await expect(n.locator('[data-norm="reading"]')).toContainText('238 words per minute for non-fiction and 260 for fiction')
     const pace = n.locator('details.pace')
@@ -376,6 +377,32 @@ test.describe('about these numbers (§7.3, §7.1)', () => {
     expect(await page.locator('body').innerText()).not.toContain('vs other HumanBench takers')
     await expectNoSeriousAxe(page)
   })
+
+  // Owner decision 2026-10-11 (UX-REVIEW D3): SD calculations and the reference line compare like with like.
+  // The save's reaction-time blocks are given with one input type and a median exactly at that input's
+  // own reference; the reveal re-scores them from the save, so a mismatch anywhere shows as a non-zero SD.
+  for (const input of ['touch', 'keyboard'] as const) {
+    test(`reaction time, ${input}: a median at its own reference reads 0 SD on the blob's axis, and the line names the ${input} reference`, async ({ page }) => {
+      await still(page)
+      await toResults(page, 1, input)
+      const line = section(page, 'numbers').locator('[data-norm="rt"]')
+      if (input === 'touch') {
+        await expect(line).toHaveAttribute('data-reference', 'touch')
+        await expect(line).toContainText('Our provisional reference for a touch screen is about 470 ms')
+        await expect(line).not.toContainText('300 ms')
+      } else {
+        await expect(line).toHaveAttribute('data-reference', 'keyboard_mouse')
+        await expect(line).toContainText('Our provisional web reference for a keyboard or mouse is about 300 ms')
+        await expect(line).not.toContainText('470 ms')
+      }
+      await expect(line).toContainText('for the same kind of input only')
+      // The same axis of the same table for both input types: the estimate is 0.00 and the range overlaps 0 SD.
+      const row = page.locator('table.hb-bars tbody tr[data-row="RT"]')
+      await expect(row.locator('td.estimate')).toHaveText(/^0\.00\u00a0±/)
+      await expect(row.locator('td.relation')).toHaveText(/^Overlaps\u00a00\u00a0SD$/)
+      await expectNoSeriousAxe(page)
+    })
+  }
 })
 
 test.describe('the results footer (R-5.6.5, A13, §13)', () => {
