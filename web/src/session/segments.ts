@@ -8,7 +8,7 @@
 
 import { axisName } from '../axis-names'
 import { axis as axisDef, type AxisCode, type Cluster } from '../engine/axes'
-import type { SegmentId } from '../engine/selector'
+import { A15_SEGMENTS, SEGMENT_ORDER, type A15SegmentId, type SegmentId } from '../engine/plan-table'
 import { INTERSTITIAL_SKIP } from './copy'
 
 /**
@@ -20,6 +20,9 @@ import { INTERSTITIAL_SKIP } from './copy'
  */
 export const needsSight = (what: string): string =>
   `This part needs you to see the screen. If you use a screen reader or cannot see ${what}, choose “${INTERSTITIAL_SKIP}”: it will show as not measured.`
+
+/** On the knowledge parts: the honour code's rule, said where it matters (no looking things up; owner decision 2026-10-05, UX-REVIEW D10). */
+const NO_LOOKUP = 'Please answer from what you know, without looking anything up.'
 
 export interface SegmentInfo {
   readonly id: SegmentId
@@ -36,7 +39,11 @@ function info(id: SegmentId, axes: readonly AxisCode[], blurb: string): SegmentI
   return Object.freeze({ id, axes: Object.freeze([...axes]), title: axisName(axes[0]!), cluster: axisDef(axes[0]!).cluster, blurb })
 }
 
-/** The six A15 segments, in order. */
+/**
+ * Every part a session can have, by id: the six A15 parts and the served text parts of M3.11 phase 1
+ * (`engine/plan-table.ts`). Use {@link A15_SEGMENT_INFO} for "the six parts", {@link SEGMENT_INFO_IN_ORDER}
+ * for all of them in session order.
+ */
 export const SEGMENT_INFO: Readonly<Record<SegmentId, SegmentInfo>> = Object.freeze({
   rt: info('rt', ['RT'], `A target appears on the screen. Respond as fast as you can once you see it. A few practice trials come first. ${needsSight('the target')}`),
   matrix_series: info('matrix_series', ['MAT'], 'Find the pattern. Pick the cell that completes a grid, or type the next term of a sequence.'),
@@ -45,7 +52,19 @@ export const SEGMENT_INFO: Readonly<Record<SegmentId, SegmentInfo>> = Object.fre
   // Paper and pencil are allowed, calculators and AI chatbots are not (owner decision 2026-10-05, UX-REVIEW D10), as the honour screen says.
   quant: info('quant', ['QR'], 'Solve short number problems and type your answer. Scratch paper and a pencil are fine; please do not use a calculator or an AI chatbot.'),
   coding_reading: info('coding_reading', ['PS'], 'Match shapes to digits against the clock, then read a short passage and answer a few questions about it.'),
+  // The served text parts (M3.11 phase 1): what the person does, never what an answer says about them (A13, R-5.6.x).
+  logical_reasoning: info('logical_reasoning', ['LR'], 'Read a short argument and pick the answer that best fits the question about it. Take the time you need to read.'),
+  vocabulary: info('vocabulary', ['VOC'], 'Questions about what words mean and how they relate. Pick the answer that fits best.'),
+  knowledge_stem: info('knowledge_stem', ['KST'], `Questions about science, mathematics and technology. Pick the answer you think is right. ${NO_LOOKUP}`),
+  knowledge_humanities: info('knowledge_humanities', ['KHU'], `Questions about history, geography, literature and ideas. Pick the answer you think is right. ${NO_LOOKUP}`),
+  knowledge_arts: info('knowledge_arts', ['KAP'], `Questions about the arts and about everyday practical matters. Pick the answer you think is right. ${NO_LOOKUP}`),
 })
+
+/** The six A15 parts, in order. */
+export const A15_SEGMENT_INFO: readonly SegmentInfo[] = Object.freeze(A15_SEGMENTS.map((s) => SEGMENT_INFO[s.id as A15SegmentId]))
+
+/** Every part in session order (the text parts after the A15 parts they follow). */
+export const SEGMENT_INFO_IN_ORDER: readonly SegmentInfo[] = Object.freeze(SEGMENT_ORDER.map((id) => SEGMENT_INFO[id]))
 
 /** The skill's on-screen name (`axis-names.ts`) for messages such as "Skip Spatial?". */
 export function skipTargetName(axis: AxisCode): string {

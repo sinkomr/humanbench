@@ -45,7 +45,7 @@ describe('toServedItem', () => {
   const base = { itemId: 'i:x', itemType: 'mc', timeLimitS: null, stem: null, media: null, options: null } as const
 
   it('marks an item with no renderer, or one this build does not have, as unsupported (never blank, never guessed)', () => {
-    expect(toServedItem(1, { ...base, stem: 'Which is larger?', options: ['a', 'b', 'c'] })).toEqual({ seq: 1, item_id: 'i:x', item_type: 'mc', family: '', spec: {}, options_count: 3, time_limit_s: null, supported: false })
+    expect(toServedItem(1, { ...base, options: ['a', 'b', 'c'] })).toEqual({ seq: 1, item_id: 'i:x', item_type: 'mc', family: '', spec: {}, options_count: 3, time_limit_s: null, supported: false })
     expect(toServedItem(1, { ...base, media: { renderer: 'polycube_v9', target: [] } })).toMatchObject({ supported: false, family: 'polycube_v9', spec: {} })
     expect(toServedItem(1, { ...base, media: { target: [] } })).toMatchObject({ supported: false, family: '' })
     expect(toServedItem(1, { ...base, media: { renderer: 'reading', passage: 'x' } })).toMatchObject({ supported: false }) // a block family is never a served item

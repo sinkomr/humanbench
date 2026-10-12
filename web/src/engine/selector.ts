@@ -58,6 +58,7 @@
 
 import { AXIS_CODES, AXIS_INDEX, initialSigma, isAxisCode, N_AXES, type AxisCode } from './axes'
 import { info2pl, info3pl } from './irt'
+import { A15_SEGMENTS, A15_TARGET_S, TEXT_PARTS, type A15SegmentId, type BlockDef, type SegmentDef, type SegmentId, type TextSegmentId } from './plan-table'
 import type { Matrix } from './linalg'
 import { createRng, type Rng } from './prng'
 import { eapByAxis, mapTheta, type ReadonlyMatrix } from './scorer'
@@ -89,8 +90,7 @@ export const ATTEMPTS_PER_STRATUM = 3 * CANDIDATES_PER_STRATUM
 export const SWEEP_ATTEMPTS = 48 * ATTEMPTS_PER_STRATUM
 /** Information multiplier of a '2pl_testlet' item: the §7.1 testlet effect γ ~ N(0, 0.3²) discounts it by ~20%. */
 export const TESTLET_INFO_FACTOR = 0.8
-/** Default M1 session length for {@link planSession}: A15's target of about 25–30 min, taken at the midpoint. */
-export const A15_TARGET_S = 27.5 * 60
+export { A15_TARGET_S }
 
 // ------------------------------------------------------------------------------- types
 
@@ -548,32 +548,9 @@ export function selectNext(state: SelectorState, rng: Rng, opts: SelectorOptions
 
 // --------------------------------------------------------------------- block schedule
 
-/** The A15 segments, in order. */
-export type SegmentId = 'rt' | 'matrix_series' | 'spatial' | 'memory' | 'quant' | 'coding_reading'
-
-/** One fixed block of a segment: a block family (one per sub-task, M1.F2). */
-export interface BlockDef {
-  readonly family: string
-}
-
-/** One A15 segment: fixed blocks, or a CAT segment on some axes. */
-export type SegmentDef =
-  | { readonly id: SegmentId; readonly kind: 'block'; readonly axis: AxisCode; readonly blocks: readonly BlockDef[] }
-  | { readonly id: SegmentId; readonly kind: 'cat'; readonly axes: readonly AxisCode[] }
-
-/**
- * The M1 session order (A15): RT → Matrix/Series → Spatial → Memory → Quant → Coding/Reading.
- * RT runs simple then 4-choice (M1.10); Memory runs digits forward, digits backward, Corsi (M1.9).
- * Each sub-task is its own block family (M1.F2).
- */
-export const A15_SEGMENTS: readonly SegmentDef[] = Object.freeze([
-  { id: 'rt', kind: 'block', axis: 'RT', blocks: [{ family: 'rt_simple' }, { family: 'rt_choice4' }] },
-  { id: 'matrix_series', kind: 'cat', axes: ['MAT'] },
-  { id: 'spatial', kind: 'cat', axes: ['SPA'] },
-  { id: 'memory', kind: 'block', axis: 'WM', blocks: [{ family: 'span_fwd' }, { family: 'span_bwd' }, { family: 'corsi' }] },
-  { id: 'quant', kind: 'cat', axes: ['QR'] },
-  { id: 'coding_reading', kind: 'block', axis: 'PS', blocks: [{ family: 'coding' }, { family: 'reading' }] },
-] as const satisfies readonly SegmentDef[])
+// The parts themselves are plain tables in `plan-table.ts` (the copy and the build read them too).
+export { A15_SEGMENTS, TEXT_PARTS }
+export type { A15SegmentId, BlockDef, SegmentDef, SegmentId, TextSegmentId }
 
 /** Names of the fixed-block families of {@link A15_SEGMENTS}. */
 export const FIXED_BLOCK_FAMILIES: ReadonlySet<string> = new Set(
@@ -602,6 +579,12 @@ export type PlannedStep =
       readonly axes: readonly AxisCode[]
       /** Planned seconds; the segment loops on {@link selectNext} until its axes are done or this runs out (A15). */
       readonly budget_s: number
+      /**
+       * A served text part (M3.11 phase 1, `plan-table.ts` TEXT_PARTS): it exists only if the server has
+       * questions for it, its `budget_s` is its own share on top of the A15 target, and it goes on until
+       * `min_items` questions are answered. Absent on the A15 parts.
+       */
+      readonly optional?: { readonly min_items: number }
     }
 
 export interface PlanOptions {
@@ -618,6 +601,12 @@ export interface PlanOptions {
    * family by design (`rtStructure`), measured every session (A15).
    */
   readonly seenFamilies?: Iterable<string>
+  /**
+   * The axes whose served text parts are planned (M3.11 phase 1; default none, which is the M1 plan
+   * exactly). Each gets a CAT step marked `optional` with the share of `TEXT_PARTS`, after the A15
+   * part the table names; the A15 parts' time and budgets do not change.
+   */
+  readonly textAxes?: readonly AxisCode[]
 }
 
 /**
@@ -657,25 +646,32 @@ export function planSession(opts: PlanOptions): PlannedStep[] {
   finite('targetS', target)
   if (target < 0) throw new RangeError(`targetS must be ≥ 0, got ${target}`)
   const seen = new Set<string>(opts.seenFamilies ?? [])
-  const kept = A15_SEGMENTS.filter((s) => (s.kind === 'block' ? axisWeight(opts.weights, s.axis) > 0 : s.axes.some((k) => axisWeight(opts.weights, k) > 0)))
-  const steps: (PlannedStep | { kind: 'cat'; segment: SegmentId; axes: readonly AxisCode[] })[] = []
+  const text = opts.textAxes ?? []
+  type Draft = PlannedStep | { kind: 'cat'; segment: SegmentId; axes: readonly AxisCode[] }
+  const steps: Draft[] = []
   let blockTime = 0
   let nCat = 0
-  for (const s of kept) {
-    if (s.kind === 'cat') {
+  for (const s of A15_SEGMENTS) {
+    const kept = s.kind === 'block' ? axisWeight(opts.weights, s.axis) > 0 : s.axes.some((k) => axisWeight(opts.weights, k) > 0)
+    if (kept && s.kind === 'cat') {
       nCat++
       steps.push({ kind: 'cat', segment: s.id, axes: s.axes.filter((k) => axisWeight(opts.weights, k) > 0) })
-      continue
+    } else if (kept && s.kind === 'block') {
+      for (const b of s.blocks) {
+        const item = blockItem(opts.sessionSeed, b, seen)
+        if (item === null) continue
+        blockTime += item.expected_time_s
+        steps.push({ kind: 'block', segment: s.id, family: b.family, axis: s.axis, item })
+      }
     }
-    for (const b of s.blocks) {
-      const item = blockItem(opts.sessionSeed, b, seen)
-      if (item === null) continue
-      blockTime += item.expected_time_s
-      steps.push({ kind: 'block', segment: s.id, family: b.family, axis: s.axis, item })
+    // The text parts that follow this A15 part (whether or not it is kept): their own share, on top of the target.
+    for (const p of TEXT_PARTS) {
+      if (p.after !== s.id || !text.includes(p.axis) || axisWeight(opts.weights, p.axis) <= 0) continue
+      steps.push({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items } })
     }
   }
   const budget = nCat === 0 ? 0 : Math.max(0, target - blockTime) / nCat
-  return steps.map((s): PlannedStep => (s.kind === 'cat' ? { kind: 'cat', segment: s.segment, axes: s.axes, budget_s: budget } : s))
+  return steps.map((s): PlannedStep => (s.kind === 'cat' && !('budget_s' in s) ? { kind: 'cat', segment: s.segment, axes: s.axes, budget_s: budget } : (s as PlannedStep)))
 }
 
 /** The fixed blocks of {@link planSession}, in A15 order (the block scheduler; never CAT items). */

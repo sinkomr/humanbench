@@ -10,7 +10,9 @@
  * contact, as the static notice does.
  */
 
+import type { SessionOutline } from '../engine/plan-table'
 import { CREDITS_SECTION } from '../session/copy'
+import { BASE_OUTLINE, lengthSentence } from '../session/length'
 import type { LoadProblem } from './errors'
 
 // ------------------------------------------------------------------------- gate and ready
@@ -22,9 +24,10 @@ export const SERVER_GATE_POINTS: readonly string[] = Object.freeze([
   'This is for curiosity and self-reflection. It is not a basis for decisions about school, work or health.',
 ])
 
-/** Replaces `READY_TEXT` when answers go to a server. */
-export const SERVER_READY_TEXT =
-  'Six short parts, about 30 minutes. Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After each answer to a question you will say how sure you are.'
+/** Replaces `READY_TEXT` when answers go to a server; the length is the plan's (`session/copy.ts`, M3.11 phase 1). */
+export const serverReadyText = (o: SessionOutline): string =>
+  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After each answer to a question you will say how sure you are.`
+export const SERVER_READY_TEXT = serverReadyText(BASE_OUTLINE)
 
 // ----------------------------------------------------------------------------- opening
 
@@ -45,6 +48,9 @@ export const OPENING_PROBLEM: Readonly<Record<LoadProblem, string>> = Object.fre
 
 export const LOADING_TEXT = 'Getting your next question…'
 export const LOADING_RETRY = 'Try again'
+/** The wait before a served text part (M3.11 phase 1): whether the server has questions for it is asked first, so no part is named yet. */
+export const PROBING_HEADING = 'One moment'
+export const PROBING_TEXT = 'Getting the next part ready…'
 export const LOADING_PROBLEM: Readonly<Record<LoadProblem, string>> = Object.freeze({
   offline: 'We could not reach the server. Your answers so far are kept, and the clock is stopped. Check your connection and try again.',
   pace: 'The server asks for a little more time between answers. The clock is stopped. Wait a few seconds and try again.',

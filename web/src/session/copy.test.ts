@@ -217,3 +217,46 @@ describe('the interstitials say what is allowed and which parts need sight (UX-R
     for (const id of ['matrix_series', 'memory', 'quant', 'coding_reading'] as const) expect(SEGMENT_INFO[id].blurb).not.toMatch(/see the screen/)
   })
 })
+
+describe('the words for the session’s length (A15, M3.11 phase 1)', () => {
+  it('the six-part session reads as it always did, on every screen that states it', async () => {
+    const { READY_TEXT, WELCOME_INTRO, BASE_OUTLINE, welcomeIntro, lengthSentence } = await import('./copy')
+    const { SERVER_READY_TEXT, serverReadyText } = await import('../backend/copy')
+    const { META_DESCRIPTION } = await import('../copy')
+    expect(WELCOME_INTRO).toBe(
+      'The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.',
+    )
+    expect(READY_TEXT).toBe('Six short parts, about 30 minutes. Your progress is saved in this browser as you go. After each answer to a question you will say how sure you are.')
+    expect(SERVER_READY_TEXT).toBe(
+      'Six short parts, about 30 minutes. Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After each answer to a question you will say how sure you are.',
+    )
+    expect(META_DESCRIPTION).toBe('HumanBench: short tasks of reasoning, memory and speed, about 30 minutes. Your results are shown as a profile with ranges, not as a single score.')
+    expect(welcomeIntro(BASE_OUTLINE)).toBe(WELCOME_INTRO)
+    expect(serverReadyText(BASE_OUTLINE)).toBe(SERVER_READY_TEXT)
+    expect(lengthSentence(BASE_OUTLINE)).toBe('Six short parts, about 30 minutes.')
+  })
+
+  it('a session that asks for text parts states the plan’s own count and minutes, as "up to"', async () => {
+    const { welcomeIntro, lengthSentence, plannedMinutes } = await import('./copy')
+    const { sessionOutline, TEXT_AXES } = await import('../engine/plan-table')
+    const { metaDescription } = await import('../copy')
+    const all = sessionOutline(TEXT_AXES)
+    expect(welcomeIntro(all)).toMatch(/^The session has up to eleven parts and takes about 40 minutes\. /u)
+    expect(lengthSentence(all)).toBe('Up to eleven short parts, about 40 minutes.')
+    expect(lengthSentence(sessionOutline(['VOC']))).toBe('Up to seven short parts, about 30 minutes.')
+    expect(lengthSentence(sessionOutline(['LR']))).toBe('Up to seven short parts, about 35 minutes.')
+    expect(metaDescription(plannedMinutes(all))).toContain('about 40 minutes')
+  })
+
+  it('the text parts say what the person does and nothing about the person', async () => {
+    const { SEGMENT_INFO } = await import('./segments')
+    const { TEXT_PARTS } = await import('../engine/plan-table')
+    for (const p of TEXT_PARTS) {
+      const blurb = SEGMENT_INFO[p.id].blurb
+      expect(blurb, p.id).not.toMatch(/\b(you are|intelligen|smart|IQ|ability|gifted|deficit|disorder|diagnos)/iu)
+      expect(blurb.length, p.id).toBeGreaterThan(30)
+      expect(SEGMENT_INFO[p.id].axes).toEqual([p.axis])
+    }
+    for (const id of ['knowledge_stem', 'knowledge_humanities', 'knowledge_arts'] as const) expect(SEGMENT_INFO[id].blurb).toContain('without looking anything up')
+  })
+})

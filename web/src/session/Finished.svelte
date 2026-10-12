@@ -41,7 +41,7 @@
   } from './copy'
   import type { AutosaveStatus } from './persist'
   import type { RunResult } from './run'
-  import { SEGMENT_INFO, skipTargetName } from './segments'
+  import { SEGMENT_INFO_IN_ORDER, skipTargetName } from './segments'
 
   interface Props {
     /** What the session did, or null when the results are shown without a new session (from the ready screen). */
@@ -95,7 +95,12 @@
   // Made once, when the results appear: the save is complete now.
   const save = $derived(makeSave())
   // The sessions the server scores are scored there, not here (R-11.1); the page shows what it returned.
-  const results = $derived(buildResults(save, outcome === null ? undefined : { sessionIds: servedSessionIds(save, outcome.server.sessionId), estimates: outcome.estimates }))
+  const results = $derived(
+    buildResults(
+      save,
+      outcome === null ? undefined : { sessionIds: servedSessionIds(save, outcome.server.sessionId), estimates: outcome.estimates, ...(outcome.textAxes === undefined ? {} : { offered: outcome.textAxes }) },
+    ),
+  )
 
   const items = $derived(result === null ? 0 : Object.values(result.itemsByAxis).reduce<number>((n, c) => n + (c ?? 0), 0))
   const minutes = $derived(result === null ? 1 : Math.max(1, Math.round(result.durationS / 60)))
@@ -122,7 +127,7 @@
   const skippedParts = $derived.by((): string[] => {
     if (result === null) return []
     const gone = result.skipped
-    return Object.values(SEGMENT_INFO)
+    return SEGMENT_INFO_IN_ORDER
       .filter((segment) => segment.axes.every((a) => gone.includes(a)))
       .map((segment) => skipTargetName(segment.axes[0]!))
   })

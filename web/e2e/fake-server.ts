@@ -33,7 +33,15 @@ export interface Call {
 
 export interface Wire {
   readonly seq: number
-  readonly item: { item_id: string; item_type: string; time_limit_s: number; media: Record<string, unknown> }
+  readonly item: { item_id: string; item_type: string; time_limit_s: number; media?: Record<string, unknown>; stem?: string; options?: readonly string[] }
+}
+
+/**
+ * A made-up text multiple-choice question as `item_view` sends one (ROADMAP M3.11 phase 1): a stem and
+ * options, no `media`, no key. `payload` is one of the synthetic ones of `src/render/text/demo.ts`.
+ */
+export function textWire(seq: number, id: string, payload: { readonly stem: string; readonly options: readonly string[]; readonly media?: { readonly stimulus: string | readonly string[] } }): Wire {
+  return { seq, item: { item_id: id, item_type: 'mc_text', time_limit_s: 180, stem: payload.stem, options: payload.options, ...(payload.media === undefined ? {} : { media: { stimulus: payload.media.stimulus } }) } }
 }
 
 /** A series item the app can draw: the spec as the bank stores it, with the family named in `media.renderer`. */
@@ -48,6 +56,13 @@ export interface FakeOptions {
   readonly failures?: Readonly<Record<string, { status: number; times: number; code?: string }>>
   /** A backup already on the server: identifier → phrase. */
   readonly backups?: Readonly<Record<string, string>>
+  /**
+   * Items by skill (M3.11): with this set the server reads `p_axes` as the real one does. It serves the next item
+   * of the first skill asked for that has one, and answers `no_items` when none of them has. `items` is then unused.
+   */
+  readonly pools?: Readonly<Record<string, readonly Wire[]>>
+  /** What `rescore` publishes (default: Matrix & Series only). */
+  readonly eap?: Readonly<Record<string, { mean: number; sd: number; n: number }>>
 }
 
 export class FakeServer {
@@ -55,6 +70,8 @@ export class FakeServer {
   readonly served: string[] = []
   readonly answered: string[] = []
   readonly #queue: Wire[]
+  readonly #pools: Map<string, Wire[]> | null
+  readonly #eap: Readonly<Record<string, { mean: number; sd: number; n: number }>>
   readonly #failures = new Map<string, { status: number; times: number; code?: string }>()
   /** identifier → { phrase, save } */
   readonly mirror = new Map<string, { phrase: string; save: Record<string, unknown> | null }>()
@@ -65,6 +82,8 @@ export class FakeServer {
 
   constructor(opts: FakeOptions = {}) {
     this.#queue = [...(opts.items ?? [])]
+    this.#pools = opts.pools === undefined ? null : new Map(Object.entries(opts.pools).map(([k, v]) => [k, [...v]]))
+    this.#eap = opts.eap ?? { MAT: { mean: 0.6, sd: 0.4, n: 6 } }
     for (const [fn, f] of Object.entries(opts.failures ?? {})) this.#failures.set(fn, { ...f })
     for (const [id, phrase] of Object.entries(opts.backups ?? {})) this.mirror.set(id, { phrase, save: null })
   }
@@ -118,7 +137,11 @@ export class FakeServer {
         if (a.p_token !== TOKEN) return new Failure(401, 'invalid_session')
         const pending = this.served.find((id) => !this.answered.includes(id))
         if (pending !== undefined) return this.#wire(pending)
-        const next = this.#queue.shift()
+        let next: Wire | undefined
+        if (this.#pools !== null) {
+          for (const k of (a.p_axes as string[] | undefined) ?? []) if (next === undefined) next = this.#pools.get(k)?.shift()
+          if (next === undefined) return { done: true, reason: 'no_items' }
+        } else next = this.#queue.shift()
         if (next === undefined) return { done: true, reason: 'axes_done' }
         this.served.push(next.item.item_id)
         this.#wires.set(next.item.item_id, next)
@@ -156,7 +179,7 @@ export class FakeServer {
           retest_version: 'retest_v1',
           param_version: 'e2e',
           sessions: sessions.map((s) => ({ ...s, ordinals: {}, rho: {}, n_scored: 0 })),
-          eap: { MAT: { mean: 0.6, sd: 0.4, n: 6 } },
+          eap: this.#eap,
           facets: { MAT: { series: { mean: 0.5, sd: 0.5, n: 5 } } },
           withheld: { eap: {}, facets: {} },
           limits: {},

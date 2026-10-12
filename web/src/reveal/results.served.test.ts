@@ -10,7 +10,7 @@ import type { RescoreReply } from '../backend/replies'
 import { AXIS_CODES, AXIS_INDEX, N_AXES } from '../engine/axes'
 import { TIMED_TASKS_ONLY_FLAG, type SaveFileV1 } from '../save/types'
 import { axisEstimates } from '../viz/profile'
-import { buildResults, overlayServed, scoredSessions, type ServedScores } from './results'
+import { OFFERED_AXES, buildResults, offeredAxes, overlayServed, scoredSessions, type ServedScores } from './results'
 import { botSave } from './test-support'
 
 const reply = (over: Partial<RescoreReply> = {}): RescoreReply => ({
@@ -178,5 +178,52 @@ describe('buildResults with the server scoring the counted questions', () => {
   it('without a server nothing changes: the same model as before, with none of the new fields', () => {
     const r = buildResults(botSave('s_SERVEDRES00008').save)!
     expect(Object.keys(r).sort()).toEqual(['facetObservations', 'input', 'nSessions', 'practiceAdjusted', 'rescore', 'skipped'])
+  })
+})
+
+describe('the served text skills on the profile (M3.11 phase 1)', () => {
+  // A session as the server signs one after text parts: made-up item ids of no family this build knows, no verdicts.
+  const textSession = (id: string, flags: Record<string, boolean> = {}): SaveFileV1['sessions'][number] => ({
+    ...served.sessions[0]!,
+    session_id: id,
+    flags,
+    responses: Array.from({ length: 5 }, (_, i) => [`i:tst:lr:${id}:${i}`, 0, i % 4, null, 30_000, 60] as SaveFileV1['sessions'][number]['responses'][number]),
+  })
+  const textSave = (...sessions: SaveFileV1['sessions']): SaveFileV1 => ({ ...served, sessions, seen_items: [], seen_families: [] })
+  const lr = reply({ eap: { LR: { mean: 0.3, sd: 0.6, n: 5 } }, facets: {} })
+  const status = (r: NonNullable<ReturnType<typeof buildResults>>, k: 'LR' | 'VOC' | 'KST') => axisEstimates(r.input).find((e) => e.code === k)!
+
+  it('are not among the skills a session offers unless it asked the server for them, as before', () => {
+    expect([...offeredAxes()].sort()).toEqual([...OFFERED_AXES].sort())
+    expect(offeredAxes({ sessionIds: new Set(), estimates: null })).toBe(OFFERED_AXES)
+    for (const k of ['LR', 'VOC', 'KST', 'KHU', 'KAP'] as const) expect(OFFERED_AXES.has(k)).toBe(false)
+    const r = buildResults(served, servedScores(reply()))!
+    expect(status(r, 'LR')).toMatchObject({ measured: false, reason: 'not_yet_available' })
+  })
+
+  it('a skill the server published is measured and shown, with the server’s mean and range', () => {
+    const save = textSave(textSession('s_TEXTSESSION0001'))
+    const r = buildResults(save, { sessionIds: new Set(['s_TEXTSESSION0001']), estimates: lr, offered: ['LR', 'VOC'] })!
+    expect(status(r, 'LR')).toMatchObject({ measured: true, theta: 0.3, sd: 0.6 })
+    expect(r.rescore.n_scored).toBe(0) // none of it was scored on the page
+    expect(r.skipped).toEqual([])
+  })
+
+  it('a skill the session asked for and the server did not publish reads "not measured", not "not offered yet"', () => {
+    const save = textSave(textSession('s_TEXTSESSION0001'))
+    const r = buildResults(save, { sessionIds: new Set(['s_TEXTSESSION0001']), estimates: lr, offered: ['LR', 'VOC'] })!
+    expect(status(r, 'VOC')).toMatchObject({ measured: false, reason: 'no_data' })
+    expect(status(r, 'KST')).toMatchObject({ measured: false, reason: 'not_yet_available' }) // not asked for: not offered
+  })
+
+  it('a text skill skipped in the session shows as skipped; skipped once and answered in another served session, it shows', () => {
+    const skippedOnce = textSave(textSession('s_TEXTSESSION0001', { skipped_lr: true }))
+    const one = buildResults(skippedOnce, { sessionIds: new Set(['s_TEXTSESSION0001']), estimates: lr, offered: ['LR'] })!
+    expect(one.skipped).toEqual(['LR'])
+    expect(status(one, 'LR')).toMatchObject({ measured: false, reason: 'skipped' })
+    const second = { ...textSession('s_TEXTSESSION0002'), started_utc: '2026-10-20T10:00:00Z' }
+    const two = buildResults(textSave(textSession('s_TEXTSESSION0001', { skipped_lr: true }), second), { sessionIds: new Set(['s_TEXTSESSION0001', 's_TEXTSESSION0002']), estimates: lr, offered: ['LR'] })!
+    expect(two.skipped).toEqual([])
+    expect(status(two, 'LR')).toMatchObject({ measured: true, theta: 0.3 })
   })
 })

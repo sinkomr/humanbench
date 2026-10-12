@@ -37,7 +37,8 @@
     "ux:build": "tsx ux-review/build.ts",
     "ux:review": "playwright test -c ux-review/playwright.ux.config.ts",
     "e2e:iso": "playwright test -c ux-review/playwright.iso.config.ts",
-    "e2e:live": "playwright test -c e2e-live/playwright.live.config.ts"
+    "e2e:live": "playwright test -c e2e-live/playwright.live.config.ts",
+    "e2e:db": "playwright test -c e2e-db/playwright.db.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

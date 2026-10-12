@@ -25,7 +25,13 @@
  *
  * - **Skills not offered yet** (§9.7, A15). The profile is told which skills a session of this build
  *   puts in front of the person ({@link OFFERED_AXES}), so a skill no part measures reads "not offered
- *   yet" rather than plain "not measured" (UX-048b).
+ *   yet" rather than plain "not measured" (UX-048b). The served text parts (M3.11 phase 1: Logical
+ *   Reasoning, Vocabulary, the three knowledge skills) are offered only where a session asks the
+ *   server for them ({@link ServedScores.offered}), and a skill the server published a score for is
+ *   offered by that fact ({@link offeredAxes}); elsewhere they read "not offered yet", as before.
+ * - **Skipped, for a skill the server scores.** The ids of the authored banks' items do not name a
+ *   family this build knows, so the save cannot say which session answered them. Such a skill that some
+ *   session skipped still shows when the server published it and a session it scored did not skip it.
  *
  * Nothing here returns a total, a mean or any other single number across skills (§9.5 a).
  */
@@ -51,12 +57,24 @@ export const OFFERED_AXES: ReadonlySet<AxisCode> = new Set([
   ...AXES.filter((a) => a.embedded).map((a) => a.code),
 ])
 
+/** The skills the profile counts as offered: the A15 ones, those a session asked the server for, and any the server published. */
+export function offeredAxes(served?: ServedScores): ReadonlySet<AxisCode> {
+  const est = served?.estimates ?? null
+  const extra = [...(served?.offered ?? []), ...(est === null ? [] : AXIS_CODES.filter((k) => est.eap[k] !== undefined))]
+  return extra.length === 0 ? OFFERED_AXES : new Set([...OFFERED_AXES, ...extra])
+}
+
 /** The part of a save the server scores (M2.7). */
 export interface ServedScores {
   /** Ids of the sessions whose answers the server scores: the page does not (and cannot) score them. */
   readonly sessionIds: ReadonlySet<string>
   /** What `rescore` returned, or null when the server could not be asked. */
   readonly estimates: RescoreReply | null
+  /**
+   * Skills the session asked the server for besides the A15 ones (the served text parts, M3.11 phase 1).
+   * They count as offered, so one of them without a score reads "not measured", not "not offered yet".
+   */
+  readonly offered?: readonly AxisCode[]
 }
 
 /**
@@ -163,10 +181,15 @@ export function buildResults(save: SaveFileV1, served?: ServedScores): ResultsMo
   const rescore = est !== null && publishes ? overlayServed(localRescore, est) : localRescore
 
   const sessionById = new Map(save.sessions.map((s) => [s.session_id, s]))
+  // Skills with no session the local re-score could place an answer in (the authored banks' items, M3.11).
+  const itemsUnplaced = new Set(AXIS_CODES.filter((k) => !rescore.sessions.some((rs) => rs.ordinals[k] !== undefined)))
   const skipped = AXIS_CODES.filter((k) => {
     if (!save.sessions.some((s) => skippedIn(s, k))) return false
     // Measured by a session that did not skip it?
-    return !rescore.sessions.some((rs) => rs.ordinals[k] !== undefined && !skippedIn(sessionById.get(rs.session_id)!, k))
+    if (rescore.sessions.some((rs) => rs.ordinals[k] !== undefined && !skippedIn(sessionById.get(rs.session_id)!, k))) return false
+    // A skill the server published, whose items the save cannot place (module comment): a served session that did not skip it.
+    if (est?.eap[k] !== undefined && itemsUnplaced.has(k) && save.sessions.some((s) => served!.sessionIds.has(s.session_id) && !skippedIn(s, k))) return false
+    return true
   })
 
   // By sitting, as scoredSessions counts (rescore.sessions are in time order).
@@ -192,7 +215,7 @@ export function buildResults(save: SaveFileV1, served?: ServedScores): ResultsMo
 
   return {
     rescore,
-    input: { score: rescore, skipped, offered: OFFERED_AXES },
+    input: { score: rescore, skipped, offered: offeredAxes(served) },
     skipped,
     facetObservations,
     ...(publishes && est !== null ? { servedFacets: est.facets as FacetOptions['precomputed'] } : {}),

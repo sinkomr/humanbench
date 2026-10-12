@@ -24,9 +24,11 @@
     readonly onresults?: () => void
     /** The notes builder's page (default `slots.ts`: `notes.html` under the base path). */
     readonly notesHref?: string
+    /** The intro of a session that is not the six-part one (served text parts, M3.11 phase 1); default the M1 words. */
+    readonly intro?: string
   }
 
-  let { onstart, focus = false, returning = null, onresults, notesHref = NOTES_BUILDER_HREF }: Props = $props()
+  let { onstart, focus = false, returning = null, onresults, notesHref = NOTES_BUILDER_HREF, intro = WELCOME_INTRO }: Props = $props()
 
   const showResults = $derived(returning !== null && returning.results && onresults !== undefined)
   const showNotes = $derived(returning !== null && returning.notes)
@@ -34,7 +36,7 @@
 
 <Screen title={WELCOME_HEADING} {focus} translate="no">
   <p class="lead">{WELCOME_TAGLINE}</p>
-  <p>{WELCOME_INTRO}</p>
+  <p>{intro}</p>
   <div class="hb-actions">
     <button type="button" class="hb-btn hb-primary" onclick={onstart}>{WELCOME_START}</button>
   </div>

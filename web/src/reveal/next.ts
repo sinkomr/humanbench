@@ -22,7 +22,7 @@
 
 import type { AxisCode } from '../engine/axes'
 import type { SegmentId } from '../engine/selector'
-import { SEGMENT_INFO } from '../session/segments'
+import { A15_SEGMENT_INFO } from '../session/segments'
 import type { AxisEstimate } from '../viz/profile'
 
 /** §7.6: precision gained per session by a question-based skill (6 items × Ī 0.35). */
@@ -92,7 +92,7 @@ export interface FocusOption {
 /** The six A15 parts as focus options, in session order; the parts of the fuzziest skills are suggested. */
 export function focusOptions(estimates: readonly AxisEstimate[], nFuzzy = 3): FocusOption[] {
   const fuzzy = new Set(fuzziestAxes(estimates, nFuzzy).map((f) => f.code))
-  return Object.values(SEGMENT_INFO).map((s) => ({
+  return A15_SEGMENT_INFO.map((s) => ({
     segment: s.id,
     title: s.title,
     axes: s.axes,
