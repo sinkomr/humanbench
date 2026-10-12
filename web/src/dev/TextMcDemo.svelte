@@ -7,7 +7,8 @@
    * `?item=N` picks the payload. Never in a production build (routes.ts).
    */
   import { untrack } from 'svelte'
-  import '../render/common/render.css'
+  // The shared renderer styles (render.css) come with the app's entry stylesheet; importing them here again splits
+  // them into a stylesheet of their own that loads after it (see TextChoiceRenderer.svelte).
   import { optionLetter } from '../render/choice/keys'
   import { DEMO_TEXT_ITEMS, demoTextItem } from '../render/text/demo'
   import { textMcSpec } from '../render/text/spec'

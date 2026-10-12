@@ -26,7 +26,9 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import '../common/render.css'
+  // No `import '../common/render.css'` here: the session's screen and the dev demo's page already load it, and this
+  // component is both in the entry chunk and imported by a dev demo, which made the bundler split that stylesheet
+  // out and link it after the entry's (scripts/dev-routes.test.ts keeps it in the entry stylesheet).
   import { CONFIRM_LABEL, optionIndexForKey, optionLetter } from '../choice/keys'
   import { browserTiming, type RendererProps } from '../common/props'
   import { TEXT_MC_COPY } from './copy'

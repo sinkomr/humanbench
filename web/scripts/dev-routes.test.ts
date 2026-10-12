@@ -100,6 +100,20 @@ describe('dev-only routes (M1.16)', () => {
     expect(dev('?fast=0')).toBe(1)
   }, 60_000)
 
+  it('the shared renderer styles stay in the entry stylesheet in both builds, so the cascade the e2e suite tests is the one that ships', async () => {
+    // `render/common/render.css` holds the base rules of `.hb-render` (max-width: 100%, the button box). Screens and
+    // renderers override them with rules of the same weight, which only works while the base rules come first: in
+    // the entry stylesheet. A component that is both in the entry chunk and imported by a dev demo, and imports
+    // render.css itself, made the bundler emit it as a stylesheet of its own, linked AFTER the entry's in the e2e
+    // build only (the welcome column went full width, the coding keypad lost its two-row fold; fix/m311-css).
+    for (const flag of [undefined, '1'] as const) {
+      const { files } = await appBuild(flag)
+      const css = files.filter((f) => f.endsWith('.css'))
+      expect(css.filter((f) => /(^|\/)render-/u.test(f)), `dev routes ${flag ?? 'off'}`).toEqual([])
+      expect(css.some((f) => /(^|\/)index-/u.test(f))).toBe(true)
+    }
+  }, 120_000)
+
   it('the e2e build (VITE_HB_DEV_ROUTES=1) does ship them, so the check above is not vacuous', async () => {
     const { files, text } = await appBuild('1')
     expect(files.some((f) => /BlobDemo/.test(f))).toBe(true)
