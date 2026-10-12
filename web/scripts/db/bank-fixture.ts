@@ -44,6 +44,10 @@ export interface FixtureItem {
   readonly expectedTimeS?: number | undefined
   /** `item_parameters.se_b`, the sd of b (pretest items: Thompson sampling). Default: null. */
   readonly seB?: number | null | undefined
+  /** `items.payload` as it is (a made-up text question, M3.11). Default: the "Test item" stem with `media.renderer` 'test'. */
+  readonly payload?: Readonly<Record<string, unknown>> | undefined
+  /** `items.item_type` as stored, when it is not the fixture's 'mc' / 'numeric' (the banks' `mc_text`). */
+  readonly storedType?: string | undefined
 }
 
 export interface BankSpec {
@@ -148,6 +152,44 @@ export function customItem(n: number, axis: AxisCode, over: Partial<FixtureItem>
   }
 }
 
+/**
+ * Made-up text multiple-choice items of one skill, in the shape the authored banks store (ROADMAP M3.11
+ * phase 1): `item_type` 'mc_text', a payload of `{stem, options}` with no `media`, an `{index}` key, a
+ * family per item. The text says it is made up and the key is a position drawn by the fixture's PRNG:
+ * nothing here is, or is derived from, a real item or a real key.
+ */
+export function textItems(axis: AxisCode, count: number, seed = 'text'): FixtureItem[] {
+  const rng = createRng(`text:${seed}:${axis}`)
+  return Array.from({ length: count }, (_, k): FixtureItem => {
+    const nOptions = 4 + (k % 3) // 4, 5 or 6 options
+    const familyId = `f:tst:${hex12(`text:${seed}:${axis}:${k}`)}`
+    const model = nOptions === 4 ? '3pl' : '2pl'
+    return {
+      itemId: `i:tst:txt:${axis.toLowerCase()}-${String(k).padStart(3, '0')}`,
+      familyId,
+      siblingGroup: familyId,
+      axis,
+      facet: `${axis.toLowerCase()}_made_up`,
+      itemType: 'mc',
+      storedType: 'mc_text',
+      model,
+      a: round3(Math.exp(rng.normal(0.15, 0.2))),
+      b: round3(rng.normal(0, 0.8)),
+      c: model === '3pl' ? 0.25 : null,
+      nOptions,
+      key: { index: rng.int(0, nOptions - 1) },
+      status: 'live',
+      practiceOnly: false,
+      generator: 'authored_test',
+      expectedTimeS: 20,
+      payload: {
+        stem: `Made-up test question ${k + 1} for ${axis}: which placeholder below is listed at position ${k + 1} of nowhere? (No real question.)`,
+        options: Array.from({ length: nOptions }, (_, i) => `Placeholder ${axis}-${k + 1}-${'ABCDEF'[i]} (made up)`),
+      },
+    }
+  })
+}
+
 /** Inserts the items, their families, keys and parameters (as the migration owner, bypassing RLS). */
 export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[], paramVersion = 'p-test'): Promise<void> {
   const families = new Map<string, FixtureItem>()
@@ -170,10 +212,10 @@ export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[],
     items.map((it) => ({
       item_id: it.itemId,
       family_id: it.familyId,
-      item_type: it.itemType,
+      item_type: it.storedType ?? it.itemType,
       status: it.status,
       finite_content: it.finiteContent ?? false,
-      payload: {
+      payload: it.payload ?? {
         stem: `Test item ${it.itemId}`,
         media: { renderer: 'test', facet: it.facet },
         ...(it.nOptions > 0 ? { options: ['A', 'B', 'C', 'D', 'E'].slice(0, it.nOptions) } : {}),

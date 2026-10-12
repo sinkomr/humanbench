@@ -10,7 +10,8 @@
 
   - The options are native radio inputs in one column, so the browser supplies the group semantics and
     the arrow keys; the question is the group's legend, so a screen reader announces it with the first
-    option. Each option's name is its letter and its text ("B. …"), and the letter is visible (WCAG 2.5.3).
+    option. Each option's name is its letter and its text ("B. …", set on the radio so every engine reads it
+    the same way); both are visible in the row (WCAG 2.5.3).
   - Keys 1 to 6 and A to F pick an option while focus is inside the group (WCAG 2.1.4); Enter on an
     option or the Confirm button answers, as in the other multiple-choice renderers (`choice/keys.ts`).
   - `onrespond(index)` is called once with the display position. `onshown(t)` reports the timestamp of
@@ -30,6 +31,9 @@
   import { browserTiming, type RendererProps } from '../common/props'
   import { TEXT_MC_COPY } from './copy'
   import { splitTextStem, type TextMcResponse, type TextMcSpec } from './spec'
+
+  /** The name of an option for assistive technology: its letter, then its text ("B. …"), both of which are on screen. */
+  const optionName = (i: number, text: string): string => `${optionLetter(i)}. ${text}`
 
   interface Props extends RendererProps<TextMcSpec, TextMcResponse> {
     /** rAF timestamp (ms, performance.now() clock) of the first frame showing the item. */
@@ -116,8 +120,8 @@
       <div class="options">
         {#each spec.options as option, i (i)}
           <label class="option">
-            <input type="radio" name={uid} value={i} bind:group={selected} bind:this={inputs[i]} />
-            <span class="letter">{optionLetter(i)}<span class="hb-sr-only">.</span></span>
+            <input type="radio" name={uid} value={i} bind:group={selected} bind:this={inputs[i]} aria-label={optionName(i, option)} />
+            <span class="letter">{optionLetter(i)}</span>
             <span class="words">{option}</span>
           </label>
         {/each}

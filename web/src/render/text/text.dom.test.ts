@@ -49,8 +49,9 @@ describe('TextChoiceRenderer', () => {
     const labels = [...m.container.querySelectorAll('label.option')]
     expect(labels).toHaveLength(4)
     expect(labels.map((l) => l.querySelector('.words')?.textContent)).toEqual(SHORT.options)
-    // The accessible name of a radio is its label's text: the letter, then the option.
-    expect(labels.map((l) => l.textContent?.replace(/\s+/gu, ' ').trim())).toEqual(SHORT.options.map((o, i) => `${'ABCD'[i]}. ${o}`))
+    // The accessible name of a radio: the letter, then the option, both of which the row shows.
+    expect(m.radios().map((r) => r.getAttribute('aria-label'))).toEqual(SHORT.options.map((o, i) => `${'ABCD'[i]}. ${o}`))
+    expect(labels.map((l) => l.querySelector('.letter')?.textContent)).toEqual(['A', 'B', 'C', 'D'])
     expect(m.radios().map((r) => r.value)).toEqual(['0', '1', '2', '3'])
     expect(new Set(m.radios().map((r) => r.name)).size).toBe(1)
   })
