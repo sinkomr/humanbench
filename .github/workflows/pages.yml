@@ -39,9 +39,16 @@ jobs:
       - run: npm test
 
       # base_path is "/humanbench" on sinkomr.github.io and "" on a custom domain (DESIGN §15).
+      # The online version (ROADMAP M2.6, M2.7): the project's URL and its anon / publishable key,
+      # both public, come from the repository VARIABLES HB_SUPABASE_URL and HB_SUPABASE_ANON_KEY
+      # (Settings > Secrets and variables > Actions > Variables). With either one unset the build
+      # is the static version, which sends nothing (web/src/backend/config.ts). Never a secret
+      # here, and never the service-role key: everything in this build is served to every visitor.
       - run: npm run build
         env:
           VITE_BASE: ${{ steps.pages.outputs.base_path }}/
+          VITE_HB_SUPABASE_URL: ${{ vars.HB_SUPABASE_URL }}
+          VITE_HB_SUPABASE_ANON_KEY: ${{ vars.HB_SUPABASE_ANON_KEY }}
 
       - uses: actions/upload-pages-artifact@v5
         with:

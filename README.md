@@ -294,7 +294,22 @@ whitelisted RPCs):
 VITE_HB_SUPABASE_URL=https://example.supabase.co VITE_HB_SUPABASE_ANON_KEY=the-anon-key npm run build
 ```
 
-Never give the front end a service-role key. `web/src/backend/` holds the client; the pieces:
+Never give the front end a service-role key. The Pages deploy (`.github/workflows/pages.yml`) takes the
+two values from the repository **variables** `HB_SUPABASE_URL` and `HB_SUPABASE_ANON_KEY` (Settings >
+Secrets and variables > Actions > Variables; they are public values, so variables and not secrets). With
+either one unset the deploy is the static version; `web/scripts/pages-backend.test.ts` holds the workflow
+to that, and to naming no project and no key itself. So the online version goes live with the first push
+to `main` after both variables are set, and deleting a variable and re-running the workflow takes the
+site back to static.
+
+`npm run e2e:live` (`web/e2e-live/`) is a smoke test of the plain production build against a real
+project: it builds with `HB_LIVE_SUPABASE_URL` and `HB_LIVE_SUPABASE_ANON_KEY`, takes one short session in
+Chromium (served questions, no key or verdict in any reply, the signed session in the save), deletes it
+again on the data page, and in a second test cuts the server off and goes on with the device only. It is
+not part of `npm run e2e` or CI: it writes to the live database and uses one of the five sessions a
+network address may start in a day.
+
+`web/src/backend/` holds the client; the pieces:
 
 - `config.ts` chooses the server (`https`, or `http` for localhost only; a half-set pair falls back to static
   with the reason). `?hb_backend=<url>&hb_key=<key>` points one page load at a server and `?hb_backend=off`
