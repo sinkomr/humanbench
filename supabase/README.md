@@ -1272,6 +1272,33 @@ with the save file. The run that reached it failed on a selector of the test (fi
 the next run was refused by the limit of five sessions a day per address (`429 rate_limited`), which is the limit working.
 The sessions those runs left were deleted with `delete_my_data` through the API. Run it again on another day.
 
+### The second load (2026-10-12): not made
+
+The owner extended the G7 waiver to the finite banks on 2026-10-12 (ROADMAP, "Owner decisions 2026-10-12": an owner decision,
+not an audit; an item is covered only while gates G1 to G6 pass on it and all three panel models agree with its key with no
+flag; situational-judgement, emotion and retired items never). The plan was to load what qualifies. **Nothing was loaded,
+and nothing in the project was written or read for it**: `bank_version` is still `2026.10.12-b1`, `param_version` `prior`,
+the pool the 1,800 procedural items, and no session was opened against the public API (the day's five stay the owner's).
+
+Why, per kind of item. "Bank" is the private pipeline's own check (`hb promote`); "server" was tried on the local database of
+`npm run db:up` with one item of each kind, stored with the bank pipeline's role and then asked for through `start_session`,
+`next_item`, `submit` and `finish` as `anon`; "front end" is `web/src/backend/items.ts` and the session's parts.
+
+| Kind (axis) | In play | Meet the waiver | Bank | Server, local proof | Front end |
+|---|---:|---:|---|---|---|
+| Text multiple choice (LR, VOC, KST, KHU, KAP) | 1,613 | 0 | G2 and G3 never recorded; F9 `not_run` | stored, selected, served, scored (`index` key); no key field in a reply | no screen; the axes are never asked for |
+| Passage questions (RC) | 324 | 0 | the same, and no no-passage test | stored and scored, the passage in `media`; **one question per passage**: its questions share a family and the selector takes one item per family | no screen |
+| Logic games (LG, procedural) | 162 | not a finite batch | gates pass; no waiver names `lg` | as RC: one question per game | no screen |
+| Fermi (FER) | 119 | 119 | F9 `not_run` | stored, **never selected**: `gaussian` rows are outside `hb.candidate_items` and the session score, and the key shape is not one `hb.score_response` reads | the entry screen exists on a dev route, not for served items |
+| RAT triads (CRE) | 145 | 143 | F9 `not_run` | stored and served, **not scored**: a typed word against an `answer`/`accept` key leaves `correct` null | the entry screen exists on a dev route, not for served items |
+
+So no kind works on both sides today, and the rule of the load was to load only what does. The server changes that are
+missing are a serving rule for testlets (a passage or a game as a block, DESIGN §7.1), the Gaussian model in selection and
+session scoring with the Fermi key and its scoring (the bank's `hb.fermi`), and a typed-answer branch in `hb.score_response`
+with the accept list. They need migrations and tests of their own (ROADMAP M3.11) and were not improvised here. In the local
+proof every reply had only `item_id`, `item_type`, `time_limit_s`, `stem`, `media`, `options`, and `finish` signed each
+session, so the guarantees of R-11.1 held for the kinds that are served.
+
 ### Left for the owner
 
 - **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository
