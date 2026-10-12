@@ -1299,6 +1299,28 @@ with the accept list. They need migrations and tests of their own (ROADMAP M3.11
 proof every reply had only `item_id`, `item_type`, `time_limit_s`, `stem`, `media`, `options`, and `finish` signed each
 session, so the guarantees of R-11.1 held for the kinds that are served.
 
+### Text multiple choice through the app (2026-10-12, ROADMAP M3.11 phase 1)
+
+The first row of the table above now works on both sides, on the local database: **no migration was written and nothing in
+the project was touched or read.** The front end draws a served text question and has parts for the five text skills
+(ROADMAP M3.11, "Phase 1"). What was checked here, with made-up items only (`web/scripts/db/bank-fixture.ts`, `textItems`:
+`item_type` `mc_text`, a payload of `{stem, options}` with no `media`, an `{index}` key drawn by a PRNG, text that says it
+is a placeholder):
+
+- `web/scripts/db/text-mc.db.test.ts` (`npm run test:db`): the app's session run and the real client. A pool **without** the
+  text skills answers each text part's one request with `no_items` and keeps no exposure and no answer; a pool with three of
+  the five runs those three parts to five answers or more, `responses.correct` is the comparison with the stored key for
+  every answer, no reply holds a key or a verdict, `finish` signs the session with `correct: null` in every tuple,
+  `verify_save` says `verified`, and `rescore` publishes exactly the three skills. A second session of the same person is
+  served other questions of the skill.
+- `npm run e2e:db` (`web/e2e-db/`): the same in Chromium, WebKit and an emulated iPhone, the browser's supabase-js against a
+  PostgREST stand-in with CORS in front of the local PostgreSQL. Three settings of those test databases differ from a
+  deployed project (sessions per address, the average-time check, the exposure cap), and the served-at time of a question
+  is moved back before its answer is stored, because a test clicks faster than a person reads (`e2e-db/server.ts`).
+
+For the live project this changes nothing until two things are true: text items are `live` there (the bank's gates above
+still prevent that), and the Pages build is given `HB_TEXT_AXES` (unset today; `web/src/backend/config.ts`).
+
 ### Left for the owner
 
 - **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository
