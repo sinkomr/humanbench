@@ -501,3 +501,8 @@ Numbered as in proposal §11. The defaults apply until the user decides otherwis
   - **Use the permissive set**, cached outside both repos: Google Books Ngram v3 (CC BY 3.0), Open English WordNet (CC BY 4.0), the Moby compound list (public domain) and VarCon (MIT-like). Only per-item evidence goes in the bank, and the app gets a credits line.
   - **wordfreq (CC BY-SA)** is allowed as a secondary signal, with per-item values only.
   - **Not used:** COCA/iWeb and Norvig/Web1T. SUBTLEX is used only via wordfreq.
+- **M2.6 deploy (2026-10-11/12):** the backend is deployed to the owner's Supabase project: 18 migrations, the signing key in the Vault, and the security checks passed as anon. **Owner decisions:**
+  - Accept that the platform's `service_role` can read the Vault. It isn't reachable through the public API, and the service-role key stays secret. The README and local-shim claims should be corrected to say so.
+  - CAPTCHA is skipped for now, since rate limits are active.
+  - `graphql_public` will be removed from the exposed schemas by the owner.
+  - **Not wired:** the site isn't connected to the backend until the procedural pool is loaded, and that needs the owner's G7 audit records.
