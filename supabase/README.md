@@ -1230,8 +1230,53 @@ of 6 with a mean on the 0.1 step and an sd on the 0.05 step; an edited answer ma
 to `rescore`; every tuple had `correct: null`. Nothing of it was committed. To be repeated through the API once the bank
 holds promoted procedural items (the finite bank waits for the owner's audit).
 
+### The first bank load, and the round trip through the API (2026-10-12)
+
+The bank pipeline loaded 1,800 procedural items with `hb load push --as-role service_role` (a dry run first, then one
+transaction): 961 `item_families` rows and 1,800 each of `items`, `item_keys` and `item_parameters`, all `live` on the prior
+parameters. They are the families the server serves: rotation (SPA, strata 2 to 6, 500), matrices (MAT, 1 to 4, 400), series
+(MAT, 1 to 5, 500) and quant (QR, 1 to 4, 400), 100 per family and stratum. Gate G7 of every one is an **owner waiver** (owner
+decision 2026-10-12: the human spot audit is waived for the procedural families, on the machine verification; the bank
+records it as `waived`, not as a pass, in each item's `provenance.status_history`). No finite-bank item was loaded, and none
+may be until its audit. `app_config` now holds `bank_version` = `2026.10.12-b1` and `param_version` = `prior` (written by
+hand: M4.10, which publishes them, is not built). The database went from 12 MB to 19 MB.
+
+Then the round trip that the section above could only run inside a rolled-back transaction, **through the public API as
+`anon`**, twice, 16 answers each (6 MAT, 6 SPA, 4 QR by `p_axes`; two of three right, from the bank's own keys):
+
+- `start_session` returned the two versions; `next_item` and `submit` served real items of all four families (`numeric`,
+  `mc_matrix_spec`, `mc_image_spec`); every `item` had only `item_id`, `item_type`, `time_limit_s`, `stem`, `media`,
+  `options`, and no reply held a property named for a key, a tolerance, a rationale, a verdict or a parameter (a recursive
+  scan of every reply; `media.given.a` / `.b` of a quant item are the question's own numbers).
+- `finish` returned the session signed (`kid` `k2026a`) with `correct: null` in all 16 tuples; `verify_save` said `verified`,
+  and `unverified` / `bad_signature` after one response time was changed.
+- `rescore`, the session answered at a person's pace (a third to a half of each item's expected time): `eap` held MAT
+  (n = 6) and SPA (n = 6), means on the 0.1 step and sds on the 0.05 step; QR with 4 answers was **withheld**
+  (`withheld.eap.QR = 4`, `skipped.not_counted = 4`), and so were the two MAT facets with 3 each, while the SPA facet with 6
+  was returned. The other session was answered 2.4 s after each question was served: the server's own clock found the
+  answers too fast, the session was not eligible, and `rescore` returned no axis at all (`not_counted = 16`). Both are the
+  design (R-11.1, DESIGN §11.2).
+- `delete_my_data` with the signed session: `{deleted: true, sessions: 1}`, after which `rescore` of the same save knows no
+  session and the tables hold no row of it.
+- **Latency** (the acceptance line of M2.6: p95 under 300 ms), 64 calls over one kept-alive connection from the owner's machine,
+  network included: `next_item` median 48 ms, p95 140 ms; `submit` median 100 ms, p95 134 ms; both together p95 134 ms,
+  maximum 218 ms. From a browser (the smoke test below): `start_session` 549 ms on a cold connection, `finish` 184 ms,
+  `rescore` 151 ms.
+
+The same through the app: `npm run e2e:live` (`web/e2e-live/`), the plain production build with the project's two public
+values, in Chromium. Seen passing: the consent and the notice of the online version, the session opened by the server,
+three served questions answered, no key or verdict in any reply, the session closed and signed, "1 session was checked by
+the server", the downloaded save with the signed session and no verdict; and, with the server cut off, "Use this device
+only" and a session that sends nothing. **Not yet seen against the live project:** the last step, deleting on the data page
+with the save file. The run that reached it failed on a selector of the test (fixed, and exercised in the cut-off test), and
+the next run was refused by the limit of five sessions a day per address (`429 rate_limited`), which is the limit working.
+The sessions those runs left were deleted with `delete_my_data` through the API. Run it again on another day.
+
 ### Left for the owner
 
+- **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository
+  variables `HB_SUPABASE_URL` and `HB_SUPABASE_ANON_KEY` are set (2026-10-12; public values), so the first Pages build after
+  the merge is the online version. Deleting either variable and re-running the workflow goes back to static.
 - **Dashboard, Authentication:** turn sign-ups off. The public settings endpoint says `disable_signup: false` with the
   email provider on. A signed-up user would have `authenticated`'s reach, which is `anon`'s (the same eleven RPCs, no
   table), with an 8 s timeout instead of 3 s.
@@ -1239,8 +1284,14 @@ holds promoted procedural items (the finite bank waits for the owner's audit).
   `graphql_public` makes it `public` alone, as the design says.
 - **CAPTCHA** (DESIGN §11.2): nothing is configured, and no RPC checks a token.
 - The Vault finding above, and a copy of the signing key.
-- Not done here: the website is not wired to the project, no GitHub secret or workflow was changed, the p95 < 300 ms
-  measurement (single calls from one machine took 90 to 200 ms, network included), and the 429 limits through the API.
+- Not done here: no GitHub **secret** was set, so the nightly job, the heartbeat and the weekly backup of the bank
+  repository still end green without doing anything (`SUPABASE_DB_URL` unset there): no archive, no backup and no purge
+  runs until the owner sets it. The p95 measurement and one 429 through the API are in the section above; the other limits
+  were not tried through the API.
+- **The privacy notice of the online version** (`web/src/backend/copy.ts`) was read against the project as deployed and left
+  as it is: every sentence holds (the project is in the United States; backups and the archive do not exist yet, which the
+  notice's "within eight weeks" and "older than 30 days" allow for). It names no controller and no contact, by the owner's
+  decision of 2026-10-05.
 
 ## Secrets
 

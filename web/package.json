@@ -36,7 +36,8 @@
     "sim:session": "tsx scripts/sim-session.ts",
     "ux:build": "tsx ux-review/build.ts",
     "ux:review": "playwright test -c ux-review/playwright.ux.config.ts",
-    "e2e:iso": "playwright test -c ux-review/playwright.iso.config.ts"
+    "e2e:iso": "playwright test -c ux-review/playwright.iso.config.ts",
+    "e2e:live": "playwright test -c e2e-live/playwright.live.config.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
