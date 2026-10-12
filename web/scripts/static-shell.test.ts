@@ -181,3 +181,27 @@ describe('the shell looks like the welcome screen, light and dark (no jump when 
     expect(get(shellCss(), '.hb-shell .hb-shell-wait', 'min-height')).toBe(get(fileCss('src/render/common/render.css'), '.hb-render .hb-btn', 'min-height'))
   })
 })
+
+describe('the shell of a build with served text parts (M3.11 phase 1)', () => {
+  it('is the six-part shell unless the build has a server and names text skills', async () => {
+    const { textAxesOfBuild } = await import('../vite.config')
+    const server = { VITE_HB_SUPABASE_URL: 'https://example.test', VITE_HB_SUPABASE_ANON_KEY: 'sb_publishable_x' }
+    expect(await textAxesOfBuild({})).toEqual([])
+    expect(await textAxesOfBuild({ ...server, VITE_HB_TEXT_AXES: '' })).toEqual([])
+    expect(await textAxesOfBuild({ VITE_HB_TEXT_AXES: 'all' })).toEqual([]) // no server: the static version has no text parts
+    expect(await textAxesOfBuild({ ...server, VITE_HB_TEXT_AXES: 'voc, LR' })).toEqual(['LR', 'VOC'])
+    const plain = await loadShellText([])
+    expect(plain).toEqual(await loadShellText())
+    expect('length' in plain).toBe(false)
+  })
+
+  it('states that build’s parts and minutes, in the app’s own words, in the intro and the page description', async () => {
+    const { welcomeIntro } = await import('../src/session/copy')
+    const { sessionOutline, TEXT_AXES } = await import('../src/engine/plan-table')
+    const { META_DESCRIPTION, metaDescription } = await import('../src/copy')
+    const words = await loadShellText(TEXT_AXES)
+    expect(words.WELCOME_INTRO).toBe(welcomeIntro(sessionOutline(TEXT_AXES)))
+    expect(words.WELCOME_INTRO).toContain('up to eleven parts and takes about 40 minutes')
+    expect(words.length?.meta).toEqual({ from: META_DESCRIPTION, to: metaDescription(40) })
+  })
+})

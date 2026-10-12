@@ -45,5 +45,7 @@ export const HEADING = 'HumanBench'
  * language lint, which reads src/, covers it). Plain and literal: what the session is, not what it says
  * about the person (provisional default, UX-REVIEW D26; web/HOUSE-STYLE.md).
  */
-export const META_DESCRIPTION =
-  'HumanBench: short tasks of reasoning, memory and speed, about 30 minutes. Your results are shown as a profile with ranges, not as a single score.'
+export const metaDescription = (minutes: number): string =>
+  `HumanBench: short tasks of reasoning, memory and speed, about ${minutes} minutes. Your results are shown as a profile with ranges, not as a single score.`
+/** The description of the six-part session, as index.html holds it; a build with served text parts (M3.11 phase 1) is given its own length by `vite.config.ts`. */
+export const META_DESCRIPTION = metaDescription(30)

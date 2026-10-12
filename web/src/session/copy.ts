@@ -6,6 +6,10 @@
  */
 
 import { HEADING } from '../copy'
+import type { SessionOutline } from '../engine/plan-table'
+import { BASE_OUTLINE, lengthSentence, partsPhrase, plannedMinutes } from './length'
+
+export { BASE_OUTLINE, lengthSentence, partsPhrase, plannedMinutes }
 
 // ---------------------------------------------------------------------------- welcome
 
@@ -17,8 +21,9 @@ export const WELCOME_HEADING = HEADING
  * build time (UX-100), so they stay plain text: no markup and no "&" or "<".
  */
 export const WELCOME_TAGLINE = 'Short tasks of reasoning, memory and speed. Your results are shown as a profile with ranges, not as a single score.'
-export const WELCOME_INTRO =
-  'The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.'
+export const welcomeIntro = (o: SessionOutline): string =>
+  `The session has ${partsPhrase(o)} parts and takes about ${plannedMinutes(o)} minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.`
+export const WELCOME_INTRO = welcomeIntro(BASE_OUTLINE)
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
 /**
@@ -93,8 +98,7 @@ export const DEVICE_FACTS = Object.freeze({
 // ------------------------------------------------------------------------------- ready
 
 export const READY_HEADING = 'Ready when you are'
-export const READY_TEXT =
-  'Six short parts, about 30 minutes. Your progress is saved in this browser as you go. After each answer to a question you will say how sure you are.'
+export const READY_TEXT = `${lengthSentence(BASE_OUTLINE)} Your progress is saved in this browser as you go. After each answer to a question you will say how sure you are.`
 export const READY_PRACTICE = 'Try practice questions first'
 export const READY_PRACTICE_NOTE = 'Practice questions show whether you were right and are never counted.'
 export const READY_BEGIN = 'Begin'

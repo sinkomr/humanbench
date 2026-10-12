@@ -93,7 +93,7 @@ export class ScriptedTransport extends FakeTransport {
 }
 
 /** A {@link Backend} over a fake transport, with no waiting between retries. */
-export function fakeBackend(transport: RpcTransport): Backend {
+export function fakeBackend(transport: RpcTransport, textAxes: Backend['textAxes'] = []): Backend {
   const api = createBackendApi(transport, { sleep: () => Promise.resolve() })
-  return { api, host: 'test.example', open: (device, save) => ServerSession.start(api, device, save) }
+  return { api, host: 'test.example', textAxes, open: (device, save) => ServerSession.start(api, device, save) }
 }

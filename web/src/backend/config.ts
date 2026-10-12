@@ -17,10 +17,28 @@
  * build (`__HB_DEV_ROUTES__`), `?hb_backend=<url>&hb_key=<key>` selects a server for that page
  * load (the e2e suite uses it with a fake one), and `?hb_backend=off` forces the static fallback.
  *
+ * ## The served text parts (ROADMAP M3.11 phase 1)
+ *
+ * A build with a server may also name the skills whose text questions it asks the server for:
+ *
+ *     VITE_HB_TEXT_AXES=LR,VOC,KST,KHU,KAP      (or `all`; the Pages build reads the repository variable HB_TEXT_AXES)
+ *
+ * Unset or empty, which is the default, the session is the six-part session of M1 and **nothing about
+ * it changes**: no extra part, no extra request, the same words about its length. Set, the session
+ * plans a part for each named skill (`engine/plan-table.ts` for which, where and how long), the words
+ * that state the session's length before it starts say so, and a part whose skill the server has no
+ * questions for is still dropped without a word (`session/run.ts`). It is a build variable because the
+ * welcome screen states the session's length before any call to the server is made, and only the
+ * owner knows when the bank's questions for a skill have been loaded. In dev, in tests and in the
+ * Playwright build, `?hb_text=LR,VOC` (or `all`, or `off`) sets it for a page load that has a server.
+ * It has no meaning without a server: the static version never shows these parts.
+ *
  * A half-set or malformed pair does not break the app: it falls back to static and reports the
  * problem (the console, in dev), because a person who opens a mistaken deploy still gets a working
  * test that keeps everything on their device, which is what the static copy says.
  */
+
+import { TEXT_AXES, isTextAxis, type TextAxis } from '../engine/plan-table'
 
 export interface BackendConfig {
   /** The project URL without a trailing slash (`https://<project>.supabase.co`). */
@@ -31,12 +49,22 @@ export interface BackendConfig {
 
 export type BackendSelection =
   | { readonly kind: 'static'; readonly problem?: string }
-  | { readonly kind: 'server'; readonly config: BackendConfig; readonly origin: 'build' | 'override' }
+  | {
+      readonly kind: 'server'
+      readonly config: BackendConfig
+      readonly origin: 'build' | 'override'
+      /** The skills whose served text parts the session asks for (M3.11 phase 1); empty by default. */
+      readonly textAxes: readonly TextAxis[]
+      /** What was wrong with the list of text skills, if anything (the names that were not understood are left out). */
+      readonly textProblem?: string
+    }
 
 /** The build-time variables this module reads (`import.meta.env`). */
 export interface BackendEnv {
   readonly VITE_HB_SUPABASE_URL?: string | undefined
   readonly VITE_HB_SUPABASE_ANON_KEY?: string | undefined
+  /** The skills whose served text parts are on (module comment): axis codes separated by commas, `all`, or nothing. */
+  readonly VITE_HB_TEXT_AXES?: string | undefined
 }
 
 export interface SelectOptions {
@@ -84,6 +112,27 @@ export function normaliseUrl(url: string): string {
   return url.replace(/\/+$/u, '')
 }
 
+/**
+ * The list of text skills a variable names: axis codes of `TEXT_AXES` separated by commas or spaces, in
+ * any case and order, or `all`; nothing, `off` or `none` is the empty list. The result is in canonical
+ * order without repeats. A name that is not a text skill is left out and reported, never guessed.
+ */
+export function parseTextAxes(raw: string | undefined): { readonly axes: readonly TextAxis[]; readonly problem?: string } {
+  const text = raw ?? ''
+  if (text.length > 200) return { axes: [], problem: 'the list of text skills is too long' }
+  const words = text.split(/[\s,]+/u).map((w) => w.toUpperCase()).filter((w) => w !== '')
+  if (words.length === 0 || (words.length === 1 && (words[0] === 'OFF' || words[0] === 'NONE'))) return { axes: [] }
+  if (words.length === 1 && words[0] === 'ALL') return { axes: [...TEXT_AXES] }
+  const unknown = words.filter((w) => !isTextAxis(w))
+  const axes = TEXT_AXES.filter((k) => words.includes(k))
+  return unknown.length === 0 ? { axes } : { axes, problem: `not a text skill: ${unknown.map((w) => JSON.stringify(w.slice(0, 16))).join(', ')} (known: ${TEXT_AXES.join(', ')}, or all)` }
+}
+
+function server(config: BackendConfig, origin: 'build' | 'override', text: string | undefined): BackendSelection {
+  const t = parseTextAxes(text)
+  return { kind: 'server', config, origin, textAxes: t.axes, ...(t.problem === undefined ? {} : { textProblem: t.problem }) }
+}
+
 function pair(url: string | undefined, key: string | undefined): BackendConfig | { readonly problem: string } | null {
   const u = (url ?? '').trim()
   const k = (key ?? '').trim()
@@ -106,12 +155,13 @@ export function selectBackend(env: BackendEnv, search: string, opts: SelectOptio
     if (asked !== null) {
       const o = pair(asked, params.get('hb_key') ?? undefined)
       if (o === null) return { kind: 'static' }
-      return 'problem' in o ? { kind: 'static', problem: o.problem } : { kind: 'server', config: o, origin: 'override' }
+      return 'problem' in o ? { kind: 'static', problem: o.problem } : server(o, 'override', params.get('hb_text') ?? env.VITE_HB_TEXT_AXES)
     }
   }
   const b = pair(env.VITE_HB_SUPABASE_URL, env.VITE_HB_SUPABASE_ANON_KEY)
   if (b === null) return { kind: 'static' }
-  return 'problem' in b ? { kind: 'static', problem: b.problem } : { kind: 'server', config: b, origin: 'build' }
+  const text = opts.override ? (new URLSearchParams(search).get('hb_text') ?? env.VITE_HB_TEXT_AXES) : env.VITE_HB_TEXT_AXES
+  return 'problem' in b ? { kind: 'static', problem: b.problem } : server(b, 'build', text)
 }
 
 /** The selection of the running page: the build's variables, the dev override and the compile-time flags. */
@@ -120,5 +170,6 @@ export function browserBackend(search: string = typeof location === 'undefined' 
   const env = (import.meta as ImportMeta & { readonly env?: BackendEnv }).env ?? {}
   const sel = selectBackend(env, search, { override: __HB_DEV_ROUTES__, compiledIn: __HB_BACKEND__ })
   if (sel.kind === 'static' && sel.problem !== undefined && typeof console !== 'undefined') console.warn(`HumanBench: running without a server: ${sel.problem}.`)
+  if (sel.kind === 'server' && sel.textProblem !== undefined && typeof console !== 'undefined') console.warn(`HumanBench: ${sel.textProblem}.`)
   return sel
 }

@@ -14,6 +14,7 @@
  * again), so a failed close can simply be tried again.
  */
 
+import type { AxisCode } from '../engine/axes'
 import type { SaveFileV1, SaveSession, SessionFlags } from '../save/types'
 import type { BackendApi } from './api'
 import type { RescoreReply } from './replies'
@@ -27,6 +28,8 @@ export interface ServedOutcome {
   readonly estimates: RescoreReply | null
   /** The session was closed on the server and its signed copy is in the save (false: the person went on without the server). */
   readonly closed: boolean
+  /** The skills whose served text parts the session asked for (M3.11 phase 1): the profile counts them as offered. */
+  readonly textAxes?: readonly AxisCode[]
 }
 
 export interface ClosableRun {

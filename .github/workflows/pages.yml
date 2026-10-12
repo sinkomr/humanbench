@@ -44,11 +44,16 @@ jobs:
       # (Settings > Secrets and variables > Actions > Variables). With either one unset the build
       # is the static version, which sends nothing (web/src/backend/config.ts). Never a secret
       # here, and never the service-role key: everything in this build is served to every visitor.
+      # The served text parts (ROADMAP M3.11 phase 1): the repository variable HB_TEXT_AXES names the
+      # skills whose text questions the session asks the server for (LR,VOC,KST,KHU,KAP, or "all").
+      # Unset, the session is the six-part one, unchanged. Set it only once the bank's questions for
+      # a skill are loaded; a skill the server has no questions for is still left out of the session.
       - run: npm run build
         env:
           VITE_BASE: ${{ steps.pages.outputs.base_path }}/
           VITE_HB_SUPABASE_URL: ${{ vars.HB_SUPABASE_URL }}
           VITE_HB_SUPABASE_ANON_KEY: ${{ vars.HB_SUPABASE_ANON_KEY }}
+          VITE_HB_TEXT_AXES: ${{ vars.HB_TEXT_AXES }}
 
       - uses: actions/upload-pages-artifact@v5
         with:

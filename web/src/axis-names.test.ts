@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { AXIS_NAMES, axisName, PLAIN_AXIS_NAMES } from './axis-names'
 import { EMO_AXIS_NAME } from './copy'
 import { AXES, AXIS_CODES, axis } from './engine/axes'
-import { SEGMENT_INFO, skipTargetName } from './session/segments'
+import { A15_SEGMENT_INFO, SEGMENT_INFO, SEGMENT_INFO_IN_ORDER, skipTargetName } from './session/segments'
 import { COMPACT_LABELS, SHORT_LABELS } from './viz/profile'
 
 /** The research names that never reach a screen (UX-060). */
@@ -70,7 +70,22 @@ describe('the session parts', () => {
       expect(s.title).toBe(axisName(s.axes[0]!))
       expect(titleCase(s.title), s.title).toBe(true)
     }
-    expect(Object.values(SEGMENT_INFO).map((s) => s.title)).toEqual(['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
+    expect(A15_SEGMENT_INFO.map((s) => s.title)).toEqual(['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
+    // With the served text parts (M3.11 phase 1), in session order.
+    expect(SEGMENT_INFO_IN_ORDER.map((s) => s.title)).toEqual([
+      'Reaction Time',
+      'Matrix & Series',
+      'Logical Reasoning',
+      'STEM Knowledge',
+      'Spatial',
+      'Vocabulary & Verbal Analogies',
+      'Working Memory',
+      'Quantitative Reasoning',
+      'Humanities Knowledge',
+      'Arts & Practical Knowledge',
+      'Processing & Reading Speed',
+    ])
+    expect(Object.keys(SEGMENT_INFO).sort()).toEqual(SEGMENT_INFO_IN_ORDER.map((s) => s.id).sort())
   })
 
   it('skip buttons, notices and the checklist use the same names', () => {

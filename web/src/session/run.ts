@@ -58,6 +58,25 @@
  * returns, signed, replaces this unsigned one in the save (merge, R-8.1, A16). The timed tasks
  * (blocks) stay on the device, are scored here as before, and make the session `sessionState()`.
  *
+ * ## Served text parts (M3.11 phase 1)
+ *
+ * With `RunConfig.textAxes` (and a server) the plan also holds the text parts of `engine/plan-table.ts`
+ * (Logical Reasoning, Vocabulary and the three knowledge skills), each with a share of its own on top of
+ * the six parts' time. Whether the server has questions for one is only known by asking, so a text part
+ * is asked for **before** its "Up next" screen: the run waits in `loading` (`RunView.probing`, the clock
+ * held as between any two parts) for the part's first question.
+ * - The server has none (any `done` answer): the part is dropped without a word. It leaves the checklist,
+ *   the session's target shrinks by its share, no notice is raised and no flag is written; the skill shows
+ *   as not measured. With no text part left the session is the M1 session, to the second.
+ * - A question comes: it is kept (it stays the server's pending item), the "Up next" screen is shown, and
+ *   Start shows that question. Skip on that screen lets it go (`release: 'skipped'`).
+ * A text part goes on past its share until `min_items` questions are answered (five: the server publishes
+ * a skill from five answers of one session), showing at most `MIN_ITEMS_SLACK` more to get there. The time
+ * spent in text parts is kept out of the six parts' budgets, which are those of a session without them.
+ * A served text item names no family, so a part cannot tell a stray one by looking: when a part is skipped
+ * while its question is on the way, the answer to that request is waited for and the item let go before the
+ * next part asks.
+ *
  * ## Skipping and finishing
  *
  * Any axis can be skipped at any time (§13 "skip any axis"): w_k = 0, the rest of its segment goes,
@@ -86,7 +105,7 @@
 
 import { BackendError, problemOf, type LoadProblem } from '../backend/errors'
 import type { ServedItem } from '../backend/items'
-import type { CatAnswer, CatSource, Release } from '../backend/session'
+import type { CatAnswer, CatNext, CatSource, Release } from '../backend/session'
 import { AXIS_CODES, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
 import {
   HIDDEN_MAX_S,
@@ -123,6 +142,7 @@ import { getFamily } from '../tasks/registry'
 import { rtBlockObservation, type RtItem, type RtResponse } from '../tasks/rt'
 import { calibrationObservation, calibrationSummary, type CalibrationSummary, type RatedAnswer } from '../tasks/calibration'
 import { confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
+import { MIN_ITEMS_SLACK } from '../engine/plan-table'
 import { DEFAULT_ITEM_LIMIT_S, HARD_STOP_S } from './constants'
 import { COMPLETED_FLAG, doneFlag, FOCUS_SESSION_FLAG, isProgressFlag } from './resume'
 import { SEGMENT_INFO } from './segments'
@@ -235,6 +255,8 @@ export interface RunView {
   readonly problem: LoadProblem | null
   /** The id of the served item on screen (the one a problem report names), or null. */
   readonly reportable: string | null
+  /** In the `loading` phase: the wait is for the first question of a text part that may not exist (M3.11), before its "Up next" screen. */
+  readonly probing: boolean
 }
 
 export interface RunConfig {
@@ -290,6 +312,12 @@ export interface RunConfig {
    * static version, whose behaviour is then exactly that of M1.
    */
   readonly cat?: CatSource
+  /**
+   * M3.11 phase 1: the axes whose served text parts this session asks the server for (module comment,
+   * "Served text parts"). Only with `cat`, and not in a focus session or a continuation. Absent or
+   * empty: the M1 plan exactly.
+   */
+  readonly textAxes?: readonly AxisCode[]
 }
 
 /** One fixed block's outcome, for tests and the results screen. */
@@ -328,7 +356,14 @@ interface Segment {
   readonly kind: 'block' | 'cat'
   readonly axes: readonly AxisCode[]
   readonly steps: readonly PlannedStep[]
-  status: SegmentStatus
+  /** `absent`: a text part the server had no question for; it is in no view (M3.11). */
+  status: SegmentStatus | 'absent'
+  /** A served text part (M3.11): its minimum of answered questions. Undefined on the A15 parts. */
+  readonly optional?: { readonly min_items: number }
+  /** A text part whose first question has been asked for (it is held, or the part is absent). */
+  probed: boolean
+  /** Start was pressed and the part has not ended yet. */
+  running: boolean
   /** Planned seconds: the blocks' E[T], or the plan's `budget_s` of a CAT segment (its planned share). */
   readonly plannedS: number
   /** CAT: seconds this segment may use (set when it starts). */
@@ -363,6 +398,8 @@ interface ItemFacts {
 interface Loading {
   readonly segment: Segment
   readonly axes: readonly AxisCode[]
+  /** The request is the first of a text part, made before its "Up next" screen (M3.11). */
+  readonly probe: boolean
 }
 
 interface CurrentBlock {
@@ -424,10 +461,20 @@ export class SessionRun {
   readonly #cfg: RunConfig
   readonly #seed: string
   readonly #clock: SessionClock
-  readonly #targetS: number
-  readonly #breakAtS: number
-  /** Index of the segment before whose interstitial the break is offered, or -1 (see the module comment). */
-  readonly #breakIdx: number
+  /** The target without the text parts: the A15 target, a focus session's, or a continuation's. */
+  readonly #baseTargetS: number
+  /** `RunConfig.breakAtS`, or half the plan's target without the text parts. */
+  readonly #baseBreakAtS: number
+  /** Without text parts: the index of the segment before whose interstitial the break is offered, or -1 (see the module comment). */
+  readonly #fixedBreakIdx: number
+  /** The plan holds text parts (M3.11): the target and the break follow the ones still there. */
+  readonly #hasOptional: boolean
+  /** Active seconds spent in text parts so far: kept out of the A15 parts' budgets. */
+  #optionalSpentS = 0
+  /** The first question of the text part about to be announced, kept from the request made before its "Up next" screen. */
+  #held: { segment: Segment; item: ServedItem } | null = null
+  /** A request abandoned by a skip whose answer is still to come: the next request waits for it (module comment). */
+  #stray: Promise<void> | null = null
   readonly #hardStopS: number
   readonly #stopSd: number
   readonly #priorCounts: Readonly<Partial<Record<AxisCode, number>>>
@@ -474,10 +521,14 @@ export class SessionRun {
   readonly #catResponses: ResponseTuple[] = []
   readonly #catSeen: string[] = []
   readonly #catAxes: AxisCode[] = []
+  /** The axes of the served questions that got an answer (not a time-out): a text part's minimum counts these. */
+  readonly #catAnsweredAxes: AxisCode[] = []
   readonly #outbox: CatAnswer[] = []
   #loading: Loading | null = null
   #problem: LoadProblem | null = null
   #fetchSeq = 0
+  /** The `next` call that is under way, so a skip can let go of the item it may still bring. */
+  #inFlight: { seq: number; asked: Promise<CatNext> } | null = null
   #flushing: Promise<void> | null = null
   /** The windows of the served answers (onset, end) on the session timeline, for the integrity flags. */
   readonly #catWindows: { onset: number; end: number }[] = []
@@ -491,7 +542,7 @@ export class SessionRun {
     this.sessionId = cfg.sessionId
     this.#seed = cfg.seed ?? cfg.sessionId
     const planTargetS = cfg.targetS ?? A15_TARGET_S
-    this.#breakAtS = cfg.breakAtS ?? planTargetS / 2
+    this.#baseBreakAtS = cfg.breakAtS ?? planTargetS / 2
     this.#hardStopS = cfg.hardStopS ?? HARD_STOP_S
     this.#stopSd = cfg.stopSd ?? STOP_SD
     this.#priorCounts = cfg.priorItemCounts ?? {}
@@ -501,8 +552,11 @@ export class SessionRun {
     this.#cat = cfg.cat
     for (const k of cfg.skipped ?? []) this.#markSkipped(k)
     if (cfg.focus !== undefined) for (const k of AXIS_CODES) if (!cfg.focus.includes(k) && !this.#skipped.has(k)) this.#weights[k] = 0
-    const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: planTargetS, seenFamilies: this.#seenBase })
+    // Text parts only where the server serves (M3.11): never in the static version, a focus session or a continuation.
+    const textAxes = cfg.cat !== undefined && cfg.focus === undefined && cfg.continues === undefined ? (cfg.textAxes ?? []) : []
+    const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: planTargetS, seenFamilies: this.#seenBase, textAxes })
     this.#segments = SessionRun.#group(plan)
+    this.#hasOptional = this.#segments.some((s) => s.optional !== undefined)
     const cont = cfg.continues
     if (cont !== undefined) {
       // Marked after the plan is drawn, so the parts stay on the checklist: done, or skipped, not "not in this version".
@@ -513,10 +567,10 @@ export class SessionRun {
       }
     }
     const left = this.#segments.filter((s) => s.status === 'upcoming')
-    this.#targetS = cont === undefined ? planTargetS : Math.max(60, left.reduce((t, s) => t + s.plannedS, 0))
-    const halfWay = SessionRun.#halfWay(this.#segments, this.#breakAtS)
+    this.#baseTargetS = cont === undefined ? planTargetS : Math.max(60, left.reduce((t, s) => t + s.plannedS, 0))
+    const halfWay = SessionRun.#halfWay(this.#segments, this.#baseBreakAtS)
     // A continuation offers the break only between two of its own parts, never before the first one.
-    this.#breakIdx = cont !== undefined && halfWay <= this.#nextLive(-1) ? -1 : halfWay
+    this.#fixedBreakIdx = cont !== undefined && halfWay <= this.#nextLive(-1) ? -1 : halfWay
     this.#clock = new SessionClock(cfg.now)
     this.#clock.start()
     this.#enterNextSegment()
@@ -533,7 +587,8 @@ export class SessionRun {
         continue
       }
       const axes = step.kind === 'block' ? [step.axis] : [...step.axes]
-      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', plannedS: 0, budgetS: 0, startedAtS: 0 })
+      const optional = step.kind === 'cat' && step.optional !== undefined ? { optional: step.optional } : {}
+      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', ...optional, probed: false, running: false, plannedS: 0, budgetS: 0, startedAtS: 0 })
     }
     return out.map((s) => ({ ...s, plannedS: s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : st.budget_s), 0) }))
   }
@@ -546,15 +601,43 @@ export class SessionRun {
     let best = -1
     let bestGap = Infinity
     let cum = 0
-    for (let i = 1; i < segments.length; i++) {
-      cum += segments[i - 1]!.plannedS
-      const gap = Math.abs(cum - atS)
-      if (gap < bestGap) {
-        best = i
-        bestGap = gap
+    let prev: Segment | null = null
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i]!
+      if (s.status === 'absent') continue // a text part the server did not have (M3.11): no boundary of its own
+      if (prev !== null) {
+        cum += prev.plannedS
+        const gap = Math.abs(cum - atS)
+        if (gap < bestGap) {
+          best = i
+          bestGap = gap
+        }
       }
+      prev = s
     }
     return best
+  }
+
+  /** Planned seconds of the text parts that are still in the session (M3.11): what they add to the target. */
+  #optionalPlannedS(): number {
+    let t = 0
+    for (const s of this.#segments) if (s.optional !== undefined && s.status !== 'absent') t += s.plannedS
+    return t
+  }
+
+  /** The session's target now: the A15 target plus the shares of the text parts still there. */
+  #targetS(): number {
+    return this.#hasOptional ? this.#baseTargetS + this.#optionalPlannedS() : this.#baseTargetS
+  }
+
+  /** The planned second the break is placed nearest to (half the target unless configured). */
+  #breakAtS(): number {
+    return this.#hasOptional && this.#cfg.breakAtS === undefined ? this.#baseBreakAtS + this.#optionalPlannedS() / 2 : this.#baseBreakAtS
+  }
+
+  /** Index of the segment before whose interstitial the break is offered, or -1 (see the module comment). */
+  #breakIdx(): number {
+    return this.#hasOptional ? SessionRun.#halfWay(this.#segments, this.#breakAtS()) : this.#fixedBreakIdx
   }
 
   // ------------------------------------------------------------------------------- views
@@ -592,7 +675,8 @@ export class SessionRun {
     if (s.kind === 'block') seconds = s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : 0), 0)
     else seconds = s.status === 'current' && s.budgetS > 0 ? s.budgetS : this.#budgetFor(idx)
     if (s.kind === 'cat' && s.axes.some((k) => !this.#skipped.has(k) && this.#itemsOn(k) < COVERAGE_FLOOR)) seconds = Math.max(seconds, FLOOR_SEGMENT_MIN_S)
-    return { id: s.id, title: info.title, cluster: info.cluster, axes: s.axes, kind: s.kind, minutes: minutesOf(seconds), status: s.status }
+    // An absent part is in no view (`view()` leaves it out); the cast is for the type only.
+    return { id: s.id, title: info.title, cluster: info.cluster, axes: s.axes, kind: s.kind, minutes: minutesOf(seconds), status: s.status as SegmentStatus }
   }
 
   /** What the screens may know of the item on screen, whoever made it. */
@@ -627,16 +711,21 @@ export class SessionRun {
       const floorPct = confidenceFloorPct(k)
       confidence = { floorPct, startPct: confidenceStartPct(floorPct), optionsCount: k ?? null }
     }
+    const probing = this.#phase === 'loading' && this.#loading?.probe === true
     let skippable: AxisCode | null = null
     if (this.#phase === 'item' || this.#phase === 'confidence') skippable = facts?.axis ?? null
     else if (this.#phase === 'block') skippable = this.#currentBlock?.step.axis ?? null
+    // A part being asked for is not named while the wait goes well; when it fails, skipping it is a way on.
+    else if (probing) skippable = this.#problem === null ? null : (this.#loading!.axes[0] ?? null)
     else if ((this.#phase === 'interstitial' || this.#phase === 'loading') && seg !== undefined) skippable = seg.axes.find((k) => !this.#skipped.has(k)) ?? null
+    // A text part the server did not have is in no view (M3.11): the lists and the index are those of the parts that exist.
+    const shown = this.#segments.filter((s) => s.status !== 'absent')
     return {
       phase: this.#phase,
       ended: this.#endReason,
-      segments: this.#segments.map((s) => this.#segmentView(s)),
-      segmentIndex: this.#segIdx,
-      segment: seg === undefined ? null : this.#segmentView(seg),
+      segments: shown.map((s) => this.#segmentView(s)),
+      segmentIndex: seg === undefined ? this.#segIdx : shown.indexOf(seg),
+      segment: seg === undefined || seg.status === 'absent' ? null : this.#segmentView(seg),
       item:
         facts === null
           ? null
@@ -663,9 +752,9 @@ export class SessionRun {
       unavailable: cur?.unavailable ?? false,
       notice: this.#notice,
       elapsedS: this.elapsedS(),
-      targetS: this.#targetS,
-      breakAtS: this.#breakAtS,
-      breakBefore: this.#segments[this.#breakIdx]?.id ?? null,
+      targetS: this.#targetS(),
+      breakAtS: this.#breakAtS(),
+      breakBefore: this.#segments[this.#breakIdx()]?.id ?? null,
       clockHeld: this.#clock.paused,
       hardStopS: this.#hardStopS,
       counts: { items: this.#administered.length + this.#catAnswered(), blocks: this.#blockRecords.length },
@@ -677,6 +766,7 @@ export class SessionRun {
       served: this.#cat !== undefined,
       problem: this.#phase === 'loading' ? this.#problem : null,
       reportable: cur?.served != null && (this.#phase === 'item' || this.#phase === 'confidence') ? cur.served.item_id : null,
+      probing,
     }
   }
 
@@ -728,27 +818,39 @@ export class SessionRun {
 
   /** Budget in seconds for the CAT segment at `idx` if it started now: at most its planned share (see the module comment). */
   #budgetFor(idx: number): number {
-    const elapsed = this.#clock.elapsedS()
+    // A text part has its own share (M3.11). The A15 parts share the A15 target as if no text part existed:
+    // the time spent in text parts is not on their clock, and text parts are not counted among them.
+    const own = this.#segments[idx]
+    if (own?.optional !== undefined) return own.plannedS
+    const elapsed = this.#clock.elapsedS() - this.#optionalSpentS
     let blocksAfter = 0
     let catLeft = 0
     for (let i = idx; i < this.#segments.length; i++) {
       const s = this.#segments[i]!
+      if (s.optional !== undefined) continue
       if (s.status === 'done' || s.status === 'skipped' || s.axes.every((k) => this.#skipped.has(k))) continue
       if (s.kind === 'cat') catLeft++
       else if (i > idx) blocksAfter += s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : 0), 0)
     }
     if (catLeft === 0) return 0
     const planned = this.#segments[idx]?.plannedS ?? 0
-    return Math.min(planned, Math.max(0, (this.#targetS - elapsed - blocksAfter) / catLeft))
+    return Math.min(planned, Math.max(0, (this.#baseTargetS - elapsed - blocksAfter) / catLeft))
   }
 
   /** Index of the first segment after `from` that still has an axis to measure (and was not done earlier in the sitting), or -1. */
   #nextLive(from: number): number {
     for (let i = from + 1; i < this.#segments.length; i++) {
       const s = this.#segments[i]!
-      if (s.status !== 'done' && !s.axes.every((k) => this.#skipped.has(k))) return i
+      if (s.status !== 'done' && s.status !== 'absent' && !s.axes.every((k) => this.#skipped.has(k))) return i
     }
     return -1
+  }
+
+  /** The active time of a text part that is ending goes on the text parts' own account (see {@link #budgetFor}). */
+  #leave(s: Segment): void {
+    if (!s.running) return
+    s.running = false
+    if (s.optional !== undefined) this.#optionalSpentS += Math.max(0, this.#clock.elapsedS() - s.startedAtS)
   }
 
   /**
@@ -759,7 +861,15 @@ export class SessionRun {
   #enterNextSegment(): void {
     const next = this.#nextLive(this.#segIdx)
     if (next >= 0) this.#clock.hold('between_parts')
-    if (next >= 0 && !this.#breakOffered && this.#breakIdx >= 0 && next >= this.#breakIdx) {
+    // A text part is asked for before anything is said about it (M3.11): the answer comes back here.
+    const ahead = next >= 0 ? this.#segments[next]! : undefined
+    if (ahead?.optional !== undefined && !ahead.probed) {
+      this.#loading = { segment: ahead, axes: ahead.axes.filter((k) => !this.#skipped.has(k)), probe: true }
+      this.#request()
+      return
+    }
+    const breakIdx = this.#breakIdx()
+    if (next >= 0 && !this.#breakOffered && breakIdx >= 0 && next >= breakIdx) {
       this.#breakOffered = true
       this.#afterBreak = () => this.#enterNextSegment()
       this.#phase = 'break_offer'
@@ -775,8 +885,8 @@ export class SessionRun {
         this.#finish('complete')
         return
       }
-      // A part a continuation's sitting finished earlier stays done (RunConfig.continues).
-      if (s.status === 'done') continue
+      // A part a continuation's sitting finished earlier stays done (RunConfig.continues); an absent text part is passed over.
+      if (s.status === 'done' || s.status === 'absent') continue
       if (s.axes.every((k) => this.#skipped.has(k))) {
         s.status = 'skipped'
         continue
@@ -796,6 +906,7 @@ export class SessionRun {
     if (s.kind === 'cat') this.#segmentEnds.push({ segment: s.id, reason: reason === 'complete' ? 'axes_done' : reason })
     s.status = s.axes.every((k) => this.#skipped.has(k)) ? 'skipped' : 'done'
     if (s.status === 'done') this.#doneHere.add(s.id)
+    this.#leave(s)
     this.#current = null
     this.#currentBlock = null
     this.#boundary(() => this.#enterNextSegment())
@@ -808,6 +919,7 @@ export class SessionRun {
     if (s === undefined) return
     this.#clock.release('between_parts')
     s.startedAtS = this.#clock.elapsedS()
+    s.running = true
     if (s.kind === 'cat') {
       s.budgetS = this.#budgetFor(this.#segIdx)
       this.#budgets.push({ segment: s.id, plannedS: s.plannedS, budgetS: s.budgetS })
@@ -880,12 +992,30 @@ export class SessionRun {
     }
     // The part's time is a soft stop once the coverage floor is met (§7.4): the server holds the
     // precision rule and the floor of its own, this is only the clock. The hard stop is the clock's.
-    if (this.#clock.elapsedS() - s.startedAtS >= s.budgetS && axes.every((k) => this.#itemsOn(k) >= COVERAGE_FLOOR)) {
+    if (this.#clock.elapsedS() - s.startedAtS >= s.budgetS && axes.every((k) => this.#itemsOn(k) >= COVERAGE_FLOOR) && !this.#belowMinimum(s, axes)) {
       this.#endSegment('time')
       return
     }
-    this.#loading = { segment: s, axes }
+    // The first question of a text part was fetched before its "Up next" screen (M3.11): it is the one to show.
+    const held = this.#held
+    if (held !== null && held.segment === s) {
+      this.#held = null
+      this.#showServed(held.item)
+      return
+    }
+    this.#loading = { segment: s, axes, probe: false }
     this.#request()
+  }
+
+  /**
+   * A text part (M3.11) is still short of the answers the server publishes a skill from, and may show
+   * more to get there: fewer than `min_items` answered, and fewer than `min_items + MIN_ITEMS_SLACK` shown.
+   */
+  #belowMinimum(s: Segment, axes: readonly AxisCode[]): boolean {
+    const min = s.optional?.min_items
+    if (min === undefined) return false
+    const count = (list: readonly AxisCode[], k: AxisCode): number => list.reduce((n, a) => n + (a === k ? 1 : 0), 0)
+    return axes.some((k) => count(this.#catAnsweredAxes, k) < min && count(this.#catAxes, k) < min + MIN_ITEMS_SLACK)
   }
 
   /** (Re)starts the wait for the next served item of the part that is loading. */
@@ -904,11 +1034,25 @@ export class SessionRun {
   async #load(l: Loading, seq: number): Promise<void> {
     const live = (): boolean => seq === this.#fetchSeq && this.#phase === 'loading'
     try {
+      // A request a skip abandoned may still bring an item: it is let go before this part asks (module comment).
+      if (this.#stray !== null) await this.#stray
       await this.#flushOutbox()
       for (let attempt = 0; attempt < MAX_FOREIGN_RELEASES; attempt++) {
         if (!live()) return
-        const r = await this.#cat!.next(l.axes)
+        const asked = this.#cat!.next(l.axes)
+        this.#inFlight = { seq, asked }
+        const r = await asked
+        if (this.#inFlight?.seq === seq) this.#inFlight = null
         if (!live()) return
+        if (l.probe) {
+          this.#settle()
+          l.segment.probed = true
+          // No question for the part: it is dropped without a word, and the session is the one without it.
+          if (r.kind === 'done') l.segment.status = 'absent'
+          else this.#held = { segment: l.segment, item: r.item }
+          this.#enterNextSegment()
+          return
+        }
         if (r.kind === 'done') {
           this.#settle()
           this.#endSegment(r.reason === 'axes_done' ? 'axes_done' : 'exhausted')
@@ -1000,6 +1144,35 @@ export class SessionRun {
   /** Drops a request in flight (its answer, if it comes, is ignored). */
   #abandonLoading(): void {
     if (this.#loading !== null) this.#settle()
+  }
+
+  /**
+   * A skip abandons the request of a text part (M3.11): if an item still comes back from it, it is let go, and the
+   * next request waits for that. A served text item names no family, so the part that asks next could not tell it
+   * from one of its own (the families of the M1 pool are told apart in {@link #load}).
+   */
+  #releaseInFlight(): void {
+    const f = this.#inFlight
+    if (f === null) return
+    this.#inFlight = null
+    const stray = f.asked
+      .then((r) => {
+        if (r.kind === 'item') this.#outbox.push({ item: r.item, response: null, rtMs: 0, confidence: null, flags: {}, release: 'skipped' })
+      })
+      .catch(() => undefined) // the request failed: nothing was served, or the next request meets the pending item itself
+      .finally(() => {
+        if (this.#stray === stray) this.#stray = null
+      })
+    this.#stray = stray
+  }
+
+  /** The question a text part was holding for its "Up next" screen is let go (the part was skipped there). */
+  #releaseHeld(s: Segment): void {
+    const held = this.#held
+    if (held === null || held.segment !== s) return
+    this.#held = null
+    this.#outbox.push({ item: held.item, response: null, rtMs: 0, confidence: null, flags: {}, release: 'skipped' })
+    void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
   }
 
   // ------------------------------------------------------------------------------ items
@@ -1124,6 +1297,7 @@ export class SessionRun {
     this.#catResponses.push([s.item_id, 0, response, null, round1(rtMs), confidencePct])
     this.#catSeen.push(s.item_id)
     this.#catAxes.push(this.#servedAxis(s))
+    if (response !== null) this.#catAnsweredAxes.push(this.#servedAxis(s))
     this.#catWindows.push({ onset, end })
     this.#outbox.push({ item: s, response, rtMs: Math.max(0, rtMs), confidence: confidencePct, flags: this.#servedFlags(s.item_id, onset, end), release })
     void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
@@ -1235,6 +1409,22 @@ export class SessionRun {
     if (target === null || !isAxisCode(target) || this.#skipped.has(target)) return
     this.#markSkipped(target)
     this.#raise({ kind: 'skipped', axis: target })
+    // A text part skipped while its first question was being asked for (the wait had failed): on to the next part.
+    const probe = this.#phase === 'loading' && this.#loading?.probe === true ? this.#loading : null
+    if (probe !== null) {
+      if (!probe.axes.includes(target)) {
+        this.#emit('skip')
+        return
+      }
+      this.#releaseInFlight()
+      this.#abandonLoading()
+      probe.segment.probed = true
+      probe.segment.status = 'skipped'
+      this.#segmentEnds.push({ segment: probe.segment.id, reason: 'skipped' })
+      this.#emit('skip')
+      this.#boundary(() => this.#enterNextSegment())
+      return
+    }
     const seg = this.#segments[this.#segIdx]
     const onScreen = this.#phase === 'interstitial' || this.#phase === 'block' || this.#phase === 'item' || this.#phase === 'confidence' || this.#phase === 'loading'
     const inSegment = seg !== undefined && onScreen && seg.axes.includes(target)
@@ -1242,6 +1432,8 @@ export class SessionRun {
       // Whatever was on screen for the axis is dropped; an answer waiting for its confidence is kept.
       this.#flushPending()
       this.#releaseCurrent()
+      this.#releaseHeld(seg)
+      if (seg.optional !== undefined) this.#releaseInFlight()
       this.#abandonLoading()
       this.#current = null
       this.#currentBlock = null
@@ -1250,6 +1442,7 @@ export class SessionRun {
     if (!inSegment) return
     if (seg.axes.every((k) => this.#skipped.has(k))) {
       seg.status = 'skipped'
+      this.#leave(seg)
       if (seg.kind === 'cat') this.#segmentEnds.push({ segment: seg.id, reason: 'skipped' })
       this.#boundary(() => this.#enterNextSegment())
     } else {

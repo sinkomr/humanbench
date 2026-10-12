@@ -39,9 +39,10 @@
   import { problemOf, type LoadProblem } from '../backend/errors'
   import Closing from '../backend/Closing.svelte'
   import Opening from '../backend/Opening.svelte'
-  import { SERVER_GATE_POINTS, SERVER_READY_TEXT } from '../backend/copy'
+  import { SERVER_GATE_POINTS, serverReadyText } from '../backend/copy'
   import type { ServerSession } from '../backend/session'
   import type { AxisCode } from '../engine/axes'
+  import { sessionOutline } from '../engine/plan-table'
   import { installUnloadGuard } from '../reveal/guard'
   import { FOCUS_TARGET_S } from '../reveal/next'
   import { pruneAutosaves, restoreAutosaves, type RestoreResult } from '../save/autosave'
@@ -61,6 +62,7 @@
   import { SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
   import { startRefreshProbe, type RefreshProbe } from './device'
   import { browserSessionEnv, type SessionEnv } from './env'
+  import { welcomeIntro } from './copy'
   import { FAST_BANNER } from './fast'
   import type { FlowPhase } from './phase'
   import { readConsent, recordConsent } from './gate'
@@ -103,6 +105,13 @@
 
   /** The server of this page, or null: the static fallback, which is the default build. */
   const backend = $derived(env.backend ?? null)
+  /**
+   * The served text parts this page asks its server for (M3.11 phase 1; `backend/config.ts`): none by default and
+   * none without a server, and then the session, its plan and the words about its length are those of M1.
+   */
+  const textAxes = $derived(backend?.textAxes ?? [])
+  /** What the session is planned to be, for the screens that say so before it starts. */
+  const outline = $derived(sessionOutline(textAxes))
   /** The terms the consent covers: the online version's notice says answers are sent to a server. */
   const terms = $derived(backend === null ? TERMS_VERSION : TERMS_VERSION_SERVER)
 
@@ -366,7 +375,7 @@
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
       ...(focus === undefined ? {} : { focus, targetS: FOCUS_TARGET_S }),
       ...(continues === undefined ? {} : { continues: { done: continues.done, skipped: continues.skipped } }),
-      ...(s === null ? {} : { cat: s }),
+      ...(s === null ? {} : { cat: s, textAxes }),
       onChange: (kind: ChangeKind) => onChange(kind),
     })
     run = r
@@ -404,7 +413,7 @@
     if (server === null || persister === null || backend === null) return
     closeFailed = false
     try {
-      outcome = await closeServedRun(r, server, persister, backend.api)
+      outcome = { ...(await closeServedRun(r, server, persister, backend.api)), textAxes }
     } catch {
       if (phase === 'closing') closeFailed = true
       return
@@ -414,7 +423,7 @@
 
   /** The person goes on without the server: what it scores shows as not measured, and the save keeps the answers. */
   function continueWithoutServer(r: SessionRun): void {
-    if (server !== null) outcome = { server, estimates: null, closed: false }
+    if (server !== null) outcome = { server, estimates: null, closed: false, textAxes }
     showResults(r)
   }
 
@@ -522,7 +531,7 @@
 </script>
 
 {#if phase === 'welcome'}
-  <Welcome onstart={start} focus={visited} {returning} onresults={backend === null ? seeResults : undefined} />
+  <Welcome onstart={start} focus={visited} {returning} onresults={backend === null ? seeResults : undefined} intro={textAxes.length === 0 ? undefined : welcomeIntro(outline)} />
 {:else if phase === 'gate' || phase === 'blocked'}
   <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} onmistake={mistake} points={backend === null ? undefined : SERVER_GATE_POINTS} />
 {:else if phase === 'honour'}
@@ -540,7 +549,7 @@
     {unfinished}
     oncontinue={backend === null ? continueRun : undefined}
     onfocus={(axes) => startRun(axes)}
-    text={backend === null ? undefined : SERVER_READY_TEXT}
+    text={backend === null ? undefined : serverReadyText(outline)}
     verify={backend === null ? undefined : (save) => backend.api.verifySave(save)}
     restore={backend === null ? undefined : (id, phrase) => backend.api.mirrorGet(id, phrase)}
   />

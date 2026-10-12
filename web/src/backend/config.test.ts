@@ -1,6 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { isLoopbackHost, keyProblem, normaliseUrl, selectBackend, urlProblem } from './config'
+import { TEXT_AXES } from '../engine/plan-table'
+import { isLoopbackHost, keyProblem, normaliseUrl, parseTextAxes, selectBackend, urlProblem } from './config'
 
 const ON = { override: false, compiledIn: true } as const
 const KEY = 'sb_publishable_AbC123-xyz'
@@ -15,7 +16,7 @@ describe('selectBackend (M2.7: the static fallback is the default build)', () =>
 
   it('is a server with both set, with the URL tidied', () => {
     const sel = selectBackend({ VITE_HB_SUPABASE_URL: `${URL_OK}/`, VITE_HB_SUPABASE_ANON_KEY: KEY }, '', ON)
-    expect(sel).toEqual({ kind: 'server', config: { url: URL_OK, anonKey: KEY }, origin: 'build' })
+    expect(sel).toEqual({ kind: 'server', config: { url: URL_OK, anonKey: KEY }, origin: 'build', textAxes: [] })
   })
 
   it('is static, with the reason, when only one is set or either is bad', () => {
@@ -41,6 +42,7 @@ describe('selectBackend (M2.7: the static fallback is the default build)', () =>
         kind: 'server',
         config: { url: 'http://127.0.0.1:54321', anonKey: 'anon-key' },
         origin: 'override',
+        textAxes: [],
       })
       expect(selectBackend(env, '?hb_backend=off', dev)).toEqual({ kind: 'static' })
       expect(selectBackend(env, '?other=1', dev)).toMatchObject({ kind: 'server', origin: 'build' })
@@ -82,6 +84,49 @@ describe('urls and keys', () => {
         }
       }),
       { numRuns: 500 },
+    )
+  })
+})
+
+describe('the served text parts of a build (M3.11 phase 1)', () => {
+  const env = { VITE_HB_SUPABASE_URL: URL_OK, VITE_HB_SUPABASE_ANON_KEY: KEY }
+  const dev = { override: true, compiledIn: true } as const
+
+  it('are none unless the build names them: unset, empty, "off" and "none" are the six-part session', () => {
+    for (const raw of [undefined, '', '   ', 'off', 'none', 'OFF']) expect(parseTextAxes(raw)).toEqual({ axes: [] })
+    expect(selectBackend(env, '', ON)).toMatchObject({ kind: 'server', textAxes: [] })
+  })
+
+  it('reads codes in any case, order and separator, in canonical order without repeats, and "all"', () => {
+    expect(parseTextAxes('all').axes).toEqual([...TEXT_AXES])
+    expect(parseTextAxes('kap, LR  voc,LR').axes).toEqual(['LR', 'VOC', 'KAP'])
+    expect(selectBackend({ ...env, VITE_HB_TEXT_AXES: 'KST,KHU' }, '', ON)).toMatchObject({ kind: 'server', origin: 'build', textAxes: ['KST', 'KHU'] })
+  })
+
+  it('leaves out a name that is not a text skill and says so, never guessing one', () => {
+    const r = parseTextAxes('LR,RC,MAT,bogus')
+    expect(r.axes).toEqual(['LR'])
+    expect(r.problem).toContain('"RC"')
+    expect(r.problem).toContain('"BOGUS"')
+    expect(selectBackend({ ...env, VITE_HB_TEXT_AXES: 'RC' }, '', ON)).toMatchObject({ kind: 'server', textAxes: [], textProblem: expect.stringContaining('RC') })
+    expect(parseTextAxes('x'.repeat(201))).toEqual({ axes: [], problem: expect.any(String) })
+  })
+
+  it('a link sets them only where a link may choose the server (dev and test builds), and never without a server', () => {
+    expect(selectBackend(env, '?hb_text=all', ON)).toMatchObject({ kind: 'server', textAxes: [] })
+    expect(selectBackend(env, '?hb_text=LR,VOC', dev)).toMatchObject({ kind: 'server', origin: 'build', textAxes: ['LR', 'VOC'] })
+    expect(selectBackend({ ...env, VITE_HB_TEXT_AXES: 'all' }, '?hb_text=off', dev)).toMatchObject({ kind: 'server', textAxes: [] })
+    expect(selectBackend({}, '?hb_backend=http://127.0.0.1:54321&hb_key=k&hb_text=KAP', dev)).toMatchObject({ kind: 'server', origin: 'override', textAxes: ['KAP'] })
+    expect(selectBackend({ VITE_HB_TEXT_AXES: 'all' }, '?hb_text=all', dev)).toEqual({ kind: 'static' })
+    expect(selectBackend(env, '?hb_backend=off&hb_text=all', dev)).toEqual({ kind: 'static' })
+  })
+
+  it('whatever the text, the result is a list of text skills in canonical order and the call does not throw', () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 60 }), (raw) => {
+        const { axes } = parseTextAxes(raw)
+        expect(axes).toEqual(TEXT_AXES.filter((k) => axes.includes(k)))
+      }),
     )
   })
 })

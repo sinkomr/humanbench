@@ -13,11 +13,15 @@
  * `media`) is {@link ServedItem.supported} = false, so the session offers the skip of §13 instead
  * of a blank screen.
  *
- * The finite text items of M3 (a stem and option texts, no `media`) need a text renderer that does
- * not exist yet; they are not supported here, and the day it exists, `SUPPORTED_RENDERERS` and the
- * mapping below are the places to extend.
+ * The text multiple-choice items of the authored banks (M3.11 phase 1: Logical Reasoning, Vocabulary,
+ * the three knowledge skills) arrive as a stem and option texts with no `media` and so no renderer
+ * name. A payload of exactly that shape (`render/text/spec.ts` `textMcSpec`) is shown by the text
+ * renderer, under the client-side name `text_mc`; its spec is the text itself, kept as data. The
+ * other finite kinds (a passage, a logic game, a Fermi estimate, a word triad) name a renderer this
+ * build does not draw for served items and stay unsupported (ROADMAP M3.11, later phases).
  */
 
+import { TEXT_MC_RENDERER, textMcSpec } from '../render/text/spec'
 import type { ServedWire } from './replies'
 
 /** The families the server may serve in M2 (the M1 procedural pool) and a client can draw. */
@@ -33,9 +37,9 @@ export interface ServedItem {
   readonly seq: number
   readonly item_id: string
   readonly item_type: string
-  /** The renderer to use (`media.renderer`), or '' when the payload names none. */
+  /** The renderer to use: `media.renderer`, `text_mc` for text multiple choice, or '' when the payload fits none. */
   readonly family: string
-  /** What the renderer takes (`media` without `renderer`); `{}` when unsupported. */
+  /** What the renderer takes (`media` without `renderer`; the text of a text item); `{}` when unsupported. */
   readonly spec: object
   /** Number of options of a multiple-choice item (the confidence slider's chance floor), absent for typed entry. */
   readonly options_count?: number
@@ -62,7 +66,10 @@ export function toServedItem(seq: number, wire: ServedWire): ServedItem {
     time_limit_s: wire.timeLimitS,
   }
   const optionsCount = wire.options === null ? undefined : wire.options.length
-  return supported
-    ? { ...base, family: renderer, spec: specOf(wire.media!), ...(optionsCount === undefined ? {} : { options_count: optionsCount }), supported: true }
-    : { ...base, family: typeof renderer === 'string' ? renderer : '', spec: {}, ...(optionsCount === undefined ? {} : { options_count: optionsCount }), supported: false }
+  const count = optionsCount === undefined ? {} : { options_count: optionsCount }
+  if (supported) return { ...base, family: renderer, spec: specOf(wire.media!), ...count, supported: true }
+  // No renderer named: text multiple choice if the payload is exactly that (M3.11 phase 1), else nothing this build draws.
+  const text = renderer === undefined ? textMcSpec(wire) : null
+  if (text !== null) return { ...base, family: TEXT_MC_RENDERER, spec: text, options_count: text.options.length, supported: true }
+  return { ...base, family: typeof renderer === 'string' ? renderer : '', spec: {}, ...count, supported: false }
 }

@@ -17,13 +17,15 @@
   every question. The region holds the question, its confidence slider and the notes about it, so it stays
   on screen when the renderer is parked. The wait between two questions of a served part takes no focus of
   its own (the question that follows does); a wait that failed takes the heading, as a screen to be told about.
+  Before a served text part (M3.11 phase 1) the run asks the server whether it has questions for it: that wait is
+  a screen named "One moment" that names no part, and a part the server does not have never appears at all.
   One primary button per screen (D27, a provisional default): in the Skip and Finish panels "Keep going" is
   the primary and comes first.
 -->
 <script lang="ts">
   import { onMount, tick as svelteTick } from 'svelte'
   import type { ProblemReport } from '../backend/api'
-  import { LOADING_PROBLEM, LOADING_RETRY, LOADING_TEXT } from '../backend/copy'
+  import { LOADING_PROBLEM, LOADING_RETRY, LOADING_TEXT, PROBING_HEADING, PROBING_TEXT } from '../backend/copy'
   import ReportProblem from '../backend/ReportProblem.svelte'
   import Checklist from './Checklist.svelte'
   import Confidence from './Confidence.svelte'
@@ -133,7 +135,8 @@
       case 'on_break':
         return BREAK_HEADING
       default:
-        return segment?.title ?? ''
+        // The wait for a text part that may not exist names no part (M3.11): the part before it is over, the next not yet known.
+        return view.probing ? PROBING_HEADING : (segment?.title ?? '')
     }
   })
   /** A new key remounts the page: focus moves to its heading (WCAG 2.4.3). */
@@ -148,7 +151,7 @@
         return `q:${view.item?.item_id ?? ''}`
       case 'loading':
         // A wait that failed is a screen of its own to be told about (focus on its heading); the wait itself is not.
-        return view.problem === null ? 'loading' : 'loading:problem'
+        return view.problem === null ? (view.probing ? 'probing' : 'loading') : 'loading:problem'
       default:
         return view.phase
     }
@@ -296,7 +299,7 @@
           </div>
         {:else if view.phase === 'loading'}
           {#if view.problem === null}
-            <p role="status" data-loading>{LOADING_TEXT}</p>
+            <p role="status" data-loading>{view.probing ? PROBING_TEXT : LOADING_TEXT}</p>
           {:else}
             <p role="alert" data-loading-problem={view.problem}>{LOADING_PROBLEM[view.problem]}</p>
             {#if view.problem !== 'ended'}

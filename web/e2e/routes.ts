@@ -78,6 +78,7 @@ export const RENDERER_ROOTS: Readonly<Record<string, string>> = {
   'render/rt/RtRenderer.svelte': 'section.hb-render.rt',
   'render/series/SeriesRenderer.svelte': 'section.hb-render.series',
   'render/sjt/SjtRenderer.svelte': 'section.hb-render.sjt',
+  'render/text/TextChoiceRenderer.svelte': 'div.hb-render.text-mc',
   'render/span/CorsiRenderer.svelte': 'section.hb-render.corsi',
   'render/span/DigitSpanRenderer.svelte': 'section.hb-render.span',
   // The two parts that draw a multiple-choice item and a typed one.
@@ -269,6 +270,13 @@ async function openFermi(page: Page): Promise<void> {
   await page.goto('./#/dev/fermi?seed=1')
   await expect(page.getByRole('heading', { level: 1, name: 'Estimation entry demo (development only)' })).toBeVisible()
   await expect(page.getByLabel(FERMI_COPY.value)).toBeVisible()
+}
+
+/** The text multiple-choice demo (M3.11 phase 1) on made-up question `item`, once its options have unlocked. */
+export async function openTextMc(page: Page, item: number): Promise<void> {
+  await page.goto(`./#/dev/text-mc?item=${item}`)
+  await expect(page.getByRole('heading', { level: 1, name: 'Text question demo (development only)' })).toBeVisible()
+  await expect(page.getByRole('radio').first()).toBeEnabled()
 }
 
 /** The emotion vignette demo (M6.1) on its first made-up situation, once its options have unlocked. */
@@ -1048,6 +1056,40 @@ export const ROUTES: readonly Route[] = [
       await page.getByRole('radio').nth(1).check()
       await page.getByRole('button', { name: 'Confirm', exact: true }).click()
       await expect(page.getByTestId('emotion-feedback')).toBeVisible()
+    },
+  },
+  {
+    id: 'dev-text-mc',
+    group: 'dev',
+    state: '#/dev/text-mc: the text multiple-choice screen of a served question (M3.11 phase 1) on a made-up question with four options',
+    phone: true,
+    covers: ['#/dev/text-mc', 'dev/TextMcDemo.svelte', 'render/text/TextChoiceRenderer.svelte'],
+    open: async (page) => {
+      await openTextMc(page, 0)
+    },
+  },
+  {
+    id: 'dev-text-mc-stimulus',
+    group: 'dev',
+    state: '#/dev/text-mc: a text to read first, six options, one of them chosen',
+    phone: true,
+    covers: ['#/dev/text-mc', 'render/text/TextChoiceRenderer.svelte'],
+    open: async (page) => {
+      await openTextMc(page, 2)
+      await page.getByRole('radio').nth(3).check()
+    },
+  },
+  {
+    id: 'dev-text-mc-long',
+    group: 'dev',
+    state: '#/dev/text-mc: long options and a word with no place to break, the answer recorded',
+    phone: true,
+    covers: ['#/dev/text-mc', 'render/text/TextChoiceRenderer.svelte'],
+    open: async (page) => {
+      await openTextMc(page, 3)
+      await page.getByRole('radio').nth(1).check()
+      await page.getByRole('button', { name: 'Confirm', exact: true }).click()
+      await expect(page.getByTestId('text-mc-feedback')).toBeVisible()
     },
   },
   // The tier (c) entries of M6.2-M6.4 keep their routes in their own files (`routes-sjt.ts`, `routes-rat.ts`, `routes-aut.ts`).

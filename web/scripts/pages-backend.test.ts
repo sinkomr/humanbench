@@ -45,6 +45,22 @@ describe('the Pages build and the server', () => {
     expect(selectBackend({ VITE_HB_SUPABASE_URL: '', VITE_HB_SUPABASE_ANON_KEY: 'k' }, '', on).kind).toBe('static')
     // Both set: the server, and a link cannot point a production page elsewhere.
     const both = { VITE_HB_SUPABASE_URL: 'https://example.test/', VITE_HB_SUPABASE_ANON_KEY: 'sb_publishable_x' }
-    expect(selectBackend(both, '?hb_backend=https://evil.test&hb_key=k', on)).toEqual({ kind: 'server', config: { url: 'https://example.test', anonKey: 'sb_publishable_x' }, origin: 'build' })
+    expect(selectBackend(both, '?hb_backend=https://evil.test&hb_key=k', on)).toEqual({ kind: 'server', config: { url: 'https://example.test', anonKey: 'sb_publishable_x' }, origin: 'build', textAxes: [] })
+  })
+
+  it('passes the list of served text parts from a repository variable too, and a build without it asks for none (M3.11 phase 1)', () => {
+    const build = pages.slice(pages.indexOf('- run: npm run build'))
+    const env = build.slice(0, build.indexOf('- uses:'))
+    expect(env).toContain('VITE_HB_TEXT_AXES: ${{ vars.HB_TEXT_AXES }}')
+    expect(pages.match(/VITE_HB_TEXT_AXES/gu)).toHaveLength(1)
+    expect(ci).not.toContain('VITE_HB_TEXT_AXES')
+    const on = { override: false, compiledIn: true }
+    const both = { VITE_HB_SUPABASE_URL: 'https://example.test/', VITE_HB_SUPABASE_ANON_KEY: 'sb_publishable_x' }
+    // Unset is the empty string GitHub passes: no text part, the six-part session.
+    expect(selectBackend({ ...both, VITE_HB_TEXT_AXES: '' }, '', on)).toMatchObject({ kind: 'server', textAxes: [] })
+    expect(selectBackend({ ...both, VITE_HB_TEXT_AXES: 'LR,VOC,KST,KHU,KAP' }, '', on)).toMatchObject({ kind: 'server', textAxes: ['LR', 'VOC', 'KST', 'KHU', 'KAP'] })
+    // A link cannot turn the parts on in a production build, and they mean nothing without a server.
+    expect(selectBackend(both, '?hb_text=all', on)).toMatchObject({ kind: 'server', textAxes: [] })
+    expect(selectBackend({ VITE_HB_TEXT_AXES: 'all' }, '', on)).toEqual({ kind: 'static' })
   })
 })
