@@ -3,8 +3,9 @@
 DESIGN §11.2 and §12 put HumanBench's data, keys and scoring in a Supabase Postgres: tables with
 RLS and no policies for `anon`, `SECURITY DEFINER` RPCs, a Vault-held HMAC key. ROADMAP A6 says the
 SQL is written and tested **locally** until the user creates a project (M2.6), so everything here
-runs on a throw-away PostgreSQL 17 on the developer's machine or the CI runner. Nothing in this
-directory is ever applied to a hosted project by the tooling; deploying is M2.6, which is the user's.
+runs on a throw-away PostgreSQL 17 on the developer's machine or the CI runner. No test, workflow or
+script here reaches a hosted project by itself; deploying is M2.6: one command that a person runs
+(`npm run db:deploy`, see "M2.6: the deploy" below).
 
 ```
 supabase/
@@ -15,6 +16,7 @@ supabase/
 web/scripts/db/           the harness (TypeScript): engine, template, request()/rpc(), tests
   shm.ts, shm/            macOS only: the System V shared-memory and semaphore shim (C) and how it is built (see the ADR)
   guard.ts                the watcher that cleans up after a SIGKILL
+  deploy.ts, deploy-cli.ts  M2.6: applies the migrations to the owner's project and records them
 ```
 
 ## Running it
@@ -1123,6 +1125,122 @@ To verify against the live project (M2.6), in addition to the lists above: that 
 (Session pooler, role `postgres`) can call `hb.purge_expired()`, `hb.archive_items()` and `hb.archive_session()` (it
 inherits `hb_definer`, as it does here: `grant hb_definer to postgres`), that `VACUUM FULL` is allowed on `responses` and
 `exposure_log`, that `postgres` can `TRUNCATE` and `COPY ... FROM` every table of `public` (a restore; it is the owner and has `BYPASSRLS` here), and that `pg_database_size(current_database())` is what the dashboard calls "database size".
+
+## M2.6: the deploy
+
+ROADMAP M2.6, A6; DESIGN §11.2, §12; R-11.1, R-12.1. The migrations were applied to the owner's project on
+2026-10-11 (PostgreSQL 17.11, Session pooler, role `postgres`). The project's address and keys are not in this
+directory (`wiring.test.ts`); the connection string is in a file outside both repositories.
+
+### The command
+
+```zsh
+cd web
+npm run db:deploy -- status --env-file ~/code/.hb-secrets/supabase.env
+npm run db:deploy -- apply --env-file ~/code/.hb-secrets/supabase.env
+```
+
+`status` changes nothing and lists what is applied and what is pending. `apply` runs the pending files in file-name
+order, **one transaction per file with its ledger row**, and stops at the first error (that file is rolled back
+whole; the earlier ones stay, and the next run continues from there). The env file holds one line,
+`SUPABASE_DB_URL='...'`; the tool parses it itself, takes the string from nowhere else (no argument, no environment
+variable) and prints every message through a redactor. `--ca-file <path>` verifies the server's certificate; without
+it the connection is encrypted and the server is not verified, and the command says so.
+
+- **The ledger** is `supabase_migrations.schema_migrations (version, name, statements)`, the Supabase CLI's own table,
+  so the CLI sees the same history. This tool stores a whole file as one statement, and that is how a later run notices
+  an applied file that was edited (it refuses to run; an applied migration is never edited). It also refuses when the
+  ledger records a file that is not in the directory, or when a new file sorts before an applied one. The schema is
+  not exposed and no API role has `usage` on it; the table has RLS.
+- As in the harness, a `GRANT` or `REVOKE` that Postgres only warns about fails the file.
+- Tests: `deploy.test.ts` (the env file, the redaction with a property test, the plan) and `deploy.db.test.ts` (the real
+  migrations onto a database with the shim and nothing else, twice; a file that fails in the middle; a no-op grant).
+
+### What the live project showed (the lists "verify at M2.6" above)
+
+| Check | Result |
+|---|---|
+| `postgres` may `create role`, `grant hb_definer to postgres`, `create schema … authorization`, set default privileges (its own, in `public` and global, and `hb_definer`'s), `grant create on schema public`, `alter role anon set …` | yes, each tried in a transaction that was rolled back. `postgres` is not a superuser (CREATEROLE, CREATEDB, BYPASSRLS, REPLICATION), owns the database and so `public` (owner `pg_database_owner`), owns `extensions`, and holds the three API roles and `authenticator` with ADMIN OPTION |
+| pgcrypto in `extensions` usable by a restricted role | yes: version 1.3, EXECUTE is PUBLIC's, `grant usage on schema extensions` by `postgres` is enough |
+| the Vault from a SECURITY DEFINER function owned by `postgres` | **yes**: a role with EXECUTE on such a function got the secret's length through it, and `42501 permission denied for schema vault` when it read the view itself. `supabase_vault` 0.3.1 |
+| exposed schemas | `public` and `graphql_public` (PostgREST's own answer to a request for `hb`: `406 PGRST106`). `pg_graphql` is not installed, so `graphql_public` holds nothing that answers |
+| timeouts | `anon` 3 s, `authenticated` 8 s, `authenticator` 8 s and `lock_timeout` 8 s, as the shim |
+| default privileges of `postgres` in `public` | everything to `anon`, `authenticated`, `service_role`, as the shim; after the first migration, nothing |
+| `PT4xx` | PostgREST answers 400, 401, 404 and 409 for `PT400`, `PT401`, `PT404`, `PT409`; a table read without a grant is `401` with `42501` |
+| the nightly job's rights (M2.5) | `postgres` executes `hb.purge_expired()`, `hb.archive_items()`, `hb.archive_session()`; `VACUUM FULL` of `responses` and `exposure_log` runs; it may `TRUNCATE` and insert into every table of `public` |
+
+**Where the project differs from the shim** (`supabase/local/` is unchanged; none of these stops a migration):
+
+1. **`service_role` can read the Vault.** The platform grants it `usage` on `vault`, `select` and `delete` on
+   `vault.secrets` and `vault.decrypted_secrets`, and EXECUTE on the decrypting function and on `create_secret` and
+   `update_secret` (seen in the catalog, and tried: `set local role service_role` reads the view). The shim gives the
+   Vault to `postgres` alone, and the tests and the text above ("no `usage` on `hb` or `vault` for any API role") hold
+   for the shim only. On the project, **a database session that is or becomes `service_role`** can read the
+   save-signing key. The API cannot, with either key: `vault` is not an exposed schema, and `anon` and `authenticated`
+   have no `usage` on it. The grants are `supabase_admin`'s, so `postgres` cannot
+   revoke them. The bank pipeline's `--as-role service_role` therefore does not keep it from the signing key. Open for
+   the owner: accept it, and whether the shim should mirror it.
+2. `anon`, `authenticated` and `service_role` are INHERIT there and NOINHERIT in the shim (they are members of nothing).
+3. The session of `postgres` through the pooler has `statement_timeout = 2min`.
+4. PostgreSQL 17.11 (17.10 here); the database's collation is `en_US.UTF-8` (`C` here; `hb.jcs` sorts with `COLLATE "C"`).
+5. Objects that `supabase_admin` creates in `public` would still get the default grants to the API roles; the
+   migrations revoke the defaults of `postgres` and `hb_definer`, the roles that create anything here.
+
+### The signing key
+
+Created in the database, from the database's own randomness, and shown to nobody (not as the M2.3 section first
+planned, with `openssl` on the owner's machine: a key that never leaves the Vault cannot be copied on the way):
+
+```sql
+select vault.create_secret(pg_catalog.encode(extensions.gen_random_bytes(48), 'base64'), 'save_hmac.k2026a', 'save signing key') is not null;
+select hb.signing_check();
+```
+
+Before the first statement the check answered `{"ok": false, "kid": "k2026a", "reason": "no_usable_key"}`, after it
+`{"ok": true, "kid": "k2026a"}`, and a session finished through the API carries a `sig` that `verify_save` accepts. **No
+backup holds the Vault** (M2.5): the owner copies the key from the dashboard (Vault) into a password manager, or accepts
+that losing the project makes every file in the wild `unverified`.
+
+### The client address (`rate.ip_header`, `rate.ip_hop`)
+
+Kept at the defaults, **`x-forwarded-for` and `-1`** (the last entry). Checked with `verify_save` calls through the public
+API: one plain, one with a made-up `X-Forwarded-For`, one with two made-up entries. All three were counted in one bucket,
+and that bucket is the hash of the caller's real public address with the day's salt (computed beside it as `postgres`).
+So the gateway's last entry is the client and a script cannot pick its bucket. (A request with a made-up
+`CF-Connecting-IP` never arrives: the CDN answers 403.) Every other setting is the row the migrations seed (the table in
+"Settings" above; `scoring.sigma_version` is `sigma-v2-2026-09-26`); `bank_version` and `param_version` are absent until
+the bank pipeline writes them.
+
+### Verified through the public API, as an anonymous client
+
+With the publishable key and nothing else: each of the 17 tables of `public` is `401` / `42501` (select, insert,
+delete); the 115 function names of `hb` are `404 PGRST202` under `/rpc/` and `406 PGRST106` when the request names the
+schema, as are `vault`, `extensions`, `auth` and the ledger's schema; the eleven RPCs answer. A synthetic session was
+started, finished (signed, `kid` `k2026a`), verified, and then six edits of it (the duration, the MAC, the `anon_id` of
+the sig, the `kid`, the device, the sig removed) were each `unverified`; `rescore` of it returned no axis; the mirror took
+it and gave it back for the right phrase only; and `delete_my_data` with the signed session removed all of it, which is
+how the test cleaned up. No reply held a property named for a key, an answer or a verdict.
+
+**The bank is empty**, so the API could serve no item: `next_item` is `{"done": true, "reason": "no_items"}`. The round
+trip with answers was run on the project inside **one transaction that was rolled back**, with 14 synthetic items of a
+family marked procedural, as `anon` with its 3 s timeout: `start_session`, `next_item`, `submit`, `finish`, `verify_save`,
+`rescore`, a second session that continued the `anon_id` from the signed save and was served none of the first one's
+items, and `delete_my_data`. A session of 3 answers came back from `rescore` with `eap: {}` and `withheld.eap.QR = 3`; one
+of 6 with a mean on the 0.1 step and an sd on the 0.05 step; an edited answer made the session `unverified` and unknown
+to `rescore`; every tuple had `correct: null`. Nothing of it was committed. To be repeated through the API once the bank
+holds promoted procedural items (the finite bank waits for the owner's audit).
+
+### Left for the owner
+
+- **Dashboard, Authentication:** turn sign-ups off. The public settings endpoint says `disable_signup: false` with the
+  email provider on. A signed-up user would have `authenticated`'s reach, which is `anon`'s (the same eleven RPCs, no
+  table), with an 8 s timeout instead of 3 s.
+- **Dashboard, API settings:** confirm the exposed schemas. PostgREST reports `public` and `graphql_public`; removing
+  `graphql_public` makes it `public` alone, as the design says.
+- **CAPTCHA** (DESIGN §11.2): nothing is configured, and no RPC checks a token.
+- The Vault finding above, and a copy of the signing key.
+- Not done here: the website is not wired to the project, no GitHub secret or workflow was changed, the p95 < 300 ms
+  measurement (single calls from one machine took 90 to 200 ms, network included), and the 429 limits through the API.
 
 ## Secrets
 
