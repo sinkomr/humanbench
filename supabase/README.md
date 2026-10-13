@@ -1342,6 +1342,23 @@ still prevent that), and the Pages build is given `HB_TEXT_AXES` (unset today; `
   notice's "within eight weeks" and "older than 30 days" allow for). It names no controller and no contact, by the owner's
   decision of 2026-10-05.
 
+### The third step (2026-10-12/13): the text multiple-choice load
+
+After the "not made" record above, the gaps it lists for plain text multiple choice were closed: gates G2 and G3
+were recorded on the six multiple-choice banks, the owner stated that there are no anchors yet (rule F9), and the
+front end got a text renderer and five session parts behind the repository variable `HB_TEXT_AXES` (ROADMAP M3.11
+phase 1). On the owner's decision ("do all 5") the bank then loaded **1,545 text multiple-choice items** on the
+finite G7 waiver (recorded as `waived`, an owner decision and not an audit): LR 262, VOC 323, KST 324, KHU 322,
+KAP 314. `bank_version` is `2026.10.12-b2`, `param_version` stays `prior`. The 1,800 procedural items are
+unchanged (same counts and row hashes before and after); the project holds 3,345 live items, 29 MB.
+
+Verified through the public API as `anon` with two sessions, both deleted afterwards: all five skills are served
+and scored, no reply carries a key, rationale, verdict or parameter, `finish` is signed and `verify_save`
+verifies, `rescore` returns each skill at 5 answers. p95 of `next_item`/`submit` was 110 ms over 64 calls at a
+steady pace; in a session with long idle gaps the `submit` p95 was 422 ms over 25 calls (one slow sample), so the
+300 ms line is worth watching. Not loaded: reading comprehension (321 of 324 questions fail the no-passage test,
+§4.2), Fermi, RAT, logic games, SJT and EMO.
+
 ## Secrets
 
 None. Every password is random per run and dies with the cluster; the Vault shim's key is a public
