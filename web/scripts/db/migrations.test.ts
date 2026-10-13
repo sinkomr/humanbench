@@ -35,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists) in order, one concern each', () => {
+  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists), then the item sets of M3.11 and the start-up of the selection, in order, one concern each', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -55,11 +55,13 @@ describe('migrations: the set', () => {
       '20261006000100_jcs_fast.sql',
       '20261007000100_rescore_facets.sql',
       '20261007000200_parse_entry_decimal_comma.sql',
+      '20261013000100_item_sets.sql',
+      '20261014000100_startup_step.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- M2\.[1-5] \(ROADMAP M2\.[1-5]\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.11 \(ROADMAP M3\.11)\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 

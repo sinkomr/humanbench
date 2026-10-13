@@ -9,14 +9,16 @@
 
 import { spanSymbols, type BoardPoint, type SpanSpec } from '../../tasks/span/config'
 import { advanceSpan, type SpanProtocol, type SpanStatus } from '../../tasks/span/protocol'
+import { specProtocol } from '../../tasks/span/score'
 
 /** Pause before the first element of a sequence (ms). */
 export const SPAN_LEAD_MS = 700
 /** Pause between one trial's entry and the next sequence (ms). */
 export const SPAN_PAUSE_MS = 1000
 
+/** The protocol the spec records (a spec without `procedure` is a fixed 1.1.0 block). */
 export function spanProtocol(spec: SpanSpec): SpanProtocol {
-  return { start_length: spec.start_length, trials_per_length: spec.trials_per_length, max_length: spec.max_length }
+  return specProtocol(spec)
 }
 
 /** The target sequence of each trial: the stimuli, reversed for backward recall. */
@@ -27,6 +29,26 @@ export function spanTargets(spec: SpanSpec): number[][] {
 /** Where the block stands after `responses` (the family's own state machine). */
 export function spanNext(spec: SpanSpec, responses: readonly (readonly number[])[]): SpanStatus {
   return advanceSpan(spanProtocol(spec), spanTargets(spec), responses, spanSymbols(spec.task))
+}
+
+/**
+ * Whether the trial the state machine gives next is a second attempt at a length (the reactive
+ * procedure: the length's second sequence, shown only after a miss). The renderers say so in the
+ * pause before it; that the first entry did not match is what the procedure itself tells.
+ */
+export function isSecondAttempt(spec: SpanSpec, status: SpanStatus): boolean {
+  return !status.finished && spec.procedure === 'reactive' && status.trial % spec.trials_per_length !== 0
+}
+
+/** The sentence of the instructions that states the procedure, for sequences of digits or of blocks. */
+export function spanRuleText(unit: 'digit' | 'block'): string {
+  // Short on purpose: on a 320 x 568 screen the instructions and Start must stay in the first screen (UX-023).
+  return `Each sequence is one ${unit} longer. After a miss you get one more of the same length; a second miss ends the task.`
+}
+
+/** What the pause before a trial says: a second attempt is named as one. */
+export function spanPauseText(secondAttempt: boolean): string {
+  return secondAttempt ? 'One more of the same length.' : 'Next sequence coming up.'
 }
 
 export type Direction = 'left' | 'right' | 'up' | 'down'

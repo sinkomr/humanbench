@@ -1,6 +1,6 @@
 <!--
   Hosts the renderer of one item or block (ROADMAP M1.15, M1.13, A18): looked up by family name in
-  the visual and entry maps (and the text renderer of a served text question, M3.11 phase 1), mounted afresh for every item with {#key} (the entry renderers report
+  the visual and entry maps (and the text renderer of a served text question or passage question, M3.11), mounted afresh for every item with {#key} (the entry renderers report
   `onshown` once per mount and only accept an answer typed after it; `render/entry.ts`), and given
   the item's `spec` only, never the key. The renderers' frame timestamps are on the real
   `performance.now()` timeline; `scale` puts them on the session's (1 outside the `?fast=1` dev
@@ -11,6 +11,7 @@
   import type { RendererTiming } from '../render/common/props'
   import { entryRenderer } from '../render/entry'
   import type { RtInputMode, RtInputType } from '../render/rt/keys'
+  import { TEXT_PASSAGE_RENDERER } from '../render/text/passage'
   import { TEXT_MC_RENDERER } from '../render/text/spec'
   import TextChoiceRenderer from '../render/text/TextChoiceRenderer.svelte'
   import { VISUAL_RENDERERS } from '../render/visual'
@@ -38,8 +39,11 @@
   let { family, itemId, spec, block = false, scale, timing, disabled = false, inputMode, onrespond, onshown, onunavailable, onpaste, oninputtype, ontimestampsource }: Props = $props()
 
   // A served text question (M3.11 phase 1) is not a family of the registry: its renderer goes by the client-side name.
+  // The question of a served passage (phase 2) is drawn by the same renderer; its passage is the session screen's to show.
   const Renderer = $derived(
-    (VISUAL_RENDERERS as Readonly<Record<string, import('svelte').Component<any> | undefined>>)[family] ?? entryRenderer(family) ?? (family === TEXT_MC_RENDERER ? (TextChoiceRenderer as import('svelte').Component<any>) : undefined),
+    (VISUAL_RENDERERS as Readonly<Record<string, import('svelte').Component<any> | undefined>>)[family] ??
+      entryRenderer(family) ??
+      (family === TEXT_MC_RENDERER || family === TEXT_PASSAGE_RENDERER ? (TextChoiceRenderer as import('svelte').Component<any>) : undefined),
   )
 </script>
 

@@ -12,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test'
  *   npm run e2e:db
  *
  *   E2E_DB_APP_PORT  the preview port (default 4187)
- *   E2E_DB_PORT      the first of the two database ports (default 4188; see server.ts)
+ *   E2E_DB_PORT      the first of the database ports (default 4188; the others are +1 and +3, see server.ts)
  *
  * The build goes to test-results/db/dist, so `dist/` and the ordinary e2e run are left alone.
  */

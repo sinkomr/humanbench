@@ -6,11 +6,14 @@ import { RHO_MAX_PRIOR, rescoreRetest, retestGain } from '../engine/retest'
 import { scoreAll } from '../engine/scorer'
 import type { Observation, ResponseTuple } from '../engine/types'
 import { calibrationObservation } from '../tasks/calibration'
-import type { ItemInstance } from '../tasks/family'
+import { MalformedResponseError, type ItemInstance } from '../tasks/family'
 import { matrices } from '../tasks/matrices'
 import { rotation } from '../tasks/rotation'
 import { CAL_NORMS } from '../tasks/priors'
+import { resolveItem } from '../tasks/registry'
 import { rtSimple } from '../tasks/rt'
+import { spanFwd } from '../tasks/span'
+import type { SpanItem } from '../tasks/span/config'
 import { rtValidResponse } from '../tasks/rt/synthetic'
 import * as saveBarrel from './index'
 import { isUsableCache } from './merge'
@@ -109,6 +112,26 @@ describe('registryObservation (response tuple → observation)', () => {
 })
 
 describe('blockResponseOf and itemAxis', () => {
+  it('re-scores a span block saved before the reactive procedure (generator 1.1.0) as it was given: both trials of every length', () => {
+    // What the owner's save of 2026-10-12 holds for forward digits: two trials at each length 3 to 8, the last two missed.
+    const id = 'i:span_fwd:1.1.0:s_OLDSESSION.blk.span_fwd'
+    const old = resolveItem(id) as unknown as SpanItem
+    expect(old.item_id).toBe(id)
+    const stream = old.key.sequences.slice(0, 12).map((k, i) => (i < 10 ? [...k] : []))
+    const r = registryObservation([id, 0, stream, null, 172_580, null])
+    const p = old.params as unknown as { a: number; b: number[] }
+    expect(r).toEqual({ observation: { kind: 'grm', axis: 'WM', a: p.a, b: [...p.b], y: 5 } }) // longest passed 7 → category 5
+    // The same stream is not one a 1.2.0 block could have given: the reactive machine would have shown a
+    // sequence of length 4 second, so it ends after three of these entries and refuses the rest. That is why the
+    // id's own generator scores it.
+    const now = spanFwd.generate('s_OLDSESSION.blk.span_fwd') as unknown as SpanItem
+    expect(now.spec.trials).toEqual(old.spec.trials)
+    expect(() => spanFwd.score(now, stream)).toThrow(MalformedResponseError)
+    // A 1.2.0 block of the same performance (span 7: one trial each at 3 to 7, two misses at 8) scores the same category.
+    const reactive = [0, 2, 4, 6, 8].map((i) => [...now.key.sequences[i]!]).concat([[], []])
+    expect(registryObservation([now.item_id, 0, reactive, null, 100_000, null])).toEqual({ observation: { kind: 'grm', axis: 'WM', a: p.a, b: [...p.b], y: 5 } })
+  })
+
   it('reads a block from `response`, or from `extra` behind "trials" (§8 example)', () => {
     expect(blockResponseOf(['i:rt_simple:2.0.0:x', 0, { rt_ms: [] }, null, 1, null])).toEqual({ rt_ms: [] })
     expect(blockResponseOf(['i:rt_simple:2.0.0:x', 0, 'trials', null, 1, null, { rt_ms: [1] }])).toEqual({ rt_ms: [1] })

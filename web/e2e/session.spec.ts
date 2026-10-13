@@ -603,8 +603,9 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
 
   test('the offer never comes in the middle of a part, however long it has run; past the planned time the ring says so', async ({ page }) => {
     await toFirstItem(page)
-    // 31 minutes on the first Matrix & Series question: it runs past its cap, and the part's time budget is gone.
-    await page.clock.fastForward('31:00')
+    // 32 minutes on the first Matrix & Series question: it runs past its cap, the part's time budget is gone, and the
+    // session is past the length it typically has (31 min 20 s, `plan-table.ts` A15_TYPICAL_S: what the ring fills toward).
+    await page.clock.fastForward('32:00')
     await page.clock.runFor(1000)
     await expect(h1(page)).not.toHaveText('Time for a break?')
     // The part keeps its coverage floor of 3 questions (the timed-out one counts), then the next part is announced.

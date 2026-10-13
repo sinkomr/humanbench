@@ -8,11 +8,15 @@ import {
   SPAN_CORSI,
   SPAN_FWD,
   SPAN_GRM_A,
+  SPAN_LEGACY_FAMILIES,
   SPAN_TASKS,
   SPAN_TIME_RANGE_S,
+  SPAN_TIME_V0,
+  SPAN_TIME_V1,
   corsi,
   grmThresholds,
   meanLength,
+  blockTrials,
   runBlock,
   spanB,
   spanBwd,
@@ -21,6 +25,8 @@ import {
   spanFwd,
   spanObservation,
   spanStratum,
+  spanTrialP,
+  spanTrialTimeS,
   SPAN_UNFINISHED,
   type SpanItem,
   type SpanOutcome,
@@ -97,54 +103,103 @@ describe('difficulty and time priors (M1.P, [SPEC] v0)', () => {
     expect(spanStratum(cfg)).toBe(stratumOfB(d.b_prior))
   })
 
-  it('expected block times are ≈ 117.0 s, 87.0 s and 96.2 s, all within 60–120 s', () => {
-    expect(spanExpectedTime(SPAN_FWD)).toBeCloseTo(117.03284212767, 9)
-    expect(spanExpectedTime(SPAN_BWD)).toBeCloseTo(86.99549880062, 9)
-    expect(spanExpectedTime(SPAN_CORSI)).toBeCloseTo(96.16566943478, 9)
+  it('expected block times are ≈ 113.2 s, 103.0 s and 99.8 s (reactive), all within 60–120 s; the 1.1.0 blocks keep 117.0 s, 87.0 s and 96.2 s', () => {
+    expect(spanExpectedTime(SPAN_FWD)).toBeCloseTo(113.20632865597, 9)
+    expect(spanExpectedTime(SPAN_BWD)).toBeCloseTo(103.03371401071, 9)
+    expect(spanExpectedTime(SPAN_CORSI)).toBeCloseTo(99.81825987997, 9)
+    expect(spanExpectedTime(SPAN_FWD, 'fixed')).toBeCloseTo(117.03284212767, 9)
+    expect(spanExpectedTime(SPAN_BWD, 'fixed')).toBeCloseTo(86.99549880062, 9)
+    expect(spanExpectedTime(SPAN_CORSI, 'fixed')).toBeCloseTo(96.16566943478, 9)
     for (const cfg of SPAN_TASKS) {
-      expect(spanExpectedTime(cfg)).toBeGreaterThanOrEqual(SPAN_TIME_RANGE_S[0])
-      expect(spanExpectedTime(cfg)).toBeLessThanOrEqual(SPAN_TIME_RANGE_S[1])
+      for (const procedure of ['reactive', 'fixed'] as const) {
+        expect(spanExpectedTime(cfg, procedure)).toBeGreaterThanOrEqual(SPAN_TIME_RANGE_S[0])
+        expect(spanExpectedTime(cfg, procedure)).toBeLessThanOrEqual(SPAN_TIME_RANGE_S[1])
+      }
+      // On one clock the reactive block is the shorter one, by about a quarter at θ = 0.
+      const fixedSameClock = spanExpectedTime(cfg, 'fixed', SPAN_TIME_V1)
+      expect(spanExpectedTime(cfg) / fixedSameClock).toBeGreaterThan(0.7)
+      expect(spanExpectedTime(cfg) / fixedSameClock).toBeLessThan(0.8)
     }
   })
 
-  it.each([spanFwd, spanBwd, corsi])('$name: E[T] is the GRM-weighted time of the trials the state machine gives at θ = 0', (family) => {
-    // Independent of spanExpectedTime: run the block for a taker of each category, time the
-    // trials it was actually given (one length past the longest passed), weight by P(y | θ = 0).
+  it('the time model reproduces the one session on record within 15% (fixed procedure, the trials it gave)', () => {
+    // Owner's session of 2026-10-12: forward 12 trials to length 8 in 173 s, backward 14 to 9 in 319 s, Corsi 14 to 9 in 233 s.
+    const block = (cfg: (typeof SPAN_TASKS)[number], top: number): number => {
+      let t = SPAN_TIME_V1.instructions_s
+      for (let length = 3; length <= top; length++) t += 2 * spanTrialTimeS(cfg, length)
+      return t
+    }
+    expect(block(SPAN_FWD, 8)).toBeCloseTo(171.6, 1)
+    expect(Math.abs(block(SPAN_FWD, 8) - 173) / 173).toBeLessThan(0.15)
+    expect(Math.abs(block(SPAN_BWD, 9) - 319) / 319).toBeLessThan(0.15)
+    expect(Math.abs(block(SPAN_CORSI, 9) - 233) / 233).toBeLessThan(0.15)
+  })
+
+  it.each([spanFwd, spanBwd, corsi, ...Object.values(SPAN_LEGACY_FAMILIES)])('$name $generatorVersion: E[T] is the expected time of the trials the state machine gives at θ = 0', (family) => {
+    // Independent of spanExpectedTime: walk every path of the block's own state machine with the trial-level
+    // chances the GRM implies, and add up each trial's time weighted by the chance of reaching it.
     const cfg = cfgOf(family.name)
     const item = family.generate('time')
-    const probs = grmProbs(0, SPAN_GRM_A, grmThresholds(cfg))
-    let expected = 0
-    for (let y = 0; y < probs.length; y++) {
-      const responses = takerResponses(item, y === 0 ? 0 : y + 2)
-      expect(outcomeOf(item, responses).category).toBe(y)
-      const trialS = responses.map((_, i) => (item.spec.trials[i] as number[]).length * (1 + cfg.responseSPerElement) + 1.5)
-      expected += (probs[y] as number) * (12 + trialS.reduce((a, b) => a + b, 0))
+    const fixed = item.spec.procedure === undefined
+    const model = fixed ? SPAN_TIME_V0 : SPAN_TIME_V1
+    const p = spanTrialP(0, SPAN_GRM_A, grmThresholds(cfg))
+    let expected = model.instructions_s
+    let total = 0
+    const visit = (responses: number[][], prob: number): void => {
+      const s = runBlock(item, responses)
+      if (s.finished) {
+        total += prob
+        return
+      }
+      expected += prob * spanTrialTimeS(cfg, s.length, model)
+      const right = p[s.length - 3] as number
+      visit([...responses, [...(item.key.sequences[s.trial] as number[])]], prob * right)
+      visit([...responses, WRONG], prob * (1 - right))
     }
-    expect(spanExpectedTime(cfg)).toBeCloseTo(expected, 9)
+    visit([], 1)
+    expect(total).toBeCloseTo(1, 9)
+    expect(item.expected_time_s).toBeCloseTo(expected, 7)
+    expect(spanExpectedTime(cfg, fixed ? 'fixed' : 'reactive')).toBeCloseTo(expected, 7)
   })
 })
 
 describe('scoring a block (exact match → state machine → GRM category)', () => {
-  it('§14.6 ex. 10: backward, passing lengths 3–5 and failing both at 6 gives y = 3', () => {
+  it('§14.6 ex. 10: backward, passing lengths 3–5 at the first trial and missing 6 twice gives y = 3 in five trials', () => {
     const item = spanBwd.generate('ex10')
     const responses = takerResponses(item, 5)
-    expect(responses).toHaveLength(8)
-    expect(outcomeOf(item, responses)).toEqual({ longest_passed: 5, category: 3, trials_given: 8, trials_correct: 6, stop: 'failed_length' })
+    expect(responses).toHaveLength(5)
+    expect(outcomeOf(item, responses)).toEqual({ longest_passed: 5, category: 3, trials_given: 5, trials_correct: 3, stop: 'failed_length' })
+    expect(blockTrials(item, responses)).toEqual([0, 2, 4, 6, 7])
     expect(spanBwd.score(item, responses)).toEqual(grmScore(item, 3))
     // Typing the digits in presentation order is wrong on every backward trial.
     expect(spanBwd.score(item, item.spec.trials.slice(0, 2))).toEqual(grmScore(item, 0))
+  })
+
+  it('a miss gets one second attempt at the same length, with the length\'s second sequence; a correct one moves up', () => {
+    const item = spanFwd.generate('second-attempt')
+    const k = item.key.sequences as number[][]
+    // Length 3 right at once: on to length 4 (sequence 2), never the second sequence of length 3 (sequence 1).
+    expect(runBlock(item, [k[0]])).toEqual({ finished: false, trial: 2, length: 4, longest_passed: 3 })
+    // Length 4 missed: its second sequence (3) comes next, at the same length.
+    expect(runBlock(item, [k[0], WRONG])).toEqual({ finished: false, trial: 3, length: 4, longest_passed: 3 })
+    // The second attempt right: length 4 is passed, on to 5.
+    expect(runBlock(item, [k[0], WRONG, k[3]])).toEqual({ finished: false, trial: 4, length: 5, longest_passed: 4 })
+    // The first sequence's answer does not pass the second attempt: the entry is compared with the sequence shown.
+    expect(outcomeOf(item, [k[0], WRONG, k[2]])).toEqual({ longest_passed: 3, category: 1, trials_given: 3, trials_correct: 1, stop: 'failed_length' })
+    expect(blockTrials(item, [k[0], WRONG, k[3], k[4]])).toEqual([0, 2, 3, 4])
   })
 
   it('§14.6 ex. 11: Corsi positions are compared exactly, in order', () => {
     const item = corsi.generate('ex11')
     const first = item.key.sequences[0] as number[]
     const swapped = [first[1], first[0], ...first.slice(2)]
-    expect(runBlock(item, [first])).toMatchObject({ finished: false, trial: 1 })
+    expect(runBlock(item, [first])).toMatchObject({ finished: false, trial: 2, length: 4 })
+    expect(runBlock(item, [swapped])).toMatchObject({ finished: false, trial: 1, length: 3 })
     expect(outcomeOf(item, [swapped, [...first, first[0]]])).toMatchObject({ longest_passed: 0, category: 0 })
     expect(outcomeOf(item, [swapped, item.key.sequences[1], WRONG, WRONG])).toMatchObject({ longest_passed: 3, category: 1 })
   })
 
-  it('a taker with true span S scores y = min(S, max) − 2 (0 below 3), for every task (property)', () => {
+  it('a taker with true span S scores y = min(S, max) − 2 (0 below 3) in one trial per length passed and two at the first failed, for every task (property)', () => {
     fc.assert(
       fc.property(fc.constantFrom(spanFwd, spanBwd, corsi), fc.integer({ min: 0, max: 12 }), SEEDS, (family, span, seed) => {
         const item = family.generate(seed)
@@ -154,10 +209,37 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
         const longest = span < 3 ? 0 : Math.min(span, max)
         expect(o.longest_passed).toBe(longest)
         expect(o.category).toBe(longest === 0 ? 0 : longest - 2)
-        expect(o.trials_given).toBe(2 * (Math.min(Math.max(span, 2), max - 1) - 1))
+        const passed = longest === 0 ? 0 : longest - 2
+        expect(o.trials_given).toBe(passed + (longest === max ? 0 : 2))
+        expect(o.trials_correct).toBe(passed)
         expect(family.score(item, responses)).toEqual(grmScore(item, o.category))
       }),
       { numRuns: 500 },
+    )
+  })
+
+  it('a 1.1.0 block (fixed procedure) is still scored as it was given: both trials of every length (property)', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...Object.values(SPAN_LEGACY_FAMILIES)), fc.integer({ min: 0, max: 12 }), SEEDS, (family, span, seed) => {
+        const item = family.generate(seed)
+        expect(item.generator_version).toBe('1.1.0')
+        expect('procedure' in item.spec).toBe(false)
+        const max = item.spec.max_length
+        const responses = takerResponses(item, span)
+        const o = outcomeOf(item, responses)
+        const longest = span < 3 ? 0 : Math.min(span, max)
+        expect(o.longest_passed).toBe(longest)
+        expect(o.trials_given).toBe(2 * (Math.min(Math.max(span, 2), max - 1) - 1))
+        expect(blockTrials(item, responses)).toEqual(responses.map((_, i) => i))
+        expect(family.score(item, responses)).toEqual(grmScore(item, o.category))
+        // The reactive family draws the same sequences from the seed, and has the same parameters.
+        const now = SPAN_NOW[family.name]!.generate(seed)
+        expect(now.spec.trials).toEqual(item.spec.trials)
+        expect(now.params).toEqual(item.params)
+        expect(now.family_id).toBe(item.family_id)
+        expect(now.difficulty).toEqual(item.difficulty)
+      }),
+      { numRuns: 200 },
     )
   })
 
@@ -166,6 +248,10 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
     expect(spanFwd.score(item, [item.key.sequences[0]])).toEqual(UNFINISHED)
     expect(() => spanFwd.score(item, [WRONG, WRONG, WRONG])).toThrow(MalformedResponseError)
     expect(() => spanFwd.score(item, [...item.key.sequences, WRONG])).toThrow(MalformedResponseError)
+    // The stream of the fixed procedure (both sequences of length 3, right) is not one this block could give:
+    // after the first, the block showed a sequence of length 4.
+    expect(spanFwd.score(item, [item.key.sequences[0], item.key.sequences[1]])).toEqual(UNFINISHED)
+    expect(runBlock(item, [item.key.sequences[0], item.key.sequences[1]])).toMatchObject({ finished: false, trial: 3, length: 4 })
   })
 
   it('treats missing trials, blank slots and wrong symbols as wrong; non-array entries and non-symbol elements as malformed (M1.F2)', () => {
@@ -235,7 +321,7 @@ describe('scoring a block (exact match → state machine → GRM category)', () 
         return r
       })
       expect(family.score(item, lastOnly)).toEqual(grmScore(item, 0))
-      // A hole in the response stream itself is a missing, hence wrong, trial.
+      // A hole in the response stream itself is a missing, hence wrong, trial: the second sequence of the length follows.
       expect(runBlock(item, [, item.key.sequences[1]])).toMatchObject({ finished: false, trial: 2, longest_passed: 3 })
       expect(outcomeOf(item, new Array(2))).toMatchObject({ longest_passed: 0, category: 0, trials_given: 2 })
     }
@@ -266,6 +352,8 @@ describe('engine observation {kind: grm, axis: WM, a, b, y}', () => {
     expect(() => spanObservation(twoPl, { ...o, category: 1 })).toThrow(RangeError)
   })
 })
+
+const SPAN_NOW: Readonly<Record<string, typeof spanFwd>> = { span_fwd: spanFwd, span_bwd: spanBwd, corsi }
 
 function cfgOf(name: string) {
   const cfg = SPAN_TASKS.find((c) => c.name === name)

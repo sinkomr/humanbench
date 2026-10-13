@@ -88,7 +88,29 @@ export interface ServedWire {
 export type DoneReason = 'item_limit' | 'axes_done' | 'no_items'
 export const DONE_REASONS: readonly DoneReason[] = ['item_limit', 'axes_done', 'no_items']
 
-export type NextReply = { readonly kind: 'item'; readonly seq: number; readonly item: ServedWire } | { readonly kind: 'done'; readonly reason: DoneReason }
+/**
+ * Where a question stands in its set (a passage's questions, served together; M3.11 phase 2,
+ * `hb.served_view`, which sends it as `{position, of}`): the `index`-th of the `of` questions this session is
+ * served of it (1 for the first). It is a fact about the bank and what was served, never about an answer.
+ */
+export interface SetPlace {
+  readonly index: number
+  readonly of: number
+}
+
+/** Most questions a set may claim (the server's passages have 3 or 4). */
+const MAX_SET = 64
+
+export type NextReply = { readonly kind: 'item'; readonly seq: number; readonly item: ServedWire; readonly set: SetPlace | null } | { readonly kind: 'done'; readonly reason: DoneReason }
+
+function setPlace(raw: unknown, path: string): SetPlace | null {
+  if (raw === undefined || raw === null) return null
+  const o = obj(raw, path)
+  const index = int(o.position, `${path}.position`)
+  const of = int(o.of, `${path}.of`)
+  if (index < 1 || of < index || of > MAX_SET) bad(path, 'expected a place in a set')
+  return { index, of }
+}
 
 export function parseNext(raw: unknown, path = 'next_item'): NextReply {
   const o = obj(raw, path)
@@ -108,6 +130,7 @@ export function parseNext(raw: unknown, path = 'next_item'): NextReply {
   return {
     kind: 'item',
     seq: int(o.seq, `${path}.seq`),
+    set: setPlace(o.set, `${path}.set`),
     item: {
       itemId: str(it.item_id, `${path}.item.item_id`, 256),
       itemType: str(it.item_type, `${path}.item.item_type`, 64),

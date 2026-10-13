@@ -383,7 +383,7 @@
     viewing = false
     answered = false
     autosave = 'ok'
-    persister = new SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (st) => (autosave = st), ...(s === null ? {} : { anonId: s.anonId }) })
+    persister = new SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (st) => (autosave = st), ...(s === null ? {} : { anonId: s.anonId, bankVersion: s.bankVersion }) })
     persister.schedule()
     if (r.view().ended !== null) {
       // Nothing to run (every part was skipped from the start): straight to the results.

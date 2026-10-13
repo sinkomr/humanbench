@@ -25,7 +25,7 @@ import { reading } from './reading'
 import { rotation } from './rotation'
 import { rtChoice4, rtSimple } from './rt'
 import { series } from './series'
-import { corsi, spanBwd, spanFwd } from './span'
+import { SPAN_LEGACY_FAMILIES, corsi, spanBwd, spanFwd } from './span'
 
 /**
  * M1 procedural families (§4.2, §14.3 M1), keyed by `family.name`: item families (kind 'item')
@@ -62,8 +62,8 @@ export function getFamily(name: string): AnyFamily | undefined {
 export function resolveItem(itemId: string): ItemInstance<object, object> | null {
   const ids = typeof itemId === 'string' ? parseItemId(itemId) : null
   if (ids === null || isPyTwinVersion(ids.generatorVersion)) return null
-  const family = getFamily(ids.family)
-  if (family === undefined || ids.generatorVersion !== family.generatorVersion) return null
+  const family = generatorOf(ids.family, ids.generatorVersion)
+  if (family === undefined) return null
   let item: ItemInstance<object, object>
   try {
     item = family.generate(ids.seed)
@@ -72,4 +72,26 @@ export function resolveItem(itemId: string): ItemInstance<object, object> | null
     throw e
   }
   return item.item_id === itemId ? item : null
+}
+
+/**
+ * Earlier generators this build still carries whole, by family name and exact version: the span
+ * blocks of 1.1.0 (both trials of every length; `span/index.ts` SPAN_LEGACY_FAMILIES). They are not
+ * registered, are never planned or served, and exist so that a save made before the generator
+ * changed keeps its score when it is re-scored (R-8.1). Each is that version's own code path, so
+ * the rule of A11 holds: an id names exactly one implementation.
+ */
+const LEGACY_GENERATORS: Readonly<Record<string, AnyFamily>> = Object.freeze(
+  Object.fromEntries(Object.values(SPAN_LEGACY_FAMILIES).map((f) => [`${f.name}@${f.generatorVersion}`, f as unknown as AnyFamily])),
+)
+
+/**
+ * The generator of exactly this version of a family: the registered family when the versions match,
+ * else a kept earlier one ({@link LEGACY_GENERATORS}), else undefined. Use it, not {@link getFamily},
+ * to score a response against the item {@link resolveItem} made from a saved id.
+ */
+export function generatorOf(name: string, generatorVersion: string): AnyFamily | undefined {
+  const family = getFamily(name)
+  if (family !== undefined && family.generatorVersion === generatorVersion) return family
+  return LEGACY_GENERATORS[`${name}@${generatorVersion}`]
 }

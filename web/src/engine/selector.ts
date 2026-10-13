@@ -45,6 +45,10 @@
  *    checked against `floorRemainingS` (the time to the hard stop) when it exceeds `remainingS`, so
  *    a segment that lost its budget to slow blocks still reaches 3 (M1.15; before this, QR fell
  *    short in about 5% of simulated sessions).
+ * 4b. **Start-up** (`startup.ts`; owner feedback 2026-10-13): while every answer on an axis in this
+ *    session is correct (or every one wrong), the candidates of that axis are those within half a
+ *    stratum of the last item's b plus (minus) one stratum, or the nearest to it; the criterion
+ *    then ranks them as always. Over at the first reversal. Needs {@link SelectorState.history}.
  * 5. **Randomesque** (§6.iii L490, §7.4 L579): a uniform pick from the top 5 (ties in score are
  *    broken by item_id, so the top 5 is a deterministic set), drawn from the injected seeded RNG.
  *
@@ -62,6 +66,7 @@ import { A15_MINIMUMS, A15_SEGMENTS, A15_TARGET_S, TEXT_PARTS, type A15SegmentId
 import type { Matrix } from './linalg'
 import { createRng, type Rng } from './prng'
 import { eapByAxis, mapTheta, type ReadonlyMatrix } from './scorer'
+import { SELECTION_PRIOR_SD_FACTOR, startupCompetes, startupTarget } from './startup'
 import type { ItemParams, Observation } from './types'
 import type { AnyFamily, ItemInstance } from '../tasks/family'
 import type { Stratum } from '../tasks/ids'
@@ -140,6 +145,47 @@ export interface SelectorState {
    * review; the axis still gets its ≥ 3 items, once). Default: none.
    */
   readonly priorCounts?: Readonly<Partial<Record<AxisCode, number>>>
+  /**
+   * The scored answers to this session's CAT items, in the order given: the axis, the item's b and
+   * whether it was correct. The start-up rule (`startup.ts`) reads them; without them (the default)
+   * every item is chosen by the criterion at the estimate, as before 2026-10-13.
+   */
+  readonly history?: readonly AnsweredItem[]
+  /**
+   * Where the items of an axis are aimed once its start-up is over: the estimate under the wider
+   * selection prior ({@link selectionAim}; `startup.ts`, "After the start-up"). The criterion's
+   * information is evaluated there instead of at the posterior mean; the variance in the criterion
+   * stays the posterior's. An axis without one is aimed at its posterior mean, as before 2026-10-13.
+   */
+  readonly aim?: Readonly<Partial<Record<AxisCode, number>>>
+}
+
+/** One scored answer of this session, as the start-up rule needs it. */
+export interface AnsweredItem {
+  readonly axis: AxisCode
+  readonly b: number
+  readonly y: 0 | 1
+}
+
+/** The scored dichotomous answers among a session's observations, in order: the selector's {@link SelectorState.history}. */
+export function answeredItems(obs: readonly Observation[]): AnsweredItem[] {
+  const out: AnsweredItem[] = []
+  for (const o of obs) if (o.kind === '2pl' || o.kind === '3pl') out.push({ axis: o.axis, b: o.b, y: o.y })
+  return out
+}
+
+/**
+ * Where each axis's items are aimed ({@link SelectorState.aim}): the per-axis EAP mean of the
+ * session's observations under a prior {@link SELECTION_PRIOR_SD_FACTOR} times as wide as the
+ * scoring prior. With no observation on an axis it is the prior mean, as the posterior's is.
+ */
+export function selectionAim(obs: readonly Observation[], opts: Omit<PosteriorOptions, 'estimator'> = {}): Partial<Record<AxisCode, number>> {
+  const sigma = opts.sigma ?? defaultSigma()
+  const k2 = SELECTION_PRIOR_SD_FACTOR * SELECTION_PRIOR_SD_FACTOR
+  const wide = sessionPosterior(obs, { ...(opts.mu === undefined ? {} : { mu: opts.mu }), sigma: sigma.map((row) => row.map((x) => x * k2)) })
+  const out: Partial<Record<AxisCode, number>> = {}
+  for (const k of AXIS_CODES) out[k] = wide[k].mean
+  return out
 }
 
 /** Selector settings; every field has a default. */
@@ -156,13 +202,15 @@ export interface SelectorOptions {
   readonly floor?: number
   /** Per-axis stop SD, default {@link STOP_SD}. */
   readonly stopSd?: number
+  /** False switches the start-up rule and the aim off (the selection of before 2026-10-13, for comparisons). Default true. */
+  readonly startup?: boolean
 }
 
 /** A scored candidate. */
 export interface Candidate {
   readonly item: AnyItem
   readonly axis: AxisCode
-  /** Fisher information of the item at θ̂ (by the item's model, A9). */
+  /** Fisher information of the item where the axis is aimed (θ̂, or the {@link SelectorState.aim}), by the item's model (A9). */
   readonly info: number
   /** The §7.4 criterion w_k · I · Var(θ_k) / E[T]. */
   readonly score: number
@@ -464,14 +512,27 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   const timeFor = (k: AxisCode): number => (underFloor.has(k) ? Math.max(remaining, floorRemaining) : remaining)
   if (!eligible.some((k) => timeFor(k) > 0)) return { ranked: [], eligibleAxes: eligible, floorAxes: [], reason: 'time' }
 
+  // 4b. The start-up target of each eligible axis, if its start-up still lasts (`startup.ts`).
+  const targets = new Map<AxisCode, number>()
+  if (opts.startup !== false && state.history !== undefined) {
+    for (const k of eligible) {
+      const t = startupTarget(state.history.filter((h) => h.axis === k).map((h) => ({ b: h.b, correct: h.y, scored: 1 })))
+      if (t !== null) targets.set(k, t)
+    }
+  }
+
   // 2–3. Candidates per (family, stratum), scored by the §7.4 criterion; one per family_id.
-  const best = new Map<string, Candidate>()
+  const all: Candidate[] = []
   let overTime = 0
   const plans = families
     .filter((fam) => eligible.includes(fam.axis))
     .map((fam) => {
       const post = state.posterior[fam.axis]!
-      return { fam, post, w: axisWeight(opts.weights, fam.axis), strata: nearestStrata(fam.strata, post.mean, fam.strata.length) }
+      // Where the axis's items are aimed: the estimate under the selection prior, if the caller gave one.
+      const at = opts.startup !== false ? (state.aim?.[fam.axis] ?? post.mean) : post.mean
+      finite(`aim of ${fam.axis}`, at)
+      // The strata nearest the start-up target while it lasts, else nearest the aim.
+      return { fam, post, at, w: axisWeight(opts.weights, fam.axis), strata: nearestStrata(fam.strata, targets.get(fam.axis) ?? at, fam.strata.length) }
     })
   const draw = (p: (typeof plans)[number], k: Stratum, from: number, to: number): void => {
     let accepted = 0
@@ -485,14 +546,27 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
         continue
       }
       accepted++
-      const info = itemInformation(item.params, p.post.mean)
-      const c: Candidate = { item, axis: p.fam.axis, info, score: criterion(item, p.post, p.w) }
-      const prev = best.get(item.family_id)
-      if (prev === undefined || byRank(c, prev) < 0) best.set(item.family_id, c)
+      const info = itemInformation(item.params, p.at)
+      all.push({ item, axis: p.fam.axis, info, score: criterion(item, { mean: p.at, sd: p.post.sd }, p.w) })
     }
   }
+  const bOf = (c: Candidate): number => (c.item.params as { b: number }).b
   // 4. Coverage floor (§7.4 L584): under-floor axes with candidates compete alone.
   const rank = (): { ranked: Candidate[]; under: AxisCode[] } => {
+    // 4b first: an axis in its start-up keeps the candidates aimed at its target.
+    let pool = all
+    for (const [k, target] of targets) {
+      const mine = pool.filter((c) => c.axis === k)
+      const keep = startupCompetes(mine.map(bOf), target)
+      const kept = new Set(mine.filter((_, i) => keep[i]))
+      pool = pool.filter((c) => c.axis !== k || kept.has(c))
+    }
+    // one candidate per family_id, the best
+    const best = new Map<string, Candidate>()
+    for (const c of pool) {
+      const prev = best.get(c.item.family_id)
+      if (prev === undefined || byRank(c, prev) < 0) best.set(c.item.family_id, c)
+    }
     let ranked = [...best.values()]
     const under = eligible.filter((k) => (counts.get(k) ?? 0) < floor && ranked.some((c) => c.axis === k))
     if (under.length > 0) ranked = ranked.filter((c) => under.includes(c.axis))
@@ -582,9 +656,10 @@ export type PlannedStep =
       /**
        * A served text part (M3.11 phase 1, `plan-table.ts` TEXT_PARTS): it exists only if the server has
        * questions for it, its `budget_s` is its own share on top of the A15 target, and it goes on until
-       * `min_items` questions are answered. Absent on the A15 parts.
+       * `min_items` questions are answered. `sets`: a part of passages reads that many and then ends
+       * (phase 2, `plan-table.ts` "Passages"). Absent on the A15 parts.
        */
-      readonly optional?: { readonly min_items: number }
+      readonly optional?: { readonly min_items: number; readonly sets?: number }
       /**
        * An A15 part that runs to a number of answered questions (`plan-table.ts` A15_MINIMUMS: the
        * Quantitative part, six). `extra_s` of its `budget_s` is what the rule adds on top of the part's
@@ -679,7 +754,7 @@ export function planSession(opts: PlanOptions): PlannedStep[] {
     // The text parts that follow this A15 part (whether or not it is kept): their own share, on top of the target.
     for (const p of TEXT_PARTS) {
       if (p.after !== s.id || !text.includes(p.axis) || axisWeight(opts.weights, p.axis) <= 0) continue
-      steps.push({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items } })
+      steps.push({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items, ...(p.sets === undefined ? {} : { sets: p.sets }) } })
     }
   }
   const budget = nCat === 0 ? 0 : Math.max(0, target - blockTime) / nCat

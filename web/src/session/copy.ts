@@ -199,6 +199,20 @@ export const FINISH_CONFIRM_NO = 'Keep going'
 
 // ------------------------------------------------------------------------------ notices
 
+// ------------------------------------------------------------------- the question's timer
+// Owner feedback 2026-10-13: a question that can run out of time shows how long is left (`item-timer.ts`).
+
+/** The words before the time left. */
+export const ITEM_TIMER_LABEL = 'Time left for this question'
+/** The mark the timer shows in its warning, beside the time: words, so the warning is not colour alone. */
+export const ITEM_TIMER_WARN = 'Time is nearly up'
+/** What a screen reader is told once, when the warning starts. */
+export const itemTimerAnnounce = (seconds: number): string => `${seconds} seconds left for this question.`
+/** What the timer says it is, for a screen reader that reads it on demand. */
+export const itemTimerSpoken = (spoken: string): string => `${ITEM_TIMER_LABEL}: ${spoken}`
+/** Under the timer of a typed-answer question, in its warning: what happens to what is typed (the answer must be entered to count). */
+export const ITEM_TIMER_ENTRY_HINT = 'An answer counts only once you have entered it.'
+
 export const NOTICE_TIMEOUT = 'That question ran out of time. It counts as not answered correctly.'
 /**
  * The same, for a question the server holds (ROADMAP M2.7): an answer that is no answer at all is

@@ -21,6 +21,7 @@ export const DEV_ROUTES: Readonly<Record<string, () => Promise<{ default: Compon
   rat: () => import('./RatDemo.svelte'),
   aut: () => import('./AutDemo.svelte'),
   'text-mc': () => import('./TextMcDemo.svelte'),
+  'text-passage': () => import('./TextPassageDemo.svelte'),
 })
 
 /** `#/dev/blob?profile=full` → { name: 'blob', params }, or null for any other hash. */

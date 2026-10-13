@@ -113,7 +113,9 @@ describe('a served text item (backend/items.ts)', () => {
 
   it('a payload that names a renderer is never taken for text, and a procedural family still goes to its own renderer', () => {
     const wire = { itemId: 'i:x', itemType: 'mc', timeLimitS: null, stem: 'A made-up question?', options: OPTIONS }
-    expect(toServedItem(1, { ...wire, media: { renderer: 'passage_v1', passage: ['A passage.'] } })).toMatchObject({ supported: false, family: 'passage_v1', spec: {} })
+    // (a passage question has a renderer of its own since phase 2: `passage.test.ts`)
+    expect(toServedItem(1, { ...wire, media: { renderer: 'passage_v1', passage: ['A made-up passage.'] } })).toMatchObject({ supported: true, family: 'text_passage' })
+    expect(toServedItem(1, { ...wire, media: { renderer: 'logic_game_v1', setup: 'A made-up setup.' } })).toMatchObject({ supported: false, family: 'logic_game_v1', spec: {} })
     expect(toServedItem(1, { ...wire, media: { renderer: 'rat_triad_v1', cues: ['a', 'b', 'c'] } })).toMatchObject({ supported: false, family: 'rat_triad_v1' })
     expect(toServedItem(1, { ...wire, media: { renderer: 'matrices', grid: [] } })).toMatchObject({ supported: true, family: 'matrices' })
     expect(toServedItem(1, { ...wire, media: null })).toMatchObject({ supported: true, family: TEXT_MC_RENDERER })

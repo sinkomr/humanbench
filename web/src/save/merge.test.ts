@@ -1,4 +1,5 @@
 import fc from 'fast-check'
+import { latestBankVersion } from './bank-version'
 import { describe, expect, it } from 'vitest'
 import { jcs } from './jcs'
 import { sessionMacInput } from './mac-input'
@@ -54,7 +55,8 @@ describe('merge (DESIGN §8 R-8.1)', () => {
         expect(r.ok, r.ok ? '' : r.errors.join('\n')).toBe(true)
         expect(m.$schema).toBe(SCHEMA_URL)
         expect(m.schema_version).toBe(SCHEMA_VERSION)
-        expect(m.bank_version).toBe(ctx.bank_version)
+        // the latest of the inputs' and the running app's (bank-version.ts): a file of a served session keeps its bank
+        expect(m.bank_version).toBe(latestBankVersion([ctx.bank_version, a!.bank_version, b!.bank_version]))
       }),
       RUNS,
     )
@@ -305,7 +307,10 @@ describe('merge (DESIGN §8 R-8.1)', () => {
       expect(mergeSaves(signed, n, ctx).sig).toEqual(sig)
       const more = base({ sessions: [session('s_01J9ZK3QB', '2026-10-04T17:20:02Z', 1)] })
       expect(mergeSaves(signed, more, ctx).sig).toBeUndefined()
-      expect(normalizeSave({ ...signed, bank_version: 'other' }, ctx).sig).toBeUndefined()
+      // an app on a later bank moves the file's label on (bank-version.ts): the body changes, so the sig goes
+      expect(normalizeSave(signed, { ...ctx, bank_version: '2026.10.12-b1' }).sig).toBeUndefined()
+      // a body that normalising does not change keeps its sig (whether it verifies is the server's to say)
+      expect(normalizeSave({ ...signed, bank_version: '2026.10.12-b1' }, ctx).sig).toEqual(sig)
     })
 
     it('session sigs travel with their sessions (property)', () => {

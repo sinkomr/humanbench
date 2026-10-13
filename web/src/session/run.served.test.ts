@@ -365,7 +365,7 @@ describe('a served part', () => {
     expect(h.cat.answers[0]!.flags).toEqual({})
   })
 
-  it('stops a part on its time once the coverage floor is met, not before', async () => {
+  it('stops a part on its time once its minimum of six answers is met, not before (owner decision 2026-10-13)', async () => {
     const h = new Harness()
     // budget of the part: (target - elapsed - blocks still to run) / CAT parts left
     h.cat.steps = Array.from({ length: 30 }, (_, i): Step => ({ kind: 'item', item: served(i + 1) }))
@@ -377,7 +377,7 @@ describe('a served part', () => {
       answered++
       await settle()
     }
-    expect(answered).toBe(3) // the floor of 3 items per axis, then the part's time ends it
+    expect(answered).toBe(6) // the part's six answers (`plan-table.ts` PART_MINIMUMS), then the part's time ends it
     expect(h.run.result().segmentEnds[0]).toEqual({ segment: 'matrix_series', reason: 'time' })
   })
 

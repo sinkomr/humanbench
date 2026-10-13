@@ -12,6 +12,8 @@
  * Responses → observations ({@link registryObservation}, the default resolver):
  * - a pretest response (`pretest` = 1) is skipped: pretest items carry no scoring weight (§6.iii);
  * - the item is regenerated from its id with `resolveItem` (A11, A18: exact generator version).
+ *   A span block of generator 1.1.0 (both trials of every length, before the reactive procedure of
+ *   2026-10-13) is regenerated and scored by that generator, which the registry keeps for this.
  *   An id this build cannot regenerate is skipped as `unresolved`; its params must come from the
  *   server or a kept payload (M2), and the resolver is injectable for that;
  * - an item (kind 'item', A9 models) is re-scored from the stored response with the family's
@@ -59,7 +61,7 @@ import type { JsonValue, Observation, ResponseTuple } from '../engine/types'
 import { calibrationObservation, type RatedAnswer } from '../tasks/calibration'
 import { MalformedResponseError, type AnyFamily, type BlockScoreContext, type ItemInstance } from '../tasks/family'
 import { parseItemId } from '../tasks/ids'
-import { getFamily, resolveItem } from '../tasks/registry'
+import { generatorOf, getFamily, resolveItem } from '../tasks/registry'
 import { CONTINUATION_FLAG, type PosteriorCache, type SaveFileV1 } from './types'
 
 /** Why a response yields no observation. */
@@ -177,7 +179,8 @@ export function registryObservation(t: ResponseTuple): ResolvedResponse {
   const [itemId, pretest] = t
   if (pretest === 1) return { skip: 'pretest' }
   const item = resolveItem(itemId)
-  const family = item === null ? undefined : getFamily(item.family)
+  // The generator of the id's own version scores it: a kept earlier one for a block saved before a bump (span 1.1.0).
+  const family = item === null ? undefined : generatorOf(item.family, item.generator_version)
   if (item === null || family === undefined) return { skip: 'unresolved' }
   return scoreWith(family, item, t)
 }

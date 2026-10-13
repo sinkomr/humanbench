@@ -39,7 +39,7 @@
 import { AXIS_CODES, AXIS_INDEX, N_AXES, initialSigma, type AxisCode } from '../engine/axes'
 import { createRng } from '../engine/prng'
 import { mapTheta, type ReadonlyMatrix } from '../engine/scorer'
-import { A15_TARGET_S, COVERAGE_FLOOR, planSession, selectNext, selectionRng, sessionPosterior, type AdministeredItem } from '../engine/selector'
+import { A15_TARGET_S, COVERAGE_FLOOR, answeredItems, planSession, selectNext, selectionAim, selectionRng, sessionPosterior, type AdministeredItem } from '../engine/selector'
 import type { Observation } from '../engine/types'
 import type { AnyFamily } from '../tasks/family'
 import { getFamily } from '../tasks/registry'
@@ -115,6 +115,8 @@ export interface SessionOptions {
   readonly fixedLength?: number
   /** Prior covariance of the finish MAP and the in-session EAP (default Σ_init v2, A8). */
   readonly sigma?: ReadonlyMatrix
+  /** False: selection without the start-up rule (`engine/startup.ts`), as before 2026-10-13. Default true. */
+  readonly startup?: boolean
 }
 
 function familyOf(name: string): AnyFamily {
@@ -169,7 +171,7 @@ export function simulateSession(theta: readonly number[], sessionSeed: string, o
       }
       const posterior = sessionPosterior(obs, { mu, sigma })
       const counter = administered.length
-      const sel = selectNext({ sessionSeed, posterior, administered, remainingS: budget - used, sessionNumber: 1 }, selectionRng(sessionSeed, counter), { axes: open })
+      const sel = selectNext({ sessionSeed, posterior, administered, history: answeredItems(obs), aim: selectionAim(obs, { mu, sigma }), remainingS: budget - used, sessionNumber: 1 }, selectionRng(sessionSeed, counter), { axes: open, startup: opts.startup !== false })
       if (sel.kind === 'none') {
         segmentEnds.push(sel.reason)
         break

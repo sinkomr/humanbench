@@ -320,6 +320,7 @@ Written and tested here only (A6); nothing is applied to a project until M2.6.
 | `…M2.3 20261006000100_jcs_fast` | `hb.jcs` re-created as one set-based walk (no call per node), a fast path for decimals in `hb.jcs`, and `verify_save` re-created so that it asks `hb.session_verdict` once per session instead of three times (performance fix, see Limits and costs). Same output, signature, owner and grants |
 | `…M2.1 20261007000100_rescore_facets` | `hb.drill_facet` (a quant template's topic group, as the app's `drillFacet`) and `rescore` re-created with the facets of the app's drill-down (UX review D4, a provisional default): quant answers count under their topic group, and a facet's prior leaves its own answers out, so its mean and sd are its axis's. Same signature, owner and grants |
 | `…M2.1 20261007000200_parse_entry_decimal_comma` | `hb.parse_entry` re-created with the decimal comma (`3,5` is 3.5; UX-079, UX review D8, a provisional default), as the app's `parseEntry` and the bank's `hb.gen.quant.entry` read it; the thousands form (`1,533`) and every other form read as before. Same signature, owner and grants |
+| `…M3.11 20261013000100_item_sets` | `hb.set_item_types`, `hb.set_questions`, `hb.served_view`, and `hb.rank_live`, `hb.thompson_pick` and `hb.serve_next` re-created: the questions of one passage (or logic game) are served together, in id order, the set competing as one unit and counted for exposure once ("M3.11 phase 2: item sets", below). Same signatures, owners and grants; one new setting, `selection.set_item_types` |
 | `…M2.3 20261003000100_save_signing` | `hb.mac_sign` (owned by `postgres`), RFC 8785 canonical JSON (`hb.jcs`), `hb.session_signed`, `hb.session_verdict`, `hb.signing_check`, the HMAC form of `hb.session_owned`, `verify_save`, the `sig.*` and `verify.*` settings. (The work estimate `hb.json_work` and its checks live with `hb.check_save` in `…500`.) |
 
 ### Who can do what (R-11.1, R-12.1)
@@ -1320,6 +1321,76 @@ is a placeholder):
 
 For the live project this changes nothing until two things are true: text items are `live` there (the bank's gates above
 still prevent that), and the Pages build is given `HB_TEXT_AXES` (unset today; `web/src/backend/config.ts`).
+
+### M3.11 phase 2: item sets, a passage served whole (2026-10-13; written and tested here, **not applied to the project**)
+
+One migration, `supabase/migrations/20261013000100_item_sets.sql`, closes the server half of the "Passage questions"
+row of the table above: "one question per passage" becomes "the passage, whole". `web/scripts/db/item-sets.db.test.ts`
+(the rule) and `passage.db.test.ts` (the app's session run on top of it) test it; the lead applies it with
+`npm run db:deploy` after review. Nothing here touched the live project.
+
+**The rule.** A *set* is the live, servable questions of one `family_id` whose `item_type` is listed in the setting
+`selection.set_item_types` (`mc_passage`, `mc_logic_game`). The item type is used, not the parameter model, so a
+four-option passage question stored as a 3PL is a set member like a five-option one stored as a 2PL-testlet. Every
+other item is served exactly as before (the ranking, scores and ties of `hb.rank_live` are unchanged for them, and
+the selection tests of M2.2 pass untouched).
+
+| | |
+|---|---|
+| Order | the `item_id`, byte by byte (collation `"C"`). The first is the set's entry. The bank controls it by how it numbers a passage's questions (`…-q1`, `…-q2`; zero-padded from ten on). |
+| Entering | the set competes for a live slot as one unit: (Σ information of its questions) × Var(θ) / (Σ of their E[T]), each question by its own model (a 2PL-testlet's × `selection.testlet_info_factor` = 0.8, §7.1). Coverage floor, content balancing and the top 5 treat the unit like an item; the item picked is the entry. A set is a candidate only whole: if any servable question of it is not a candidate for this session (at the cap, lost a race), the set is left out, never entered in the middle. |
+| Inside | while the session's last served item is a set question and the call allows its axis, the next item is the set's next question, before anything else: no other item, no pretest slot, no per-axis stop and no cap comes between two questions of a passage. A question that ran out of time or was let go does not end the set. |
+| Leaving | a call whose `p_axes` leaves the axis out (the client's part ended, or was skipped) ends the set. The rest is never served to that person: the family is one they were served. |
+| Exposure | counted per passage. The 0.25 cap is applied at the entry, whose `item_exposure` row is the number of sessions served the passage (the same single guarded statement as for any item, so a race for the last place has one winner). Later questions are counted without a limit of their own: their rows say how many sessions reached them. |
+| Scoring | unchanged, and it counts questions: each answer is scored against its own key, enters the grid EAP and the MAP as a dichotomous answer by its own model (a 2PL-testlet as a 2PL, as the app does; grouping a set into one testlet term is still M3.9's), and counts toward `rescore.min_axis_items`. Two passages of three questions are six answers; one passage of four is withheld. |
+| Pretest | a pretest slot never takes a set question, and a set question that is not `live` is not served. Pretesting a passage needs a rule of its own. |
+
+**What a reply gains** (`hb.served_view`, which wraps `hb.item_view`), and nothing else:
+
+- `set: {position, of}` next to `seq` and `item`, for a question of a set of two or more: its place among the set's
+  questions served to this session, and how many it will be served in all. It lets the client keep the passage on
+  screen between questions and not end a part in the middle of one. It is a function of the bank's rows and of what
+  was served, never of an answer. (Not `index`: that is the name of a key's field, and the reply checks grep for it.)
+- `item.media.attribution`, for a set question whose payload has a `media` object without one: the family's
+  `source.attribution`, cut to 1,000 characters. This is the credit line a licence such as CC BY requires to be
+  shown with the text; a payload that carries its own keeps its own. Nothing else of `source` is projected (a test
+  plants canaries in the title, the address and the batch).
+
+No key, tolerance, rationale, parameter, status, verdict or `family_id` is in any reply, as before; the tests plant
+canaries in the key table's other columns, the family's source, and the item's `verification`, `provenance` and
+`server_tags`, and fuzz sessions that answer right, wrong and with rubbish, switch skills and let questions go. The
+accepted adaptive channel (A24-sec) gets narrower: inside a set the next item does not depend on the answers.
+
+**What the bank should set for a passage** (the server hands these over as stored and enforces none of them):
+
+- `item_type: 'mc_passage'`, one `family_id` per passage, ids that order the questions.
+- `media: {renderer: 'passage_v1', passage: [paragraphs…]}` and optionally `attribution` and `title` (strings).
+  **No other field in `media`**: the app does not draw a passage question whose `media` holds a field it does not
+  know (it offers the skip rather than half a passage).
+- The whole credit line a licence requires (title, author, source, licence, "changes were made") in the family's
+  `source.attribution`, or in `media.attribution`. It is shown as text; an address in it is not a link.
+- **The reading time on the first question** (the one with the lowest id): `expected_time_s` = 45 + 0.3 s per word
+  of the passage (200 words a minute), and `time_limit_s` = max(180, 2.5 × that), the §13 rule; 300 to 450 s for a
+  200 to 450-word passage. The other questions: 45 s expected, 180 s limit. The app uses the limit as served and
+  adds nothing of its own, so a first question left at 180 s gives a slow reader of a long passage too little.
+  If the first question is ever retired, give the next one the reading time.
+
+### The start-up of the selection, and where items are aimed (2026-10-13; written and tested here, **not applied to the project**)
+
+One new migration, `supabase/migrations/20261014000100_startup_step.sql`, to be applied with `npm run db:deploy` after review, **after** `20261013000100_item_sets.sql` (it replaces that file's `hb.rank_live`). The owner, after a full session with 64 of 67 right: "was the test i took adaptive? … it seemed like it didnt", "many of the questions are too easy". The selection was adaptive and could not be felt: it places the next item at the posterior mean under the N(0, 1) prior, which ten correct answers in a row move by about a stratum, and divides by time, which favours the quicker, easier items.
+
+| | What |
+|---|---|
+| Start-up (`hb.startup_targets`) | The first item on a skill is picked as before. While every answer the session's score counts on the skill is correct, the next item is aimed at the difficulty of the last one plus `selection.startup_step` (1, one stratum); while every one is wrong, minus that. At the first reversal the start-up is over for the skill in that session. While a skill has a target, only the candidates within `selection.startup_window` (0.5) of it compete, or the nearest ones when there are none. |
+| The aim (`hb.session_aims`) | After the start-up the criterion's information is evaluated at the EAP under a prior `selection.aim_prior_sd_factor` (2) times as wide as the scoring prior, not at the posterior mean. The variance in the criterion, the per-skill stop and every score still use the scoring posterior. |
+| What an answer is | Exactly the answers `hb.eap_add_response` adds to the session's EAP: not a pretest answer, not one outside the item's answer space (a question that ran out of time or was let go), not one on a quarantined item. |
+| Sets | A passage is one unit: it is entered at the mean difficulty of its questions, steps up when all of them were answered correctly, down when none was, and is a reversal in between. Inside a passage nothing changes (the rule of item sets). |
+| Unchanged | Scoring, exposure (the cap is applied before the filter: an item at the cap is never served to reach a target), the seen lists, family and sibling exclusion, the coverage floor, the balancing of generator families, the top k at random, pretest slots. No reply gains a field. |
+| Off | `selection.startup_step = 0` and `selection.aim_prior_sd_factor = 1` rank exactly as before. |
+
+The same rule runs in the app's selector (`web/src/engine/startup.ts`); `web/scripts/db/startup.db.test.ts` holds the SQL to it on random answer sequences (the target, the aim, what competes). Simulated before and after (`npm run sim:cat -- --part c`; figures in ROADMAP, "Owner decisions 2026-10-13"): a taker at θ = +2.5 on a pool shaped like the live text banks is shown a stratum 5 or 6 item among the first five questions in about three sessions of four (before: never), and the part's estimate recovers θ as well as before (r and RMSE within sampling error).
+
+**What the accepted adaptive channel looks like now (ROADMAP A24-sec).** Which item comes next already depended on whether the last answer was right. During the start-up that is plainer: a harder item follows a correct answer and an easier one a miss, until the first reversal. Nothing new is in a reply, and the bounds are the ones of A24-sec.
 
 ### Left for the owner
 

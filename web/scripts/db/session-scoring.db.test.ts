@@ -661,11 +661,13 @@ describe('which item parameters a session uses', () => {
       const { rows: got } = await db.owner.query<{ mean: number; sd: number }>(`select * from hb.session_posteriors($1::jsonb) where axis = 'QR'`, [JSON.stringify(st)])
       expect(Math.abs(got[0]!.mean - want.mean)).toBeLessThan(1e-9)
       expect(Math.abs(got[0]!.sd - want.sd)).toBeLessThan(1e-9)
-      // and the pool is ranked on those parameters too
+      // and the pool is ranked on those parameters too, its information at the aim (the EAP under the selection
+      // prior, twice as wide: 20261014000100_startup_step.sql)
+      const aim = eapAxis(obs, 0, 4).mean
       const pool = await db.owner.query<{ o_item_id: string; o_info: number }>(`select * from hb.rank_live((select s from public.sessions s where s.session_id = $1), array['QR'], null)`, [s.session_id])
       for (const r of pool.rows) {
         const it = byId.get(r.o_item_id)!
-        const z = it.a * (want.mean - it.b)
+        const z = it.a * (aim - it.b)
         const sg = 1 / (1 + Math.exp(-z))
         const info = it.model === '3pl' ? (it.a * it.a * sg * sg * (1 - it.c!) * (1 - sg)) / (it.c! + (1 - it.c!) * sg) : it.a * it.a * sg * (1 - sg)
         expect(Math.abs(r.o_info - info)).toBeLessThan(1e-9)

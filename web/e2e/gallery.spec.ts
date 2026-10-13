@@ -160,7 +160,10 @@ test.describe('renderers at 360 px and 200% zoom, reduced motion, keyboard (chro
     await page.keyboard.type('123')
     await expect(page.getByRole('list', { name: /Your entry, 3 of 3 digits/ })).toBeVisible()
     await page.keyboard.press('Enter')
-    await expect(page.getByText(/Next sequence coming up|Watch the digits/)).toBeVisible()
+    // 1-2-3 is never a sequence (no runs of three), so this entry does not match: the reactive procedure gives one
+    // more sequence of the same length and the pause says so, then the digits play again (span 1.2.0).
+    await expect(page.getByText(/One more of the same length|Watch the digits/)).toBeVisible()
+    await expect(page.getByText(/^Enter 3 digits/)).toBeVisible({ timeout: 15_000 })
   })
 
   test('simple RT responds to the Space bar', async ({ page }) => {

@@ -24,9 +24,12 @@ import { WEB } from './css-tokens'
 /**
  * The entry chunk's gzip size limit, in bytes. Before the split it was 158 KB (results included); after it,
  * 120 KB. The results chunk alone is about 41 KB gzip, so a static import of it trips this bound, while the
- * welcome-to-run code keeps some 15 KB of room to grow.
+ * welcome-to-run code keeps room to grow. Raised from 135 KB to 140 KB with the passage screen of M3.11
+ * phase 2 (about 1.5 KB gzip, measured on the default build: the passage spec, the layout and the run's set
+ * rule), which took the entry of this build to 136.0 KB; a static import of the results chunk still trips the
+ * bound by a wide margin.
  */
-const ENTRY_GZIP_MAX = 135_000
+const ENTRY_GZIP_MAX = 140_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [

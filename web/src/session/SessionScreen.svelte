@@ -3,7 +3,7 @@
   the per-cluster checklist around whatever the run is showing: an interstitial ("Up next: Spatial.
   About 6 min.", and that the clock waits there until Start, UX-066), a fixed block, a power item with
   its confidence slider (which reports whether it was moved, UX-063), the break suggestion at the part
-  boundary nearest half-way, or the break itself. "Skip <axis>" and "Finish early" are always at hand. This component only shows
+  boundary nearest half-way, or the break itself. A question that waits for its answer shows its timer (`ItemTimer.svelte`). "Skip <axis>" and "Finish early" are always at hand. This component only shows
   `SessionRun.view()` and forwards the renderers' events; the rules live in `run.ts`.
   The header is small on a phone (UX-003); "Keep going" in a confirmation hands focus back to the running
   block's own input surface, so the next response key counts (UX-005a); the browser's Back button opens
@@ -21,6 +21,13 @@
   a screen named "One moment" that names no part, and a part the server does not have never appears at all.
   One primary button per screen (D27, a provisional default): in the Skip and Finish panels "Keep going" is
   the primary and comes first.
+  A served passage (M3.11 phase 2; owner decision 2026-10-12: the passage stays visible while its questions are
+  answered) is shown beside its question, or above it on a narrow screen (`render/text/PassageLayout.svelte`), and
+  the page is not rebuilt between two questions of the same passage: the passage stays where it is, scrolled where
+  the person left it, through the question, its slider and the short wait for the next one. A new passage takes
+  focus (its region is named "Passage"), so a screen-reader user learns that there is something new to read; a
+  later question of the same passage takes focus on its own region, as any later question does, so the passage is
+  not read out again, and it says which of the passage's questions it is.
 -->
 <script lang="ts">
   import { onMount, tick as svelteTick } from 'svelte'
@@ -29,6 +36,7 @@
   import ReportProblem from '../backend/ReportProblem.svelte'
   import Checklist from './Checklist.svelte'
   import Confidence from './Confidence.svelte'
+  import ItemTimer from './ItemTimer.svelte'
   import ConfirmPanel from './ConfirmPanel.svelte'
   import ProgressRing from './ProgressRing.svelte'
   import Screen from './Screen.svelte'
@@ -67,6 +75,8 @@
     skipButton,
     upNext,
   } from './copy'
+  import { PASSAGE_COPY } from '../render/text/copy'
+  import PassageLayout from '../render/text/PassageLayout.svelte'
   import { QuestionFocus, itemRegionName } from './question-focus'
   import type { SessionEnv } from './env'
   import type { AutosaveStatus } from './persist'
@@ -92,9 +102,14 @@
   let view: RunView = $state.raw(run.view())
   // svelte-ignore state_referenced_locally
   let elapsedS = $state(run.elapsedS())
+  /** The time left for the question on screen (null when none is waiting for an answer); read every tick, like the ring. */
+  // svelte-ignore state_referenced_locally
+  let itemTime = $state.raw(run.itemTime())
   const uid = $props.id()
   /** The id of the region a later question hands focus to (`Screen` `focusId`). */
   const regionId = `${uid}-item`
+  /** The id of the passage's region (a new passage takes focus there). */
+  const passageId = `${uid}-passage`
   const questions = new QuestionFocus()
   let confirm: 'skip' | 'finish' | null = $state(null)
   let opener: HTMLElement | null = null
@@ -102,12 +117,18 @@
   // svelte-ignore state_referenced_locally
   let seenFinishRequest = finishRequest
 
-  $effect(() => run.subscribe(() => (view = run.view())))
+  $effect(() =>
+    run.subscribe(() => {
+      view = run.view()
+      itemTime = run.itemTime()
+    }),
+  )
 
   onMount(() => {
     const timer = setInterval(() => {
       run.tick()
       elapsedS = run.elapsedS()
+      itemTime = run.itemTime()
     }, 250)
     const onVisibility = (): void => run.noteVisibility(document.visibilityState === 'hidden' ? 'hidden' : 'visible')
     document.addEventListener('visibilitychange', onVisibility)
@@ -158,6 +179,14 @@
   })
   /** Where focus goes on this screen, and the number of its question: asked once per screen key. */
   const plan = $derived(questions.enter(screenKey, { phase: view.phase, segmentIndex: view.segmentIndex, problem: view.problem !== null }))
+  /**
+   * What the page is rebuilt for. A passage is one page from its first question to its last (the questions, their
+   * sliders and the waits between them), so the passage stays in place; every other screen is a page of its own,
+   * and so is a wait that failed.
+   */
+  const mountKey = $derived(view.passage !== null && view.problem === null ? `p:${view.segmentIndex}:${view.passage.passageKey}` : screenKey)
+  /** On a new page: a later question's own region, or, when the page brings a new passage, the passage. */
+  const focusId = $derived(plan.target !== 'item' ? undefined : view.passage !== null ? passageId : regionId)
   const notice = $derived.by(() => {
     const n = view.notice
     if (n === null) return ''
@@ -201,6 +230,28 @@
     run.finishEarly()
   }
 
+  // A later question of the passage on screen: the page is the same, so focus is handed to the question here (the
+  // page's own mount does it for every other screen), and the question is brought into view under the passage.
+  let mounted = ''
+  let shown = ''
+  $effect(() => {
+    const page = mountKey
+    const screen = screenKey
+    const toQuestion = plan.target === 'item'
+    const same = page === mounted && screen !== shown
+    mounted = page
+    shown = screen
+    if (!same || !toQuestion) return
+    void svelteTick().then(() => {
+      const region = document.getElementById(regionId)
+      if (region === null) return
+      region.focus({ preventScroll: true })
+      const top = region.getBoundingClientRect().top
+      const clear = parseFloat(getComputedStyle(region).scrollMarginTop) || 0
+      if ((top < clear || top > window.innerHeight - 96) && typeof region.scrollIntoView === 'function') region.scrollIntoView({ block: 'start', behavior: 'instant' })
+    })
+  })
+
   // A confirmation belongs to the screen it was asked on.
   $effect(() => {
     void screenKey
@@ -216,6 +267,97 @@
     confirm = 'finish'
   })
 </script>
+
+<!-- What the screen shows for the run's phase; beside a passage when the question has one. -->
+{#snippet content()}
+  {#if view.phase === 'interstitial' && segment !== null}
+    <p class="lead">{aboutMinutes(segment.minutes)}</p>
+    <p>{SEGMENT_INFO[segment.id].blurb}</p>
+    <p class="clock-note" data-clock-note>{INTERSTITIAL_CLOCK}</p>
+    <div class="hb-actions">
+      <button type="button" class="hb-btn hb-primary" onclick={() => run.startSegment()}>{INTERSTITIAL_START}</button>
+      <button type="button" class="hb-btn" onclick={(e) => ask('skip', e)}>{INTERSTITIAL_SKIP}</button>
+    </div>
+  {:else if view.phase === 'block' && view.block !== null}
+    <Stage
+      block
+      family={view.block.family}
+      itemId={view.block.item_id}
+      spec={view.block.spec}
+      scale={env.scale}
+      timing={env.timing}
+      inputMode={view.rtInput}
+      onrespond={(r) => run.blockResponded(r)}
+      oninputtype={(t) => run.blockInputType(t)}
+      ontimestampsource={(s, reason) => run.blockTimestampSource(s, reason)}
+    />
+  {:else if (view.phase === 'item' || view.phase === 'confidence') && view.item !== null}
+    <!-- The question's own region: a script target for a later question of the part (D21), not a tab stop. -->
+    <div class="item-region" id={regionId} role="group" aria-label={itemRegionName(plan.number)} tabindex="-1">
+      {#if view.unavailable}
+        <div class="unavailable" role="group" aria-label="This question cannot be shown">
+          <p role="status">{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
+          <div class="hb-actions">
+            <button type="button" class="hb-btn hb-primary" onclick={() => run.skipAxis()}>{skipButton(skipName)}</button>
+            <button type="button" class="hb-btn" onclick={(e) => ask('finish', e)}>{FINISH_EARLY}</button>
+          </div>
+        </div>
+      {/if}
+      {#if view.passage?.position != null && view.passage.position.of > 1}
+        <p class="set-position" data-set-position>{PASSAGE_COPY.position(view.passage.position.index, view.passage.position.of)}</p>
+      {/if}
+      {#if view.phase === 'item' && itemTime !== null}
+        <!-- Every question that can run out of time says how long is left, and warns before it does (owner feedback 2026-10-13). -->
+        {#key view.item.item_id}
+          <ItemTimer leftS={itemTime.leftS} limitS={itemTime.limitS} typed={view.item.options_count === undefined} />
+        {/key}
+      {/if}
+      <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
+      <div class="stage-host" hidden={view.unavailable}>
+        <Stage
+          family={view.item.family}
+          itemId={view.item.item_id}
+          spec={view.item.spec}
+          scale={env.scale}
+          timing={env.timing}
+          disabled={view.phase === 'confidence' || view.unavailable}
+          onrespond={(r) => run.itemResponded(r)}
+          onshown={(ms) => run.itemShown(ms)}
+          onunavailable={() => run.itemUnavailable()}
+          onpaste={(id) => run.notePaste(id)}
+        />
+      </div>
+      {#if view.phase === 'confidence' && view.confidence !== null}
+        <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct, touched) => run.confirmConfidence(pct, touched)} />
+      {/if}
+      {#if view.reportable !== null && report !== undefined}
+        <ReportProblem itemId={view.reportable} {report} />
+      {/if}
+    </div>
+  {:else if view.phase === 'loading'}
+    {#if view.problem === null}
+      <p role="status" data-loading>{view.probing ? PROBING_TEXT : LOADING_TEXT}</p>
+    {:else}
+      <p role="alert" data-loading-problem={view.problem}>{LOADING_PROBLEM[view.problem]}</p>
+      {#if view.problem !== 'ended'}
+        <div class="hb-actions">
+          <button type="button" class="hb-btn hb-primary" onclick={() => run.retryLoad()}>{LOADING_RETRY}</button>
+        </div>
+      {/if}
+    {/if}
+  {:else if view.phase === 'break_offer'}
+    <p>{BREAK_OFFER_TEXT}</p>
+    <div class="hb-actions">
+      <button type="button" class="hb-btn hb-primary" onclick={() => run.takeBreak()}>{BREAK_TAKE}</button>
+      <button type="button" class="hb-btn" onclick={() => run.declineBreak()}>{BREAK_DECLINE}</button>
+    </div>
+  {:else if view.phase === 'on_break'}
+    <p>{BREAK_TEXT}</p>
+    <div class="hb-actions">
+      <button type="button" class="hb-btn hb-primary" onclick={() => run.resume()}>{BREAK_RESUME}</button>
+    </div>
+  {/if}
+{/snippet}
 
 <div class="hb-render session" data-phase={view.phase}>
   <header class="top">
@@ -240,85 +382,14 @@
   </header>
 
   <div class="body">
-    {#key screenKey}
-      <Screen {title} wide focus={plan.target !== 'none'} focusId={plan.target === 'item' ? regionId : undefined}>
-        {#if view.phase === 'interstitial' && segment !== null}
-          <p class="lead">{aboutMinutes(segment.minutes)}</p>
-          <p>{SEGMENT_INFO[segment.id].blurb}</p>
-          <p class="clock-note" data-clock-note>{INTERSTITIAL_CLOCK}</p>
-          <div class="hb-actions">
-            <button type="button" class="hb-btn hb-primary" onclick={() => run.startSegment()}>{INTERSTITIAL_START}</button>
-            <button type="button" class="hb-btn" onclick={(e) => ask('skip', e)}>{INTERSTITIAL_SKIP}</button>
-          </div>
-        {:else if view.phase === 'block' && view.block !== null}
-          <Stage
-            block
-            family={view.block.family}
-            itemId={view.block.item_id}
-            spec={view.block.spec}
-            scale={env.scale}
-            timing={env.timing}
-            inputMode={view.rtInput}
-            onrespond={(r) => run.blockResponded(r)}
-            oninputtype={(t) => run.blockInputType(t)}
-            ontimestampsource={(s, reason) => run.blockTimestampSource(s, reason)}
-          />
-        {:else if (view.phase === 'item' || view.phase === 'confidence') && view.item !== null}
-          <!-- The question's own region: a script target for a later question of the part (D21), not a tab stop. -->
-          <div class="item-region" id={regionId} role="group" aria-label={itemRegionName(plan.number)} tabindex="-1">
-            {#if view.unavailable}
-              <div class="unavailable" role="group" aria-label="This question cannot be shown">
-                <p role="status">{view.notice?.kind === 'unsupported' ? noticeUnsupported(skipName) : noticeUnavailable(skipName)}</p>
-                <div class="hb-actions">
-                  <button type="button" class="hb-btn hb-primary" onclick={() => run.skipAxis()}>{skipButton(skipName)}</button>
-                  <button type="button" class="hb-btn" onclick={(e) => ask('finish', e)}>{FINISH_EARLY}</button>
-                </div>
-              </div>
-            {/if}
-            <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
-            <div class="stage-host" hidden={view.unavailable}>
-              <Stage
-                family={view.item.family}
-                itemId={view.item.item_id}
-                spec={view.item.spec}
-                scale={env.scale}
-                timing={env.timing}
-                disabled={view.phase === 'confidence' || view.unavailable}
-                onrespond={(r) => run.itemResponded(r)}
-                onshown={(ms) => run.itemShown(ms)}
-                onunavailable={() => run.itemUnavailable()}
-                onpaste={(id) => run.notePaste(id)}
-              />
-            </div>
-            {#if view.phase === 'confidence' && view.confidence !== null}
-              <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct, touched) => run.confirmConfidence(pct, touched)} />
-            {/if}
-            {#if view.reportable !== null && report !== undefined}
-              <ReportProblem itemId={view.reportable} {report} />
-            {/if}
-          </div>
-        {:else if view.phase === 'loading'}
-          {#if view.problem === null}
-            <p role="status" data-loading>{view.probing ? PROBING_TEXT : LOADING_TEXT}</p>
-          {:else}
-            <p role="alert" data-loading-problem={view.problem}>{LOADING_PROBLEM[view.problem]}</p>
-            {#if view.problem !== 'ended'}
-              <div class="hb-actions">
-                <button type="button" class="hb-btn hb-primary" onclick={() => run.retryLoad()}>{LOADING_RETRY}</button>
-              </div>
-            {/if}
-          {/if}
-        {:else if view.phase === 'break_offer'}
-          <p>{BREAK_OFFER_TEXT}</p>
-          <div class="hb-actions">
-            <button type="button" class="hb-btn hb-primary" onclick={() => run.takeBreak()}>{BREAK_TAKE}</button>
-            <button type="button" class="hb-btn" onclick={() => run.declineBreak()}>{BREAK_DECLINE}</button>
-          </div>
-        {:else if view.phase === 'on_break'}
-          <p>{BREAK_TEXT}</p>
-          <div class="hb-actions">
-            <button type="button" class="hb-btn hb-primary" onclick={() => run.resume()}>{BREAK_RESUME}</button>
-          </div>
+    {#key mountKey}
+      <Screen {title} wide focus={plan.target !== 'none'} {focusId}>
+        {#if view.passage !== null}
+          <PassageLayout passage={view.passage} regionId={passageId}>
+            {@render content()}
+          </PassageLayout>
+        {:else}
+          {@render content()}
         {/if}
 
         {#if confirm === 'skip'}
@@ -418,6 +489,13 @@
   /* A box of its own (a focus target needs one), with nothing of its own to draw: focus on it is a position, not a control. */
   .item-region:focus {
     outline: none;
+  }
+
+  /* Which of the passage's questions this is: a quiet line above the question. */
+  .set-position {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+    color: var(--r-muted);
   }
 
   .unavailable {

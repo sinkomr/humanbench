@@ -99,7 +99,7 @@ async function playTextPart(page: Page, title: string): Promise<number> {
 const KEYISH = /"key"|"index"|"correct"\s*:\s*(0|1|true|false)|rationale|tolerance|option_weights|"se_b"/u
 
 test.describe('the plain pool: no text item on the server (the live project today)', () => {
-  test('a page that asks for all five text parts gets the six parts, and the server is asked once per text skill', async ({ page }) => {
+  test('a page that asks for every text part gets the six parts, and the server is asked once per text skill', async ({ page }) => {
     const calls = watch(page)
     await page.emulateMedia({ reducedMotion: 'reduce' }) // the results are complete at once
     await toReady(page, query(PLAIN, 'all'))
@@ -128,8 +128,8 @@ test.describe('the plain pool: no text item on the server (the live project toda
     await expect.poll(() => calls.some((c) => c.fn === 'finish' && c.status === 200), { timeout: 30_000 }).toBe(true)
 
     const asked = calls.filter((c) => c.fn === 'next_item')
-    const text = asked.filter((c) => ['LR', 'VOC', 'KST', 'KHU', 'KAP'].includes((c.request.p_axes as string[])[0]!))
-    expect(text.map((c) => (c.request.p_axes as string[]).join()).sort()).toEqual(['KAP', 'KHU', 'KST', 'LR', 'VOC'])
+    const text = asked.filter((c) => ['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'].includes((c.request.p_axes as string[])[0]!))
+    expect(text.map((c) => (c.request.p_axes as string[]).join()).sort()).toEqual(['KAP', 'KHU', 'KST', 'LR', 'RC', 'VOC'])
     for (const c of text) expect(c.reply).toEqual({ done: true, reason: 'no_items' })
     expect(calls.every((c) => c.status === 200)).toBe(true)
     expect(JSON.stringify(calls.map((c) => c.reply))).not.toMatch(KEYISH)
@@ -142,7 +142,7 @@ test.describe('the text pool: made-up questions for three of the five text skill
     const calls = watch(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await toReady(page, query(TEXT, 'all'))
-    await expect(page.locator('main')).toContainText('Up to eleven short parts, about 40 minutes.')
+    await expect(page.locator('main')).toContainText('Up to twelve short parts, about 55 minutes.')
     await button(page, 'Begin').click()
     const seen: string[] = []
     const answered: Record<string, number> = {}

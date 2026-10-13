@@ -29,6 +29,8 @@ export interface BotOptions {
   readonly theta?: readonly number[]
   /** Multiplier on the taker's block durations, per family or overall (default 1). */
   readonly blockScale?: number | Readonly<Record<string, number>>
+  /** Seconds added to a block of a family on top of its model time (what its screens take that the model leaves out; default none). */
+  readonly blockExtraS?: Readonly<Record<string, number>>
   /** Multiplier on a CAT item's time, E[T] × this (default 1). */
   readonly itemScale?: number
   /** Seconds spent on the confidence slider (default 2). */
@@ -118,7 +120,7 @@ export class Bot {
         const item = this.fullItem(blk.item_id)
         const family = getFamily(blk.family)!
         const a = answerBlock(family, item, this.thetaOf(blk.axis), this.rng.fork(`block/${blk.family}`))
-        this.wait(a.timeS * this.blockFactor(blk.family))
+        this.wait((a.timeS + (this.opts.blockExtraS?.[blk.family] ?? 0)) * this.blockFactor(blk.family))
         if (blk.family.startsWith('rt_')) this.run.blockInputType('keyboard')
         this.run.blockResponded(a.response)
         return true

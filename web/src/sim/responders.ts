@@ -14,9 +14,11 @@
  * - **Items** (kind 'item', 2PL / 3PL, A9): y ~ Bernoulli(P(θ)) with the item's a, b (and c); a
  *   correct MC answer is the keyed option, a wrong one another option; a correct entry is the key
  *   (canonical rational or letter), a wrong one an empty entry (unparseable = wrong, M1.F2).
- * - **Span** (GRM, A10): y ~ GRM(θ_WM; a, b_L) from the block's params; the taker passes every
- *   length up to the category's longest length (both trials exact) and fails both trials of the
- *   next, so `score()` returns category y.
+ * - **Span** (GRM, A10): every trial the block gives is exactly right with the trial-level chance
+ *   the block's own GRM implies at its length (`span/prior.ts` `spanTrialP`: p_L = 1 − √(1 − q_L)),
+ *   independently, under whichever procedure the block has (reactive, or the fixed one of 1.1.0).
+ *   The graded outcome `score()` then returns is y ~ GRM(θ_WM; a, b_L) under both (`span/prior.ts`,
+ *   "Why the scoring model stands"), and the trials given, so the block's time, are the procedure's.
  * - **RT** (Gaussian on median log RT, A10): the block location μ = d + lam·θ_RT + τ_res·ε, then
  *   every scored trial ln RT ~ N(μ, {@link RT_WITHIN_SD}²), correct position, no lapses; `score()`
  *   takes the median and its MAD-based SE and trims as in a real block.
@@ -41,8 +43,8 @@ import type { ReadingKey, ReadingResponse, ReadingSpec } from '../tasks/reading/
 import { RT_TIME_MODEL, RT_WEB_NORMS } from '../tasks/rt/prior'
 import { RT_MODE_CONFIG, RT_PRACTICE_TRIALS, type RtResponse, type RtSpec } from '../tasks/rt/types'
 import { SPAN_TASKS, spanSymbols, type SpanItem } from '../tasks/span/config'
-import { SPAN_INSTRUCTIONS_S, SPAN_INTER_TRIAL_S } from '../tasks/span/prior'
-import { runBlock } from '../tasks/span/score'
+import { spanTimeModel, spanTrialP, spanTrialTimeS } from '../tasks/span/prior'
+import { blockTrials, runBlock } from '../tasks/span/score'
 import { SIGMA_MEASUREMENT, readingExpectedTimeS } from '../tasks/reading/prior'
 
 /** Any family's item instance. */
@@ -151,12 +153,22 @@ export function spanStream(item: SpanItem, longest: number): number[][] {
   }
 }
 
-/** A span block response: category y ~ GRM(θ) from the block's params, as a response stream. */
+/**
+ * A span block response: each trial given is exactly right with the GRM's trial-level chance at its
+ * length (module comment), one uniform draw per trial, until the block's own state machine ends it.
+ */
 export function spanResponse(item: SpanItem, theta: number, rng: Rng): number[][] {
   const p = item.params
   if (p.model !== 'grm') throw new RangeError(`${item.item_id}: params.model ${p.model}, not grm`)
-  const y = grmCategory(theta, p.a, p.b, rng.next())
-  return spanStream(item, y === 0 ? 0 : item.spec.start_length + y - 1)
+  const trialP = spanTrialP(theta, p.a, p.b)
+  const out: number[][] = []
+  for (;;) {
+    const status = runBlock(item, out)
+    if (status.finished) return out
+    const expected = item.key.sequences[status.trial]!
+    const right = rng.next() < trialP[status.length - item.spec.start_length]!
+    out.push(right ? [...expected] : wrongEntry(item, expected))
+  }
 }
 
 /** An RT block response (see the module comment); RTs in whole 0.1 ms. */
@@ -210,18 +222,19 @@ export function blockResponse(item: AnyItem, theta: number, rng: Rng): unknown {
 // ------------------------------------------------------------------------------ block time
 
 /**
- * Seconds a span block takes (`span/prior.ts` [SPEC] v0 time model): instructions, then per trial
- * actually given (one per entry of `stream`, in presentation order) L elements × (SOA + the
- * task's entry time per element) + the inter-trial gap. Its mean over the GRM categories at θ = 0
- * is the block's E[T] (`spanExpectedTime`).
+ * Seconds a span block takes (`span/prior.ts` time model of the block's procedure): instructions,
+ * then per trial actually given (one per entry of `stream`, each at the length of the sequence the
+ * state machine showed for it) the lead and pause, L elements × (SOA + the task's entry time per
+ * element) and the entry's fixed part. Its mean over takers at θ = 0 is the block's E[T]
+ * (`spanExpectedTime`).
  */
 export function spanBlockTimeS(item: SpanItem, stream: readonly unknown[]): number {
   const cfg = SPAN_TASKS.find((c) => c.task === item.spec.task)
   if (cfg === undefined) throw new RangeError(`${item.item_id}: unknown span task ${item.spec.task}`)
   if (stream.length > item.spec.trials.length) throw new RangeError(`${item.item_id}: ${stream.length} responses for ${item.spec.trials.length} trials`)
-  const soaS = (item.spec.timing.on_ms + item.spec.timing.off_ms) / 1000
-  let t = SPAN_INSTRUCTIONS_S
-  for (let i = 0; i < stream.length; i++) t += item.spec.trials[i]!.length * (soaS + cfg.responseSPerElement) + SPAN_INTER_TRIAL_S
+  const model = spanTimeModel(item.spec.procedure ?? 'fixed')
+  let t = model.instructions_s
+  for (const trial of blockTrials(item, stream)) t += spanTrialTimeS(cfg, item.spec.trials[trial]!.length, model)
   return t
 }
 

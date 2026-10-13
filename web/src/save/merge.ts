@@ -20,7 +20,10 @@
  *   people's on a shared device, which a merge cannot tell apart: callers check
  *   {@link distinctAnonIds} first and ask before combining (`restoreAutosaves` reports them).
  * - `created_utc`: the later one (fixed-width UTC sorts as text).
- * - `$schema`, `schema_version`, `bank_version`: those of the running app ({@link SaveContext}).
+ * - `$schema`, `schema_version`: those of the running app ({@link SaveContext}).
+ * - `bank_version`: the latest of the inputs' and the running app's (`bank-version.ts`): a file that
+ *   holds a served session keeps the server's bank version when it is merged by an app that is on
+ *   the device's own pool.
  * - `brief_prefs` (AI.7, proposal §5.5): joined by `mergeBriefPrefs` (`brief-prefs.ts`): the higher rev
  *   per slot, a union of fit notes, the later month. It is not part of a session, so editing it never
  *   changes a session's canonical form or its A16 MAC.
@@ -35,6 +38,7 @@
  */
 
 import { isAxisCode } from '../engine/axes'
+import { latestBankVersion } from './bank-version'
 import { briefPrefsCovered, mergeBriefPrefs } from './brief-prefs'
 import { jcs } from './jcs'
 import { SCHEMA_URL, SCHEMA_VERSION, type PosteriorCache, type SaveContext, type SaveFileV1, type SaveSession } from './types'
@@ -133,7 +137,7 @@ export function mergeAll(saves: readonly SaveFileV1[], ctx: SaveContext): SaveFi
   const out: SaveFileV1 = {
     $schema: SCHEMA_URL,
     schema_version: SCHEMA_VERSION,
-    bank_version: ctx.bank_version,
+    bank_version: latestBankVersion([ctx.bank_version, ...saves.map((x) => x.bank_version)]),
     anon_id: saves.reduce((m, s) => (s.anon_id < m ? s.anon_id : m), first.anon_id),
     created_utc: saves.reduce((m, s) => (s.created_utc > m ? s.created_utc : m), first.created_utc),
     sessions,

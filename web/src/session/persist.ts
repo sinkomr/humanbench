@@ -32,6 +32,12 @@ export interface PersisterOptions {
    * deletion all take only the sessions bound to the file's own id). Default: the base's id, or a fresh one.
    */
   readonly anonId?: string
+  /**
+   * The bank version the server said it serves from (`start_session`), when a server session is running:
+   * a save that holds a served session is labelled with it (DESIGN §8; `save/bank-version.ts`). Absent or
+   * null: the label of the device's own pool.
+   */
+  readonly bankVersion?: string | null
   /** Wall-clock epoch ms of a write (`created_utc`, metadata only: `save/clock.ts`). */
   readonly wallClockMs: () => number
   /** Coalescing delay of the autosaver (default the library's). */
@@ -58,6 +64,7 @@ export class SessionPersister {
   /** The served part of the session as the server signed it (M2.7), once `finish` has returned it. */
   #signed: SaveSession | null = null
   readonly #onStatus: ((s: AutosaveStatus) => void) | undefined
+  readonly #bankVersion: string | null
 
   constructor(run: SessionRun, opts: PersisterOptions) {
     this.#run = run
@@ -65,6 +72,7 @@ export class SessionPersister {
     // Re-keyed, not merged: a merge keeps the smaller of two ids (merge.ts), which is not the server's.
     this.#base = opts.base !== null && opts.base.anon_id !== this.anonId ? { ...opts.base, anon_id: this.anonId } : opts.base
     this.#wallClockMs = opts.wallClockMs
+    this.#bankVersion = opts.bankVersion ?? null
     this.key = autosaveKey(run.sessionId)
     this.#onStatus = opts.onStatus
     this.#saver = createAutosaver(run.sessionId, {
@@ -97,7 +105,11 @@ export class SessionPersister {
   currentSave(): SaveFileV1 {
     const blocks = this.#run.sessionState()
     const cat = this.#run.catSessionState()
-    const meta = { ctx: SAVE_CTX, createdMs: this.#wallClockMs(), anonId: this.anonId }
+    // A file that holds a session the server served says which bank it was served from (§8); until the first
+    // served answer the file holds nothing of the server's and keeps the label of the device's pool.
+    const served = (cat !== null || this.#signed !== null) && this.#bankVersion !== null
+    const ctx = served ? { ...SAVE_CTX, bank_version: this.#bankVersion as string } : SAVE_CTX
+    const meta = { ctx, createdMs: this.#wallClockMs(), anonId: this.anonId }
     // The worked examples' families ride with the first session written.
     const extra = this.#extraSeenFamilies
     const withExtra = <T extends { seenFamilies: readonly string[] }>(st: T): T => (extra.length === 0 ? st : { ...st, seenFamilies: [...st.seenFamilies, ...extra] })
@@ -109,7 +121,7 @@ export class SessionPersister {
       save = saveWithSession(save, i === 0 ? withExtra(st) : st, meta)
     })
     let out = save as SaveFileV1
-    if (this.#signed !== null) out = mergeAll([out, { ...out, sessions: [this.#signed], seen_items: [], seen_families: [] }], SAVE_CTX)
+    if (this.#signed !== null) out = mergeAll([out, { ...out, sessions: [this.#signed], seen_items: [], seen_families: [] }], ctx)
     return out
   }
 

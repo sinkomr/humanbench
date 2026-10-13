@@ -14,6 +14,9 @@ import corsiSource from './CorsiRenderer.svelte?raw'
 import DigitSpanRenderer from './DigitSpanRenderer.svelte'
 import { SPAN_LEAD_MS, nearestInDirection, spanTargets } from './run'
 
+/** The targets a taker who never misses is shown under the reactive procedure: the first sequence of each length. */
+const firstOfEachLength = (targets: number[][]): number[][] => targets.filter((_, i) => i % 2 === 0)
+
 const FRAME = 1000 / 60
 
 let cleanup: (() => void)[] = []
@@ -75,8 +78,10 @@ describe('DigitSpanRenderer', () => {
   ] as const) {
     it(`${name}: typing every target on the keyboard runs the whole block and scores the top category`, () => {
       const item = family.generate(`render-span-${name}`)
-      const targets = spanTargets(item.spec)
-      expect(targets).toEqual(item.key.sequences)
+      expect(spanTargets(item.spec)).toEqual(item.key.sequences)
+      // One trial per length: lengths 3, 4, 5, … to the last, and no second sequence of any.
+      const targets = firstOfEachLength(spanTargets(item.spec))
+      expect(targets.map((t) => t.length)).toEqual(Array.from({ length: item.spec.max_length - 2 }, (_, k) => k + 3))
       const m = mountSpan(item, DigitSpanRenderer)
       click(buttonByText(m.container, 'Start'))
       for (let trial = 0; trial < targets.length; trial++) {
@@ -120,6 +125,56 @@ describe('DigitSpanRenderer', () => {
     expect(keypad.classList.contains('split')).toBe(false)
     expect(keypad.style.getPropertyValue('--cols')).toBe('')
     expect(keypad.style.getPropertyValue('--cols-narrow')).toBe('')
+  })
+
+  it('a miss gets one more sequence of the same length, and the pause says so; a correct entry moves up a length', () => {
+    const item = spanFwd.generate('render-span-second')
+    const targets = spanTargets(item.spec)
+    const m = mountSpan(item, DigitSpanRenderer)
+    const status = (): string => m.container.querySelector('.hb-status')?.textContent?.trim() ?? ''
+    const shown: string[] = []
+    const watch = (): void => {
+      let last = ''
+      until(m.display, () => {
+        const now = m.container.querySelector('.digit')?.textContent ?? ''
+        if (now !== last && now !== '') shown.push(now)
+        last = now
+        return inEntry(m.container)
+      })
+    }
+    const enter = (seq: readonly number[]): void => {
+      for (const d of seq) press(String(d))
+      press('Enter')
+    }
+    click(buttonByText(m.container, 'Start'))
+    // Length 3, right: on to length 4, and the pause is the ordinary one.
+    watch()
+    expect(shown.splice(0).map(Number)).toEqual(item.spec.trials[0])
+    enter(targets[0]!)
+    expect(status()).toBe('Next sequence coming up.')
+    // Length 4, missed: the second sequence of length 4 follows, announced as one more of the same length.
+    watch()
+    expect(shown.splice(0).map(Number)).toEqual(item.spec.trials[2])
+    enter(targets[2]!.map((d) => (d % 9) + 1))
+    expect(status()).toBe('One more of the same length.')
+    watch()
+    expect(shown.splice(0).map(Number)).toEqual(item.spec.trials[3])
+    expect(status()).toBe('Enter 4 digits.')
+    // The second attempt right: length 5 comes next.
+    enter(targets[3]!)
+    expect(status()).toBe('Next sequence coming up.')
+    watch()
+    expect(shown.splice(0).map(Number)).toEqual(item.spec.trials[4])
+    // Two misses at length 5 end the block: the longest passed length is 4.
+    enter([])
+    expect(status()).toBe('One more of the same length.')
+    watch()
+    expect(shown.splice(0).map(Number)).toEqual(item.spec.trials[5])
+    enter([])
+    expect(m.responses).toHaveLength(1)
+    expect(m.responses[0]).toHaveLength(5)
+    expect(spanFwd.score(item, m.responses[0] as SpanResponse).observation).toMatchObject({ kind: 'grm', y: 2 })
+    expect(m.container.textContent).toContain('Block complete')
   })
 
   it('failing both trials at length 3 ends the block with category 0', () => {
@@ -218,7 +273,7 @@ describe('DigitSpanRenderer', () => {
       expect(text).toMatch(direction)
       expect(text).toContain('Press Enter when you are done; Backspace removes the last digit.')
       expect(text).toContain('then choose Done')
-      expect(text).toContain('The sequences get longer step by step.')
+      expect(text).toContain('Each sequence is one digit longer. After a miss you get one more of the same length; a second miss ends the task.')
       m.destroy()
     }
   })
@@ -289,7 +344,7 @@ describe('CorsiRenderer', () => {
     const item = corsi.generate('render-corsi-full')
     const m = mountSpan(item, CorsiRenderer)
     click(buttonByText(m.container, 'Start'))
-    const targets = spanTargets(item.spec)
+    const targets = firstOfEachLength(spanTargets(item.spec))
     for (let trial = 0; trial < targets.length; trial++) {
       until(m.display, () => inEntry(m.container))
       const seq = targets[trial] ?? []
@@ -355,7 +410,7 @@ describe('CorsiRenderer', () => {
     expect(labels()).toEqual([])
     // The row sits under the board and the status line, in the same place in every phase.
     expect([...m.container.querySelector('section')!.children].at(-1)).toBe(slot)
-    const targets = spanTargets(item.spec)
+    const targets = firstOfEachLength(spanTargets(item.spec))
     for (let trial = 0; trial < targets.length; trial++) {
       until(m.display, () => inEntry(m.container))
       expect(m.container.querySelector('.hb-actions')).toBe(slot)

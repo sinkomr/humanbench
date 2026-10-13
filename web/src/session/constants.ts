@@ -3,6 +3,7 @@
  * "Session composition", §10 pacing, §13 consent and integrity; ROADMAP A15).
  */
 
+import { STATIC_BANK_VERSION } from '../save/bank-version'
 import type { SaveContext } from '../save/types'
 
 /** Hard stop, in active seconds: the session ends and the person sees their results (§7.4 "hard stop at 57 min"). */
@@ -28,13 +29,20 @@ export const CONSENT_KEY = 'hb:consent:v1'
 
 /**
  * The versions a save written by this build is stamped with (§8). `bank_version` names the static
- * M1 pool of procedural generators; `param_version` names the provisional item and block
+ * M1 pool of procedural generators, and is replaced by the server's bank version in a save that
+ * holds a served session (`persist.ts`, `save/bank-version.ts`); `param_version` names the provisional item and block
  * parameters (A10, M1.P), which M4 replaces with calibrated ones.
  */
-export const SAVE_CTX: SaveContext = Object.freeze({ bank_version: 'm1-static', param_version: 'm1-provisional' })
+export const SAVE_CTX: SaveContext = Object.freeze({ bank_version: STATIC_BANK_VERSION, param_version: 'm1-provisional' })
 
 /** Dev flag factor (`?fast=1`): virtual session time runs this many times faster than real time. */
 export const FAST_FACTOR = 20
 
 /** Fallback item time cap in seconds when an item declares none (§13: max(180, 2.5 · E[T])). */
 export const DEFAULT_ITEM_LIMIT_S = 180
+
+/**
+ * Seconds left at which the question's timer changes to its warning and says so once (owner feedback
+ * 2026-10-13: no surprise time-outs). For a limit under two minutes it is a quarter of the limit.
+ */
+export const ITEM_TIME_WARN_S = 30

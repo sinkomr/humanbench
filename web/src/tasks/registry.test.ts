@@ -10,7 +10,7 @@ import { QUANT_TEMPLATES, quant, quantSpecLeaksKey } from './quant'
 import { reading, type ReadingKey, type ReadingSpec } from './reading'
 import { readingInvalidResponse, readingMalformedResponses, readingValidResponse } from './reading/synthetic'
 import { Fraction } from './quant/fraction'
-import { FAMILIES, FAMILY_NAMES, getFamily, resolveItem } from './registry'
+import { FAMILIES, FAMILY_NAMES, generatorOf, getFamily, resolveItem } from './registry'
 import { rotation } from './rotation'
 import { rotationSpecLeaksKey } from './rotation/verify'
 import { RT_SPEC_FIELDS, rtChoice4, rtSimple, type RtKey, type RtSpec } from './rt'
@@ -221,6 +221,23 @@ describe('family registry (M1.F)', () => {
       expect(resolveItem(`i:quant:${quant.generatorVersion}+py:${seed}`)).toBeNull() // the Python twin's item (A11)
       expect(resolveItem(`i:quant:0.0.1:${seed}`)).toBeNull() // before a generator bump
       expect(resolveItem('i:rt:1.1.0:x0')).toBeNull() // rt split into rt_simple / rt_choice4 at 2.0.0
+      // The span blocks of 1.1.0 (both trials of every length) are kept whole, so a save made before the reactive
+      // procedure still re-scores: the id regenerates the 1.1.0 block, not a 1.2.0 one under an old name.
+      for (const name of ['span_fwd', 'span_bwd', 'corsi']) {
+        const now = getFamily(name)!
+        expect(now.generatorVersion).toBe('1.2.0')
+        const old = resolveItem(`i:${name}:1.1.0:${seed}`)
+        expect(old, name).not.toBeNull()
+        expect(old!.item_id).toBe(`i:${name}:1.1.0:${seed}`)
+        expect(old!.generator_version).toBe('1.1.0')
+        expect('procedure' in old!.spec).toBe(false)
+        expect(generatorOf(name, '1.1.0')!.generatorVersion).toBe('1.1.0')
+        expect(generatorOf(name, '1.2.0')).toBe(now)
+        expect(generatorOf(name, '1.0.0')).toBeUndefined()
+        expect(resolveItem(`i:${name}:1.0.0:${seed}`)).toBeNull()
+        // The kept generator is not a registered family: nothing plans or serves it.
+        expect(Object.values(FAMILIES).some((f) => f.generatorVersion === '1.1.0' && f.name === name)).toBe(false)
+      }
       for (const bad of ['', 'x', 'i:quant', `f:quant:${seed}`, `i:Quant:${quant.generatorVersion}:x0`, `i:quant:${quant.generatorVersion}:`]) {
         expect(resolveItem(bad), bad).toBeNull()
       }

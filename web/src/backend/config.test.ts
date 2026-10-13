@@ -104,11 +104,16 @@ describe('the served text parts of a build (M3.11 phase 1)', () => {
   })
 
   it('leaves out a name that is not a text skill and says so, never guessing one', () => {
-    const r = parseTextAxes('LR,RC,MAT,bogus')
+    const r = parseTextAxes('LR,LG,MAT,bogus')
     expect(r.axes).toEqual(['LR'])
-    expect(r.problem).toContain('"RC"')
+    expect(r.problem).toContain('"LG"')
     expect(r.problem).toContain('"BOGUS"')
-    expect(selectBackend({ ...env, VITE_HB_TEXT_AXES: 'RC' }, '', ON)).toMatchObject({ kind: 'server', textAxes: [], textProblem: expect.stringContaining('RC') })
+    expect(selectBackend({ ...env, VITE_HB_TEXT_AXES: 'LG' }, '', ON)).toMatchObject({ kind: 'server', textAxes: [], textProblem: expect.stringContaining('LG') })
+    // Reading Comprehension is a text skill since phase 2 (served passages), by its code and in "all"
+    expect(parseTextAxes('rc').axes).toEqual(['RC'])
+    expect(parseTextAxes('VOC,RC,LR').axes).toEqual(['LR', 'RC', 'VOC'])
+    expect(parseTextAxes('all').axes).toContain('RC')
+    expect(selectBackend({ ...env, VITE_HB_TEXT_AXES: 'RC' }, '', ON)).toMatchObject({ kind: 'server', textAxes: ['RC'] })
     expect(parseTextAxes('x'.repeat(201))).toEqual({ axes: [], problem: expect.any(String) })
   })
 

@@ -6,12 +6,17 @@
 
 import { blockScore, type BlockObservation, type BlockScore } from '../family'
 import { spanSymbols, type SpanItem, type SpanResponse } from './config'
-import { advanceSpan, type SpanOutcome, type SpanProtocol, type SpanStatus } from './protocol'
+import { advanceSpan, spanResponseTrials, type SpanOutcome, type SpanProtocol, type SpanStatus } from './protocol'
+
+/** The protocol recorded in a block's spec. A spec without `procedure` is a generator 1.1.0 block: fixed. */
+export function specProtocol(spec: Pick<SpanItem['spec'], 'start_length' | 'trials_per_length' | 'max_length' | 'procedure'>): SpanProtocol {
+  const { start_length, trials_per_length, max_length } = spec
+  return { start_length, trials_per_length, max_length, procedure: spec.procedure ?? 'fixed' }
+}
 
 /** The protocol recorded in a block's spec. */
 export function itemProtocol(item: SpanItem): SpanProtocol {
-  const { start_length, trials_per_length, max_length } = item.spec
-  return { start_length, trials_per_length, max_length }
+  return specProtocol(item.spec)
 }
 
 /**
@@ -21,6 +26,15 @@ export function itemProtocol(item: SpanItem): SpanProtocol {
  */
 export function runBlock(item: SpanItem, responses: SpanResponse): SpanStatus {
   return advanceSpan(itemProtocol(item), item.key.sequences, responses, spanSymbols(item.spec.task))
+}
+
+/**
+ * The sequence of the block (index into `spec.trials` / `key.sequences`) that each entry of a
+ * response stream answered, in order: under the reactive procedure the second sequence of a length
+ * is shown only after a miss, so entry i is not sequence i. Throws as {@link runBlock} does.
+ */
+export function blockTrials(item: SpanItem, responses: SpanResponse): number[] {
+  return spanResponseTrials(itemProtocol(item), item.key.sequences, responses, spanSymbols(item.spec.task))
 }
 
 /**

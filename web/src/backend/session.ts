@@ -85,7 +85,7 @@ export class ServerSession implements CatSource {
 
   async next(axes: readonly AxisCode[]): Promise<CatNext> {
     const r = await this.#api.nextItem(this.#token, axes)
-    return r.kind === 'done' ? r : { kind: 'item', item: toServedItem(r.seq, r.item) }
+    return r.kind === 'done' ? r : { kind: 'item', item: toServedItem(r.seq, r.item, r.set) }
   }
 
   async answer(a: CatAnswer): Promise<void> {

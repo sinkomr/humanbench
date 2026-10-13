@@ -175,6 +175,7 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
     'dev-emotion-feedback',
     'dev-text-mc-stimulus',
     'dev-text-mc-long',
+    'dev-text-passage-long',
     // the tier (c) entries (M6.2-M6.4): each feature keeps its pins in its own e2e/routes-<x>.ts
     ...SJT_PINNED_STATES,
     ...RAT_PINNED_STATES,
