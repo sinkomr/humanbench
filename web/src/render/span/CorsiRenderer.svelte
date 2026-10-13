@@ -24,7 +24,7 @@
   import { browserTiming, type RendererProps } from '../common/props'
   import { afterFrames, presentSequence } from '../common/sequence'
   import { CORSI_BOARD, type SpanResponse, type SpanSpec } from '../../tasks/span/config'
-  import { SPAN_LEAD_MS, SPAN_PAUSE_MS, directionOfKey, nearestInDirection, spanNext } from './run'
+  import { SPAN_LEAD_MS, SPAN_PAUSE_MS, directionOfKey, isSecondAttempt, nearestInDirection, spanNext, spanPauseText, spanRuleText } from './run'
 
   let { spec, onrespond, timing }: RendererProps<SpanSpec, SpanResponse> = $props()
 
@@ -33,6 +33,8 @@
   const uid = $props.id()
   let phase: Phase = $state('intro')
   let trial = $state(0)
+  /** The trial coming up is a second attempt at its length (the pause says so). */
+  let retry = $state(false)
   let lit: number | null = $state(null)
   let picked: number[] = $state([])
   let focusIndex = $state(0)
@@ -111,6 +113,7 @@
       onrespond(responses.map((r) => [...r]))
       return
     }
+    retry = isSecondAttempt(spec, status)
     phase = 'pause'
     flushSync()
     focusStage(boardEl)
@@ -151,7 +154,7 @@
   {#if phase === 'intro'}
     <p class="hb-instructions">
       Blocks on the board will light up one at a time. When the sequence ends, select the blocks in the same order: click or tap
-      them, or use the arrow keys and Enter. Then choose Done. Sequences get longer as you go. With a screen reader, the blocks are
+      them, or use the arrow keys and Enter. Then choose Done. {spanRuleText('block')} With a screen reader, the blocks are
       named Block 1 to Block 9, and the number keys 1 to 9 select the block of that name.
     </p>
     <button type="button" class="hb-btn hb-primary" onclick={start}>Start</button>
@@ -175,7 +178,7 @@
     <p class="hb-sr-only" aria-live="assertive" aria-atomic="true">{phase === 'present' && lit !== null ? `Block ${lit + 1}` : ''}</p>
   {/if}
   <p class="hb-status" aria-live="polite">
-    {#if phase === 'present'}Watch the blocks.{:else if phase === 'entry'}Selected <span translate="no">{picked.length}</span> of <span translate="no">{length}</span>.{:else if phase === 'pause'}Next sequence coming up.{:else if phase === 'done'}Block complete. Thank you.{/if}
+    {#if phase === 'present'}Watch the blocks.{:else if phase === 'entry'}Selected <span translate="no">{picked.length}</span> of <span translate="no">{length}</span>.{:else if phase === 'pause'}{spanPauseText(retry)}{:else if phase === 'done'}Block complete. Thank you.{/if}
   </p>
   {#if phase !== 'intro'}
     <div class="hb-actions slot">

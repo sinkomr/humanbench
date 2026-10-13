@@ -86,12 +86,17 @@ describe.each(CASES)('family %s (M1.9)', (name, family, cfg) => {
   it('scores its own key stream at the top category and an empty stream as unfinished', () => {
     const item = family.generate('score')
     const p = item.params as unknown as { a: number; b: number[] }
-    expect(family.score(item, item.key.sequences)).toEqual({
+    // Reactive: a taker who never misses is shown the first sequence of each length, and no other.
+    const perfect = item.key.sequences.filter((_, i) => i % 2 === 0)
+    expect(perfect).toHaveLength(cfg.maxLength - 2)
+    expect(family.score(item, perfect)).toEqual({
       correct: null,
       observation: { kind: 'grm', axis: 'WM', a: p.a, b: [...p.b], y: cfg.maxLength - 2 },
       flags: [],
       reasons: [],
     })
+    expect(item.spec.procedure).toBe('reactive')
+    expect(item.generator_version).toBe('1.2.0')
     expect(family.score(item, [])).toEqual({ correct: null, flags: [], reasons: ['unfinished'] })
     expect(family.kind).toBe('block')
     expect(family.facets).toEqual([cfg.task])

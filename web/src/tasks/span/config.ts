@@ -3,8 +3,12 @@
  * the three graded sub-tasks, their render payload / key types and the fixed Corsi board.
  *
  * One {@link ItemInstance} is one whole block: every stimulus sequence the block could present
- * (2 trials at each length from 3 to the task's maximum), in presentation order. The adaptive
+ * (2 sequences at each length from 3 to the task's maximum), in order of length. The adaptive
  * part (which of those trials a taker actually sees) is the pure state machine in `protocol.ts`.
+ *
+ * Since generator 1.2.0 the procedure is REACTIVE ({@link SPAN_PROCEDURE}; owner decision
+ * 2026-10-13): one trial per length, and the second sequence of a length is shown only after a
+ * miss. The spec says so itself (`procedure`), so a block's own record tells how it was given.
  */
 
 import type { ItemInstance } from '../family'
@@ -17,8 +21,22 @@ export type RecallOrder = 'forward' | 'backward'
 
 /** M1.9: every block starts at length 3 … */
 export const START_LENGTH = 3
-/** … with two trials per length. */
+/** … and two sequences per length: the trial, and the second attempt a miss gets. */
 export const TRIALS_PER_LENGTH = 2
+
+/**
+ * How the trials of a length are given (`protocol.ts`):
+ * - `reactive` (generator 1.2.0 on): one trial per length; a correct trial moves up, a miss gives
+ *   one second attempt at that length (the length's second sequence), a second miss ends the block;
+ * - `fixed` (generator 1.1.0, kept so that a saved 1.1.0 block still re-scores): every sequence of
+ *   a length is given, whatever the first one's outcome.
+ * A length is passed by one exactly correct trial under either, so the graded outcome has the same
+ * distribution under both (`prior.ts`, "Why the scoring model stands").
+ */
+export type SpanProcedure = 'fixed' | 'reactive'
+
+/** The procedure of the current generator. */
+export const SPAN_PROCEDURE: SpanProcedure = 'reactive'
 
 /** Digits shown in digit span: 1–9 (no 0, M1.9). */
 export const DIGITS: readonly number[] = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9])
@@ -71,14 +89,17 @@ export interface SpanTiming {
 export const SPAN_TIMING: SpanTiming = Object.freeze({ on_ms: 800, off_ms: 200 })
 
 /**
- * The render payload of a span block. `trials[i]` is the stimulus of trial i, whose length is
+ * The render payload of a span block. `trials[i]` is the stimulus of sequence i, whose length is
  * `start_length + ⌊i / trials_per_length⌋`. For forward digits and Corsi the stimuli are the key
  * by design, for backward digits its reversal (the runs set `allowKeyInSpec`).
  */
 export interface SpanSpec {
   readonly task: SpanTask
   readonly recall: RecallOrder
+  /** How the trials of a length are given. Absent on a generator 1.1.0 block, which is `fixed`. */
+  readonly procedure?: SpanProcedure
   readonly start_length: number
+  /** Sequences per length: the most trials a length can take. */
   readonly trials_per_length: number
   readonly max_length: number
   readonly trials: readonly (readonly number[])[]
@@ -92,7 +113,11 @@ export interface SpanKey {
   readonly sequences: readonly (readonly number[])[]
 }
 
-/** A block's response stream: the sequence entered on each trial given so far, in order. */
+/**
+ * A block's response stream: the sequence entered on each trial given so far, in the order given.
+ * Under the reactive procedure entry i is not sequence i of the spec: the state machine says which
+ * sequence each trial showed (`protocol.ts` `spanTrialsGiven`).
+ */
 export type SpanResponse = readonly unknown[]
 
 export type SpanItem = ItemInstance<SpanSpec, SpanKey>
@@ -119,8 +144,10 @@ export interface SpanTaskConfig {
   readonly forbidPalindromes: boolean
   /** [EST†]/[SPEC] provisional norm (A10). */
   readonly norm: SpanNorm
-  /** [SPEC] response entry time per element, in seconds (expected-time prior). */
+  /** [EST] response entry time per element, in seconds (expected-time prior; `prior.ts` SPAN_TIME_V1). */
   readonly responseSPerElement: number
+  /** [SPEC] the 1.1.0 generator's entry time per element (`prior.ts` SPAN_TIME_V0; the kept 1.1.0 blocks only). */
+  readonly responseSPerElementV0: number
   /** Source of the norm, quoted in the prior's provenance. */
   readonly normSource: string
 }
@@ -135,7 +162,8 @@ export const SPAN_FWD: SpanTaskConfig = Object.freeze({
   forbidRuns: true,
   forbidPalindromes: false,
   norm: Object.freeze({ mu: 6.5, sigma: 1.2 }),
-  responseSPerElement: 0.5,
+  responseSPerElement: 0.7,
+  responseSPerElementV0: 0.5,
   normSource: 'DESIGN §7.3 [EST†] typical adult forward digit span ≈ 6–7',
 })
 
@@ -149,7 +177,8 @@ export const SPAN_BWD: SpanTaskConfig = Object.freeze({
   forbidRuns: true,
   forbidPalindromes: true,
   norm: Object.freeze({ mu: 4.8, sigma: 1.3 }),
-  responseSPerElement: 0.8,
+  responseSPerElement: 1.5,
+  responseSPerElementV0: 0.8,
   normSource: 'DESIGN §7.3 [EST†] typical adult backward digit span ≈ 4–5',
 })
 
@@ -163,7 +192,8 @@ export const SPAN_CORSI: SpanTaskConfig = Object.freeze({
   forbidRuns: false,
   forbidPalindromes: false,
   norm: Object.freeze({ mu: 5.5, sigma: 1.1 }),
-  responseSPerElement: 0.6,
+  responseSPerElement: 0.9,
+  responseSPerElementV0: 0.6,
   normSource: '[SPEC] no DESIGN norm for Corsi; set between the §7.3 [EST†] digit span norms',
 })
 

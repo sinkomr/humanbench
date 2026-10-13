@@ -29,6 +29,7 @@ import {
   poisson,
   rtBlockTimeS,
   spanBlockTimeS,
+  spanResponse,
   spanStream,
   type AnyItem,
 } from './responders'
@@ -219,20 +220,46 @@ describe('poisson', () => {
 describe("block time: the family's time model on the taker's response (M1.4b review fix)", () => {
   const spans = BLOCK_FAMILIES.filter((f) => SPAN_FAMILIES.has(f.name))
 
-  it.each(spans.map((f) => f.name))('%s: the mean over the GRM categories at θ = 0 is the block E[T]', (name) => {
-    const item = getFamily(name)!.generate('time-e') as unknown as SpanItem
-    const p = item.params
-    if (p.model !== 'grm') throw new Error('span must be GRM')
-    const expected = grmProbs(0, p.a, p.b).reduce((t, prob, y) => t + prob * spanBlockTimeS(item, spanStream(item, y === 0 ? 0 : item.spec.start_length + y - 1)), 0)
-    expect(expected).toBeCloseTo(item.expected_time_s, 9)
+  it.each(spans.map((f) => f.name))('%s: the mean block time of takers at θ = 0 is the block E[T]', (name) => {
+    const fam = getFamily(name)!
+    const item = fam.generate('time-e') as unknown as SpanItem
+    const n = 6000
+    let sum = 0
+    let sq = 0
+    for (let i = 0; i < n; i++) {
+      const t = spanBlockTimeS(item, spanResponse(item, 0, createRng(`time-e.${name}.${i}`)))
+      sum += t
+      sq += t * t
+    }
+    const mean = sum / n
+    const se = Math.sqrt((sq / n - mean * mean) / n)
+    expect(Math.abs(mean - item.expected_time_s), `${name}: mean ${mean}, E[T] ${item.expected_time_s}`).toBeLessThan(4 * se)
   })
 
-  it('a span block takes longer the longer the span passed (property)', () => {
+  it.each(spans.map((f) => f.name))('%s: the simulated taker\'s category follows the block\'s GRM (the reactive procedure keeps the outcome\'s distribution)', (name) => {
+    const fam = getFamily(name)!
+    const item = fam.generate('grm-out') as unknown as SpanItem
+    const p = item.params
+    if (p.model !== 'grm') throw new Error('span must be GRM')
+    for (const t of [-1.2, 0, 1.4]) {
+      const n = 8000
+      const counts = new Array<number>(p.b.length + 1).fill(0)
+      for (let i = 0; i < n; i++) {
+        const o = (fam.score(item as unknown as AnyItem, spanResponse(item, t, createRng(`grm-out.${name}.${t}.${i}`))) as BlockScore).observation
+        if (o?.kind !== 'grm') throw new Error('no GRM observation')
+        counts[o.y]!++
+      }
+      grmProbs(t, p.a, p.b).forEach((prob, j) => expect(Math.abs(counts[j]! / n - prob), `${name} θ = ${t} category ${j}`).toBeLessThan(5 * Math.sqrt((prob * (1 - prob)) / n) + 1e-9))
+    }
+  })
+
+  it('a span block takes longer the longer the span passed, up to the last length (property)', () => {
     fc.assert(
       fc.property(fc.constantFrom(...spans), fc.string({ maxLength: 6 }), fc.integer({ min: 0, max: 12 }), (fam, seed, raw) => {
         const item = fam.generate(`span-t.${seed}`) as unknown as SpanItem
         const at = (l: number): number => spanBlockTimeS(item, spanStream(item, l < item.spec.start_length ? 0 : Math.min(l, item.spec.max_length)))
-        expect(at(raw + 1)).toBeGreaterThanOrEqual(at(raw))
+        // Passing the last length ends the block with no failed length after it, so it is not longer than stopping at it.
+        if (raw + 1 < item.spec.max_length) expect(at(raw + 1)).toBeGreaterThanOrEqual(at(raw))
         expect(at(item.spec.max_length)).toBeGreaterThan(at(0))
       }),
       { numRuns: 100 },

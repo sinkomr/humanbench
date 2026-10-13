@@ -131,12 +131,12 @@ function slowMemoryThenQuant(bot: Bot, s: number): void {
 
 describe('coverage floor and the session clock (M1.15 known issue)', () => {
   it('every CAT axis reaches 3 items in session 1 even when the blocks before it ran very long', () => {
-    // Memory blocks taking 5× their model time: the time budget of Quant is gone before it starts.
+    // Memory blocks taking 4× their model time: the time budget of Quant is gone before it starts.
     // The floor still gives it its 3 items (before M1.15: 0–2 in some sessions), and since 2026-10-12
-    // the part's own minimum its six (5×, not the 6× of before: with six questions in Quant, 6× ends
-    // at the hard stop).
+    // the part's own minimum its six (4×: the blocks' model time is the re-estimated one of span 1.2.0,
+    // about 5 minutes for the three, so 4× is 21 minutes in Working Memory; 5× ends at the hard stop).
     for (let i = 0; i < 12; i++) {
-      const bot = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}` }, { blockScale: { span_fwd: 5, span_bwd: 5, corsi: 5 } })
+      const bot = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}` }, { blockScale: { span_fwd: 4, span_bwd: 4, corsi: 4 } })
       const run = bot.finish()
       const r = run.result()
       expect(r.reason, `session ${i}`).toBe('complete')
@@ -198,7 +198,7 @@ function priorFrom(bot: Bot): ReturnType<typeof priorItemCounts> {
 }
 
 describe('the coverage floor follows the axes covered, not the session number (M1.15 review)', () => {
-  const LONG_SPANS = { span_fwd: 5, span_bwd: 5, corsi: 5 } // 5×: Quant's budget is gone, and the session still ends before the hard stop
+  const LONG_SPANS = { span_fwd: 4, span_bwd: 4, corsi: 4 } // 4×: Quant's budget is gone, and the session still ends before the hard stop
 
   it('a first session abandoned before any answer does not lift the floor: the next one still gives every axis 3 items', () => {
     const abandoned = new Bot({ sessionId: 's_ABANDONED00000' })

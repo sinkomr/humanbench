@@ -4,7 +4,9 @@
   animation frames, then takes the entry on an on-screen keypad or the digit keys. The family's
   state machine (`advanceSpan`, via `run.ts`) picks the next trial and ends the block; the response
   is the list of entered sequences, one per trial given (`SpanResponse`), which is what score()
-  takes. No correctness is shown (§10). One polite status line stays mounted for the whole block
+  takes. The procedure is reactive (`tasks/span/protocol.ts`): one trial per length, and a second sequence of
+  the same length only after an entry that did not match, which the pause before it says ("One more of the same
+  length"); nothing else about correctness is shown (§10). One polite status line stays mounted for the whole block
   (empty until the block starts), so every phase text is announced as a change, never as new content.
 -->
 <script lang="ts">
@@ -15,7 +17,7 @@
   import { browserTiming, type RendererProps } from '../common/props'
   import { afterFrames, presentSequence } from '../common/sequence'
   import { DIGITS, type SpanResponse, type SpanSpec } from '../../tasks/span/config'
-  import { SPAN_LEAD_MS, SPAN_PAUSE_MS, spanNext } from './run'
+  import { SPAN_LEAD_MS, SPAN_PAUSE_MS, isSecondAttempt, spanNext, spanPauseText, spanRuleText } from './run'
 
   let { spec, onrespond, timing }: RendererProps<SpanSpec, SpanResponse> = $props()
 
@@ -24,6 +26,8 @@
   const uid = $props.id()
   let phase: Phase = $state('intro')
   let trial = $state(0)
+  /** The trial coming up is a second attempt at its length (the pause says so). */
+  let retry = $state(false)
   let shown: number | null = $state(null)
   let entered: number[] = $state([])
   let root: HTMLElement | undefined = $state()
@@ -94,6 +98,7 @@
       onrespond(responses.map((r) => [...r]))
       return
     }
+    retry = isSecondAttempt(spec, status)
     phase = 'pause'
     flushSync()
     focusStage(stage)
@@ -131,8 +136,8 @@
     <p class="hb-instructions">
       You will see digits one at a time. When the sequence ends, type the digits
       {backward ? 'in reverse order, starting with the last digit you saw' : 'in the same order you saw them'},
-      with the keypad or the number keys, then choose Done. Press Enter when you are done; Backspace removes the last digit. The
-      sequences get longer step by step.
+      with the keypad or the number keys, then choose Done. Press Enter when you are done; Backspace removes the last digit.
+      {spanRuleText('digit')}
     </p>
     <button type="button" class="hb-btn hb-primary" onclick={start}>Start</button>
   {:else}
@@ -147,7 +152,7 @@
     </div>
   {/if}
   <p class="hb-status" aria-live="polite">
-    {#if phase === 'present'}Watch the digits.{:else if phase === 'entry'}Enter <span translate="no">{length}</span> digits{backward ? ', last one first' : ''}.{:else if phase === 'pause'}Next sequence coming up.{:else if phase === 'done'}Block complete. Thank you.{/if}
+    {#if phase === 'present'}Watch the digits.{:else if phase === 'entry'}Enter <span translate="no">{length}</span> digits{backward ? ', last one first' : ''}.{:else if phase === 'pause'}{spanPauseText(retry)}{:else if phase === 'done'}Block complete. Thank you.{/if}
   </p>
   {#if phase === 'entry'}
     <ol class="slots" aria-label="Your entry, {entered.length} of {length} digits">

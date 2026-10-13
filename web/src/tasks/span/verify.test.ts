@@ -10,6 +10,7 @@ import {
   SPAN_BWD,
   SPAN_CORSI,
   SPAN_FWD,
+  SPAN_LEGACY_FAMILIES,
   corsi,
   expectedKey,
   hasImmediateRepeat,
@@ -220,6 +221,19 @@ describe('span verifier rejects each failure reason (hand-built bad blocks)', ()
     // A b_prior moved into another band fails both the prior and the stratum.
     const d = fwd.difficulty
     expectRejected(SPAN_FWD, tamper(fwd, (x) => (x.difficulty = { ...d, b_prior: 1 })), ['prior_matches', 'stratum_matches'])
+  })
+
+  it('protocol_matches: the procedure is the generator\'s (reactive in 1.2.0; a 1.1.0 block has no field and verifies only as fixed)', () => {
+    expectRejected(SPAN_FWD, tamper(fwd, (x) => (x.spec.procedure = 'fixed')), ['protocol_matches', 'state_machine_consistent'])
+    expectRejected(SPAN_BWD, tamper(bwd, (x) => delete x.spec.procedure), ['spec_fields', 'protocol_matches', 'state_machine_consistent'])
+    for (const [cfg, name] of [[SPAN_FWD, 'span_fwd'], [SPAN_BWD, 'span_bwd'], [SPAN_CORSI, 'corsi']] as const) {
+      const old = SPAN_LEGACY_FAMILIES[name]!.generate('neg-legacy')
+      expect(old.item_id.startsWith(`i:${name}:1.1.0:`)).toBe(true)
+      expect(verifySpan(cfg, old, 'fixed')).toMatchObject({ ok: true })
+      expect(SPAN_LEGACY_FAMILIES[name]!.verify(old).ok).toBe(true)
+      // The current verifier does not take a 1.1.0 block for one of its own (procedure, fields, E[T]).
+      expect(failed(verifySpan(cfg, old))).toEqual(['expected_time_matches', 'protocol_matches', 'spec_fields', 'state_machine_consistent'])
+    }
   })
 
   it('expected_time_matches: a different or out-of-range E[T]', () => {

@@ -3,7 +3,8 @@
  * alone and never throws: a malformed instance fails with a reason. Checks, by name:
  *
  * - shape: `spec_fields`, `trials_well_formed`, `key_well_formed`;
- * - protocol: `task_matches`, `protocol_matches` (start 3, 2 per length, max 10/9/10),
+ * - protocol: `task_matches`, `protocol_matches` (start 3, 2 per length, max 10/9/10, and the
+ *   generator's procedure: `reactive`, or no field for the fixed 1.1.0 blocks),
  *   `timing_matches`, `board_matches` (the fixed Corsi board; absent for digits);
  * - layout: `trial_count`, `trial_lengths` (trial i has length 3 + ⌊i/2⌋);
  * - sequence rules: `symbols_valid` (digits 1–9 / blocks 0–8), `no_immediate_repeats`,
@@ -12,18 +13,19 @@
  * - A11/A10/M1.P: `structure_matches`, `grm_params`, `prior_matches`, `stratum_matches`,
  *   `expected_time_matches` (and 60–120 s);
  * - `state_machine_consistent`: the block's own protocol, key and GRM thresholds cohere: the
- *   key as responses reaches the top category m = #thresholds; failing both trials at length F
- *   after passing everything before stops there with category F − 3; one pass per length is
- *   enough; the stop categories are exactly 0 … m; and the stimuli as typed (no reversal)
- *   score m forward but fail at once backward. Given the checks above it depends only on
- *   `protocol.ts`, so it never fails alone on a bad block: it is a per-item self-test of the
+ *   key as responses reaches the top category m = #thresholds (one trial per length under the
+ *   reactive procedure, every sequence under the fixed one); a miss then a correct second attempt at
+ *   every length is still the top category; two misses at length F after passing everything before
+ *   stop there with category F − 3; the stop categories are exactly 0 … m; and the stimuli as typed
+ *   (no reversal) score m forward but fail at once backward. Given the checks above it depends only
+ *   on `protocol.ts`, so it never fails alone on a bad block: it is a per-item self-test of the
  *   state machine that every gate run (G2/G3) repeats, not an extra item rule.
  */
 
 import { canonicalJson } from '../ids'
 import { stratumOfB } from '../priors'
 import { verdict, type VerifyResult } from '../family'
-import { CORSI_BOARD, SPAN_TIMING, START_LENGTH, TRIALS_PER_LENGTH, type SpanItem, type SpanTaskConfig } from './config'
+import { CORSI_BOARD, SPAN_PROCEDURE, SPAN_TIMING, START_LENGTH, TRIALS_PER_LENGTH, type SpanItem, type SpanProcedure, type SpanTaskConfig } from './config'
 import { isPalindrome, runCompletion } from './gen'
 import {
   SPAN_GRM_A,
@@ -38,7 +40,7 @@ import { advanceSpan, categoryCount, trialCount, trialLength, type SpanProtocol,
 /** Tolerance for recomputed floats (thresholds, b_prior, E[T]); the Python twin uses the same. */
 export const SPAN_FLOAT_TOL = 1e-9
 
-/** Block duration bounds of the E[T] prior (M1.9: about 60–120 s per block). */
+/** Block duration bounds of the E[T] prior at θ = 0 (M1.9: about 60–120 s per block; the reactive blocks are 100–113 s). */
 export const SPAN_TIME_RANGE_S: readonly [number, number] = Object.freeze([60, 120])
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v)
@@ -49,9 +51,10 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b)
 const close = (a: unknown, b: number): boolean => typeof a === 'number' && Math.abs(a - b) <= SPAN_FLOAT_TOL
 
-/** The spec fields of a task, sorted. */
-export function specFieldsOf(cfg: SpanTaskConfig): string[] {
+/** The spec fields of a task, sorted (a fixed 1.1.0 block has no `procedure`). */
+export function specFieldsOf(cfg: SpanTaskConfig, procedure: SpanProcedure = SPAN_PROCEDURE): string[] {
   const base = ['task', 'recall', 'start_length', 'trials_per_length', 'max_length', 'trials', 'timing']
+  if (procedure !== 'fixed') base.push('procedure')
   return (cfg.task === 'corsi' ? [...base, 'board'] : base).sort()
 }
 
@@ -81,35 +84,43 @@ function stateMachineConsistent(
 ): boolean {
   const n = trialCount(p)
   const m = categoryCount(p)
+  const tpl = p.trials_per_length
+  const reactive = p.procedure === 'reactive'
   if (key.length !== n || m !== thresholds) return false
   const wrong: number[] = []
-  // Everything exactly right: all trials given, top category.
-  const top = finished(advanceSpan(p, key, key))
+  /** The first sequence of each length (what a reactive taker who never misses is shown). */
+  const firsts = <T>(xs: readonly T[]): T[] => xs.filter((_, i) => i % tpl === 0)
+  // Everything exactly right: the top category; one trial per length (reactive) or every sequence (fixed).
+  const perfect = reactive ? firsts(key) : key
+  const top = finished(advanceSpan(p, key, perfect))
   if (!top || top.stop !== 'max_length' || top.longest_passed !== p.max_length || top.category !== m) return false
-  if (top.trials_given !== n || top.trials_correct !== n) return false
-  // One of two right at every length is still a pass.
-  const half = finished(advanceSpan(p, key, key.map((k, i) => (i % p.trials_per_length === 0 ? wrong : k))))
-  if (!half || half.category !== m || half.trials_correct !== n / p.trials_per_length) return false
+  if (top.trials_given !== perfect.length || top.trials_correct !== perfect.length) return false
+  // A miss and then a correct attempt at every length is still a pass (under either procedure the
+  // stream is then every sequence of the block, the first of each length wrong).
+  const half = finished(advanceSpan(p, key, key.map((k, i) => (i % tpl === 0 ? wrong : k))))
+  if (!half || half.category !== m || half.trials_given !== n || half.trials_correct !== n / tpl) return false
   // Fail every trial at length F after passing all shorter lengths: stop at F with category F − start.
   const seen = new Set<number>([top.category])
   for (let f = p.start_length; f <= p.max_length; f++) {
-    const upTo = (f - p.start_length + 1) * p.trials_per_length
-    const responses = key.slice(0, upTo).map((k, i) => (trialLength(p, i) === f ? wrong : k))
-    const partial = advanceSpan(p, key, responses.slice(0, upTo - 1))
-    if (partial.finished || partial.trial !== upTo - 1 || partial.length !== f) return false
+    const below = (f - p.start_length) * tpl
+    const passed = reactive ? firsts(key.slice(0, below)) : key.slice(0, below)
+    const responses = [...passed, ...new Array<number[]>(tpl).fill(wrong)]
+    const partial = advanceSpan(p, key, responses.slice(0, -1))
+    if (partial.finished || partial.trial !== below + tpl - 1 || partial.length !== f) return false
     const out = finished(advanceSpan(p, key, responses))
-    if (!out || out.stop !== 'failed_length' || out.trials_given !== upTo) return false
+    if (!out || out.stop !== 'failed_length' || out.trials_given !== responses.length) return false
     if (out.longest_passed !== (f === p.start_length ? 0 : f - 1) || out.category !== f - p.start_length) return false
     seen.add(out.category)
   }
   if (seen.size !== m + 1 || [...seen].some((y) => y < 0 || y > m)) return false
   // The stimuli typed as shown: all right forward; wrong at once backward (no palindromes).
-  const asShown = finished(advanceSpan(p, key, trials.slice(0, cfg.recall === 'backward' ? p.trials_per_length : n)))
+  const shown = cfg.recall === 'backward' ? trials.slice(0, tpl) : reactive ? firsts(trials) : trials
+  const asShown = finished(advanceSpan(p, key, shown))
   return asShown !== null && asShown.category === (cfg.recall === 'backward' ? 0 : m)
 }
 
-/** Verify a span block of task `cfg` (see the module comment). Never throws. */
-export function verifySpan(cfg: SpanTaskConfig, item: SpanItem): VerifyResult {
+/** Verify a span block of task `cfg` made with `procedure` (see the module comment). Never throws. */
+export function verifySpan(cfg: SpanTaskConfig, item: SpanItem, procedure: SpanProcedure = SPAN_PROCEDURE): VerifyResult {
   try {
     const spec = item.spec as unknown
     if (!isRecord(spec)) return verdict({ spec_fields: false })
@@ -119,7 +130,7 @@ export function verifySpan(cfg: SpanTaskConfig, item: SpanItem): VerifyResult {
     const seqs = isRecord(key) ? key.sequences : undefined
     const keyOk =
       isRecord(key) && Object.keys(key).length === 1 && isArrayOf(seqs, isIntArray) && seqs.length === trials.length
-    const p = protocolOf(cfg)
+    const p = protocolOf(cfg, procedure)
     const n = trialCount(p)
     const symbols = new Set(cfg.symbols)
     const lengthsOk = trials.length === n && trials.every((t, i) => t.length === trialLength(p, i))
@@ -145,12 +156,16 @@ export function verifySpan(cfg: SpanTaskConfig, item: SpanItem): VerifyResult {
       start_length: spec.start_length as number,
       trials_per_length: spec.trials_per_length as number,
       max_length: spec.max_length as number,
+      procedure,
     }
     const protocolOk =
-      recorded.start_length === START_LENGTH && recorded.trials_per_length === TRIALS_PER_LENGTH && recorded.max_length === cfg.maxLength
+      recorded.start_length === START_LENGTH &&
+      recorded.trials_per_length === TRIALS_PER_LENGTH &&
+      recorded.max_length === cfg.maxLength &&
+      (procedure === 'fixed' ? !('procedure' in spec) : spec.procedure === procedure)
     const [tMin, tMax] = SPAN_TIME_RANGE_S
     return verdict({
-      spec_fields: sameJson(Object.keys(spec).sort(), specFieldsOf(cfg)),
+      spec_fields: sameJson(Object.keys(spec).sort(), specFieldsOf(cfg, procedure)),
       task_matches: spec.task === cfg.task && spec.recall === cfg.recall,
       protocol_matches: protocolOk,
       timing_matches: isRecord(spec.timing) && sameJson(spec.timing, SPAN_TIMING),
@@ -175,7 +190,7 @@ export function verifySpan(cfg: SpanTaskConfig, item: SpanItem): VerifyResult {
         Number.isFinite(d.b_prior) &&
         item.stratum === stratumOfB(d.b_prior),
       expected_time_matches:
-        close(item.expected_time_s, spanExpectedTime(cfg)) && item.expected_time_s >= tMin && item.expected_time_s <= tMax,
+        close(item.expected_time_s, spanExpectedTime(cfg, procedure)) && item.expected_time_s >= tMin && item.expected_time_s <= tMax,
       state_machine_consistent:
         keyOk &&
         protocolOk &&
