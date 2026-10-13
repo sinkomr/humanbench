@@ -58,7 +58,7 @@
 
 import { AXIS_CODES, AXIS_INDEX, initialSigma, isAxisCode, N_AXES, type AxisCode } from './axes'
 import { info2pl, info3pl } from './irt'
-import { A15_SEGMENTS, A15_TARGET_S, TEXT_PARTS, type A15SegmentId, type BlockDef, type SegmentDef, type SegmentId, type TextSegmentId } from './plan-table'
+import { A15_MINIMUMS, A15_SEGMENTS, A15_TARGET_S, TEXT_PARTS, type A15SegmentId, type BlockDef, type SegmentDef, type SegmentId, type TextSegmentId } from './plan-table'
 import type { Matrix } from './linalg'
 import { createRng, type Rng } from './prng'
 import { eapByAxis, mapTheta, type ReadonlyMatrix } from './scorer'
@@ -585,6 +585,12 @@ export type PlannedStep =
        * `min_items` questions are answered. Absent on the A15 parts.
        */
       readonly optional?: { readonly min_items: number }
+      /**
+       * An A15 part that runs to a number of answered questions (`plan-table.ts` A15_MINIMUMS: the
+       * Quantitative part, six). `extra_s` of its `budget_s` is what the rule adds on top of the part's
+       * share of the target. Absent on the other parts, and in a plan made with `minimums: false`.
+       */
+      readonly minimum?: { readonly min_items: number; readonly extra_s: number }
     }
 
 export interface PlanOptions {
@@ -607,6 +613,11 @@ export interface PlanOptions {
    * part the table names; the A15 parts' time and budgets do not change.
    */
   readonly textAxes?: readonly AxisCode[]
+  /**
+   * Whether the A15 parts' minimums apply (`plan-table.ts` A15_MINIMUMS; default true). False gives
+   * the plan without them, to the second: a focus session, whose time is the skills it names.
+   */
+  readonly minimums?: boolean
 }
 
 /**
@@ -638,7 +649,8 @@ function blockItem(sessionSeed: string, b: BlockDef, seen: ReadonlySet<string>):
  * every draw was seen, see {@link PlanOptions.seenFamilies}) as a generated instance, and a CAT
  * segment for each power axis with w_k > 0. The time left after the blocks' E[T] is shared
  * equally by the CAT segments (never below 0), so a skipped axis's or dropped block's time goes
- * to the others. Deterministic in the options.
+ * to the others. A part with a minimum (A15_MINIMUMS: Quant) has that share plus its `extra_s`, on
+ * top of the target; the other parts' shares do not change. Deterministic in the options.
  */
 export function planSession(opts: PlanOptions): PlannedStep[] {
   checkSeed(opts.sessionSeed)
@@ -671,7 +683,12 @@ export function planSession(opts: PlanOptions): PlannedStep[] {
     }
   }
   const budget = nCat === 0 ? 0 : Math.max(0, target - blockTime) / nCat
-  return steps.map((s): PlannedStep => (s.kind === 'cat' && !('budget_s' in s) ? { kind: 'cat', segment: s.segment, axes: s.axes, budget_s: budget } : (s as PlannedStep)))
+  return steps.map((s): PlannedStep => {
+    if (s.kind !== 'cat' || 'budget_s' in s) return s as PlannedStep
+    const minimum = opts.minimums === false ? undefined : A15_MINIMUMS[s.segment as A15SegmentId]
+    if (minimum === undefined) return { kind: 'cat', segment: s.segment, axes: s.axes, budget_s: budget }
+    return { kind: 'cat', segment: s.segment, axes: s.axes, budget_s: budget + minimum.extra_s, minimum: { min_items: minimum.min_items, extra_s: minimum.extra_s } }
+  })
 }
 
 /** The fixed blocks of {@link planSession}, in A15 order (the block scheduler; never CAT items). */

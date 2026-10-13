@@ -7,7 +7,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, axis, type AxisCode } from './axes'
-import { A15_SEGMENTS, A15_TARGET_S, PUBLISH_MIN_ITEMS, SEGMENT_ORDER, TEXT_AXES, TEXT_PARTS, aboutMinutes, isTextAxis, sessionOutline, textPartById, textPartOf } from './plan-table'
+import { A15_PLANNED_S, A15_SEGMENTS, A15_TARGET_S, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, SEGMENT_ORDER, TEXT_AXES, TEXT_PARTS, aboutMinutes, isTextAxis, sessionOutline, textPartById, textPartOf } from './plan-table'
 import { COVERAGE_FLOOR, planSession, type PlannedStep } from './selector'
 
 describe('the text parts table', () => {
@@ -37,14 +37,16 @@ describe('the text parts table', () => {
     expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 300, KST: 130, VOC: 120, KHU: 130, KAP: 130 })
   })
 
-  it('plans 27.5 minutes without text parts and 41 with all five, said as "about 30" and "about 40"', () => {
-    expect(sessionOutline()).toEqual({ parts: 6, planned_s: A15_TARGET_S, upTo: false })
+  it('plans 28.5 minutes without text parts and 42 with all five, said as "about 30" and "about 40" (Quant’s six questions add a minute, 2026-10-12)', () => {
+    expect(A15_PLANNED_S).toBe(A15_TARGET_S + QUANT_EXTRA_S)
+    expect(A15_PLANNED_S).toBe(28.5 * 60)
+    expect(sessionOutline()).toEqual({ parts: 6, planned_s: A15_PLANNED_S, upTo: false })
     expect(sessionOutline([])).toEqual(sessionOutline())
-    expect(sessionOutline(TEXT_AXES)).toEqual({ parts: 11, planned_s: 41 * 60, upTo: true })
-    expect(sessionOutline(['VOC'])).toEqual({ parts: 7, planned_s: A15_TARGET_S + 120, upTo: true })
+    expect(sessionOutline(TEXT_AXES)).toEqual({ parts: 11, planned_s: 42 * 60, upTo: true })
+    expect(sessionOutline(['VOC'])).toEqual({ parts: 7, planned_s: A15_PLANNED_S + 120, upTo: true })
     expect(sessionOutline(['MAT', 'RC'])).toEqual(sessionOutline()) // not text parts
-    expect(aboutMinutes(A15_TARGET_S)).toBe(30)
-    expect(aboutMinutes(41 * 60)).toBe(40)
+    expect(aboutMinutes(A15_PLANNED_S)).toBe(30)
+    expect(aboutMinutes(42 * 60)).toBe(40)
     expect(aboutMinutes(20 * 60)).toBe(20)
     expect(aboutMinutes(90)).toBe(2)
   })

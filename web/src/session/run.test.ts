@@ -2,6 +2,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
 import { createRng } from '../engine/prng'
+import { A15_PLANNED_S, MIN_ITEMS_SLACK, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS } from '../engine/plan-table'
 import { A15_TARGET_S, STOP_SD, planSession, type SegmentId } from '../engine/selector'
 import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
@@ -69,7 +70,7 @@ describe('the A15 flow (M1.15)', () => {
 
   it('progress is time: the elapsed seconds and the target come from the clock, not the item count', () => {
     const bot = new Bot({ sessionId: 's_FLOWPROGRESS01' })
-    expect(bot.view().targetS).toBe(A15_TARGET_S)
+    expect(bot.view().targetS).toBe(A15_PLANNED_S)
     expect(bot.view().elapsedS).toBe(0)
     bot.wait(90) // on the first "Up next" screen: the clock waits for Start (UX-066)
     expect(bot.view().elapsedS).toBe(0)
@@ -106,6 +107,16 @@ describe('the A15 flow (M1.15)', () => {
 const CAT: readonly AxisCode[] = ['MAT', 'SPA', 'QR']
 
 /**
+ * Run to the first Reaction Time block and spend `s` seconds on it, then on to the Matrix & Series
+ * interstitial: every part after it has no budget left when `s` is the whole target.
+ */
+function slowRtThenMatrix(bot: Bot, s: number): void {
+  bot.until((v) => v.phase === 'block' && v.segment?.id === 'rt')
+  bot.wait(s)
+  bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'matrix_series')
+}
+
+/**
  * Run to Working Memory's first block and spend `s` seconds on it (the clock runs during a block,
  * not on an "Up next" screen), then on to the Quantitative interstitial: the parts after it have no
  * budget left when `s` is the whole target.
@@ -118,10 +129,12 @@ function slowMemoryThenQuant(bot: Bot, s: number): void {
 
 describe('coverage floor and the session clock (M1.15 known issue)', () => {
   it('every CAT axis reaches 3 items in session 1 even when the blocks before it ran very long', () => {
-    // Memory blocks (and the rest) taking 6× their model time: the time budget of Quant is gone
-    // before it starts. The floor still gives it exactly 3 items (before M1.15: 0–2 in some sessions).
+    // Memory blocks taking 5× their model time: the time budget of Quant is gone before it starts.
+    // The floor still gives it its 3 items (before M1.15: 0–2 in some sessions), and since 2026-10-12
+    // the part's own minimum its six (5×, not the 6× of before: with six questions in Quant, 6× ends
+    // at the hard stop).
     for (let i = 0; i < 12; i++) {
-      const bot = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}` }, { blockScale: { span_fwd: 6, span_bwd: 6, corsi: 6 } })
+      const bot = new Bot({ sessionId: `s_FLOORLONG${String(i).padStart(5, '0')}` }, { blockScale: { span_fwd: 5, span_bwd: 5, corsi: 5 } })
       const run = bot.finish()
       const r = run.result()
       expect(r.reason, `session ${i}`).toBe('complete')
@@ -141,16 +154,22 @@ describe('coverage floor and the session clock (M1.15 known issue)', () => {
     }
   }, 120_000)
 
-  it('a segment with no budget left gets exactly the floor, not more', () => {
-    // A Working Memory block that took the whole target: Quant starts with a budget of 0.
+  it('a segment with no budget left gets exactly the floor, not more (Quant: exactly its six)', () => {
+    // A Reaction Time block that took the whole target: every part after it starts with no shared time.
     const bot = new Bot({ sessionId: 's_FLOORZERO00001' })
-    slowMemoryThenQuant(bot, A15_TARGET_S) // 27.5 more minutes: the budget of the rest is gone
+    slowRtThenMatrix(bot, A15_TARGET_S) // 27.5 more minutes: the budget of the rest is gone
     bot.run.tick()
-    const before = bot.run.result().itemsByAxis.QR ?? 0
-    expect(before).toBe(0)
+    expect(bot.run.result().itemsByAxis).toEqual({})
     bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
-    expect(bot.run.result().itemsByAxis.QR).toBe(3)
-    expect(bot.run.result().segmentEnds.find((e) => e.segment === 'quant')?.reason).toBe('time')
+    const r = bot.run.result()
+    expect(r.itemsByAxis).toEqual({ MAT: 3, SPA: 3, QR: QUANT_MIN_ITEMS })
+    for (const id of ['matrix_series', 'spatial', 'quant'] as const) expect(r.segmentEnds.find((e) => e.segment === id)?.reason, id).toBe('time')
+    // The shared time is gone for all three; Quant has the minute of its own.
+    expect(r.budgets.map((b) => [b.segment, b.budgetS])).toEqual([
+      ['matrix_series', 0],
+      ['spatial', 0],
+      ['quant', QUANT_EXTRA_S],
+    ])
   })
 
   it('a slow enough session still ends at the hard stop, with the floor best-effort', () => {
@@ -161,11 +180,12 @@ describe('coverage floor and the session clock (M1.15 known issue)', () => {
     expect(v.elapsedS).toBeLessThan(HARD_STOP_S + 20 * 60) // the last step may overshoot by one block
   })
 
-  it('an axis that earlier sessions covered (3 items) has no floor: a segment without budget serves nothing', () => {
+  it('an axis that earlier sessions covered (3 items) has no floor: a segment without budget serves nothing; Quant still runs to its six, which are this session’s', () => {
     const bot = new Bot({ sessionId: 's_FLOORSESS200001', priorItemCounts: { MAT: 3, SPA: 3, QR: 3 } })
-    slowMemoryThenQuant(bot, A15_TARGET_S)
+    slowRtThenMatrix(bot, A15_TARGET_S)
     bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
-    expect(bot.run.result().itemsByAxis.QR ?? 0).toBe(0)
+    // The server publishes a skill from the answers of one session, so earlier sessions' do not count toward the six.
+    expect(bot.run.result().itemsByAxis).toEqual({ QR: QUANT_MIN_ITEMS })
   })
 })
 
@@ -176,7 +196,7 @@ function priorFrom(bot: Bot): ReturnType<typeof priorItemCounts> {
 }
 
 describe('the coverage floor follows the axes covered, not the session number (M1.15 review)', () => {
-  const LONG_SPANS = { span_fwd: 6, span_bwd: 6, corsi: 6 }
+  const LONG_SPANS = { span_fwd: 5, span_bwd: 5, corsi: 5 } // 5×: Quant's budget is gone, and the session still ends before the hard stop
 
   it('a first session abandoned before any answer does not lift the floor: the next one still gives every axis 3 items', () => {
     const abandoned = new Bot({ sessionId: 's_ABANDONED00000' })
@@ -217,10 +237,193 @@ describe('the coverage floor follows the axes covered, not the session number (M
   })
 
   it('earlier items count toward the 3: an axis with 2 before needs only 1 more, and one with 3 needs none', () => {
-    const one = new Bot({ sessionId: 's_FLOORSHORT0001', priorItemCounts: { QR: 2 } })
-    slowMemoryThenQuant(one, A15_TARGET_S) // the budget of the rest is gone
-    one.until((v) => v.phase === 'interstitial' && v.segment?.id === 'coding_reading')
-    expect(one.run.result().itemsByAxis.QR).toBe(1)
+    const one = new Bot({ sessionId: 's_FLOORSHORT0001', priorItemCounts: { MAT: 3, SPA: 2 } })
+    slowRtThenMatrix(one, A15_TARGET_S) // the budget of the rest is gone
+    one.until((v) => v.phase === 'interstitial' && v.segment?.id === 'memory')
+    expect(one.run.result().itemsByAxis).toEqual({ SPA: 1 })
+  })
+})
+
+/** Leaves the question on screen until it runs out of time. */
+function timeOut(bot: Bot): void {
+  const v = bot.view()
+  bot.run.itemShown(bot.t)
+  bot.wait((v.item!.time_limit_s ?? 180) + 1)
+  bot.run.tick()
+}
+
+/** Runs the Quantitative part from its "Up next" screen to its end; `timesOut(n)` says whether its n-th question (from 0) is left to run out. */
+function playQuant(bot: Bot, timesOut: (n: number) => boolean = () => false): { shown: number; answered: number } {
+  let shown = 0
+  let answered = 0
+  bot.until((v) => v.phase === 'interstitial' && v.segment?.id === 'quant')
+  for (let i = 0; i < 400; i++) {
+    bot.run.tick()
+    const v = bot.view()
+    if (v.phase === 'finished' || (v.phase === 'interstitial' && v.segment?.id !== 'quant')) break
+    if (v.phase === 'item' && timesOut(shown++)) timeOut(bot)
+    else {
+      if (v.phase === 'item') answered++
+      bot.step()
+    }
+  }
+  return { shown, answered }
+}
+
+/**
+ * Extra seconds in Working Memory that leave Quant none of the shared time (the session is past its
+ * target less the tasks still to come), and still leave room before the hard stop for eight questions
+ * that all run out of time.
+ */
+const GONE_S = 8 * 60
+
+describe('the Quantitative part runs to six answered questions (A15 amended, owner decision 2026-10-12; DESIGN §7.4)', () => {
+  it('six is one more than a skill is published from, and at most two more are shown to get there', () => {
+    expect(QUANT_MIN_ITEMS).toBe(6)
+    expect(QUANT_MIN_ITEMS).toBeGreaterThan(PUBLISH_MIN_ITEMS)
+    expect(MIN_ITEMS_SLACK).toBe(2)
+  })
+
+  it('a session is planned a minute longer for it, and the part says "About 6 min" however little shared time is left', () => {
+    const bot = new Bot({ sessionId: 's_QRSIXPLAN00001' })
+    expect(bot.view().targetS).toBe(A15_TARGET_S + QUANT_EXTRA_S)
+    const quant = (b: Bot): number => b.view().segments.find((s) => s.id === 'quant')!.minutes
+    const planned = plannedParts('s_QRSIXPLAN00001').find((p) => p.id === 'quant')!.s
+    expect(planned).toBeGreaterThan(5 * 60)
+    expect(quant(bot)).toBe(Math.round(planned / 60))
+    slowMemoryThenQuant(bot, GONE_S)
+    expect(bot.view().segment?.minutes).toBe(Math.round(planned / 60))
+    bot.run.startSegment()
+    expect(bot.view().segment?.minutes).toBe(Math.round(planned / 60))
+    // A session without the part has no minute added.
+    expect(new Bot({ sessionId: 's_QRSIXPLAN00002', skipped: ['QR'] }).view().targetS).toBe(A15_TARGET_S)
+  })
+
+  it('with its time gone before it starts it asks exactly six, all answered, and ends on time', () => {
+    const bot = new Bot({ sessionId: 's_QRSIXZERO00001' })
+    slowMemoryThenQuant(bot, GONE_S)
+    expect(playQuant(bot)).toEqual({ shown: 6, answered: 6 })
+    const r = bot.run.result()
+    expect(r.itemsByAxis.QR).toBe(6)
+    expect(r.segmentEnds.find((e) => e.segment === 'quant')?.reason).toBe('time')
+    expect(bot.view().segment?.id).toBe('coding_reading')
+    expect(bot.finish().result().reason).toBe('complete')
+  })
+
+  it('a question that runs out of time is not one of the six: one more is shown for each, up to two', () => {
+    const run = (id: string, timesOut: (n: number) => boolean): { shown: number; answered: number } => {
+      const bot = new Bot({ sessionId: id })
+      slowMemoryThenQuant(bot, GONE_S)
+      const got = playQuant(bot, timesOut)
+      expect(bot.run.result().itemsByAxis.QR, id).toBe(got.shown)
+      expect(bot.view().phase, id).not.toBe('finished') // the session goes on to the next part
+      return got
+    }
+    expect(run('s_QRSIXTIMEOUT01', (n) => n === 1)).toEqual({ shown: 7, answered: 6 })
+    expect(run('s_QRSIXTIMEOUT02', (n) => n === 0 || n === 4)).toEqual({ shown: 8, answered: 6 })
+    expect(run('s_QRSIXTIMEOUT03', (n) => n < 3)).toEqual({ shown: 8, answered: 5 })
+    expect(run('s_QRSIXTIMEOUT04', () => true)).toEqual({ shown: 8, answered: 0 })
+  })
+
+  it('whatever runs out of time, the part shows at most eight, and stops at six answers or at eight shown', () => {
+    fc.assert(
+      fc.property(fc.array(fc.boolean(), { minLength: 12, maxLength: 12 }), fc.integer({ min: 0, max: 9999 }), (outs, n) => {
+        const bot = new Bot({ sessionId: `s_QRSIXPROP${String(n).padStart(6, '0')}` })
+        slowMemoryThenQuant(bot, GONE_S)
+        const got = playQuant(bot, (i) => outs[i] ?? false)
+        expect(got.shown).toBeLessThanOrEqual(QUANT_MIN_ITEMS + MIN_ITEMS_SLACK)
+        expect(got.answered).toBeLessThanOrEqual(QUANT_MIN_ITEMS)
+        expect(got.answered === QUANT_MIN_ITEMS || got.shown === QUANT_MIN_ITEMS + MIN_ITEMS_SLACK).toBe(true)
+        // What was shown is what the plan of time-outs gives: the six answers come as soon as they can.
+        let answered = 0
+        let shown = 0
+        while (answered < QUANT_MIN_ITEMS && shown < QUANT_MIN_ITEMS + MIN_ITEMS_SLACK) if (!outs[shown++]) answered++
+        expect(got).toEqual({ shown, answered })
+      }),
+      { numRuns: 25 },
+    )
+  }, 120_000)
+
+  it('across takers of every pace: six or more answered in every session that ends by itself, and Matrix & Series and Spatial get the time they had', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 9999 }), fc.double({ min: 0.6, max: 1.8, noNaN: true }), fc.double({ min: 0.6, max: 1.6, noNaN: true }), (n, blockScale, itemScale) => {
+        const id = `s_QRSIXPACE${String(n).padStart(6, '0')}`
+        const bot = new Bot({ sessionId: id }, { theta: Array.from({ length: N_AXES }, (_, k) => ((n * (k + 3)) % 7) / 2 - 1.5), blockScale, itemScale })
+        const r = bot.finish().result()
+        const parts = plannedParts(id)
+        if (r.reason === 'complete') {
+          expect(r.itemsByAxis.QR ?? 0).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
+          for (const k of ['MAT', 'SPA'] as const) expect(r.itemsByAxis[k] ?? 0, k).toBeGreaterThanOrEqual(3)
+        } else expect(r.reason).toBe('hard_stop')
+        expect(r.durationS).toBeLessThanOrEqual(HARD_STOP_S)
+        for (const b of r.budgets) {
+          const planned = parts.find((p) => p.id === b.segment)!.s
+          expect(b.plannedS, b.segment).toBeCloseTo(planned, 9)
+          expect(b.budgetS, b.segment).toBeLessThanOrEqual(b.plannedS + 1e-9)
+          if (b.segment === 'quant') expect(b.budgetS).toBeGreaterThanOrEqual(QUANT_EXTRA_S - 1e-9) // the minute of its own
+        }
+        // The other two parts' shares are those of the plan without the minimum: a third of what the timed tasks leave.
+        const shares = parts.filter((p) => p.id === 'matrix_series' || p.id === 'spatial' || p.id === 'quant').map((p) => p.s)
+        expect(shares[0]).toBeCloseTo(shares[1]!, 9)
+        expect(shares[2]).toBeCloseTo(shares[0]! + QUANT_EXTRA_S, 9)
+      }),
+      { numRuns: 20 },
+    )
+  }, 120_000)
+
+  it('skipping the part, finishing early and the hard stop work in the middle of the six', () => {
+    const skip = new Bot({ sessionId: 's_QRSIXSKIP00001' })
+    slowMemoryThenQuant(skip, GONE_S)
+    skip.run.startSegment()
+    skip.until((v) => skip.run.result().itemsByAxis.QR === 2 && v.phase === 'item')
+    skip.run.skipAxis('QR')
+    expect(skip.view().segment?.id).toBe('coding_reading')
+    expect(skip.run.result().itemsByAxis.QR).toBe(2)
+    expect(skip.finish().result().skipped).toEqual(['QR'])
+
+    const early = new Bot({ sessionId: 's_QRSIXEARLY0001' })
+    slowMemoryThenQuant(early, GONE_S)
+    early.run.startSegment()
+    early.until((v) => early.run.result().itemsByAxis.QR === 3 && v.phase === 'item')
+    early.run.finishEarly()
+    expect(early.view().ended).toBe('finish_early')
+    expect(early.run.result().itemsByAxis.QR).toBe(3)
+
+    // The hard stop is the clock's: a part short of its six does not hold the session past it.
+    const hard = new Bot({ sessionId: 's_QRSIXHARD00001' })
+    slowMemoryThenQuant(hard, HARD_STOP_S - 20 * 60)
+    hard.run.startSegment()
+    hard.until((v) => v.phase === 'item')
+    hard.wait(HARD_STOP_S)
+    hard.run.tick()
+    expect(hard.view().ended).toBe('hard_stop')
+    expect(hard.run.result().durationS).toBe(HARD_STOP_S)
+    expect(hard.run.result().itemsByAxis.QR ?? 0).toBeLessThan(QUANT_MIN_ITEMS)
+  })
+
+  it('the precision stop still ends the part before six, and a focus session has no minimum and no minute added', () => {
+    const precise = new Bot({ sessionId: 's_QRSIXSTOPSD001', stopSd: 0.95 })
+    slowMemoryThenQuant(precise, GONE_S)
+    const got = playQuant(precise)
+    expect(got.shown).toBeLessThan(QUANT_MIN_ITEMS)
+    expect(precise.run.result().segmentEnds.find((e) => e.segment === 'quant')?.reason).toBe('axes_done')
+
+    const focus = new Bot({ sessionId: 's_QRSIXFOCUS0001', focus: ['WM', 'QR'], targetS: 20 * 60 })
+    expect(focus.view().targetS).toBe(20 * 60)
+    focus.until((v) => v.phase === 'block' && v.segment?.id === 'memory')
+    focus.wait(20 * 60) // the focus session's time is gone before Quant
+    expect(playQuant(focus)).toEqual({ shown: 3, answered: 3 }) // the floor of a first session, as before
+  })
+
+  it('a continuation that still has the part runs it to six, and its target counts the minute once', () => {
+    const id = 's_QRSIXCONT00001'
+    const parts = plannedParts(id)
+    const planned = (ids: readonly SegmentId[]): number => parts.filter((p) => ids.includes(p.id)).reduce((t, p) => t + p.s, 0)
+    const bot = new Bot({ sessionId: id, continues: { done: ['rt', 'matrix_series', 'spatial', 'memory'], skipped: [] } })
+    expect(bot.view().targetS).toBeCloseTo(planned(['quant', 'coding_reading']), 6)
+    expect(playQuant(bot).answered).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
+    const done = new Bot({ sessionId: id, continues: { done: ['rt', 'matrix_series', 'spatial', 'memory', 'quant'], skipped: [] } })
+    expect(done.view().targetS).toBeCloseTo(planned(['coding_reading']), 6)
   })
 })
 
@@ -484,7 +687,8 @@ function plannedParts(sessionId: string, opts: { skipped?: readonly AxisCode[]; 
   for (const k of opts.skipped ?? []) weights[k] = 0
   if (opts.focus !== undefined) for (const k of AXIS_CODES) if (!opts.focus.includes(k)) weights[k] = 0
   const parts: { id: SegmentId; s: number }[] = []
-  for (const st of planSession({ sessionSeed: sessionId, weights, targetS: opts.targetS ?? A15_TARGET_S })) {
+  // As the run plans it: a focus session has no minimum on the Quantitative part (A15_MINIMUMS).
+  for (const st of planSession({ sessionSeed: sessionId, weights, targetS: opts.targetS ?? A15_TARGET_S, minimums: opts.focus === undefined })) {
     const s = st.kind === 'block' ? st.item.expected_time_s : st.budget_s
     const last = parts.at(-1)
     if (last?.id === st.segment) last.s += s
@@ -1431,10 +1635,10 @@ describe('a continuation of an interrupted session (UX-064; provisional default,
     const id = 's_CONTINUE000003'
     const parts = plannedParts(id)
     const planned = (ids: readonly SegmentId[]): number => parts.filter((p) => ids.includes(p.id)).reduce((t, p) => t + p.s, 0)
-    expect(new Bot({ sessionId: id, continues: { done: [], skipped: [] } }).view().targetS).toBeCloseTo(A15_TARGET_S, 6)
+    expect(new Bot({ sessionId: id, continues: { done: [], skipped: [] } }).view().targetS).toBeCloseTo(A15_PLANNED_S, 6)
     const bot = new Bot({ sessionId: id, continues: { done: ['rt', 'matrix_series'], skipped: [] } })
     expect(bot.view().targetS).toBeCloseTo(planned(['spatial', 'memory', 'quant', 'coding_reading']), 6)
-    expect(bot.view().targetS).toBeLessThan(A15_TARGET_S)
+    expect(bot.view().targetS).toBeLessThan(A15_PLANNED_S)
     bot.finish()
     for (const b of bot.run.result().budgets) expect(b.budgetS).toBeLessThanOrEqual(b.plannedS + 1e-9)
   })
