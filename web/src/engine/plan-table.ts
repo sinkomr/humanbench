@@ -51,21 +51,33 @@
  *
  * ## How long a session is said to be ({@link sessionOutline}, {@link aboutMinutes})
  *
- * A session runs longer than its plan: the timed tasks take longer than their model time, a part with a
- * minimum of answers goes past its share, and every answer is followed by the confidence slider. So the
- * words that state the length ("about 45 minutes"), and the target of the progress ring, are not the
- * plan's sum but the **typical** length: the median of simulated sessions (`npm run sim:session`),
- * {@link A15_TYPICAL_S} for the six parts and {@link TextPart.typical_s} for each text part, added up for
- * the parts a session asks for and said to the nearest five minutes. The figures are measured, not
- * derived: `scripts/sim-length.test.ts` holds each to the simulation for the combinations of parts
- * (re-measure and change them here when a share, a minimum or a task's length changes). The plan, the
- * budgets and the place of the break are untouched by them.
+ * A session runs longer than its plan: a part with a minimum of answers goes past its share, and every
+ * answer is followed by the confidence slider (about 5 s a question in the one full session on record).
+ * So the words that state the length ("about 45 minutes"), and the target of the progress ring, are not
+ * the plan's sum but the **typical** length: the median of simulated sessions (`npm run sim:session`,
+ * calibrated to that session: `scripts/sim-session.ts`, "Where the time goes"), {@link A15_TYPICAL_S}
+ * for the six parts and {@link TextPart.typical_s} for each text part, added up for the parts a session
+ * asks for and said to the nearest five minutes. The figures are measured, not derived:
+ * `scripts/sim-length.test.ts` holds each to the simulation for the combinations of parts (re-measure
+ * and change them here when a share, a minimum or a task's length changes). The plan, the budgets and
+ * the place of the break are untouched by them.
+ *
+ * Measured 2026-10-13 (400 sessions each; takers at the model's pace, ±15% from person to person):
+ *
+ * | Session | said | median | 95th percentile | at the 57-minute hard stop |
+ * |---|---|---|---|---|
+ * | six parts | about 30 minutes | 29.5 | 35.2 | none |
+ * | eleven (the five of phase 1) | about 45 minutes | 45.6 | 54.4 | 3% |
+ * | twelve (with Reading Comprehension) | about 55 minutes | 54.5 | 57.0 | 35% |
+ *
+ * Twelve parts do not fit under the hard stop with margin: ROADMAP, "Owner decisions 2026-10-13".
  *
  * ## A minimum of answered questions for every question part ({@link PART_MINIMUMS}; owner decision 2026-10-13)
  *
  * The owner, after a full session: "its ok to have more questions if there is time, but each section
  * should have a minimum number of questions asked, even if running over the originally estimated time
- * for that section." So every part that asks questions has a stated minimum of ANSWERED questions that
+ * for that section." (The rule is the owner's; the number, six everywhere, is the proposal that was
+ * built and is the owner's to change here.) So every part that asks questions has a stated minimum of ANSWERED questions that
  * holds past its time share, in ONE table, {@link PART_MINIMUMS}: six for Matrix & Series, Spatial,
  * Quantitative and each text part; Reading Comprehension is counted in passages (two, 6 to 8 questions)
  * and keeps five as the least it will accept of them. The rule, the same for every part and in both
@@ -202,11 +214,13 @@ export const A15_MINIMUMS: Readonly<Partial<Record<A15SegmentId, A15Minimum>>> =
 export const A15_PLANNED_S = A15_TARGET_S + Object.values(A15_MINIMUMS).reduce((t, m) => t + m.extra_s, 0)
 
 /**
- * Typical active seconds of the six-part session: the simulated median of the online version, 31 minutes
- * 20 seconds (600 sessions; the device-only version's is 30.6 minutes; module comment, "How long a session
- * is said to be"). Said as "about 30 minutes", as the plan was.
+ * Typical active seconds of the six-part session: the simulated median of the online version, 29 minutes
+ * 29 seconds (400 sessions, `npm run sim:session -- --mode online`; the device-only version's is 28.8
+ * minutes; module comment, "How long a session is said to be"). Said as "about 30 minutes", as the plan was.
+ * Re-measured 2026-10-13 with the simulator calibrated to a real session (`scripts/sim-session.ts`, "Where
+ * the time goes"), the reactive memory blocks and the minimums of six: it was 1,880 s.
  */
-export const A15_TYPICAL_S = 1880
+export const A15_TYPICAL_S = 1769
 
 /** What the six-part session typically runs over its plan, in seconds. */
 export const A15_TYPICAL_OVER_S = A15_TYPICAL_S - A15_PLANNED_S
@@ -228,7 +242,12 @@ export interface TextPart {
   readonly share_s: number
   /** Answered questions before the part's time may end it ({@link PART_MINIMUMS}). */
   readonly min_items: number
-  /** Typical active seconds of the part: the simulated median (module comment: "How long a session is said to be"). */
+  /**
+   * Typical active seconds of the part: what it takes a taker at the model's pace, which is the simulated median
+   * (module comment: "How long a session is said to be"). Six questions at the bank's expected time and the 4.8 s
+   * after each answer for Logical Reasoning (389) and the knowledge parts (149); seven for Vocabulary, whose sixth
+   * answer comes just inside its share (139); two passages, seven questions, for Reading Comprehension (549).
+   */
   readonly typical_s: number
   /** A part of passages: how many it reads before it ends (module comment: "Passages"). Absent on the others. */
   readonly sets?: number
@@ -239,12 +258,12 @@ export interface TextPart {
  * after the same A15 part run in the order listed here).
  */
 export const TEXT_PARTS: readonly TextPart[] = Object.freeze([
-  { id: 'logical_reasoning', axis: 'LR', after: 'matrix_series', share_s: 360, ...PART_MINIMUMS.logical_reasoning, typical_s: 370 },
-  { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, ...PART_MINIMUMS.knowledge_stem, typical_s: 130 },
-  { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, ...PART_MINIMUMS.vocabulary, typical_s: 135 },
-  { id: 'reading_comprehension', axis: 'RC', after: 'spatial', share_s: 540, ...PART_MINIMUMS.reading_comprehension, typical_s: 530 },
-  { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_humanities, typical_s: 130 },
-  { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_arts, typical_s: 130 },
+  { id: 'logical_reasoning', axis: 'LR', after: 'matrix_series', share_s: 360, ...PART_MINIMUMS.logical_reasoning, typical_s: 389 },
+  { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, ...PART_MINIMUMS.knowledge_stem, typical_s: 149 },
+  { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, ...PART_MINIMUMS.vocabulary, typical_s: 139 },
+  { id: 'reading_comprehension', axis: 'RC', after: 'spatial', share_s: 540, ...PART_MINIMUMS.reading_comprehension, typical_s: 549 },
+  { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_humanities, typical_s: 149 },
+  { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_arts, typical_s: 149 },
 ] as const satisfies readonly TextPart[])
 
 /** The text part of an axis, or undefined. */

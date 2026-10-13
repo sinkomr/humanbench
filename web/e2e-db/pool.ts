@@ -4,7 +4,7 @@
 export const DB_PORT = Number(process.env.E2E_DB_PORT ?? 4188)
 /** The text skills the "text" database has questions for; the other two are asked for and not there. */
 export const TEXT_PRESENT = ['LR', 'VOC', 'KST'] as const
-/** Made-up questions per skill: more than the five a part needs, few enough that the part ends when they run out. */
+/** Made-up questions per skill: the six a part runs to (`plan-table.ts` PART_MINIMUMS), and no more, so the part ends when they run out. */
 export const TEXT_PER_AXIS = 6
 /** Made-up passages in the "passage" database (phase 2): 3 and 4 questions in turn, every other one with a source line. */
 export const PASSAGES = 6

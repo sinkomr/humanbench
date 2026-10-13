@@ -60,6 +60,12 @@ describe('the text parts table', () => {
       expect(p.share_s).toBeLessThanOrEqual(p.sets === undefined ? 360 : 540)
     }
     expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 360, KST: 130, VOC: 120, RC: 540, KHU: 130, KAP: 130 })
+    // what a part typically takes is its share and the step after each answer: never less than the share, never far over
+    for (const p of TEXT_PARTS) {
+      expect(p.typical_s, p.id).toBeGreaterThanOrEqual(p.share_s)
+      expect(p.typical_s - p.share_s, p.id).toBeLessThanOrEqual(40)
+    }
+    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.typical_s]))).toEqual({ LR: 389, KST: 149, VOC: 139, RC: 549, KHU: 149, KAP: 149 })
     // only Reading Comprehension is counted in passages: two
     expect(TEXT_PARTS.filter((p) => p.sets !== undefined).map((p) => [p.axis, p.sets])).toEqual([['RC', RC_PASSAGES]])
     expect(RC_PASSAGES).toBe(2)
@@ -77,8 +83,9 @@ describe('the text parts table', () => {
   })
 
   it('says a session’s length from what it typically takes, not from the plan’s sum: "about 30" for six parts, "about 45" for eleven, "about 55" for twelve', () => {
-    // the six parts typically run close to three minutes over their plan (the timed tasks take longer than their model time)
-    expect(A15_TYPICAL_S).toBe(1880)
+    // the six parts typically run about a minute over their plan (the step after each answer; re-measured 2026-10-13
+    // with the simulator calibrated to a real session, the reactive memory blocks and the minimums of six: it was 1880)
+    expect(A15_TYPICAL_S).toBe(1769)
     expect(A15_TYPICAL_OVER_S).toBe(A15_TYPICAL_S - A15_PLANNED_S)
     expect(A15_TYPICAL_OVER_S).toBeGreaterThan(0)
     const typical = (axes: readonly AxisCode[]): number => sessionOutline(axes).typical_s
@@ -87,7 +94,8 @@ describe('the text parts table', () => {
     expect(aboutMinutes(typical(PHASE1))).toBe(45)
     expect(aboutMinutes(typical(TEXT_AXES))).toBe(55)
     expect(aboutMinutes(typical(['RC']))).toBe(40)
-    expect(aboutMinutes(typical(['VOC']))).toBe(35)
+    expect(aboutMinutes(typical(['VOC']))).toBe(30)
+    expect(aboutMinutes(typical(['LR']))).toBe(35)
     // the figure is additive over the parts, for every combination of them
     fc.assert(
       fc.property(fc.subarray([...TEXT_AXES]), (axes) => {

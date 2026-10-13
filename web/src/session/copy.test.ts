@@ -247,8 +247,8 @@ describe('the words for the session’s length (A15, M3.11 phase 1)', () => {
     const all = sessionOutline(TEXT_AXES)
     expect(welcomeIntro(all)).toMatch(/^The session has up to twelve parts and takes about 55 minutes\. /u)
     expect(lengthSentence(all)).toBe('Up to twelve short parts, about 55 minutes.')
-    expect(lengthSentence(sessionOutline(['VOC']))).toBe('Up to seven short parts, about 35 minutes.')
-    expect(lengthSentence(sessionOutline(['LR']))).toBe('Up to seven short parts, about 40 minutes.')
+    expect(lengthSentence(sessionOutline(['VOC']))).toBe('Up to seven short parts, about 30 minutes.')
+    expect(lengthSentence(sessionOutline(['LR']))).toBe('Up to seven short parts, about 35 minutes.')
     expect(lengthSentence(sessionOutline(['RC']))).toBe('Up to seven short parts, about 40 minutes.')
     expect(metaDescription(plannedMinutes(all))).toContain('about 55 minutes')
     // every combination of the text parts: the figure said is the typical length to the nearest five minutes

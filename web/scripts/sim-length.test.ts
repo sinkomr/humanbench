@@ -21,7 +21,14 @@ import { plannedMinutes } from '../src/session/length'
 import { quantile, simulateOneOnline, type SimSessionOne } from './sim-session'
 
 const SLOW = process.env.HB_SLOW === '1'
-const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S } as const
+/**
+ * Takers at the model's pace (`paceSd: 0`): the table's figure for a part is what it takes the median taker, and
+ * with a pace of their own six people's mean is off it by their mean pace (the sessions the words are made from
+ * have the spread: the slow tier below).
+ */
+const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S, paceSd: 0 } as const
+/** The same people with a pace of their own, as `npm run sim:session` plays them. */
+const spread = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S } as const
 const play = (i: number, text: readonly TextAxis[]): Promise<SimSessionOne> => simulateOneOnline(i, text.length === 0 ? base : { ...base, text })
 const mean = (xs: readonly number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
 
@@ -72,17 +79,19 @@ describe.skipIf(!SLOW)('the figures against 300 simulated sessions (slow)', () =
 
   it('the six parts: the median is the table\'s figure; and for every combination of the text parts the stated minutes are the simulated median to the nearest five', async () => {
     const six: number[] = []
-    for (let i = 0; i < N; i++) six.push((await play(i, [])).durationS)
+    for (let i = 0; i < N; i++) six.push((await simulateOneOnline(i, spread)).durationS)
     const median = quantile(six, 0.5)
     expect(Math.abs(median - A15_TYPICAL_S), `the median of ${N} six-part sessions is ${(median / 60).toFixed(2)} min`).toBeLessThanOrEqual(30)
 
-    // what each part adds, measured on the same people (it does not depend on the person in this simulation)
+    // what each part adds at the model's pace, measured on the same people with and without it
+    const atPace: number[] = []
+    for (let i = 0; i < PAIRS; i++) atPace.push((await play(i, [])).durationS)
     const adds = new Map<TextAxis, number>()
     for (const k of TEXT_AXES) {
       const xs: number[] = []
       for (let i = 0; i < PAIRS; i++) {
         const s = await play(i, [k])
-        if (s.ended === 'complete') xs.push(s.durationS - six[i]!)
+        if (s.ended === 'complete') xs.push(s.durationS - atPace[i]!)
       }
       expect(xs.length).toBeGreaterThan(PAIRS / 2)
       adds.set(k, mean(xs))

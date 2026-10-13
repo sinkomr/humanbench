@@ -1,19 +1,36 @@
 /**
  * `npm run sim:session -- [--n 200] [--offset 0] [--skip none|MAT|SPA|…] [--interstitial-s 0]
  * [--target-min 27.5] [--mode static|online] [--text none|all|LR,VOC,…] [--pace 1] [--timeout-p 0]
- * [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
+ * [--theta <x>] [--pace-sd 0.15] [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
  * session machine (`session/run.ts`) driven by the simulated taker of `session/bot.ts`, so the
- * clock rules, the break, the part budgets and the coverage floor are the ones the app runs (the
- * M1.4b `sim:cat` models the CAT budget on its own and does not skip). Each simulee has θ ~ N(0, I)
- * and block times 1–1.6× their model time; `--skip` skips that skill at its "Up next" screen.
+ * clock rules, the break, the part budgets, the minimums and the coverage floor are the ones the app
+ * runs (the M1.4b `sim:cat` models the CAT budget on its own and does not skip). Each simulee has
+ * θ ~ N(0, I) (or `--theta` on every skill) and a pace of their own; `--skip` skips that skill at its
+ * "Up next" screen.
+ *
+ * ## Where the time goes (calibrated 2026-10-13 to the one full session on record)
+ *
+ * The owner's eleven-part session of 2026-10-12 took 54.2 active minutes (3,254 s on the session clock;
+ * 56.1 minutes by the server's start-to-finish time, which also counts the "Up next" screens and the
+ * waits), and the simulator of that day predicted 45. The session's own record says where they went:
+ *
+ * | | seconds | what the simulator had | what it has now |
+ * |---|---|---|---|
+ * | the seven timed tasks | 1,139 | their [SPEC] model time (723 s for these blocks' E[T]) times a blanket 1 to 1.6 | the block's own time model on the trials given, the span model re-estimated (`tasks/span/prior.ts`: 675 s for the trials of that session against 725), plus {@link BLOCK_EXTRA_S} for what the other blocks' screens take over their model (25 s) |
+ * | answering 67 questions | 1,794 | the items' expected times | the same: not rescaled (the session was quicker than expected on text questions, 0.65 to 0.85 of the bank's expected times, and at or over on the others) |
+ * | between an answer and the next question | 321 (4.8 s a question) | 2 s for the confidence slider | {@link CONFIDENCE_S} |
+ *
+ * So the 10 minutes were in the timed tasks (about 7: the Working Memory blocks alone ran 12.1 minutes
+ * against a model of 5) and in the step after each answer (about 3). Nothing here makes that person
+ * "fast" or "slow": the question times are the model's, and only the overhead is fitted to the session.
+ * One session is one data point; {@link PACE_SD} spreads takers around it.
  *
  * Prints, and with `--json` writes, the mean active session length, the mean active time of each
- * part, the "About N min" each CAT part showed on its interstitial, the QR coverage-floor misses
- * (fewer than 3 QR items in a session that reached Quant), and where the break was offered; and,
- * for the limits (A15 amendment 2026-10-12: Quant's six questions, the 60-minute ceiling), the
- * questions shown and answered per skill (least, median, most), the share of sessions with at
- * least five answered Quantitative questions (what the server publishes a skill from), the
- * session length (median, 95th percentile, longest) and the share that reached the hard stop.
+ * part, the time by kind (timed tasks, questions, the step after an answer), the "About N min" each
+ * CAT part showed on its interstitial, the QR coverage-floor misses, and where the break was offered;
+ * and, for the limits, the questions shown and answered per skill (least, median, most), the share of
+ * sessions with at least five answered Quantitative questions (what the server publishes a skill
+ * from), the session length (median, 95th percentile, longest) and the share that reached the hard stop.
  *
  * `--mode online` plays the online version against a stand-in server ({@link SimServer}): the three
  * served parts get the questions the selector would pick, and `--text` (which implies it) adds the
@@ -55,8 +72,33 @@ export interface SimSessionArgs {
   readonly pace?: number
   /** Chance that a question is left to run out of time. Default 0. */
   readonly timeoutP?: number
+  /** Every simulee has this θ on every skill (default: θ ~ N(0, I)). */
+  readonly theta?: number
+  /** The spread of takers' pace (default {@link PACE_SD}); 0: every simulee at the model's pace. */
+  readonly paceSd?: number
   readonly json?: string
 }
+
+/**
+ * Seconds between an answer and the next question: the confidence slider and the hand-over (module comment:
+ * 321 s over the 67 questions of the session on record).
+ */
+export const CONFIDENCE_S = 4.8
+
+/**
+ * Seconds a block's screens take over its time model, per family (module comment): the session on record
+ * against the model on the same responses. Simple reaction time 85.4 against 84.0 s, choice 121.6 against
+ * 112.7, coding 99.0 against its 90 s window, reading 109.7 against 103.2. The span blocks have none: their
+ * model was re-estimated from the same session (`tasks/span/prior.ts`).
+ */
+export const BLOCK_EXTRA_S: Readonly<Record<string, number>> = Object.freeze({ rt_simple: 1, rt_choice4: 9, coding: 9, reading: 6 })
+
+/**
+ * [SPEC] The spread of takers' pace: each simulee's times (blocks, questions, the step after an answer) are
+ * multiplied by exp({@link PACE_SD} · z), z ~ N(0, 1), about ±15%. There is one real session, so this is an
+ * assumption; it replaces the blanket 1 to 1.6 on the blocks alone that stood in for the missing overhead.
+ */
+export const PACE_SD = 0.15
 
 /** Seconds a taker at the model's pace spends on a text question: the bank's expected times (`plan-table.ts`, "The shares"). For RC, on a question once the passage is read. */
 export const TEXT_ITEM_S: Readonly<Record<TextAxis, number>> = Object.freeze({ LR: 60, RC: 45, VOC: 15, KST: 20, KHU: 20, KAP: 20 })
@@ -81,6 +123,8 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
   let text: TextAxis[] | undefined
   let pace: number | undefined
   let timeoutP: number | undefined
+  let theta: number | undefined
+  let paceSd: number | undefined
   const args = argv[0] === '--' ? argv.slice(1) : argv
   for (let i = 0; i < args.length; i++) {
     const flag = args[i]
@@ -124,6 +168,12 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
       case '--timeout-p':
         timeoutP = Number(value)
         break
+      case '--theta':
+        theta = Number(value)
+        break
+      case '--pace-sd':
+        paceSd = Number(value)
+        break
       case '--json':
         json = resolve(cwd, value)
         break
@@ -135,6 +185,8 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
   if (!(interstitialS >= 0) || !(targetS > 0)) throw new UsageError('--interstitial-s ≥ 0 and --target-min > 0')
   if (pace !== undefined && !(pace > 0)) throw new UsageError('--pace > 0')
   if (timeoutP !== undefined && !(timeoutP >= 0 && timeoutP <= 1)) throw new UsageError('--timeout-p is between 0 and 1')
+  if (theta !== undefined && !(Number.isFinite(theta) && Math.abs(theta) <= 4)) throw new UsageError('--theta is a number from -4 to 4')
+  if (paceSd !== undefined && !(paceSd >= 0 && paceSd <= 1)) throw new UsageError('--pace-sd is between 0 and 1')
   if (text !== undefined && text.length > 0) {
     if (mode === 'static') throw new UsageError('--text needs --mode online: the device-only version has no text parts')
     mode = 'online'
@@ -149,6 +201,8 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
     ...(text === undefined || text.length === 0 ? {} : { text }),
     ...(pace === undefined ? {} : { pace }),
     ...(timeoutP === undefined ? {} : { timeoutP }),
+    ...(theta === undefined ? {} : { theta }),
+    ...(paceSd === undefined ? {} : { paceSd }),
     ...(json === undefined ? {} : { json }),
   }
 }
@@ -158,6 +212,8 @@ export interface SimSessionOne {
   readonly ended: string | null
   /** Active seconds per part that ran. */
   readonly partS: Partial<Record<SegmentId, number>>
+  /** Active seconds by kind: the timed tasks, answering questions, and the step after each answer. */
+  readonly kindS: { readonly blocks: number; readonly questions: number; readonly confidence: number }
   /** "About N min" of each part's interstitial, as shown. */
   readonly aboutMin: Partial<Record<SegmentId, number>>
   readonly qrItems: number
@@ -253,6 +309,7 @@ class SimDriver {
   readonly bot: Bot
   readonly partS: Partial<Record<SegmentId, number>> = {}
   readonly aboutMin: Partial<Record<SegmentId, number>> = {}
+  readonly kindS = { blocks: 0, questions: 0, confidence: 0 }
   breakBefore: SegmentId | null = null
   breakAtS: number | null = null
   breakOffers = 0
@@ -271,8 +328,10 @@ class SimDriver {
     readonly args: SimSessionArgs,
   ) {
     const rng = createRng(`sim-session:${i}`)
-    this.#theta = Array.from({ length: N_AXES }, () => rng.normal())
-    this.#pace = args.pace ?? 1
+    const drawn = Array.from({ length: N_AXES }, () => rng.normal())
+    this.#theta = args.theta === undefined ? drawn : drawn.map(() => args.theta as number)
+    // The taker's own pace around the model's (PACE_SD), times the pace asked for.
+    this.#pace = (args.pace ?? 1) * Math.exp((args.paceSd ?? PACE_SD) * rng.normal())
     this.#timeoutP = args.timeoutP ?? 0
     this.#timeouts = createRng(`sim-session:timeouts:${i}`)
     this.#answers = createRng(`sim-session:answers:${i}`)
@@ -280,7 +339,7 @@ class SimDriver {
     const online = args.mode === 'online' ? { cat: new SimServer(sessionId), textAxes: args.text ?? [] } : {}
     this.bot = new Bot(
       { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online },
-      { theta: this.#theta, blockScale: (1 + 0.6 * rng.next()) * this.#pace, itemScale: this.#pace, confidenceS: 2 * this.#pace, interstitialS: args.interstitialS },
+      { theta: this.#theta, blockScale: this.#pace, blockExtraS: BLOCK_EXTRA_S, itemScale: this.#pace, confidenceS: CONFIDENCE_S * this.#pace, interstitialS: args.interstitialS },
     )
   }
 
@@ -354,8 +413,13 @@ class SimDriver {
       bot.run.startSegment()
       return 'go'
     }
+    const before = bot.run.elapsedS()
     if (v.phase === 'item') this.#question(v)
     else bot.step()
+    const spent = bot.run.elapsedS() - before
+    if (v.phase === 'item') this.kindS.questions += spent
+    else if (v.phase === 'block') this.kindS.blocks += spent
+    else if (v.phase === 'confidence') this.kindS.confidence += spent
     return 'go'
   }
 
@@ -382,6 +446,7 @@ class SimDriver {
       durationS: v.elapsedS,
       ended: v.ended,
       partS: this.partS,
+      kindS: { ...this.kindS },
       aboutMin: this.aboutMin,
       qrItems: shown.QR ?? 0,
       shown,
@@ -442,6 +507,10 @@ export interface SimSessionReport {
   readonly maxDurationMin: number
   readonly ended: Record<string, number>
   readonly meanPartMin: Partial<Record<SegmentId, number>>
+  /** Median active minutes of each part, over the sessions that ran it. */
+  readonly medianPartMin: Partial<Record<SegmentId, number>>
+  /** Mean active minutes by kind: the timed tasks, answering questions, the step after each answer. */
+  readonly meanKindMin: { readonly blocks: number; readonly questions: number; readonly confidence: number }
   readonly meanAboutMin: Partial<Record<SegmentId, number>>
   readonly qrFloorMisses: number
   readonly reachedQuant: number
@@ -488,10 +557,12 @@ export function summarise(args: SimSessionArgs, runs: readonly SimSessionOne[]):
   const durations = runs.map((r) => r.durationS / 60)
   const reached = runs.filter((r) => r.reachedQuant && args.skip !== 'QR')
   const meanPartMin: Partial<Record<SegmentId, number>> = {}
+  const medianPartMin: Partial<Record<SegmentId, number>> = {}
   const meanAboutMin: Partial<Record<SegmentId, number>> = {}
   for (const p of parts) {
     const xs = runs.flatMap((r) => (r.partS[p] === undefined ? [] : [r.partS[p]! / 60]))
     if (xs.length > 0) meanPartMin[p] = Math.round(mean(xs) * 100) / 100
+    if (xs.length > 0) medianPartMin[p] = round2(quantile(xs, 0.5))
     const ab = runs.flatMap((r) => (r.aboutMin[p] === undefined ? [] : [r.aboutMin[p]!]))
     if (ab.length > 0) meanAboutMin[p] = Math.round(mean(ab) * 100) / 100
   }
@@ -506,6 +577,8 @@ export function summarise(args: SimSessionArgs, runs: readonly SimSessionOne[]):
     maxDurationMin: Math.round(Math.max(...runs.map((r) => r.durationS / 60)) * 100) / 100,
     ended,
     meanPartMin,
+    medianPartMin,
+    meanKindMin: { blocks: round2(mean(runs.map((r) => r.kindS.blocks / 60))), questions: round2(mean(runs.map((r) => r.kindS.questions / 60))), confidence: round2(mean(runs.map((r) => r.kindS.confidence / 60))) },
     meanAboutMin,
     qrFloorMisses: runs.filter((r) => r.reachedQuant && args.skip !== 'QR' && r.qrItems < 3).length,
     reachedQuant: runs.filter((r) => r.reachedQuant).length,

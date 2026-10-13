@@ -3,7 +3,7 @@ import { A15_TARGET_S } from '../src/engine/selector'
 import { UsageError } from './dump-lib'
 import { PUBLISH_MIN_ITEMS, QUANT_MIN_ITEMS, TEXT_AXES } from '../src/engine/plan-table'
 import { HARD_STOP_S } from '../src/session/constants'
-import { PASSAGE_READING_S, parseSimSessionArgs, quantile, simPassageQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
+import { BLOCK_EXTRA_S, CONFIDENCE_S, PACE_SD, PASSAGE_READING_S, parseSimSessionArgs, quantile, simPassageQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
 
 describe('scripts/sim-session.ts: whole sessions of the real session machine (UX-066)', () => {
   it('parses its flags, with defaults, and refuses what it does not know', () => {
@@ -33,6 +33,51 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     expect(() => parseSimSessionArgs(['--mode', 'both'], '/w')).toThrow(UsageError)
     expect(() => parseSimSessionArgs(['--pace', '0'], '/w')).toThrow(UsageError)
     expect(() => parseSimSessionArgs(['--timeout-p', '2'], '/w')).toThrow(UsageError)
+  })
+
+  it('parses a fixed θ and the spread of pace', () => {
+    const base = { n: 200, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S }
+    expect(parseSimSessionArgs(['--theta', '2', '--pace-sd', '0'], '/w')).toEqual({ ...base, theta: 2, paceSd: 0 })
+    expect(() => parseSimSessionArgs(['--theta', '9'], '/w')).toThrow(UsageError)
+    expect(() => parseSimSessionArgs(['--pace-sd', '-1'], '/w')).toThrow(UsageError)
+  })
+
+  it('where the time goes: the overhead is the one full session on record’s, and every active second is a timed task, a question or the step after an answer', () => {
+    // The owner's eleven-part session of 2026-10-12: 3,254 active seconds = 1,139 in the seven timed tasks + 1,794 answering
+    // 67 questions + 321 between an answer and the next question.
+    expect(1139 + 1794 + 321).toBe(3254)
+    expect(CONFIDENCE_S).toBeCloseTo(321 / 67, 1)
+    // what the other blocks' screens took over their time model on the same responses: 85.4 − 84.0, 121.6 − 112.7, 99.0 − 90, 109.7 − 103.2
+    expect(BLOCK_EXTRA_S).toEqual({ rt_simple: 1, rt_choice4: 9, coding: 9, reading: 6 })
+    expect(Object.values(BLOCK_EXTRA_S).reduce((a, b) => a + b, 0)).toBe(25)
+    expect(PACE_SD).toBe(0.15)
+    const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S } as const
+    for (const i of [0, 4, 11]) {
+      const s = simulateOne(i, base)
+      expect(s.ended).toBe('complete')
+      expect(s.kindS.blocks + s.kindS.questions + s.kindS.confidence).toBeCloseTo(s.durationS, 6)
+      expect(Object.values(s.partS).reduce((a, b) => a + b, 0)).toBeCloseTo(s.durationS, 6)
+      // the step after an answer: CONFIDENCE_S a question at the taker's own pace (within the ±15% spread, three SDs)
+      const n = Object.values(s.shown).reduce((a, b) => a + b, 0)
+      expect(s.kindS.confidence / n).toBeGreaterThan(CONFIDENCE_S * Math.exp(-3 * PACE_SD))
+      expect(s.kindS.confidence / n).toBeLessThan(CONFIDENCE_S * Math.exp(3 * PACE_SD))
+    }
+    // at the model's pace exactly: the step is CONFIDENCE_S, and the same person is slower by the pace asked for
+    const exact = simulateOne(4, { ...base, paceSd: 0 })
+    const n = Object.values(exact.shown).reduce((a, b) => a + b, 0)
+    expect(exact.kindS.confidence).toBeCloseTo(CONFIDENCE_S * n, 6)
+    const slow = simulateOne(4, { ...base, paceSd: 0, pace: 1.25 })
+    expect(slow.kindS.blocks).toBeGreaterThan(exact.kindS.blocks * 1.1)
+  })
+
+  it('a strong taker’s Working Memory part is longer than a weak one’s (more lengths passed), and both are far under the 12 minutes of the fixed procedure', () => {
+    const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S, paceSd: 0 } as const
+    const strong = [0, 1, 2, 3].map((i) => simulateOne(i, { ...base, theta: 2 }).partS.memory!)
+    const weak = [0, 1, 2, 3].map((i) => simulateOne(i, { ...base, theta: -2 }).partS.memory!)
+    const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length
+    expect(mean(strong)).toBeGreaterThan(mean(weak) + 120)
+    expect(mean(strong)).toBeLessThan(9.5 * 60) // the owner's three blocks took 725 s on the fixed procedure
+    expect(mean(weak)).toBeGreaterThan(2 * 60)
   })
 
   it('quantiles are by the nearest rank', () => {
