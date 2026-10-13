@@ -378,6 +378,11 @@ test.describe('a pool with made-up passages', () => {
     await expect(page.locator(`${PASSAGE} .attribution`)).toContainText(demo.media.attribution!)
     await expect(page.locator(`${QUESTION} legend`)).toHaveText(demo.questions[0]!.stem)
     await expect(page.locator('[data-set-position]')).toHaveText('Question 1 of 4 about this passage')
+    // the question's timer is with the question, beside or under the passage: the time left, as m:ss (owner feedback 2026-10-13)
+    const timer = page.locator(".item-region [data-item-timer]").getByRole('timer')
+    await expect(timer).toBeVisible()
+    await expect(timer).toHaveText(/^\d+:\d\d$/)
+    await expect(timer).toHaveAccessibleName(/^Time left for this question: /)
     await expectNoSeriousAxe(page)
     await expectNoSidewaysScroll(page, 'a passage question in the session')
     await page.locator(PASSAGE).evaluate((el) => {

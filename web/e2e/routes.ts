@@ -496,8 +496,8 @@ export const ROUTES: readonly Route[] = [
     // are drawn by family on the review page (`dev-review`, `dev-review-matrices`), so this claims only the screen they sit in.
     id: 'item-matrix-series',
     group: 'session',
-    state: 'a matrix or series item (multiple choice or typed entry)',
-    covers: ['session/Stage.svelte'],
+    state: 'a matrix or series item (multiple choice or typed entry), with the timer of the question above it',
+    covers: ['session/Stage.svelte', 'session/ItemTimer.svelte'],
     open: async (page) => {
       await intoSegment(page, 1)
       await itemOnScreen(page)

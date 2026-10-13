@@ -43,7 +43,8 @@
  *   dropped, an answered item still waiting for its confidence is kept without one. The hard stop
  *   is noticed on the next `tick()`, but the recorded time is the limit, not the late reading.
  * - **Item cap** (§13): a power item that gets no answer within `time_limit_s` is recorded as not
- *   correct (a time-out).
+ *   correct (a time-out). The screen shows the time left for the whole of it and warns in the last
+ *   30 seconds ({@link SessionRun.itemTime}, `ItemTimer.svelte`; owner feedback 2026-10-13).
  *
  * ## Served parts (M2.7)
  *
@@ -846,6 +847,20 @@ export class SessionRun {
 
   get phase(): RunPhase {
     return this.#phase
+  }
+
+  /**
+   * The time of the question on screen (cheap; the screen reads it every tick, like `elapsedS`): its limit
+   * and the seconds left before it is recorded as run out of time ({@link SessionRun.tick}). Null when no
+   * question is waiting for an answer: outside the `item` phase (the confidence slider is not timed), and for
+   * a question that cannot be shown. So what the timer shows is exactly what the time-out acts on.
+   */
+  itemTime(): { readonly limitS: number; readonly leftS: number } | null {
+    const cur = this.#current
+    if (this.#phase !== 'item' || cur === null || cur.unavailable) return null
+    const limitS = this.#facts(cur).time_limit_s ?? DEFAULT_ITEM_LIMIT_S
+    const usedS = (this.#cfg.now() - (cur.onsetMs ?? cur.startedMs)) / 1000
+    return { limitS, leftS: Math.max(0, limitS - usedS) }
   }
 
   /**

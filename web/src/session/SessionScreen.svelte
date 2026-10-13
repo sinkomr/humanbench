@@ -3,7 +3,7 @@
   the per-cluster checklist around whatever the run is showing: an interstitial ("Up next: Spatial.
   About 6 min.", and that the clock waits there until Start, UX-066), a fixed block, a power item with
   its confidence slider (which reports whether it was moved, UX-063), the break suggestion at the part
-  boundary nearest half-way, or the break itself. "Skip <axis>" and "Finish early" are always at hand. This component only shows
+  boundary nearest half-way, or the break itself. A question that waits for its answer shows its timer (`ItemTimer.svelte`). "Skip <axis>" and "Finish early" are always at hand. This component only shows
   `SessionRun.view()` and forwards the renderers' events; the rules live in `run.ts`.
   The header is small on a phone (UX-003); "Keep going" in a confirmation hands focus back to the running
   block's own input surface, so the next response key counts (UX-005a); the browser's Back button opens
@@ -36,6 +36,7 @@
   import ReportProblem from '../backend/ReportProblem.svelte'
   import Checklist from './Checklist.svelte'
   import Confidence from './Confidence.svelte'
+  import ItemTimer from './ItemTimer.svelte'
   import ConfirmPanel from './ConfirmPanel.svelte'
   import ProgressRing from './ProgressRing.svelte'
   import Screen from './Screen.svelte'
@@ -101,6 +102,9 @@
   let view: RunView = $state.raw(run.view())
   // svelte-ignore state_referenced_locally
   let elapsedS = $state(run.elapsedS())
+  /** The time left for the question on screen (null when none is waiting for an answer); read every tick, like the ring. */
+  // svelte-ignore state_referenced_locally
+  let itemTime = $state.raw(run.itemTime())
   const uid = $props.id()
   /** The id of the region a later question hands focus to (`Screen` `focusId`). */
   const regionId = `${uid}-item`
@@ -113,12 +117,18 @@
   // svelte-ignore state_referenced_locally
   let seenFinishRequest = finishRequest
 
-  $effect(() => run.subscribe(() => (view = run.view())))
+  $effect(() =>
+    run.subscribe(() => {
+      view = run.view()
+      itemTime = run.itemTime()
+    }),
+  )
 
   onMount(() => {
     const timer = setInterval(() => {
       run.tick()
       elapsedS = run.elapsedS()
+      itemTime = run.itemTime()
     }, 250)
     const onVisibility = (): void => run.noteVisibility(document.visibilityState === 'hidden' ? 'hidden' : 'visible')
     document.addEventListener('visibilitychange', onVisibility)
@@ -295,6 +305,12 @@
       {/if}
       {#if view.passage?.position != null && view.passage.position.of > 1}
         <p class="set-position" data-set-position>{PASSAGE_COPY.position(view.passage.position.index, view.passage.position.of)}</p>
+      {/if}
+      {#if view.phase === 'item' && itemTime !== null}
+        <!-- Every question that can run out of time says how long is left, and warns before it does (owner feedback 2026-10-13). -->
+        {#key view.item.item_id}
+          <ItemTimer leftS={itemTime.leftS} limitS={itemTime.limitS} typed={view.item.options_count === undefined} />
+        {/key}
       {/if}
       <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
       <div class="stage-host" hidden={view.unavailable}>
