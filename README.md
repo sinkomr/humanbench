@@ -114,18 +114,25 @@ npm run test:slow
 
 `npm run sim:session` drives the real session machine (`web/src/session/run.ts`) with the
 simulated taker of `web/src/session/bot.ts`, so the session clock, the break offer, each part's
-budget and the Quantitative three-question floor are the rules the app runs (`sim:cat` models the
-CAT budget on its own and never skips a part). It prints the mean active session length, each
-part's mean active time, the "About N min" each adaptive part showed on its "Up next" screen, the
-floor misses and where the break was offered. `--skip <axis>` skips that skill at its "Up next"
-screen, `--interstitial-s <s>` makes the taker wait that long on each "Up next" screen (the session
-clock does not count it), `--target-min` changes the session target and `--json <file>` also
-writes the result.
+budget, the three-question floor and the six questions of the Quantitative part are the rules the
+app runs (`sim:cat` models the CAT budget on its own, without the six questions, and never skips a
+part). It prints the mean active session length, each part's mean active time, the "About N min"
+each adaptive part showed on its "Up next" screen, the floor misses and where the break was
+offered; and, for the session's limits, the questions shown and answered per skill (least, median,
+most), the share of sessions with at least five answered Quantitative questions, the session length
+(median, 95th percentile, longest) and the share that reached the hard stop. `--skip <axis>` skips
+that skill at its "Up next" screen, `--interstitial-s <s>` makes the taker wait that long on each
+"Up next" screen (the session clock does not count it), `--target-min` changes the session target
+and `--json <file>` also writes the result. `--mode online` plays the online version against a
+stand-in server, `--text all` (or a list of skill codes) adds the text parts to it, `--pace 1.5`
+is a taker who takes one and a half times as long over everything, and `--timeout-p 0.1` leaves
+one question in ten to run out of time.
 
 ```zsh
 npm run sim:session
 npm run sim:session -- --n 300 --skip SPA
 npm run sim:session -- --n 300 --skip QR --interstitial-s 60 --json sim-session.json
+npm run sim:session -- --n 300 --text all --pace 1.5
 ```
 
 ### End-to-end and accessibility tests

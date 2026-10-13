@@ -5,8 +5,9 @@
  * placeholder: UX-REVIEW D1), the honour code, the device check and RT input mode, practice mode, the
  * interstitials, the time-based progress ring and per-cluster checklist, skip axis, finish early,
  * the one break offer before the half-way part and the clock held on "Up next" screens (UX-066; owner
- * decision 2026-10-05, UX-REVIEW D5), the hard stop at 57, the ≥ 3-item coverage floor when the time budget is
- * gone (the known QR issue), the per-axis early stop, the confidence slider, autosave through the
+ * decision 2026-10-05, UX-REVIEW D5), the hard stop at 57, the six answered questions of the Quantitative part
+ * when its time budget is gone (A15 amended 2026-10-12; before it, the ≥ 3-item coverage floor and the known QR
+ * issue), the per-axis early stop, the confidence slider, autosave through the
  * save library, and the `?fast=1` dev flag. Rules that depend on minutes run on a fake clock
  * (`page.clock`), so the tests take seconds. Every screen is checked with axe (0 serious or critical
  * issues, WCAG 2.2 AA) and, for the main ones, the language lint (A13) and reflow at 320 px.
@@ -15,6 +16,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { lintText } from '../scripts/language-lint'
 import { DISCLAIMER } from '../src/copy'
+import { QUANT_MIN_ITEMS } from '../src/engine/plan-table'
 import { BREAK_OFFER_TEXT } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { FINISHED_HEADINGS } from './flow'
@@ -653,8 +655,13 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
    * From the reaction-time interstitial: skip to Quantitative Reasoning (declining the break offer before Working
    * Memory), start it, and let its time budget be gone on its first question (a jump past the 27.5-minute target:
    * the clock waits on "Up next" screens, so the jump is made inside the part; the question runs past its cap and
-   * counts as not correct). Then answer what it serves. Returns the families of the answers saved for the session.
+   * counts as not correct). Then answer what it serves: the part runs to six answered questions (A15 amended
+   * 2026-10-12, `engine/plan-table.ts`), so the one that ran out of time is made up for by a seventh, and no more
+   * come. Returns the families of the answers saved for the session.
    */
+  /** What the part shows there: the question that ran out of time, and the six answered ones. */
+  const QUANT_SHOWN = 1 + QUANT_MIN_ITEMS
+
   async function quantWithoutBudget(page: Page): Promise<string[]> {
     for (const next of ['Up next: Matrix & Series', 'Up next: Spatial', 'Time for a break?', 'Up next: Working Memory', 'Up next: Quantitative Reasoning']) {
       if (next === 'Up next: Working Memory') await button(page, 'Keep going').click()
@@ -665,9 +672,9 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await expect(page.locator('form.entry')).toBeVisible()
     await page.clock.fastForward('28:00')
     await expect(page.getByRole('status').first()).toContainText('ran out of time', { timeout: 15_000 })
-    for (let n = 2; n <= 3; n++) {
+    for (let n = 2; n <= QUANT_SHOWN; n++) {
       await answerItem(page)
-      if (n < 3) await expect(page.locator('form.entry')).toBeVisible()
+      if (n < QUANT_SHOWN) await expect(page.locator('form.entry')).toBeVisible()
     }
     await expect(h1(page)).toHaveText('Up next: Processing & Reading Speed')
     let families: string[] = []
@@ -680,16 +687,16 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
         })
         return families.length
       })
-      .toBe(3)
+      .toBe(QUANT_SHOWN)
     return families
   }
 
-  test('QR keeps its coverage floor of 3 items when the time budget is gone (the known issue), and gets no more', async ({ page }) => {
+  test('QR runs to six answered questions when its time budget is gone (one more for the one that ran out of time), and gets no more', async ({ page }) => {
     await begin(page)
-    expect(await quantWithoutBudget(page)).toEqual(['quant', 'quant', 'quant'])
+    expect(await quantWithoutBudget(page)).toEqual(Array.from({ length: QUANT_SHOWN }, () => 'quant'))
   })
 
-  test('a start that was abandoned before any answer is not an earlier session: after a reload QR still gets its floor (M1.15 review, §7.4)', async ({ page }) => {
+  test('a start that was abandoned before any answer is not an earlier session: after a reload QR still gets its questions (M1.15 review, §7.4)', async ({ page }) => {
     await begin(page) // Begin pressed, nothing answered
     // Nothing is kept for a session without an answer, neither at once nor when the page goes away.
     const saves = (): Promise<string[]> => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('hb:save:v1:')))
@@ -709,8 +716,8 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await expect(page.getByText('Earlier saves on this device')).toHaveCount(0)
     await button(page, 'Begin').click()
     await expect(h1(page)).toHaveText('Up next: Reaction Time')
-    // Counted as session 2, QR would have had no floor (0 items after long span blocks).
-    expect(await quantWithoutBudget(page)).toEqual(['quant', 'quant', 'quant'])
+    // Counted as session 2, QR would have had no floor (0 items after long span blocks, before its six questions).
+    expect(await quantWithoutBudget(page)).toEqual(Array.from({ length: QUANT_SHOWN }, () => 'quant'))
   })
 
   test('the ring follows session time once a part runs', async ({ page }) => {

@@ -136,7 +136,9 @@ export function simulateSession(theta: readonly number[], sessionSeed: string, o
   const taker = createRng(`sim:${sessionSeed}`)
   const fixed = opts.fixedLength
   if (fixed !== undefined && !(Number.isInteger(fixed) && fixed >= 1)) throw new RangeError(`fixedLength must be an integer ≥ 1, got ${fixed}`)
-  const plan = planSession({ sessionSeed, targetS: opts.targetS ?? A15_TARGET_S })
+  // The time rule alone: the Quantitative part's minimum of answers (A15_MINIMUMS, 2026-10-12) is the session
+  // machine's, simulated by `npm run sim:session`; this run keeps the plan the Python twin has.
+  const plan = planSession({ sessionSeed, targetS: opts.targetS ?? A15_TARGET_S, minimums: false })
   const obs: Observation[] = []
   const administered: AdministeredItem[] = []
   const blocks: BlockRecord[] = []

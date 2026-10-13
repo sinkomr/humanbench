@@ -6,8 +6,10 @@
  * Two tables:
  *
  * - {@link A15_SEGMENTS}: the six parts of the M1 session, on every device and in both versions.
- *   Their time is {@link A15_TARGET_S}, shared as before (`planSession`). **Nothing below changes
- *   them**: a session without served text parts is planned, budgeted and timed exactly as in M1.
+ *   Their time is {@link A15_TARGET_S}, shared as before (`planSession`), plus what a part's
+ *   minimum adds ({@link A15_MINIMUMS}: the Quantitative part, below). **The text parts change
+ *   nothing of them**: a session without served text parts is planned, budgeted and timed the same
+ *   with or without the setting.
  * - {@link TEXT_PARTS}: the parts of served text multiple choice (M3.11 phase 1). They exist only in
  *   the online version, only for the axes the build names (`backend/config.ts`, `HB_TEXT_AXES`), and
  *   only when the server has questions for the axis: a part whose first request is answered "no
@@ -28,8 +30,9 @@
  * | Humanities knowledge | KHU | 2 min 10 s | the same |
  * | Arts & Practical | KAP | 2 min 10 s | the same |
  *
- * All five together are 13.5 minutes, so a session with all of them is planned at 41 minutes (27.5 +
- * 13.5), which the copy rounds to "about 40 minutes" ({@link aboutMinutes}).
+ * All five together are 13.5 minutes, so a session with all of them is planned at 42 minutes (28.5 +
+ * 13.5), which the copy rounds to "about 40 minutes" ({@link aboutMinutes}). The owner's ceiling for a
+ * session is 60 minutes (2026-10-12); the hard stop is at 57 active minutes (`session/constants.ts`).
  *
  * ## Why five answers ({@link PUBLISH_MIN_ITEMS})
  *
@@ -38,7 +41,27 @@
  * read single answers out). A text part that stopped at the §7.4 floor of three would therefore
  * measure nothing the person ever sees. So a text part goes on past its share until five questions
  * are answered ({@link TextPart.min_items}), and at most {@link MIN_ITEMS_SLACK} more are shown to
- * get there when some ran out of time. The six M1 parts keep their own rule (the floor of three).
+ * get there when some ran out of time. The six M1 parts keep their own rule (the floor of three),
+ * but for the Quantitative part:
+ *
+ * ## Six questions in the Quantitative part ({@link A15_MINIMUMS}; owner decision 2026-10-12)
+ *
+ * The Quantitative part is the last of the three that share the session's time, and a question of
+ * it takes close to a minute, so its share bought about four answers (three to seven in simulated
+ * sessions): fewer than the five a skill is published from, in most sessions. The owner: "go to six
+ * questions". So the part follows the rule of the text parts, in the online version and in the
+ * device-only version alike: it goes on past its time until {@link QUANT_MIN_ITEMS} questions are
+ * answered, and at most {@link MIN_ITEMS_SLACK} more are shown to get there when some ran out of
+ * time (six answered leaves the published five with one to spare). A count was chosen over a larger
+ * time share because a share buys a number of answers that depends on the pace of the person and
+ * on how long the timed tasks before it took, which is what left the part short; the count is the
+ * thing the server asks for.
+ *
+ * `extra_s` is what the rule adds to the plan: the part's planned time is its share plus this
+ * (about 5 + 1 = 6 minutes, six questions at 55 to 60 s), and the session's is
+ * {@link A15_TARGET_S} plus this, 28.5 minutes, still said as "about 30 minutes". Nothing else of
+ * the six parts moves: the other parts' budgets and the place of the break are worked out from
+ * {@link A15_TARGET_S} as before. A focus session has no minimum (its time is the skills it names).
  */
 
 import type { AxisCode } from './axes'
@@ -82,7 +105,27 @@ export const A15_SEGMENTS: readonly SegmentDef[] = Object.freeze([
 /** Answers on one skill in one session from which the server publishes its score (`rescore.min_axis_items`). */
 export const PUBLISH_MIN_ITEMS = 5
 
-/** Questions a text part may show beyond its minimum to reach it (some may run out of time). */
+/** Answered questions the Quantitative part runs to in a normal session (owner decision 2026-10-12: "go to six questions"). */
+export const QUANT_MIN_ITEMS = 6
+
+/** Planned seconds the six-question rule adds to the Quantitative part's share, and so to the session. */
+export const QUANT_EXTRA_S = 60
+
+/** A minimum of answered questions on one of the six parts, and the planned time it adds (module comment). */
+export interface A15Minimum {
+  readonly min_items: number
+  readonly extra_s: number
+}
+
+/** The A15 parts that run to a number of answered questions (owner: change them here). */
+export const A15_MINIMUMS: Readonly<Partial<Record<A15SegmentId, A15Minimum>>> = Object.freeze({
+  quant: Object.freeze({ min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S }),
+})
+
+/** Planned seconds of the six-part session: the A15 target and what the minimums add. */
+export const A15_PLANNED_S = A15_TARGET_S + Object.values(A15_MINIMUMS).reduce((t, m) => t + m.extra_s, 0)
+
+/** Questions a part with a minimum may show beyond it to reach it (some may run out of time). */
 export const MIN_ITEMS_SLACK = 2
 
 /** The axes of served text multiple choice, in the canonical axis order. */
@@ -142,12 +185,12 @@ export interface SessionOutline {
 /** The plan of a session that asks for the text parts of `textAxes` (none: the M1 session). */
 export function sessionOutline(textAxes: readonly AxisCode[] = []): SessionOutline {
   const parts = TEXT_PARTS.filter((p) => textAxes.includes(p.axis))
-  return { parts: A15_SEGMENTS.length + parts.length, planned_s: A15_TARGET_S + parts.reduce((t, p) => t + p.share_s, 0), upTo: parts.length > 0 }
+  return { parts: A15_SEGMENTS.length + parts.length, planned_s: A15_PLANNED_S + parts.reduce((t, p) => t + p.share_s, 0), upTo: parts.length > 0 }
 }
 
 /**
  * The figure a planned length is said as: whole minutes, to the nearest five from three minutes up
- * ("about 30" for 27.5, "about 40" for 41), the rule of the progress ring (UX-008).
+ * ("about 30" for 28.5, "about 40" for 42), the rule of the progress ring (UX-008).
  */
 export function aboutMinutes(plannedS: number): number {
   const m = Math.max(1, Math.round(plannedS / 60))

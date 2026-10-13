@@ -19,7 +19,7 @@ const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
 /** "six" or "up to eleven". */
 export const partsPhrase = (o: SessionOutline): string => `${o.upTo ? 'up to ' : ''}${countWord(o.parts)}`
-/** The planned minutes as they are said: to the nearest five ("30" for 27.5, "40" for 41). */
+/** The planned minutes as they are said: to the nearest five ("30" for 28.5, "40" for 42). */
 export const plannedMinutes = (o: SessionOutline): number => aboutPlannedMinutes(o.planned_s)
 
 /** The six-part session of M1. */

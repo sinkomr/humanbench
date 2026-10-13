@@ -5,6 +5,7 @@ import { info2pl, info3pl, logistic } from './irt'
 import { createRng } from './prng'
 import { eapAxis, mapTheta } from './scorer'
 import {
+  type PlannedStep,
   A15_SEGMENTS,
   A15_TARGET_S,
   COVERAGE_FLOOR,
@@ -40,7 +41,11 @@ import {
   type SelectorState,
   type SessionPosterior,
 } from './selector'
+import { A15_MINIMUMS, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS, TEXT_AXES } from './plan-table'
 import type { Observation } from './types'
+
+/** What a part's minimum adds to its share of the target (Quant), 0 for the others. */
+const extraOf = (s: PlannedStep): number => (s.kind === 'cat' ? (s.minimum?.extra_s ?? 0) : 0)
 import { parseItemId } from '../tasks/ids'
 import { quant } from '../tasks/quant'
 import { QUANT_SIBLING_SETS, VARIANTS, quantSiblingGroup } from '../tasks/quant/templates'
@@ -820,17 +825,66 @@ describe('block scheduler (A15)', () => {
     const blockTime = scheduleBlocks({ sessionSeed: 'plan' }).reduce((s, b) => s + b.item.expected_time_s, 0)
     const cats = plan.filter((s) => s.kind === 'cat')
     expect(cats).toHaveLength(3)
-    for (const c of cats) expect(c.budget_s).toBeCloseTo((A15_TARGET_S - blockTime) / 3, 9)
+    for (const c of cats) expect(c.budget_s - extraOf(c)).toBeCloseTo((A15_TARGET_S - blockTime) / 3, 9)
     expect(cats[0]!.budget_s).toBeGreaterThan(180)
     const short = planSession({ sessionSeed: 'plan', targetS: 60 })
-    for (const s of short) if (s.kind === 'cat') expect(s.budget_s).toBe(0)
+    for (const s of short) if (s.kind === 'cat') expect(s.budget_s - extraOf(s)).toBe(0)
+  })
+
+  it('the Quantitative part runs to six answers, with a minute of its own on top of its share; no other part has a minimum (A15 amended 2026-10-12)', () => {
+    const cats = planSession({ sessionSeed: 'plan' }).flatMap((s) => (s.kind === 'cat' ? [s] : []))
+    expect(cats.map((c) => [c.segment, c.minimum])).toEqual([
+      ['matrix_series', undefined],
+      ['spatial', undefined],
+      ['quant', { min_items: 6, extra_s: 60 }],
+    ])
+    expect(A15_MINIMUMS).toEqual({ quant: { min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S } })
+    expect(QUANT_MIN_ITEMS).toBeGreaterThan(PUBLISH_MIN_ITEMS) // one time-out still leaves what a skill is published from
+    expect(cats[2]!.budget_s).toBeCloseTo(cats[0]!.budget_s + QUANT_EXTRA_S, 9)
+    // Without the minimums the plan is the one of before, to the second, and the other parts are the same in both.
+    const plain = planSession({ sessionSeed: 'plan', minimums: false })
+    expect(plain.every((s) => s.kind !== 'cat' || s.minimum === undefined)).toBe(true)
+    const plainCats = plain.flatMap((s) => (s.kind === 'cat' ? [s] : []))
+    for (const c of plainCats) expect(c.budget_s).toBe(plainCats[0]!.budget_s)
+    expect(planSession({ sessionSeed: 'plan' }).filter((s) => s.segment !== 'quant')).toEqual(plain.filter((s) => s.segment !== 'quant'))
+    // A plan without Quant has no minimum, and no time added.
+    expect(planSession({ sessionSeed: 'plan', weights: { QR: 0 } })).toEqual(planSession({ sessionSeed: 'plan', weights: { QR: 0 }, minimums: false }))
+  })
+
+  it('whatever is skipped, seen or planned for, the minimum changes only the Quantitative part, by its extra time', () => {
+    fc.assert(
+      fc.property(
+        fc.subarray(['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] as AxisCode[]),
+        fc.integer({ min: 0, max: 3600 }),
+        fc.string({ minLength: 1, maxLength: 8 }).map((x) => `p-${x.replace(/[^a-z0-9]/giu, 'x')}`),
+        fc.subarray([...TEXT_AXES]),
+        (skipped, targetS, sessionSeed, textAxes) => {
+          const weights = Object.fromEntries(skipped.map((k) => [k, 0]))
+          const withMin = planSession({ sessionSeed, weights, targetS, textAxes })
+          const without = planSession({ sessionSeed, weights, targetS, textAxes, minimums: false })
+          expect(withMin.map((s) => s.segment)).toEqual(without.map((s) => s.segment))
+          withMin.forEach((s, i) => {
+            const o = without[i]!
+            if (s.kind === 'cat' && s.segment === 'quant') {
+              expect(o.kind === 'cat' ? o.budget_s : Number.NaN).toBeCloseTo(s.budget_s - QUANT_EXTRA_S, 9)
+              expect(s.minimum).toEqual({ min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S })
+              expect(s.optional).toBeUndefined()
+            } else {
+              expect(s).toEqual(o)
+              expect(s.kind === 'cat' ? s.minimum : undefined).toBeUndefined()
+            }
+          })
+        },
+      ),
+      { numRuns: 60 },
+    )
   })
 
   it('drops the blocks and segments of skipped axes (w_k = 0) and gives their time to the rest', () => {
     const plan = planSession({ sessionSeed: 'plan', weights: { WM: 0, SPA: 0, RT: 0 } })
     expect(plan.map((s) => (s.kind === 'block' ? s.family : `cat:${s.axes.join('+')}`))).toEqual(['cat:MAT', 'cat:QR', 'coding', 'reading'])
     const blockTime = plan.reduce((s, x) => s + (x.kind === 'block' ? x.item.expected_time_s : 0), 0)
-    for (const s of plan) if (s.kind === 'cat') expect(s.budget_s).toBeCloseTo((A15_TARGET_S - blockTime) / 2, 9)
+    for (const s of plan) if (s.kind === 'cat') expect(s.budget_s - extraOf(s)).toBeCloseTo((A15_TARGET_S - blockTime) / 2, 9)
     const none = planSession({ sessionSeed: 'plan', weights: Object.fromEntries(AXIS_CODES.map((k) => [k, 0])) })
     expect(none).toEqual([])
   })
@@ -879,7 +933,7 @@ describe('block scheduler (A15)', () => {
     const blocks = plan.flatMap((s) => (s.kind === 'block' ? [s] : []))
     expect(blocks.map((b) => b.family)).toEqual(['rt_simple', 'rt_choice4', 'span_fwd', 'span_bwd', 'corsi', 'coding'])
     const blockTime = blocks.reduce((t, b) => t + b.item.expected_time_s, 0)
-    for (const s of plan) if (s.kind === 'cat') expect(s.budget_s).toBeCloseTo((A15_TARGET_S - blockTime) / 3, 9)
+    for (const s of plan) if (s.kind === 'cat') expect(s.budget_s - extraOf(s)).toBeCloseTo((A15_TARGET_S - blockTime) / 3, 9)
   })
 
   it('RT is exempt: an RT sub-task is one family, measured every session; every other block is re-drawn', () => {

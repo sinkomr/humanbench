@@ -15,7 +15,7 @@ import { BackendError } from '../backend/errors'
 import { toServedItem, type ServedItem } from '../backend/items'
 import type { CatAnswer, CatNext, CatSource } from '../backend/session'
 import type { AxisCode } from '../engine/axes'
-import { A15_TARGET_S, MIN_ITEMS_SLACK, PUBLISH_MIN_ITEMS, TEXT_AXES, TEXT_PARTS, textPartOf } from '../engine/plan-table'
+import { A15_PLANNED_S, MIN_ITEMS_SLACK, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS, TEXT_AXES, TEXT_PARTS, textPartOf } from '../engine/plan-table'
 import { createRng } from '../engine/prng'
 import { demoTextItem } from '../render/text/demo'
 import { TEXT_MC_RENDERER } from '../render/text/spec'
@@ -231,7 +231,7 @@ describe('a pool without the text skills gives the six-part session, unchanged (
   it('without the setting: no text part is planned, and the server is never asked for a text skill', async () => {
     const t = new Taker(new PoolServer(bigPool(A15_CAT)))
     expect(t.v().segments.map((s) => s.id)).toEqual(['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'])
-    expect(t.v().targetS).toBe(A15_TARGET_S)
+    expect(t.v().targetS).toBe(A15_PLANNED_S)
     await t.finish()
     expect(t.server.asked.every((a) => a.length === 1 && A15_CAT.includes(a[0]!))).toBe(true)
     expect(t.trace.some((s) => s.probing)).toBe(false)
@@ -258,7 +258,7 @@ describe('a pool without the text skills gives the six-part session, unchanged (
     // By the end the plan is the six parts, and its target the six parts' target.
     const end = asked.v()
     expect(end.segments.map((s) => s.id)).toEqual(['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'])
-    expect(end.targetS).toBe(A15_TARGET_S)
+    expect(end.targetS).toBe(A15_PLANNED_S)
     expect(end.breakBefore).toBe(plain.v().breakBefore)
   })
 
@@ -320,7 +320,7 @@ describe('a text part the server has questions for', () => {
     const t = new Taker(server, { textAxes: ['LR'], skipped: ['RT'] })
     const v = await t.until((x) => x.phase === 'interstitial' && x.segment?.id === 'logical_reasoning')
     expect(v.segment).toMatchObject({ title: 'Logical Reasoning', kind: 'cat', axes: ['LR'], minutes: 5 })
-    expect(v.targetS).toBe(A15_TARGET_S + 300)
+    expect(v.targetS).toBe(A15_PLANNED_S + 300)
     expect(v.clockHeld).toBe(true)
     // The question is the server's pending item, kept for Start: nothing was asked twice.
     expect(server.askedFor('LR')).toBe(1)
@@ -380,6 +380,68 @@ describe('a text part the server has questions for', () => {
     expect(server.answers.every((a) => a.response === null)).toBe(true)
   })
 
+  it('the Quantitative part has the same rule online: six answered, at most two more shown, and the server running out still ends it (A15 amended 2026-10-12)', async () => {
+    const only = { skipped: ['RT', 'MAT', 'SPA', 'WM', 'PS'] as AxisCode[], targetS: 60 } // a minute of shared time, and the part's own minute
+    const slow = new Taker(new PoolServer(bigPool(['QR'])), only)
+    expect(slow.v().targetS).toBe(60 + QUANT_EXTRA_S)
+    slow.itemS = 100
+    await slow.finish()
+    expect(slow.run.result().itemsByAxis.QR).toBe(QUANT_MIN_ITEMS)
+    expect(slow.server.answered('QR').filter((a) => a.response !== null)).toHaveLength(QUANT_MIN_ITEMS)
+    expect(slow.run.result().segmentEnds).toEqual([{ segment: 'quant', reason: 'time' }])
+    expect(slow.run.result().budgets).toEqual([{ segment: 'quant', plannedS: 60 + QUANT_EXTRA_S, budgetS: 60 + QUANT_EXTRA_S }])
+
+    // One time-out: a seventh question makes up for it.
+    const one = new Taker(new PoolServer(bigPool(['QR'])), only)
+    one.itemS = 100
+    let n = 0
+    one.respond = () => (n++ === 2 ? null : '4')
+    await one.finish()
+    expect(one.run.result().itemsByAxis.QR).toBe(QUANT_MIN_ITEMS + 1)
+    expect(one.server.answered('QR').filter((a) => a.response !== null)).toHaveLength(QUANT_MIN_ITEMS)
+
+    // Every question runs out of time: eight are shown, then the part ends.
+    const none = new Taker(new PoolServer(bigPool(['QR'])), only)
+    none.respond = () => null
+    await none.finish()
+    expect(none.run.result().itemsByAxis.QR).toBe(QUANT_MIN_ITEMS + MIN_ITEMS_SLACK)
+    expect(none.run.result().reason).toBe('complete')
+
+    // The server has four: the part ends there, as any served part does.
+    const short = new Taker(new PoolServer({ QR: 4 }), only)
+    await short.finish()
+    expect(short.run.result().itemsByAxis.QR).toBe(4)
+    expect(short.run.result().segmentEnds).toEqual([{ segment: 'quant', reason: 'exhausted' }])
+
+    // With time to spare it is the time that ends the part, as before: more than six.
+    const quick = new Taker(new PoolServer(bigPool(['QR'])), { ...only, targetS: 600 })
+    quick.itemS = 40
+    await quick.finish()
+    expect(quick.run.result().itemsByAxis.QR).toBe(16) // 42 s a question with the slider, in 660 s
+  })
+
+  it('in a whole online session the Quantitative part has six answers or more, and Matrix & Series and Spatial are asked as they were', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.integer({ min: 20, max: 110 }), async (itemS) => {
+        const t = new Taker(new PoolServer(bigPool(A15_CAT)))
+        t.itemS = itemS
+        await t.finish()
+        const r = t.run.result()
+        expect(r.reason).toBe('complete')
+        expect(r.itemsByAxis.QR ?? 0).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
+        const [mat, spa, qr] = r.budgets
+        // The first two start with their third of the shared time at most; Quant with that and its own minute.
+        expect(mat!.budgetS).toBeLessThanOrEqual(mat!.plannedS + 1e-9)
+        expect(spa!.plannedS).toBeCloseTo(mat!.plannedS, 9)
+        expect(qr!.plannedS).toBeCloseTo(mat!.plannedS + QUANT_EXTRA_S, 9)
+        expect(qr!.budgetS).toBeGreaterThanOrEqual(QUANT_EXTRA_S - 1e-9)
+        // Two questions use up the part's time: the first two parts stop at the floor of three, as before.
+        if ((itemS + 2) * 2 >= mat!.plannedS) for (const k of ['MAT', 'SPA'] as const) expect(r.itemsByAxis[k], k).toBe(3)
+      }),
+      { numRuns: 12 },
+    )
+  })
+
   it('ends when the server runs out, like any served part', async () => {
     const server = new PoolServer({ KHU: 3 })
     const t = new Taker(server, { textAxes: ['KHU'], skipped: ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] })
@@ -389,10 +451,10 @@ describe('a text part the server has questions for', () => {
     expect(t.run.sessionState().flags.done_knowledge_humanities).toBe(true)
   })
 
-  it('runs all five in the order of the plan, each with five answers or more, and the session is planned at 41 minutes', async () => {
+  it('runs all five in the order of the plan, each with five answers or more, and the session is planned at 42 minutes', async () => {
     const server = new PoolServer(bigPool([...A15_CAT, ...TEXT_AXES]))
     const t = new Taker(server, { textAxes: TEXT_AXES })
-    expect(t.v().targetS).toBe(41 * 60)
+    expect(t.v().targetS).toBe(42 * 60)
     await t.finish()
     expect(t.trace.filter((s) => s.phase === 'interstitial').map((s) => s.segment)).toEqual([
       'rt',
@@ -408,7 +470,7 @@ describe('a text part the server has questions for', () => {
       'coding_reading',
     ])
     for (const k of TEXT_AXES) expect(t.run.result().itemsByAxis[k], k).toBeGreaterThanOrEqual(PUBLISH_MIN_ITEMS)
-    expect(t.v().targetS).toBe(41 * 60)
+    expect(t.v().targetS).toBe(42 * 60)
     // Every text question went to the server under the skill it was asked for.
     for (const k of TEXT_AXES) expect(server.answered(k).length, k).toBe(t.run.result().itemsByAxis[k])
     for (const p of TEXT_PARTS) expect(t.run.sessionState().flags[`done_${p.id}`], p.id).toBe(true)
@@ -418,11 +480,11 @@ describe('a text part the server has questions for', () => {
   it('the target shrinks by the share of each part the server does not have, and the break follows the parts that are left', async () => {
     const server = new PoolServer(bigPool([...A15_CAT, 'VOC']))
     const t = new Taker(server, { textAxes: TEXT_AXES })
-    expect(t.v().targetS).toBe(41 * 60)
+    expect(t.v().targetS).toBe(42 * 60)
     await t.until((v) => v.phase === 'interstitial' && v.segment?.id === 'spatial')
-    expect(t.v().targetS).toBe(41 * 60 - 300 - 130) // Logical Reasoning and STEM Knowledge were not there
+    expect(t.v().targetS).toBe(42 * 60 - 300 - 130) // Logical Reasoning and STEM Knowledge were not there
     await t.finish()
-    expect(t.v().targetS).toBe(A15_TARGET_S + 120)
+    expect(t.v().targetS).toBe(A15_PLANNED_S + 120)
     expect(t.v().segments.map((s) => s.id)).toEqual(['rt', 'matrix_series', 'spatial', 'vocabulary', 'memory', 'quant', 'coding_reading'])
     expect(t.trace.filter((s) => s.phase === 'break_offer')).toHaveLength(1)
   })
@@ -455,7 +517,7 @@ describe('skipping a text part', () => {
     await t.finish()
     expect(server.askedFor('LR')).toBe(0)
     expect(server.askedFor('KAP')).toBe(0)
-    expect(t.v().targetS).toBe(A15_TARGET_S + 130 + 120 + 130)
+    expect(t.v().targetS).toBe(A15_PLANNED_S + 130 + 120 + 130)
   })
 
   it('while its question is on its way: the item that still arrives is let go before the next part asks', async () => {
@@ -535,7 +597,7 @@ describe('where text parts never are', () => {
   it('not in the static version, whatever the setting says', () => {
     const run = new SessionRun({ sessionId: 's_LOCALSESSION001', startedMs: 1, now: () => 0, device: TEST_DEVICE, rtInput: 'keyboard', textAxes: TEXT_AXES })
     expect(run.view().segments.map((s) => s.id)).toEqual(['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'])
-    expect(run.view().targetS).toBe(A15_TARGET_S)
+    expect(run.view().targetS).toBe(A15_PLANNED_S)
     expect(run.view().served).toBe(false)
   })
 

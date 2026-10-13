@@ -73,6 +73,9 @@
  * A text part goes on past its share until `min_items` questions are answered (five: the server publishes
  * a skill from five answers of one session), showing at most `MIN_ITEMS_SLACK` more to get there. The time
  * spent in text parts is kept out of the six parts' budgets, which are those of a session without them.
+ * The Quantitative part has the same rule in both versions (`plan-table.ts` A15_MINIMUMS; owner decision
+ * 2026-10-12): six answered questions, at most `MIN_ITEMS_SLACK` more shown, its planned time its share
+ * plus the rule's `extra_s`, which the session's target grows by. Not in a focus session.
  * A served text item names no family, so a part cannot tell a stray one by looking: when a part is skipped
  * while its question is on the way, the answer to that request is waited for and the item let go before the
  * next part asks.
@@ -360,6 +363,8 @@ interface Segment {
   status: SegmentStatus | 'absent'
   /** A served text part (M3.11): its minimum of answered questions. Undefined on the A15 parts. */
   readonly optional?: { readonly min_items: number }
+  /** An A15 part with a minimum of answered questions (Quant), and the planned seconds it adds to the part's share. */
+  readonly minimum?: { readonly min_items: number; readonly extra_s: number }
   /** A text part whose first question has been asked for (it is held, or the part is absent). */
   probed: boolean
   /** Start was pressed and the part has not ended yet. */
@@ -461,8 +466,10 @@ export class SessionRun {
   readonly #cfg: RunConfig
   readonly #seed: string
   readonly #clock: SessionClock
-  /** The target without the text parts: the A15 target, a focus session's, or a continuation's. */
+  /** The target without the text parts and without what a part's minimum adds: the A15 target, a focus session's, or a continuation's. */
   readonly #baseTargetS: number
+  /** Planned seconds the minimums of the parts still to run add to the target (Quant's six questions). */
+  readonly #minimumExtraS: number
   /** `RunConfig.breakAtS`, or half the plan's target without the text parts. */
   readonly #baseBreakAtS: number
   /** Without text parts: the index of the segment before whose interstitial the break is offered, or -1 (see the module comment). */
@@ -521,8 +528,8 @@ export class SessionRun {
   readonly #catResponses: ResponseTuple[] = []
   readonly #catSeen: string[] = []
   readonly #catAxes: AxisCode[] = []
-  /** The axes of the served questions that got an answer (not a time-out): a text part's minimum counts these. */
-  readonly #catAnsweredAxes: AxisCode[] = []
+  /** The axes of this session's questions, served or made here, that got an answer (not a time-out): a part's minimum counts these. */
+  readonly #answeredAxes: AxisCode[] = []
   readonly #outbox: CatAnswer[] = []
   #loading: Loading | null = null
   #problem: LoadProblem | null = null
@@ -554,7 +561,7 @@ export class SessionRun {
     if (cfg.focus !== undefined) for (const k of AXIS_CODES) if (!cfg.focus.includes(k) && !this.#skipped.has(k)) this.#weights[k] = 0
     // Text parts only where the server serves (M3.11): never in the static version, a focus session or a continuation.
     const textAxes = cfg.cat !== undefined && cfg.focus === undefined && cfg.continues === undefined ? (cfg.textAxes ?? []) : []
-    const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: planTargetS, seenFamilies: this.#seenBase, textAxes })
+    const plan = planSession({ sessionSeed: this.#seed, weights: this.#weights as AxisWeights, targetS: planTargetS, seenFamilies: this.#seenBase, textAxes, minimums: cfg.focus === undefined })
     this.#segments = SessionRun.#group(plan)
     this.#hasOptional = this.#segments.some((s) => s.optional !== undefined)
     const cont = cfg.continues
@@ -567,7 +574,8 @@ export class SessionRun {
       }
     }
     const left = this.#segments.filter((s) => s.status === 'upcoming')
-    this.#baseTargetS = cont === undefined ? planTargetS : Math.max(60, left.reduce((t, s) => t + s.plannedS, 0))
+    this.#minimumExtraS = (cont === undefined ? this.#segments : left).reduce((t, s) => t + (s.minimum?.extra_s ?? 0), 0)
+    this.#baseTargetS = cont === undefined ? planTargetS : Math.max(60, left.reduce((t, s) => t + s.plannedS, 0) - this.#minimumExtraS)
     const halfWay = SessionRun.#halfWay(this.#segments, this.#baseBreakAtS)
     // A continuation offers the break only between two of its own parts, never before the first one.
     this.#fixedBreakIdx = cont !== undefined && halfWay <= this.#nextLive(-1) ? -1 : halfWay
@@ -588,7 +596,8 @@ export class SessionRun {
       }
       const axes = step.kind === 'block' ? [step.axis] : [...step.axes]
       const optional = step.kind === 'cat' && step.optional !== undefined ? { optional: step.optional } : {}
-      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', ...optional, probed: false, running: false, plannedS: 0, budgetS: 0, startedAtS: 0 })
+      const minimum = step.kind === 'cat' && step.minimum !== undefined ? { minimum: step.minimum } : {}
+      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', ...optional, ...minimum, probed: false, running: false, plannedS: 0, budgetS: 0, startedAtS: 0 })
     }
     return out.map((s) => ({ ...s, plannedS: s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : st.budget_s), 0) }))
   }
@@ -625,9 +634,10 @@ export class SessionRun {
     return t
   }
 
-  /** The session's target now: the A15 target plus the shares of the text parts still there. */
+  /** The session's target now: the A15 target, what the minimums add, and the shares of the text parts still there. */
   #targetS(): number {
-    return this.#hasOptional ? this.#baseTargetS + this.#optionalPlannedS() : this.#baseTargetS
+    const base = this.#baseTargetS + this.#minimumExtraS
+    return this.#hasOptional ? base + this.#optionalPlannedS() : base
   }
 
   /** The planned second the break is placed nearest to (half the target unless configured). */
@@ -674,6 +684,8 @@ export class SessionRun {
     let seconds: number
     if (s.kind === 'block') seconds = s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : 0), 0)
     else seconds = s.status === 'current' && s.budgetS > 0 ? s.budgetS : this.#budgetFor(idx)
+    // A part that runs to a number of answers takes its planned time however little of the shared time is left.
+    if (s.minimum !== undefined && s.axes.some((k) => !this.#skipped.has(k))) seconds = Math.max(seconds, s.plannedS)
     if (s.kind === 'cat' && s.axes.some((k) => !this.#skipped.has(k) && this.#itemsOn(k) < COVERAGE_FLOOR)) seconds = Math.max(seconds, FLOOR_SEGMENT_MIN_S)
     // An absent part is in no view (`view()` leaves it out); the cast is for the type only.
     return { id: s.id, title: info.title, cluster: info.cluster, axes: s.axes, kind: s.kind, minutes: minutesOf(seconds), status: s.status as SegmentStatus }
@@ -833,8 +845,10 @@ export class SessionRun {
       else if (i > idx) blocksAfter += s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : 0), 0)
     }
     if (catLeft === 0) return 0
-    const planned = this.#segments[idx]?.plannedS ?? 0
-    return Math.min(planned, Math.max(0, (this.#baseTargetS - elapsed - blocksAfter) / catLeft))
+    // What a minimum adds (Quant) is the part's own, on top of its share of the target.
+    const extra = own?.minimum?.extra_s ?? 0
+    const planned = (own?.plannedS ?? 0) - extra
+    return Math.min(planned, Math.max(0, (this.#baseTargetS - elapsed - blocksAfter) / catLeft)) + extra
   }
 
   /** Index of the first segment after `from` that still has an axis to measure (and was not done earlier in the sitting), or -1. */
@@ -959,14 +973,17 @@ export class SessionRun {
       return
     }
     const elapsed = this.#clock.elapsedS()
+    // Short of its minimum of answers (Quant), the part may go on past its time, as far as the hard stop.
+    const toHardStop = Math.max(0, this.#hardStopS - elapsed)
+    const left = s.budgetS - (elapsed - s.startedAtS)
     const sel = selectNext(
       {
         sessionSeed: this.#seed,
         posterior: sessionPosterior(this.#obs),
         administered: this.#administered,
         seenFamilies: this.#seenBase,
-        remainingS: s.budgetS - (elapsed - s.startedAtS),
-        floorRemainingS: Math.max(0, this.#hardStopS - elapsed),
+        remainingS: this.#belowMinimum(s, axes) ? Math.max(left, toHardStop) : left,
+        floorRemainingS: toHardStop,
         priorCounts: this.#priorCounts,
       },
       selectionRng(this.#seed, this.#administered.length),
@@ -1008,14 +1025,16 @@ export class SessionRun {
   }
 
   /**
-   * A text part (M3.11) is still short of the answers the server publishes a skill from, and may show
-   * more to get there: fewer than `min_items` answered, and fewer than `min_items + MIN_ITEMS_SLACK` shown.
+   * A part with a minimum (a text part, M3.11; Quant, A15_MINIMUMS) is still short of its answers, and may
+   * show more to get there: fewer than `min_items` answered in this session, and fewer than
+   * `min_items + MIN_ITEMS_SLACK` shown. The same in both versions.
    */
   #belowMinimum(s: Segment, axes: readonly AxisCode[]): boolean {
-    const min = s.optional?.min_items
+    const min = s.optional?.min_items ?? s.minimum?.min_items
     if (min === undefined) return false
     const count = (list: readonly AxisCode[], k: AxisCode): number => list.reduce((n, a) => n + (a === k ? 1 : 0), 0)
-    return axes.some((k) => count(this.#catAnsweredAxes, k) < min && count(this.#catAxes, k) < min + MIN_ITEMS_SLACK)
+    const shown = (k: AxisCode): number => count(this.#catAxes, k) + this.#administered.reduce((n, a) => n + (a.axis === k ? 1 : 0), 0)
+    return axes.some((k) => count(this.#answeredAxes, k) < min && shown(k) < min + MIN_ITEMS_SLACK)
   }
 
   /** (Re)starts the wait for the next served item of the part that is loading. */
@@ -1269,6 +1288,7 @@ export class SessionRun {
     const o = itemObservation(item, correct)
     if (o !== null) this.#obs.push(o)
     this.#administered.push(item)
+    if (response !== null) this.#answeredAxes.push(item.axis)
     this.#seenItems.push(item.item_id)
     this.#seenFamilies.push(item.family_id)
     if (confidencePct !== null) this.#rated.push({ pct: confidencePct, correct })
@@ -1297,7 +1317,7 @@ export class SessionRun {
     this.#catResponses.push([s.item_id, 0, response, null, round1(rtMs), confidencePct])
     this.#catSeen.push(s.item_id)
     this.#catAxes.push(this.#servedAxis(s))
-    if (response !== null) this.#catAnsweredAxes.push(this.#servedAxis(s))
+    if (response !== null) this.#answeredAxes.push(this.#servedAxis(s))
     this.#catWindows.push({ onset, end })
     this.#outbox.push({ item: s, response, rtMs: Math.max(0, rtMs), confidence: confidencePct, flags: this.#servedFlags(s.item_id, onset, end), release })
     void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
