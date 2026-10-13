@@ -7,7 +7,7 @@
  *
  * - {@link A15_SEGMENTS}: the six parts of the M1 session, on every device and in both versions.
  *   Their time is {@link A15_TARGET_S}, shared as before (`planSession`), plus what a part's
- *   minimum adds ({@link A15_MINIMUMS}: the Quantitative part, below). **The text parts change
+ *   minimum adds ({@link A15_MINIMUMS}: a minute for the Quantitative part, below). **The text parts change
  *   nothing of them**: a session without served text parts is planned, budgeted and timed the same
  *   with or without the setting.
  * - {@link TEXT_PARTS}: the parts of served text multiple choice (M3.11 phase 1) and of served
@@ -29,15 +29,15 @@
  *
  * | Part | Axis | Share | Why |
  * |---|---|---|---|
- * | Logical Reasoning | LR | 5 min | an argument to read per question (the bank's expected time is 60 s) |
+ * | Logical Reasoning | LR | 6 min | an argument to read per question (the bank's expected time is 60 s), six questions |
  * | Reading Comprehension | RC | 9 min | two passages of 3 or 4 questions: about 100 s to read one, 45 s a question |
  * | Vocabulary | VOC | 2 min | a word per question (15 s) |
  * | STEM knowledge | KST | 2 min 10 s | a fact per question (20 s) |
  * | Humanities knowledge | KHU | 2 min 10 s | the same |
  * | Arts & Practical | KAP | 2 min 10 s | the same |
  *
- * The five of phase 1 together are 13.5 minutes, so a session with them is planned at 42 minutes (28.5 +
- * 13.5); with Reading Comprehension, 51. The owner's ceiling for a session is 60 minutes (2026-10-12);
+ * The five of phase 1 together are 14.5 minutes, so a session with them is planned at 43 minutes (28.5 +
+ * 14.5); with Reading Comprehension, 52. The owner's ceiling for a session is 60 minutes (2026-10-12);
  * the hard stop is at 57 active minutes (`session/constants.ts`).
  *
  * ## Passages ({@link TextPart.sets}; M3.11 phase 2)
@@ -46,7 +46,7 @@
  * and says of each where it stands in its set. A part of passages is counted in passages: Reading
  * Comprehension reads {@link RC_PASSAGES} (two), which is 6 to 8 questions, and then ends, whatever is left
  * of its share; a passage that has been started is always finished (its time does not cut it, only the
- * hard stop, a skip or "finish early" do); and the five-answer rule below still holds, so when fewer than
+ * hard stop, a skip or "finish early" do); and its minimum of five answers ({@link PART_MINIMUMS}) still holds, so when fewer than
  * five questions were answered after two passages (some ran out of time) one more passage is read.
  *
  * ## How long a session is said to be ({@link sessionOutline}, {@link aboutMinutes})
@@ -61,34 +61,38 @@
  * (re-measure and change them here when a share, a minimum or a task's length changes). The plan, the
  * budgets and the place of the break are untouched by them.
  *
- * ## Why five answers ({@link PUBLISH_MIN_ITEMS})
+ * ## A minimum of answered questions for every question part ({@link PART_MINIMUMS}; owner decision 2026-10-13)
  *
- * The server publishes a skill's score only from a session that holds at least five scored answers
- * on it (`rescore.min_axis_items`, supabase/README.md "What `rescore` does not tell": fewer would
- * read single answers out). A text part that stopped at the §7.4 floor of three would therefore
- * measure nothing the person ever sees. So a text part goes on past its share until five questions
- * are answered ({@link TextPart.min_items}), and at most {@link MIN_ITEMS_SLACK} more are shown to
- * get there when some ran out of time. The six M1 parts keep their own rule (the floor of three),
- * but for the Quantitative part:
+ * The owner, after a full session: "its ok to have more questions if there is time, but each section
+ * should have a minimum number of questions asked, even if running over the originally estimated time
+ * for that section." So every part that asks questions has a stated minimum of ANSWERED questions that
+ * holds past its time share, in ONE table, {@link PART_MINIMUMS}: six for Matrix & Series, Spatial,
+ * Quantitative and each text part; Reading Comprehension is counted in passages (two, 6 to 8 questions)
+ * and keeps five as the least it will accept of them. The rule, the same for every part and in both
+ * versions (`session/run.ts`):
  *
- * ## Six questions in the Quantitative part ({@link A15_MINIMUMS}; owner decision 2026-10-12)
+ * - the part goes on past its time until `min_items` of its questions are answered;
+ * - a question that runs out of time is not an answer, so the part shows more to get there, but at
+ *   most {@link MIN_ITEMS_SLACK} more than the minimum (the bounded extra: a person who lets every
+ *   question run out is not kept in the part);
+ * - once the minimum is met the part's time decides, so there are more questions when time remains;
+ * - skipping the part, "finish early", the hard stop and the precision stop work as before, and a focus
+ *   session has no minimum (its time is the skills it names).
  *
- * The Quantitative part is the last of the three that share the session's time, and a question of
- * it takes close to a minute, so its share bought about four answers (three to seven in simulated
- * sessions): fewer than the five a skill is published from, in most sessions. The owner: "go to six
- * questions". So the part follows the rule of the text parts, in the online version and in the
- * device-only version alike: it goes on past its time until {@link QUANT_MIN_ITEMS} questions are
- * answered, and at most {@link MIN_ITEMS_SLACK} more are shown to get there when some ran out of
- * time (six answered leaves the published five with one to spare). A count was chosen over a larger
- * time share because a share buys a number of answers that depends on the pace of the person and
- * on how long the timed tasks before it took, which is what left the part short; the count is the
- * thing the server asks for.
+ * Why six and not the §7.4 floor of three: the server publishes a skill's score only from a session
+ * that holds at least five scored answers on it ({@link PUBLISH_MIN_ITEMS}; `rescore.min_axis_items`,
+ * supabase/README.md "What `rescore` does not tell": fewer would read single answers out), and six
+ * answered leaves that five with one to spare. A count is used, not a larger time share, because a
+ * share buys a number of answers that depends on the person's pace and on how long the timed tasks
+ * before it ran. In the owner's session of 2026-10-12 Matrix & Series got five questions.
  *
- * `extra_s` is what the rule adds to the plan: the part's planned time is its share plus this
- * (about 5 + 1 = 6 minutes, six questions at 55 to 60 s), and the session's is
- * {@link A15_TARGET_S} plus this, 28.5 minutes, still said as "about 30 minutes". Nothing else of
- * the six parts moves: the other parts' budgets and the place of the break are worked out from
- * {@link A15_TARGET_S} as before. A focus session has no minimum (its time is the skills it names).
+ * `extra_s` ({@link A15_MINIMUMS}) is what a minimum adds to the plan of one of the six parts: the
+ * Quantitative part's planned time is its share plus a minute (owner decision 2026-10-12: about
+ * 5 + 1 = 6 minutes, six questions at 55 to 60 s), and the session's is {@link A15_TARGET_S} plus
+ * that, 28.5 minutes. Matrix & Series and Spatial add nothing to the plan: their share already buys
+ * six questions for a taker at the model's pace, and the minimum is there for the taker it does not.
+ * Nothing else of the six parts moves: the budgets and the place of the break are worked out from
+ * {@link A15_TARGET_S} as before.
  */
 
 import type { AxisCode } from './axes'
@@ -132,8 +136,48 @@ export const A15_SEGMENTS: readonly SegmentDef[] = Object.freeze([
 /** Answers on one skill in one session from which the server publishes its score (`rescore.min_axis_items`). */
 export const PUBLISH_MIN_ITEMS = 5
 
-/** Answered questions the Quantitative part runs to in a normal session (owner decision 2026-10-12: "go to six questions"). */
-export const QUANT_MIN_ITEMS = 6
+/**
+ * Answered questions every question part runs to in a normal session (owner decision 2026-10-13; the
+ * Quantitative part since 2026-10-12: "go to six questions"). One more than {@link PUBLISH_MIN_ITEMS}.
+ */
+export const PART_MIN_ITEMS = 6
+
+/** Questions a part with a minimum may show beyond it to reach it (some may run out of time). */
+export const MIN_ITEMS_SLACK = 2
+
+/** Passages the Reading Comprehension part reads (module comment, "Passages"). */
+export const RC_PASSAGES = 2
+
+/** The parts that ask questions: three of the six A15 parts and every text part. */
+export type QuestionSegmentId = 'matrix_series' | 'spatial' | 'quant' | TextSegmentId
+
+/** The minimum of one question part (module comment, "A minimum of answered questions"). */
+export interface PartMinimum {
+  /** Answered questions before the part's time may end it. */
+  readonly min_items: number
+  /** A part of passages: how many it reads before it ends. Absent on the others. */
+  readonly sets?: number
+}
+
+/**
+ * THE table of minimums (owner: change them here): the answered questions each question part runs to,
+ * whatever its time share says. Reading Comprehension is counted in passages: it reads two (6 to 8
+ * questions) and reads a third only when fewer than five of those were answered.
+ */
+export const PART_MINIMUMS: Readonly<Record<QuestionSegmentId, PartMinimum>> = Object.freeze({
+  matrix_series: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  spatial: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  quant: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  logical_reasoning: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  knowledge_stem: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  vocabulary: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  reading_comprehension: Object.freeze({ min_items: PUBLISH_MIN_ITEMS, sets: RC_PASSAGES }),
+  knowledge_humanities: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  knowledge_arts: Object.freeze({ min_items: PART_MIN_ITEMS }),
+})
+
+/** Answered questions the Quantitative part runs to ({@link PART_MINIMUMS}). */
+export const QUANT_MIN_ITEMS = PART_MINIMUMS.quant.min_items
 
 /** Planned seconds the six-question rule adds to the Quantitative part's share, and so to the session. */
 export const QUANT_EXTRA_S = 60
@@ -144,9 +188,14 @@ export interface A15Minimum {
   readonly extra_s: number
 }
 
-/** The A15 parts that run to a number of answered questions (owner: change them here). */
+/**
+ * The minimums of the A15 parts as the plan takes them: {@link PART_MINIMUMS} with the planned seconds
+ * each adds to its part's share (module comment: only the Quantitative part's adds any).
+ */
 export const A15_MINIMUMS: Readonly<Partial<Record<A15SegmentId, A15Minimum>>> = Object.freeze({
-  quant: Object.freeze({ min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S }),
+  matrix_series: Object.freeze({ min_items: PART_MINIMUMS.matrix_series.min_items, extra_s: 0 }),
+  spatial: Object.freeze({ min_items: PART_MINIMUMS.spatial.min_items, extra_s: 0 }),
+  quant: Object.freeze({ min_items: PART_MINIMUMS.quant.min_items, extra_s: QUANT_EXTRA_S }),
 })
 
 /** Planned seconds of the six-part session: the A15 target and what the minimums add. */
@@ -161,12 +210,6 @@ export const A15_TYPICAL_S = 1880
 
 /** What the six-part session typically runs over its plan, in seconds. */
 export const A15_TYPICAL_OVER_S = A15_TYPICAL_S - A15_PLANNED_S
-
-/** Questions a part with a minimum may show beyond it to reach it (some may run out of time). */
-export const MIN_ITEMS_SLACK = 2
-
-/** Passages the Reading Comprehension part reads (module comment, "Passages"). */
-export const RC_PASSAGES = 2
 
 /** The axes of the served text parts (text multiple choice and passages), in the canonical axis order. */
 export const TEXT_AXES = ['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'] as const satisfies readonly AxisCode[]
@@ -183,7 +226,7 @@ export interface TextPart {
   readonly after: A15SegmentId
   /** Planned seconds, on top of the six parts' time (module comment: "The shares"). */
   readonly share_s: number
-  /** Answered questions before the part's time may end it (module comment: "Why five answers"). */
+  /** Answered questions before the part's time may end it ({@link PART_MINIMUMS}). */
   readonly min_items: number
   /** Typical active seconds of the part: the simulated median (module comment: "How long a session is said to be"). */
   readonly typical_s: number
@@ -196,12 +239,12 @@ export interface TextPart {
  * after the same A15 part run in the order listed here).
  */
 export const TEXT_PARTS: readonly TextPart[] = Object.freeze([
-  { id: 'logical_reasoning', axis: 'LR', after: 'matrix_series', share_s: 300, min_items: PUBLISH_MIN_ITEMS, typical_s: 310 },
-  { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, min_items: PUBLISH_MIN_ITEMS, typical_s: 130 },
-  { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, min_items: PUBLISH_MIN_ITEMS, typical_s: 135 },
-  { id: 'reading_comprehension', axis: 'RC', after: 'spatial', share_s: 540, min_items: PUBLISH_MIN_ITEMS, typical_s: 530, sets: RC_PASSAGES },
-  { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, min_items: PUBLISH_MIN_ITEMS, typical_s: 130 },
-  { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, min_items: PUBLISH_MIN_ITEMS, typical_s: 130 },
+  { id: 'logical_reasoning', axis: 'LR', after: 'matrix_series', share_s: 360, ...PART_MINIMUMS.logical_reasoning, typical_s: 370 },
+  { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, ...PART_MINIMUMS.knowledge_stem, typical_s: 130 },
+  { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, ...PART_MINIMUMS.vocabulary, typical_s: 135 },
+  { id: 'reading_comprehension', axis: 'RC', after: 'spatial', share_s: 540, ...PART_MINIMUMS.reading_comprehension, typical_s: 530 },
+  { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_humanities, typical_s: 130 },
+  { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_arts, typical_s: 130 },
 ] as const satisfies readonly TextPart[])
 
 /** The text part of an axis, or undefined. */

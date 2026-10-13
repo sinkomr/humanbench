@@ -1,4 +1,5 @@
 import fc from 'fast-check'
+import type { A15SegmentId } from './plan-table'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, initialSigma, N_AXES, type AxisCode } from './axes'
 import { info2pl, info3pl, logistic } from './irt'
@@ -831,27 +832,26 @@ describe('block scheduler (A15)', () => {
     for (const s of short) if (s.kind === 'cat') expect(s.budget_s - extraOf(s)).toBe(0)
   })
 
-  it('the Quantitative part runs to six answers, with a minute of its own on top of its share; no other part has a minimum (A15 amended 2026-10-12)', () => {
+  it('every question part runs to six answers; only the Quantitative part has a minute of its own on top of its share (A15 amended 2026-10-12, 2026-10-13)', () => {
     const cats = planSession({ sessionSeed: 'plan' }).flatMap((s) => (s.kind === 'cat' ? [s] : []))
     expect(cats.map((c) => [c.segment, c.minimum])).toEqual([
-      ['matrix_series', undefined],
-      ['spatial', undefined],
+      ['matrix_series', { min_items: 6, extra_s: 0 }],
+      ['spatial', { min_items: 6, extra_s: 0 }],
       ['quant', { min_items: 6, extra_s: 60 }],
     ])
-    expect(A15_MINIMUMS).toEqual({ quant: { min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S } })
+    expect(A15_MINIMUMS.quant).toEqual({ min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S })
     expect(QUANT_MIN_ITEMS).toBeGreaterThan(PUBLISH_MIN_ITEMS) // one time-out still leaves what a skill is published from
     expect(cats[2]!.budget_s).toBeCloseTo(cats[0]!.budget_s + QUANT_EXTRA_S, 9)
-    // Without the minimums the plan is the one of before, to the second, and the other parts are the same in both.
+    // Without the minimums the plan is the one of before, to the second: the budgets of the other parts are the same in both.
     const plain = planSession({ sessionSeed: 'plan', minimums: false })
     expect(plain.every((s) => s.kind !== 'cat' || s.minimum === undefined)).toBe(true)
     const plainCats = plain.flatMap((s) => (s.kind === 'cat' ? [s] : []))
     for (const c of plainCats) expect(c.budget_s).toBe(plainCats[0]!.budget_s)
-    expect(planSession({ sessionSeed: 'plan' }).filter((s) => s.segment !== 'quant')).toEqual(plain.filter((s) => s.segment !== 'quant'))
-    // A plan without Quant has no minimum, and no time added.
-    expect(planSession({ sessionSeed: 'plan', weights: { QR: 0 } })).toEqual(planSession({ sessionSeed: 'plan', weights: { QR: 0 }, minimums: false }))
+    expect(cats.slice(0, 2).map((c) => c.budget_s)).toEqual(plainCats.slice(0, 2).map((c) => c.budget_s))
+    expect(planSession({ sessionSeed: 'plan' }).filter((s) => s.kind === 'block')).toEqual(plain.filter((s) => s.kind === 'block'))
   })
 
-  it('whatever is skipped, seen or planned for, the minimum changes only the Quantitative part, by its extra time', () => {
+  it('whatever is skipped, seen or planned for, the minimums change no budget but the Quantitative part’s, by its extra time', () => {
     fc.assert(
       fc.property(
         fc.subarray(['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] as AxisCode[]),
@@ -865,10 +865,14 @@ describe('block scheduler (A15)', () => {
           expect(withMin.map((s) => s.segment)).toEqual(without.map((s) => s.segment))
           withMin.forEach((s, i) => {
             const o = without[i]!
-            if (s.kind === 'cat' && s.segment === 'quant') {
-              expect(o.kind === 'cat' ? o.budget_s : Number.NaN).toBeCloseTo(s.budget_s - QUANT_EXTRA_S, 9)
-              expect(s.minimum).toEqual({ min_items: QUANT_MIN_ITEMS, extra_s: QUANT_EXTRA_S })
-              expect(s.optional).toBeUndefined()
+            if (s.kind === 'cat' && s.optional === undefined) {
+              const m = A15_MINIMUMS[s.segment as A15SegmentId]!
+              expect(s.minimum).toEqual({ min_items: m.min_items, extra_s: m.extra_s })
+              expect(m.extra_s).toBe(s.segment === 'quant' ? QUANT_EXTRA_S : 0)
+              expect(o.kind === 'cat' ? o.budget_s : Number.NaN).toBeCloseTo(s.budget_s - m.extra_s, 9)
+              const { minimum: _minimum, budget_s: _budget, ...rest } = s
+              const { budget_s: _b, ...restO } = o as typeof s
+              expect(rest).toEqual(restO)
             } else {
               expect(s).toEqual(o)
               expect(s.kind === 'cat' ? s.minimum : undefined).toBeUndefined()

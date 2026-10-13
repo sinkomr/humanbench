@@ -15,7 +15,7 @@ import { BackendError } from '../backend/errors'
 import { toServedItem, type ServedItem } from '../backend/items'
 import type { CatAnswer, CatNext, CatSource } from '../backend/session'
 import type { AxisCode } from '../engine/axes'
-import { A15_TYPICAL_S, MIN_ITEMS_SLACK, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS, TEXT_PARTS as ALL_TEXT_PARTS, sessionOutline, textPartOf } from '../engine/plan-table'
+import { A15_TYPICAL_S, MIN_ITEMS_SLACK, PART_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS, TEXT_PARTS as ALL_TEXT_PARTS, sessionOutline, textPartOf } from '../engine/plan-table'
 import { createRng } from '../engine/prng'
 import { demoTextItem } from '../render/text/demo'
 import { TEXT_MC_RENDERER } from '../render/text/spec'
@@ -324,7 +324,7 @@ describe('a text part the server has questions for', () => {
     const server = new PoolServer(bigPool([...A15_CAT, 'LR']))
     const t = new Taker(server, { textAxes: ['LR'], skipped: ['RT'] })
     const v = await t.until((x) => x.phase === 'interstitial' && x.segment?.id === 'logical_reasoning')
-    expect(v.segment).toMatchObject({ title: 'Logical Reasoning', kind: 'cat', axes: ['LR'], minutes: 5 })
+    expect(v.segment).toMatchObject({ title: 'Logical Reasoning', kind: 'cat', axes: ['LR'], minutes: 6 })
     expect(v.targetS).toBe(typical(['LR']))
     expect(typical(['LR'])).toBe(A15_TYPICAL_S + textPartOf('LR')!.typical_s)
     expect(v.clockHeld).toBe(true)
@@ -363,12 +363,12 @@ describe('a text part the server has questions for', () => {
     expect(JSON.stringify(t.v())).not.toMatch(/"key"|"correct"|"index"/u)
   })
 
-  it('goes on past its share until five questions are answered, and stops on its share once they are', async () => {
+  it('goes on past its share until six questions are answered, and stops on its share once they are', async () => {
     const server = new PoolServer(bigPool(['VOC']))
     const t = new Taker(server, { textAxes: ['VOC'], skipped: ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] })
     t.itemS = 100 // one question takes most of the two-minute share
     await t.finish()
-    expect(t.run.result().itemsByAxis.VOC).toBe(PUBLISH_MIN_ITEMS)
+    expect(t.run.result().itemsByAxis.VOC).toBe(PART_MIN_ITEMS)
     expect(t.run.result().segmentEnds).toEqual([{ segment: 'vocabulary', reason: 'time' }])
 
     const quick = new Taker(new PoolServer(bigPool(['VOC'])), { textAxes: ['VOC'], skipped: ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] })
@@ -377,12 +377,12 @@ describe('a text part the server has questions for', () => {
     expect(quick.run.result().itemsByAxis.VOC).toBe(10)
   })
 
-  it('shows at most two more than five when questions run out of time, then lets the part end', async () => {
+  it('shows at most two more than six when questions run out of time, then lets the part end', async () => {
     const server = new PoolServer(bigPool(['KST']))
     const t = new Taker(server, { textAxes: ['KST'], skipped: ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] })
     t.respond = () => null // every question runs out of time
     await t.finish()
-    expect(t.run.result().itemsByAxis.KST).toBe(PUBLISH_MIN_ITEMS + MIN_ITEMS_SLACK)
+    expect(t.run.result().itemsByAxis.KST).toBe(PART_MIN_ITEMS + MIN_ITEMS_SLACK)
     expect(server.answers.every((a) => a.response === null)).toBe(true)
   })
 
@@ -457,10 +457,10 @@ describe('a text part the server has questions for', () => {
     expect(t.run.sessionState().flags.done_knowledge_humanities).toBe(true)
   })
 
-  it('runs all five in the order of the plan, each with five answers or more; the session is planned at 42 minutes and its target is what it typically takes', async () => {
+  it('runs all five in the order of the plan, each with six answers or more; the session is planned at 43 minutes and its target is what it typically takes', async () => {
     const server = new PoolServer(bigPool([...A15_CAT, ...TEXT_AXES]))
     const t = new Taker(server, { textAxes: TEXT_AXES })
-    expect(sessionOutline(TEXT_AXES).planned_s).toBe(42 * 60)
+    expect(sessionOutline(TEXT_AXES).planned_s).toBe(43 * 60)
     expect(t.v().targetS).toBe(typical(TEXT_AXES))
     await t.finish()
     expect(t.trace.filter((s) => s.phase === 'interstitial').map((s) => s.segment)).toEqual([
@@ -476,7 +476,7 @@ describe('a text part the server has questions for', () => {
       'knowledge_arts',
       'coding_reading',
     ])
-    for (const k of TEXT_AXES) expect(t.run.result().itemsByAxis[k], k).toBeGreaterThanOrEqual(PUBLISH_MIN_ITEMS)
+    for (const k of TEXT_AXES) expect(t.run.result().itemsByAxis[k], k).toBeGreaterThanOrEqual(PART_MIN_ITEMS)
     expect(t.v().targetS).toBe(typical(TEXT_AXES))
     // Every text question went to the server under the skill it was asked for.
     for (const k of TEXT_AXES) expect(server.answered(k).length, k).toBe(t.run.result().itemsByAxis[k])

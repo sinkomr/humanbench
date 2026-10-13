@@ -166,7 +166,7 @@ describe('a text part the server has questions for', () => {
     t.script('next_item', DONE, textWire(1), textWire(2, 2)) // Matrix & Series has nothing; the first LR question is asked for once, before "Up next"
     await pastMatrix()
     expect(h1()).toBe('Up next: Logical Reasoning')
-    expect(host.textContent).toContain('About 5 minutes.')
+    expect(host.textContent).toContain('About 6 minutes.')
     expect(host.textContent).toContain('Read a short argument and pick the answer that best fits the question about it.')
     click(buttonByText(host, 'Start'))
     await tick()

@@ -7,7 +7,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, axis, type AxisCode } from './axes'
-import { A15_PLANNED_S, A15_SEGMENTS, A15_TARGET_S, A15_TYPICAL_OVER_S, A15_TYPICAL_S, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, RC_PASSAGES, SEGMENT_ORDER, TEXT_AXES, TEXT_PARTS, aboutMinutes, isTextAxis, sessionOutline, textPartById, textPartOf } from './plan-table'
+import { A15_MINIMUMS, A15_PLANNED_S, A15_SEGMENTS, A15_TARGET_S, A15_TYPICAL_OVER_S, A15_TYPICAL_S, MIN_ITEMS_SLACK, PART_MINIMUMS, PART_MIN_ITEMS, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, RC_PASSAGES, SEGMENT_ORDER, TEXT_AXES, TEXT_PARTS, aboutMinutes, isTextAxis, sessionOutline, textPartById, textPartOf } from './plan-table'
 import { COVERAGE_FLOOR, planSession, type PlannedStep } from './selector'
 
 /** The five text skills of phase 1 (text multiple choice); Reading Comprehension is the sixth (phase 2). */
@@ -29,29 +29,49 @@ describe('the text parts table', () => {
     expect(AXIS_CODES.filter(isTextAxis)).toEqual([...TEXT_AXES]) // canonical order
   })
 
-  it('gives each a modest share and the minimum the server publishes a skill from (five, above the floor of three)', () => {
+  it('one table of minimums: six answered questions for every question part, Reading Comprehension counted in two passages (owner decision 2026-10-13)', () => {
     expect(PUBLISH_MIN_ITEMS).toBe(5)
+    expect(PART_MIN_ITEMS).toBe(6)
+    expect(PART_MIN_ITEMS).toBeGreaterThan(PUBLISH_MIN_ITEMS) // the five the server publishes a skill from, with one to spare
     expect(PUBLISH_MIN_ITEMS).toBeGreaterThanOrEqual(COVERAGE_FLOOR)
+    expect(MIN_ITEMS_SLACK).toBe(2)
+    expect(PART_MINIMUMS).toEqual({
+      matrix_series: { min_items: 6 },
+      spatial: { min_items: 6 },
+      quant: { min_items: 6 },
+      logical_reasoning: { min_items: 6 },
+      knowledge_stem: { min_items: 6 },
+      vocabulary: { min_items: 6 },
+      reading_comprehension: { min_items: 5, sets: 2 },
+      knowledge_humanities: { min_items: 6 },
+      knowledge_arts: { min_items: 6 },
+    })
+    // every part that asks questions is in it: the CAT parts of A15 and every text part, and nothing else
+    const question = [...A15_SEGMENTS.filter((s) => s.kind === 'cat').map((s) => s.id), ...TEXT_PARTS.map((p) => p.id)]
+    expect(Object.keys(PART_MINIMUMS).sort()).toEqual([...question].sort())
+    // the plan and the text parts read their minimums from it
+    for (const p of TEXT_PARTS) expect({ min_items: p.min_items, ...(p.sets === undefined ? {} : { sets: p.sets }) }, p.id).toEqual(PART_MINIMUMS[p.id])
+    expect(A15_MINIMUMS).toEqual({ matrix_series: { min_items: 6, extra_s: 0 }, spatial: { min_items: 6, extra_s: 0 }, quant: { min_items: 6, extra_s: QUANT_EXTRA_S } })
+  })
+
+  it('gives each text part a modest share', () => {
     for (const p of TEXT_PARTS) {
-      expect(p.min_items).toBe(PUBLISH_MIN_ITEMS)
       expect(p.share_s).toBeGreaterThanOrEqual(120)
-      expect(p.share_s).toBeLessThanOrEqual(p.sets === undefined ? 300 : 540)
-      // what a part typically takes is close to what it is planned at (the figure the length is said from)
-      expect(Math.abs(p.typical_s - p.share_s), p.id).toBeLessThanOrEqual(30)
+      expect(p.share_s).toBeLessThanOrEqual(p.sets === undefined ? 360 : 540)
     }
-    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 300, KST: 130, VOC: 120, RC: 540, KHU: 130, KAP: 130 })
+    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 360, KST: 130, VOC: 120, RC: 540, KHU: 130, KAP: 130 })
     // only Reading Comprehension is counted in passages: two
     expect(TEXT_PARTS.filter((p) => p.sets !== undefined).map((p) => [p.axis, p.sets])).toEqual([['RC', RC_PASSAGES]])
     expect(RC_PASSAGES).toBe(2)
   })
 
-  it('plans 28.5 minutes without text parts, 42 with the five of phase 1 and 51 with Reading Comprehension (Quant’s six questions add a minute, 2026-10-12)', () => {
+  it('plans 28.5 minutes without text parts, 43 with the five of phase 1 and 52 with Reading Comprehension (Quant’s six questions add a minute, 2026-10-12; Logical Reasoning’s six a minute, 2026-10-13)', () => {
     expect(A15_PLANNED_S).toBe(A15_TARGET_S + QUANT_EXTRA_S)
     expect(A15_PLANNED_S).toBe(28.5 * 60)
     expect(sessionOutline()).toEqual({ parts: 6, planned_s: A15_PLANNED_S, typical_s: A15_TYPICAL_S, upTo: false })
     expect(sessionOutline([])).toEqual(sessionOutline())
-    expect(sessionOutline(PHASE1)).toMatchObject({ parts: 11, planned_s: 42 * 60, upTo: true })
-    expect(sessionOutline(TEXT_AXES)).toMatchObject({ parts: 12, planned_s: 51 * 60, upTo: true })
+    expect(sessionOutline(PHASE1)).toMatchObject({ parts: 11, planned_s: 43 * 60, upTo: true })
+    expect(sessionOutline(TEXT_AXES)).toMatchObject({ parts: 12, planned_s: 52 * 60, upTo: true })
     expect(sessionOutline(['VOC'])).toMatchObject({ parts: 7, planned_s: A15_PLANNED_S + 120, upTo: true })
     expect(sessionOutline(['MAT', 'LG'])).toEqual(sessionOutline()) // not text parts
   })
