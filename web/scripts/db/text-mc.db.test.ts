@@ -18,7 +18,7 @@ import type { CatAnswer, CatNext, CatSource } from '../../src/backend/session'
 import { ServerSession } from '../../src/backend/session'
 import { supabaseTransport } from '../../src/backend/transport'
 import type { AxisCode } from '../../src/engine/axes'
-import { A15_TARGET_S, PUBLISH_MIN_ITEMS, TEXT_AXES } from '../../src/engine/plan-table'
+import { A15_TARGET_S, A15_TYPICAL_OVER_S, PUBLISH_MIN_ITEMS, TEXT_AXES } from '../../src/engine/plan-table'
 import { TEXT_MC_RENDERER } from '../../src/render/text/spec'
 import type { SaveFileV1 } from '../../src/save/types'
 import { TEST_DEVICE } from '../../src/session/bot'
@@ -138,7 +138,7 @@ describe('a pool without the text skills (the live project today)', () => {
     const asked = shim.requests.slice(before).filter((r) => r.fn === 'next_item').map((r) => (JSON.parse(r.body) as { p_axes: string[] }).p_axes)
     expect(asked.map((a) => a.join()).sort()).toEqual([...TEXT_AXES].sort())
     expect(run.view().segments).toEqual([]) // the six A15 parts were skipped from the start (not planned); no text part is left
-    expect(run.view().targetS).toBe(A15_TARGET_S)
+    expect(run.view().targetS).toBe(A15_TARGET_S + A15_TYPICAL_OVER_S) // the six parts' target: no text part is left in it
     expect(run.catSessionState()).toBeNull()
     const rows = await db.owner.query(`select (select count(*) from public.exposure_log where session_id = $1) as exposures, (select count(*) from public.responses where session_id = $1) as responses`, [server.sessionId])
     expect(rows.rows[0]).toEqual({ exposures: '0', responses: '0' })

@@ -16,13 +16,19 @@
  * The text multiple-choice items of the authored banks (M3.11 phase 1: Logical Reasoning, Vocabulary,
  * the three knowledge skills) arrive as a stem and option texts with no `media` and so no renderer
  * name. A payload of exactly that shape (`render/text/spec.ts` `textMcSpec`) is shown by the text
- * renderer, under the client-side name `text_mc`; its spec is the text itself, kept as data. The
- * other finite kinds (a passage, a logic game, a Fermi estimate, a word triad) name a renderer this
- * build does not draw for served items and stay unsupported (ROADMAP M3.11, later phases).
+ * renderer, under the client-side name `text_mc`; its spec is the text itself, kept as data.
+ *
+ * A passage question of the reading bank (M3.11 phase 2) names the renderer `passage_v1` and carries
+ * its passage in `media`. A payload of exactly that shape (`render/text/passage.ts` `passageSpec`) is
+ * shown under the client-side name `text_passage`: the question by the text renderer, the passage
+ * beside it by the session's screen, where it stays across the questions the server serves together
+ * ({@link ServedItem.set}). The other finite kinds (a logic game, a Fermi estimate, a word triad) name
+ * a renderer this build does not draw for served items and stay unsupported (ROADMAP M3.11, later phases).
  */
 
+import { PASSAGE_MEDIA_RENDERER, TEXT_PASSAGE_RENDERER, passageSpec } from '../render/text/passage'
 import { TEXT_MC_RENDERER, textMcSpec } from '../render/text/spec'
-import type { ServedWire } from './replies'
+import type { ServedWire, SetPlace } from './replies'
 
 /** The families the server may serve in M2 (the M1 procedural pool) and a client can draw. */
 export const SUPPORTED_RENDERERS = ['rotation', 'matrices', 'series', 'quant'] as const
@@ -47,6 +53,8 @@ export interface ServedItem {
   readonly time_limit_s: number | null
   /** A renderer exists for it. */
   readonly supported: boolean
+  /** Where the question stands in the set the server serves it in (a passage's questions); absent for any other item. */
+  readonly set?: SetPlace
 }
 
 /** The render spec of `media`: everything but the `renderer` name. */
@@ -56,7 +64,7 @@ export function specOf(media: Readonly<Record<string, unknown>>): Record<string,
 }
 
 /** The session's view of an item the server served as number `seq`. */
-export function toServedItem(seq: number, wire: ServedWire): ServedItem {
+export function toServedItem(seq: number, wire: ServedWire, set: SetPlace | null = null): ServedItem {
   const renderer = wire.media === null ? undefined : wire.media.renderer
   const supported = wire.media !== null && isSupportedRenderer(renderer)
   const base = {
@@ -64,6 +72,7 @@ export function toServedItem(seq: number, wire: ServedWire): ServedItem {
     item_id: wire.itemId,
     item_type: wire.itemType,
     time_limit_s: wire.timeLimitS,
+    ...(set === null ? {} : { set }),
   }
   const optionsCount = wire.options === null ? undefined : wire.options.length
   const count = optionsCount === undefined ? {} : { options_count: optionsCount }
@@ -71,5 +80,8 @@ export function toServedItem(seq: number, wire: ServedWire): ServedItem {
   // No renderer named: text multiple choice if the payload is exactly that (M3.11 phase 1), else nothing this build draws.
   const text = renderer === undefined ? textMcSpec(wire) : null
   if (text !== null) return { ...base, family: TEXT_MC_RENDERER, spec: text, options_count: text.options.length, supported: true }
+  // A passage question (M3.11 phase 2): the question and its passage, if the payload is exactly that.
+  const passage = renderer === PASSAGE_MEDIA_RENDERER ? passageSpec(wire) : null
+  if (passage !== null) return { ...base, family: TEXT_PASSAGE_RENDERER, spec: passage, options_count: passage.options.length, supported: true }
   return { ...base, family: typeof renderer === 'string' ? renderer : '', spec: {}, ...count, supported: false }
 }

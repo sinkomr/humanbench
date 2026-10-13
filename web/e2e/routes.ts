@@ -274,8 +274,20 @@ async function openFermi(page: Page): Promise<void> {
 
 /** The text multiple-choice demo (M3.11 phase 1) on made-up question `item`, once its options have unlocked. */
 export async function openTextMc(page: Page, item: number): Promise<void> {
+  // A change of the hash alone does not load the page again, and the demo reads its query once: load it afresh.
   await page.goto(`./#/dev/text-mc?item=${item}`)
+  await page.reload()
   await expect(page.getByRole('heading', { level: 1, name: 'Text question demo (development only)' })).toBeVisible()
+  await expect(page.getByRole('radio').first()).toBeEnabled()
+}
+
+/** The passage demo (M3.11 phase 2) on made-up passage `item` and its question `q`, once the options have unlocked. */
+export async function openTextPassage(page: Page, item: number, q = 0): Promise<void> {
+  // A change of the hash alone does not load the page again, and the demo reads its query once: load it afresh.
+  await page.goto(`./#/dev/text-passage?item=${item}&q=${q}`)
+  await page.reload()
+  await expect(page.getByRole('heading', { level: 1, name: 'Passage question demo (development only)' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Passage' })).toBeVisible()
   await expect(page.getByRole('radio').first()).toBeEnabled()
 }
 
@@ -1090,6 +1102,27 @@ export const ROUTES: readonly Route[] = [
       await page.getByRole('radio').nth(1).check()
       await page.getByRole('button', { name: 'Confirm', exact: true }).click()
       await expect(page.getByTestId('text-mc-feedback')).toBeVisible()
+    },
+  },
+  {
+    id: 'dev-text-passage',
+    group: 'dev',
+    state: '#/dev/text-passage: the passage screen of a served passage question (M3.11 phase 2) on a made-up passage with a source line',
+    phone: true,
+    covers: ['#/dev/text-passage', 'dev/TextPassageDemo.svelte', 'render/text/PassageLayout.svelte', 'render/text/TextChoiceRenderer.svelte'],
+    open: async (page) => {
+      await openTextPassage(page, 0)
+    },
+  },
+  {
+    id: 'dev-text-passage-long',
+    group: 'dev',
+    state: '#/dev/text-passage: a long passage with a title and a word with no place to break, its second question, an option chosen',
+    phone: true,
+    covers: ['#/dev/text-passage', 'render/text/PassageLayout.svelte'],
+    open: async (page) => {
+      await openTextPassage(page, 1, 1)
+      await page.getByRole('radio').nth(2).check()
     },
   },
   // The tier (c) entries of M6.2-M6.4 keep their routes in their own files (`routes-sjt.ts`, `routes-rat.ts`, `routes-aut.ts`).

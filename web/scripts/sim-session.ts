@@ -1,7 +1,7 @@
 /**
  * `npm run sim:session -- [--n 200] [--offset 0] [--skip none|MAT|SPA|…] [--interstitial-s 0]
  * [--target-min 27.5] [--mode static|online] [--text none|all|LR,VOC,…] [--pace 1] [--timeout-p 0]
- * [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11 phase 1): whole sessions of the real
+ * [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
  * session machine (`session/run.ts`) driven by the simulated taker of `session/bot.ts`, so the
  * clock rules, the break, the part budgets and the coverage floor are the ones the app runs (the
  * M1.4b `sim:cat` models the CAT budget on its own and does not skip). Each simulee has θ ~ N(0, I)
@@ -33,6 +33,7 @@ import { createRng, type Rng } from '../src/engine/prng'
 import type { Observation } from '../src/engine/types'
 import { A15_TARGET_S, selectNext, selectionRng, sessionPosterior, type AnyItem, type SegmentId } from '../src/engine/selector'
 import { demoTextItem } from '../src/render/text/demo'
+import { demoPassage, demoPassagePayload } from '../src/render/text/demo-passage'
 import { Bot } from '../src/session/bot'
 import { HARD_STOP_S } from '../src/session/constants'
 import type { RunView } from '../src/session/run'
@@ -57,8 +58,17 @@ export interface SimSessionArgs {
   readonly json?: string
 }
 
-/** Seconds a taker at the model's pace spends on a text question: the bank's expected times (`plan-table.ts`, "The shares"). */
-export const TEXT_ITEM_S: Readonly<Record<TextAxis, number>> = Object.freeze({ LR: 60, VOC: 15, KST: 20, KHU: 20, KAP: 20 })
+/** Seconds a taker at the model's pace spends on a text question: the bank's expected times (`plan-table.ts`, "The shares"). For RC, on a question once the passage is read. */
+export const TEXT_ITEM_S: Readonly<Record<TextAxis, number>> = Object.freeze({ LR: 60, RC: 45, VOC: 15, KST: 20, KHU: 20, KAP: 20 })
+
+/**
+ * Seconds a taker at the model's pace spends reading a passage before its first question: about 325 words (the
+ * middle of DESIGN §3's 200 to 450) at 200 words a minute, a careful reading pace.
+ */
+export const PASSAGE_READING_S = 100
+
+/** Questions of the stand-in server's made-up passage number `p` (0-based): 3 and 4 in turn, as the bank's passages have. */
+export const simPassageQuestions = (p: number): number => 3 + (p % 2)
 
 export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSessionArgs {
   let n = 200
@@ -166,7 +176,9 @@ export interface SimSessionOne {
  * A stand-in for the server of the online version: one pending question at a time, as `hb.serve_next`
  * has. For the three served parts of A15 it picks what the selector would (the server's rule is the
  * same criterion, and like it this stops a skill only when it is precise enough or has nothing left:
- * the time is the client's); for a text skill it hands out made-up questions without end.
+ * the time is the client's); for a text skill it hands out made-up questions without end; and for Reading
+ * Comprehension made-up passages, each with its questions one after the other and their place in the set,
+ * as the server's set rule does (a call for another skill leaves the passage).
  */
 export class SimServer implements CatSource {
   readonly sessionId: string
@@ -175,6 +187,9 @@ export class SimServer implements CatSource {
   readonly #obs: Observation[] = []
   #pending: { served: ServedItem; item: AnyItem | null } | null = null
   #seq = 0
+  /** The passage under way: its number and how many of its questions have been served. */
+  #set: { passage: number; served: number } | null = null
+  #passages = 0
 
   constructor(seed: string) {
     this.#seed = seed
@@ -186,6 +201,20 @@ export class SimServer implements CatSource {
     const axis = axes[0]
     if (axis === undefined) return Promise.resolve({ kind: 'done', reason: 'no_items' })
     const seq = ++this.#seq
+    if (axis !== 'RC') this.#set = null
+    if (axis === 'RC') {
+      if (this.#set === null || this.#set.served >= simPassageQuestions(this.#set.passage)) this.#set = { passage: this.#passages++, served: 0 }
+      const set = this.#set
+      const of = simPassageQuestions(set.passage)
+      const demo = demoPassage(set.passage)
+      // The demo's text with the passage's number in it, so two passages of a session are two texts.
+      const payload = demoPassagePayload(demo, set.served % demo.questions.length)
+      const media = { ...payload.media, passage: [`Made-up passage ${set.passage + 1} of this simulated session.`, ...payload.media.passage] }
+      const served = toServedItem(seq, { itemId: `i:sim:rc:${seq}`, itemType: 'mc_passage', timeLimitS: set.served === 0 ? 360 : 180, stem: payload.stem, media, options: payload.options }, { index: set.served + 1, of })
+      set.served++
+      this.#pending = { served, item: null }
+      return Promise.resolve({ kind: 'item', item: served })
+    }
     if (isTextAxis(axis)) {
       const demo = demoTextItem(seq)
       const served = toServedItem(seq, { itemId: `i:sim:${axis.toLowerCase()}:${seq}`, itemType: 'mc_text', timeLimitS: 180, stem: demo.payload.stem, media: null, options: demo.payload.options })
@@ -250,7 +279,7 @@ class SimDriver {
     const sessionId = `s_SIMSESS${String(i).padStart(8, '0')}`
     const online = args.mode === 'online' ? { cat: new SimServer(sessionId), textAxes: args.text ?? [] } : {}
     this.bot = new Bot(
-      { sessionId, targetS: args.targetS, ...online },
+      { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online },
       { theta: this.#theta, blockScale: (1 + 0.6 * rng.next()) * this.#pace, itemScale: this.#pace, confidenceS: 2 * this.#pace, interstitialS: args.interstitialS },
     )
   }
@@ -272,8 +301,10 @@ class SimDriver {
     bot.run.itemShown(bot.t)
     const item = resolveItem(it.item_id)
     if (item === null) {
-      // A made-up text question: the server holds the key, so any option is an answer.
-      bot.wait((isTextAxis(it.axis) ? TEXT_ITEM_S[it.axis] : 40) * this.#pace)
+      // A made-up text question: the server holds the key, so any option is an answer. The first question of a
+      // passage comes after the reading.
+      const reading = v.passage !== null && v.passage.position?.index === 1 ? PASSAGE_READING_S : 0
+      bot.wait((reading + (isTextAxis(it.axis) ? TEXT_ITEM_S[it.axis] : 40)) * this.#pace)
       bot.run.itemResponded(0)
       return
     }

@@ -582,9 +582,10 @@ export type PlannedStep =
       /**
        * A served text part (M3.11 phase 1, `plan-table.ts` TEXT_PARTS): it exists only if the server has
        * questions for it, its `budget_s` is its own share on top of the A15 target, and it goes on until
-       * `min_items` questions are answered. Absent on the A15 parts.
+       * `min_items` questions are answered. `sets`: a part of passages reads that many and then ends
+       * (phase 2, `plan-table.ts` "Passages"). Absent on the A15 parts.
        */
-      readonly optional?: { readonly min_items: number }
+      readonly optional?: { readonly min_items: number; readonly sets?: number }
       /**
        * An A15 part that runs to a number of answered questions (`plan-table.ts` A15_MINIMUMS: the
        * Quantitative part, six). `extra_s` of its `budget_s` is what the rule adds on top of the part's
@@ -679,7 +680,7 @@ export function planSession(opts: PlanOptions): PlannedStep[] {
     // The text parts that follow this A15 part (whether or not it is kept): their own share, on top of the target.
     for (const p of TEXT_PARTS) {
       if (p.after !== s.id || !text.includes(p.axis) || axisWeight(opts.weights, p.axis) <= 0) continue
-      steps.push({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items } })
+      steps.push({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items, ...(p.sets === undefined ? {} : { sets: p.sets }) } })
     }
   }
   const budget = nCat === 0 ? 0 : Math.max(0, target - blockTime) / nCat

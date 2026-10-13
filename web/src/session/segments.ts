@@ -40,7 +40,7 @@ function info(id: SegmentId, axes: readonly AxisCode[], blurb: string): SegmentI
 }
 
 /**
- * Every part a session can have, by id: the six A15 parts and the served text parts of M3.11 phase 1
+ * Every part a session can have, by id: the six A15 parts and the served text parts of M3.11
  * (`engine/plan-table.ts`). Use {@link A15_SEGMENT_INFO} for "the six parts", {@link SEGMENT_INFO_IN_ORDER}
  * for all of them in session order.
  */
@@ -54,6 +54,8 @@ export const SEGMENT_INFO: Readonly<Record<SegmentId, SegmentInfo>> = Object.fre
   coding_reading: info('coding_reading', ['PS'], 'Match shapes to digits against the clock, then read a short passage and answer a few questions about it.'),
   // The served text parts (M3.11 phase 1): what the person does, never what an answer says about them (A13, R-5.6.x).
   logical_reasoning: info('logical_reasoning', ['LR'], 'Read a short argument and pick the answer that best fits the question about it. Take the time you need to read.'),
+  // Served passages (M3.11 phase 2): the passage stays on screen while its questions are answered (owner decision 2026-10-12).
+  reading_comprehension: info('reading_comprehension', ['RC'], 'Read a passage and answer a few questions about it, then a second passage. The passage stays on screen while you answer, so you can look back at it. Take the time you need to read.'),
   vocabulary: info('vocabulary', ['VOC'], 'Questions about what words mean and how they relate. Pick the answer that fits best.'),
   knowledge_stem: info('knowledge_stem', ['KST'], `Questions about science, mathematics and technology. Pick the answer you think is right. ${NO_LOOKUP}`),
   knowledge_humanities: info('knowledge_humanities', ['KHU'], `Questions about history, geography, literature and ideas. Pick the answer you think is right. ${NO_LOOKUP}`),

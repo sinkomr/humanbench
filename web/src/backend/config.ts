@@ -23,6 +23,11 @@
  *
  *     VITE_HB_TEXT_AXES=LR,VOC,KST,KHU,KAP      (or `all`; the Pages build reads the repository variable HB_TEXT_AXES)
  *
+ * Since M3.11 phase 2 the list may also name `RC`, the Reading Comprehension part of served passages, and
+ * **`all` includes it**. A build that says `all` therefore states the twelve-part length ("up to twelve
+ * parts, about 55 minutes") whether or not passages are loaded: name the five skills
+ * (`LR,VOC,KST,KHU,KAP`) until they are.
+ *
  * Unset or empty, which is the default, the session is the six-part session of M1 and **nothing about
  * it changes**: no extra part, no extra request, the same words about its length. Set, the session
  * plans a part for each named skill (`engine/plan-table.ts` for which, where and how long), the words

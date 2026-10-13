@@ -108,11 +108,11 @@ describe('the words about the session before it starts', () => {
     expect(SERVER_READY_TEXT.startsWith('Six short parts, about 30 minutes. ')).toBe(true)
   })
 
-  it('a server asked for all five: up to eleven parts, about 40 minutes, on the welcome and the ready screen', async () => {
+  it('a server asked for every text part: up to twelve parts, about 55 minutes, on the welcome and the ready screen', async () => {
     const { fake } = setup(TEXT_AXES)
     open(fake)
     const outline = sessionOutline(TEXT_AXES)
-    expect(host.textContent).toContain('The session has up to eleven parts and takes about 40 minutes.')
+    expect(host.textContent).toContain('The session has up to twelve parts and takes about 55 minutes.')
     expect(host.textContent).toContain(welcomeIntro(outline))
     expect(host.textContent).not.toContain('six parts')
     if (app) unmount(app)
@@ -120,7 +120,15 @@ describe('the words about the session before it starts', () => {
     document.body.innerHTML = ''
     await toReady(fake)
     expect(host.textContent).toContain(serverReadyText(outline))
-    expect(host.textContent).toContain('Up to eleven short parts, about 40 minutes.')
+    expect(host.textContent).toContain('Up to twelve short parts, about 55 minutes.')
+  })
+
+  it('a server asked for the five text skills of phase 1: up to eleven parts, about 45 minutes (what such a session typically takes)', async () => {
+    const five: readonly AxisCode[] = ['LR', 'VOC', 'KST', 'KHU', 'KAP']
+    const { fake } = setup(five)
+    open(fake)
+    expect(host.textContent).toContain('The session has up to eleven parts and takes about 45 minutes.')
+    expect(host.textContent).toContain(welcomeIntro(sessionOutline(five)))
   })
 })
 
@@ -147,7 +155,7 @@ describe('a server with no text questions (the live site today)', () => {
     const checklist = host.querySelector('.checklist')?.textContent ?? ''
     expect(checklist).not.toContain('Logical Reasoning')
     expect(checklist).not.toContain('STEM Knowledge')
-    expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toMatch(/of about 35 min$/u) // 41 less the two parts that were not there
+    expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toMatch(/of about 45 min$/u) // the twelve parts' typical 54 minutes less the two parts that were not there
   })
 })
 

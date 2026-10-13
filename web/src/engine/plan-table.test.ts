@@ -1,5 +1,5 @@
 /**
- * The tables of the session's parts (ROADMAP A15, M3.11 phase 1; DESIGN §3, §7.4): the six parts are
+ * The tables of the session's parts (ROADMAP A15, M3.11; DESIGN §3, §7.4): the six parts are
  * what they were, the text parts add their own shares on top, and the plan of a session without text
  * parts is the M1 plan to the last number.
  */
@@ -7,11 +7,14 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, axis, type AxisCode } from './axes'
-import { A15_PLANNED_S, A15_SEGMENTS, A15_TARGET_S, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, SEGMENT_ORDER, TEXT_AXES, TEXT_PARTS, aboutMinutes, isTextAxis, sessionOutline, textPartById, textPartOf } from './plan-table'
+import { A15_PLANNED_S, A15_SEGMENTS, A15_TARGET_S, A15_TYPICAL_OVER_S, A15_TYPICAL_S, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, RC_PASSAGES, SEGMENT_ORDER, TEXT_AXES, TEXT_PARTS, aboutMinutes, isTextAxis, sessionOutline, textPartById, textPartOf } from './plan-table'
 import { COVERAGE_FLOOR, planSession, type PlannedStep } from './selector'
 
+/** The five text skills of phase 1 (text multiple choice); Reading Comprehension is the sixth (phase 2). */
+const PHASE1: readonly AxisCode[] = ['LR', 'VOC', 'KST', 'KHU', 'KAP']
+
 describe('the text parts table', () => {
-  it('has one part for each of the five text skills, each a tier-a multiple-choice skill of the construct map', () => {
+  it('has one part for each of the six text skills, each a tier-a multiple-choice skill of the construct map', () => {
     expect(TEXT_PARTS.map((p) => p.axis).sort()).toEqual([...TEXT_AXES].sort())
     expect(new Set(TEXT_PARTS.map((p) => p.id)).size).toBe(TEXT_PARTS.length)
     for (const p of TEXT_PARTS) {
@@ -32,19 +35,46 @@ describe('the text parts table', () => {
     for (const p of TEXT_PARTS) {
       expect(p.min_items).toBe(PUBLISH_MIN_ITEMS)
       expect(p.share_s).toBeGreaterThanOrEqual(120)
-      expect(p.share_s).toBeLessThanOrEqual(300)
+      expect(p.share_s).toBeLessThanOrEqual(p.sets === undefined ? 300 : 540)
+      // what a part typically takes is close to what it is planned at (the figure the length is said from)
+      expect(Math.abs(p.typical_s - p.share_s), p.id).toBeLessThanOrEqual(30)
     }
-    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 300, KST: 130, VOC: 120, KHU: 130, KAP: 130 })
+    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 300, KST: 130, VOC: 120, RC: 540, KHU: 130, KAP: 130 })
+    // only Reading Comprehension is counted in passages: two
+    expect(TEXT_PARTS.filter((p) => p.sets !== undefined).map((p) => [p.axis, p.sets])).toEqual([['RC', RC_PASSAGES]])
+    expect(RC_PASSAGES).toBe(2)
   })
 
-  it('plans 28.5 minutes without text parts and 42 with all five, said as "about 30" and "about 40" (Quant’s six questions add a minute, 2026-10-12)', () => {
+  it('plans 28.5 minutes without text parts, 42 with the five of phase 1 and 51 with Reading Comprehension (Quant’s six questions add a minute, 2026-10-12)', () => {
     expect(A15_PLANNED_S).toBe(A15_TARGET_S + QUANT_EXTRA_S)
     expect(A15_PLANNED_S).toBe(28.5 * 60)
-    expect(sessionOutline()).toEqual({ parts: 6, planned_s: A15_PLANNED_S, upTo: false })
+    expect(sessionOutline()).toEqual({ parts: 6, planned_s: A15_PLANNED_S, typical_s: A15_TYPICAL_S, upTo: false })
     expect(sessionOutline([])).toEqual(sessionOutline())
-    expect(sessionOutline(TEXT_AXES)).toEqual({ parts: 11, planned_s: 42 * 60, upTo: true })
-    expect(sessionOutline(['VOC'])).toEqual({ parts: 7, planned_s: A15_PLANNED_S + 120, upTo: true })
-    expect(sessionOutline(['MAT', 'RC'])).toEqual(sessionOutline()) // not text parts
+    expect(sessionOutline(PHASE1)).toMatchObject({ parts: 11, planned_s: 42 * 60, upTo: true })
+    expect(sessionOutline(TEXT_AXES)).toMatchObject({ parts: 12, planned_s: 51 * 60, upTo: true })
+    expect(sessionOutline(['VOC'])).toMatchObject({ parts: 7, planned_s: A15_PLANNED_S + 120, upTo: true })
+    expect(sessionOutline(['MAT', 'LG'])).toEqual(sessionOutline()) // not text parts
+  })
+
+  it('says a session’s length from what it typically takes, not from the plan’s sum: "about 30" for six parts, "about 45" for eleven, "about 55" for twelve', () => {
+    // the six parts typically run close to three minutes over their plan (the timed tasks take longer than their model time)
+    expect(A15_TYPICAL_S).toBe(1880)
+    expect(A15_TYPICAL_OVER_S).toBe(A15_TYPICAL_S - A15_PLANNED_S)
+    expect(A15_TYPICAL_OVER_S).toBeGreaterThan(0)
+    const typical = (axes: readonly AxisCode[]): number => sessionOutline(axes).typical_s
+    expect(typical(TEXT_AXES)).toBe(A15_TYPICAL_S + TEXT_PARTS.reduce((t, p) => t + p.typical_s, 0))
+    expect(aboutMinutes(typical([]))).toBe(30)
+    expect(aboutMinutes(typical(PHASE1))).toBe(45)
+    expect(aboutMinutes(typical(TEXT_AXES))).toBe(55)
+    expect(aboutMinutes(typical(['RC']))).toBe(40)
+    expect(aboutMinutes(typical(['VOC']))).toBe(35)
+    // the figure is additive over the parts, for every combination of them
+    fc.assert(
+      fc.property(fc.subarray([...TEXT_AXES]), (axes) => {
+        expect(typical(axes)).toBe(A15_TYPICAL_S + TEXT_PARTS.filter((p) => axes.includes(p.axis)).reduce((t, p) => t + p.typical_s, 0))
+        expect(typical(axes)).toBeGreaterThanOrEqual(sessionOutline(axes).planned_s)
+      }),
+    )
     expect(aboutMinutes(A15_PLANNED_S)).toBe(30)
     expect(aboutMinutes(42 * 60)).toBe(40)
     expect(aboutMinutes(20 * 60)).toBe(20)
@@ -52,7 +82,7 @@ describe('the text parts table', () => {
   })
 
   it('orders the parts as §7.4 does: Reasoning, Knowledge, Spatial, Verbal, Memory, Quantitative, Knowledge, Speed', () => {
-    expect(SEGMENT_ORDER).toEqual(['rt', 'matrix_series', 'logical_reasoning', 'knowledge_stem', 'spatial', 'vocabulary', 'memory', 'quant', 'knowledge_humanities', 'knowledge_arts', 'coding_reading'])
+    expect(SEGMENT_ORDER).toEqual(['rt', 'matrix_series', 'logical_reasoning', 'knowledge_stem', 'spatial', 'vocabulary', 'reading_comprehension', 'memory', 'quant', 'knowledge_humanities', 'knowledge_arts', 'coding_reading'])
   })
 })
 
@@ -69,7 +99,7 @@ describe('planSession with text parts', () => {
   it('adds a step per text skill with its share and its minimum, in the table’s place', () => {
     const plan = planSession({ sessionSeed: 's1', textAxes: TEXT_AXES })
     expect([...new Set(plan.map((s) => s.segment))]).toEqual([...SEGMENT_ORDER])
-    for (const p of TEXT_PARTS) expect(cat(plan).find((s) => s.segment === p.id)).toEqual({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items } })
+    for (const p of TEXT_PARTS) expect(cat(plan).find((s) => s.segment === p.id)).toEqual({ kind: 'cat', segment: p.id, axes: [p.axis], budget_s: p.share_s, optional: { min_items: p.min_items, ...(p.sets === undefined ? {} : { sets: p.sets }) } })
   })
 
   it('never changes a step of the six parts: their blocks, their order and their budgets are those of the plan without text parts', () => {

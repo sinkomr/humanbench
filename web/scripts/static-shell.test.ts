@@ -201,7 +201,11 @@ describe('the shell of a build with served text parts (M3.11 phase 1)', () => {
     const { META_DESCRIPTION, metaDescription } = await import('../src/copy')
     const words = await loadShellText(TEXT_AXES)
     expect(words.WELCOME_INTRO).toBe(welcomeIntro(sessionOutline(TEXT_AXES)))
-    expect(words.WELCOME_INTRO).toContain('up to eleven parts and takes about 40 minutes')
-    expect(words.length?.meta).toEqual({ from: META_DESCRIPTION, to: metaDescription(40) })
+    expect(words.WELCOME_INTRO).toContain('up to twelve parts and takes about 55 minutes')
+    expect(words.length?.meta).toEqual({ from: META_DESCRIPTION, to: metaDescription(55) })
+    // the five text skills of phase 1 without Reading Comprehension: what such a session typically takes, 45 minutes
+    const five = await loadShellText(['LR', 'VOC', 'KST', 'KHU', 'KAP'])
+    expect(five.WELCOME_INTRO).toContain('up to eleven parts and takes about 45 minutes')
+    expect(five.length?.meta).toEqual({ from: META_DESCRIPTION, to: metaDescription(45) })
   })
 })

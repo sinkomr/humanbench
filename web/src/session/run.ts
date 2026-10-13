@@ -80,6 +80,22 @@
  * while its question is on the way, the answer to that request is waited for and the item let go before the
  * next part asks.
  *
+ * ## Served passages (M3.11 phase 2)
+ *
+ * A passage question (`render/text/passage.ts`) comes with its passage, and the server serves the questions of
+ * one passage together and says of each where it stands in its set (`ServedItem.set`). The passage stays on
+ * screen while its questions are answered (owner decision 2026-10-12): {@link RunView.passage} is the same
+ * passage from its first question to its last, the short wait for the next question included, so the screen
+ * keeps it in place, scrolled where the person left it. Nothing about it is timed afresh between two of its
+ * questions: each question has the time limit the server states for it (the first one's covers the reading; the
+ * bank sets it), and its response time starts at its own first frame, as for any question.
+ * - **A passage is finished once started.** While the server says more questions of the passage are to come,
+ *   the next one is asked for whatever the part's time says. Only the hard stop, a skip and "finish early" end a
+ *   passage early.
+ * - **A part of passages is counted in passages** (`plan-table.ts` `sets`: Reading Comprehension, two). Between
+ *   two passages the part ends when it has read that many and has its minimum of answers, or when its time is
+ *   used up and it has its minimum; short of the minimum it reads one more (the rule above, `MIN_ITEMS_SLACK`).
+ *
  * ## Skipping and finishing
  *
  * Any axis can be skipped at any time (§13 "skip any axis"): w_k = 0, the rest of its segment goes,
@@ -137,6 +153,7 @@ import {
   type SegmentId,
 } from '../engine/selector'
 import { isJsonValue, type JsonValue, type Observation, type ResponseTuple } from '../engine/types'
+import { TEXT_PASSAGE_RENDERER, isPassageSpec, passageTextOf, type PassageText } from '../render/text/passage'
 import type { RtInputMode, RtInputType } from '../render/rt/keys'
 import type { SessionState } from '../save/create'
 import { CONTINUATION_FLAG, TIMED_TASKS_ONLY_FLAG, type DeviceInfo, type SessionFlags } from '../save/types'
@@ -145,7 +162,7 @@ import { getFamily } from '../tasks/registry'
 import { rtBlockObservation, type RtItem, type RtResponse } from '../tasks/rt'
 import { calibrationObservation, calibrationSummary, type CalibrationSummary, type RatedAnswer } from '../tasks/calibration'
 import { confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
-import { MIN_ITEMS_SLACK } from '../engine/plan-table'
+import { A15_TYPICAL_OVER_S, MIN_ITEMS_SLACK, textPartById } from '../engine/plan-table'
 import { DEFAULT_ITEM_LIMIT_S, HARD_STOP_S } from './constants'
 import { COMPLETED_FLAG, doneFlag, FOCUS_SESSION_FLAG, isProgressFlag } from './resume'
 import { SEGMENT_INFO } from './segments'
@@ -222,6 +239,12 @@ export interface PublicBlock {
   readonly spec: object
 }
 
+/** The passage the question on screen is about (M3.11 phase 2), as the screen keeps it across its questions. */
+export interface PassageView extends PassageText {
+  /** The place of the question on screen among the passage's questions, when the server said it; null while the next one is fetched. */
+  readonly position: { readonly index: number; readonly of: number } | null
+}
+
 export interface RunView {
   readonly phase: RunPhase
   readonly ended: EndReason | null
@@ -260,6 +283,11 @@ export interface RunView {
   readonly reportable: string | null
   /** In the `loading` phase: the wait is for the first question of a text part that may not exist (M3.11), before its "Up next" screen. */
   readonly probing: boolean
+  /**
+   * The passage of the question on screen, and of the wait for the next question of the same passage (module
+   * comment, "Served passages"); null on every other screen.
+   */
+  readonly passage: PassageView | null
 }
 
 export interface RunConfig {
@@ -361,8 +389,10 @@ interface Segment {
   readonly steps: readonly PlannedStep[]
   /** `absent`: a text part the server had no question for; it is in no view (M3.11). */
   status: SegmentStatus | 'absent'
-  /** A served text part (M3.11): its minimum of answered questions. Undefined on the A15 parts. */
-  readonly optional?: { readonly min_items: number }
+  /** A served text part (M3.11): its minimum of answered questions, and for a part of passages how many it reads. Undefined on the A15 parts. */
+  readonly optional?: { readonly min_items: number; readonly sets?: number }
+  /** Passages this part has shown a question of (their keys), in order. */
+  readonly setsShown: string[]
   /** An A15 part with a minimum of answered questions (Quant), and the planned seconds it adds to the part's share. */
   readonly minimum?: { readonly min_items: number; readonly extra_s: number }
   /** A text part whose first question has been asked for (it is held, or the part is absent). */
@@ -482,6 +512,10 @@ export class SessionRun {
   #held: { segment: Segment; item: ServedItem } | null = null
   /** A request abandoned by a skip whose answer is still to come: the next request waits for it (module comment). */
   #stray: Promise<void> | null = null
+  /** The passage under way (M3.11 phase 2): its text, the part it belongs to, and whether the server has more questions of it. */
+  #passage: { readonly text: PassageText; readonly segment: Segment; readonly position: { readonly index: number; readonly of: number } | null; readonly more: boolean } | null = null
+  /** The session is the standard one (no focus, no continuation, no target of its own): its typical length is known (`plan-table.ts`). */
+  readonly #standard: boolean
   readonly #hardStopS: number
   readonly #stopSd: number
   readonly #priorCounts: Readonly<Partial<Record<AxisCode, number>>>
@@ -557,6 +591,7 @@ export class SessionRun {
     this.#device = cfg.device
     this.#rtInput = cfg.rtInput
     this.#cat = cfg.cat
+    this.#standard = cfg.targetS === undefined && cfg.focus === undefined && cfg.continues === undefined
     for (const k of cfg.skipped ?? []) this.#markSkipped(k)
     if (cfg.focus !== undefined) for (const k of AXIS_CODES) if (!cfg.focus.includes(k) && !this.#skipped.has(k)) this.#weights[k] = 0
     // Text parts only where the server serves (M3.11): never in the static version, a focus session or a continuation.
@@ -597,7 +632,7 @@ export class SessionRun {
       const axes = step.kind === 'block' ? [step.axis] : [...step.axes]
       const optional = step.kind === 'cat' && step.optional !== undefined ? { optional: step.optional } : {}
       const minimum = step.kind === 'cat' && step.minimum !== undefined ? { minimum: step.minimum } : {}
-      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', ...optional, ...minimum, probed: false, running: false, plannedS: 0, budgetS: 0, startedAtS: 0 })
+      out.push({ id: step.segment, kind: step.kind, axes, steps: [step], status: 'upcoming', ...optional, ...minimum, setsShown: [], probed: false, running: false, plannedS: 0, budgetS: 0, startedAtS: 0 })
     }
     return out.map((s) => ({ ...s, plannedS: s.steps.reduce((t, st) => t + (st.kind === 'block' ? st.item.expected_time_s : st.budget_s), 0) }))
   }
@@ -627,17 +662,31 @@ export class SessionRun {
     return best
   }
 
-  /** Planned seconds of the text parts that are still in the session (M3.11): what they add to the target. */
+  /** Planned seconds of the text parts that are still in the session (M3.11): what they add to the plan. */
   #optionalPlannedS(): number {
     let t = 0
     for (const s of this.#segments) if (s.optional !== undefined && s.status !== 'absent') t += s.plannedS
     return t
   }
 
-  /** The session's target now: the A15 target, what the minimums add, and the shares of the text parts still there. */
+  /** Typical seconds of the text parts that are still in the session: what they add to the target the ring shows. */
+  #optionalTypicalS(): number {
+    let t = 0
+    for (const s of this.#segments) if (s.optional !== undefined && s.status !== 'absent') t += textPartById(s.id)?.typical_s ?? s.plannedS
+    return t
+  }
+
+  /**
+   * The session's target now, which is what the progress ring fills toward and says ("of about 45 min"): the
+   * A15 target and what the minimums add, plus, for the standard session, what it typically runs over its
+   * plan, and the typical time of the text parts still there (`plan-table.ts`, "How long a session is said to
+   * be"). So the ring says the figure the welcome screen said. A focus session, a continuation and a session
+   * given a target of its own keep that target. The budgets and the break are worked out from the plan, not
+   * from this.
+   */
   #targetS(): number {
-    const base = this.#baseTargetS + this.#minimumExtraS
-    return this.#hasOptional ? base + this.#optionalPlannedS() : base
+    const base = this.#baseTargetS + this.#minimumExtraS + (this.#standard ? A15_TYPICAL_OVER_S : 0)
+    return this.#hasOptional ? base + this.#optionalTypicalS() : base
   }
 
   /** The planned second the break is placed nearest to (half the target unless configured). */
@@ -724,6 +773,16 @@ export class SessionRun {
       confidence = { floorPct, startPct: confidenceStartPct(floorPct), optionsCount: k ?? null }
     }
     const probing = this.#phase === 'loading' && this.#loading?.probe === true
+    const held = this.#passage
+    let passage: PassageView | null = null
+    if (held !== null) {
+      // (also in the instant between an answer being recorded and the next request: the passage is not taken away and put back)
+      const onQuestion = this.#phase === 'item' || this.#phase === 'confidence'
+      // The wait for the next question of the passage is still the passage's screen; the place is the next question's to say.
+      const between = this.#phase === 'loading' && !probing && held.more && this.#loading?.segment === held.segment
+      if (onQuestion) passage = { ...held.text, position: held.position }
+      else if (between) passage = { ...held.text, position: null }
+    }
     let skippable: AxisCode | null = null
     if (this.#phase === 'item' || this.#phase === 'confidence') skippable = facts?.axis ?? null
     else if (this.#phase === 'block') skippable = this.#currentBlock?.step.axis ?? null
@@ -779,6 +838,7 @@ export class SessionRun {
       problem: this.#phase === 'loading' ? this.#problem : null,
       reportable: cur?.served != null && (this.#phase === 'item' || this.#phase === 'confidence') ? cur.served.item_id : null,
       probing,
+      passage,
     }
   }
 
@@ -923,6 +983,7 @@ export class SessionRun {
     this.#leave(s)
     this.#current = null
     this.#currentBlock = null
+    this.#passage = null
     this.#boundary(() => this.#enterNextSegment())
   }
 
@@ -1007,9 +1068,15 @@ export class SessionRun {
       this.#endSegment('skipped')
       return
     }
+    // A passage that has been started is finished (M3.11 phase 2): while the server has more questions of it,
+    // neither the part's time nor its count of passages ends the part.
+    const midPassage = this.#passage !== null && this.#passage.segment === s && this.#passage.more
     // The part's time is a soft stop once the coverage floor is met (§7.4): the server holds the
     // precision rule and the floor of its own, this is only the clock. The hard stop is the clock's.
-    if (this.#clock.elapsedS() - s.startedAtS >= s.budgetS && axes.every((k) => this.#itemsOn(k) >= COVERAGE_FLOOR) && !this.#belowMinimum(s, axes)) {
+    // A part of passages also ends when it has read its number of them (`plan-table.ts` `sets`).
+    const timeUp = this.#clock.elapsedS() - s.startedAtS >= s.budgetS
+    const setsRead = s.optional?.sets !== undefined && s.setsShown.length >= s.optional.sets
+    if (!midPassage && (timeUp || setsRead) && axes.every((k) => this.#itemsOn(k) >= COVERAGE_FLOOR) && !this.#belowMinimum(s, axes)) {
       this.#endSegment('time')
       return
     }
@@ -1106,6 +1173,7 @@ export class SessionRun {
   #showServed(item: ServedItem): void {
     const cur: CurrentItem = { item: null, served: item, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
     this.#current = cur
+    this.#notePassage(item)
     if (!item.supported) {
       // A renderer this build does not have: the item cannot be shown, so the skip of §13 is offered.
       cur.unavailable = true
@@ -1114,6 +1182,25 @@ export class SessionRun {
     this.#phase = 'item'
     this.#newScreen()
     this.#emit('phase')
+  }
+
+  /**
+   * Keeps track of the passage a served question belongs to (module comment, "Served passages"): the same
+   * passage as the last question's stays, a new one replaces it and is counted for its part, and a question
+   * without a passage ends it.
+   */
+  #notePassage(item: ServedItem): void {
+    const seg = this.#segments[this.#segIdx]
+    if (seg === undefined || !item.supported || item.family !== TEXT_PASSAGE_RENDERER || !isPassageSpec(item.spec)) {
+      this.#passage = null
+      return
+    }
+    const text = passageTextOf(item.spec)
+    const same = this.#passage !== null && this.#passage.segment === seg && this.#passage.text.passageKey === text.passageKey
+    if (!seg.setsShown.includes(text.passageKey)) seg.setsShown.push(text.passageKey)
+    const set = item.set
+    // The object the screen was given for this passage is kept, so nothing about the passage changes between its questions.
+    this.#passage = { text: same ? this.#passage!.text : text, segment: seg, position: set === undefined ? null : { index: set.index, of: set.of }, more: set !== undefined && set.index < set.of }
   }
 
   /** Sends the answers the server has not acknowledged yet, one at a time and in order (single flight). */
@@ -1457,6 +1544,7 @@ export class SessionRun {
       this.#abandonLoading()
       this.#current = null
       this.#currentBlock = null
+      this.#passage = null
     }
     this.#emit('skip')
     if (!inSegment) return
@@ -1490,6 +1578,7 @@ export class SessionRun {
     this.#flushPending()
     this.#current = null
     this.#currentBlock = null
+    this.#passage = null
     this.#afterBreak = null
     // At the hard stop the recorded time is the limit itself: a tab that was suspended past it (or a
     // timer that fired late) does not put minutes on the clock that nobody worked.

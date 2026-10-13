@@ -3,7 +3,7 @@ import { A15_TARGET_S } from '../src/engine/selector'
 import { UsageError } from './dump-lib'
 import { PUBLISH_MIN_ITEMS, QUANT_MIN_ITEMS, TEXT_AXES } from '../src/engine/plan-table'
 import { HARD_STOP_S } from '../src/session/constants'
-import { parseSimSessionArgs, quantile, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
+import { PASSAGE_READING_S, parseSimSessionArgs, quantile, simPassageQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
 
 describe('scripts/sim-session.ts: whole sessions of the real session machine (UX-066)', () => {
   it('parses its flags, with defaults, and refuses what it does not know', () => {
@@ -96,18 +96,23 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     expect(() => simulateOne(2, { ...base, mode: 'online' })).toThrow(RangeError)
   })
 
-  it('the online version against the stand-in server: six parts, or eleven with the text parts, with six Quantitative answers either way', async () => {
-    const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S } as const
+  it('the online version against the stand-in server: six parts, or twelve with the text parts, with six Quantitative answers either way', async () => {
+    // (a brisk taker: the twelve-part session of this simulee at the model's pace ends at the hard stop, in its last part)
+    const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S, pace: 0.8 } as const
     const six = await simulateOneOnline(4, base)
     expect(six.ended).toBe('complete')
     expect(Object.keys(six.partS)).toEqual(['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'])
     expect(six.answered.QR).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
     const eleven = await simulateOneOnline(4, { ...base, text: TEXT_AXES })
-    expect(Object.keys(eleven.partS)).toHaveLength(11)
+    expect(Object.keys(eleven.partS)).toHaveLength(12)
+    // Reading Comprehension read two made-up passages, whole: three questions and four
+    expect(eleven.shown.RC).toBe(simPassageQuestions(0) + simPassageQuestions(1))
+    expect(eleven.partS.reading_comprehension).toBeGreaterThan(2 * PASSAGE_READING_S)
     for (const k of TEXT_AXES) expect(eleven.answered[k], k).toBeGreaterThanOrEqual(PUBLISH_MIN_ITEMS)
     expect(eleven.answered.QR).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
     expect(eleven.durationS).toBeGreaterThan(six.durationS + 10 * 60)
     expect(eleven.durationS).toBeLessThanOrEqual(HARD_STOP_S)
+    expect(eleven.ended).toBe('complete')
     // The six parts are the same with and without the text parts: their time is their own.
     for (const p of ['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'] as const) expect(eleven.partS[p], p).toBeCloseTo(six.partS[p]!, 6)
     const r = await simulateOnline({ ...base, n: 2, text: ['VOC'] })

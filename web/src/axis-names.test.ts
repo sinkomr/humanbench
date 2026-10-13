@@ -71,7 +71,7 @@ describe('the session parts', () => {
       expect(titleCase(s.title), s.title).toBe(true)
     }
     expect(A15_SEGMENT_INFO.map((s) => s.title)).toEqual(['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
-    // With the served text parts (M3.11 phase 1), in session order.
+    // With the served text parts (M3.11), in session order.
     expect(SEGMENT_INFO_IN_ORDER.map((s) => s.title)).toEqual([
       'Reaction Time',
       'Matrix & Series',
@@ -79,6 +79,7 @@ describe('the session parts', () => {
       'STEM Knowledge',
       'Spatial',
       'Vocabulary & Verbal Analogies',
+      'Reading Comprehension',
       'Working Memory',
       'Quantitative Reasoning',
       'Humanities Knowledge',

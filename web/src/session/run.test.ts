@@ -2,7 +2,7 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { AXIS_CODES, AXIS_INDEX, N_AXES, type AxisCode } from '../engine/axes'
 import { createRng } from '../engine/prng'
-import { A15_PLANNED_S, MIN_ITEMS_SLACK, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS } from '../engine/plan-table'
+import { A15_PLANNED_S, A15_TYPICAL_OVER_S, A15_TYPICAL_S, MIN_ITEMS_SLACK, PUBLISH_MIN_ITEMS, QUANT_EXTRA_S, QUANT_MIN_ITEMS } from '../engine/plan-table'
 import { A15_TARGET_S, STOP_SD, planSession, type SegmentId } from '../engine/selector'
 import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
@@ -70,7 +70,9 @@ describe('the A15 flow (M1.15)', () => {
 
   it('progress is time: the elapsed seconds and the target come from the clock, not the item count', () => {
     const bot = new Bot({ sessionId: 's_FLOWPROGRESS01' })
-    expect(bot.view().targetS).toBe(A15_PLANNED_S)
+    // the target the ring fills toward is what the six parts typically take, a little over their plan (plan-table.ts)
+    expect(bot.view().targetS).toBe(A15_TYPICAL_S)
+    expect(A15_TYPICAL_S).toBe(A15_PLANNED_S + A15_TYPICAL_OVER_S)
     expect(bot.view().elapsedS).toBe(0)
     bot.wait(90) // on the first "Up next" screen: the clock waits for Start (UX-066)
     expect(bot.view().elapsedS).toBe(0)
@@ -286,7 +288,7 @@ describe('the Quantitative part runs to six answered questions (A15 amended, own
 
   it('a session is planned a minute longer for it, and the part says "About 6 min" however little shared time is left', () => {
     const bot = new Bot({ sessionId: 's_QRSIXPLAN00001' })
-    expect(bot.view().targetS).toBe(A15_TARGET_S + QUANT_EXTRA_S)
+    expect(bot.view().targetS).toBe(A15_TARGET_S + QUANT_EXTRA_S + A15_TYPICAL_OVER_S)
     const quant = (b: Bot): number => b.view().segments.find((s) => s.id === 'quant')!.minutes
     const planned = plannedParts('s_QRSIXPLAN00001').find((p) => p.id === 'quant')!.s
     expect(planned).toBeGreaterThan(5 * 60)
@@ -296,7 +298,7 @@ describe('the Quantitative part runs to six answered questions (A15 amended, own
     bot.run.startSegment()
     expect(bot.view().segment?.minutes).toBe(Math.round(planned / 60))
     // A session without the part has no minute added.
-    expect(new Bot({ sessionId: 's_QRSIXPLAN00002', skipped: ['QR'] }).view().targetS).toBe(A15_TARGET_S)
+    expect(new Bot({ sessionId: 's_QRSIXPLAN00002', skipped: ['QR'] }).view().targetS).toBe(A15_TARGET_S + A15_TYPICAL_OVER_S)
   })
 
   it('with its time gone before it starts it asks exactly six, all answered, and ends on time', () => {

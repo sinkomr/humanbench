@@ -192,25 +192,25 @@ test.describe('a pool without the text skills gives the six-part session', () =>
     expect(axesAsked(server)).toEqual([]) // every part was skipped on its "Up next" screen: nothing was asked for, and never a text skill
   })
 
-  test('a page that asks for all five: one question to the server per skill, and then the same six parts with nothing said', async ({ page }) => {
+  test('a page that asks for every text part: one question to the server per skill, and then the same six parts with nothing said', async ({ page }) => {
     const server = new FakeServer({ pools: { MAT: [seriesWire(1)] } })
     await server.attach(page)
     await page.goto(`./${TEXT_QUERY}`)
-    await expect(page.locator('main')).toContainText('The session has up to eleven parts and takes about 40 minutes.')
+    await expect(page.locator('main')).toContainText('The session has up to twelve parts and takes about 55 minutes.')
     await toReadyOnline(page, TEXT_QUERY)
-    await expect(page.locator('main')).toContainText('Up to eleven short parts, about 40 minutes.')
+    await expect(page.locator('main')).toContainText('Up to twelve short parts, about 55 minutes.')
     await button(page, 'Begin').click()
     const seen: string[] = []
     for (let i = 0; i < 6; i++) {
       await pastBreak(page)
       await expect(h1(page)).toHaveText(/^Up next: /)
       seen.push((await h1(page).textContent())!.replace('Up next: ', ''))
-      await expect(page.locator('header .status').first()).not.toContainText(/Logical|Vocabulary|Knowledge/)
+      await expect(page.locator('header .status').first()).not.toContainText(/Logical|Vocabulary|Knowledge|Reading Comprehension/)
       await skipPart(page)
     }
     expect(seen).toEqual(['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
     await expect(h1(page)).toHaveText(/^Session /, { timeout: 20_000 })
-    expect(axesAsked(server)).toEqual(['LR', 'KST', 'VOC', 'KHU', 'KAP'])
+    expect(axesAsked(server)).toEqual(['LR', 'KST', 'VOC', 'RC', 'KHU', 'KAP'])
     expect(server.served).toEqual([])
     // The profile reads the five as not measured; nothing about them was skipped or failed.
     await expect(page.locator('body')).not.toContainText(/Logical Reasoning skipped|cannot be shown/)
@@ -223,7 +223,7 @@ test.describe('a pool with made-up text questions', () => {
     await server.attach(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await toReadyOnline(page, `${SERVER_QUERY}&hb_text=VOC`)
-    await expect(page.locator('main')).toContainText('Up to seven short parts, about 30 minutes.')
+    await expect(page.locator('main')).toContainText('Up to seven short parts, about 35 minutes.')
     await button(page, 'Begin').click()
     for (const part of ['Reaction Time', 'Matrix & Series', 'Spatial']) {
       await pastBreak(page)

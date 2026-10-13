@@ -34,6 +34,24 @@ export interface Call {
 export interface Wire {
   readonly seq: number
   readonly item: { item_id: string; item_type: string; time_limit_s: number; media?: Record<string, unknown>; stem?: string; options?: readonly string[] }
+  /** The place of a passage question among the passage's questions, as `hb.served_view` sends it (M3.11 phase 2). */
+  readonly set?: { readonly position: number; readonly of: number }
+}
+
+/**
+ * Question `q` (0-based) of a made-up passage as the server sends it (ROADMAP M3.11 phase 2): the passage in
+ * `media`, the question's place in the set, a longer time limit on the first question, no key. `passage` is
+ * one of the synthetic ones of `src/render/text/demo-passage.ts`. A pool that lists a passage's questions one
+ * after the other serves them as the server's set rule does.
+ */
+export function passageWire(
+  seq: number,
+  id: string,
+  passage: { readonly media: Readonly<Record<string, unknown>>; readonly questions: readonly { readonly stem: string; readonly options: readonly string[] }[] },
+  q: number,
+): Wire {
+  const it = passage.questions[q]!
+  return { seq, item: { item_id: id, item_type: 'mc_passage', time_limit_s: q === 0 ? 300 : 180, stem: it.stem, media: { ...passage.media }, options: it.options }, set: { position: q + 1, of: passage.questions.length } }
 }
 
 /**

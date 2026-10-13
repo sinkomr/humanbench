@@ -14,7 +14,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json && tsc -p tsconfig.scripts.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:slow": "HB_SLOW=1 vitest run scripts/sim-cat.slow.test.ts",
+    "test:slow": "HB_SLOW=1 vitest run scripts/sim-cat.slow.test.ts scripts/sim-length.test.ts",
     "test:db": "vitest run -c vitest.db.config.ts",
     "db:up": "tsx scripts/db/cli.ts up",
     "db:reap": "tsx scripts/db/cli.ts reap",

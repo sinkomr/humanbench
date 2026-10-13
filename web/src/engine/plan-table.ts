@@ -10,11 +10,16 @@
  *   minimum adds ({@link A15_MINIMUMS}: the Quantitative part, below). **The text parts change
  *   nothing of them**: a session without served text parts is planned, budgeted and timed the same
  *   with or without the setting.
- * - {@link TEXT_PARTS}: the parts of served text multiple choice (M3.11 phase 1). They exist only in
+ * - {@link TEXT_PARTS}: the parts of served text multiple choice (M3.11 phase 1) and of served
+ *   passages (phase 2: Reading Comprehension). They exist only in
  *   the online version, only for the axes the build names (`backend/config.ts`, `HB_TEXT_AXES`), and
  *   only when the server has questions for the axis: a part whose first request is answered "no
  *   items" is dropped without a word (`session/run.ts`). Each has a planned share of its own, **on
  *   top of** the six parts' time.
+ *
+ * And one figure per part that the plan does not use: how long it **typically** takes
+ * ({@link A15_TYPICAL_S}, {@link TextPart.typical_s}). The words that state a session's length, and
+ * the progress ring, are made from those ("How long a session is said to be", below).
  *
  * ## The shares (owner: change them here)
  *
@@ -25,14 +30,36 @@
  * | Part | Axis | Share | Why |
  * |---|---|---|---|
  * | Logical Reasoning | LR | 5 min | an argument to read per question (the bank's expected time is 60 s) |
+ * | Reading Comprehension | RC | 9 min | two passages of 3 or 4 questions: about 100 s to read one, 45 s a question |
  * | Vocabulary | VOC | 2 min | a word per question (15 s) |
  * | STEM knowledge | KST | 2 min 10 s | a fact per question (20 s) |
  * | Humanities knowledge | KHU | 2 min 10 s | the same |
  * | Arts & Practical | KAP | 2 min 10 s | the same |
  *
- * All five together are 13.5 minutes, so a session with all of them is planned at 42 minutes (28.5 +
- * 13.5), which the copy rounds to "about 40 minutes" ({@link aboutMinutes}). The owner's ceiling for a
- * session is 60 minutes (2026-10-12); the hard stop is at 57 active minutes (`session/constants.ts`).
+ * The five of phase 1 together are 13.5 minutes, so a session with them is planned at 42 minutes (28.5 +
+ * 13.5); with Reading Comprehension, 51. The owner's ceiling for a session is 60 minutes (2026-10-12);
+ * the hard stop is at 57 active minutes (`session/constants.ts`).
+ *
+ * ## Passages ({@link TextPart.sets}; M3.11 phase 2)
+ *
+ * The server serves a passage's questions together (`supabase/migrations/20261013000100_item_sets.sql`)
+ * and says of each where it stands in its set. A part of passages is counted in passages: Reading
+ * Comprehension reads {@link RC_PASSAGES} (two), which is 6 to 8 questions, and then ends, whatever is left
+ * of its share; a passage that has been started is always finished (its time does not cut it, only the
+ * hard stop, a skip or "finish early" do); and the five-answer rule below still holds, so when fewer than
+ * five questions were answered after two passages (some ran out of time) one more passage is read.
+ *
+ * ## How long a session is said to be ({@link sessionOutline}, {@link aboutMinutes})
+ *
+ * A session runs longer than its plan: the timed tasks take longer than their model time, a part with a
+ * minimum of answers goes past its share, and every answer is followed by the confidence slider. So the
+ * words that state the length ("about 45 minutes"), and the target of the progress ring, are not the
+ * plan's sum but the **typical** length: the median of simulated sessions (`npm run sim:session`),
+ * {@link A15_TYPICAL_S} for the six parts and {@link TextPart.typical_s} for each text part, added up for
+ * the parts a session asks for and said to the nearest five minutes. The figures are measured, not
+ * derived: `scripts/sim-length.test.ts` holds each to the simulation for the combinations of parts
+ * (re-measure and change them here when a share, a minimum or a task's length changes). The plan, the
+ * budgets and the place of the break are untouched by them.
  *
  * ## Why five answers ({@link PUBLISH_MIN_ITEMS})
  *
@@ -72,8 +99,8 @@ export const A15_TARGET_S = 27.5 * 60
 /** The six parts of the M1 session (A15). */
 export type A15SegmentId = 'rt' | 'matrix_series' | 'spatial' | 'memory' | 'quant' | 'coding_reading'
 
-/** The parts of served text multiple choice (M3.11 phase 1). */
-export type TextSegmentId = 'logical_reasoning' | 'vocabulary' | 'knowledge_stem' | 'knowledge_humanities' | 'knowledge_arts'
+/** The parts of served text multiple choice (M3.11 phase 1) and of served passages (phase 2). */
+export type TextSegmentId = 'logical_reasoning' | 'reading_comprehension' | 'vocabulary' | 'knowledge_stem' | 'knowledge_humanities' | 'knowledge_arts'
 
 /** Every part a session can have. */
 export type SegmentId = A15SegmentId | TextSegmentId
@@ -125,11 +152,24 @@ export const A15_MINIMUMS: Readonly<Partial<Record<A15SegmentId, A15Minimum>>> =
 /** Planned seconds of the six-part session: the A15 target and what the minimums add. */
 export const A15_PLANNED_S = A15_TARGET_S + Object.values(A15_MINIMUMS).reduce((t, m) => t + m.extra_s, 0)
 
+/**
+ * Typical active seconds of the six-part session: the simulated median of the online version, 31 minutes
+ * 20 seconds (600 sessions; the device-only version's is 30.6 minutes; module comment, "How long a session
+ * is said to be"). Said as "about 30 minutes", as the plan was.
+ */
+export const A15_TYPICAL_S = 1880
+
+/** What the six-part session typically runs over its plan, in seconds. */
+export const A15_TYPICAL_OVER_S = A15_TYPICAL_S - A15_PLANNED_S
+
 /** Questions a part with a minimum may show beyond it to reach it (some may run out of time). */
 export const MIN_ITEMS_SLACK = 2
 
-/** The axes of served text multiple choice, in the canonical axis order. */
-export const TEXT_AXES = ['LR', 'VOC', 'KST', 'KHU', 'KAP'] as const satisfies readonly AxisCode[]
+/** Passages the Reading Comprehension part reads (module comment, "Passages"). */
+export const RC_PASSAGES = 2
+
+/** The axes of the served text parts (text multiple choice and passages), in the canonical axis order. */
+export const TEXT_AXES = ['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'] as const satisfies readonly AxisCode[]
 export type TextAxis = (typeof TEXT_AXES)[number]
 
 export function isTextAxis(code: unknown): code is TextAxis {
@@ -145,6 +185,10 @@ export interface TextPart {
   readonly share_s: number
   /** Answered questions before the part's time may end it (module comment: "Why five answers"). */
   readonly min_items: number
+  /** Typical active seconds of the part: the simulated median (module comment: "How long a session is said to be"). */
+  readonly typical_s: number
+  /** A part of passages: how many it reads before it ends (module comment: "Passages"). Absent on the others. */
+  readonly sets?: number
 }
 
 /**
@@ -152,11 +196,12 @@ export interface TextPart {
  * after the same A15 part run in the order listed here).
  */
 export const TEXT_PARTS: readonly TextPart[] = Object.freeze([
-  { id: 'logical_reasoning', axis: 'LR', after: 'matrix_series', share_s: 300, min_items: PUBLISH_MIN_ITEMS },
-  { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, min_items: PUBLISH_MIN_ITEMS },
-  { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, min_items: PUBLISH_MIN_ITEMS },
-  { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, min_items: PUBLISH_MIN_ITEMS },
-  { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, min_items: PUBLISH_MIN_ITEMS },
+  { id: 'logical_reasoning', axis: 'LR', after: 'matrix_series', share_s: 300, min_items: PUBLISH_MIN_ITEMS, typical_s: 310 },
+  { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, min_items: PUBLISH_MIN_ITEMS, typical_s: 130 },
+  { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, min_items: PUBLISH_MIN_ITEMS, typical_s: 135 },
+  { id: 'reading_comprehension', axis: 'RC', after: 'spatial', share_s: 540, min_items: PUBLISH_MIN_ITEMS, typical_s: 530, sets: RC_PASSAGES },
+  { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, min_items: PUBLISH_MIN_ITEMS, typical_s: 130 },
+  { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, min_items: PUBLISH_MIN_ITEMS, typical_s: 130 },
 ] as const satisfies readonly TextPart[])
 
 /** The text part of an axis, or undefined. */
@@ -178,6 +223,8 @@ export interface SessionOutline {
   readonly parts: number
   /** Planned seconds with every part present. */
   readonly planned_s: number
+  /** Typical active seconds with every part present: what the length is said from (module comment, "How long a session is said to be"). */
+  readonly typical_s: number
   /** Some parts depend on what the server has, so the count is "up to". */
   readonly upTo: boolean
 }
@@ -185,14 +232,19 @@ export interface SessionOutline {
 /** The plan of a session that asks for the text parts of `textAxes` (none: the M1 session). */
 export function sessionOutline(textAxes: readonly AxisCode[] = []): SessionOutline {
   const parts = TEXT_PARTS.filter((p) => textAxes.includes(p.axis))
-  return { parts: A15_SEGMENTS.length + parts.length, planned_s: A15_PLANNED_S + parts.reduce((t, p) => t + p.share_s, 0), upTo: parts.length > 0 }
+  return {
+    parts: A15_SEGMENTS.length + parts.length,
+    planned_s: A15_PLANNED_S + parts.reduce((t, p) => t + p.share_s, 0),
+    typical_s: A15_TYPICAL_S + parts.reduce((t, p) => t + p.typical_s, 0),
+    upTo: parts.length > 0,
+  }
 }
 
 /**
- * The figure a planned length is said as: whole minutes, to the nearest five from three minutes up
- * ("about 30" for 28.5, "about 40" for 42), the rule of the progress ring (UX-008).
+ * The figure a length is said as: whole minutes, to the nearest five from three minutes up
+ * ("about 30" for 31, "about 45" for 44.5), the rule of the progress ring (UX-008).
  */
-export function aboutMinutes(plannedS: number): number {
-  const m = Math.max(1, Math.round(plannedS / 60))
+export function aboutMinutes(seconds: number): number {
+  const m = Math.max(1, Math.round(seconds / 60))
   return m < 3 ? m : Math.round(m / 5) * 5
 }
