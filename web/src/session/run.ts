@@ -12,7 +12,7 @@
  * Coding/Reading. Each segment opens with an interstitial ("Up next: Spatial. About 6 min"); the
  * person can start it or skip its axis. A block segment then runs its fixed blocks one after the
  * other (a renderer each, one whole-block response, scored by the family); a CAT segment loops on
- * `selectNext` (information per second) until its axes are done (posterior SD < 0.3), no candidate
+ * `selectNext` (information per second, after the start-up steps of `engine/startup.ts`) until its axes are done (posterior SD < 0.3), no candidate
  * is left or the segment's time is used up. After every counted power answer the person rates how
  * sure they are (the confidence slider; Brier, `calibration.ts`).
  *
@@ -141,8 +141,10 @@ import {
   A15_TARGET_S,
   COVERAGE_FLOOR,
   STOP_SD,
+  answeredItems,
   planSession,
   selectNext,
+  selectionAim,
   selectionRng,
   sessionPosterior,
   type AdministeredItem,
@@ -1042,6 +1044,8 @@ export class SessionRun {
         sessionSeed: this.#seed,
         posterior: sessionPosterior(this.#obs),
         administered: this.#administered,
+        history: answeredItems(this.#obs),
+        aim: selectionAim(this.#obs),
         seenFamilies: this.#seenBase,
         remainingS: this.#belowMinimum(s, axes) ? Math.max(left, toHardStop) : left,
         floorRemainingS: toHardStop,

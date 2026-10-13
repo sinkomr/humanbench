@@ -1375,6 +1375,23 @@ accepted adaptive channel (A24-sec) gets narrower: inside a set the next item do
   adds nothing of its own, so a first question left at 180 s gives a slow reader of a long passage too little.
   If the first question is ever retired, give the next one the reading time.
 
+### The start-up of the selection, and where items are aimed (2026-10-13; written and tested here, **not applied to the project**)
+
+One new migration, `supabase/migrations/20261014000100_startup_step.sql`, to be applied with `npm run db:deploy` after review, **after** `20261013000100_item_sets.sql` (it replaces that file's `hb.rank_live`). The owner, after a full session with 64 of 67 right: "was the test i took adaptive? … it seemed like it didnt", "many of the questions are too easy". The selection was adaptive and could not be felt: it places the next item at the posterior mean under the N(0, 1) prior, which ten correct answers in a row move by about a stratum, and divides by time, which favours the quicker, easier items.
+
+| | What |
+|---|---|
+| Start-up (`hb.startup_targets`) | The first item on a skill is picked as before. While every answer the session's score counts on the skill is correct, the next item is aimed at the difficulty of the last one plus `selection.startup_step` (1, one stratum); while every one is wrong, minus that. At the first reversal the start-up is over for the skill in that session. While a skill has a target, only the candidates within `selection.startup_window` (0.5) of it compete, or the nearest ones when there are none. |
+| The aim (`hb.session_aims`) | After the start-up the criterion's information is evaluated at the EAP under a prior `selection.aim_prior_sd_factor` (2) times as wide as the scoring prior, not at the posterior mean. The variance in the criterion, the per-skill stop and every score still use the scoring posterior. |
+| What an answer is | Exactly the answers `hb.eap_add_response` adds to the session's EAP: not a pretest answer, not one outside the item's answer space (a question that ran out of time or was let go), not one on a quarantined item. |
+| Sets | A passage is one unit: it is entered at the mean difficulty of its questions, steps up when all of them were answered correctly, down when none was, and is a reversal in between. Inside a passage nothing changes (the rule of item sets). |
+| Unchanged | Scoring, exposure (the cap is applied before the filter: an item at the cap is never served to reach a target), the seen lists, family and sibling exclusion, the coverage floor, the balancing of generator families, the top k at random, pretest slots. No reply gains a field. |
+| Off | `selection.startup_step = 0` and `selection.aim_prior_sd_factor = 1` rank exactly as before. |
+
+The same rule runs in the app's selector (`web/src/engine/startup.ts`); `web/scripts/db/startup.db.test.ts` holds the SQL to it on random answer sequences (the target, the aim, what competes). Simulated before and after (`npm run sim:cat -- --part c`; figures in ROADMAP, "Owner decisions 2026-10-13"): a taker at θ = +2.5 on a pool shaped like the live text banks is shown a stratum 5 or 6 item among the first five questions in about three sessions of four (before: never), and the part's estimate recovers θ as well as before (r and RMSE within sampling error).
+
+**What the accepted adaptive channel looks like now (ROADMAP A24-sec).** Which item comes next already depended on whether the last answer was right. During the start-up that is plainer: a harder item follows a correct answer and an easier one a miss, until the first reversal. Nothing new is in a reply, and the bounds are the ones of A24-sec.
+
 ### Left for the owner
 
 - **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository

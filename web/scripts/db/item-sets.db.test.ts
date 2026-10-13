@@ -250,31 +250,42 @@ describe('a set competes for a slot as one unit (§7.4 for the unit, §7.1 for t
     await sc.db.owner.query(`update public.items set status = 'live' where item_id = $1`, [three[0]!.itemId])
   })
 
-  it('uses the session\'s posterior for the unit, as for an item', async () => {
-    const s = await start(sc)
-    let n = await nextOf(sc, s, ['RC'])
-    // answer single items or a whole set until something has been answered and no set is under way
-    for (let i = 0; i < 12 && isServed(n); i++) {
-      const cur = n as ServedSet
-      const last = cur.set === undefined || cur.set.position === cur.set.of
-      n = await submit(sc, s, cur, keyOf(sc, cur), ['RC'], undefined, !last)
-      if (last) break
+  it('uses the session\'s posterior for the unit, as for an item: its variance, and the information at the aim (20261014000100_startup_step.sql)', async () => {
+    // After a record that is all correct the start-up would leave only the units near its target in the pool
+    // (startup.db.test.ts, "a passage is one unit of the start-up"). This test is about the criterion of a unit
+    // once answers exist, so the steps are switched off for it; the aim is not.
+    await sc.db.owner.query(`update public.app_config set value = '0'::jsonb where key = 'selection.startup_step'`)
+    try {
+      const s = await start(sc)
+      let n = await nextOf(sc, s, ['RC'])
+      // answer single items or a whole set until something has been answered and no set is under way
+      for (let i = 0; i < 12 && isServed(n); i++) {
+        const cur = n as ServedSet
+        const last = cur.set === undefined || cur.set.position === cur.set.of
+        n = await submit(sc, s, cur, keyOf(sc, cur), ['RC'], undefined, !last)
+        if (last) break
+      }
+      const { rows } = await sc.db.owner.query<{ mean: number; sd: number }>(`select mean, sd from hb.session_posteriors((select state from public.sessions where session_id = $1)) where axis = 'RC'`, [s.session_id])
+      const { sd } = rows[0]!
+      expect(sd).toBeLessThan(1)
+      // where the axis's items are aimed: the EAP under the wider selection prior (startup.db.test.ts holds it to the app's)
+      const mean = Number((await sc.db.owner.query<{ aim: number }>(`select a.aim from hb.session_aims((select state from public.sessions where session_id = $1)) a where a.axis = 'RC'`, [s.session_id])).rows[0]!.aim)
+      expect(Math.abs(mean)).toBeGreaterThanOrEqual(Math.abs(Number(rows[0]!.mean)))
+      const ranked = await pool(sc, s.session_id, ['RC'])
+      let checked = 0
+      for (const set of [testlet, three, plain]) {
+        const row = ranked.find((r) => r.family === set[0]!.familyId)
+        if (row === undefined) continue // the set this session has been served
+        checked++
+        const sumInfo = set.reduce((t, q) => t + info(q, mean), 0)
+        const sumT = set.reduce((t, q) => t + q.expectedTimeS!, 0)
+        expect(row.score / ((sumInfo * sd * sd) / sumT)).toBeCloseTo(1, 9)
+      }
+      expect(ranked.length).toBe(5)
+      expect(checked).toBeGreaterThanOrEqual(2)
+    } finally {
+      await sc.db.owner.query(`update public.app_config set value = '1'::jsonb where key = 'selection.startup_step'`)
     }
-    const { rows } = await sc.db.owner.query<{ mean: number; sd: number }>(`select mean, sd from hb.session_posteriors((select state from public.sessions where session_id = $1)) where axis = 'RC'`, [s.session_id])
-    const { mean, sd } = rows[0]!
-    expect(sd).toBeLessThan(1)
-    const ranked = await pool(sc, s.session_id, ['RC'])
-    let checked = 0
-    for (const set of [testlet, three, plain]) {
-      const row = ranked.find((r) => r.family === set[0]!.familyId)
-      if (row === undefined) continue // the set this session has been served
-      checked++
-      const sumInfo = set.reduce((t, q) => t + info(q, mean), 0)
-      const sumT = set.reduce((t, q) => t + q.expectedTimeS!, 0)
-      expect(row.score / ((sumInfo * sd * sd) / sumT)).toBeCloseTo(1, 9)
-    }
-    expect(ranked.length).toBe(5)
-    expect(checked).toBeGreaterThanOrEqual(2)
   })
 })
 

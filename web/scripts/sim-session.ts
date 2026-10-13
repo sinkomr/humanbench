@@ -31,7 +31,7 @@ import { AXIS_INDEX, N_AXES, isAxisCode, type AxisCode } from '../src/engine/axe
 import { PUBLISH_MIN_ITEMS, SEGMENT_ORDER, TEXT_AXES, isTextAxis, type TextAxis } from '../src/engine/plan-table'
 import { createRng, type Rng } from '../src/engine/prng'
 import type { Observation } from '../src/engine/types'
-import { A15_TARGET_S, selectNext, selectionRng, sessionPosterior, type AnyItem, type SegmentId } from '../src/engine/selector'
+import { A15_TARGET_S, answeredItems, selectNext, selectionAim, selectionRng, sessionPosterior, type AnyItem, type SegmentId } from '../src/engine/selector'
 import { demoTextItem } from '../src/render/text/demo'
 import { demoPassage, demoPassagePayload } from '../src/render/text/demo-passage'
 import { Bot } from '../src/session/bot'
@@ -222,7 +222,7 @@ export class SimServer implements CatSource {
       return Promise.resolve({ kind: 'item', item: served })
     }
     const sel = selectNext(
-      { sessionSeed: this.#seed, posterior: sessionPosterior(this.#obs), administered: this.#administered, seenFamilies: [], remainingS: 1e9 },
+      { sessionSeed: this.#seed, posterior: sessionPosterior(this.#obs), administered: this.#administered, history: answeredItems(this.#obs), aim: selectionAim(this.#obs), seenFamilies: [], remainingS: 1e9 },
       selectionRng(this.#seed, this.#administered.length),
       { axes },
     )

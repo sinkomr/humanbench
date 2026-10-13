@@ -24,12 +24,14 @@ vi.mock('../src/sim/cat', async (importOriginal) => {
 
 describe('parseSimCatArgs', () => {
   it('has the documented defaults', () => {
-    expect(parseSimCatArgs([], '/w')).toEqual({ part: 'all', n: 2000, seed: 'm14b', targetMin: A15_TARGET_S / 60, fixed: 20, strict: false })
+    expect(parseSimCatArgs([], '/w')).toEqual({ part: 'all', perTheta: 200, items: 8, n: 2000, seed: 'm14b', targetMin: A15_TARGET_S / 60, fixed: 20, strict: false })
   })
 
   it('reads every option; --json resolves against the given directory', () => {
     const a = parseSimCatArgs(['--', '--part', 'b', '--n', '300', '--seed', 's1', '--target-min', '30', '--fixed', '25', '--json', 'out.json', '--strict'], '/w')
-    expect(a).toEqual({ part: 'b', n: 300, seed: 's1', targetMin: 30, fixed: 25, json: '/w/out.json', strict: true })
+    expect(a).toEqual({ part: 'b', perTheta: 200, items: 8, n: 300, seed: 's1', targetMin: 30, fixed: 25, json: '/w/out.json', strict: true })
+    // part c, the start-up study (engine/startup.ts), has its own two sizes and no acceptance
+    expect(parseSimCatArgs(['--part', 'c', '--per-theta', '50', '--items', '10'], '/w')).toMatchObject({ part: 'c', perTheta: 50, items: 10 })
   })
 
   // --strict is the M1.4b certificate; its r criterion needs a run of >= 20 items/axis (DESIGN §14.3).
@@ -43,7 +45,10 @@ describe('parseSimCatArgs', () => {
   })
 
   it.each([
-    [['--part', 'c']],
+    [['--part', 'd']],
+    [['--part', 'c', '--strict']],
+    [['--per-theta', '1']],
+    [['--items', '41']],
     [['--n', '1']],
     [['--n', 'x']],
     [['--target-min', '0']],

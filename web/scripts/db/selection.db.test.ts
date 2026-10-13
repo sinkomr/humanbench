@@ -10,6 +10,7 @@
  */
 
 import type pg from 'pg'
+import { SELECTION_PRIOR_SD_FACTOR } from '../../src/engine/startup'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eapAxis } from '../../src/engine/scorer'
 import { criterion, itemInformation } from '../../src/engine/selector'
@@ -145,7 +146,7 @@ describe('the §7.4 criterion: information per second x posterior variance (pari
     for (const n of counts.values()) expect(n).toBeGreaterThan(30) // 60 expected; a fifth of 300
   })
 
-  it('uses the posterior of the session: after answers the scores are those of the app at the session\'s EAP', async () => {
+  it('uses the posterior of the session: after answers (a mixed record, so the start-up is over) the scores are those of the app, its information at the aim and its variance the session\'s EAP', async () => {
     const s = await start(sc)
     let next = await nextOf(sc, s, ['QR'])
     const obs: Observation[] = []
@@ -156,12 +157,15 @@ describe('the §7.4 criterion: information per second x posterior variance (pari
       next = await answer(sc, s, next, right, ['QR'])
     }
     const post = eapAxis(obs, 0, 1)
+    // where the items are aimed: the EAP under the selection prior, twice as wide (20261014000100_startup_step.sql)
+    const at = { mean: eapAxis(obs, 0, SELECTION_PRIOR_SD_FACTOR ** 2).mean, sd: post.sd }
+    expect(Math.abs(at.mean)).toBeGreaterThan(Math.abs(post.mean))
     const got = await pool(sc, s.session_id, ['QR'])
     expect(got.length).toBe(5)
     const served = new Set((await sc.db.owner.query<{ item_id: string }>(`select item_id from public.exposure_log where session_id = $1`, [s.session_id])).rows.map((r) => r.item_id))
     const want = sc.items
       .filter((it) => it.axis === 'QR' && !served.has(it.itemId))
-      .map((it) => ({ id: it.itemId, score: criterion({ params: paramsOf(it), expected_time_s: it.expectedTimeS! }, post, 1) }))
+      .map((it) => ({ id: it.itemId, score: criterion({ params: paramsOf(it), expected_time_s: it.expectedTimeS! }, at, 1) }))
       .sort((x, y) => y.score - x.score || (x.id < y.id ? -1 : 1))
       .slice(0, 5)
     expect(got.map((g) => g.id)).toEqual(want.map((w) => w.id))
