@@ -31,8 +31,13 @@ import { SessionDriver } from './session-driver'
 const SCRIPTS = /\/assets\/[^/?]+\.js(\?.*)?$/
 /** The results chunk and its stylesheet, with or without the loader's cache-busting query. */
 const RESULTS_CHUNK = /\/assets\/Finished-[^/?]+\.(js|css)(\?.*)?$/
-/** The entry chunk's gzip bound (the same as scripts/results-split.test.ts, which says why). */
-const ENTRY_GZIP_MAX = 135_000
+/**
+ * The entry chunk's gzip bound: the same as scripts/results-split.test.ts, which says why and was raised to 140 KB
+ * with the passage screen (M3.11 phase 2). This copy had stayed at 135 KB; the session fixes of 2026-10-13 (the
+ * question timer, the start-up rule of the selector, the kept span generators) took this build's entry from 133.6 KB to
+ * 135.6 KB (2.0 KB more). A static import of the results chunk (about 41 KB) still trips the bound by a wide margin.
+ */
+const ENTRY_GZIP_MAX = 140_000
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
 
 // -------------------------------------------------------------------------- the shell

@@ -42,7 +42,8 @@ export function isSecondAttempt(spec: SpanSpec, status: SpanStatus): boolean {
 
 /** The sentence of the instructions that states the procedure, for sequences of digits or of blocks. */
 export function spanRuleText(unit: 'digit' | 'block'): string {
-  return `Each sequence is one ${unit} longer than the last. If your entry does not match, you get one more sequence of the same length, and after two that do not match at one length this task ends.`
+  // Short on purpose: on a 320 x 568 screen the instructions and Start must stay in the first screen (UX-023).
+  return `Each sequence is one ${unit} longer. After a miss you get one more of the same length; a second miss ends the task.`
 }
 
 /** What the pause before a trial says: a second attempt is named as one. */

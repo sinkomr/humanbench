@@ -218,12 +218,13 @@ test.describe('a pool without the text skills gives the six-part session', () =>
 })
 
 test.describe('a pool with made-up text questions', () => {
-  test('runs the part: "Up next", the question as text, the slider, a report, five answers, and the skill on the profile', async ({ page }) => {
-    const server = new FakeServer({ pools: { VOC: textPool('VOC', 5) }, eap: { VOC: { mean: 0.3, sd: 0.6, n: 5 } } })
+  test('runs the part: "Up next", the question as text, the slider, a report, six answers, and the skill on the profile', async ({ page }) => {
+    const server = new FakeServer({ pools: { VOC: textPool('VOC', 6) }, eap: { VOC: { mean: 0.3, sd: 0.6, n: 6 } } })
     await server.attach(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await toReadyOnline(page, `${SERVER_QUERY}&hb_text=VOC`)
-    await expect(page.locator('main')).toContainText('Up to seven short parts, about 35 minutes.')
+    // six parts and Vocabulary: typically 31.8 minutes since the lengths were re-measured on 2026-10-13 (it read "about 35")
+    await expect(page.locator('main')).toContainText('Up to seven short parts, about 30 minutes.')
     await button(page, 'Begin').click()
     for (const part of ['Reaction Time', 'Matrix & Series', 'Spatial']) {
       await pastBreak(page)
@@ -262,12 +263,12 @@ test.describe('a pool with made-up text questions', () => {
     expect(server.of('submit')[0]!.body).toMatchObject({ p_item_id: 'i:tst:voc:e2e1', p_response: 2 })
     await expect(page.locator('body')).not.toContainText(/\bincorrect\b|\bcorrect\b|wrong answer/i)
 
-    for (let i = 1; i < 5; i++) await answerText(page, i % 4)
-    // Five answered and the pool is empty: the part is over.
+    for (let i = 1; i < 6; i++) await answerText(page, i % 4)
+    // Six answered (the part's minimum, `plan-table.ts` PART_MINIMUMS) and the pool is empty: the part is over.
     await pastBreak(page)
     await expect(h1(page)).toHaveText('Up next: Working Memory')
-    expect(server.of('submit')).toHaveLength(5)
-    expect(server.of('submit').map((c) => typeof c.body.p_response)).toEqual(['number', 'number', 'number', 'number', 'number'])
+    expect(server.of('submit')).toHaveLength(6)
+    expect(server.of('submit').map((c) => typeof c.body.p_response)).toEqual(['number', 'number', 'number', 'number', 'number', 'number'])
     await button(page, 'Finish early').click()
     await button(page, 'Finish now').click()
     await expect(h1(page)).toHaveText(/^Session /, { timeout: 20_000 })

@@ -273,8 +273,7 @@ describe('DigitSpanRenderer', () => {
       expect(text).toMatch(direction)
       expect(text).toContain('Press Enter when you are done; Backspace removes the last digit.')
       expect(text).toContain('then choose Done')
-      expect(text).toContain('Each sequence is one digit longer than the last.')
-      expect(text).toContain('If your entry does not match, you get one more sequence of the same length, and after two that do not match at one length this task ends.')
+      expect(text).toContain('Each sequence is one digit longer. After a miss you get one more of the same length; a second miss ends the task.')
       m.destroy()
     }
   })
