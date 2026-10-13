@@ -132,6 +132,8 @@ HumanBench cannot run on GitHub Pages alone, because Pages only serves static fi
 
 (17 rows: 16 cognitive/knowledge axes plus Calibration, which is embedded and costs no separate time. The blob shows 16 or 17 spokes. In v1, rows 16–17 appear as "not yet measured".)
 
+**Span procedure (row 8; owner decision 2026-10-13).** The three span blocks are *reactive*: one trial per length; a correct trial moves up a length; a miss gives one second attempt at that length; a second miss ends the block. (Before: two trials at every length, always.) A length is passed by one exactly correct trial, with probability 1 − (1 − p)² for a trial that succeeds with probability p under either procedure, so the graded outcome (the longest passed length) has the same distribution and the GRM, its thresholds and the block's information are unchanged. The trial record is shorter and stopped on outcomes: a trial-level model must be fitted by likelihood, not from proportions correct (`web/src/tasks/span/prior.ts`).
+
 **Note on the LSAT format.** [EST] LSAC removed Analytical Reasoning ("Logic Games") starting with the August 2024 LSAT, following a 2019 ADA settlement with blind test-takers. The test now has two scored Logical Reasoning sections, one Reading Comprehension section and one unscored section. HumanBench keeps logic games anyway, as a separate axis: they are the most *programmatically verifiable* reasoning items available (Z3), and they measure deductive ordering/grouping distinct from LR. Tag them "LSAT-classic style (pre-2024)".
 
 **Expected intercorrelations.** These initialise Σ; values are [EST†] literature ranges.
@@ -579,10 +581,17 @@ $$\text{score}_j = w_k \cdot \frac{a_j^2 P_j(1-P_j)\,\operatorname{Var}(\theta_k
 
 Then apply randomesque top-5, exposure caps and family exclusion.
 
+**Start-up and aim (amended 2026-10-13, after the owner's first full session: 64 of 67 right and "it seemed like it didnt [adapt]").** The criterion above places the next item at the posterior mean under the N(0, 1) prior, which ten correct answers in a row move by about one stratum, and it divides by time, which favours the quicker, easier items. Two rules sit in front of it; neither changes a score:
+1. *Start-up.* The first item of a part is chosen as above. While every scored answer on the axis in this session is correct, the next item is aimed at the difficulty of the last one plus one stratum (1.0); while every one is wrong, minus one. Only candidates within half a stratum of that target compete (or the nearest, when there are none), and among them the criterion, the floor, the balancing and the top-5 decide as before. At the first reversal the start-up is over for the axis in that session. A passage is one unit (the mean difficulty of its questions; up when all were right, down when none was, a reversal in between).
+2. *Aim.* After the start-up the information $a_j^2P_j(1-P_j)$ is evaluated at the EAP under a prior twice as wide (SD 2), not at the posterior mean; $\operatorname{Var}(\theta_k)$, the per-axis stop and every score still use the scoring posterior.
+
+Exposure caps, seen lists and family exclusion apply before both. The rule is the same in the app (`web/src/engine/startup.ts`) and on the server (`supabase/migrations/20261014000100_startup_step.sql`).
+
 **Session composition (60 min), requirement R-7.4.**
 1. Onboarding + honour code + device check: 3 min.
 2. Blocks of 6–10 min alternating clusters, in this order: Speed warm-up (RT, 2 min) → Reasoning → Knowledge → Spatial → Verbal/RC → Memory → Quant → Knowledge → Logic → Fermi (calibration embedded throughout). This order breaks up fatigue and varies the modality.
 3. Within a block the engine picks axes by the criterion, subject to a floor of ≥ 3 scored items per axis in session 1.
+   - **Minimum per part (owner, 2026-10-13: "each section should have a minimum number of questions asked, even if running over the originally estimated time"; the number six is the proposal built, ROADMAP "Owner decisions 2026-10-13").** Every part that asks questions runs until six of its questions are answered, past its time share if need be, and shows at most two more than six when some run out of time. Reading Comprehension is counted in passages (two, 6 to 8 questions). More questions follow when time remains. One table: `web/src/engine/plan-table.ts` `PART_MINIMUMS`. A focus session has no minimum.
 4. Stopping:
    - hard stop at 57 min, then reveal;
    - a "finish early" button at any time (partial blob);
@@ -673,6 +682,7 @@ $$N_{\text{families/stratum}} \approx 6S \times 0.5 \times 2 = 6S, \qquad N_{\te
 ```
 
 - **Response tuple:** `[item_id, pretest(0/1), response, correct(0/1/null), rt_ms, confidence_pct, extra?]`.
+- **`bank_version`:** the item bank the file's sessions were served from, as far as the app that wrote it knows: the server's bank version (`start_session`) once the file holds a served session, the latest one when it holds several, and `m1-static` for a file whose sessions were all made on the device. A merge keeps the latest of its inputs' and the running app's. It is a label: nothing is scored, selected or verified by it, and the per-session MAC does not cover it (`web/src/save/bank-version.ts`).
 - **Correctness for finite-bank items:** filled from the server's scoring RPC. It is stored so that offline re-scoring works, and it is covered by the HMAC.
 
 **Size [CALC].**
@@ -760,6 +770,7 @@ $$N_{\text{families/stratum}} \approx 6S \times 0.5 \times 2 = 6S, \qquad N_{\te
   - No correctness feedback on finite-bank items (key leakage, and it would inflate practice effects).
   - Speed/memory games show immediate stats (they are designed to be game-like and their keys are trivial).
   - Procedural items show feedback only in an optional "practice mode" that doesn't count.
+  - **A question that can run out of time shows how long is left** (owner feedback 2026-10-13): the time as `m:ss` above the question for the whole time it waits for an answer, small and unanimated; in the last 30 seconds the words "Time is nearly up", a mark and a frame (not colour alone), announced once to a screen reader. The confidence slider is not timed.
   - At the end, reveal performance per axis, plus 3 *procedural* items with worked solutions.
 - **Reveal flow:** animated blob build-up, axis by axis → "your most distinctive peaks" (credible only) → drill-down → download the save file (prominent, and required before leaving; a `beforeunload` warning is shown) → share card.
 - **Retest motivation:**
@@ -982,7 +993,7 @@ No RLS policies are created for `anon`, so all access goes through `SECURITY DEF
   - keyboard navigation for everything;
   - screen-reader labels;
   - no color-only information;
-  - adjustable text size, with timing unaffected for power items (no time limits on power items beyond a generous cap).
+  - adjustable text size, with timing unaffected for power items (no time limits on power items beyond a generous cap). The cap is `max(180 s, 2.5 · E[T])` (ROADMAP A18); it is never a surprise: the question's timer shows the time left and warns before it ends (§10).
   - Users can **skip any axis** ("I can't do this one", e.g. colour vision, motor, visual impairment); the blob then shows "not measured".
   - RT tasks offer a keyboard or touch mode; the mode is stored and normed separately.
 - **Fairness/DIF without demographics:**
