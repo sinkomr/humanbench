@@ -18,6 +18,8 @@ import type { SaveFileV1 } from '../save/types'
 import { createRng } from '../engine/prng'
 import { answerBlock } from '../sim/responders'
 import { getFamily, resolveItem } from '../tasks/registry'
+import { mergeAll } from '../save/merge'
+import { validateSave } from '../save/validate'
 import { SpyStorage, TEST_DEVICE } from './bot'
 import { SAVE_CTX } from './constants'
 import { SessionPersister } from './persist'
@@ -43,7 +45,7 @@ class Cat implements CatSource {
   }
 }
 
-function setup(over: { anonId?: string; base?: SaveFileV1 | null } = {}): { run: SessionRun; p: SessionPersister; cat: Cat; s: SpyStorage; t: { ms: number }; fire: () => void } {
+function setup(over: { anonId?: string; base?: SaveFileV1 | null; bankVersion?: string | null } = {}): { run: SessionRun; p: SessionPersister; cat: Cat; s: SpyStorage; t: { ms: number }; fire: () => void } {
   const t = { ms: 0 }
   const cat = new Cat()
   const run = new SessionRun({ sessionId: 's_LOCALSESSION001', startedMs: WALL, now: () => t.ms, device: TEST_DEVICE, rtInput: 'keyboard', cat })
@@ -120,6 +122,38 @@ describe('a run with a server in the save library', () => {
     await answerOne(none)
     expect(none.p.anonId).toBe(earlier.anon_id)
     expect(none.p.currentSave().anon_id).toBe(earlier.anon_id)
+  })
+
+  it('labels a save that holds a served session with the bank the server served it from, not with the device’s pool (DESIGN §8; the owner’s save of 2026-10-12 said m1-static)', async () => {
+    const h = setup({ bankVersion: '2026.10.12-b2' })
+    // before the first served answer the file holds nothing of the server's: the label is the device's
+    expect(h.run.catSessionState()).toBeNull()
+    expect(h.p.currentSave().bank_version).toBe('m1-static')
+    await answerOne(h)
+    expect(h.p.currentSave().bank_version).toBe('2026.10.12-b2')
+    h.p.attachSigned(signedCopy())
+    const done = h.p.currentSave()
+    expect(done.bank_version).toBe('2026.10.12-b2')
+    expect(validateSave(done).ok).toBe(true)
+    // the label is not part of what the server signed: the session and its MAC are the server's bytes as before
+    expect(jcs(done.sessions.find((x) => x.session_id === SERVER_ID)!)).toBe(jcs(signedCopy()))
+    // read back by an app on the device's own pool (a later visit, the autosave, a merge with another file), it keeps it
+    expect(mergeAll([done], SAVE_CTX).bank_version).toBe('2026.10.12-b2')
+    expect(mergeAll([done, { ...done, bank_version: 'm1-static', sessions: [] }], SAVE_CTX).bank_version).toBe('2026.10.12-b2')
+    // and a later sitting on a newer bank moves it on, whatever the order of the files
+    const newer = { ...done, bank_version: '2026.11.02-b10', sessions: [] }
+    const older = { ...done, bank_version: '2026.11.02-b9', sessions: [] }
+    expect(mergeAll([done, newer, older], SAVE_CTX).bank_version).toBe('2026.11.02-b10')
+    expect(mergeAll([older, newer, done], SAVE_CTX).bank_version).toBe('2026.11.02-b10')
+  })
+
+  it('without a bank version from the server (an older server, or none) the label stays the device’s', async () => {
+    for (const bankVersion of [null, undefined]) {
+      const h = setup(bankVersion === undefined ? {} : { bankVersion })
+      await answerOne(h)
+      h.p.attachSigned(signedCopy())
+      expect(h.p.currentSave().bank_version).toBe(SAVE_CTX.bank_version)
+    }
   })
 
   it('the signed copy replaces the unsigned one, and stays when the save is made again', async () => {

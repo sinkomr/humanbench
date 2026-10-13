@@ -9,6 +9,7 @@
  */
 
 import type { ResponseTuple } from '../engine/types'
+import { laterBankVersion } from './bank-version'
 import { utcSeconds } from './clock'
 import { isUsableCache, mergeAll } from './merge'
 import { SCHEMA_URL, SCHEMA_VERSION, type DeviceInfo, type PosteriorCache, type SaveContext, type SaveFileV1, type SaveSession, type SessionFlags } from './types'
@@ -74,7 +75,7 @@ export function saveWithSession(base: SaveFileV1 | null, state: SessionState, me
   const doc: SaveFileV1 = {
     $schema: SCHEMA_URL,
     schema_version: SCHEMA_VERSION,
-    bank_version: meta.ctx.bank_version,
+    bank_version: base === null ? meta.ctx.bank_version : laterBankVersion(meta.ctx.bank_version, base.bank_version),
     anon_id: anonId,
     created_utc: utcSeconds(meta.createdMs),
     sessions: [...(base?.sessions ?? []).filter((s) => s.session_id !== state.sessionId), session],
