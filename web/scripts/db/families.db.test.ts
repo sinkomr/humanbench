@@ -352,12 +352,9 @@ describe('Fermi estimates: the score of §3 row 11 and its Gaussian observation,
 
   it('withholds FER from a session with fewer than five answers, and counts an answer outside the answer space as none', async () => {
     const s = await start(sc)
-    // (answers a dex or so off: one eight dex off puts the whole posterior on the edge of the grid, and the per-skill stop
-    // of §7.4 then ends the part; a real effect of the grid, left as it is)
-    await play(sc, s, ['FER'], (it, i) => {
-      const t = Number((it.key as { true_value: string }).true_value)
-      return i < 4 ? { value: t * 10, unit: 'count', low: t, high: t * 100 } : { value: 5, unit: 'count', low: 10, high: 1 }
-    }, 6)
+    // (answers several dex off put the grid posterior on its edge, where its sd is small: the per-skill stop does not end
+    // a Fermi part for that, so the part goes on to its minimum)
+    await play(sc, s, ['FER'], (_it, i) => (i < 4 ? { value: 1000, unit: 'count', low: 10, high: 1e5 } : { value: 5, unit: 'count', low: 10, high: 1 }), 6)
     await finish(sc, s)
     const got = await rescoreOf(sc, [s])
     expect(got.eap.FER, JSON.stringify(got)).toBeUndefined()
@@ -404,6 +401,33 @@ describe('situational judgments: the rating score and its GRM category, as the d
     const fits = (response: unknown): Promise<boolean> => one<boolean>(sc.db, 'hb.response_fits($1::jsonb, 4, $2::jsonb)', [JSON.stringify({ ratings: [1, 2, 3, 4] }), JSON.stringify(response)])
     for (const [response, want] of [[[1, 2, 3, 4], true], [[4, 4, 4, 4], true], [[1, 2, 3], false], [[1, 2, 3, 5], false], [[0, 2, 3, 4], false], [[1.5, 2, 3, 4], false], [['1', 2, 3, 4], false], [2, false], [null, false], [{ most: 0, least: 1 }, false]] as const) {
       expect(await fits(response), JSON.stringify(response)).toBe(want)
+    }
+  })
+
+  it('computes the grid log-likelihood of a GRM and a Gaussian observation in one statement, equal to the scoring core and to the app engine (fuzzed)', async () => {
+    const grid = Array.from({ length: EAP_N_GRID }, (_, i) => (i === EAP_N_GRID - 1 ? EAP_HI : EAP_LO + (i * (EAP_HI - EAP_LO)) / (EAP_N_GRID - 1)))
+    const cases = fc.sample(
+      fc.oneof(
+        // (parameters to the precision the bank writes them: no subnormal number, whose products PostgreSQL refuses)
+        fc.record({ kind: fc.constant('grm' as const), a: fc.integer({ min: 20, max: 300 }).map((n) => n / 100), b0: fc.integer({ min: -300, max: 200 }).map((n) => n / 100), gaps: fc.array(fc.integer({ min: 5, max: 200 }).map((n) => n / 100), { minLength: 1, maxLength: 4 }), yf: fc.double({ min: 0, max: 1, noNaN: true }) }),
+        fc.record({ kind: fc.constant('gaussian' as const), lam: fc.integer({ min: 5, max: 100 }).map((n) => n / 100), d: fc.integer({ min: -200, max: 100 }).map((n) => n / 100), sigma: fc.integer({ min: 10, max: 100 }).map((n) => n / 100), x: fc.double({ min: -8, max: 0, noNaN: true }).map((v) => (Math.abs(v) < 1e-12 ? 0 : v)) }),
+      ),
+      120,
+    )
+    for (const c of cases) {
+      const obs: Observation =
+        c.kind === 'grm'
+          ? (() => {
+              const b = c.gaps.reduce<number[]>((acc, g) => [...acc, acc[acc.length - 1]! + g], [c.b0])
+              return { kind: 'grm', axis: 'EMO', a: c.a, b, y: Math.min(b.length, Math.floor(c.yf * (b.length + 1))) }
+            })()
+          : { kind: 'gaussian', axis: 'FER', lam: c.lam, d: c.d, sigma: c.sigma, x: c.x }
+      const got = await one<number[]>(sc.db, 'hb.obs_grid_ll($1::jsonb)', [JSON.stringify(obs)])
+      const core = await one<number[]>(sc.db, `(select array_agg((select o.o_ll from hb.obs_terms(s.kind[1], g.t, s.pa[1], s.pb[1], s.pc[1], s.py[1], s.ext, s.off[1], s.len[1], 1) o) order by g.i) from hb.parse_obs(jsonb_build_array($1::jsonb)) s, unnest(hb.eap_grid()) with ordinality g (t, i))`, [JSON.stringify(obs)])
+      for (let i = 0; i < grid.length; i++) {
+        expect(Math.abs(got[i]! - core[i]!), `${JSON.stringify(obs)} at ${i}`).toBeLessThan(1e-9)
+        expect(Math.abs(got[i]! - observationLoglik(obs, grid[i]!)), `${JSON.stringify(obs)} at ${i}`).toBeLessThan(1e-6)
+      }
     }
   })
 

@@ -46,8 +46,23 @@ async function toReady(page: Page, q: string): Promise<void> {
   await expect(h1(page)).toHaveText('Ready when you are')
 }
 
+/**
+ * Through the closing screen to the results. `finish` is safe to repeat, and the screen offers "Try again" when it
+ * fails: here, with three browsers playing on one database on a loaded machine, it has run past the anon role's 3 s
+ * statement timeout (alone it takes under 0.1 s), so the person's way on is taken, at most twice.
+ */
+async function throughClosing(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const retry = button(page, 'Try again')
+    await expect(h1(page).filter({ hasText: /^Session / }).or(retry)).toBeVisible({ timeout: 30_000 })
+    if ((await h1(page).textContent())?.startsWith('Session ')) return
+    await retry.click()
+  }
+}
+
 async function nextScreen(page: Page): Promise<string> {
-  await expect(h1(page)).toHaveText(/^(Up next: .+|Time for a break\?|Session .+)$/, { timeout: 30_000 })
+  await expect(h1(page)).toHaveText(/^(Up next: .+|Time for a break\?|Session .+|Saving your answers)$/, { timeout: 30_000 })
+  if ((await h1(page).textContent()) === 'Saving your answers') await throughClosing(page)
   if ((await h1(page).textContent()) === 'Time for a break?') {
     await button(page, 'Keep going').click()
     await expect(h1(page)).toHaveText(/^(Up next: .+|Session .+)$/, { timeout: 30_000 })
@@ -62,7 +77,7 @@ async function skipPart(page: Page): Promise<void> {
 
 /** Waits for the question on screen or the end of the part; true while a question of `title` is on screen. */
 async function onQuestion(page: Page, title: string, control: string): Promise<boolean> {
-  await expect(page.locator(control).first().or(h1(page).filter({ hasText: /^(Up next: |Time for a break|Session )/ }))).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator(control).first().or(h1(page).filter({ hasText: /^(Up next: |Time for a break|Session |Saving your answers)/ }))).toBeVisible({ timeout: 30_000 })
   return (await h1(page).textContent())?.trim() === title
 }
 
@@ -107,14 +122,14 @@ test.describe('the "games" pool: made-up logic games', () => {
       }
     }
     expect(seen).toEqual(['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed', 'Logic Games'])
-    expect(answered).toBe(7) // two games, three questions and four
-    await expect(h1(page)).toHaveText(/^Session /, { timeout: 30_000 })
+    expect([6, 7]).toContain(answered) // two of the three games (3, 4 and 3 questions), whole
+    await throughClosing(page)
     await expect(page.locator('[data-section="save"]')).toBeVisible({ timeout: 30_000 })
     const of = (fn: string): Rpc[] => calls.filter((c) => c.fn === fn)
     expect(calls.filter((c) => c.status !== 200)).toEqual([])
     expect(JSON.stringify(calls.map((c) => c.reply))).not.toMatch(KEYISH)
     const rescore = of('rescore').at(-1)!.reply as { eap: Record<string, { n: number }> }
-    expect(rescore.eap.LG?.n).toBe(7)
+    expect(rescore.eap.LG?.n).toBe(answered)
   })
 })
 
@@ -143,7 +158,7 @@ test.describe('the "estimates" pool: made-up Fermi estimates, vignettes, judgmen
           await done
           await expect(page.getByRole('slider')).toHaveCount(0)
           n++
-          if (n > 12) throw new Error('the Fermi part did not end')
+          if (n > 40) throw new Error('the Fermi part did not end') // (a part goes on while its time lasts and the pool has items)
         }
         played[name] = n
       } else if (name === 'Emotion Reading (text scenarios)') {
@@ -164,7 +179,7 @@ test.describe('the "estimates" pool: made-up Fermi estimates, vignettes, judgmen
             await done
           }
           n++
-          if (n > 12) throw new Error('the Emotion Reading part did not end')
+          if (n > 40) throw new Error('the Emotion Reading part did not end')
         }
         played[name] = n
       } else if (name === 'Creative Thinking') {
@@ -180,14 +195,14 @@ test.describe('the "estimates" pool: made-up Fermi estimates, vignettes, judgmen
           await button(page, 'Continue').click()
           await done
           n++
-          if (n > 12) throw new Error('the word-links part did not end')
+          if (n > 40) throw new Error('the word-links part did not end')
         }
         played[name] = n
       } else await skipPart(page)
     }
     for (const n of Object.values(played)) expect(n).toBeGreaterThanOrEqual(6)
     expect(Object.keys(played).sort()).toEqual(['Creative Thinking', 'Emotion Reading (text scenarios)', 'Fermi Estimation'])
-    await expect(h1(page)).toHaveText(/^Session /, { timeout: 30_000 })
+    await throughClosing(page)
     await expect(page.locator('[data-section="save"]')).toBeVisible({ timeout: 30_000 })
 
     const of = (fn: string): Rpc[] => calls.filter((c) => c.fn === fn)
@@ -207,6 +222,7 @@ test.describe('the "estimates" pool: made-up Fermi estimates, vignettes, judgmen
     expect(finish.session.responses.every((t) => t[3] === null)).toBe(true)
     const rescore = of('rescore').at(-1)!.reply as { eap: Record<string, { n: number }> }
     for (const k of ['FER', 'EMO', 'CRE']) expect(rescore.eap[k]?.n, k).toBeGreaterThanOrEqual(5)
-    await expect(page.locator('body')).not.toContainText(/\bincorrect\b|wrong answer|autis|adhd|alexithym/i)
+    // no verdict; and no clinical term beyond the one resource line R-5.6.5 asks for when Emotion Reading is measured
+    await expect(page.locator('body')).not.toContainText(/\bincorrect\b|wrong answer|adhd|alexithym/i)
   })
 })

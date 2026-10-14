@@ -40,7 +40,11 @@
 --   hb.session_obs       the MAP at finish takes them too (hb.map_theta has had Gaussian and GRM terms since M2.2).
 --   hb.candidate_items   re-created with one more column, o_extra (the parameter row's extra): a live item whose row
 --                          is Gaussian (lam, d, sigma > 0) with a Fermi key, or GRM (a > 0, increasing thresholds)
---                          with a rating key, is a candidate; pretest slots still take dichotomous items only.
+--                          with a rating key, is a candidate; pretest slots still take dichotomous items only. The
+--                          per-axis stop (posterior sd < selection.stop_sd) does not apply to a Gaussian item: with the
+--                          provisional fermi-v0 norms (lam 0.2 dex per SD) a few answers 1.5 dex off put the grid
+--                          posterior at its edge (θ = −4), whose sd the grid makes small, and the part would end before
+--                          its minimum of answers; the client's part decides when Fermi questions end.
 --   hb.rank_live         the information of a Gaussian item is (lam/sigma)², of a GRM item its expected Fisher
 --                          information at the aim; an item with no difficulty b passes the start-up's window (it has
 --                          no difficulty to aim); and on the axes of selection.balance_item_type_axes (EMO) the
@@ -478,7 +482,10 @@ begin
 end
 $$;
 
--- The log-likelihood of one observation (any kind of the scoring core) at the 61 grid points.
+-- The log-likelihood of one observation (any kind of the scoring core) at the 61 grid points. A Gaussian and a GRM
+-- observation are computed in one statement over the grid (the terms of hb.obs_terms kinds 4 and 3, written out: a
+-- call of hb.obs_terms per grid point costs about 0.2 ms, which a save of forty sessions with situational judgments
+-- would multiply past the anon role's 3 s); any other kind goes through hb.obs_terms.
 create function hb.obs_grid_ll(p_obs jsonb)
 returns double precision[]
 language plpgsql immutable parallel safe
@@ -488,7 +495,39 @@ declare
   v_set hb.obs_set := hb.parse_obs(pg_catalog.jsonb_build_array(p_obs));
   v_grid double precision[] := hb.eap_grid();
   v_out double precision[] := pg_catalog.array_fill(0::double precision, array[61]);
+  v_a double precision;
+  v_m int;
+  v_y int;
+  v_lo double precision;
+  v_hi double precision;
+  v_gap double precision;
 begin
+  if v_set.kind[1] = 4 then
+    -- x ~ N(lam·θ + d, sigma²): -½ r² - ln sigma - ½ ln 2π
+    -- (a residual below 1e-150 is 0: its square would underflow, an error in PostgreSQL)
+    return (select pg_catalog.array_agg(-0.5 * (case when pg_catalog.abs(r.r) < 1e-150::double precision then 0 else r.r * r.r end)
+                                        - pg_catalog.ln(v_set.pc[1]) - 0.5 * pg_catalog.ln(2 * pg_catalog.pi()) order by g.i)
+              from pg_catalog.unnest(v_grid) with ordinality g (t, i)
+             cross join lateral (select (v_set.py[1] - v_set.pa[1] * g.t - v_set.pb[1]) / v_set.pc[1] as r) r);
+  elsif v_set.kind[1] = 3 then
+    -- P(y) of the GRM with thresholds b_1 < … < b_m: log σ(-z_1) for y = 0, log σ(z_m) for y = m, and
+    -- log σ(z_y) + log σ(-z_{y+1}) + ln(1 - e^{-a(b_{y+1} - b_y)}) between (z_j = a(θ - b_j))
+    v_a := v_set.pa[1];
+    v_m := v_set.len[1];
+    v_y := v_set.py[1]::int;
+    v_lo := case when v_y >= 1 then v_set.ext[v_set.off[1] + v_y] end;
+    v_hi := case when v_y < v_m then v_set.ext[v_set.off[1] + v_y + 1] end;
+    v_gap := case when v_y >= 1 and v_y < v_m then pg_catalog.ln(- hb.expm1(- v_a * (v_hi - v_lo))) else 0 end;
+    return (select pg_catalog.array_agg(
+                     (case when v_lo is null then 0::double precision
+                           else (case when v_a * (g.t - v_lo) >= 0 then - pg_catalog.ln(1 + pg_catalog.exp(greatest(- v_a * (g.t - v_lo), -700::double precision)))
+                                      else v_a * (g.t - v_lo) - pg_catalog.ln(1 + pg_catalog.exp(greatest(v_a * (g.t - v_lo), -700::double precision))) end) end)
+                     + (case when v_hi is null then 0::double precision
+                             else (case when - v_a * (g.t - v_hi) >= 0 then - pg_catalog.ln(1 + pg_catalog.exp(greatest(v_a * (g.t - v_hi), -700::double precision)))
+                                        else - v_a * (g.t - v_hi) - pg_catalog.ln(1 + pg_catalog.exp(greatest(- v_a * (g.t - v_hi), -700::double precision))) end) end)
+                     + v_gap order by g.i)
+              from pg_catalog.unnest(v_grid) with ordinality g (t, i));
+  end if;
   for g in 1..61 loop
     v_out[g] := (select o.o_ll from hb.obs_terms(v_set.kind[1], v_grid[g], v_set.pa[1], v_set.pb[1], v_set.pc[1], v_set.py[1], v_set.ext, v_set.off[1], v_set.len[1], 1) o);
   end loop;
@@ -684,7 +723,9 @@ begin
    where i.status = p_status
      and not f.practice_only
      and (p_axes is null or f.axis = any (p_axes))
-     and po.sd >= v_stop
+     -- the per-axis stop of §7.4, except for a Gaussian (Fermi) item: an answer a few dex off moves the 61-point grid's
+     -- posterior to its edge, where the grid makes its sd small, and the stop would end the part before its minimum
+     and (po.sd >= v_stop or p.model = 'gaussian')
      and (
        (p.model in ('2pl', '2pl_testlet', '3pl')
         and p.a is not null and p.b is not null

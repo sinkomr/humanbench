@@ -39,7 +39,7 @@ export function fermiItems(count: number, seed = 'fermi'): FixtureItem[] {
     const delta = round3(rng.normal(0, 0.8))
     const p = fermiParams(delta)
     const mantissa = (1 + rng.next() * 8.999).toFixed(4)
-    const exponent = rng.int(2, 11)
+    const exponent = rng.int(5, 7) // (truths of a few million: an answer of 3e6 is at most about two dex off)
     const u = [0, 0.05, 0.15, 0.2, 0.3][k % 5]!
     return {
       itemId: `i:fermi:v1:${seed}-${String(k).padStart(3, '0')}`,

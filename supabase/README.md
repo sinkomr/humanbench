@@ -1429,10 +1429,18 @@ tests them (ROADMAP M3.11 phase 3).
   four skills; `finish` carries the client's own answers with `correct: null`).
 - **Interval hits (§3 row 12) are not stored and not scored:** `hb.fermi_eval` computes them, a later calibration (M4.8)
   can recompute them from the stored answer and the key.
-- **Measured** (one 40-session save of 100 answers, while other work loaded the machine): `rescore`'s output on a
-  dichotomous save is identical to the old body's; its time was within the noise of the old body's on the same save.
-  A grid edge to know of: two Fermi answers about eight dex off put the FER posterior on the edge of the 61-point grid,
-  its sd falls under `selection.stop_sd`, and the server ends the part (`axes_done`) before its six; left as it is.
+- **Measured.** `rescore`'s output on a dichotomous save is identical to the old body's (one 40-session save of 100
+  answers), and its time within the noise of the old body's on the same save. A session of 36 answers of the four
+  families: `finish` 87 ms, `rescore` about 30 ms (the Gaussian and GRM grid terms are computed in one statement, not
+  through `hb.obs_terms` per grid point, which took 140 ms and would have put a save of forty such sessions past the
+  anon role's 3 s), `submit` 20 to 50 ms. Under the heavy load of this machine (load average 30 to 300) with three
+  browsers on one database, `finish` and `rescore` did run past 3 s once each (`npm run e2e:db`, before the grid terms
+  were made faster); the app offers "Try again" and the test takes it.
+- **A grid edge.** With the provisional fermi-v0 norms (lam 0.2 dex per SD) a few answers 1.5 dex or more off put the
+  session's FER posterior on the edge of the 61-point grid (θ = −4), where the grid makes its sd small. The per-skill
+  stop (`selection.stop_sd`) therefore does not apply to Gaussian items, so a Fermi part runs to its minimum; the
+  published estimate of such a person is the grid's edge (the blob clamps at −3 anyway). Wider grids or calibrated norms
+  (M4.8) are the fix.
 - **What the bank should set** (its servable list): `fermi_estimate`, `rat_triad`, `emotion_vignette_mc`, `sjt_rating`,
   `mc_logic_game`. A Fermi row is `fermi_params(δ)` in `extra` with a and b null; an SJT row a GRM with three
   thresholds in `extra.thresholds`; a logic game's questions share the family and are numbered in id order; a Fermi
