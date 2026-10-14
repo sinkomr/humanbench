@@ -45,7 +45,8 @@
  *   dropped (an answer is recorded the moment it is given, with its confidence if any). The hard stop
  *   is noticed on the next `tick()`, but the recorded time is the limit, not the late reading.
  * - **Item cap** (§13): a power item that gets no answer within `time_limit_s` is recorded as not
- *   correct (a time-out). The screen shows the time left for the whole of it and warns in the last
+ *   correct (a time-out). When an answer is chosen or typed and not yet sent at that moment, it is sent as it stands
+ *   and scored as any answer, marked `submitted_at_timeout` (owner decision 2026-10-13; {@link SessionRun.itemDraft}). The screen shows the time left for the whole of it and warns in the last
  *   30 seconds ({@link SessionRun.itemTime}, `ItemTimer.svelte`; owner feedback 2026-10-13).
  *
  * ## Served parts (M2.7)
@@ -206,6 +207,8 @@ export interface Notice {
   readonly axis?: AxisCode
   /** A `timeout` of a question the server holds: there it is left out of the scores, not counted as wrong. */
   readonly served?: boolean
+  /** A `timeout` that sent the answer as it stood (owner decision 2026-10-13). */
+  readonly submitted?: boolean
 }
 
 /** Why the run changed, for the persistence layer (autosave after `response`, `skip`, `break`, `finish`). */
@@ -421,6 +424,12 @@ interface CurrentItem {
   readonly startedMs: number
   onsetMs: number | null
   unavailable: boolean
+  /**
+   * The answer as it stands on screen, not yet submitted (a valid response or null), and the confidence set on the
+   * scale: what a time-out sends (owner decision 2026-10-13; {@link SessionRun.itemDraft}).
+   */
+  draft?: JsonValue | null
+  draftPct?: number | null
 }
 
 /** What the screens may know of the item on screen, whoever made it. */
@@ -490,6 +499,12 @@ function minutesOf(seconds: number): number {
 
 /** A minimum on the interstitial's estimate of a first-session CAT segment: the 3-item floor takes about this long. */
 const FLOOR_SEGMENT_MIN_S = 120
+
+/**
+ * The mark of an answer sent as it stood when its question ran out of time (owner decision 2026-10-13): the device
+ * tuple's `extra` (`{ submitted_at_timeout: true }`) and the served answer's client flag of the same name.
+ */
+export const SUBMITTED_AT_TIMEOUT = 'submitted_at_timeout'
 
 /** How many times a served part lets go of an item left pending by another part before it gives up (M2.7). */
 const MAX_FOREIGN_RELEASES = 3
@@ -1367,21 +1382,64 @@ export class SessionRun {
     this.#boundary(() => this.#present())
   }
 
+  /**
+   * The answer on screen as it stands, not yet submitted (owner decision 2026-10-13): the renderer reports every change
+   * of its choice or its text (`render/common/answer-slot.ts`). Kept when the family (or, for a served question, the
+   * served shape) accepts it as a response, else none. Cheap and silent: it changes nothing on screen.
+   */
+  itemDraft(response: unknown): void {
+    const cur = this.#current
+    if (this.#phase !== 'item' || cur === null || cur.unavailable) return
+    cur.draft = response === null || response === undefined ? null : this.#acceptable(cur, response) ? (response as JsonValue) : null
+  }
+
+  /** The confidence set on the scale of the question on screen, or null when it is cleared (sent with a time-out's answer). */
+  itemConfidence(pct: number | null): void {
+    const cur = this.#current
+    if (this.#phase !== 'item' || cur === null) return
+    cur.draftPct = pct
+  }
+
+  /** True iff `response` is one the question on screen takes as an answer (scored to right or wrong on the device). */
+  #acceptable(cur: CurrentItem, response: unknown): boolean {
+    if (cur.served !== null) return servedResponseFits(cur.served, response)
+    try {
+      return (familyOf(cur.item!.family).score(cur.item as never, response as never) as { correct: 0 | 1 | null }).correct !== null
+    } catch (e) {
+      if (e instanceof MalformedResponseError) return false
+      throw e
+    }
+  }
+
+  /**
+   * The question ran out of time. With an answer chosen or typed and not yet sent, that answer is sent as it stands,
+   * with the confidence if one was set, scored as any answer, with the time limit as its response time and the mark
+   * `submitted_at_timeout` (the tuple's `extra` on the device, the answer's client flag for a served one; owner
+   * decision 2026-10-13). With nothing chosen or typed it is a time-out with no answer, as before.
+   */
   #timeoutItem(cur: CurrentItem): void {
     const limitMs = (this.#facts(cur).time_limit_s ?? DEFAULT_ITEM_LIMIT_S) * 1000
     const start = cur.onsetMs ?? cur.startedMs
-    if (cur.served !== null) this.#recordServed(cur, null, limitMs, null, start + limitMs)
+    const draft = cur.draft !== undefined && cur.draft !== null && this.#acceptable(cur, cur.draft) ? cur.draft : null
+    if (draft !== null) {
+      const pct = this.#ratingOf(cur, cur.draftPct ?? null)
+      if (cur.served !== null) this.#recordServed(cur, draft, limitMs, pct, start + limitMs, undefined, true)
+      else {
+        const correct = (familyOf(cur.item!.family).score(cur.item as never, draft as never) as { correct: 0 | 1 }).correct
+        this.#recordItem(cur, draft, correct, limitMs, pct, start + limitMs, true)
+      }
+    } else if (cur.served !== null) this.#recordServed(cur, null, limitMs, null, start + limitMs)
     else this.#recordItem(cur, null, 0, limitMs, null, start + limitMs)
     this.#current = null
-    this.#raise({ kind: 'timeout', ...(cur.served === null ? {} : { served: true }) })
+    this.#raise({ kind: 'timeout', ...(cur.served === null ? {} : { served: true }), ...(draft === null ? {} : { submitted: true }) })
     this.#emit('response')
     this.#boundary(() => this.#present())
   }
 
   /** Puts one counted CAT answer (or time-out) into the logs. */
-  #recordItem(cur: CurrentItem, response: JsonValue, correct: 0 | 1, rtMs: number, confidencePct: number | null, endMs: number): void {
+  #recordItem(cur: CurrentItem, response: JsonValue, correct: 0 | 1, rtMs: number, confidencePct: number | null, endMs: number, atTimeout = false): void {
     const item = cur.item!
-    this.#responses.push([item.item_id, 0, response, correct, round1(rtMs), confidencePct])
+    this.#responses.push(atTimeout ? [item.item_id, 0, response, correct, round1(rtMs), confidencePct, { [SUBMITTED_AT_TIMEOUT]: true }] : [item.item_id, 0, response, correct, round1(rtMs), confidencePct])
     const o = itemObservation(item, correct)
     if (o !== null) this.#obs.push(o)
     this.#administered.push(item)
@@ -1407,7 +1465,7 @@ export class SessionRun {
    * tuple's `correct` is null: the verdict is the server's and never comes back (R-11.1); the signed
    * session that `finish` returns replaces this copy.
    */
-  #recordServed(cur: CurrentItem, response: JsonValue | null, rtMs: number, confidencePct: number | null, endMs: number, release?: Release): void {
+  #recordServed(cur: CurrentItem, response: JsonValue | null, rtMs: number, confidencePct: number | null, endMs: number, release?: Release, atTimeout = false): void {
     const s = cur.served!
     const onset = cur.onsetMs ?? cur.startedMs
     const end = Math.max(onset, endMs)
@@ -1416,7 +1474,9 @@ export class SessionRun {
     this.#catAxes.push(this.#servedAxis(s))
     if (response !== null) this.#answeredAxes.push(this.#servedAxis(s))
     this.#catWindows.push({ onset, end })
-    this.#outbox.push({ item: s, response, rtMs: Math.max(0, rtMs), confidence: confidencePct, flags: this.#servedFlags(s.item_id, onset, end), release })
+    const flags = this.#servedFlags(s.item_id, onset, end)
+    if (atTimeout) flags[SUBMITTED_AT_TIMEOUT] = true
+    this.#outbox.push({ item: s, response, rtMs: Math.max(0, rtMs), confidence: confidencePct, flags, release })
     void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
   }
 

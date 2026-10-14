@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buttonByText, click, fakeDisplay } from '../render/common/testing'
 import { settle } from '../render/dom-testing'
 import { Bot } from './bot'
-import { ITEM_TIMER_ENTRY_HINT, ITEM_TIMER_LABEL, ITEM_TIMER_WARN } from './copy'
+import { ITEM_TIMER_LABEL, ITEM_TIMER_SEND_HINT, ITEM_TIMER_WARN } from './copy'
 import { fakeEnv } from './dom-support'
 import ItemTimer from './ItemTimer.svelte'
 import timerSource from './ItemTimer.svelte?raw'
@@ -60,21 +60,21 @@ describe('ItemTimer', () => {
       expect(host.querySelector('.flag')!.textContent).toContain(ITEM_TIMER_WARN)
       expect(host.querySelector('.mark')!.textContent).toBe('!')
       // the same words whatever is left: once it has changed from empty it does not change again
-      expect(statusLine().textContent).toBe('30 seconds left for this question.')
+      expect(statusLine().textContent).toBe(`30 seconds left for this question. ${ITEM_TIMER_SEND_HINT}`)
     }
     expect(timer().textContent).toBe('0:00')
     // the mark and the words are for the eye; the announcement is the status line's
     expect(host.querySelector('.flag')!.getAttribute('aria-hidden')).toBe('true')
   })
 
-  it('a typed-answer question also says that an answer counts only once it is entered, on screen and in the one announcement', () => {
-    show({ leftS: 40, limitS: 180, typed: true })
-    expect(host.textContent).not.toContain(ITEM_TIMER_ENTRY_HINT)
-    show({ leftS: 25, limitS: 180, typed: true })
-    expect(host.querySelector('[data-item-timer-hint]')!.textContent).toBe(ITEM_TIMER_ENTRY_HINT)
-    expect(statusLine().textContent).toBe(`30 seconds left for this question. ${ITEM_TIMER_ENTRY_HINT}`)
-    show({ leftS: 25, limitS: 180 })
+  it('the warning says that what is chosen or typed is sent when the time is up, on screen and in the one announcement (owner decision 2026-10-13)', () => {
+    show({ leftS: 40, limitS: 180 })
+    expect(host.textContent).not.toContain(ITEM_TIMER_SEND_HINT)
     expect(host.querySelector('[data-item-timer-hint]')).toBeNull()
+    show({ leftS: 25, limitS: 180 })
+    expect(host.querySelector('[data-item-timer-hint]')!.textContent).toBe(ITEM_TIMER_SEND_HINT)
+    expect(statusLine().textContent).toBe(`30 seconds left for this question. ${ITEM_TIMER_SEND_HINT}`)
+    expect(host.textContent).not.toMatch(/counts only once/)
   })
 
   it('has no animation or transition at all, so there is nothing for reduced motion to switch off', () => {
@@ -141,7 +141,7 @@ describe('the timer in the running session', () => {
       if (before !== null) {
         shown.push(timer().textContent ?? '')
         if (before.getAttribute('data-warn') === 'true') warnedFor += 0.25
-        const said = (host.querySelector('[data-item-timer-status]')!.textContent ?? '').replace(/ An answer counts.*$/u, '')
+        const said = host.querySelector('[data-item-timer-status]')!.textContent ?? ''
         if (announced.at(-1) !== said) announced.push(said)
         if (statusEl === null) statusEl = host.querySelector('[data-item-timer-status]')
         expect(host.querySelector('[data-item-timer-status]')).toBe(statusEl) // the same element throughout: a change, not new content
@@ -152,7 +152,7 @@ describe('the timer in the running session', () => {
     expect(bot.view().item?.item_id).not.toBe(id)
     expect(bot.view().notice?.kind).toBe('timeout')
     // one announcement: the status line changed once, from empty to its words
-    expect(announced).toEqual(['', '30 seconds left for this question.'])
+    expect(announced).toEqual(['', `30 seconds left for this question. ${ITEM_TIMER_SEND_HINT}`])
     expect(warnedFor).toBeGreaterThanOrEqual(29)
     expect(shown).toContain('0:01')
     expect(shown.at(-1) === '0:00' || shown.at(-1) === '0:01').toBe(true)

@@ -180,6 +180,41 @@ describe('the running session screen (M1.15)', () => {
     expect(bot.run.sessionState().responses[0]![5]).toBe(Number(p.value))
   })
 
+  it('at the time-out, the answer chosen or typed in the page, and the confidence set, are sent as they stand (owner decision 2026-10-13)', async () => {
+    const bot = await firstQuestion('s_UISESSION00027')
+    const v = bot.view()
+    fillAnswer(bot)
+    click(points()[4])
+    expect(v.phase).toBe('item')
+    bot.wait(bot.run.itemTime()!.leftS + 1) // to the question's own limit, from its first frame
+    bot.run.tick()
+    flushSync()
+    const last = bot.run.sessionState().responses.at(-1)!
+    expect(last[2]).not.toBeNull()
+    expect(last[5]).toBe(100)
+    expect(last[6]).toEqual({ submitted_at_timeout: true })
+    expect(status()).toBe('That question ran out of time. Your answer was sent as it stood.')
+  })
+
+  it('at the time-out, a typed text the question cannot read, or nothing at all, sends nothing', async () => {
+    for (const id of ['s_UISESSION00028', 's_UISESSION00029', 's_UISESSION00030']) {
+      if (app) unmount(app)
+      app = undefined
+      document.body.innerHTML = ''
+      const bot = await firstQuestion(id)
+      const v = bot.view()
+      const box = host.querySelector<HTMLInputElement>('form.entry input.box')
+      if (box !== null) typeInto(box, '#?!')
+      expect(v.phase).toBe('item')
+      bot.wait(bot.run.itemTime()!.leftS + 1)
+      bot.run.tick()
+      flushSync()
+      const last = bot.run.sessionState().responses.at(-1)!
+      expect(last[2]).toBeNull()
+      expect(last).toHaveLength(6)
+    }
+  })
+
   it('a value set on one question is never sent with the next', async () => {
     const bot = await firstQuestion('s_UISESSION00026')
     click(points()[4])

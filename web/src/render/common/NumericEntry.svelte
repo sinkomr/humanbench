@@ -64,6 +64,14 @@
     onsubmit(entry)
   }
 
+  // The answer as it stands, for a time-out (owner decision 2026-10-13): the typed text when the family can read it
+  // as an answer (as Submit would send it), else none; until it is submitted.
+  $effect(() => {
+    const entry = normalizeEntry(text, format)
+    if (submitted) return
+    slot?.draft?.(entry.trim() !== '' && check(entry) === 'ok' ? entry : null)
+  })
+
   function toggleSign(): void {
     const t = text.trimStart()
     text = t.startsWith('-') || t.startsWith('−') ? t.slice(1) : `-${t}`

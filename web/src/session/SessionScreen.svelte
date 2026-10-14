@@ -64,6 +64,7 @@
     NOTICE_MALFORMED,
     NOTICE_TIMEOUT,
     NOTICE_TIMEOUT_SERVED,
+    NOTICE_TIMEOUT_SUBMITTED,
     SKIP_CONFIRM_HEADING,
     SKIP_CONFIRM_NO,
     SKIP_CONFIRM_TEXT,
@@ -135,6 +136,8 @@
     get snippet() {
       return view.phase === 'item' && view.confidence !== null && view.item !== null ? confidenceSlot : null
     },
+    // The answer as it stands, so a question that runs out of time sends it (owner decision 2026-10-13).
+    draft: (response) => run.itemDraft(response),
   })
 
   $effect(() =>
@@ -213,7 +216,7 @@
     if (view.unavailable && (n.kind === 'unavailable' || n.kind === 'unsupported')) return ''
     switch (n.kind) {
       case 'timeout':
-        return n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
+        return n.submitted === true ? NOTICE_TIMEOUT_SUBMITTED : n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
       case 'malformed':
         return NOTICE_MALFORMED
       case 'skipped':
@@ -291,7 +294,10 @@
 {#snippet confidenceSlot()}
   {#if view.confidence !== null && view.item !== null}
     {@const itemId = view.item.item_id}
-    <ConfidenceScale floorPct={view.confidence.floorPct} optionsCount={view.confidence.optionsCount} disabled={view.unavailable} onchange={(pct) => (rating = { itemId, pct })} />
+    <ConfidenceScale floorPct={view.confidence.floorPct} optionsCount={view.confidence.optionsCount} disabled={view.unavailable} onchange={(pct) => {
+        rating = { itemId, pct }
+        run.itemConfidence(pct)
+      }} />
   {/if}
 {/snippet}
 
@@ -336,7 +342,7 @@
       {#if itemTime !== null}
         <!-- Every question that can run out of time says how long is left, and warns before it does (owner feedback 2026-10-13). -->
         {#key view.item.item_id}
-          <ItemTimer leftS={itemTime.leftS} limitS={itemTime.limitS} typed={view.item.options_count === undefined} />
+          <ItemTimer leftS={itemTime.leftS} limitS={itemTime.limitS} />
         {/key}
       {/if}
       <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->

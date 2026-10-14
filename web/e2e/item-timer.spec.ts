@@ -94,6 +94,40 @@ test.describe('the question timer', () => {
     await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'false')
   })
 
+  test('at the time-out, what is chosen or typed is sent as the answer, with the confidence if set; with nothing chosen or typed, nothing is sent (owner decision 2026-10-13)', async ({ page, isMobile }) => {
+    await toFirstQuestion(page, isMobile)
+    const stored = (): Promise<unknown[][]> =>
+      page.evaluate(() => {
+        const key = Object.keys(localStorage).find((k) => k.startsWith('hb:save:v1:')) ?? ''
+        return (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][] }[] }).sessions?.[0]?.responses ?? []
+      })
+    // the first question: an answer given and not sent, the confidence set; then the time runs out
+    const form = page.locator('form.choice, form.entry').first()
+    const choice = (await form.getAttribute('class'))?.split(/\s+/).includes('choice') === true
+    if (choice) await form.locator('.options input[type=radio]').first().check()
+    else {
+      const box = form.getByRole('textbox')
+      await box.fill((await box.getAttribute('class'))?.split(/\s+/).includes('letter') ? 'A' : '1')
+    }
+    await form.locator('fieldset[data-confidence] input[type=radio]').nth(4).check()
+    await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'true', { timeout: 20_000 })
+    await expect(page.locator('[data-item-timer-hint]')).toHaveText('When the time is up, what you have chosen or typed is sent as your answer.')
+    await expect(page.locator('header .status').first()).toHaveText('That question ran out of time. Your answer was sent as it stood.', { timeout: 20_000 })
+    await expect.poll(async () => (await stored()).length).toBe(1)
+    const first = (await stored())[0]!
+    expect(first[2]).not.toBeNull() // the answer as it stood
+    expect(first[3] === 0 || first[3] === 1).toBe(true) // scored as any answer
+    expect(first[5]).toBe(100) // the confidence set
+    expect(first[6]).toEqual({ submitted_at_timeout: true })
+    // the next question: nothing chosen or typed, so its time-out sends nothing
+    await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'false')
+    await expect.poll(async () => (await stored()).length, { timeout: 30_000 }).toBe(2)
+    const second = (await stored())[1]!
+    expect(second[2]).toBeNull()
+    expect(second[5]).toBeNull()
+    expect(second.length).toBe(6)
+  })
+
   test('nothing about it moves: no animation and no transition, with or without reduced motion', async ({ page, isMobile }) => {
     for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       await page.emulateMedia({ reducedMotion })

@@ -8,11 +8,11 @@
   - The warning (the last 30 seconds, `ITEM_TIME_WARN_S`): the line gains the words "Time is nearly up", a
     mark and a frame, not only a colour, and a separate status line says it ONCE (it is empty until the
     warning starts and does not change after).
-  - A typed-answer question also says, in the warning, that an answer counts only once it is entered: the
-    person the owner describes had the right answer worked out and had not entered it.
+  - The warning also says what happens at the end: what is chosen or typed then is sent as the answer (owner decision
+    2026-10-13, after the owner's typed answer was lost to a time-out); with nothing chosen or typed, nothing is sent.
 -->
 <script lang="ts">
-  import { ITEM_TIMER_ENTRY_HINT, ITEM_TIMER_LABEL, ITEM_TIMER_WARN, itemTimerAnnounce, itemTimerSpoken } from './copy'
+  import { ITEM_TIMER_SEND_HINT, ITEM_TIMER_LABEL, ITEM_TIMER_WARN, itemTimerAnnounce, itemTimerSpoken } from './copy'
   import { timerSpoken, timerText, timerWarns, warnAtS } from './item-timer'
 
   interface Props {
@@ -20,11 +20,9 @@
     readonly leftS: number
     /** The question's time limit in seconds. */
     readonly limitS: number
-    /** The answer is typed (numeric or text entry), not chosen: the warning adds what entering means. */
-    readonly typed?: boolean
   }
 
-  let { leftS, limitS, typed = false }: Props = $props()
+  let { leftS, limitS }: Props = $props()
 
   const warn = $derived(timerWarns(leftS, limitS))
   const text = $derived(timerText(leftS))
@@ -38,11 +36,11 @@
       <strong class="flag" aria-hidden="true"><span class="mark">!</span> {ITEM_TIMER_WARN}</strong>
     {/if}
   </p>
-  {#if warn && typed}
-    <p class="hint" data-item-timer-hint>{ITEM_TIMER_ENTRY_HINT}</p>
+  {#if warn}
+    <p class="hint" data-item-timer-hint>{ITEM_TIMER_SEND_HINT}</p>
   {/if}
   <!-- Mounted from the start and empty until the warning: its one change is the one announcement. -->
-  <p class="hb-sr-only" role="status" data-item-timer-status>{warn ? `${itemTimerAnnounce(warnAtS(limitS))}${typed ? ` ${ITEM_TIMER_ENTRY_HINT}` : ''}` : ''}</p>
+  <p class="hb-sr-only" role="status" data-item-timer-status>{warn ? `${itemTimerAnnounce(warnAtS(limitS))} ${ITEM_TIMER_SEND_HINT}` : ''}</p>
 </div>
 
 <style>

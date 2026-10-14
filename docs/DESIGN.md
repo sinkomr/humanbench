@@ -770,7 +770,7 @@ $$N_{\text{families/stratum}} \approx 6S \times 0.5 \times 2 = 6S, \qquad N_{\te
   - No correctness feedback on finite-bank items (key leakage, and it would inflate practice effects).
   - Speed/memory games show immediate stats (they are designed to be game-like and their keys are trivial).
   - Procedural items show feedback only in an optional "practice mode" that doesn't count.
-  - **A question that can run out of time shows how long is left** (owner feedback 2026-10-13): the time as `m:ss` above the question for the whole time it waits for an answer, small and unanimated; in the last 30 seconds the words "Time is nearly up", a mark and a frame (not colour alone), announced once to a screen reader. The optional confidence scale is part of the question (owner decision 2026-10-13): there is no step after the answer, and setting the scale is inside the question's time.
+  - **A question that can run out of time shows how long is left** (owner feedback 2026-10-13): the time as `m:ss` above the question for the whole time it waits for an answer, small and unanimated; in the last 30 seconds the words "Time is nearly up", a mark and a frame (not colour alone), announced once to a screen reader, with "When the time is up, what you have chosen or typed is sent as your answer." (owner decision 2026-10-13; §13). The optional confidence scale is part of the question (owner decision 2026-10-13): there is no step after the answer, and setting the scale is inside the question's time.
   - At the end, reveal performance per axis, plus 3 *procedural* items with worked solutions.
 - **Reveal flow:** animated blob build-up, axis by axis → "your most distinctive peaks" (credible only) → drill-down → download the save file (prominent, and required before leaving; a `beforeunload` warning is shown) → share card.
 - **Retest motivation:**
@@ -993,7 +993,7 @@ No RLS policies are created for `anon`, so all access goes through `SECURITY DEF
   - keyboard navigation for everything;
   - screen-reader labels;
   - no color-only information;
-  - adjustable text size, with timing unaffected for power items (no time limits on power items beyond a generous cap). The cap is `max(180 s, 2.5 · E[T])` (ROADMAP A18); it is never a surprise: the question's timer shows the time left and warns before it ends (§10).
+  - adjustable text size, with timing unaffected for power items (no time limits on power items beyond a generous cap). The cap is `max(180 s, 2.5 · E[T])` (ROADMAP A18); it is never a surprise: the question's timer shows the time left and warns before it ends (§10). At the cap, an answer that is chosen or typed and not yet sent is sent as it stands, with the confidence if set, scored as any answer, its response time the cap, and marked `submitted_at_timeout` (the device tuple's `extra`, the served answer's client flag); with nothing chosen or typed (or a typed text the question cannot read) nothing is sent, as before (owner decision 2026-10-13).
   - Users can **skip any axis** ("I can't do this one", e.g. colour vision, motor, visual impairment); the blob then shows "not measured".
   - RT tasks offer a keyboard or touch mode; the mode is stored and normed separately.
 - **Fairness/DIF without demographics:**

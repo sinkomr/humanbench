@@ -8,7 +8,8 @@
  * `common/NumericEntry.svelte`, `text/TextChoiceRenderer.svelte`) render it with {@link getAnswerSlot} right
  * before their submit button, inside their form. Outside a session (the dev galleries, the review page)
  * there is no slot and the renderers draw as before. The slot carries no item data: the renderer contract
- * (`visual.ts`, `props.ts`: the spec and never the key) is unchanged.
+ * (`visual.ts`, `props.ts`: the spec and never the key) is unchanged. Through the same slot the renderers report
+ * the answer as it stands ({@link AnswerSlot.draft}), so a question that runs out of time sends it.
  *
  * A control in the slot is inside the renderer's form, so it must keep the renderer's own keys to itself
  * (an option key typed in it must not choose an answer) and may submit the form with Enter
@@ -22,6 +23,13 @@ const KEY = Symbol('hb-answer-slot')
 /** What a renderer draws before its submit button; `get` reads it when drawn, so it may change with the screen. */
 export interface AnswerSlot {
   readonly snippet: Snippet | null
+  /**
+   * The answer as it stands, not yet submitted (owner decision 2026-10-13: at a time-out what is chosen or typed is
+   * sent): the renderer calls it whenever its choice or its text changes, with the response it would submit (the
+   * option's display position, or the typed text as the parser reads it) or null when there is none it could submit
+   * (nothing chosen, an empty box, a text the family cannot read). Not called once the answer was submitted.
+   */
+  readonly draft?: (response: unknown) => void
 }
 
 /** Called by a screen during its initialisation: its descendants' renderers draw `slot.snippet`. */

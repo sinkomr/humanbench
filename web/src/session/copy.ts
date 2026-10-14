@@ -230,10 +230,15 @@ export const ITEM_TIMER_WARN = 'Time is nearly up'
 export const itemTimerAnnounce = (seconds: number): string => `${seconds} seconds left for this question.`
 /** What the timer says it is, for a screen reader that reads it on demand. */
 export const itemTimerSpoken = (spoken: string): string => `${ITEM_TIMER_LABEL}: ${spoken}`
-/** Under the timer of a typed-answer question, in its warning: what happens to what is typed (the answer must be entered to count). */
-export const ITEM_TIMER_ENTRY_HINT = 'An answer counts only once you have entered it.'
+/**
+ * Under the timer, in its warning: what happens at the end (owner decision 2026-10-13: what is chosen or typed then is
+ * sent as the answer; with nothing chosen or typed, nothing is sent).
+ */
+export const ITEM_TIMER_SEND_HINT = 'When the time is up, what you have chosen or typed is sent as your answer.'
 
 export const NOTICE_TIMEOUT = 'That question ran out of time. It counts as not answered correctly.'
+/** A time-out that sent the answer as it stood (owner decision 2026-10-13). */
+export const NOTICE_TIMEOUT_SUBMITTED = 'That question ran out of time. Your answer was sent as it stood.'
 /**
  * The same, for a question the server holds (ROADMAP M2.7): an answer that is no answer at all is
  * not scored there, neither right nor wrong (`rescore` counts it under `skipped.invalid`, R-11.1), so

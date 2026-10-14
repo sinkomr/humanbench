@@ -172,6 +172,21 @@ describe('a served part', () => {
     expect(h.v().notice).toMatchObject({ kind: 'timeout', served: true }) // the server leaves it out of the scores: the notice says so
   })
 
+  it('at the time-out, sends the answer as it stands with the confidence set, at the limit, flagged; the server holds the verdict (owner decision 2026-10-13)', async () => {
+    const h = new Harness()
+    h.cat.steps = [{ kind: 'item', item: served(1, { time_limit_s: 20 }) }]
+    await h.toMatrix()
+    h.run.itemShown(h.t)
+    h.run.itemDraft('7')
+    h.run.itemConfidence(75)
+    h.t += 21_000
+    h.run.tick()
+    await settle()
+    expect(h.cat.answers[0]).toMatchObject({ response: '7', rtMs: 20_000, confidence: 75, flags: { submitted_at_timeout: true } })
+    expect(h.run.catSessionState()?.responses[0]).toEqual(['i:series:1.0.0:1', 0, '7', null, 20_000, 75])
+    expect(h.v().notice).toMatchObject({ kind: 'timeout', served: true, submitted: true })
+  })
+
   it('refuses a response a renderer could not have given', async () => {
     const h = new Harness()
     h.cat.steps = [{ kind: 'item', item: served(1) }]

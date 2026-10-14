@@ -81,6 +81,12 @@
     onrespond(selected)
   }
 
+  // The answer as it stands, for a time-out (owner decision 2026-10-13): the option chosen, until it is submitted.
+  $effect(() => {
+    const chosen = selected
+    if (!submitted) slot?.draft?.(chosen)
+  })
+
   // Character keys are handled on the form, so they act only while focus is inside it (WCAG 2.1.4).
   $effect(() => {
     const el = form

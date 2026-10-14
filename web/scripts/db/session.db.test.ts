@@ -438,6 +438,29 @@ describe('submit', () => {
     expect((await sessionRow(s.session_id)).n_answered).toBe(1)
   })
 
+  it('takes an answer sent as it stood at the time-out (owner decision 2026-10-13): the response time at the limit, the client flag, scored as any answer; a null confidence is stored as none', async () => {
+    const ip = freshIp()
+    const s = await startSession(db, ip)
+    const n = (await rpc<Next>(ip, 'next_item', { p_token: s.token })) as Served
+    const it = bank.get(n.item.item_id)!
+    const limitMs = (n.item.time_limit_s ?? 180) * 1000 // the item's own limit, or the app's default
+    expect(limitMs).toBeGreaterThan(0)
+    await ageExposures(db, s.session_id, limitMs / 1000 + 5)
+    const out = await rpc<Record<string, unknown>>(ip, 'submit', {
+      p_token: s.token,
+      p_item_id: it.itemId,
+      p_response: it.key.index,
+      p_rt_ms: limitMs,
+      p_confidence: null,
+      p_client_flags: { submitted_at_timeout: true },
+      p_next: false,
+    })
+    expect(out).toEqual({ ack: true, seq: 1 })
+    const row = (await db.owner.query(`select * from public.responses where session_id = $1`, [s.session_id])).rows[0]
+    expect(row).toMatchObject({ correct: 1, score: 1, rt_ms: limitMs, confidence: null, client_flags: { submitted_at_timeout: true } })
+    expect((await sessionRow(s.session_id)).n_answered).toBe(1)
+  })
+
   it('scores a wrong, out-of-range or malformed answer as 0', async () => {
     const ip = freshIp()
     const s = await startSession(db, ip)

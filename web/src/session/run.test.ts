@@ -1081,6 +1081,96 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     expect(bot.run.result().observations.length).toBe(1)
   })
 
+  /** A response the question on screen takes (its key: right), and one it takes that is wrong where there is one. */
+  function responsesOf(bot: Bot): { right: unknown; wrong: unknown | null } {
+    const full = bot.fullItem(bot.view().item!.item_id)
+    const key = full.key as { index?: number; value?: string; letter?: string }
+    if (key.index !== undefined) return { right: key.index, wrong: (key.index + 1) % full.options_count! }
+    return { right: key.value ?? key.letter, wrong: null }
+  }
+
+  it('at the time-out, the answer chosen or typed is sent as it stands: scored, at the limit, with the confidence set, marked (owner decision 2026-10-13)', () => {
+    const bot = new Bot({ sessionId: 's_TIMEOUTSEND001', skipped: ['RT', 'WM', 'PS'] })
+    const v = bot.until((x) => x.phase === 'item')
+    const cap = v.item!.time_limit_s
+    const { right } = responsesOf(bot)
+    bot.run.itemShown(bot.t)
+    bot.run.itemDraft('nonsense that no family reads') // not an answer: nothing kept
+    bot.run.itemDraft(right)
+    const pct = midConfidence(v)
+    bot.run.itemConfidence(pct)
+    bot.wait(cap + 1)
+    bot.run.tick()
+    const last = bot.run.sessionState().responses.at(-1)!
+    expect(last).toEqual([v.item!.item_id, 0, right, 1, cap * 1000, pct, { submitted_at_timeout: true }])
+    expect(bot.view().notice).toEqual({ kind: 'timeout', submitted: true, seq: expect.any(Number) })
+    // a rated answer (one, below the minimum: no Calibration observation from it)
+    expect(bot.run.result().calibration?.n).toBe(1)
+    expect(bot.run.result().observations.some((o) => o.axis === 'CAL')).toBe(false)
+    // it re-scores from the save as any answer
+    const st = bot.run.sessionState()
+    const save = saveWithSession(null, st, { ctx: SAVE_CTX, createdMs: st.startedMs + 3_600_000, anonId: newAnonId() })
+    expect(rescoreSessions(save).n_scored).toBe(bot.run.result().observations.length)
+  })
+
+  it('at the time-out, nothing chosen or typed (or a choice or text taken back) sends nothing, as before', () => {
+    for (const takeBack of [false, true]) {
+      const bot = new Bot({ sessionId: takeBack ? 's_TIMEOUTSEND003' : 's_TIMEOUTSEND002', skipped: ['RT', 'WM', 'PS'] })
+      const v = bot.until((x) => x.phase === 'item')
+      bot.run.itemShown(bot.t)
+      if (takeBack) {
+        bot.run.itemDraft(responsesOf(bot).right)
+        bot.run.itemConfidence(100)
+        bot.run.itemDraft(null)
+      }
+      bot.wait(v.item!.time_limit_s + 1)
+      bot.run.tick()
+      const last = bot.run.sessionState().responses.at(-1)!
+      expect(last).toEqual([v.item!.item_id, 0, null, 0, v.item!.time_limit_s * 1000, null])
+      expect(bot.view().notice).toEqual({ kind: 'timeout', seq: expect.any(Number) })
+    }
+  })
+
+  it('a draft never outlives its question: the next question starts with none, and an answer sent by its button is not marked', () => {
+    const bot = new Bot({ sessionId: 's_TIMEOUTSEND004', skipped: ['RT', 'WM', 'PS'] })
+    bot.until((x) => x.phase === 'item')
+    bot.run.itemDraft(responsesOf(bot).right)
+    bot.answer(null)
+    expect(bot.run.sessionState().responses.at(-1)!.length).toBe(6)
+    const v = bot.until((x) => x.phase === 'item')
+    bot.run.itemShown(bot.t)
+    bot.wait(v.item!.time_limit_s + 1)
+    bot.run.tick()
+    expect(bot.run.sessionState().responses.at(-1)![2]).toBeNull()
+  })
+
+  it('property: a time-out sends exactly the last answer drafted (a wrong one is scored wrong), or nothing when the last draft is none', () => {
+    fc.assert(
+      fc.property(fc.array(fc.constantFrom<'right' | 'wrong' | 'none' | 'junk'>('right', 'wrong', 'none', 'junk'), { minLength: 1, maxLength: 6 }), (drafts) => {
+        const bot = new Bot({ sessionId: 's_TIMEOUTPROP001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+        const v = bot.until((x) => x.phase === 'item')
+        const r = responsesOf(bot)
+        let kept: unknown = null
+        bot.run.itemShown(bot.t)
+        for (const d of drafts) {
+          const value = d === 'right' ? r.right : d === 'wrong' ? r.wrong : d === 'junk' ? { nope: 1 } : null
+          bot.run.itemDraft(value)
+          kept = d === 'junk' || value === null ? null : value
+        }
+        bot.wait(v.item!.time_limit_s + 1)
+        bot.run.tick()
+        const last = bot.run.sessionState().responses.at(-1)!
+        expect(last[2]).toEqual(kept)
+        if (kept === null) expect(last.length).toBe(6)
+        else {
+          expect(last[3]).toBe(kept === r.right ? 1 : 0)
+          expect(last[6]).toEqual({ submitted_at_timeout: true })
+        }
+      }),
+      { numRuns: 40 },
+    )
+  })
+
   it('an item the renderer cannot draw is not counted, never times out, and offers the skip', () => {
     const bot = new Bot({ sessionId: 's_ITEMUNAVAIL001', skipped: ['RT', 'MAT', 'WM', 'PS', 'QR'] })
     const v = bot.until((x) => x.phase === 'item')
