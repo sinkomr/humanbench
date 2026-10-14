@@ -96,8 +96,16 @@ export class SessionDriver {
 
   /** Tick a checkbox or choose a radio button, and see that it took. */
   async tick(box: Locator): Promise<void> {
-    if (this.opts.touch) await box.tap({ timeout: ACTION_MS })
-    else await box.check({ timeout: ACTION_MS })
+    if (this.opts.touch) {
+      await box.tap({ timeout: ACTION_MS })
+      // A tap on the spot of the previous screen's tap, within its first 350 ms, is taken for the second tap of a double tap
+      // and held back (SKIM-15; one press now sends an answer, so the next question can be up that fast): tap again, as a
+      // person would.
+      if (!(await box.isChecked())) {
+        await this.page.waitForTimeout(400)
+        await box.tap({ timeout: ACTION_MS })
+      }
+    } else await box.check({ timeout: ACTION_MS })
     await expect(box).toBeChecked()
   }
 
