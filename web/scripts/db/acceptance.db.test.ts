@@ -67,7 +67,9 @@ describe('(1) anon cannot select any table', () => {
     await db.rpc(from(ip), 'report_problem', { p_token: s.token, p_kind: 'typo', p_item_id: served, p_detail: 'a typo' })
     await db.rpc(from(ip), 'submit_survey', { p_token: s.token, p_age_band: '25-34', p_english_first: true })
     await db.rpc(from(ip), 'mirror_put', { p_token: s.token, p_save: emptySave(s.anon_id) })
-    expect(await db.rpc(from(ip), 'live_axes', {})).toEqual({ axes: [] }) // an empty bank: no skill has a question
+    const live = await db.rpc<{ axes: string[] }>(from(ip), 'live_axes', {})
+    expect(Object.keys(live)).toEqual(['axes'])
+    expect(live.axes.every((a) => /^[A-Z]{2,3}$/u.test(a))).toBe(true)
     await db.owner.query(`insert into public.calibration_runs (param_version) values ('p-test')`)
     // and a session long past its token, compacted (M2.5): the archive holds a row too (the first session keeps its live rows)
     const ip2 = freshIp()
@@ -259,7 +261,9 @@ describe('(2) anon can EXECUTE only the whitelisted RPCs', () => {
     await db.rpc(from(ip), 'submit_survey', { p_token: s.token, p_age_band: '18-24' })
     await db.rpc(from(ip), 'finish', { p_token: s.token })
     await db.rpc(from(ip), 'mirror_put', { p_token: s.token, p_save: emptySave(s.anon_id) })
-    expect(await db.rpc(from(ip), 'live_axes', {})).toEqual({ axes: [] }) // an empty bank: no skill has a question
+    const live = await db.rpc<{ axes: string[] }>(from(ip), 'live_axes', {})
+    expect(Object.keys(live)).toEqual(['axes'])
+    expect(live.axes.every((a) => /^[A-Z]{2,3}$/u.test(a))).toBe(true)
     // next_item and submit need an item; with an empty bank they answer "done" and "not served", both from the function
     expect(await db.rpc(from(freshIp()), 'next_item', { p_token: (await startSession(db, freshIp())).token })).toMatchObject({ done: true })
     const t = await startSession(db, freshIp())

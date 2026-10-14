@@ -15,7 +15,7 @@ import { expect, test, type Page, type Response } from '@playwright/test'
 import { DB_PORT, PASSAGE_PORT_OFFSET, passageCredit } from './pool'
 
 const PASSAGE_DB = `http://127.0.0.1:${DB_PORT + PASSAGE_PORT_OFFSET}`
-const QUERY = `?hb_backend=${encodeURIComponent(PASSAGE_DB)}&hb_key=e2e-anon-key&hb_text=RC`
+const QUERY = `?hb_backend=${encodeURIComponent(PASSAGE_DB)}&hb_key=e2e-anon-key`
 const QUESTION = 'div.hb-render.text-mc'
 const PASSAGE = 'section.passage'
 

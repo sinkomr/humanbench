@@ -16,7 +16,8 @@ import { DB_PORT, TEXT_PER_AXIS } from './pool'
 
 const PLAIN = `http://127.0.0.1:${DB_PORT}`
 const TEXT = `http://127.0.0.1:${DB_PORT + 1}`
-const query = (server: string, text: string): string => `?hb_backend=${encodeURIComponent(server)}&hb_key=e2e-anon-key&hb_text=${text}`
+/** A page pointed at a database; the parts come from what it has (`live_axes`), no build variable or link names them. */
+const query = (server: string): string => `?hb_backend=${encodeURIComponent(server)}&hb_key=e2e-anon-key`
 const ROOT = 'div.hb-render.text-mc'
 
 const h1 = (page: Page) => page.getByRole('heading', { level: 1 })
@@ -99,10 +100,11 @@ async function playTextPart(page: Page, title: string): Promise<number> {
 const KEYISH = /"key"|"index"|"correct"\s*:\s*(0|1|true|false)|rationale|tolerance|option_weights|"se_b"/u
 
 test.describe('the plain pool: no text item on the server (the live project today)', () => {
-  test('a page that asks for every text part gets the six parts, and the server is asked once per text skill', async ({ page }) => {
+  test('a server with no text item says so (live_axes): the six parts, and no text skill is ever asked for', async ({ page }) => {
     const calls = watch(page)
     await page.emulateMedia({ reducedMotion: 'reduce' }) // the results are complete at once
-    await toReady(page, query(PLAIN, 'all'))
+    await toReady(page, query(PLAIN))
+    await expect(page.locator('main')).toContainText('Six short parts, about 30 minutes.')
     await button(page, 'Begin').click()
     const seen: string[] = []
     for (;;) {
@@ -128,9 +130,8 @@ test.describe('the plain pool: no text item on the server (the live project toda
     await expect.poll(() => calls.some((c) => c.fn === 'finish' && c.status === 200), { timeout: 30_000 }).toBe(true)
 
     const asked = calls.filter((c) => c.fn === 'next_item')
-    const text = asked.filter((c) => ['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'].includes((c.request.p_axes as string[])[0]!))
-    expect(text.map((c) => (c.request.p_axes as string[]).join()).sort()).toEqual(['KAP', 'KHU', 'KST', 'LR', 'RC', 'VOC'])
-    for (const c of text) expect(c.reply).toEqual({ done: true, reason: 'no_items' })
+    expect(asked.filter((c) => !['MAT', 'SPA', 'QR'].includes((c.request.p_axes as string[])[0]!))).toEqual([])
+    expect(calls.find((c) => c.fn === 'live_axes')?.reply).toEqual({ axes: ['MAT'] })
     expect(calls.every((c) => c.status === 200)).toBe(true)
     expect(JSON.stringify(calls.map((c) => c.reply))).not.toMatch(KEYISH)
     await expect(page.locator('body')).not.toContainText(/Logical Reasoning skipped|cannot be shown/)
@@ -138,11 +139,11 @@ test.describe('the plain pool: no text item on the server (the live project toda
 })
 
 test.describe('the text pool: made-up questions for three of the five text skills', () => {
-  test('the three parts run, the server scores and signs them, and the three skills are on the profile', async ({ page }) => {
+  test('the first turn of the rotation runs (Logical Reasoning; Vocabulary and STEM come next time), the server scores and signs it, and the skill is on the profile', async ({ page }) => {
     const calls = watch(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await toReady(page, query(TEXT, 'all'))
-    await expect(page.locator('main')).toContainText('Up to twelve short parts, about 55 minutes.')
+    await toReady(page, query(TEXT))
+    await expect(page.locator('main')).toContainText('Up to seven short parts, about 35 minutes.')
     await button(page, 'Begin').click()
     const seen: string[] = []
     const answered: Record<string, number> = {}
@@ -154,8 +155,9 @@ test.describe('the text pool: made-up questions for three of the five text skill
       if (['Logical Reasoning', 'STEM Knowledge', 'Vocabulary & Verbal Analogies'].includes(name)) answered[name] = await playTextPart(page, name)
       else await skipPart(page)
     }
-    // The two knowledge parts the pool does not have never appeared.
-    expect(seen).toEqual(['Reaction Time', 'Matrix & Series', 'Logical Reasoning', 'STEM Knowledge', 'Spatial', 'Vocabulary & Verbal Analogies', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
+    // The parts the pool does not have never appeared, and the other two of the pool wait for the next turn (plan-table.ts ROTATION).
+    expect(seen).toEqual(['Reaction Time', 'Matrix & Series', 'Logical Reasoning', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
+    expect(calls.find((c) => c.fn === 'live_axes')?.reply).toEqual({ axes: ['MAT', 'LR', 'VOC', 'KST'] })
     for (const n of Object.values(answered)) expect(n).toBeGreaterThanOrEqual(5)
     await expect(h1(page)).toHaveText(/^Session /, { timeout: 30_000 })
 
@@ -168,7 +170,7 @@ test.describe('the text pool: made-up questions for three of the five text skill
     expect(calls.filter((c) => c.status !== 200)).toEqual([])
     // Every text question came as text and nothing else; every answer went out as a position.
     const items = of('next_item').flatMap((c) => ((c.reply as { item?: Record<string, unknown> }).item === undefined ? [] : [(c.reply as { item: Record<string, unknown> }).item]))
-    expect(items.length).toBeGreaterThanOrEqual(15)
+    expect(items.length).toBeGreaterThanOrEqual(5)
     for (const item of items) expect(Object.keys(item).sort()).toEqual(['item_id', 'item_type', 'options', 'stem', 'time_limit_s'])
     expect(of('submit').every((c) => Number.isInteger(c.request.p_response))).toBe(true)
     expect(JSON.stringify(calls.map((c) => c.reply))).not.toMatch(KEYISH)
@@ -176,7 +178,7 @@ test.describe('the text pool: made-up questions for three of the five text skill
     expect(finish.session.sig?.alg).toBe('HMAC-SHA256')
     expect(finish.session.responses.every((r) => r[3] === null)).toBe(true)
     const rescore = of('rescore').at(-1)!.reply as { eap: Record<string, { mean: number; sd: number; n: number }> }
-    expect(Object.keys(rescore.eap).sort()).toEqual(['KST', 'LR', 'VOC'])
+    expect(Object.keys(rescore.eap).sort()).toEqual(['LR'])
     for (const e of Object.values(rescore.eap)) expect(e.n).toBeGreaterThanOrEqual(5)
     await expect(page.locator('body')).not.toContainText(/\bincorrect\b|wrong answer/i)
   })

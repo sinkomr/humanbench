@@ -331,11 +331,12 @@ async function answerQuestion(page: Page, index = 0): Promise<void> {
 }
 
 const axesAsked = (server: FakeServer): string[] => server.of('next_item').map((c) => (c.body.p_axes as string[]).join('+'))
-const READING_QUERY = `${SERVER_QUERY}&hb_text=RC`
+/** The server lists the skills whose pools hold questions (`live_axes`); no build variable or link names them. */
+const READING_QUERY = SERVER_QUERY
 
 test.describe('a pool without passages gives the six-part session', () => {
-  test('a page that asks for Reading Comprehension: one question to the server, and then the same six parts with nothing said', async ({ page }) => {
-    const server = new FakeServer({ pools: { MAT: [seriesWire(1)] } })
+  test('a server that lists Reading Comprehension but has no passage left for this person: one question to the server, and then the same six parts with nothing said', async ({ page }) => {
+    const server = new FakeServer({ pools: { MAT: [seriesWire(1)] }, live: ['MAT', 'RC'] })
     await server.attach(page)
     await toReadyOnline(page, READING_QUERY)
     await expect(page.locator('main')).toContainText('Up to seven short parts, about 40 minutes.')
