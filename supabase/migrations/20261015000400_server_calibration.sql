@@ -2,7 +2,7 @@
 -- sufficient confidence data"; DESIGN §3 row 12, §7.1 "Calibration", §7.8, §10, R-11.1): rescore computes the Calibration
 -- skill (CAL) of the sessions the server scored, from their rated answers, with the app's own observation model.
 --
--- One change to public.rescore (20261007000100_rescore_facets.sql) and two config rows; nothing else. calibration.db.test.ts
+-- One change to public.rescore (as last re-created by 20261015000200_continuous_items.sql, the remaining families) and two config rows; nothing else. calibration.db.test.ts
 -- holds the body to the earlier one with exactly these edits, and the numbers to the app's engine.
 --
 --   * Rated answers. A session's valid scored answers (the outcome 'scored' or 'short_axis' of the earlier body: a counted
@@ -99,16 +99,23 @@ begin
     resp as (
       select k.session_id, k.started_utc, k.counts, r.pretest, r.correct, r.confidence,
              i.status as item_status, f.axis, f.facet, p.model, p.a, p.b, p.c,
+             -- hb.key_fits_model written out (a function call per row is the largest cost of the row)
+             coalesce((p.model = 'gaussian' and ik.key ? 'true_value') or (p.model = 'grm' and ik.key ? 'ratings'), false) as scored_here,
              hb.response_fits(ik.key,
                pg_catalog.jsonb_array_length(case when pg_catalog.jsonb_typeof(i.payload -> 'options') = 'array' then i.payload -> 'options' else '[]'::jsonb end),
-               r.response) as in_space
+               r.response) as in_space,
+             -- the observation of a Gaussian or GRM answer (hb.response_obs); null for every other answer
+             case when p.model in ('gaussian', 'grm') then
+               hb.response_obs(f.axis, p.model, p.a, p.b, p.c, p.extra, ik.key,
+                 pg_catalog.jsonb_array_length(case when pg_catalog.jsonb_typeof(i.payload -> 'options') = 'array' then i.payload -> 'options' else '[]'::jsonb end),
+                 r.response, r.correct) end as cobs
         from known k
         cross join lateral hb.responses_of(k.session_id) r
         join public.items i on i.item_id = r.item_id
         join public.item_families f on f.family_id = i.family_id
         left join public.item_keys ik on ik.item_id = r.item_id
         left join lateral (
-          select ip.model, ip.a, ip.b, ip.c
+          select ip.model, ip.a, ip.b, ip.c, ip.extra
             from public.item_parameters ip
            where ip.item_id = r.item_id and (v_param is null or ip.param_version = v_param)
            order by ip.created_at desc
@@ -122,6 +129,9 @@ begin
                when item_status = 'quarantined' then 'quarantined'
                when not counts then 'ineligible_session'
                when model is null then 'no_params'
+               -- a Gaussian or GRM item the server scores (a Fermi truth, a rating profile): invalid when outside the answer
+               -- space, else scored when it has an observation. One without such a key is a block, scored on the device.
+               when scored_here then case when not in_space then 'invalid' when cobs is null then 'no_params' else 'scored' end
                when model not in ('2pl', '2pl_testlet', '3pl') then 'block'
                when correct is null then 'unscored'
                when a is null or b is null or (model = '3pl' and c is null) then 'no_params'
@@ -134,7 +144,7 @@ begin
     -- a session's answers on an axis count only if the session holds at least v_min_axis of them
     -- (R-11.1: what a session adds to a score is a sum of that many answers, never one)
     cls as (
-      select c.session_id, c.started_utc, c.counts, c.correct, c.confidence, c.axis, c.facet, c.model, c.a, c.b, c.c,
+      select c.session_id, c.started_utc, c.counts, c.correct, c.confidence, c.axis, c.facet, c.model, c.a, c.b, c.c, c.cobs,
              case
                when c.outcome = 'scored' and c.n_axis < v_min_axis then 'short_axis'
                else c.outcome
@@ -178,10 +188,11 @@ begin
     -- under its topic group). facet_ok: the facet counts the answer only if the same session holds at least
     -- v_min_facet counted answers on that facet (the axis counts it either way); no facet, never
     obs as (
-      select c.axis, coalesce(c.facet, '') as facet, c.a, c.b, c.c, c.y,
+      select c.axis, coalesce(c.facet, '') as facet, c.a, c.b, c.c, c.y, c.cobs,
              (c.facet is not null and pg_catalog.count(*) over (partition by c.session_id, c.axis, c.facet) >= v_min_facet) as facet_ok
         from (
-          select c0.session_id, c0.axis, hb.drill_facet(c0.axis, c0.facet) as facet, c0.a, c0.b - r.rho as b, c0.c, c0.correct as y
+          select c0.session_id, c0.axis, hb.drill_facet(c0.axis, c0.facet) as facet, c0.a, c0.b - r.rho as b, c0.c, c0.correct as y,
+                 case when c0.cobs is not null then hb.obs_shift(c0.cobs, r.rho) end as cobs
             from cls c0
             join rho r on r.axis = c0.axis and r.session_id = c0.session_id
            where c0.outcome = 'scored'
@@ -191,29 +202,43 @@ begin
       select g.i, case when g.i = 60 then 4::double precision else -4::double precision + g.i * (8::double precision / 60) end as g
         from pg_catalog.generate_series(0, 60) g (i)
     ),
-    -- log-likelihood of the observations of one (axis, facet, facet_ok) at each grid point: the 2PL/3PL
-    -- terms of engine/irt.ts, in the same numerically stable form (log sigmoid, log-sum-exp)
-    fll as (
-      select o.axis, o.facet, o.facet_ok, gr.i, gr.g,
-             pg_catalog.sum(
-               case
-                 when o.c is null then case when o.y = 1 then lz.pos else lz.neg end
-                 when o.y = 0 then pg_catalog.ln(1 - o.c) + lz.neg
-                 else mm.m + pg_catalog.ln(pg_catalog.exp(greatest(uv.u - mm.m, -700)) + pg_catalog.exp(greatest(uv.v - mm.m, -700)))
-               end) as ll
+    -- the grid log-likelihood of each continuous observation, once
+    cgrid as materialized (
+      select o.axis, o.facet, o.facet_ok, hb.obs_grid_ll(o.cobs) as ll
         from obs o
-       cross join grid gr
-       cross join lateral (select o.a * (gr.g - o.b) as z) zz
-       cross join lateral (
-         select case when zz.z >= 0 then - pg_catalog.ln(1 + pg_catalog.exp(greatest(- zz.z, -700))) else zz.z - pg_catalog.ln(1 + pg_catalog.exp(greatest(zz.z, -700))) end as pos,
-                case when zz.z <= 0 then - pg_catalog.ln(1 + pg_catalog.exp(greatest(zz.z, -700))) else - zz.z - pg_catalog.ln(1 + pg_catalog.exp(greatest(- zz.z, -700))) end as neg
-       ) lz
-       cross join lateral (
-         select case when o.c is null then 0::double precision else pg_catalog.ln(o.c) end as u,
-                case when o.c is null then 0::double precision else pg_catalog.ln(1 - o.c) + lz.pos end as v
-       ) uv
-       cross join lateral (select greatest(uv.u, uv.v) as m) mm
-       group by o.axis, o.facet, o.facet_ok, gr.i, gr.g
+       where o.cobs is not null
+    ),
+    -- log-likelihood of the observations of one (axis, facet, facet_ok) at each grid point: the 2PL/3PL
+    -- terms of engine/irt.ts, in the same numerically stable form (log sigmoid, log-sum-exp), and the
+    -- continuous terms of the scoring core
+    fll as (
+      select t.axis, t.facet, t.facet_ok, t.i, t.g, pg_catalog.sum(t.ll) as ll
+        from (
+          select o.axis, o.facet, o.facet_ok, gr.i, gr.g,
+                 case
+                   when o.c is null then case when o.y = 1 then lz.pos else lz.neg end
+                   when o.y = 0 then pg_catalog.ln(1 - o.c) + lz.neg
+                   else mm.m + pg_catalog.ln(pg_catalog.exp(greatest(uv.u - mm.m, -700)) + pg_catalog.exp(greatest(uv.v - mm.m, -700)))
+                 end as ll
+            from obs o
+           cross join grid gr
+           cross join lateral (select o.a * (gr.g - o.b) as z) zz
+           cross join lateral (
+             select case when zz.z >= 0 then - pg_catalog.ln(1 + pg_catalog.exp(greatest(- zz.z, -700))) else zz.z - pg_catalog.ln(1 + pg_catalog.exp(greatest(zz.z, -700))) end as pos,
+                    case when zz.z <= 0 then - pg_catalog.ln(1 + pg_catalog.exp(greatest(zz.z, -700))) else - zz.z - pg_catalog.ln(1 + pg_catalog.exp(greatest(- zz.z, -700))) end as neg
+           ) lz
+           cross join lateral (
+             select case when o.c is null then 0::double precision else pg_catalog.ln(o.c) end as u,
+                    case when o.c is null then 0::double precision else pg_catalog.ln(1 - o.c) + lz.pos end as v
+           ) uv
+           cross join lateral (select greatest(uv.u, uv.v) as m) mm
+           where o.cobs is null
+          union all
+          select cg.axis, cg.facet, cg.facet_ok, gr.i, gr.g, cg.ll[gr.i + 1]
+            from cgrid cg
+           cross join grid gr
+        ) t
+       group by t.axis, t.facet, t.facet_ok, t.i, t.g
     ),
     -- the calibration observation of each session that measured it (tasks/calibration.ts calibrationObservation,
     -- tasks/priors.ts CAL_NORMS): x = -B ~ N(lam theta + d, SE^2 + tau_res^2), lam = brier_sd sqrt(reliability),

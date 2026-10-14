@@ -24,7 +24,7 @@
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { PASSAGE_COPY } from './copy'
+  import { PASSAGE_COPY, SETUP_COPY } from './copy'
   import type { PassageText } from './passage'
 
   interface Props {
@@ -40,6 +40,8 @@
   const uid = $props.id()
   /** The height limit of the narrow layout is lifted. */
   let expanded = $state(false)
+  /** A logic game's setup (its opening and its rules) is shown in the passage's place, under its own name. */
+  const copy = $derived(passage.kind === 'setup' ? SETUP_COPY : PASSAGE_COPY)
 </script>
 
 <div class="passage-layout" class:expanded>
@@ -48,9 +50,9 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <section class="passage" id={regionId ?? `${uid}-passage`} aria-labelledby="{uid}-h" tabindex="0" data-passage={passage.passageKey}>
       <div class="head">
-        <h2 id="{uid}-h">{PASSAGE_COPY.heading}</h2>
+        <h2 id="{uid}-h">{copy.heading}</h2>
         <button type="button" class="hb-btn toggle" aria-expanded={expanded} aria-controls="{uid}-text" onclick={() => (expanded = !expanded)}>
-          {expanded ? PASSAGE_COPY.showLess : PASSAGE_COPY.showAll}
+          {expanded ? copy.showLess : copy.showAll}
         </button>
       </div>
       <div class="text" id="{uid}-text">
@@ -60,6 +62,13 @@
         {#each passage.passage as paragraph, i (i)}
           <p>{paragraph}</p>
         {/each}
+        {#if passage.rules !== undefined && passage.rules.length > 0}
+          <ul class="rules" aria-label={SETUP_COPY.rulesLabel}>
+            {#each passage.rules as rule, i (i)}
+              <li>{rule}</li>
+            {/each}
+          </ul>
+        {/if}
       </div>
       {#if passage.attribution !== null}
         <p class="attribution"><span class="hb-sr-only">{PASSAGE_COPY.sourcePrefix}</span>{passage.attribution}</p>
@@ -139,6 +148,19 @@
 
   .text .title {
     font-weight: 700;
+  }
+
+  /* A logic game's rules: one to a line, so each can be checked against an arrangement. */
+  .rules {
+    margin: 0.75rem 0 0;
+    padding-left: 1.25rem;
+    max-width: 38rem;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+  }
+
+  .rules li + li {
+    margin-top: 0.25rem;
   }
 
   .attribution {

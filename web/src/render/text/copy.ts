@@ -25,3 +25,18 @@ export const PASSAGE_COPY = Object.freeze({
   /** "Question 2 of 4 about this passage": the place of the question among the passage's own. */
   position: (index: number, of: number): string => `Question ${index} of ${of} about this passage`,
 })
+
+/**
+ * Copy of the setup beside a served logic-game question (the remaining families, 2026-10-13; DESIGN §3 row 3): the
+ * same screen as a passage's, with the game's opening sentence and its rules in the passage's place.
+ */
+export const SETUP_COPY = Object.freeze({
+  /** The heading and the name of the setup's region. */
+  heading: 'Setup',
+  /** The name of the list of the game's rules. */
+  rulesLabel: 'Rules',
+  showAll: 'Show the whole setup',
+  showLess: 'Keep the setup small',
+  /** "Question 2 of 4 about this setup". */
+  position: (index: number, of: number): string => `Question ${index} of ${of} about this setup`,
+})

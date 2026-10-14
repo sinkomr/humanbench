@@ -15,6 +15,7 @@
   import { TEXT_MC_RENDERER } from '../render/text/spec'
   import TextChoiceRenderer from '../render/text/TextChoiceRenderer.svelte'
   import { VISUAL_RENDERERS } from '../render/visual'
+  import { isLazyRenderer, loadRenderer, loadedRenderer } from './served-renderers'
 
   interface Props {
     readonly family: string
@@ -38,17 +39,71 @@
 
   let { family, itemId, spec, block = false, scale, timing, disabled = false, inputMode, onrespond, onshown, onunavailable, onpaste, oninputtype, ontimestampsource }: Props = $props()
 
+  /** Bumped when a renderer of the remaining families arrives (`served-renderers.ts`), so the lookup below runs again. */
+  let arrived = $state(0)
+  /** The renderer of the remaining families could not be fetched: the session offers the skip. */
+  let failed = $state(false)
+
   // A served text question (M3.11 phase 1) is not a family of the registry: its renderer goes by the client-side name.
-  // The question of a served passage (phase 2) is drawn by the same renderer; its passage is the session screen's to show.
-  const Renderer = $derived(
-    (VISUAL_RENDERERS as Readonly<Record<string, import('svelte').Component<any> | undefined>>)[family] ??
+  // The question of a served passage or logic game is drawn by the same renderer; its passage or setup is the session
+  // screen's to show. The remaining families go by the bank's renderer name and are fetched when needed.
+  const Renderer = $derived.by(() => {
+    void arrived
+    return (
+      (VISUAL_RENDERERS as Readonly<Record<string, import('svelte').Component<any> | undefined>>)[family] ??
       entryRenderer(family) ??
-      (family === TEXT_MC_RENDERER || family === TEXT_PASSAGE_RENDERER ? (TextChoiceRenderer as import('svelte').Component<any>) : undefined),
-  )
+      (family === TEXT_MC_RENDERER || family === TEXT_PASSAGE_RENDERER ? (TextChoiceRenderer as import('svelte').Component<any>) : undefined) ??
+      fitting(family)
+    )
+  })
+
+  /** A renderer of the remaining families that has arrived, if the spec is one it can draw. */
+  function fitting(f: string): import('svelte').Component<any> | undefined {
+    const r = loadedRenderer(f)
+    return r !== undefined && r.fits(spec) ? r.component : undefined
+  }
+  const waiting = $derived(Renderer === undefined && isLazyRenderer(family) && !failed)
+
+  $effect(() => {
+    const f = family
+    const s = spec
+    if (!isLazyRenderer(f)) return
+    const have = loadedRenderer(f)
+    if (have !== undefined) {
+      // it is here, but this spec is not one it can draw (a Fermi unit it does not know): the skip of §13
+      if (!have.fits(s) && !failed) {
+        failed = true
+        onunavailable?.()
+      }
+      return
+    }
+    let current = true
+    failed = false
+    loadRenderer(f).then(
+      (r) => {
+        if (!current) return
+        if (r.fits(s)) arrived++
+        else {
+          failed = true
+          onunavailable?.()
+        }
+      },
+      () => {
+        if (!current) return
+        failed = true
+        onunavailable?.()
+      },
+    )
+    return () => {
+      current = false
+    }
+  })
 </script>
 
 {#key itemId}
-  {#if Renderer === undefined}
+  {#if waiting}
+    <p class="hb-render" role="status">Loading the question…</p>
+  {:else if Renderer === undefined}
     <p class="hb-render error" role="alert">This question type is not available in this version.</p>
   {:else if block}
     <Renderer {spec} {onrespond} {timing} {inputMode} {oninputtype} {ontimestampsource} />

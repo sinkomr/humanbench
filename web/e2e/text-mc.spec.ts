@@ -130,7 +130,8 @@ test.describe('the text question screen (made-up questions)', () => {
 
 // ------------------------------------------------------------------------------ the session
 
-const TEXT_QUERY = `${SERVER_QUERY}&hb_text=all`
+/** Every served skill the app knows (`plan-table.ts` TEXT_AXES): what a server that has questions for all of them lists. */
+const ALL_SERVED = ['LR', 'LG', 'RC', 'VOC', 'FER', 'KST', 'KHU', 'KAP', 'EMO', 'CRE']
 
 /** Made-up text questions for a skill: ids that say what they are. */
 const textPool = (axis: string, n: number): Wire[] => Array.from({ length: n }, (_, i) => textWire(i + 1, `i:tst:${axis.toLowerCase()}:e2e${i + 1}`, DEMO_TEXT_ITEMS[i % DEMO_TEXT_ITEMS.length]!.payload))
@@ -193,13 +194,15 @@ test.describe('a pool without the text skills gives the six-part session', () =>
     expect(axesAsked(server)).toEqual([]) // every part was skipped on its "Up next" screen: nothing was asked for, and never a text skill
   })
 
-  test('a page that asks for every text part: one question to the server per skill, and then the same six parts with nothing said', async ({ page }) => {
-    const server = new FakeServer({ pools: { MAT: [seriesWire(1)] } })
+  test('a server that lists every served skill but has nothing left for this person: one question per skill of the first turn, and then the same six parts with nothing said', async ({ page }) => {
+    const server = new FakeServer({ pools: { MAT: [seriesWire(1)] }, live: ALL_SERVED })
     await server.attach(page)
-    await page.goto(`./${TEXT_QUERY}`)
-    await expect(page.locator('main')).toContainText('The session has up to twelve parts and takes about 55 minutes.')
-    await toReadyOnline(page, TEXT_QUERY)
-    await expect(page.locator('main')).toContainText('Up to twelve short parts, about 55 minutes.')
+    await page.goto(`./${SERVER_QUERY}`)
+    // the parts take turns (plan-table.ts ROTATION): the first turn is Logical Reasoning and Reading Comprehension; the words
+    // state the longest turn (Fermi, Emotion Reading, word links and Arts & Practical: ten parts)
+    await expect(page.locator('main')).toContainText('The session has up to ten parts and takes about 45 minutes.')
+    await toReadyOnline(page, SERVER_QUERY)
+    await expect(page.locator('main')).toContainText('Up to eight short parts, about 45 minutes.') // this session's own turn
     await button(page, 'Begin').click()
     const seen: string[] = []
     for (let i = 0; i < 6; i++) {
@@ -211,7 +214,7 @@ test.describe('a pool without the text skills gives the six-part session', () =>
     }
     expect(seen).toEqual(['Reaction Time', 'Matrix & Series', 'Spatial', 'Working Memory', 'Quantitative Reasoning', 'Processing & Reading Speed'])
     await expect(h1(page)).toHaveText(/^Session /, { timeout: 20_000 })
-    expect(axesAsked(server)).toEqual(['LR', 'KST', 'VOC', 'RC', 'KHU', 'KAP'])
+    expect(axesAsked(server)).toEqual(['LR', 'RC'])
     expect(server.served).toEqual([])
     // The profile reads the five as not measured; nothing about them was skipped or failed.
     await expect(page.locator('body')).not.toContainText(/Logical Reasoning skipped|cannot be shown/)
@@ -223,7 +226,7 @@ test.describe('a pool with made-up text questions', () => {
     const server = new FakeServer({ pools: { VOC: textPool('VOC', 6) }, eap: { VOC: { mean: 0.3, sd: 0.6, n: 6 } } })
     await server.attach(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await toReadyOnline(page, `${SERVER_QUERY}&hb_text=VOC`)
+    await toReadyOnline(page, SERVER_QUERY) // the server lists Vocabulary (its pool has questions): no build variable names it
     // six parts and Vocabulary: typically 31.8 minutes since the lengths were re-measured on 2026-10-13 (it read "about 35")
     await expect(page.locator('main')).toContainText('Up to seven short parts, about 30 minutes.')
     await button(page, 'Begin').click()
@@ -289,7 +292,7 @@ test.describe('a pool with made-up text questions', () => {
     await server.attach(page)
     await useWideFont(page)
     await page.setViewportSize({ width: 320, height: 720 })
-    await toReadyOnline(page, `${SERVER_QUERY}&hb_text=LR`)
+    await toReadyOnline(page, SERVER_QUERY)
     await button(page, 'Begin').click()
     for (const part of ['Reaction Time', 'Matrix & Series']) {
       await pastBreak(page)

@@ -3,7 +3,7 @@ import { A15_TARGET_S } from '../src/engine/selector'
 import { UsageError } from './dump-lib'
 import { PUBLISH_MIN_ITEMS, QUANT_MIN_ITEMS, TEXT_AXES } from '../src/engine/plan-table'
 import { HARD_STOP_S } from '../src/session/constants'
-import { ANSWER_GAP_S, BLOCK_EXTRA_S, MEASURED_STEP_S, PACE_SD, PER_ANSWER_S, RATING_S, PASSAGE_READING_S, parseSimSessionArgs, quantile, simPassageQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
+import { ANSWER_GAP_S, BLOCK_EXTRA_S, MEASURED_STEP_S, PACE_SD, PER_ANSWER_S, RATING_S, PASSAGE_READING_S, parseSimSessionArgs, quantile, simGameQuestions, simPassageQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
 
 describe('scripts/sim-session.ts: whole sessions of the real session machine (UX-066)', () => {
   it('parses its flags, with defaults, and refuses what it does not know', () => {
@@ -152,18 +152,29 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     expect(six.ended).toBe('complete')
     expect(Object.keys(six.partS)).toEqual(['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'])
     expect(six.answered.QR).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
-    const eleven = await simulateOneOnline(4, { ...base, text: TEXT_AXES })
+    // the twelve parts of the six text skills (the remaining families are another group of the rotation: below)
+    const TEXT6 = ['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'] as const
+    const eleven = await simulateOneOnline(4, { ...base, text: TEXT6 })
     expect(Object.keys(eleven.partS)).toHaveLength(12)
     // Reading Comprehension read two made-up passages, whole: three questions and four
     expect(eleven.shown.RC).toBe(simPassageQuestions(0) + simPassageQuestions(1))
     expect(eleven.partS.reading_comprehension).toBeGreaterThan(2 * PASSAGE_READING_S)
-    for (const k of TEXT_AXES) expect(eleven.answered[k], k).toBeGreaterThanOrEqual(PUBLISH_MIN_ITEMS)
+    for (const k of TEXT6) expect(eleven.answered[k], k).toBeGreaterThanOrEqual(PUBLISH_MIN_ITEMS)
     expect(eleven.answered.QR).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
     expect(eleven.durationS).toBeGreaterThan(six.durationS + 10 * 60)
     expect(eleven.durationS).toBeLessThanOrEqual(HARD_STOP_S)
     expect(eleven.ended).toBe('complete')
     // The six parts are the same with and without the text parts: their time is their own.
     for (const p of ['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'] as const) expect(eleven.partS[p], p).toBeCloseTo(six.partS[p]!, 6)
+    // the remaining families: two made-up logic games, whole (three questions and four), Fermi estimates, vignettes and
+    // judgments in turn, word links; every part to its minimum, after the six parts, whose time is their own
+    const families = await simulateOneOnline(4, { ...base, text: ['LG', 'FER', 'EMO', 'CRE'] })
+    expect(families.ended).toBe('complete')
+    expect(Object.keys(families.partS)).toEqual(['rt', 'matrix_series', 'spatial', 'memory', 'emotion', 'word_links', 'quant', 'coding_reading', 'logic_games', 'fermi'])
+    expect(families.shown.LG).toBe(simGameQuestions(0) + simGameQuestions(1))
+    for (const k of ['LG', 'FER', 'EMO', 'CRE'] as const) expect(families.answered[k], k).toBeGreaterThanOrEqual(PUBLISH_MIN_ITEMS)
+    for (const p of ['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading'] as const) expect(families.partS[p], p).toBeCloseTo(six.partS[p]!, 6)
+    expect(TEXT_AXES).toHaveLength(10)
     const r = await simulateOnline({ ...base, n: 2, text: ['VOC'] })
     expect(r.args).toMatchObject({ mode: 'online', text: ['VOC'] })
     expect(r.meanPartMin.vocabulary).toBeGreaterThan(0)

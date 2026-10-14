@@ -1,7 +1,7 @@
 /**
  * The server's Calibration (owner decision 2026-10-13: "yeah, lets add calibration to the live score if they submit
  * sufficient confidence data"; DESIGN §3 row 12, §7.1 "Calibration", §7.8, R-11.1; ROADMAP M2.1):
- * supabase/migrations/20261015000100_server_calibration.sql. rescore computes CAL from each session's rated answers
+ * supabase/migrations/20261015000400_server_calibration.sql. rescore computes CAL from each session's rated answers
  * (valid scored answers with a confidence) with the app's observation model (tasks/calibration.ts
  * calibrationObservation, tasks/priors.ts CAL_NORMS), at least CAL_NORMS.min_responses of them a session, on the
  * own-axis grid with the practice model of every axis. The expected numbers come from the app's own engine
@@ -267,14 +267,14 @@ describe('the migration', () => {
     return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
   }
 
-  it('re-creates rescore as the facets migration did, with the Calibration added and nothing else changed', () => {
-    const before = body('_rescore_facets.sql').split('\n')
+  it('re-creates rescore as the remaining families\' migration did (20261015000200_continuous_items.sql), with the Calibration added and nothing else changed', () => {
+    const before = body('_continuous_items.sql').split('\n')
     const now = body('_server_calibration.sql').split('\n')
     // the six lines of the earlier body that carry an edit: the confidence carried (two), the CAL ordinals, CAL's n, the
     // withheld union and the limit in the reply; every other line is kept, in order
     const edited = [
       '      select k.session_id, k.started_utc, k.counts, r.pretest, r.correct,',
-      '      select c.session_id, c.started_utc, c.counts, c.correct, c.axis, c.facet, c.model, c.a, c.b, c.c,',
+      '      select c.session_id, c.started_utc, c.counts, c.correct, c.axis, c.facet, c.model, c.a, c.b, c.c, c.cobs,',
       '    -- test numbers (§7.8): every session that took the axis, scored or not, in time order',
       '             (select pg_catalog.count(*) from obs o where o.axis = m.axis) as n',
       "               group by c.axis) w), '{}'::jsonb),",

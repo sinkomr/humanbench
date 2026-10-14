@@ -1393,13 +1393,67 @@ The same rule runs in the app's selector (`web/src/engine/startup.ts`); `web/scr
 
 **What the accepted adaptive channel looks like now (ROADMAP A24-sec).** Which item comes next already depended on whether the last answer was right. During the start-up that is plainer: a harder item follows a correct answer and an easier one a miss, until the first reversal. Nothing new is in a reply, and the bounds are the ones of A24-sec.
 
+### The remaining families (2026-10-13; written and tested here, **not applied to the project**)
+
+Three new migrations, to be applied with `npm run db:deploy` after review, **after** `20261013000100_item_sets.sql` and
+`20261014000100_startup_step.sql` (the second re-creates `hb.rank_live` again, the third adds an RPC):
+`20261015000100_rat_answers.sql`, `20261015000200_continuous_items.sql`, `20261015000300_live_axes.sql`. The owner:
+"work on the fermi estimation scoring, and the logic games screen, the remaining families. suspend the alternate uses
+family. i don't want to use a model for any scoring." Nothing scores with a model. `web/scripts/db/families.db.test.ts`
+tests them (ROADMAP M3.11 phase 3).
+
+| Family | `item_type` | key (`item_keys.key`, never in a reply) | parameter row | answer space (`hb.response_fits`) | `responses.correct` / `score` | in the score |
+|---|---|---|---|---|---|---|
+| Word links (CRE) | `rat_triad` | `{answer, accept}` | 2PL | text of 1 to 40 characters with a letter a to z after folding | 1 when the folded answer is a folded accepted form, else 0 | 2PL, as before |
+| Fermi (FER) | `fermi_estimate` | `{true_value, unit, as_of_date, true_value_uncertainty_log10}` | `gaussian`, `extra = {lam, d, sigma}`, a and b null | `{value, unit, low, high}`: magnitudes in [1e-30, 1e30], low ≤ value ≤ high, at most 8 dex, a unit of the truth's dimension (which the payload states) | null / x = −\|log10(est/true)\| | Gaussian x ~ N(lam·θ + d, σ²), σ = √(SE² + sigma²) with SE from the truth's uncertainty above 0.15 dex |
+| Situational judgment (EMO) | `sjt_rating` | `{ratings: four in [1, 4], best, worst, source}` | `grm`, a, `extra.thresholds` (three), b null | four whole ratings 1 to 4 | null / 1 − Σ\|u − k\|/12 | GRM category: how many of 0.625, 0.75, 0.875 the score reaches |
+| Emotion vignette (EMO) | `emotion_vignette_mc` | `{index, emotion}` | 2PL | an option position | as any `{index}` key (unchanged) | 2PL |
+| Logic game (LG) | `mc_logic_game` | `{index}` | 2PL-testlet | an option position | unchanged | 2PL (a set, phase 2) |
+
+- **One place says which answers count:** `hb.response_obs` gives the observation of a stored answer, or null. It is
+  used by `hb.eap_add_response` (the session's grid EAP: the selector's posterior and the per-skill stop),
+  `hb.session_obs` (the MAP at finish) and `rescore` (for the continuous models; its 2PL/3PL terms are computed inline as
+  before). A Gaussian or GRM row without the key it scores against is a block (scored on the device) and is classified
+  as before.
+- **Selection.** `hb.candidate_items` (re-created with a column `o_extra`) takes live Gaussian and GRM items whose row
+  is valid and whose key is of their kind; pretest slots still take dichotomous items only. `hb.rank_live`: a
+  Gaussian item's information is (lam/sigma)², a GRM item's its expected Fisher information at the aim; an item with no
+  difficulty passes the start-up window; on the axes of `selection.balance_item_type_axes` (`["EMO"]`) the content
+  balancing alternates item types too, so a part of vignettes and judgments shows both, not only the quicker kind.
+- **Parity with the device** to 1e-6: `fermi_scoring_v1.json` (112 cases, 14 malformed), `m6_scoring_v1.json` (235
+  rating cases, 280 folding cases, 73 matching cases; one folding case holds a NUL, which no text or jsonb value can),
+  250 fuzzed Fermi answers, and `rescore`'s FER and EMO estimates against the app engine's grid EAP.
+- **`public.live_axes()`** returns `{"axes": [...]}`, the skills with at least one item a live slot could serve, in the
+  canonical order, and nothing else. It takes no argument and reads no session. The app asks it when the page loads and
+  plans its served parts from it, so loading a family's questions is enough to put its part in sessions.
+- **What a reply tells:** nothing new (canaries in the keys, rationale and tolerance columns; fuzzed sessions on all
+  four skills; `finish` carries the client's own answers with `correct: null`).
+- **Interval hits (§3 row 12) are not stored and not scored:** `hb.fermi_eval` computes them, a later calibration (M4.8)
+  can recompute them from the stored answer and the key.
+- **Measured.** `rescore`'s output on a dichotomous save is identical to the old body's (one 40-session save of 100
+  answers), and its time within the noise of the old body's on the same save. A session of 36 answers of the four
+  families: `finish` 87 ms, `rescore` about 30 ms (the Gaussian and GRM grid terms are computed in one statement, not
+  through `hb.obs_terms` per grid point, which took 140 ms and would have put a save of forty such sessions past the
+  anon role's 3 s), `submit` 20 to 50 ms. Under the heavy load of this machine (load average 30 to 300) with three
+  browsers on one database, `finish` and `rescore` did run past 3 s once each (`npm run e2e:db`, before the grid terms
+  were made faster); the app offers "Try again" and the test takes it.
+- **A grid edge.** With the provisional fermi-v0 norms (lam 0.2 dex per SD) a few answers 1.5 dex or more off put the
+  session's FER posterior on the edge of the 61-point grid (θ = −4), where the grid makes its sd small. The per-skill
+  stop (`selection.stop_sd`) therefore does not apply to Gaussian items, so a Fermi part runs to its minimum; the
+  published estimate of such a person is the grid's edge (the blob clamps at −3 anyway). Wider grids or calibrated norms
+  (M4.8) are the fix.
+- **What the bank should set** (its servable list): `fermi_estimate`, `rat_triad`, `emotion_vignette_mc`, `sjt_rating`,
+  `mc_logic_game`. A Fermi row is `fermi_params(δ)` in `extra` with a and b null; an SJT row a GRM with three
+  thresholds in `extra.thresholds`; a logic game's questions share the family and are numbered in id order; a Fermi
+  `media` holds exactly `renderer, dimension, units, interval_pct` (the app does not draw one with another field).
+
 ### Left for the owner
 
 - **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository
   variables `HB_SUPABASE_URL` and `HB_SUPABASE_ANON_KEY` are set (2026-10-12; public values), so the first Pages build after
   the merge is the online version. Deleting either variable and re-running the workflow goes back to static.
 - **Dashboard, Authentication:** turn sign-ups off. The public settings endpoint says `disable_signup: false` with the
-  email provider on. A signed-up user would have `authenticated`'s reach, which is `anon`'s (the same eleven RPCs, no
+  email provider on. A signed-up user would have `authenticated`'s reach, which is `anon`'s (the same RPCs, twelve since `live_axes`, no
   table), with an 8 s timeout instead of 3 s.
 - **Dashboard, API settings:** confirm the exposed schemas. PostgREST reports `public` and `graphql_public`; removing
   `graphql_public` makes it `public` alone, as the design says.
@@ -1419,7 +1473,7 @@ The same rule runs in the app's selector (`web/src/engine/startup.ts`); `web/scr
 After the "not made" record above, the gaps it lists for plain text multiple choice were closed: gates G2 and G3
 were recorded on the six multiple-choice banks, the owner stated that there are no anchors yet (rule F9), and the
 front end got a text renderer and five session parts behind the repository variable `HB_TEXT_AXES` (ROADMAP M3.11
-phase 1). On the owner's decision ("do all 5") the bank then loaded **1,545 text multiple-choice items** on the
+phase 1; the variable is no longer read since phase 3, 2026-10-13: the app asks `live_axes`). On the owner's decision ("do all 5") the bank then loaded **1,545 text multiple-choice items** on the
 finite G7 waiver (recorded as `waived`, an owner decision and not an audit): LR 262, VOC 323, KST 324, KHU 322,
 KAP 314. `bank_version` is `2026.10.12-b2`, `param_version` stays `prior`. The 1,800 procedural items are
 unchanged (same counts and row hashes before and after); the project holds 3,345 live items, 29 MB.

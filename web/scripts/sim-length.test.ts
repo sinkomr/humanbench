@@ -8,13 +8,13 @@
  * - Always: each text part adds what the table says it typically takes, for the same simulated people with
  *   and without it (a paired difference, so a few sessions are enough), and the parts add up.
  * - With `HB_SLOW=1` (`npm run test:slow`, about two minutes): the median of 300 six-part sessions is the
- *   table's figure, and for **every combination** of the text parts the stated minutes are the simulated
- *   median to the nearest five.
+ *   table's figure, and for **every set of served parts a session can ask for** (a subset of one group of the
+ *   rotation, `plan-table.ts` ROTATION) the stated minutes are the simulated median to the nearest five.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { AxisCode } from '../src/engine/axes'
-import { A15_TYPICAL_S, TEXT_AXES, TEXT_PARTS, aboutMinutes, sessionOutline, textPartOf, type TextAxis } from '../src/engine/plan-table'
+import { A15_TYPICAL_S, ROTATION, TEXT_AXES, TEXT_PARTS, aboutMinutes, sessionOutline, textPartOf, type TextAxis } from '../src/engine/plan-table'
 import { A15_TARGET_S } from '../src/engine/selector'
 import { HARD_STOP_S } from '../src/session/constants'
 import { plannedMinutes } from '../src/session/length'
@@ -32,13 +32,28 @@ const spread = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TAR
 const play = (i: number, text: readonly TextAxis[]): Promise<SimSessionOne> => simulateOneOnline(i, text.length === 0 ? base : { ...base, text })
 const mean = (xs: readonly number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
 
+/**
+ * Every set of served parts a session can ask for: a subset of one group of the rotation (`plan-table.ts` ROTATION;
+ * the parts take turns because all of them at once take about 75 minutes), the empty set included.
+ */
+const SESSION_SETS: readonly (readonly TextAxis[])[] = (() => {
+  const out = new Map<string, TextAxis[]>()
+  for (const g of ROTATION.length === 0 ? [TEXT_AXES] : ROTATION) {
+    for (let mask = 0; mask < 1 << g.length; mask++) {
+      const axes = TEXT_AXES.filter((k) => g.some((x, i) => x === k && (mask >> i) & 1))
+      out.set(axes.join('+'), axes)
+    }
+  }
+  return [...out.values()]
+})()
+
 /** Seconds a text part's typical figure may be off the simulated one. */
 const PART_TOLERANCE_S = 15
 
 describe('what each text part adds to a session is what the table says it typically takes', () => {
   const PEOPLE = [0, 1, 2, 3, 5, 7] // (their six-part sessions leave room under the hard stop for any one text part)
 
-  it('for the same simulated people with and without the part, for each of the six', async () => {
+  it('for the same simulated people with and without the part, for each of the ten', async () => {
     const without = await Promise.all(PEOPLE.map((i) => play(i, [])))
     for (const k of TEXT_AXES) {
       const part = textPartOf(k)!
@@ -51,18 +66,21 @@ describe('what each text part adds to a session is what the table says it typica
     }
   }, 120_000)
 
-  it('the parts add up: a brisk taker\'s twelve-part session is their six-part session plus each part', async () => {
+  it('the parts add up: a brisk taker\'s session of each group of the rotation is their six-part session plus each part', async () => {
     const brisk = { ...base, pace: 0.8 }
     const six = await simulateOneOnline(1, brisk)
-    const twelve = await simulateOneOnline(1, { ...brisk, text: TEXT_AXES })
-    expect(twelve.ended).toBe('complete')
-    const parts = TEXT_PARTS.reduce((t, p) => t + twelve.partS[p.id]!, 0)
-    expect(twelve.durationS).toBeCloseTo(six.durationS + parts, 3)
+    for (const g of ROTATION) {
+      const whole = await simulateOneOnline(1, { ...brisk, text: g })
+      expect(whole.ended).toBe('complete')
+      const parts = TEXT_PARTS.filter((p) => g.includes(p.axis)).reduce((t, p) => t + whole.partS[p.id]!, 0)
+      expect(whole.durationS).toBeCloseTo(six.durationS + parts, 3)
+    }
   }, 60_000)
 
-  it('the stated minutes are the typical length to the nearest five, for every combination of the parts', () => {
-    for (let mask = 0; mask < 1 << TEXT_AXES.length; mask++) {
-      const axes: AxisCode[] = TEXT_AXES.filter((_, i) => (mask >> i) & 1)
+  it('the stated minutes are the typical length to the nearest five, for every set of parts a session can ask for', () => {
+    expect(SESSION_SETS.length).toBeGreaterThan(20)
+    for (const set of SESSION_SETS) {
+      const axes: AxisCode[] = [...set]
       const o = sessionOutline(axes)
       expect(o.typical_s).toBe(A15_TYPICAL_S + TEXT_PARTS.filter((p) => axes.includes(p.axis)).reduce((t, p) => t + p.typical_s, 0))
       expect(plannedMinutes(o)).toBe(aboutMinutes(o.typical_s))
@@ -77,7 +95,7 @@ describe.skipIf(!SLOW)('the figures against 300 simulated sessions (slow)', () =
   const N = 300
   const PAIRS = 60
 
-  it('the six parts: the median is the table\'s figure; and for every combination of the text parts the stated minutes are the simulated median to the nearest five', async () => {
+  it('the six parts: the median is the table\'s figure; and for every set of served parts a session can ask for the stated minutes are the simulated median to the nearest five', async () => {
     const six: number[] = []
     for (let i = 0; i < N; i++) six.push((await simulateOneOnline(i, spread)).durationS)
     const median = quantile(six, 0.5)
@@ -98,10 +116,9 @@ describe.skipIf(!SLOW)('the figures against 300 simulated sessions (slow)', () =
       expect(Math.abs(mean(xs) - textPartOf(k)!.typical_s), k).toBeLessThanOrEqual(PART_TOLERANCE_S)
     }
 
-    // every combination: the session of each simulated person is their six parts plus the parts asked for, up to the hard stop
+    // every set a session can ask for: the session of each simulated person is their six parts plus the parts asked for, up to the hard stop
     const lines: string[] = []
-    for (let mask = 0; mask < 1 << TEXT_AXES.length; mask++) {
-      const axes = TEXT_AXES.filter((_, i) => (mask >> i) & 1)
+    for (const axes of SESSION_SETS) {
       const extra = axes.reduce((t, k) => t + adds.get(k)!, 0)
       const lengths = six.map((s) => Math.min(HARD_STOP_S, s + extra))
       const med = quantile(lengths, 0.5)

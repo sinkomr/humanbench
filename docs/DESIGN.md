@@ -387,7 +387,7 @@ Quarantined items stop being served immediately (`status='quarantined'`). Respon
   - Author new triads, verified by corpus: the solution must form common compounds with all three cues (checked in a word-frequency list or n-gram data).
   - Solver unanimity must hold, and no alternative word may form compounds with all three above a frequency threshold.
   - Accepted answers include spelling variants.
-- **Alternate Uses Task (tier c-automated):** 2 objects × 90 s each.
+- **Alternate Uses Task (tier c-automated):** 2 objects × 90 s each. **Suspended (owner decision 2026-10-13: "suspend the alternate uses family. i don't want to use a model for any scoring"; ROADMAP M6.4):** no session asks for it, and Creative Thinking is measured by the Remote Associates items alone until it returns.
   - Score: mean of the top-3 responses' semantic distance from the prompt, computed in-browser with a small sentence-embedding model (e.g. all-MiniLM-L6-v2 via Transformers.js, ~25 MB, downloaded once, zero API cost). Flexibility = number of embedding clusters.
   - [EST] Organisciak et al. (2023) showed fine-tuned LLM scoring (Ocsai) reaches up to r = .81 with human raters, vs r = .12–.26 for earlier semantic-distance systems in their benchmark.
   - Implication: the in-browser distance score is noisy. Label this axis "experimental".
@@ -592,6 +592,7 @@ Exposure caps, seen lists and family exclusion apply before both. The rule is th
 2. Blocks of 6–10 min alternating clusters, in this order: Speed warm-up (RT, 2 min) → Reasoning → Knowledge → Spatial → Verbal/RC → Memory → Quant → Knowledge → Logic → Fermi (calibration embedded throughout). This order breaks up fatigue and varies the modality.
 3. Within a block the engine picks axes by the criterion, subject to a floor of ≥ 3 scored items per axis in session 1.
    - **Minimum per part (owner, 2026-10-13: "each section should have a minimum number of questions asked, even if running over the originally estimated time"; the number six is the proposal built, ROADMAP "Owner decisions 2026-10-13").** Every part that asks questions runs until six of its questions are answered, past its time share if need be, and shows at most two more than six when some run out of time. Reading Comprehension is counted in passages (two, 6 to 8 questions). More questions follow when time remains. One table: `web/src/engine/plan-table.ts` `PART_MINIMUMS`. A focus session has no minimum.
+   - **Served parts take turns (2026-10-13, ROADMAP M3.11 phase 3).** With every served skill on, one session would hold sixteen parts and typically take about 75 minutes, past the hard stop. The served parts (text, passages, logic games, Fermi, emotion, word links) are therefore split into groups that take turns, one group a session (`web/src/engine/plan-table.ts` `ROTATION`: three groups, each with the six parts about 45 minutes); the six timed and procedural parts run in every session. A served part is in a session only when the server has questions for its skill (`public.live_axes`); no build setting names them.
 4. Stopping:
    - hard stop at 57 min, then reveal;
    - a "finish early" button at any time (partial blob);

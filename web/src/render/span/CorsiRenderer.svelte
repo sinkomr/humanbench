@@ -15,7 +15,8 @@
   what 2.75rem blocks need), so the board, the status line and Undo / Done all fit the first screen on a
   320 x 568 phone; the row of Undo / Done is a slot that is mounted for the whole block (buttons only while
   entering), so the page is as tall during the sequence, the pause and after Done as it is while entering,
-  and the board stays where it was (UX-023).
+  and the board stays where it was (UX-023). The note for screen-reader users in the instructions is read but not
+  shown, so Start is in the first screen at 320 x 568 in a wide (Linux) font too.
 -->
 <script lang="ts">
   import { flushSync, onDestroy } from 'svelte'
@@ -87,9 +88,23 @@
     ).cancel
   }
 
+  /**
+   * The board replaces the instructions. If Start was below the first screen (a long text, a wide font), pressing it
+   * scrolled the page, and the shorter board screen would stay scrolled with the session bar and heading out of view.
+   * When the block's whole screen fits the first screen it is shown there, the page at its top (UX-023); otherwise
+   * (a gallery page, large text) the page stays where it is and the board is brought into view as before.
+   */
+  function toFirstScreen(): void {
+    const actions = root?.querySelector('.hb-actions')
+    if (!actions || window.scrollY === 0) return
+    if (actions.getBoundingClientRect().bottom + window.scrollY <= window.innerHeight) window.scrollTo({ top: 0, left: window.scrollX, behavior: 'instant' })
+  }
+
   function start(): void {
     const status = spanNext(spec, responses)
-    if (!status.finished) runTrial(status.trial)
+    if (status.finished) return
+    runTrial(status.trial)
+    toFirstScreen()
   }
 
   function pick(i: number): void {
@@ -154,8 +169,8 @@
   {#if phase === 'intro'}
     <p class="hb-instructions">
       Blocks on the board will light up one at a time. When the sequence ends, select the blocks in the same order: click or tap
-      them, or use the arrow keys and Enter. Then choose Done. {spanRuleText('block')} With a screen reader, the blocks are
-      named Block 1 to Block 9, and the number keys 1 to 9 select the block of that name.
+      them, or use the arrow keys and Enter. Then choose Done. {spanRuleText('block')}
+      <span class="hb-sr-only">With a screen reader, the blocks are named Block 1 to Block 9, and the number keys 1 to 9 select the block of that name.</span>
     </p>
     <button type="button" class="hb-btn hb-primary" onclick={start}>Start</button>
   {:else}

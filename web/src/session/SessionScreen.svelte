@@ -77,7 +77,7 @@
     skipButton,
     upNext,
   } from './copy'
-  import { PASSAGE_COPY } from '../render/text/copy'
+  import { PASSAGE_COPY, SETUP_COPY } from '../render/text/copy'
   import PassageLayout from '../render/text/PassageLayout.svelte'
   import { QuestionFocus, itemRegionName } from './question-focus'
   import type { SessionEnv } from './env'
@@ -337,7 +337,7 @@
         </div>
       {/if}
       {#if view.passage?.position != null && view.passage.position.of > 1}
-        <p class="set-position" data-set-position>{PASSAGE_COPY.position(view.passage.position.index, view.passage.position.of)}</p>
+        <p class="set-position" data-set-position>{(view.passage.kind === 'setup' ? SETUP_COPY : PASSAGE_COPY).position(view.passage.position.index, view.passage.position.of)}</p>
       {/if}
       {#if itemTime !== null}
         <!-- Every question that can run out of time says how long is left, and warns before it does (owner feedback 2026-10-13). -->

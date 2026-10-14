@@ -11,7 +11,7 @@
  */
 
 import type { SessionOutline } from '../engine/plan-table'
-import { CONFIDENCE_INSTRUCTION, CREDITS_SECTION } from '../session/copy'
+import { CONFIDENCE_INSTRUCTION, CONFIDENCE_INSTRUCTION_MOST, CREDITS_SECTION } from '../session/copy'
 import { BASE_OUTLINE, lengthSentence } from '../session/length'
 import type { LoadProblem } from './errors'
 
@@ -25,8 +25,12 @@ export const SERVER_GATE_POINTS: readonly string[] = Object.freeze([
 ])
 
 /** Replaces `READY_TEXT` when answers go to a server; the length is the plan's (`session/copy.ts`, M3.11 phase 1). */
-export const serverReadyText = (o: SessionOutline): string =>
-  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. ${CONFIDENCE_INSTRUCTION}`
+/**
+ * `unrated`: the session has a part whose answers are not rated for confidence (a Fermi range, a rating of responses, an
+ * emotion vignette; `backend/items.ts` `asksConfidence`), so the optional scale is on most questions, not on each one.
+ */
+export const serverReadyText = (o: SessionOutline, unrated = false): string =>
+  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. ${unrated ? CONFIDENCE_INSTRUCTION_MOST : CONFIDENCE_INSTRUCTION}`
 export const SERVER_READY_TEXT = serverReadyText(BASE_OUTLINE)
 
 // ----------------------------------------------------------------------------- opening

@@ -18,7 +18,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte'
-  import '../common/render.css'
+  // No `import '../common/render.css'` here: it is in the session's entry chunk and in a dev demo, which would split that stylesheet out of the entry (scripts/dev-routes.test.ts); the screens load it.
   import { CONFIRM_LABEL, optionIndexForKey } from '../choice/keys'
   import { browserTiming, type RendererProps } from '../common/props'
   import { EMO_AXIS_NAME, EMO_TOOLTIP } from '../../copy'

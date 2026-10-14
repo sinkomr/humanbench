@@ -128,7 +128,7 @@
  */
 
 import { BackendError, problemOf, type LoadProblem } from '../backend/errors'
-import type { ServedItem } from '../backend/items'
+import { asksConfidence, servedResponseFits, type ServedItem } from '../backend/items'
 import type { CatAnswer, CatNext, CatSource, Release } from '../backend/session'
 import { AXIS_CODES, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
 import {
@@ -482,15 +482,8 @@ function familyOf(name: string): AnyFamily {
   return f
 }
 
-/**
- * Whether `response` is an answer the renderer of a served item could have given: an option position
- * for a multiple-choice item, text for a typed one (the checks `mcResponseIndex` and `entryResponse` make
- * for a generated item, without the key). Anything else is not sent.
- */
-export function servedResponseFits(item: ServedItem, response: unknown): boolean {
-  if (item.options_count !== undefined) return typeof response === 'number' && Number.isInteger(response) && response >= 0 && response < item.options_count
-  return typeof response === 'string' && response.length <= 256
-}
+/** Whether `response` is an answer the renderer of a served item could have given (`backend/items.ts`). */
+export { servedResponseFits }
 
 /** Whole minutes for "About N min" (at least 1). */
 function minutesOf(seconds: number): number {
@@ -785,7 +778,7 @@ export class SessionRun {
     const cur = this.#current
     const facts = cur === null ? null : this.#facts(cur)
     let confidence: RunView['confidence'] = null
-    if (this.#phase === 'item' && facts !== null) {
+    if (this.#phase === 'item' && facts !== null && cur !== null && this.#asksConfidence(cur)) {
       const k = facts.options_count
       confidence = { floorPct: confidenceFloorPct(k), optionsCount: k ?? null }
     }
@@ -1370,9 +1363,19 @@ export class SessionRun {
     this.#answered()
   }
 
-  /** The confidence to record with an answer to `cur`: the value set, if it is one the item's scale allows; else none. */
+  /**
+   * The confidence to record with an answer to `cur`: the value set, if it is one the item's scale allows; else none.
+   * None for a family that is not rated (a Fermi range, a rating of responses, an emotion vignette: DESIGN §3 row 12,
+   * `backend/items.ts` `asksConfidence`), which shows no scale either ({@link SessionRun.view}).
+   */
   #ratingOf(cur: CurrentItem, pct: number | null): number | null {
+    if (!this.#asksConfidence(cur)) return null
     return pct !== null && isConfidencePct(pct, confidenceFloorPct(this.#facts(cur).options_count)) ? pct : null
+  }
+
+  /** Whether the question carries the optional confidence scale: every one but a served item of an unrated family. */
+  #asksConfidence(cur: CurrentItem): boolean {
+    return cur.served === null || asksConfidence(cur.served)
   }
 
   /** After an answer was recorded: the next thing comes. */

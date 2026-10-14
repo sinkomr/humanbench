@@ -45,6 +45,13 @@ export interface PassageText {
   readonly attribution: string | null
   /** A title above the text, or null. */
   readonly title: string | null
+  /**
+   * What the shared text is: a reading passage (the default), or the setup of a logic game, whose `passage` is its
+   * opening sentence and `rules` its rules, one sentence each (`logicGameSpec`).
+   */
+  readonly kind?: 'passage' | 'setup'
+  /** The rules of a logic game's setup, in order; absent on a passage. */
+  readonly rules?: readonly string[]
 }
 
 /** The spec of a passage question: the question as the text renderer takes it (no stimulus), and its passage. */
@@ -98,7 +105,56 @@ export function passageSpec(payload: { readonly stem: string | null; readonly me
 
 /** The passage of a spec, without its question. */
 export function passageTextOf(spec: PassageSpec): PassageText {
-  return { passageKey: spec.passageKey, passage: spec.passage, attribution: spec.attribution, title: spec.title }
+  return {
+    passageKey: spec.passageKey,
+    passage: spec.passage,
+    attribution: spec.attribution,
+    title: spec.title,
+    ...(spec.kind === undefined ? {} : { kind: spec.kind }),
+    ...(spec.rules === undefined ? {} : { rules: spec.rules }),
+  }
+}
+
+// ------------------------------------------------------------------------------------------- logic games
+
+/** `media.renderer` of a logic-game question as the bank stores it (`hb.gen.logic`, item_type `mc_logic_game`). */
+export const LOGIC_GAME_MEDIA_RENDERER = 'logic_game_v1'
+
+const LOGIC_GAME_FIELDS: readonly string[] = ['renderer', 'setup', 'attribution', 'title']
+
+/**
+ * The sentences of a setup: split after a full stop, question or exclamation mark that is followed by space and a
+ * capital letter or a digit (the bank's setups are an opening sentence and one sentence per rule, joined by spaces).
+ */
+export function setupSentences(setup: string): string[] {
+  return setup
+    .trim()
+    .split(/(?<=[.!?])\s+(?=[\p{Lu}\p{N}])/u)
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+}
+
+/**
+ * The spec of a payload that is a logic-game question, or null for anything else (ROADMAP M3.11; DESIGN §3 row 3).
+ * The bank's `mc_logic_game` items carry `{stem, media: {renderer: 'logic_game_v1', setup}, options}`; the setup is
+ * shown in the passage's place, its first sentence as the opening and the others as a list of rules, and stays on
+ * screen across the game's questions, which the server serves together (`selection.set_item_types`). Like a passage,
+ * everything here is text the server sent, kept as data; the key, the formal game and the difficulty are not in it.
+ */
+export function logicGameSpec(payload: { readonly stem: string | null; readonly media: Readonly<Record<string, unknown>> | null; readonly options: readonly string[] | null }): PassageSpec | null {
+  const { media } = payload
+  if (media === null || media.renderer !== LOGIC_GAME_MEDIA_RENDERER) return null
+  if (Object.keys(media).some((k) => !LOGIC_GAME_FIELDS.includes(k))) return null
+  if (!hasText(media.setup)) return null
+  const sentences = setupSentences(media.setup)
+  if (sentences.length === 0) return null
+  const attribution = line(media.attribution)
+  const title = line(media.title)
+  if (attribution === undefined || title === undefined) return null
+  const question = textMcSpec({ stem: payload.stem, media: null, options: payload.options })
+  if (question === null) return null
+  const [opening, ...rules] = sentences as [string, ...string[]]
+  return { ...question, passageKey: textKey(sentences), passage: [opening], rules, kind: 'setup', attribution, title }
 }
 
 /** Whether `spec` (a served item's) is a passage question's. */

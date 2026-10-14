@@ -154,7 +154,8 @@ export interface ProfileInput {
   /**
    * The axes this build puts in front of the person (UX-048a). An axis that is not observed, not
    * skipped and not in this set is "not measured (not offered yet)" rather than plain "not measured".
-   * Without it the reason follows the registry only (an axis with status 'v2' is not offered yet).
+   * Without it the reason follows the registry only (an axis with status 'v2' is not offered yet); with it, the set
+   * decides, so a 'v2' axis that a session offered (the remaining families, M3.11) reads "not measured" without data.
    */
   readonly offered?: ReadonlySet<AxisCode>
 }
@@ -189,8 +190,9 @@ export function axisEstimates(input: ProfileInput): AxisEstimate[] {
     }
     const observed = Object.hasOwn(input.score.eap, code)
     if (skipped.has(code) || !observed) {
-      // Skipped wins; then an axis the build does not offer (registry 'v2', or outside `offered`); else it just has no data.
-      const unavailable = a.status === 'v2' || (input.offered !== undefined && !input.offered.has(code))
+      // Skipped wins; then an axis the session does not offer (outside `offered`, or, without that set, registry 'v2'); else
+      // it just has no data. A 'v2' axis (EMO, CRE) is offered where a session asks the server for it (M3.11, 2026-10-13).
+      const unavailable = input.offered !== undefined ? !input.offered.has(code) : a.status === 'v2'
       const reason: NotMeasuredReason = skipped.has(code) ? 'skipped' : unavailable ? 'not_yet_available' : 'no_data'
       return { ...base, measured: false, reason, muted: false }
     }

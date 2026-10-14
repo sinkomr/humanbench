@@ -24,9 +24,30 @@ function functionText(sql: string, name: string): string {
 }
 
 describe('rescore facets (UX review D4)', () => {
-  it('is the migration that re-creates rescore before the server\'s Calibration (20261015000100_server_calibration.sql, which keeps it but for CAL)', () => {
+  it('is re-created twice since: by the remaining families (Gaussian and GRM answers, 20261015000200_continuous_items.sql), which keeps every line of it but the grid sum, then by the server\'s Calibration (20261015000400_server_calibration.sql, which keeps that body but for CAL)', () => {
     const recreating = migrations.filter((m) => /create\s+(?:or\s+replace\s+)?function\s+public\.rescore\s*\(/i.test(m.sql)).map((m) => m.name)
-    expect(recreating.slice(-2)).toEqual(['20261007000100_rescore_facets.sql', '20261015000100_server_calibration.sql'])
+    expect(recreating.slice(-3)).toEqual(['20261007000100_rescore_facets.sql', '20261015000200_continuous_items.sql', '20261015000400_server_calibration.sql'])
+    const facets = functionText(facetsSql, 'public.rescore').split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('--'))
+    const now = functionText(byName('_continuous_items.sql'), 'public.rescore').split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('--'))
+    // the lines that gained the continuous observation (cobs, the parameter row's extra) and the grid sum that became the
+    // 2PL/3PL branch of a union with the continuous terms; every other line is there, in order
+    const replaced = new Set([
+      'r.response) as in_space',
+      'select ip.model, ip.a, ip.b, ip.c',
+      'select c.session_id, c.started_utc, c.counts, c.correct, c.axis, c.facet, c.model, c.a, c.b, c.c,',
+      "select c.axis, coalesce(c.facet, '') as facet, c.a, c.b, c.c, c.y,",
+      'select c0.session_id, c0.axis, hb.drill_facet(c0.axis, c0.facet) as facet, c0.a, c0.b - r.rho as b, c0.c, c0.correct as y',
+      'pg_catalog.sum(',
+      'end) as ll',
+      'group by o.axis, o.facet, o.facet_ok, gr.i, gr.g',
+    ])
+    let at = 0
+    for (const line of facets) {
+      if (replaced.has(line)) continue
+      const found = now.indexOf(line, at)
+      expect(found, line).toBeGreaterThanOrEqual(0)
+      at = found + 1
+    }
   })
 
   it('re-creates rescore as before, with only the drill-down facet and the leave-facet-out facets changed', () => {

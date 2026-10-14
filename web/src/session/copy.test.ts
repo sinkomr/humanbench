@@ -244,6 +244,8 @@ describe('the words for the session’s length (A15, M3.11 phase 1)', () => {
     expect(META_DESCRIPTION).toBe('HumanBench: short tasks of reasoning, memory and speed, about 30 minutes. Your results are shown as a profile with ranges, not as a single score.')
     expect(welcomeIntro(BASE_OUTLINE)).toBe(WELCOME_INTRO)
     expect(serverReadyText(BASE_OUTLINE)).toBe(SERVER_READY_TEXT)
+    // a session with a part whose answers are not rated (Fermi, Emotion Reading) says "most questions"
+    expect(serverReadyText(BASE_OUTLINE, true)).toContain('Most questions also have a small optional scale for how sure you are of your answer.')
     expect(lengthSentence(BASE_OUTLINE)).toBe('Six short parts, about 30 minutes.')
   })
 
@@ -255,9 +257,11 @@ describe('the words for the session’s length (A15, M3.11 phase 1)', () => {
     // the minutes are what such a session typically takes (the simulated median), not the plan's sum: 45, where the plan (42) read "40"
     expect(welcomeIntro(five)).toMatch(/^The session has up to eleven parts and takes about 45 minutes\. /u)
     expect(lengthSentence(five)).toBe('Up to eleven short parts, about 45 minutes.')
-    const all = sessionOutline(TEXT_AXES)
+    const all = sessionOutline(['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'])
     expect(welcomeIntro(all)).toMatch(/^The session has up to twelve parts and takes about 55 minutes\. /u)
     expect(lengthSentence(all)).toBe('Up to twelve short parts, about 55 minutes.')
+    // every served part at once (no session has them all: they take turns, ROTATION) would read sixteen and about 75
+    expect(lengthSentence(sessionOutline(TEXT_AXES))).toBe('Up to sixteen short parts, about 75 minutes.')
     expect(lengthSentence(sessionOutline(['VOC']))).toBe('Up to seven short parts, about 30 minutes.')
     expect(lengthSentence(sessionOutline(['LR']))).toBe('Up to seven short parts, about 35 minutes.')
     expect(lengthSentence(sessionOutline(['RC']))).toBe('Up to seven short parts, about 40 minutes.')

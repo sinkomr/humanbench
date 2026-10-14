@@ -23,7 +23,7 @@
 -->
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import '../common/render.css'
+  // No `import '../common/render.css'` here: it is in the session's entry chunk and in a dev demo, which would split that stylesheet out of the entry (scripts/dev-routes.test.ts); the screens load it.
   import { optionIndexForKey, optionLetter } from '../choice/keys'
   import { browserTiming, type RendererProps } from '../common/props'
   import { axisName } from '../../axis-names'

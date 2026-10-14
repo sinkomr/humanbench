@@ -8,7 +8,7 @@
    * Never in a production build (routes.ts).
    */
   import { untrack } from 'svelte'
-  import '../render/common/render.css'
+  // The shared renderer styles (render.css) come with the app's entry stylesheet; importing them here again splits it.
   import FermiRenderer from '../render/fermi/FermiRenderer.svelte'
   import { demoFermiItem } from '../tasks/fermi/demo'
   import { formatMagnitude } from '../tasks/fermi/magnitude'

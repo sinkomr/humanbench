@@ -24,6 +24,12 @@ export const WELCOME_TAGLINE = 'Short tasks of reasoning, memory and speed. Your
 export const welcomeIntro = (o: SessionOutline): string =>
   `The session has ${partsPhrase(o)} parts and takes about ${plannedMinutes(o)} minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.`
 export const WELCOME_INTRO = welcomeIntro(BASE_OUTLINE)
+/**
+ * The intro of the online version before the server has said which skills it has questions for (`Backend.liveAxes`):
+ * no count and no length, because both depend on that answer, and nothing that is not true of every session.
+ */
+export const WELCOME_INTRO_PENDING =
+  'The session has a series of short parts; how many depends on the questions available. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.'
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
 /**
@@ -100,6 +106,8 @@ export const DEVICE_FACTS = Object.freeze({
 export const READY_HEADING = 'Ready when you are'
 /** Said once in the instructions (Ready screen; owner decision 2026-10-13). */
 export const CONFIDENCE_INSTRUCTION = 'Each question also has a small optional scale for how sure you are of your answer. Set it before you submit if you like, or leave it.'
+/** The same, for a session with a part whose answers are not rated (a Fermi range, a rating of responses, an emotion vignette). */
+export const CONFIDENCE_INSTRUCTION_MOST = 'Most questions also have a small optional scale for how sure you are of your answer. Set it before you submit if you like, or leave it.'
 export const READY_TEXT = `${lengthSentence(BASE_OUTLINE)} Your progress is saved in this browser as you go. ${CONFIDENCE_INSTRUCTION}`
 export const READY_PRACTICE = 'Try practice questions first'
 export const READY_PRACTICE_NOTE = 'Practice questions show whether you were right and are never counted.'
