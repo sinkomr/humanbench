@@ -53,7 +53,9 @@ export interface DeviceInfo {
 
 /**
  * Integrity flag counters (§13), e.g. `visibility_hidden_s`, `paste_events`, `fast_guess_n`,
- * `confidence_untouched_n` (answers whose confidence slider was not moved, UX-063).
+ * and, in saves made before 2026-10-13 only, `confidence_untouched_n` (answers whose follow-up confidence
+ * slider was confirmed unmoved, UX-063). The confidence is now optional on the question screen, so leaving it
+ * unset is normal and no longer flagged (owner decision 2026-10-13); old saves keep the counter and stay valid.
  * Keys are snake_case; M1.19's `integrityReport().save_flags` (`engine/integrity.ts` SaveFlags)
  * adds `flag_count`, `calibration_eligible` and the session-level kinds as booleans. A merge
  * keeps the copy of a session with the most flag information (`merge.ts` flagRank).

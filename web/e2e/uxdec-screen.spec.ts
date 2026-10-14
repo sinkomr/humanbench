@@ -40,28 +40,28 @@ async function skipThisPart(page: Page): Promise<void> {
   await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()
 }
 
-/** Answer the question on screen with the keys a keyboard user presses, as far as the confidence slider: Tab to the field first. */
-async function answerByKeys(page: Page, browserName: string): Promise<number> {
+/**
+ * Answer the question on screen with the keys a keyboard user presses: Tab to the field, then the answer; on the
+ * first question also Tab on to the optional confidence scale, set it with an arrow key, and Enter there; otherwise
+ * Enter in the field. One press sends it either way (owner decision 2026-10-13).
+ */
+async function answerByKeys(page: Page, browserName: string, rate = false): Promise<number> {
   await expect(field(page)).toBeVisible()
   const tabs = await tabTo(page, field(page), browserName)
-  const slider = page.getByRole('slider')
-  if ((await page.locator('form.choice').count()) > 0) {
-    await page.keyboard.press('b')
-    await page.keyboard.press('Enter')
-  } else {
-    await page.keyboard.type('1')
-    await page.keyboard.press('Enter')
-    if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-      await page.keyboard.press('ControlOrMeta+A')
-      await page.keyboard.type('A') // a letter series
-      await page.keyboard.press('Enter')
-    }
+  const points = page.locator('fieldset[data-confidence] input[type=radio]')
+  const name = (await points.first().getAttribute('name')) ?? ''
+  if ((await page.locator('form.choice').count()) > 0) await page.keyboard.press('b')
+  else {
+    const letter = (await page.locator('form.entry input[type=text]').getAttribute('class'))?.split(/\s+/).includes('letter') === true
+    await page.keyboard.type(letter ? 'A' : '1') // a letter series wants a letter
   }
-  await expect(slider).toBeFocused()
-  await page.keyboard.press('ArrowRight')
-  await tabTo(page, button(page, 'Continue'), browserName)
+  if (rate) {
+    await tabTo(page, points.first(), browserName)
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('fieldset[data-confidence] input[type=radio]:checked')).toHaveCount(1)
+  }
   await page.keyboard.press('Enter')
-  await expect(slider).toHaveCount(0)
+  await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
   return tabs
 }
 
@@ -101,7 +101,7 @@ test.describe('a later question of a part takes its own region, not the part’s
     await press(page, button(page, 'Start'), browserName)
     await expect(h1(page)).toHaveText('Matrix & Series')
     await expect(h1(page)).toBeFocused()
-    expect(await answerByKeys(page, browserName), 'Tabs from the heading of the first question').toBe(1)
+    expect(await answerByKeys(page, browserName, true), 'Tabs from the heading of the first question').toBe(1)
     for (const n of [2, 3, 4]) {
       await expect(question(page, n)).toBeFocused()
       expect(await answerByKeys(page, browserName), `Tabs from the group of question ${n}`).toBe(1)
@@ -113,31 +113,19 @@ test.describe('a later question of a part takes its own region, not the part’s
     test.describe(name, () => {
       if (size !== undefined) test.use({ viewport: size })
 
-      test('after Continue on the confidence panel the next question opens at the top of the page, its group in focus and its heading in view (UX-001)', async ({ page, isMobile }) => {
+      test('after the one press that sends an answer the next question opens at the top of the page, its group in focus and its heading in view (UX-001)', async ({ page, isMobile }) => {
         test.skip(isMobile !== true, 'the phone engines are where a new screen kept the old scroll offset')
         await intoSegment(page, MAT)
-        // The first question, answered as far as its slider ...
-        const choice = page.locator('form.choice')
-        const entry = page.locator('form.entry')
-        const slider = page.getByRole('slider')
-        await expect(choice.or(entry)).toBeVisible()
-        if ((await choice.count()) > 0) {
-          await choice.getByRole('radio').first().check()
-          await button(page, 'Confirm').click()
-        } else {
-          const box = entry.getByRole('textbox')
-          await box.fill('1')
-          await box.press('Enter')
-          if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-            await box.fill('A')
-            await box.press('Enter')
-          }
-        }
-        await expect(slider).toBeVisible()
-        // ... then the page sits at the bottom, as it does after a tap on a button low on the screen.
+        // The first question, answered (not yet sent) ...
+        const form = page.locator('form.choice, form.entry').first()
+        await expect(form).toBeVisible()
+        if ((await form.getAttribute('class'))?.split(/\s+/).includes('choice')) await form.locator('.options input[type=radio]').first().check()
+        else await form.getByRole('textbox').fill((await form.getByRole('textbox').getAttribute('class'))?.split(/\s+/).includes('letter') ? 'A' : '1')
+        const name = (await form.locator('fieldset[data-confidence] input[type=radio]').first().getAttribute('name')) ?? ''
+        // ... then the page sits at the bottom, as it does after a tap on a button low on the screen, and its button is tapped.
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
-        await button(page, 'Continue').tap()
-        await expect(slider).toHaveCount(0)
+        await form.locator('button[type=submit]').tap()
+        await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
         await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
         await expect(question(page, 2)).toBeFocused()
         await expect(h1(page)).toBeInViewport()

@@ -91,20 +91,15 @@ async function toReading(): Promise<void> {
   await tick()
 }
 
-/** Answers the question on screen with option `index`, moves the slider and continues. */
+/** Answers the question on screen with option `index`, sets the confidence scale's middle point and confirms: one press. */
 async function answer(index: number): Promise<void> {
   await settle() // the first frame that shows the question unlocks its options
   flushSync()
-  const radios = [...host.querySelectorAll<HTMLInputElement>('.text-mc input[type="radio"]')]
+  const radios = [...host.querySelectorAll<HTMLInputElement>('.text-mc .options input[type="radio"]')]
   click(radios[index])
   flushSync()
+  click(host.querySelectorAll<HTMLInputElement>('fieldset[data-confidence] input[type="radio"]')[2])
   click(buttonByText(host, 'Confirm'))
-  flushSync()
-  const slider = host.querySelector<HTMLInputElement>('.confidence input[type="range"]')!
-  slider.value = '70'
-  slider.dispatchEvent(new Event('input', { bubbles: true }))
-  flushSync()
-  click(buttonByText(host, 'Continue'))
   await tick()
   await settle()
   flushSync()
@@ -154,26 +149,23 @@ describe('a Reading Comprehension part of made-up passages', () => {
     ;(first as unknown as { mark: string }).mark = 'kept'
     expect(host.textContent).not.toMatch(/correct|incorrect/iu)
 
-    // the slider is on the same page, beside the same passage
+    // the optional confidence scale is in the question, beside the same passage; one press sends both
     await settle()
     flushSync()
-    click([...host.querySelectorAll<HTMLInputElement>('.text-mc input[type="radio"]')][2])
+    click([...host.querySelectorAll<HTMLInputElement>('.text-mc .options input[type="radio"]')][2])
     flushSync()
-    click(buttonByText(host, 'Confirm'))
-    flushSync()
-    expect(host.textContent).toContain('How sure are you that your answer is right?')
+    expect(host.textContent).toContain('How sure are you?')
+    const points = host.querySelectorAll<HTMLInputElement>('fieldset[data-confidence] input[type="radio"]')
+    expect([...points].map((p) => p.value)).toEqual(['20', '40', '60', '80', '100']) // five options: a guess is 20%
+    click(points[2])
     expect(passageNode()).toBe(first)
-    const slider = host.querySelector<HTMLInputElement>('.confidence input[type="range"]')!
-    slider.value = '70'
-    slider.dispatchEvent(new Event('input', { bubbles: true }))
-    flushSync()
-    click(buttonByText(host, 'Continue'))
+    click(buttonByText(host, 'Confirm'))
     await tick()
     await settle()
     flushSync()
 
     // the second question: the page was not rebuilt, the passage is the element it was, and focus is on the question
-    expect(t.args('submit')).toMatchObject({ p_item_id: 'i:tst:rc:p1-q1', p_response: 2, p_confidence: 70 })
+    expect(t.args('submit')).toMatchObject({ p_item_id: 'i:tst:rc:p1-q1', p_response: 2, p_confidence: 60 })
     expect(document.querySelector('main')).toBe(main)
     expect(passageNode()).toBe(first)
     expect((passageNode() as unknown as { mark?: string }).mark).toBe('kept')

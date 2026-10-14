@@ -11,7 +11,7 @@
  *   text shown as text, never as markup;
  * - the session with a fake project (`fake-server.ts`): a pool without passages gives the six-part session
  *   whether or not the page asks for Reading Comprehension, and a pool with them gives the part: two
- *   passages, every question of each, the slider, "Report a problem", the source line, and the skill on the
+ *   passages, every question of each, the confidence scale, "Report a problem", the source line, and the skill on the
  *   profile.
  *
  * `e2e-db/` runs the same session against the real local database.
@@ -319,15 +319,16 @@ async function toReading(page: Page): Promise<void> {
   await expect(h1(page)).toHaveText('Up next: Reading Comprehension')
 }
 
-/** Answer the passage question on screen with option `index` and rate the confidence. */
+/** Answer the passage question on screen with option `index`, set the optional confidence scale on every other one, and confirm: one press. */
 async function answerQuestion(page: Page, index = 0): Promise<void> {
-  const radio = page.locator(`${QUESTION} input[type="radio"]`).nth(index)
+  const radio = page.locator(`${QUESTION} .options input[type="radio"]`).nth(index)
   await expect(radio).toBeEnabled()
   await radio.check()
+  const points = page.locator(`${QUESTION} fieldset[data-confidence] input[type="radio"]`)
+  const name = (await points.first().getAttribute('name')) ?? ''
+  if (index % 2 === 0) await points.nth(3).check()
   await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
-  await expect(page.getByRole('slider')).toBeVisible()
-  await page.getByRole('slider').press('ArrowRight')
-  await button(page, 'Continue').click()
+  await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
 }
 
 const axesAsked = (server: FakeServer): string[] => server.of('next_item').map((c) => (c.body.p_axes as string[]).join('+'))
@@ -357,7 +358,7 @@ test.describe('a pool without passages gives the six-part session', () => {
 })
 
 test.describe('a pool with made-up passages', () => {
-  test('runs the part: "Up next", two passages with every question of each beside its passage, the slider, a report, and the skill on the profile', async ({ page }) => {
+  test('runs the part: "Up next", two passages with every question of each beside its passage, the confidence scale, a report, and the skill on the profile', async ({ page }) => {
     const pool = passagePool([0, 2, 1])
     const server = new FakeServer({ pools: { RC: pool }, eap: { RC: { mean: 0.2, sd: 0.6, n: 7 } } })
     await server.attach(page)
@@ -376,7 +377,7 @@ test.describe('a pool with made-up passages', () => {
     await expect(passage(page)).toBeVisible()
     await expect(page.locator(`${PASSAGE} .text p`)).toHaveText([...demo.media.passage])
     await expect(page.locator(`${PASSAGE} .attribution`)).toContainText(demo.media.attribution!)
-    await expect(page.locator(`${QUESTION} legend`)).toHaveText(demo.questions[0]!.stem)
+    await expect(page.locator(`${QUESTION} fieldset:not([data-confidence]) > legend`)).toHaveText(demo.questions[0]!.stem)
     await expect(page.locator('[data-set-position]')).toHaveText('Question 1 of 4 about this passage')
     // the question's timer is with the question, beside or under the passage: the time left, as m:ss (owner feedback 2026-10-13)
     const timer = page.locator(".item-region [data-item-timer]").getByRole('timer')
@@ -396,17 +397,18 @@ test.describe('a pool with made-up passages', () => {
     await expect(page.locator('.report [role="status"]')).toContainText('Thank you')
     expect(server.of('report_problem')[0]!.body).toMatchObject({ p_kind: 'typo', p_item_id: 'i:tst:rc:e2e-p1-q1' })
 
-    // the slider is beside the same passage; the answer goes out as a position, and nothing says right or wrong
-    await page.locator(`${QUESTION} input[type="radio"]`).nth(2).check()
-    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
-    await expect(page.locator('.confidence')).toContainText('With 5 options, guessing would be right about 20% of the time.')
+    // the optional scale is in the question, beside the same passage (five options: from 20%, "a guess"); one press
+    // sends the answer as a position with the confidence, and nothing says right or wrong
+    await page.locator(`${QUESTION} .options input[type="radio"]`).nth(2).check()
+    const scale = page.locator(`${QUESTION} fieldset[data-confidence]`)
+    await expect(scale.getByRole('radio', { name: '20%, a guess' })).toBeVisible()
+    await scale.getByRole('radio').nth(1).check()
     await expect(passage(page)).toBeVisible()
     await expectNoSeriousAxe(page)
-    await page.getByRole('slider').press('ArrowRight')
-    await button(page, 'Continue').click()
+    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
 
     // the second question: the same passage element, and the question says which one it is
-    await expect(page.locator(`${QUESTION} legend`)).toHaveText(demo.questions[1]!.stem)
+    await expect(page.locator(`${QUESTION} fieldset:not([data-confidence]) > legend`)).toHaveText(demo.questions[1]!.stem)
     await expect(page.locator('[data-set-position]')).toHaveText('Question 2 of 4 about this passage')
     expect(await page.locator(PASSAGE).evaluate((el) => (el as unknown as { mark?: string }).mark)).toBe('kept')
     expect(server.of('submit')[0]!.body).toMatchObject({ p_item_id: 'i:tst:rc:e2e-p1-q1', p_response: 2 })
@@ -444,7 +446,7 @@ test.describe('a pool with made-up passages', () => {
     await expectNoSeriousAxe(page)
   })
 
-  test('the part fits a phone\'s width in a wide font, from "Up next" to the slider under a long passage, and the passage stays in view', async ({ page }) => {
+  test('the part fits a phone\'s width in a wide font, from "Up next" to the confidence scale under a long passage, and the passage stays in view', async ({ page }) => {
     const server = new FakeServer({ pools: { RC: passagePool([1, 0]) } })
     await server.attach(page)
     await useWideFont(page)
@@ -454,20 +456,21 @@ test.describe('a pool with made-up passages', () => {
     await expectWideFont(page)
     await expectNoSidewaysScroll(page, 'Up next: Reading Comprehension')
     await button(page, 'Start').click()
-    await expect(page.locator(`${QUESTION} input[type="radio"]`).first()).toBeEnabled()
+    await expect(page.locator(`${QUESTION} .options input[type="radio"]`).first()).toBeEnabled()
     await expectNoSidewaysScroll(page, 'a passage question with a long passage')
     await expectNoClippedText(page, 'a passage question with a long passage', LAYOUT)
-    await page.locator(`${QUESTION} input[type="radio"]`).nth(1).check()
-    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
-    await expect(page.getByRole('slider')).toBeVisible()
-    await expectNoSidewaysScroll(page, 'the slider under a passage question')
-    await button(page, 'Continue').scrollIntoViewIfNeeded()
+    await page.locator(`${QUESTION} .options input[type="radio"]`).nth(1).check()
+    const scale = page.locator(`${QUESTION} fieldset[data-confidence]`)
+    await scale.getByRole('radio').nth(4).check()
+    await expectNoSidewaysScroll(page, 'the confidence scale under a passage question')
+    await expectNoClippedText(page, 'the confidence scale under a passage question', `${QUESTION} fieldset[data-confidence]`)
+    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).scrollIntoViewIfNeeded()
     expect(await passageInView(page)).toBeGreaterThan(150)
-    await button(page, 'Continue').click()
+    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
     await expect(page.locator('[data-set-position]')).toHaveText('Question 2 of 3 about this passage')
     await expectNoSidewaysScroll(page, 'the second question of a passage')
     // the new question is in view under the passage, not behind it
-    const legend = await page.locator(`${QUESTION} legend`).evaluate((el) => el.getBoundingClientRect().top)
+    const legend = await page.locator(`${QUESTION} fieldset:not([data-confidence]) > legend`).evaluate((el) => el.getBoundingClientRect().top)
     const frame = await boxOf(page, PASSAGE)
     expect(legend).toBeGreaterThanOrEqual(frame.bottom - 1)
     expect(legend).toBeLessThan(720)

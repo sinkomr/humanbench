@@ -10,7 +10,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { ITEM_TIMER_LABEL, ITEM_TIMER_WARN } from '../src/session/copy'
 import { expectNoAriaAttributeIssues, expectNoSeriousAxe } from './axe'
-import { button, h1 } from './flow'
+import { answerItem, button, h1 } from './flow'
 import { SessionDriver } from './session-driver'
 
 const TIMER = '[data-item-timer]'
@@ -81,28 +81,17 @@ test.describe('the question timer', () => {
     await expect(page.locator('[data-item-timer-status]')).toHaveText('')
   })
 
-  test('is gone while the confidence slider is up (the slider is not timed) and back on the next question', async ({ page, isMobile }) => {
+  test('one press sends the answer (and the optional confidence) and the next question shows a fresh timer of its own', async ({ page, isMobile }) => {
     await toFirstQuestion(page, isMobile)
-    const choice = page.locator('form.choice')
-    const entry = page.locator('form.entry')
-    const slider = page.getByRole('slider')
-    if ((await choice.count()) > 0) {
-      await choice.getByRole('radio').first().check()
-      await button(page, 'Confirm').click()
-    } else {
-      const box = entry.getByRole('textbox')
-      await box.fill('1')
-      await box.press('Enter')
-      if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-        await box.fill('A') // a letter series
-        await box.press('Enter')
-      }
-    }
-    await expect(page.getByRole('slider')).toBeVisible()
-    await expect(page.locator(TIMER)).toHaveCount(0)
-    await slider.press('ArrowRight')
-    await button(page, 'Continue').click()
     await expect(page.locator(TIMER)).toBeVisible()
+    const first = await page.locator('fieldset[data-confidence] input[type=radio]').first().getAttribute('name')
+    await answerItem(page, 2)
+    // no step in between: the next question is up, with its own scale (unset) and its timer
+    await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
+    await expect(page.locator(`input[name="${first}"]`)).toHaveCount(0)
+    await expect(page.locator('fieldset[data-confidence] input[type=radio]:checked')).toHaveCount(0)
+    await expect(page.locator(TIMER)).toBeVisible()
+    await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'false')
   })
 
   test('nothing about it moves: no animation and no transition, with or without reduced motion', async ({ page, isMobile }) => {

@@ -231,22 +231,20 @@ describe('the served part', () => {
     entry.value = '17'
     entry.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
+    // The optional scale is on the question (typed entry: from 0%); set, it goes with the answer in one press.
+    const points = [...host.querySelectorAll<HTMLInputElement>('form.entry fieldset[data-confidence] input[type="radio"]')]
+    expect(points.map((p) => p.value)).toEqual(['0', '25', '50', '75', '100'])
+    click(points[3])
+    expect(host.textContent).not.toMatch(/correct|incorrect|wrong/i) // no verdict, ever
     host.querySelector<HTMLFormElement>('form.entry')!.requestSubmit()
     flushSync()
-    expect(host.querySelector('[role="slider"], input[type="range"]')).not.toBeNull()
-    expect(host.textContent).not.toMatch(/correct|incorrect|wrong/i) // no verdict, ever
-    // The slider is moved before Continue: a rating left where it started is sent as no rating (UX-063).
-    const range = host.querySelector<HTMLInputElement>('input[type="range"]')!
-    range.value = '70'
-    range.dispatchEvent(new Event('input', { bubbles: true }))
-    flushSync()
-    click(buttonByText(host, 'Continue'))
+    expect(host.querySelector('[role="slider"], input[type="range"]')).toBeNull()
     await tick()
     await settle(2)
     const sent = t.args('submit')
     expect(sent).toMatchObject({ p_token: 'hbt_ABCDEFGHIJKLMNOPQRSTUV', p_response: '17', p_next: false })
     expect(typeof sent.p_rt_ms).toBe('number')
-    expect(typeof sent.p_confidence).toBe('number')
+    expect(sent.p_confidence).toBe(75)
     // the next item is up
     expect(t.callsOf('next_item')).toBe(2)
     expect(host.querySelector('form.entry')).not.toBeNull()
@@ -355,9 +353,8 @@ describe('closing and the results', () => {
     entry.value = '3'
     entry.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
-    host.querySelector<HTMLFormElement>('form.entry')!.requestSubmit()
+    host.querySelector<HTMLFormElement>('form.entry')!.requestSubmit() // the scale left unset: no confidence
     flushSync()
-    click(buttonByText(host, 'Continue'))
     await tick()
     expect(h1()).toBe('Up next: Spatial')
     click(buttonByText(host, 'Finish early'))
@@ -387,8 +384,9 @@ describe('closing and the results', () => {
     await tick(12)
     await settle(3)
     expect(h1()).toBe('Session complete')
-    // The one answer was confirmed with the slider where it started: counted as not rated (UX-063).
-    expect(t.args('finish')).toEqual({ p_token: 'hbt_ABCDEFGHIJKLMNOPQRSTUV', p_flags: { visibility_hidden_s: 0, paste_events: 0, skipped_rt: true, finished_early: true, confidence_untouched_n: 1 } })
+    // The one answer went with the scale unset: sent without a confidence, and nothing flags it (owner decision 2026-10-13).
+    expect(t.args('submit').p_confidence).toBeNull()
+    expect(t.args('finish')).toEqual({ p_token: 'hbt_ABCDEFGHIJKLMNOPQRSTUV', p_flags: { visibility_hidden_s: 0, paste_events: 0, skipped_rt: true, finished_early: true } })
     // the server was asked for the scores of the signed session only, without notes settings
     const asked = t.args('rescore').p_save as { sessions: { session_id: string; sig?: unknown }[]; anon_id: string }
     expect(asked.sessions.map((s) => s.session_id)).toEqual([SESSION_ID])

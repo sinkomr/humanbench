@@ -50,8 +50,7 @@ export class QuestionFocus {
   #count = 0
 
   /**
-   * The plan for the screen with this key. Asking again for the same key returns the same plan (the confidence
-   * slider is the same screen as the question it rates), so it is safe to call from a derived value.
+   * The plan for the screen with this key. Asking again for the same key returns the same plan, so it is safe to call from a derived value.
    */
   enter(key: string, screen: ScreenFacts): FocusPlan {
     if (key === this.#key) return this.#plan
@@ -61,7 +60,7 @@ export class QuestionFocus {
   }
 
   #decide(screen: ScreenFacts): FocusPlan {
-    if (screen.phase === 'item' || screen.phase === 'confidence') {
+    if (screen.phase === 'item') {
       const later = screen.segmentIndex === this.#part
       this.#part = screen.segmentIndex
       this.#count = later ? this.#count + 1 : 1

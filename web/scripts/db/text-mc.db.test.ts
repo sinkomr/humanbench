@@ -106,10 +106,8 @@ async function playTextParts(api: BackendApi, answer: (itemId: string, options: 
       expect(item.family).toBe(TEXT_MC_RENDERER)
       shown.push(item.item_id)
       run.itemShown(t)
-      t += 15_000
-      run.itemResponded(answer(item.item_id, item.options_count!))
-      t += 2000
-      run.confirmConfidence(run.view().confidence!.startPct)
+      t += 15_000 + 2000 // the answer, and a tap on the optional confidence scale (one press sends both)
+      run.itemResponded(answer(item.item_id, item.options_count!), 100)
     } else throw new Error(`unexpected phase ${v.phase}`)
   }
   expect(run.phase).toBe('finished')

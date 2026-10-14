@@ -10,7 +10,7 @@ import { SAVE_CTX } from './constants'
 import { READY_CONTINUE, READY_NOT_LOADED, continueLine } from './copy'
 import { findUnfinished, type Unfinished } from './resume'
 import { utcSeconds } from '../save/clock'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 import { defaultReadyState, type ReadyState } from './ready-state'
 import Ready from './Ready.svelte'
 
@@ -24,8 +24,8 @@ afterEach(() => {
 /** A save of one session: one Matrix & Series answer, then the rest skipped. */
 async function savedFile(createdMs = 1_790_000_100_000): Promise<SaveFileV1> {
   const bot = new Bot({ sessionId: 's_READYSAVE000002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-  bot.until((v) => v.phase === 'confidence')
-  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+  bot.until((v) => v.phase === 'item')
+  bot.answer(midConfidence(bot.view()))
   bot.run.finishEarly()
   return saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs, anonId: newAnonId() })
 }

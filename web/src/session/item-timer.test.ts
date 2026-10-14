@@ -60,7 +60,7 @@ describe('the words of the question timer (owner feedback 2026-10-13: no surpris
 describe('SessionRun.itemTime: what the timer shows is what the time-out acts on', () => {
   const only = { skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] as const }
 
-  it('is null when no question waits for an answer: on an "Up next" screen, in a block, on the confidence slider, after the end', () => {
+  it('is null when no question waits for an answer: on an "Up next" screen, in a block, after the end; the answer ends it at once', () => {
     const bot = new Bot({ sessionId: 's_ITEMTIME000001', skipped: ['WM', 'PS', 'SPA', 'QR'] })
     expect(bot.view().phase).toBe('interstitial')
     expect(bot.run.itemTime()).toBeNull()
@@ -70,9 +70,10 @@ describe('SessionRun.itemTime: what the timer shows is what the time-out acts on
     bot.until((v) => v.phase === 'item')
     expect(bot.run.itemTime()).not.toBeNull()
     const item = bot.fullItem(bot.view().item!.item_id)
+    const before = bot.view().item!.item_id
     bot.run.itemResponded(item.options_count === undefined ? '1' : 0)
-    expect(bot.view().phase).toBe('confidence')
-    expect(bot.run.itemTime()).toBeNull() // the slider is not timed
+    // One press: the next question (with a fresh timer) or no question at all; never the answered one's timer.
+    expect(bot.view().item?.item_id).not.toBe(before)
     bot.run.finishEarly()
     expect(bot.run.itemTime()).toBeNull()
   })

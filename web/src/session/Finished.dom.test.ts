@@ -3,7 +3,7 @@ import { buttonByText, render } from '../render/common/testing'
 import { saveWithSession } from '../save/create'
 import type { SaveFileV1 } from '../save/types'
 import { SAVE_CTX } from './constants'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 import Finished from './Finished.svelte'
 
 let cleanup: (() => void) | undefined
@@ -20,8 +20,8 @@ const ALL_AXES = ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] as const
 /** An earlier session with one answer: what a loaded file holds. */
 function earlierSave(): SaveFileV1 {
   const bot = new Bot({ sessionId: 's_EARLIERSESSION2', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-  bot.until((v) => v.phase === 'confidence')
-  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+  bot.until((v) => v.phase === 'item')
+  bot.answer(midConfidence(bot.view()))
   bot.run.finishEarly()
   return saveWithSession(null, bot.run.sessionState(), meta)
 }
@@ -93,8 +93,8 @@ describe('Finished: the lines above the profile say what it rests on (UX-009a)',
   it('a session with answers on top of earlier ones says how many sessions the profile combines', () => {
     const base = earlierSave()
     const bot = new Bot({ sessionId: 's_FINISHEDCOMB001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     bot.run.finishEarly()
     const c = show(bot, base)
     expect(lead(c)).toBe('You finished early, so some parts are not measured.')
@@ -103,8 +103,8 @@ describe('Finished: the lines above the profile say what it rests on (UX-009a)',
 
   it('a first session alone does not talk about combining', () => {
     const bot = new Bot({ sessionId: 's_FINISHEDCOMB002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     bot.run.finishEarly()
     const c = show(bot, null)
     expect(lines(c)).toContain('You answered 1 question')
@@ -166,8 +166,8 @@ describe('Finished: an interrupted session and its continuation are one session 
   /** A session interrupted after one Matrix & Series answer (no end recorded), on top of `base`. */
   function interrupted(base: SaveFileV1 | null): SaveFileV1 {
     const bot = new Bot({ sessionId: 's_FINISHEDINTR001', startedMs: 1_790_000_500_000, skipped: [...ONLY_MAT] })
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     return saveWithSession(base, bot.run.sessionState(), meta)
   }
 
@@ -175,8 +175,8 @@ describe('Finished: an interrupted session and its continuation are one session 
   function continuation(answer: boolean): Bot {
     const bot = new Bot({ sessionId: 's_FINISHEDCONT001', startedMs: 1_790_000_600_000, continues: { done: [], skipped: [...ONLY_MAT] } })
     if (answer) {
-      bot.until((v) => v.phase === 'confidence')
-      bot.run.confirmConfidence(bot.view().confidence!.startPct)
+      bot.until((v) => v.phase === 'item')
+      bot.answer(midConfidence(bot.view()))
     }
     bot.run.finishEarly()
     return bot

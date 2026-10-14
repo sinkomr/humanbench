@@ -8,7 +8,7 @@ import { saveText } from '../save/io'
 import type { BriefContextV1, BriefPrefsV1, SaveFileV1 } from '../save/types'
 import { SAVE_CTX } from './constants'
 import Checklist from './Checklist.svelte'
-import Confidence from './Confidence.svelte'
+import ConfidenceScale from './ConfidenceScale.svelte'
 import Finished from './Finished.svelte'
 import ConsentGate from './ConsentGate.svelte'
 import Privacy from './Privacy.svelte'
@@ -16,7 +16,7 @@ import ProgressRing from './ProgressRing.svelte'
 import Ready from './Ready.svelte'
 import Welcome from './Welcome.svelte'
 import { defaultReadyState, type ReadyState } from './ready-state'
-import { SpyStorage } from './bot'
+import { SpyStorage, midConfidence } from './bot'
 import { Bot } from './bot'
 import { READY_LOAD_PREFS_NOTICE } from './copy'
 import type { SegmentView } from './run'
@@ -106,7 +106,7 @@ describe('Checklist (DESIGN §10: per-cluster checklist)', () => {
       ['done', 'Done'],
       ['current', 'Now'],
       ['upcoming', 'Up next'],
-      // Estimation has no part of its own: the confidence slider measures it with each answer (A15).
+      // Estimation has no part of its own: the optional confidence scale on each question measures it (A15).
       ['embedded', 'With each answer'],
     ])
     expect(c.querySelector('.later')?.textContent).toContain('Verbal, Knowledge, Social-Creative')
@@ -183,99 +183,82 @@ describe('Checklist (DESIGN §10: per-cluster checklist)', () => {
   })
 })
 
-describe('Confidence', () => {
-  it('runs from the floor to 100, starts where it is told, and reports whole percent', () => {
-    const seen: number[] = []
-    const c = mountIt(Confidence, { floorPct: 25, startPct: 63, optionsCount: 4, onconfirm: (p: number) => seen.push(p) })
-    const r = c.querySelector<HTMLInputElement>('input[type="range"]')!
-    expect([r.min, r.max, r.step, r.value]).toEqual(['25', '100', '1', '63'])
-    expect(c.querySelector('.hint')?.textContent).toBe('With 4 options, guessing would be right about 25% of the time. 100% means you are certain.')
-    click(buttonByText(c, 'Continue'))
-    expect(seen).toEqual([63])
+describe('ConfidenceScale (owner decision 2026-10-13: optional, on the question screen)', () => {
+  const pts = (c: HTMLElement): HTMLInputElement[] => [...c.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
+
+  it('offers five points from the chance level to 100, starts unset and says so', () => {
+    const c = mountIt(ConfidenceScale, { floorPct: 25, optionsCount: 4, onchange: () => undefined })
+    expect(pts(c).map((p) => p.value)).toEqual(['25', '44', '63', '81', '100'])
+    expect(pts(c).every((p) => !p.checked)).toBe(true)
+    expect(c.querySelector('[data-confidence-unset]')?.textContent).toBe('Not set')
+    expect([...c.querySelectorAll('.pill')].map((p) => p.textContent)).toEqual(['25%', '44%', '63%', '81%', '100%'])
+    expect(c.querySelector('.ends')?.textContent).toBe('25% = a guess100% = certain')
+    expect(c.querySelector('.hb-sr-only')?.textContent).toBe('Optional. With 4 options a guess is right about 25% of the time. Choose how sure you are, from 25% to 100%, certain, or leave it unset.')
   })
 
-  it('says whether the slider was moved: Continue straight away is untouched, a move (even back to the start) is touched (UX-063)', () => {
-    const seen: [number, boolean][] = []
-    const a = mountIt(Confidence, { floorPct: 25, startPct: 63, optionsCount: 4, onconfirm: (p: number, t: boolean) => seen.push([p, t]) })
-    click(buttonByText(a, 'Continue'))
-    cleanup?.() // one slider at a time: the first is gone before the second is mounted
-    const b = mountIt(Confidence, { floorPct: 25, startPct: 63, optionsCount: 4, onconfirm: (p: number, t: boolean) => seen.push([p, t]) })
-    const r = b.querySelector<HTMLInputElement>('input[type="range"]')!
-    r.value = '80'
-    r.dispatchEvent(new Event('input', { bubbles: true }))
-    r.value = '63'
-    r.dispatchEvent(new Event('input', { bubbles: true }))
-    flushSync()
-    click(buttonByText(b, 'Continue'))
-    expect(seen).toEqual([
-      [63, false],
-      [63, true],
-    ])
+  it('typed entry runs from 0, "a guess", with its own description', () => {
+    const c = mountIt(ConfidenceScale, { floorPct: 0, optionsCount: null, onchange: () => undefined })
+    expect(pts(c).map((p) => p.value)).toEqual(['0', '25', '50', '75', '100'])
+    expect(pts(c)[0]!.getAttribute('aria-label')).toBe('0%, a guess')
+    expect(c.querySelector('.hb-sr-only')?.textContent).toBe('Optional. Choose how sure you are, from 0%, a guess, to 100%, certain, or leave it unset.')
   })
 
-  it('Enter on an untouched slider (the form submit) is untouched too', () => {
-    const seen: [number, boolean][] = []
-    const c = mountIt(Confidence, { floorPct: 0, startPct: 50, optionsCount: null, onconfirm: (p: number, t: boolean) => seen.push([p, t]) })
-    c.querySelector('form')!.requestSubmit()
-    expect(seen).toEqual([[50, false]])
+  it('one click sets it and reports the value; another point changes it; Clear unsets it, reports null and hands focus back', () => {
+    const seen: (number | null)[] = []
+    const c = mountIt(ConfidenceScale, { floorPct: 17, optionsCount: 6, onchange: (p: number | null) => seen.push(p) })
+    click(pts(c)[2])
+    expect(c.querySelector('[data-confidence-unset]')).toBeNull()
+    click(pts(c)[4])
+    click(buttonByText(c, 'Clear'))
+    expect(seen).toEqual([59, 100, null])
+    expect(pts(c).every((p) => !p.checked)).toBe(true)
+    expect(c.querySelector('[data-confidence-unset]')?.textContent).toBe('Not set')
+    expect(document.activeElement).toBe(pts(c)[0])
   })
 
-  it('typed entry has a floor of 0 and its own hint', () => {
-    const c = mountIt(Confidence, { floorPct: 0, startPct: 50, optionsCount: null, onconfirm: () => undefined })
-    expect(c.querySelector<HTMLInputElement>('input[type="range"]')?.min).toBe('0')
-    expect(c.querySelector('.hint')?.textContent).toBe('0% means you have no idea. 100% means you are certain.')
+  it('is a named group: the legend names it, each point has its value as its name, the ends say what they mean, targets are the pills', () => {
+    const c = mountIt(ConfidenceScale, { floorPct: 50, optionsCount: 2, onchange: () => undefined })
+    const group = c.querySelector('fieldset')!
+    expect(group.querySelector('legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('How sure are you? Optional')
+    expect(pts(c).map((p) => p.getAttribute('aria-label'))).toEqual(['50%, a guess', '63%', '75%', '88%', '100%, certain'])
+    expect(new Set(pts(c).map((p) => p.name)).size).toBe(1)
+    expect(group.getAttribute('aria-describedby')).toBe(c.querySelector('.hb-sr-only')?.id)
+    for (const p of c.querySelectorAll('.pill')) expect(p.getAttribute('aria-hidden')).toBe('true')
+    expect(c.querySelector('.ends')?.getAttribute('aria-hidden')).toBe('true')
   })
 
-  it('puts the whole form in view once it is laid out, Continue included, and leaves the scroll to that (UX-014)', async () => {
-    const scrolled = vi.fn()
-    const original = Element.prototype.scrollIntoView
-    Element.prototype.scrollIntoView = scrolled
-    try {
-      const c = mountIt(Confidence, { floorPct: 25, startPct: 50, optionsCount: 4, onconfirm: () => undefined })
-      expect(document.activeElement).toBe(c.querySelector('input[type="range"]'))
-      await vi.waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1))
-      expect(scrolled.mock.contexts[0]).toBe(c.querySelector('form'))
-      expect(scrolled.mock.calls[0]).toEqual([{ block: 'nearest' }])
-    } finally {
-      Element.prototype.scrollIntoView = original
-    }
+  it('keeps character keys to itself, and Enter submits the form around it (a held Enter does not)', () => {
+    const form = document.createElement('form')
+    const submitted = vi.fn((e: Event) => e.preventDefault())
+    const keys = vi.fn()
+    form.addEventListener('submit', submitted)
+    form.addEventListener('keydown', (e) => keys(e.key))
+    document.body.appendChild(form)
+    const r = render(ConfidenceScale, { floorPct: 0, optionsCount: null, onchange: () => undefined })
+    cleanup = r.destroy
+    form.appendChild(r.container)
+    const p = pts(r.container)[1]!
+    for (const k of ['1', 'a', 'B']) p.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+    p.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(keys.mock.calls.map((c) => c[0])).toEqual(['Tab'])
+    p.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true }))
+    expect(submitted).not.toHaveBeenCalled()
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    p.dispatchEvent(enter)
+    expect(enter.defaultPrevented).toBe(true)
+    expect(submitted).toHaveBeenCalledTimes(1)
   })
 
-  it('an Enter that is held down or repeating does not rate the item; a fresh Enter does (UX-014)', () => {
-    const seen: number[] = []
-    const c = mountIt(Confidence, { floorPct: 0, startPct: 40, optionsCount: null, onconfirm: (p: number) => seen.push(p) })
-    const range = c.querySelector<HTMLInputElement>('input[type="range"]')!
-    const repeated = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
-    range.dispatchEvent(repeated)
-    expect(repeated.defaultPrevented).toBe(true)
-    const fresh = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
-    range.dispatchEvent(fresh)
-    expect(fresh.defaultPrevented).toBe(false)
-    const arrow = new KeyboardEvent('keydown', { key: 'ArrowRight', repeat: true, bubbles: true, cancelable: true })
-    range.dispatchEvent(arrow)
-    expect(arrow.defaultPrevented).toBe(false)
-    expect(seen).toEqual([])
-  })
-
-  it('the readout is left to the page translator alone: it is a number (UX-014)', () => {
-    const c = mountIt(Confidence, { floorPct: 0, startPct: 40, optionsCount: null, onconfirm: () => undefined })
-    expect(c.querySelector('output')?.getAttribute('translate')).toBe('no')
-  })
-
-  it('the slider has a name (the legend), a value text and a description', () => {
-    const c = mountIt(Confidence, { floorPct: 17, startPct: 58, optionsCount: 6, onconfirm: () => undefined })
-    const r = c.querySelector<HTMLInputElement>('input[type="range"]')!
-    expect(c.querySelector('fieldset legend')?.textContent).toBe('How sure are you that your answer is right?')
-    expect(r.getAttribute('aria-valuetext')).toBe('58% sure')
-    expect(r.getAttribute('aria-describedby')).toBe(c.querySelector('.hint')?.id)
-    expect(document.activeElement).toBe(r)
+  it('disabled: nothing can be chosen', () => {
+    const c = mountIt(ConfidenceScale, { floorPct: 0, optionsCount: null, onchange: () => undefined, disabled: true })
+    expect(c.querySelector('fieldset')!.disabled).toBe(true)
   })
 })
 
 async function savedFile(): Promise<SaveFileV1> {
   const bot = new Bot({ sessionId: 's_READYSAVE000001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-  bot.until((v) => v.phase === 'confidence')
-  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+  bot.until((v) => v.phase === 'item')
+  bot.answer(midConfidence(bot.view()))
   bot.run.finishEarly()
   return saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: newAnonId() })
 }

@@ -18,10 +18,17 @@
  * |---|---|---|---|
  * | the seven timed tasks | 1,139 | their [SPEC] model time (723 s for these blocks' E[T]) times a blanket 1 to 1.6 | the block's own time model on the trials given, the span model re-estimated (`tasks/span/prior.ts`: 675 s for the trials of that session against 725), plus {@link BLOCK_EXTRA_S} for what the other blocks' screens take over their model (25 s) |
  * | answering 67 questions | 1,794 | the items' expected times | the same: not rescaled (the session was quicker than expected on text questions, 0.65 to 0.85 of the bank's expected times, and at or over on the others) |
- * | between an answer and the next question | 321 (4.8 s a question) | 2 s for the confidence slider | {@link CONFIDENCE_S} |
+ * | between an answer and the next question | 321 (4.8 s a question) | 2 s for the confidence slider | 4.8 s, then (owner decision 2026-10-13) {@link ANSWER_GAP_S} + {@link RATING_S} |
  *
  * So the 10 minutes were in the timed tasks (about 7: the Working Memory blocks alone ran 12.1 minutes
- * against a model of 5) and in the step after each answer (about 3). Nothing here makes that person
+ * against a model of 5) and in the step after each answer (about 3).
+ *
+ * **The step after each answer is gone** (owner decision 2026-10-13: the confidence scale is optional and on the
+ * question screen; one press submits). Of the 4.8 s, the part that is the next question's own arrival stays:
+ * the session clock is held while a served question is fetched, so what is left on the clock between an answer
+ * and the next question's first frame is the screen change, {@link ANSWER_GAP_S}. Setting the scale, for
+ * those who do, is a tap within reach of the submit button, {@link RATING_S}, counted in the question's time;
+ * the simulated taker sets it on every question, so the lengths below are the upper end. Nothing here makes that person
  * "fast" or "slow": the question times are the model's, and only the overhead is fitted to the session.
  * One session is one data point; {@link PACE_SD} spreads takers around it.
  *
@@ -68,7 +75,7 @@ export interface SimSessionArgs {
   readonly mode?: 'static' | 'online'
   /** The text parts asked for (online only). Default none. */
   readonly text?: readonly TextAxis[]
-  /** Multiplier on every time the taker spends: blocks, questions, the confidence slider. Default 1. */
+  /** Multiplier on every time the taker spends: blocks, questions, the step around each answer. Default 1. */
   readonly pace?: number
   /** Chance that a question is left to run out of time. Default 0. */
   readonly timeoutP?: number
@@ -80,10 +87,26 @@ export interface SimSessionArgs {
 }
 
 /**
- * Seconds between an answer and the next question: the confidence slider and the hand-over (module comment:
- * 321 s over the 67 questions of the session on record).
+ * Seconds between an answer and the next question's step, as measured with the old follow-up confidence step
+ * (module comment: 321 s over the 67 questions of the session on record). Kept as the record; no longer used.
  */
-export const CONFIDENCE_S = 4.8
+export const MEASURED_STEP_S = 4.8
+
+/**
+ * [SPEC] Seconds on the session clock between an answer and the next question's first frame, now that there is
+ * no step after the answer: the screen change and the new question's mount (a served question's fetch is off the
+ * clock). Half a second is a generous allowance for a frame or two and a renderer's first paint.
+ */
+export const ANSWER_GAP_S = 0.5
+
+/**
+ * [SPEC] Seconds a taker spends setting the optional confidence scale before submitting: one tap on a point
+ * just above the submit button. The simulated taker sets it on every question (the upper end of the time).
+ */
+export const RATING_S = 1
+
+/** What each answer costs beyond the question itself, at the model's pace: {@link ANSWER_GAP_S} + {@link RATING_S}. */
+export const PER_ANSWER_S = ANSWER_GAP_S + RATING_S
 
 /**
  * Seconds a block's screens take over its time model, per family (module comment): the session on record
@@ -212,8 +235,8 @@ export interface SimSessionOne {
   readonly ended: string | null
   /** Active seconds per part that ran. */
   readonly partS: Partial<Record<SegmentId, number>>
-  /** Active seconds by kind: the timed tasks, answering questions, and the step after each answer. */
-  readonly kindS: { readonly blocks: number; readonly questions: number; readonly confidence: number }
+  /** Active seconds by kind: the timed tasks, answering questions, and around each answer (the rating and the screen change). */
+  readonly kindS: { readonly blocks: number; readonly questions: number; readonly answer: number }
   /** "About N min" of each part's interstitial, as shown. */
   readonly aboutMin: Partial<Record<SegmentId, number>>
   readonly qrItems: number
@@ -309,7 +332,7 @@ class SimDriver {
   readonly bot: Bot
   readonly partS: Partial<Record<SegmentId, number>> = {}
   readonly aboutMin: Partial<Record<SegmentId, number>> = {}
-  readonly kindS = { blocks: 0, questions: 0, confidence: 0 }
+  readonly kindS = { blocks: 0, questions: 0, answer: 0 }
   breakBefore: SegmentId | null = null
   breakAtS: number | null = null
   breakOffers = 0
@@ -339,36 +362,43 @@ class SimDriver {
     const online = args.mode === 'online' ? { cat: new SimServer(sessionId), textAxes: args.text ?? [] } : {}
     this.bot = new Bot(
       { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online },
-      { theta: this.#theta, blockScale: this.#pace, blockExtraS: BLOCK_EXTRA_S, itemScale: this.#pace, confidenceS: CONFIDENCE_S * this.#pace, interstitialS: args.interstitialS },
+      { theta: this.#theta, blockScale: this.#pace, blockExtraS: BLOCK_EXTRA_S, itemScale: this.#pace, answerGapS: ANSWER_GAP_S * this.#pace, ratingS: RATING_S * this.#pace, interstitialS: args.interstitialS },
     )
   }
 
-  /** A question is on screen: a time-out by chance, else an answer after the taker's time for it. */
-  #question(v: RunView): void {
+  /**
+   * A question is on screen: a time-out by chance, else an answer after the taker's time for it. Returns the
+   * seconds spent around the answer (the screen change and the rating), part of the question's active time.
+   */
+  #question(v: RunView): number {
     const bot = this.bot
     const it = v.item!
     if (this.#timeoutP > 0 && this.#timeouts.next() < this.#timeoutP) {
       bot.run.itemShown(bot.t)
       bot.wait((it.time_limit_s ?? 180) + 1)
       bot.run.tick()
-      return
+      return 0
     }
     if (this.args.mode !== 'online') {
       bot.step()
-      return
+      return PER_ANSWER_S * this.#pace
     }
+    bot.wait(ANSWER_GAP_S * this.#pace)
     bot.run.itemShown(bot.t)
+    const pct = bot.rating(v)
+    const rating = pct === null ? 0 : RATING_S * this.#pace
     const item = resolveItem(it.item_id)
     if (item === null) {
       // A made-up text question: the server holds the key, so any option is an answer. The first question of a
       // passage comes after the reading.
       const reading = v.passage !== null && v.passage.position?.index === 1 ? PASSAGE_READING_S : 0
-      bot.wait((reading + (isTextAxis(it.axis) ? TEXT_ITEM_S[it.axis] : 40)) * this.#pace)
-      bot.run.itemResponded(0)
-      return
+      bot.wait((reading + (isTextAxis(it.axis) ? TEXT_ITEM_S[it.axis] : 40)) * this.#pace + rating)
+      bot.run.itemResponded(0, pct)
+      return ANSWER_GAP_S * this.#pace + rating
     }
-    bot.wait(item.expected_time_s * this.#pace)
-    bot.run.itemResponded(answerItem(getFamily(item.family)!, item, this.#theta[AXIS_INDEX[it.axis]] ?? 0, this.#answers.fork(`item/${it.item_id}`)).response)
+    bot.wait(item.expected_time_s * this.#pace + rating)
+    bot.run.itemResponded(answerItem(getFamily(item.family)!, item, this.#theta[AXIS_INDEX[it.axis]] ?? 0, this.#answers.fork(`item/${it.item_id}`)).response, pct)
+    return ANSWER_GAP_S * this.#pace + rating
   }
 
   /** One thing the taker does. Returns 'wait' when the run is waiting for the server (online only). */
@@ -414,12 +444,14 @@ class SimDriver {
       return 'go'
     }
     const before = bot.run.elapsedS()
-    if (v.phase === 'item') this.#question(v)
-    else bot.step()
+    const around = v.phase === 'item' ? this.#question(v) : (bot.step(), 0)
     const spent = bot.run.elapsedS() - before
-    if (v.phase === 'item') this.kindS.questions += spent
-    else if (v.phase === 'block') this.kindS.blocks += spent
-    else if (v.phase === 'confidence') this.kindS.confidence += spent
+    if (v.phase === 'item') {
+      // A hard stop inside the question cuts it short: what is counted around the answer is never more than was spent.
+      const a = Math.min(around, spent)
+      this.kindS.answer += a
+      this.kindS.questions += spent - a
+    } else if (v.phase === 'block') this.kindS.blocks += spent
     return 'go'
   }
 
@@ -509,8 +541,8 @@ export interface SimSessionReport {
   readonly meanPartMin: Partial<Record<SegmentId, number>>
   /** Median active minutes of each part, over the sessions that ran it. */
   readonly medianPartMin: Partial<Record<SegmentId, number>>
-  /** Mean active minutes by kind: the timed tasks, answering questions, the step after each answer. */
-  readonly meanKindMin: { readonly blocks: number; readonly questions: number; readonly confidence: number }
+  /** Mean active minutes by kind: the timed tasks, answering questions, around each answer (rating, screen change). */
+  readonly meanKindMin: { readonly blocks: number; readonly questions: number; readonly answer: number }
   readonly meanAboutMin: Partial<Record<SegmentId, number>>
   readonly qrFloorMisses: number
   readonly reachedQuant: number
@@ -578,7 +610,7 @@ export function summarise(args: SimSessionArgs, runs: readonly SimSessionOne[]):
     ended,
     meanPartMin,
     medianPartMin,
-    meanKindMin: { blocks: round2(mean(runs.map((r) => r.kindS.blocks / 60))), questions: round2(mean(runs.map((r) => r.kindS.questions / 60))), confidence: round2(mean(runs.map((r) => r.kindS.confidence / 60))) },
+    meanKindMin: { blocks: round2(mean(runs.map((r) => r.kindS.blocks / 60))), questions: round2(mean(runs.map((r) => r.kindS.questions / 60))), answer: round2(mean(runs.map((r) => r.kindS.answer / 60))) },
     meanAboutMin,
     qrFloorMisses: runs.filter((r) => r.reachedQuant && args.skip !== 'QR' && r.qrItems < 3).length,
     reachedQuant: runs.filter((r) => r.reachedQuant).length,

@@ -24,22 +24,18 @@ describe('practice mode (DESIGN §10: feedback only here, never counted)', () =>
       ids.push(it.item_id)
       expect(resolveItem(it.item_id)).not.toBeNull()
       p.itemResponded(rightResponse(it.item_id))
-      p.confirmConfidence(p.view().confidence!.startPct)
       p.next()
     }
     expect(ids.map((id) => id.split(':')[1])).toEqual(['matrices', 'series', 'quant', 'rotation'])
     expect(p.view().phase).toBe('done')
   })
 
-  it('shows what was right after the answer and the confidence, and only then', () => {
+  it('shows what was right after the answer, and only then: one press, no step between', () => {
     const p = new PracticeRun('s_PRACTICE0000002')
     const it = p.view().item!
     expect(JSON.stringify(p.view())).not.toMatch(/"key"|"params"|"difficulty"/)
     expect(p.view().feedback).toBeNull()
     p.itemResponded(rightResponse(it.item_id))
-    expect(p.view().phase).toBe('confidence')
-    expect(p.view().feedback).toBeNull()
-    p.confirmConfidence(p.view().confidence!.floorPct)
     const fb = p.view().feedback!
     expect(fb.correct).toBe(true)
     expect(fb.answer).toMatch(/^[A-F]$/) // matrices: an option letter
@@ -51,28 +47,29 @@ describe('practice mode (DESIGN §10: feedback only here, never counted)', () =>
     const item = resolveItem(p.view().item!.item_id)!
     const wrong = ((item.key as { index: number }).index + 1) % item.options_count!
     p.itemResponded(wrong)
-    p.confirmConfidence(p.view().confidence!.startPct)
     expect(p.view().feedback).toMatchObject({ correct: false })
     expect(p.view().feedback!.answer).toBe('ABCDEF'[(item.key as { index: number }).index])
   })
 
-  it('checks the confidence range like the counted session does', () => {
+  it('offers the optional confidence scale on each question, with the counted session\'s floor, and not with the feedback', () => {
     const p = new PracticeRun('s_PRACTICE0000004')
-    p.itemResponded(0)
-    const floor = p.view().confidence!.floorPct
-    p.confirmConfidence(floor - 1)
-    p.confirmConfidence(101)
-    p.confirmConfidence(50.5)
-    expect(p.view().phase).toBe('confidence')
-    p.confirmConfidence(floor)
-    expect(p.view().phase).toBe('feedback')
+    for (let i = 0; i < 4; i++) {
+      const v = p.view()
+      expect(v.confidence).toEqual({ floorPct: v.item!.options_count === undefined ? 0 : Math.ceil(100 / v.item!.options_count), optionsCount: v.item!.options_count ?? null })
+      p.itemResponded(rightResponse(v.item!.item_id))
+      expect(p.view().phase).toBe('feedback')
+      expect(p.view().confidence).toBeNull()
+      p.next()
+    }
+    const q = new PracticeRun('s_PRACTICE0000011')
+    q.itemUnavailable()
+    expect(q.view().confidence).toBeNull()
   })
 
   it('ignores a malformed response, and calls at the wrong time', () => {
     const p = new PracticeRun('s_PRACTICE0000005')
     p.itemResponded({ nope: 1 })
     expect(p.view().phase).toBe('item')
-    p.confirmConfidence(60)
     p.next()
     expect(p.view().phase).toBe('item')
     expect(p.view().number).toBe(1)
@@ -115,7 +112,6 @@ describe('practice mode (DESIGN §10: feedback only here, never counted)', () =>
     const s = new SpyStorage()
     const p = new PracticeRun('s_PRACTICE0000009')
     p.itemResponded(0)
-    p.confirmConfidence(p.view().confidence!.startPct)
     expect(s.calls).toEqual([])
   })
 

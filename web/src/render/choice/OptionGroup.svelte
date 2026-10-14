@@ -14,65 +14,22 @@
     card is marked by a thicker frame and an inverted letter, not by colour alone. No transitions or
     animations. Confirm is the session's primary button (`hb-btn hb-primary`).
   - The second tap of a double tap on the button of the previous screen lands on whatever the new
-    screen has under the finger, here an option (SKIM-15): a touch tap that repeats the spot of a
+    screen has under the finger, here an option (SKIM-15, `common/double-tap.ts`): a touch tap that repeats the spot of a
     touch tap made before the group appeared, in the first 350 ms after it appeared, selects
     nothing. A tap anywhere else, a later tap, and mouse, pen and keyboard selection are never held
     back (so a tap that is only fast, like the e2e drivers', still selects).
   - `flush` draws a card with no padding and no border (a frame outside the figure instead), so the
     figure fills its grid track exactly; the matrices renderer sizes the track like a cell of its grid.
+  - In a session, the session's control (the optional confidence scale, `common/answer-slot.ts`) is drawn between
+    the options and Confirm, inside the form, so Confirm sends both with one press (owner decision 2026-10-13).
   - Nothing option-specific is written to the DOM except the position (value, letter) and the
     caller's `optionName` text: no key, no correctness hint, no data attributes.
 -->
-<script module lang="ts">
-  /** Where and when (performance.now()) a touch press was. */
-  interface Tap {
-    readonly x: number
-    readonly y: number
-    readonly at: number
-  }
-
-  /** A pointer press on the page, and the touch press before it. */
-  interface Press extends Tap {
-    readonly type: string
-    readonly before: Tap | null
-  }
-
-  let lastTouch: Tap | null = null
-  let lastPress: Press | null = null
-
-  // One listener for the page, installed before any group exists: the tap that made the screen
-  // change happened on another component.
-  if (typeof document !== 'undefined') {
-    document.addEventListener(
-      'pointerdown',
-      (e) => {
-        const at = performance.now()
-        lastPress = { type: e.pointerType, x: e.clientX, y: e.clientY, at, before: lastTouch }
-        if (e.pointerType === 'touch') lastTouch = { x: e.clientX, y: e.clientY, at }
-      },
-      { capture: true, passive: true },
-    )
-  }
-
-  /** How long after it appeared a group holds back the repeat of an earlier tap. */
-  const SETTLE_MS = 350
-  /** How close in time and in space two taps are to be one double tap. */
-  const DOUBLE_TAP_MS = 600
-  const DOUBLE_TAP_PX = 32
-
-  /** True iff a click made now is the second tap of a double tap whose first tap came before a group appeared at `mountedAt`. */
-  function repeatsEarlierTap(mountedAt: number): boolean {
-    const now = performance.now()
-    const press = lastPress
-    if (now - mountedAt >= SETTLE_MS || press === null || press.type !== 'touch' || now - press.at > DOUBLE_TAP_MS) return false
-    const first = press.before
-    return first !== null && first.at < mountedAt && press.at - first.at <= DOUBLE_TAP_MS && Math.hypot(press.x - first.x, press.y - first.y) <= DOUBLE_TAP_PX
-  }
-</script>
-
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import '../common/render.css'
+  import { getAnswerSlot } from '../common/answer-slot'
+  import { repeatsEarlierTap } from '../common/double-tap'
   import { CONFIRM_LABEL, MAX_OPTIONS, optionIndexForKey, optionLetter } from './keys'
 
   interface Props {
@@ -98,6 +55,8 @@
   let { count, legend, optionName, option, onrespond, disabled = false, columns = { narrow: 2, wide: 4 }, flush = false, maxWidth }: Props = $props()
 
   const mountedAt = performance.now()
+  /** The session's control before Confirm (the optional confidence scale), or none outside a session. */
+  const slot = getAnswerSlot()
 
   const uid = $props.id()
   let selected: number | null = $state(null)
@@ -170,6 +129,9 @@
       {/each}
     </div>
   </fieldset>
+  {#if slot?.snippet}
+    {@render slot.snippet()}
+  {/if}
   <button type="submit" class="hb-btn hb-primary" disabled={locked || selected === null}>{CONFIRM_LABEL}</button>
 </form>
 

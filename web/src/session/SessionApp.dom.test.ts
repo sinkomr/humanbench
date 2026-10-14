@@ -7,7 +7,7 @@ import { autosaveKey } from '../save/autosave'
 import { saveWithSession } from '../save/create'
 import type { BriefContextV1, BriefPrefsV1, SaveFileV1 } from '../save/types'
 import ResultsStub from '../test-support/ResultsStub.svelte'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 import { CONSENT_KEY, SAVE_CTX, TERMS_VERSION } from './constants'
 import { DESKTOP, fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
@@ -290,8 +290,8 @@ describe('ready, practice and the start of a session', () => {
 /** A save with one answered question, as an autosave of this browser would hold it. */
 function savedSession(id = 's_FUNNELROW0000001'): SaveFileV1 {
   const bot = new Bot({ sessionId: id, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-  bot.until((v) => v.phase === 'confidence')
-  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+  bot.until((v) => v.phase === 'item')
+  bot.answer(midConfidence(bot.view()))
   bot.run.finishEarly()
   return saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: 'hb_' + 'f'.repeat(17) })
 }

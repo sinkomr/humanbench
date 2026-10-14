@@ -98,7 +98,9 @@ export const DEVICE_FACTS = Object.freeze({
 // ------------------------------------------------------------------------------- ready
 
 export const READY_HEADING = 'Ready when you are'
-export const READY_TEXT = `${lengthSentence(BASE_OUTLINE)} Your progress is saved in this browser as you go. After each answer to a question you will say how sure you are.`
+/** Said once in the instructions (Ready screen; owner decision 2026-10-13). */
+export const CONFIDENCE_INSTRUCTION = 'Each question also has a small optional scale for how sure you are of your answer. Set it before you submit if you like, or leave it.'
+export const READY_TEXT = `${lengthSentence(BASE_OUTLINE)} Your progress is saved in this browser as you go. ${CONFIDENCE_INSTRUCTION}`
 export const READY_PRACTICE = 'Try practice questions first'
 export const READY_PRACTICE_NOTE = 'Practice questions show whether you were right and are never counted.'
 export const READY_BEGIN = 'Begin'
@@ -168,14 +170,32 @@ export const INTERSTITIAL_CLOCK = 'The clock waits until you press Start.'
 
 // -------------------------------------------------------------------------- confidence
 
-export const CONFIDENCE_LEGEND = 'How sure are you that your answer is right?'
-export const CONFIDENCE_CONTINUE = 'Continue'
-/** Under the slider: what its ends mean. */
+/**
+ * The optional confidence scale on the question screen (owner decision 2026-10-13): one line above the
+ * question's own submit button. It starts unset and says so; nothing is recorded unless a point is chosen.
+ */
+export const CONFIDENCE_LEGEND = 'How sure are you?'
+/** Beside the legend: the scale can be left alone. */
+export const CONFIDENCE_OPTIONAL = 'Optional'
+/** Where the Clear button is when a point is chosen: nothing is chosen. */
+export const CONFIDENCE_UNSET = 'Not set'
+export const CONFIDENCE_CLEAR = 'Clear'
+/** The meaning of the lowest point (the chance level, or 0% for a typed answer) and of the highest. */
+export const CONFIDENCE_LOW = 'a guess'
+export const CONFIDENCE_HIGH = 'certain'
+/** Under the scale: what its ends mean. */
+export const confidenceEnds = (floorPct: number): { readonly low: string; readonly high: string } => ({
+  low: `${floorPct}% = ${CONFIDENCE_LOW}`,
+  high: `100% = ${CONFIDENCE_HIGH}`,
+})
+/** The accessible name of a point: the value, and at the ends what it means ("25%, a guess"). */
+export const confidencePointName = (pct: number, floorPct: number): string =>
+  pct === floorPct ? `${pct}%, ${CONFIDENCE_LOW}` : pct === 100 ? `${pct}%, ${CONFIDENCE_HIGH}` : `${pct}%`
+/** For a screen reader, with the group: how the scale works. */
 export const confidenceHint = (floorPct: number, optionsCount: number | null): string =>
   optionsCount === null
-    ? '0% means you have no idea. 100% means you are certain.'
-    : `With ${optionsCount} options, guessing would be right about ${floorPct}% of the time. 100% means you are certain.`
-export const confidenceValue = (pct: number): string => `${pct}% sure`
+    ? 'Optional. Choose how sure you are, from 0%, a guess, to 100%, certain, or leave it unset.'
+    : `Optional. With ${optionsCount} options a guess is right about ${floorPct}% of the time. Choose how sure you are, from ${floorPct}% to 100%, certain, or leave it unset.`
 
 // ---------------------------------------------------------------------------- controls
 
@@ -235,7 +255,7 @@ export const CHECKLIST_LABEL = 'Session checklist'
 export const CHECKLIST_LATER_LABEL = 'Not in this version'
 /** In a focus session (M1.R) the other parts are left out by choice. */
 export const CHECKLIST_FOCUS_LATER_LABEL = 'Not in this session'
-/** The Estimation cluster has no part of its own: it is measured by the confidence slider after each answer (A15). */
+/** The Estimation cluster has no part of its own: it is measured by the optional confidence scale on each question (A15). */
 export const CHECKLIST_EMBEDDED_STATUS = 'With each answer'
 export const CHECKLIST_STATUS: Readonly<Record<'done' | 'current' | 'upcoming' | 'later' | 'partial' | 'skipped' | 'not_reached', string>> = Object.freeze({
   done: 'Done',
@@ -355,7 +375,7 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
     heading: 'What this version keeps',
     paragraphs: [
-      'While you take part, HumanBench keeps your answers, how long each took, how sure you said you were, and coarse details of your device: its class (desktop, tablet or phone), the type of input you used, the family of your system and browser (with no version numbers), your window size, your screen refresh rate and your timer precision.',
+      'While you take part, HumanBench keeps your answers, how long each took, how sure you said you were when you set the optional scale, and coarse details of your device: its class (desktop, tablet or phone), the type of input you used, the family of your system and browser (with no version numbers), your window size, your screen refresh rate and your timer precision.',
       'It also keeps a random identifier that starts with hb_. It is not linked to your name, your email address or your network address, and this site does not ask for any of them.',
     ],
   },

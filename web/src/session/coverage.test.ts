@@ -3,7 +3,7 @@ import { newAnonId } from '../save/ids'
 import { saveWithSession } from '../save/create'
 import { SAVE_CTX } from './constants'
 import { priorItemCounts, questionsAnswered } from './coverage'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 
 const CAT_ONLY = ['RT', 'WM', 'PS'] as const
 
@@ -49,8 +49,8 @@ describe('priorItemCounts: CAT items per axis in a save (M1.15 review, §7.4 L58
 
   it('leaves out pretest responses and ids of no registered family', () => {
     const bot = new Bot({ sessionId: 's_COVERAGE000005', skipped: [...CAT_ONLY, 'SPA', 'QR'] })
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     const save = saveOf([bot])!
     const extra = [
       [save.sessions[0]!.responses[0]![0], 1, 0, 0, 1000, null], // pretest of a counted item

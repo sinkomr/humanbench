@@ -113,13 +113,10 @@ describe('the timer in the running session', () => {
     expect(host.querySelector('[data-item-timer-status]')!.textContent).toMatch(/^30 seconds left for this question\./u)
     // answered: the slider is not timed
     const full = bot.fullItem(bot.view().item!.item_id)
+    // one press: the answer goes, and the next question starts with a fresh timer: no warning carried over
     bot.run.itemResponded(full.options_count === undefined ? '1' : 0)
     flushSync()
-    expect(bot.view().phase).toBe('confidence')
-    expect(host.querySelector('[data-item-timer]')).toBeNull()
-    // the next question starts with a fresh timer: no warning carried over
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
-    flushSync()
+    expect(bot.view().phase).toBe('item')
     expect(host.querySelector('[data-item-timer]')!.getAttribute('data-warn')).toBe('false')
     expect(host.querySelector('[data-item-timer-status]')!.textContent).toBe('')
     vi.useRealTimers()

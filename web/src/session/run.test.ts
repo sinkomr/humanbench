@@ -15,7 +15,7 @@ import { HARD_STOP_S, SAVE_CTX } from './constants'
 import { priorItemCounts } from './coverage'
 import { COMPLETED_FLAG, doneFlag, findUnfinished } from './resume'
 import { SessionRun } from './run'
-import { Bot, TEST_DEVICE } from './bot'
+import { Bot, TEST_DEVICE, midConfidence } from './bot'
 
 const ORDER: readonly SegmentId[] = ['rt', 'matrix_series', 'spatial', 'memory', 'quant', 'coding_reading']
 
@@ -37,7 +37,7 @@ describe('the A15 flow (M1.15)', () => {
       if (v.phase === 'interstitial' && v.segment) seen.push(v.segment.id)
       if (v.phase === 'finished') break
       // A segment's first screen is its interstitial; it never starts without one.
-      if (v.phase === 'block' || v.phase === 'item') expect(['interstitial', 'block', 'item', 'confidence', 'break_offer']).toContain(prev)
+      if (v.phase === 'block' || v.phase === 'item') expect(['interstitial', 'block', 'item', 'break_offer']).toContain(prev)
       prev = v.phase
       bot.run.tick()
       bot.step()
@@ -549,12 +549,14 @@ describe('skip axis (§13)', () => {
     expect(bot.run.result().score).toBeNull()
   })
 
-  it('an answer waiting for its confidence is kept, unrated, when its axis is skipped', () => {
+  it('an answer is recorded the moment it is given, so a skip right after it keeps it, with its confidence', () => {
     const bot = new Bot({ sessionId: 's_SKIPCONF000001' })
-    bot.until((v) => v.phase === 'confidence')
+    bot.until((v) => v.phase === 'item')
+    const pct = midConfidence(bot.view())
+    bot.answer(pct)
     bot.run.skipAxis()
     const last = bot.run.sessionState().responses.at(-1)!
-    expect(last[5]).toBeNull()
+    expect(last[5]).toBe(pct)
     expect(last[3]).not.toBeNull()
   })
 })
@@ -576,12 +578,14 @@ describe('finish early and the hard stop (§7.4)', () => {
     expect(bot.run.view().phase).toBe('finished')
   })
 
-  it('finish early with an answer waiting for its confidence keeps the answer unrated', () => {
+  it('finish early right after an answer given with the scale unset keeps the answer, unrated', () => {
     const bot = new Bot({ sessionId: 's_FINISHCONF0001' })
-    bot.until((v) => v.phase === 'confidence')
+    bot.until((v) => v.phase === 'item')
+    bot.answer(null)
     bot.run.finishEarly()
     const last = bot.run.sessionState().responses.at(-1)!
     expect(last[5]).toBeNull()
+    expect(last[3]).not.toBeNull()
     expect(bot.run.result().calibration).toBeNull()
   })
 
@@ -687,16 +691,18 @@ describe('finish early and the hard stop (§7.4)', () => {
     expect(bot.run.sessionState().responses.every((r) => r[0].startsWith('i:rt_') || r[0].startsWith('i:rt'))).toBe(true)
   })
 
-  it('an answer given just before the stop is kept, without a confidence', () => {
+  it('an answer given just before the stop is kept, with the confidence it was given', () => {
     const bot = new Bot({ sessionId: 's_HARDSTOP000003' })
-    bot.until((v) => v.phase === 'confidence')
+    bot.until((v) => v.phase === 'item')
     const n = bot.run.sessionState().responses.length
+    const pct = midConfidence(bot.view())
+    bot.answer(pct)
     bot.wait(HARD_STOP_S)
     bot.run.tick()
     const st = bot.run.sessionState()
     expect(bot.run.view().ended).toBe('hard_stop')
     expect(st.responses.length).toBe(n + 1)
-    expect(st.responses.at(-1)![5]).toBeNull()
+    expect(st.responses.at(-1)![5]).toBe(pct)
   })
 
   it('a custom hard stop applies (config)', () => {
@@ -816,7 +822,7 @@ describe('the break, at the part boundary nearest half-way (UX-066, §10)', () =
       if (v.phase === 'break_offer') {
         offers++
         // At the end of a part (an answer rated, a block done, an item timed out), with nothing on screen and the clock held.
-        expect(['confidence', 'block', 'item'], `phase before the offer`).toContain(prev)
+        expect(['block', 'item'], `phase before the offer`).toContain(prev)
         expect(v.item).toBeNull()
         expect(v.block).toBeNull()
         expect(v.clockHeld).toBe(true)
@@ -1092,26 +1098,52 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     expect(bot.view().phase).toBe('finished')
   })
 
-  it('validates the confidence: an integer from the floor (1/k for multiple choice, 0 for entry) to 100', () => {
+  it('the question screen carries the scale: its floor is 1/k for multiple choice and 0 for entry, and no step follows the answer', () => {
     const bot = new Bot({ sessionId: 's_CONFVALID00001', skipped: ['RT', 'WM', 'PS', 'QR', 'SPA'] })
     const floors = new Set<number>()
     for (let n = 0; n < 12; n++) {
-      const v = bot.until((x) => x.phase === 'confidence')
+      const v = bot.until((x) => x.phase === 'item')
       const c = v.confidence!
       const k = c.optionsCount
       expect(c.floorPct).toBe(k === null ? 0 : Math.ceil(100 / k))
+      expect(c.optionsCount).toBe(v.item!.options_count ?? null)
       floors.add(c.floorPct)
-      expect(c.startPct).toBeGreaterThanOrEqual(c.floorPct)
-      expect(c.startPct).toBeLessThanOrEqual(100)
-      for (const bad of [c.floorPct - 1, 101, 55.5, Number.NaN, -3]) {
-        bot.run.confirmConfidence(bad)
-        expect(bot.view().phase, `confidence ${bad}`).toBe('confidence')
-      }
-      bot.run.confirmConfidence(c.floorPct)
+      const before = bot.run.sessionState().responses.length
+      bot.answer(c.floorPct)
+      // One press: the answer is recorded at once, with its confidence, and the run is past the question.
+      expect(bot.run.sessionState().responses.length).toBe(before + 1)
       expect(bot.run.sessionState().responses.at(-1)![5]).toBe(c.floorPct)
+      expect(bot.view().item?.item_id).not.toBe(v.item!.item_id)
     }
     // Matrices (6 options) and series (entry) both occur in the MAT segment.
     expect(floors.has(0) || floors.has(17)).toBe(true)
+  })
+
+  it('a confidence outside the scale (below the floor, over 100, not whole) is recorded as none; the answer still counts', () => {
+    for (const bad of [-3, 101, 55.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const bot = new Bot({ sessionId: 's_CONFVALID00002', skipped: ['RT', 'WM', 'PS', 'QR', 'SPA'] })
+      bot.until((x) => x.phase === 'item')
+      bot.answer(bad)
+      const last = bot.run.sessionState().responses.at(-1)!
+      expect(last[5], String(bad)).toBeNull()
+      expect(last[3]).not.toBeNull()
+    }
+    const bot = new Bot({ sessionId: 's_CONFVALID00003', skipped: ['RT', 'WM', 'PS', 'QR', 'SPA'] })
+    const v = bot.until((x) => x.phase === 'item' && x.confidence!.floorPct > 0)
+    bot.answer(v.confidence!.floorPct - 1)
+    expect(bot.run.sessionState().responses.at(-1)![5]).toBeNull()
+  })
+
+  it('no scale outside a question: blocks, interstitials and the finished screen have none', () => {
+    const bot = new Bot({ sessionId: 's_CONFVALID00004' })
+    for (let i = 0; i < 3000; i++) {
+      const v = bot.view()
+      if (v.phase !== 'item') expect(v.confidence, v.phase).toBeNull()
+      else expect(v.confidence).not.toBeNull()
+      if (v.phase === 'finished') break
+      bot.run.tick()
+      bot.step()
+    }
   })
 
   it('a session with at least 10 rated answers carries a calibration observation x = −Brier', () => {
@@ -1129,8 +1161,8 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     expect(r.calibration!.brier).toBeCloseTo(wrong / rated.length, 12)
   })
 
-  it('an untouched slider is recorded as not rated: null in the tuple, counted in confidence_untouched_n, and left out of the calibration (UX-063)', () => {
-    const bot = new Bot({ sessionId: 's_UNTOUCHED00001', skipped: ['RT', 'WM', 'PS'] }, { touch: 'random', confidence: 'max' })
+  it('an answer given with the scale unset is recorded without a confidence (null), left out of the calibration, and flags nothing (owner decision 2026-10-13)', () => {
+    const bot = new Bot({ sessionId: 's_UNTOUCHED00001', skipped: ['RT', 'WM', 'PS'] }, { rate: 'random', confidence: 'max' })
     bot.finish()
     const st = bot.run.sessionState()
     const items = st.responses.filter((t) => t[0].startsWith('i:') && t[3] !== null)
@@ -1138,8 +1170,9 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     const rated = items.filter((t) => t[5] !== null)
     expect(unrated.length).toBeGreaterThan(2)
     expect(rated.length).toBeGreaterThan(2)
-    expect(st.flags.confidence_untouched_n).toBe(unrated.length)
-    // A touched rating keeps its value; the untouched ones are not in the calibration at all.
+    // Leaving the scale unset is normal now: no flag counts it.
+    expect(st.flags.confidence_untouched_n).toBeUndefined()
+    // A rating keeps its value; the unrated answers are not in the calibration at all.
     for (const t of rated) expect(t[5]).toBe(100)
     const r = bot.run.result()
     expect(r.calibration!.n).toBe(rated.length)
@@ -1151,50 +1184,41 @@ describe('items: time-out, unavailable, confidence (§13, DESIGN §3 row 12)', (
     expect(re.theta[AXIS_INDEX.CAL]).toBeCloseTo(r.score!.theta[AXIS_INDEX.CAL]!, 9)
   })
 
-  it('no untouched rating, no flag; every rating untouched, no calibration at all', () => {
-    const touched = new Bot({ sessionId: 's_UNTOUCHED00002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    touched.finish()
-    expect(touched.run.sessionState().flags.confidence_untouched_n).toBeUndefined()
-    expect(touched.run.result().calibration!.n).toBeGreaterThan(0)
-    const never = new Bot({ sessionId: 's_UNTOUCHED00003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] }, { touch: 'never' })
+  it('every answer rated: calibration over all of them; none rated: no calibration at all, and no flag either way', () => {
+    const rated = new Bot({ sessionId: 's_UNTOUCHED00002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+    rated.finish()
+    expect(rated.run.sessionState().flags.confidence_untouched_n).toBeUndefined()
+    expect(rated.run.result().calibration!.n).toBe(rated.run.sessionState().responses.filter((t) => t[2] !== null).length)
+    const never = new Bot({ sessionId: 's_UNTOUCHED00003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] }, { rate: 'never' })
     never.finish()
     const st = never.run.sessionState()
     expect(st.responses.every((t) => t[5] === null)).toBe(true)
-    expect(st.flags.confidence_untouched_n).toBe(st.responses.length)
+    expect(st.flags.confidence_untouched_n).toBeUndefined()
     expect(never.run.result().calibration).toBeNull()
     expect(never.run.result().observations.some((o) => o.axis === 'CAL')).toBe(false)
   })
 
-  it('property: untouched gives null and one count, touched gives the value, whatever the order', () => {
+  it('property: unset gives null, set gives the value, whatever the order; calibration counts the set ones only', () => {
     fc.assert(
-      fc.property(fc.array(fc.tuple(fc.boolean(), fc.integer({ min: 0, max: 100 })), { minLength: 1, maxLength: 12 }), (ratings) => {
+      fc.property(fc.array(fc.option(fc.integer({ min: 0, max: 100 }), { nil: null }), { minLength: 1, maxLength: 12 }), (ratings) => {
         const bot = new Bot({ sessionId: 's_UNTOUCHPROP001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], stopSd: 0.01 })
         const given: (number | null)[] = []
-        for (const [touched, raw] of ratings) {
-          const v = bot.until((x) => x.phase === 'confidence' || x.phase === 'finished')
+        for (const raw of ratings) {
+          const v = bot.until((x) => x.phase === 'item' || x.phase === 'finished')
           if (v.phase === 'finished') break
-          const floor = v.confidence!.floorPct
-          const pct = Math.max(floor, raw)
-          bot.run.confirmConfidence(pct, touched)
-          given.push(touched ? pct : null)
+          const pct = raw === null ? null : Math.max(v.confidence!.floorPct, raw)
+          bot.answer(pct)
+          given.push(pct)
         }
         const st = bot.run.sessionState()
         expect(st.responses.map((t) => t[5])).toEqual(given)
-        const n = given.filter((g) => g === null).length
-        expect(st.flags.confidence_untouched_n).toBe(n === 0 ? undefined : n)
-        expect(bot.run.result().calibration?.n ?? 0).toBe(given.length - n)
+        expect(st.flags.confidence_untouched_n).toBeUndefined()
+        const n = given.filter((g) => g !== null).length
+        expect(bot.run.result().calibration?.n ?? 0).toBe(n)
+        expect(bot.run.result().observations.some((o) => o.axis === 'CAL')).toBe(n >= CAL_NORMS.min_responses)
       }),
       { numRuns: 30 },
     )
-  })
-
-  it('an invalid percentage is refused whether or not the slider was touched', () => {
-    const bot = new Bot({ sessionId: 's_UNTOUCHED00004', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    bot.until((x) => x.phase === 'confidence')
-    bot.run.confirmConfidence(101, false)
-    bot.run.confirmConfidence(-1, false)
-    expect(bot.view().phase).toBe('confidence')
-    expect(bot.run.sessionState().flags.confidence_untouched_n).toBeUndefined()
   })
 
   it('below 10 rated answers there is no calibration observation', () => {
@@ -1387,8 +1411,7 @@ describe('integrity logs (M1.19)', () => {
     bot.run.noteVisibility('hidden')
     bot.wait(30)
     bot.run.noteVisibility('visible')
-    bot.run.itemResponded(0)
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.run.itemResponded(0, midConfidence(bot.view()))
     const flags = bot.run.sessionState().flags
     expect(flags.paste_events).toBe(1)
     expect(flags.visibility_hidden_s).toBeGreaterThanOrEqual(29)
@@ -1402,9 +1425,9 @@ describe('config', () => {
     const kinds: string[] = []
     const bot = new Bot({ sessionId: 's_CHANGES0000001', onChange: (k) => kinds.push(k), skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     expect(kinds).toEqual([])
-    bot.until((v) => v.phase === 'confidence')
+    bot.until((v) => v.phase === 'item')
     expect(kinds).toContain('phase')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.answer(midConfidence(bot.view()))
     expect(kinds).toContain('response')
     bot.run.skipAxis('MAT')
     bot.run.finishEarly()
@@ -1551,7 +1574,7 @@ describe('a notice lives for the screen it was raised on and the next one (UX-00
   })
 
   it('property: whatever is skipped or timed out, a notice is never seen on more than two screens in a row', () => {
-    /** The screen the person is looking at: a new key is a new screen (the confidence slider belongs to its question). */
+    /** The screen the person is looking at: a new key is a new screen. */
     const screenKey = (v: ReturnType<Bot['view']>): string | null => {
       switch (v.phase) {
         case 'interstitial':
@@ -1559,7 +1582,6 @@ describe('a notice lives for the screen it was raised on and the next one (UX-00
         case 'block':
           return `b:${v.block?.item_id ?? ''}`
         case 'item':
-        case 'confidence':
           return `q:${v.item?.item_id ?? ''}`
         case 'break_offer':
         case 'on_break':
@@ -1683,7 +1705,7 @@ describe('a continuation of an interrupted session (UX-064; provisional default,
   it('re-scores with the interrupted session as one sitting: the part run in both is not practice-adjusted', () => {
     const anonId = newAnonId()
     const first = new Bot({ sessionId: 's_CONTINUE000006', startedMs: 1_790_000_000_000 })
-    first.until((v) => v.phase === 'confidence' && v.segment?.id === 'spatial')
+    first.until((v) => v.phase === 'item' && v.segment?.id === 'spatial')
     first.step() // one Spatial answer recorded, then the tab is reloaded
     const base = saveWithSession(null, first.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId })
     const u = findUnfinished(base, 1_790_000_200_000)!

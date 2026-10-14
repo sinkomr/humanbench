@@ -1,7 +1,7 @@
 /**
  * The served text parts in the session flow (ROADMAP M3.11 phase 1; DESIGN §7.4, §10, §11.2, §13, R-5.6.x,
  * R-11.1): the words about the session's length before it starts, a text part the server has questions
- * for (the "Up next" screen, the question as text, the confidence slider, "Report a problem"), and a
+ * for (the "Up next" screen, the question as text, the optional confidence scale, "Report a problem"), and a
  * server without them, where the flow is the six-part one. The server is a scripted fake transport;
  * `scripts/db/text-mc.db.test.ts` and `e2e-db/` use the real database.
  */
@@ -160,7 +160,7 @@ describe('a server with no text questions (the live site today)', () => {
 })
 
 describe('a text part the server has questions for', () => {
-  it('is announced, shows the question as text with its options, then the slider of a four-option question, and can be reported', async () => {
+  it('is announced, shows the question as text with its options and the optional scale of a four-option question, and can be reported', async () => {
     const { t, fake } = setup(['LR'])
     await toReady(fake)
     t.script('next_item', DONE, textWire(1), textWire(2, 2)) // Matrix & Series has nothing; the first LR question is asked for once, before "Up next"
@@ -179,27 +179,24 @@ describe('a text part the server has questions for', () => {
     expect(buttonByText(host, 'Report a problem')).toBeTruthy()
     expect(host.textContent).not.toMatch(/correct|incorrect/iu)
 
-    const radios = [...host.querySelectorAll<HTMLInputElement>('.text-mc input[type="radio"]')]
+    const radios = [...host.querySelectorAll<HTMLInputElement>('.text-mc .options input[type="radio"]')]
     click(radios[1])
     flushSync()
+    // The optional scale of a four-option question, inside its form, before Confirm: from 25%, a guess, to 100%.
+    expect(host.textContent).toContain('How sure are you?')
+    expect(host.textContent).toContain('With 4 options a guess is right about 25% of the time.')
+    const points = [...host.querySelectorAll<HTMLInputElement>('.text-mc fieldset[data-confidence] input[type="radio"]')]
+    expect(points.map((p) => p.value)).toEqual(['25', '44', '63', '81', '100'])
+    click(points[3])
     click(buttonByText(host, 'Confirm'))
-    flushSync()
-    expect(host.textContent).toContain('How sure are you that your answer is right?')
-    expect(host.textContent).toContain('With 4 options, guessing would be right about 25% of the time.')
-    const slider = host.querySelector<HTMLInputElement>('.confidence input[type="range"]')!
-    expect(slider.min).toBe('25')
-    slider.value = '70'
-    slider.dispatchEvent(new Event('input', { bubbles: true }))
-    flushSync()
-    click(buttonByText(host, 'Continue'))
     await tick()
     const sent = t.args('submit')
-    expect(sent).toMatchObject({ p_item_id: 'i:tst:text:1', p_response: 1, p_confidence: 70, p_next: false })
+    expect(sent).toMatchObject({ p_item_id: 'i:tst:text:1', p_response: 1, p_confidence: 81, p_next: false })
     expect(JSON.stringify(sent)).not.toMatch(/correct|"key"/u)
     // The next question of the part: a text to read first and six options, markup shown as characters.
     await settle()
     flushSync()
-    expect(host.querySelectorAll('.text-mc input[type="radio"]')).toHaveLength(6)
+    expect(host.querySelectorAll('.text-mc .options input[type="radio"]')).toHaveLength(6)
     expect(host.querySelectorAll('.text-mc script, .text-mc img, .text-mc b, .text-mc i')).toHaveLength(0)
     expect(host.querySelector('.text-mc .reading')?.textContent).toContain('<script>')
   })

@@ -13,8 +13,10 @@
  * person can start it or skip its axis. A block segment then runs its fixed blocks one after the
  * other (a renderer each, one whole-block response, scored by the family); a CAT segment loops on
  * `selectNext` (information per second, after the start-up steps of `engine/startup.ts`) until its axes are done (posterior SD < 0.3), no candidate
- * is left or the segment's time is used up. After every counted power answer the person rates how
- * sure they are (the confidence slider; Brier, `calibration.ts`).
+ * is left or the segment's time is used up. Every counted power question carries an optional scale for how sure
+ * the person is, on the question screen (owner decision 2026-10-13): the answer and, if it was set, the
+ * confidence arrive together ({@link SessionRun.itemResponded}); unset, the answer has none (null). Calibration
+ * (Brier, `tasks/calibration.ts`) is over the rated answers only, and needs `CAL_NORMS.min_responses` of them.
  *
  * ## Time
  *
@@ -40,7 +42,7 @@
  *   or, when that part was skipped, before the next interstitial shown after it. A plan of one part
  *   has no break. The clock is already held there; taking the break adds a hold of its own.
  * - **Hard stop** (§7.4): at 57 active minutes the session ends where it is; an item in progress is
- *   dropped, an answered item still waiting for its confidence is kept without one. The hard stop
+ *   dropped (an answer is recorded the moment it is given, with its confidence if any). The hard stop
  *   is noticed on the next `tick()`, but the recorded time is the limit, not the late reading.
  * - **Item cap** (§13): a power item that gets no answer within `time_limit_s` is recorded as not
  *   correct (a time-out). The screen shows the time left for the whole of it and warns in the last
@@ -50,8 +52,9 @@
  *
  * With `RunConfig.cat` (a server session, `backend/session.ts`) the CAT parts are not selected
  * here: the server picks every counted item (DESIGN §11.2) and scores the answer where the key
- * is, so this machine never learns whether an answer was right (R-11.1) and the confidence slider
- * is the only thing between an answer and the server. The run waits in the `loading` phase for each
+ * is, so this machine never learns whether an answer was right (R-11.1): the confidence a person sets goes to the
+ * server with the answer, and the online version does not compute calibration (the server does not yet; separate
+ * decision). The run waits in the `loading` phase for each
  * item (the clock is paused: waiting for the network is not working), keeps every answer in an
  * outbox until the server has acknowledged it (a failed call leaves the phase `loading` with a
  * `problem` and a way to try again), and records the answers it hands over in a session of its own,
@@ -164,7 +167,7 @@ import { MalformedResponseError, type AnyFamily } from '../tasks/family'
 import { getFamily } from '../tasks/registry'
 import { rtBlockObservation, type RtItem, type RtResponse } from '../tasks/rt'
 import { calibrationObservation, calibrationSummary, type CalibrationSummary, type RatedAnswer } from '../tasks/calibration'
-import { confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
+import { confidenceFloorPct, isConfidencePct } from './calibration'
 import { A15_TYPICAL_OVER_S, MIN_ITEMS_SLACK, textPartById } from '../engine/plan-table'
 import { DEFAULT_ITEM_LIMIT_S, HARD_STOP_S } from './constants'
 import { COMPLETED_FLAG, doneFlag, FOCUS_SESSION_FLAG, isProgressFlag } from './resume'
@@ -182,8 +185,6 @@ export type RunPhase =
   | 'loading'
   /** A CAT item is on screen, waiting for an answer. */
   | 'item'
-  /** The item was answered; the confidence slider is showing. */
-  | 'confidence'
   /** The break is suggested, between two parts (the clock is held). */
   | 'break_offer'
   /** On a break: the clock is paused. */
@@ -256,8 +257,11 @@ export interface RunView {
   readonly segment: SegmentView | null
   readonly item: PublicItem | null
   readonly block: PublicBlock | null
-  /** The slider of the answered item; null outside the `confidence` phase. */
-  readonly confidence: { readonly floorPct: number; readonly startPct: number; readonly optionsCount: number | null } | null
+  /**
+   * The optional confidence scale of the question on screen (owner decision 2026-10-13): its lowest point (the
+   * chance level, 0 for typed entry) and the options count; null outside the `item` phase.
+   */
+  readonly confidence: { readonly floorPct: number; readonly optionsCount: number | null } | null
   /** The renderer could not draw the current item (e.g. no WebGL): offer the skip (§13). */
   readonly unavailable: boolean
   readonly notice: Notice | null
@@ -417,8 +421,6 @@ interface CurrentItem {
   readonly startedMs: number
   onsetMs: number | null
   unavailable: boolean
-  /** `correct` is null for a served item: the server holds the key (R-11.1). */
-  pending: { response: JsonValue; correct: 0 | 1 | null; endMs: number; rtMs: number } | null
 }
 
 /** What the screens may know of the item on screen, whoever made it. */
@@ -538,8 +540,6 @@ export class SessionRun {
   #endReason: EndReason | null = null
   #breakOffered = false
   #breaks = 0
-  /** Confidence ratings confirmed without the slider being moved (UX-063): recorded as not rated. */
-  #untouched = 0
   /** Parts that ended normally in this session (`done_<part>` flags, read by `resume.ts`). */
   readonly #doneHere = new Set<SegmentId>()
   #afterBreak: (() => void) | null = null
@@ -770,24 +770,23 @@ export class SessionRun {
     const cur = this.#current
     const facts = cur === null ? null : this.#facts(cur)
     let confidence: RunView['confidence'] = null
-    if (this.#phase === 'confidence' && facts !== null) {
+    if (this.#phase === 'item' && facts !== null) {
       const k = facts.options_count
-      const floorPct = confidenceFloorPct(k)
-      confidence = { floorPct, startPct: confidenceStartPct(floorPct), optionsCount: k ?? null }
+      confidence = { floorPct: confidenceFloorPct(k), optionsCount: k ?? null }
     }
     const probing = this.#phase === 'loading' && this.#loading?.probe === true
     const held = this.#passage
     let passage: PassageView | null = null
     if (held !== null) {
       // (also in the instant between an answer being recorded and the next request: the passage is not taken away and put back)
-      const onQuestion = this.#phase === 'item' || this.#phase === 'confidence'
+      const onQuestion = this.#phase === 'item'
       // The wait for the next question of the passage is still the passage's screen; the place is the next question's to say.
       const between = this.#phase === 'loading' && !probing && held.more && this.#loading?.segment === held.segment
       if (onQuestion) passage = { ...held.text, position: held.position }
       else if (between) passage = { ...held.text, position: null }
     }
     let skippable: AxisCode | null = null
-    if (this.#phase === 'item' || this.#phase === 'confidence') skippable = facts?.axis ?? null
+    if (this.#phase === 'item') skippable = facts?.axis ?? null
     else if (this.#phase === 'block') skippable = this.#currentBlock?.step.axis ?? null
     // A part being asked for is not named while the wait goes well; when it fails, skipping it is a way on.
     else if (probing) skippable = this.#problem === null ? null : (this.#loading!.axes[0] ?? null)
@@ -839,7 +838,7 @@ export class SessionRun {
       focus: this.#cfg.focus !== undefined,
       served: this.#cat !== undefined,
       problem: this.#phase === 'loading' ? this.#problem : null,
-      reportable: cur?.served != null && (this.#phase === 'item' || this.#phase === 'confidence') ? cur.served.item_id : null,
+      reportable: cur?.served != null && this.#phase === 'item' ? cur.served.item_id : null,
       probing,
       passage,
     }
@@ -852,7 +851,7 @@ export class SessionRun {
   /**
    * The time of the question on screen (cheap; the screen reads it every tick, like `elapsedS`): its limit
    * and the seconds left before it is recorded as run out of time ({@link SessionRun.tick}). Null when no
-   * question is waiting for an answer: outside the `item` phase (the confidence slider is not timed), and for
+   * question is waiting for an answer: outside the `item` phase, and for
    * a question that cannot be shown. So what the timer shows is exactly what the time-out acts on.
    */
   itemTime(): { readonly limitS: number; readonly leftS: number } | null {
@@ -1073,7 +1072,7 @@ export class SessionRun {
       this.#endSegment(sel.reason)
       return
     }
-    this.#current = { item: sel.item, served: null, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
+    this.#current = { item: sel.item, served: null, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false }
     this.#phase = 'item'
     this.#newScreen()
     this.#emit('phase')
@@ -1190,7 +1189,7 @@ export class SessionRun {
   }
 
   #showServed(item: ServedItem): void {
-    const cur: CurrentItem = { item: null, served: item, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false, pending: null }
+    const cur: CurrentItem = { item: null, served: item, startedMs: this.#cfg.now(), onsetMs: null, unavailable: false }
     this.#current = cur
     this.#notePassage(item)
     if (!item.supported) {
@@ -1261,7 +1260,7 @@ export class SessionRun {
   /** A served item that is on screen unanswered is let go when its part is skipped. */
   #releaseCurrent(): void {
     const cur = this.#current
-    if (cur?.served == null || cur.pending !== null || this.#phase === 'confidence') return
+    if (cur?.served == null) return
     this.#outbox.push({ item: cur.served, response: null, rtMs: 0, confidence: null, flags: {}, release: cur.unavailable ? 'unavailable' : 'skipped' })
     void this.#flushOutbox().catch(() => undefined) // the next request sends it again, and says why if it cannot
   }
@@ -1319,11 +1318,13 @@ export class SessionRun {
   }
 
   /**
-   * The person answered the item: it is scored, and the confidence slider comes next. Ignored when
-   * no item is waiting for an answer, or when the response is not one the family accepts (the
-   * renderers only send valid ones; a notice says so).
+   * The person answered the item, with the confidence they set on its scale or null when they left it unset
+   * (owner decision 2026-10-13): it is scored and recorded at once, and the session moves on. A confidence that is
+   * not a whole percent from the item's floor to 100 is recorded as none (the answer still counts). Ignored when
+   * no item is waiting for an answer, or when the response is not one the family accepts (the renderers only send
+   * valid ones; a notice says so).
    */
-  itemResponded(response: unknown): void {
+  itemResponded(response: unknown, confidencePct: number | null = null): void {
     const cur = this.#current
     if (this.#limitsHit() || this.#phase !== 'item' || cur === null || cur.unavailable) return
     const endMs = this.#cfg.now()
@@ -1334,10 +1335,9 @@ export class SessionRun {
         this.#emit('phase')
         return
       }
-      cur.pending = { response: response as JsonValue, correct: null, endMs, rtMs: endMs - (cur.onsetMs ?? cur.startedMs) }
       this.#notice = null
-      this.#phase = 'confidence'
-      this.#emit('phase')
+      this.#recordServed(cur, response as JsonValue, endMs - (cur.onsetMs ?? cur.startedMs), this.#ratingOf(cur, confidencePct), endMs)
+      this.#answered()
       return
     }
     let correct: 0 | 1 | null
@@ -1350,27 +1350,18 @@ export class SessionRun {
       return
     }
     if (correct === null) return
-    cur.pending = { response: response as JsonValue, correct, endMs, rtMs: endMs - (cur.onsetMs ?? cur.startedMs) }
     this.#notice = null
-    this.#phase = 'confidence'
-    this.#emit('phase')
+    this.#recordItem(cur, response as JsonValue, correct, endMs - (cur.onsetMs ?? cur.startedMs), this.#ratingOf(cur, confidencePct), endMs)
+    this.#answered()
   }
 
-  /**
-   * The person confirmed how sure they are (percent, an integer from the slider's floor to 100).
-   * `touched` false: the slider was confirmed where it started, never moved (Continue, Enter or a
-   * double click straight away). Such an answer is recorded as not rated (`confidence_pct` null, as
-   * after a skip or the hard stop), so it stays out of the calibration, and the session counts it in
-   * the flag `confidence_untouched_n` (UX-063).
-   */
-  confirmConfidence(pct: number, touched = true): void {
-    const cur = this.#current
-    if (this.#limitsHit() || this.#phase !== 'confidence' || cur === null || cur.pending === null) return
-    if (!isConfidencePct(pct, confidenceFloorPct(this.#facts(cur).options_count))) return
-    const rated = touched ? pct : null
-    if (!touched) this.#untouched++
-    if (cur.served !== null) this.#recordServed(cur, cur.pending.response, cur.pending.rtMs, rated, cur.pending.endMs)
-    else this.#recordItem(cur, cur.pending.response, cur.pending.correct as 0 | 1, cur.pending.rtMs, rated, cur.pending.endMs)
+  /** The confidence to record with an answer to `cur`: the value set, if it is one the item's scale allows; else none. */
+  #ratingOf(cur: CurrentItem, pct: number | null): number | null {
+    return pct !== null && isConfidencePct(pct, confidenceFloorPct(this.#facts(cur).options_count)) ? pct : null
+  }
+
+  /** After an answer was recorded: the next thing comes. */
+  #answered(): void {
     this.#current = null
     this.#emit('response')
     this.#boundary(() => this.#present())
@@ -1552,11 +1543,10 @@ export class SessionRun {
       return
     }
     const seg = this.#segments[this.#segIdx]
-    const onScreen = this.#phase === 'interstitial' || this.#phase === 'block' || this.#phase === 'item' || this.#phase === 'confidence' || this.#phase === 'loading'
+    const onScreen = this.#phase === 'interstitial' || this.#phase === 'block' || this.#phase === 'item' || this.#phase === 'loading'
     const inSegment = seg !== undefined && onScreen && seg.axes.includes(target)
     if (inSegment) {
-      // Whatever was on screen for the axis is dropped; an answer waiting for its confidence is kept.
-      this.#flushPending()
+      // Whatever was on screen for the axis is dropped (answers already given are recorded).
       this.#releaseCurrent()
       this.#releaseHeld(seg)
       if (seg.optional !== undefined) this.#releaseInFlight()
@@ -1583,18 +1573,9 @@ export class SessionRun {
     this.#finish('finish_early')
   }
 
-  /** The answered item waiting for its confidence is kept, unrated; anything else in progress is dropped. */
-  #flushPending(): void {
-    const cur = this.#current
-    if (this.#phase !== 'confidence' || !cur?.pending) return
-    if (cur.served !== null) this.#recordServed(cur, cur.pending.response, cur.pending.rtMs, null, cur.pending.endMs)
-    else this.#recordItem(cur, cur.pending.response, cur.pending.correct as 0 | 1, cur.pending.rtMs, null, cur.pending.endMs)
-  }
-
   #finish(reason: EndReason): void {
     if (this.#phase === 'finished') return
     this.#abandonLoading()
-    this.#flushPending()
     this.#current = null
     this.#currentBlock = null
     this.#passage = null
@@ -1680,7 +1661,6 @@ export class SessionRun {
     const flags: SessionFlags = this.#cat === undefined ? { ...this.#integrityReport().save_flags } : this.#servedIntegrityFlags()
     for (const k of this.#skipped) flags[`skipped_${k.toLowerCase()}`] = true
     if (this.#breaks > 0) flags.breaks = this.#breaks
-    if (this.#untouched > 0) flags.confidence_untouched_n = this.#untouched
     if (this.#endReason === 'finish_early') flags.finished_early = true
     if (this.#endReason === 'hard_stop') flags.hard_stop = true
     // How far the session got, for picking up an interrupted one (`resume.ts`): the parts that ended normally, and

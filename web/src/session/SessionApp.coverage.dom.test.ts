@@ -12,7 +12,7 @@ import { newAnonId } from '../save/ids'
 import { jcs } from '../save/jcs'
 import { buttonByText, click, fakeDisplay } from '../render/common/testing'
 import { encodeSaveCode } from '../save/codec'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 import { CONSENT_KEY, SAVE_CTX } from './constants'
 import { fakeEnv, SpyStorage, type FakeEnv } from './dom-support'
 import type { RunConfig, SessionRun } from './run'
@@ -150,8 +150,8 @@ describe('what the flow tells the run about earlier sessions (coverage floor per
 
   it('a save loaded on the ready screen survives a trip to practice and becomes the base of the new session', async () => {
     const earlier = new Bot({ sessionId: 's_EARLIERSESSION1', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    earlier.until((v) => v.phase === 'confidence')
-    earlier.run.confirmConfidence(earlier.view().confidence!.startPct)
+    earlier.until((v) => v.phase === 'item')
+    earlier.answer(midConfidence(earlier.view()))
     earlier.run.finishEarly()
     const file = saveWithSession(null, earlier.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: 'hb_' + 'q'.repeat(17) })
     const code = await encodeSaveCode(file)
@@ -174,8 +174,7 @@ describe('what the flow tells the run about earlier sessions (coverage floor per
     run.skipAxis() // reaction time, from its interstitial
     run.startSegment()
     const item = run.view().item!
-    run.itemResponded(item.options_count === undefined ? '1' : 0)
-    run.confirmConfidence(run.view().confidence!.startPct)
+    run.itemResponded(item.options_count === undefined ? '1' : 0, 50)
     await vi.waitFor(() => expect([...fake.storage.data.keys()].some((k) => k.startsWith('hb:save:v1:s_'))).toBe(true))
     const key = [...fake.storage.data.keys()].find((k) => k.startsWith('hb:save:v1:s_'))!
     const saved = JSON.parse(fake.storage.data.get(key)!) as { anon_id: string; sessions: { session_id: string }[] }

@@ -12,7 +12,7 @@ import { settle } from '../render/dom-testing'
 import { encodeSaveCode } from '../save/codec'
 import { saveWithSession } from '../save/create'
 import { newAnonId } from '../save/ids'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 import { CONSENT_KEY, SAVE_CTX } from './constants'
 import { fakeEnv, type FakeEnv } from './dom-support'
 import type { RunConfig, SessionRun } from './run'
@@ -107,8 +107,7 @@ async function answerOne(): Promise<void> {
   flushSync()
   await settle(2)
   const item = run.view().item!
-  run.itemResponded(item.options_count === undefined ? '1' : 0)
-  run.confirmConfidence(run.view().confidence!.startPct)
+  run.itemResponded(item.options_count === undefined ? '1' : 0, 50)
   flushSync()
 }
 
@@ -179,8 +178,8 @@ describe('returning to a screen (UX-006, WCAG 2.4.2, 2.4.3)', () => {
 describe('the results of a loaded save, with no new session (UX-010)', () => {
   async function savedCode(): Promise<string> {
     const bot = new Bot({ sessionId: 's_VIEWSAVE0000001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     bot.run.finishEarly()
     return encodeSaveCode(saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: newAnonId() }))
   }
@@ -428,8 +427,8 @@ describe('the results code comes as a chunk of its own (UX-100)', () => {
     mountWith(fake, hand.loader)
     await walkToReady(fake)
     const bot = new Bot({ sessionId: 's_VIEWSAVE0000001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     bot.run.finishEarly()
     const code = await encodeSaveCode(saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: newAnonId() }))
     const area = host.querySelector<HTMLTextAreaElement>('textarea')!

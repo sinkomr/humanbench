@@ -11,7 +11,7 @@
  */
 
 import type { SessionOutline } from '../engine/plan-table'
-import { CREDITS_SECTION } from '../session/copy'
+import { CONFIDENCE_INSTRUCTION, CREDITS_SECTION } from '../session/copy'
 import { BASE_OUTLINE, lengthSentence } from '../session/length'
 import type { LoadProblem } from './errors'
 
@@ -26,7 +26,7 @@ export const SERVER_GATE_POINTS: readonly string[] = Object.freeze([
 
 /** Replaces `READY_TEXT` when answers go to a server; the length is the plan's (`session/copy.ts`, M3.11 phase 1). */
 export const serverReadyText = (o: SessionOutline): string =>
-  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After each answer to a question you will say how sure you are.`
+  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. ${CONFIDENCE_INSTRUCTION}`
 export const SERVER_READY_TEXT = serverReadyText(BASE_OUTLINE)
 
 // ----------------------------------------------------------------------------- opening
@@ -214,14 +214,14 @@ export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.fre
   {
     heading: 'What this version keeps',
     paragraphs: [
-      'While you take part, HumanBench keeps your answers, how long each took, how sure you said you were, and coarse details of your device: its class (desktop, tablet or phone), the type of input you used, the family of your system and browser (with no version numbers), your window size, your screen refresh rate and your timer precision.',
+      'While you take part, HumanBench keeps your answers, how long each took, how sure you said you were when you set the optional scale, and coarse details of your device: its class (desktop, tablet or phone), the type of input you used, the family of your system and browser (with no version numbers), your window size, your screen refresh rate and your timer precision.',
       'It also keeps a random identifier that starts with hb_. It is not linked to your name, your email address or your network address, and this site does not ask for any of them. The server’s hosting provider sees network addresses in its own logs, as every web host does; HumanBench does not store them with your answers. To limit abuse, the server keeps a scrambled (hashed) form of your network address, apart from your answers, for about two days.',
     ],
   },
   {
     heading: 'What is sent to the server',
     paragraphs: [
-      'Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative Reasoning are sent to the server as you give them, with your response times, how sure you said you were, and the device details above. The server scores them where the answers are kept, so your browser never learns whether a counted answer was right.',
+      'Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative Reasoning are sent to the server as you give them, with your response times, how sure you said you were (when you set it), and the device details above. The server scores them where the answers are kept, so your browser never learns whether a counted answer was right.',
       'The timed tasks of the parts Reaction Time, Working Memory and Processing & Reading Speed stay on your device. They are in your save file and are not sent unless you choose to keep a backup of that file on the server.',
       'If you report a problem, the report names the question and, if you write it, the text you add. Please do not include personal details. If you answer the two optional questions at the end, the answers are kept apart from your other data and are used only to check that the questions are fair.',
     ],

@@ -4,7 +4,7 @@
 
   The passage is a region of its own with a heading, before the question in the document, so a screen
   reader meets it first and can come back to it by its name; the question (whatever the caller renders:
-  the text question, its confidence slider, the short wait for the next question) follows.
+  the text question (with its optional confidence scale), the short wait for the next question) follows.
 
   - **Wide** (the layout itself is at least 50rem across, a container query): passage and question side by
     side; the passage keeps to the top of the window and scrolls inside its own frame when it is taller.
