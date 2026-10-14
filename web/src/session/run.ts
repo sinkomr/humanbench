@@ -54,8 +54,8 @@
  * With `RunConfig.cat` (a server session, `backend/session.ts`) the CAT parts are not selected
  * here: the server picks every counted item (DESIGN §11.2) and scores the answer where the key
  * is, so this machine never learns whether an answer was right (R-11.1): the confidence a person sets goes to the
- * server with the answer, and the online version does not compute calibration (the server does not yet; separate
- * decision). The run waits in the `loading` phase for each
+ * server with the answer, and Calibration of the served answers is the server's to score (`rescore`, migration
+ * `20261015000100_server_calibration.sql`; owner decision 2026-10-13), never this machine's. The run waits in the `loading` phase for each
  * item (the clock is paused: waiting for the network is not working), keeps every answer in an
  * outbox until the server has acknowledged it (a failed call leaves the phase `loading` with a
  * `problem` and a way to try again), and records the answers it hands over in a session of its own,

@@ -196,7 +196,10 @@ describe('a pool with made-up text items for three of the five skills', () => {
     const save = saveOf(server, fin.session, shown)
     expect((await api.verifySave(save)).sessions).toEqual([{ sessionId: server.sessionId, status: 'verified', reason: null }])
     const est = await api.rescore(save)
-    expect(Object.keys(est.eap).sort()).toEqual([...PRESENT].sort())
+    // every answer went with its confidence set (100%), and there are more than ten: the server publishes Calibration too
+    // (owner decision 2026-10-13; migration 20261015000100_server_calibration.sql)
+    expect(Object.keys(est.eap).sort()).toEqual([...PRESENT, 'CAL'].sort())
+    expect(est.eap.CAL!.n).toBe(shown.length)
     for (const k of PRESENT) {
       expect(est.eap[k]!.n, k).toBe(counts[k])
       expect(est.eap[k]!.sd, k).toBeGreaterThan(0)

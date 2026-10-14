@@ -216,7 +216,7 @@ interface Result {
   facets: Record<string, Record<string, { mean: number; sd: number; n: number }>>
   /** Counts of scored items for the axes and facets that were held back. */
   withheld: { eap: Record<string, number>; facets: Record<string, Record<string, number>> }
-  limits: { min_axis_items: number; min_facet_items: number; mean_step: number; sd_step: number }
+  limits: { min_axis_items: number; min_facet_items: number; min_cal_items: number; mean_step: number; sd_step: number }
   skipped: Record<string, number>
 }
 
@@ -729,7 +729,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
       const exact = await rescore(save)
       await setConfig(PUBLISHED)
       const got = await rescore(save)
-      expect(got.limits).toEqual({ min_axis_items: 5, min_facet_items: 5, mean_step: 0.1, sd_step: 0.05 })
+      expect(got.limits).toEqual({ min_axis_items: 5, min_facet_items: 5, min_cal_items: 10, mean_step: 0.1, sd_step: 0.05 })
       expect(Object.keys(got.eap).sort(), name).toEqual(Object.keys(exact.eap).sort())
       const onGrid = (x: number, step: number): boolean => Math.abs(x / step - Math.round(x / step)) < 1e-9
       const compare = (g: { mean: number; sd: number; n: number }, e: { mean: number; sd: number; n: number }, what: string): void => {
@@ -831,7 +831,7 @@ describe('rescore: what it withholds (R-11.1, DESIGN §10; owner decision 2026-1
     await setConfig({ 'rescore.min_axis_items': 0, 'rescore.min_facet_items': -3, 'rescore.mean_step': -1, 'rescore.sd_step': -1 })
     try {
       const got = await rescore(saveOf(s.anonId, [s.sessionId]))
-      expect(got.limits).toEqual({ min_axis_items: 1, min_facet_items: 1, mean_step: 0, sd_step: 0 })
+      expect(got.limits).toEqual({ min_axis_items: 1, min_facet_items: 1, min_cal_items: 10, mean_step: 0, sd_step: 0 })
     } finally {
       await setConfig(PUBLISHED)
     }

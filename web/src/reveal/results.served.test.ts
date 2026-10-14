@@ -149,6 +149,19 @@ describe('buildResults with the server scoring the counted questions', () => {
     expect(e.find((x) => x.code === 'LR')).toMatchObject({ measured: false, reason: 'not_yet_available' })
   })
 
+  it('shows Calibration when the server published it, from the rated answers it scored (owner decision 2026-10-13); otherwise "not measured"', () => {
+    // the served answers carry their confidences but no verdicts: the page cannot compute Calibration from them
+    const rated = served.sessions[0]!.responses.filter((t) => t[5] !== null)
+    expect(rated.length).toBeGreaterThanOrEqual(10)
+    expect(rated.every((t) => t[3] === null)).toBe(true)
+    const without = buildResults(served, servedScores(reply()))!
+    expect(without.rescore.eap.CAL).toBeUndefined()
+    expect(axisEstimates(without.input).find((x) => x.code === 'CAL')).toMatchObject({ measured: false, reason: 'no_data' })
+    const withCal = buildResults(served, servedScores(reply({ eap: { ...reply().eap, CAL: { mean: 0.4, sd: 0.75, n: 18 } } })))!
+    expect(withCal.rescore.eap.CAL).toEqual({ mean: 0.4, sd: 0.75 })
+    expect(axisEstimates(withCal.input).find((x) => x.code === 'CAL')).toMatchObject({ measured: true, theta: 0.4, sd: 0.75 })
+  })
+
   it('a session the server does not score (made without it) is scored here, next to the served one', () => {
     const local = botSave('s_SERVEDRES00002', { level: 0.2 })
     const joined = { ...served, sessions: [...served.sessions, ...local.save.sessions] } as SaveFileV1

@@ -24,9 +24,9 @@ function functionText(sql: string, name: string): string {
 }
 
 describe('rescore facets (UX review D4)', () => {
-  it('is the latest migration that re-creates rescore', () => {
+  it('is the migration that re-creates rescore before the server\'s Calibration (20261015000100_server_calibration.sql, which keeps it but for CAL)', () => {
     const recreating = migrations.filter((m) => /create\s+(?:or\s+replace\s+)?function\s+public\.rescore\s*\(/i.test(m.sql)).map((m) => m.name)
-    expect(recreating.at(-1)).toBe('20261007000100_rescore_facets.sql')
+    expect(recreating.slice(-2)).toEqual(['20261007000100_rescore_facets.sql', '20261015000100_server_calibration.sql'])
   })
 
   it('re-creates rescore as before, with only the drill-down facet and the leave-facet-out facets changed', () => {
