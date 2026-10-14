@@ -36,8 +36,10 @@ const RESULTS_CHUNK = /\/assets\/Finished-[^/?]+\.(js|css)(\?.*)?$/
  * with the passage screen (M3.11 phase 2). This copy had stayed at 135 KB; the session fixes of 2026-10-13 (the
  * question timer, the start-up rule of the selector, the kept span generators) took this build's entry from 133.6 KB to
  * 135.6 KB (2.0 KB more). A static import of the results chunk (about 41 KB) still trips the bound by a wide margin.
+ * Raised to 143 KB, the same as scripts/results-split.test.ts again, when the three branches of 2026-10-13 merged
+ * together took this build's entry to 140.4 KB on CI (Node 24): see there for why the bound was raised.
  */
-const ENTRY_GZIP_MAX = 140_000
+const ENTRY_GZIP_MAX = 143_000
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
 
 // -------------------------------------------------------------------------- the shell

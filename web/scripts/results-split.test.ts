@@ -30,9 +30,15 @@ import { WEB } from './css-tokens'
  * bound by a wide margin. Raised to 142 KB with the remaining families of M3.11 (2026-10-13), which took the entry from
  * 138.1 to 140.6 KB: the served payload shapes, the logic-game setup on the passage screen, the skills the server has
  * and the rotation of the parts. Their four renderers and the task modules behind them stay out of the entry
- * (`src/session/served-renderers.ts`, fetched when a session with one of their parts starts).
+ * (`src/session/served-renderers.ts`, fetched when a session with one of their parts starts). Raised to 143 KB when
+ * the three branches of 2026-10-13 (session fixes, served families, inline confidence) were merged together: each added
+ * session code (the question timer and the answer sent at time-out, the selector's start-up rule, the skills the server
+ * has and the rotation, the confidence scale on the question screen), which took this entry to 142.2 KB on CI's Node 24
+ * (141.7 KB on Node 26, whose gzip is tighter). All of it runs in the session the entry starts. Taking the text
+ * renderer out as well saved only 0.6 KB here and nothing in the e2e build (`e2e/ux2-perf.spec.ts`, where the dev
+ * routes already split it off), so the bound was raised rather than the session code split further.
  */
-const ENTRY_GZIP_MAX = 142_000
+const ENTRY_GZIP_MAX = 143_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [

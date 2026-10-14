@@ -164,8 +164,10 @@ async function session(page: Page, calls: Call[]): Promise<void> {
 test('with the server cut off the person goes on with this device only', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' }) // the results are complete at once
   let reached = 0
+  const rpcs: string[] = []
   await page.route(`${SERVER}/**`, (route) => {
     reached++
+    rpcs.push(new URL(route.request().url()).pathname.replace(/^.*\/rpc\//u, ''))
     return route.abort('connectionrefused')
   })
   await toReady(page)
@@ -185,9 +187,12 @@ test('with the server cut off the person goes on with this device only', async (
   await button(page, 'Finish early').click()
   await button(page, 'Finish now').click()
   await expect(h1(page)).toHaveText(/^Session (complete|ended)$/, { timeout: 60_000 })
+  expect(reached).toBe(before) // the session's end asked nothing either
   const text = await downloadSave(page)
   expect((JSON.parse(text) as { sessions: { sig?: unknown }[] }).sessions.every((s) => s.sig === undefined)).toBe(true)
   await deleteWithFile(page, text)
   await expect(page.getByText('Nothing was deleted.')).toBeVisible()
-  expect(reached).toBe(before)
+  // The data page is opened by a new page load (`deleteWithFile`), and every page load asks once which skills the server
+  // has questions for (`live_axes`, ROADMAP M3.11), which here fails as well. The data page itself asks nothing.
+  expect(rpcs.slice(before)).toEqual(['live_axes'])
 })
