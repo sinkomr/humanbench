@@ -304,8 +304,17 @@ describe('a pool without the text skills gives the six-part session, unchanged (
         const base = (x: Taker) => x.run.result().budgets.filter((b) => ['matrix_series', 'spatial', 'quant'].includes(b.segment))
         expect(base(t).map((b) => [b.segment, b.plannedS])).toEqual(base(plain).map((b) => [b.segment, b.plannedS]))
         base(t).forEach((b, i) => expect(b.budgetS).toBeCloseTo(base(plain)[i]!.budgetS, 6))
-        const a15 = (x: Taker): unknown => Object.fromEntries(A15_CAT.map((k) => [k, x.run.result().itemsByAxis[k]]))
-        expect(a15(t)).toEqual(a15(plain))
+        // The same number of questions in each of the three parts, except in the part the 57-minute hard stop (DESIGN
+        // §7.4) cut short: the six-question minimum holds past a part's own time share, never past the hard stop. A slow
+        // taker with text parts can reach it during Quantitative, the more so now each rated question takes the
+        // seconds spent on its confidence scale (owner decision 2026-10-13): then that part, never ended, has fewer.
+        const a15 = (x: Taker): Record<string, number | undefined> => Object.fromEntries(A15_CAT.map((k) => [k, x.run.result().itemsByAxis[k]]))
+        const cut = (x: Taker): AxisCode[] =>
+          x.run.result().reason !== 'hard_stop' ? [] : A15_CAT.filter((_, i) => !x.run.result().segmentEnds.some((e) => e.segment === ['matrix_series', 'spatial', 'quant'][i]))
+        expect(cut(plain)).toEqual([])
+        const whole = (x: Taker): Record<string, number | undefined> => Object.fromEntries(Object.entries(a15(x)).filter(([k]) => !cut(t).includes(k as AxisCode)))
+        expect(whole(t)).toEqual(whole(plain))
+        for (const k of cut(t)) expect(a15(t)[k] ?? 0).toBeLessThanOrEqual(a15(plain)[k]!)
         // A text part ran exactly when it was both asked for and in the pool.
         const ran = TEXT_AXES.filter((k) => (t.run.result().itemsByAxis[k] ?? 0) > 0)
         const due = TEXT_AXES.filter((k) => asked.includes(k) && present.includes(k))
