@@ -20,7 +20,8 @@ export interface FixtureItem {
   readonly axis: AxisCode
   readonly facet: string
   readonly itemType: 'mc' | 'numeric'
-  readonly model: '2pl' | '3pl' | '2pl_testlet'
+  /** The parameter row's model; 'gaussian' (Fermi) and 'grm' (situational judgment) take their values from {@link extra}. */
+  readonly model: '2pl' | '3pl' | '2pl_testlet' | 'gaussian' | 'grm'
   readonly a: number
   readonly b: number
   /** Guessing parameter: 1/k for a 4-option item, null for 2PL. */
@@ -52,6 +53,10 @@ export interface FixtureItem {
   readonly attribution?: string | undefined
   /** `items.time_limit_s`. Default 180. */
   readonly timeLimitS?: number | undefined
+  /** More of `item_parameters.extra` (a Gaussian row's lam, d, sigma; a GRM row's thresholds). Default none. */
+  readonly extra?: Readonly<Record<string, unknown>> | undefined
+  /** Store `a` and `b` (or `b` alone) as null, as the bank's Gaussian (both) and GRM (b) rows have them. Default: both stored. */
+  readonly nullParams?: 'ab' | 'b' | undefined
 }
 
 export interface BankSpec {
@@ -313,9 +318,18 @@ export async function loadFixtureBank(db: TestDb, items: readonly FixtureItem[],
   )
   await run(
     `insert into public.item_parameters (item_id, param_version, model, a, b, c, extra, n_resp, se_b)
-     select item_id, $2::text, model, a, b, c, case when expected_time_s is null then '{}'::jsonb else jsonb_build_object('expected_time_s', expected_time_s) end, 0, se_b
-       from jsonb_to_recordset($1::jsonb) as t (item_id text, model text, a double precision, b double precision, c double precision, expected_time_s double precision, se_b double precision)`,
-    items.map((it) => ({ item_id: it.itemId, model: it.model, a: it.a, b: it.b, c: it.c, expected_time_s: it.expectedTimeS ?? null, se_b: it.seB ?? null })),
+     select item_id, $2::text, model, a, b, c, coalesce(extra, '{}'::jsonb) || case when expected_time_s is null then '{}'::jsonb else jsonb_build_object('expected_time_s', expected_time_s) end, 0, se_b
+       from jsonb_to_recordset($1::jsonb) as t (item_id text, model text, a double precision, b double precision, c double precision, expected_time_s double precision, se_b double precision, extra jsonb)`,
+    items.map((it) => ({
+      item_id: it.itemId,
+      model: it.model,
+      a: it.nullParams === 'ab' ? null : it.a,
+      b: it.nullParams === undefined ? it.b : null,
+      c: it.c,
+      expected_time_s: it.expectedTimeS ?? null,
+      se_b: it.seB ?? null,
+      extra: it.extra ?? null,
+    })),
     paramVersion,
   )
 }

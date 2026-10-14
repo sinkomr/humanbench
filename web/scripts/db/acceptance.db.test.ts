@@ -67,6 +67,7 @@ describe('(1) anon cannot select any table', () => {
     await db.rpc(from(ip), 'report_problem', { p_token: s.token, p_kind: 'typo', p_item_id: served, p_detail: 'a typo' })
     await db.rpc(from(ip), 'submit_survey', { p_token: s.token, p_age_band: '25-34', p_english_first: true })
     await db.rpc(from(ip), 'mirror_put', { p_token: s.token, p_save: emptySave(s.anon_id) })
+    expect(await db.rpc(from(ip), 'live_axes', {})).toEqual({ axes: [] }) // an empty bank: no skill has a question
     await db.owner.query(`insert into public.calibration_runs (param_version) values ('p-test')`)
     // and a session long past its token, compacted (M2.5): the archive holds a row too (the first session keeps its live rows)
     const ip2 = freshIp()
@@ -166,10 +167,11 @@ describe('(1) anon cannot select any table', () => {
 
 // ================================================================================ (2) functions
 
-/** The RPCs of the API (ROADMAP M2.1, M2.3), with their argument lists as the catalog prints them. */
+/** The RPCs of the API (ROADMAP M2.1, M2.3; live_axes since M3.11, 2026-10-13), with their argument lists as the catalog prints them. */
 const RPCS: readonly string[] = [
   'public.delete_my_data(p_anon_id text, p_phrase text, p_save jsonb)',
   'public.finish(p_token text, p_flags jsonb)',
+  'public.live_axes()',
   'public.mirror_get(p_anon_id text, p_phrase text)',
   'public.mirror_put(p_token text, p_save jsonb, p_phrase text)',
   'public.next_item(p_token text, p_axes text[])',
@@ -192,7 +194,7 @@ describe('(2) anon can EXECUTE only the whitelisted RPCs', () => {
 
   const withArgs = (f: { schema: string; name: string; args: string }): string => `${f.schema}.${f.name}(${f.args})`
 
-  it('executes exactly the eleven RPCs of the API in public: the same for anon and authenticated, none for service_role', async () => {
+  it('executes exactly the twelve RPCs of the API in public: the same for anon and authenticated, none for service_role', async () => {
     for (const role of ['anon', 'authenticated'] as const) {
       const surface = await exposedSurface(db, role)
       expect(surface.functions.map(withArgs), role).toEqual([...RPCS].sort())
@@ -257,6 +259,7 @@ describe('(2) anon can EXECUTE only the whitelisted RPCs', () => {
     await db.rpc(from(ip), 'submit_survey', { p_token: s.token, p_age_band: '18-24' })
     await db.rpc(from(ip), 'finish', { p_token: s.token })
     await db.rpc(from(ip), 'mirror_put', { p_token: s.token, p_save: emptySave(s.anon_id) })
+    expect(await db.rpc(from(ip), 'live_axes', {})).toEqual({ axes: [] }) // an empty bank: no skill has a question
     // next_item and submit need an item; with an empty bank they answer "done" and "not served", both from the function
     expect(await db.rpc(from(freshIp()), 'next_item', { p_token: (await startSession(db, freshIp())).token })).toMatchObject({ done: true })
     const t = await startSession(db, freshIp())
