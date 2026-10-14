@@ -3,8 +3,9 @@
  * RPC with a reply the contract allows. Never imported by the app.
  */
 
+import type { AxisCode } from '../engine/axes'
 import { createBackendApi } from './api'
-import type { Backend } from './backend'
+import { liveAxesOnce, type Backend } from './backend'
 import { BackendError } from './errors'
 import { ServerSession } from './session'
 import type { RpcTransport } from './transport'
@@ -37,6 +38,7 @@ export const CANNED: Readonly<Record<string, unknown>> = {
   mirror_put: { stored: true, anon_id: ANON, size_bytes: 10, recovery_phrase: 'acorn acrobat action advice agate agenda aisle album alder alert almond amber' },
   mirror_get: { found: false },
   delete_my_data: { deleted: false },
+  live_axes: { axes: [] },
 }
 
 export interface Call {
@@ -92,8 +94,12 @@ export class ScriptedTransport extends FakeTransport {
   }
 }
 
-/** A {@link Backend} over a fake transport, with no waiting between retries. */
-export function fakeBackend(transport: RpcTransport, textAxes: Backend['textAxes'] = []): Backend {
+/**
+ * A {@link Backend} over a fake transport, with no waiting between retries. `liveAxes` is what the server says it has
+ * questions for (its `live_axes` reply; by default the transport's, `CANNED`: none).
+ */
+export function fakeBackend(transport: RpcTransport, liveAxes?: readonly AxisCode[]): Backend {
   const api = createBackendApi(transport, { sleep: () => Promise.resolve() })
-  return { api, host: 'test.example', textAxes, open: (device, save) => ServerSession.start(api, device, save) }
+  if (liveAxes !== undefined && transport instanceof FakeTransport) transport.replies.live_axes = { axes: [...liveAxes] }
+  return { api, host: 'test.example', liveAxes: liveAxesOnce(api), open: (device, save) => ServerSession.start(api, device, save) }
 }

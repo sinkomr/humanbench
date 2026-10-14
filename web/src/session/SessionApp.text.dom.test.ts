@@ -11,11 +11,11 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { SERVER_READY_TEXT, serverReadyText } from '../backend/copy'
 import { CANNED, ScriptedTransport, fakeBackend } from '../backend/testing'
 import type { AxisCode } from '../engine/axes'
-import { TEXT_AXES, sessionOutline } from '../engine/plan-table'
+import { TEXT_AXES, longestOutline, servedPartAxes, sessionOutline } from '../engine/plan-table'
 import { buttonByText, click, fakeDisplay, type FakeDisplay } from '../render/common/testing'
 import { settle } from '../render/dom-testing'
 import { DEMO_TEXT_ITEMS } from '../render/text/demo'
-import { WELCOME_INTRO, welcomeIntro } from './copy'
+import { WELCOME_INTRO, WELCOME_INTRO_PENDING, welcomeIntro } from './copy'
 import { fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
 import { resultsLoader } from './results-loader'
@@ -32,6 +32,12 @@ function open(fake: FakeEnv<FakeDisplay>): void {
   document.body.appendChild(host)
   app = mount(SessionApp, { target: host, props: { env: fake.env } })
   flushSync()
+}
+
+/** Mounts the app and lets the server's list of skills arrive (`live_axes`, asked when the page loads). */
+async function openAndHear(fake: FakeEnv<FakeDisplay>): Promise<void> {
+  open(fake)
+  await tick()
 }
 
 afterEach(() => {
@@ -93,9 +99,12 @@ async function pastMatrix(): Promise<void> {
 const axesAsked = (t: ScriptedTransport): string[] => t.calls.filter((c) => c.fn === 'next_item').map((c) => (JSON.parse(c.body) as { p_axes: string[] }).p_axes.join('+'))
 
 describe('the words about the session before it starts', () => {
-  it('a server that is not asked for text parts: six parts, about 30 minutes, word for word as before', async () => {
+  it('a server that has no text questions: six parts, about 30 minutes, word for word as before, once it has said so', async () => {
     const { fake } = setup([])
     open(fake)
+    // before the server's list arrives: no count and no length (the static shell says the same, vite.config.ts)
+    expect(host.textContent).toContain(WELCOME_INTRO_PENDING)
+    await tick()
     expect(host.textContent).toContain(WELCOME_INTRO)
     expect(WELCOME_INTRO).toContain('The session has six parts and takes about 30 minutes.')
     await (async () => {
@@ -108,27 +117,28 @@ describe('the words about the session before it starts', () => {
     expect(SERVER_READY_TEXT.startsWith('Six short parts, about 30 minutes. ')).toBe(true)
   })
 
-  it('a server asked for every text part: up to twelve parts, about 55 minutes, on the welcome and the ready screen', async () => {
+  it('a server with every served skill: the parts take turns (ROTATION), and the first session reads "up to eight parts, about 45 minutes" on the welcome and the ready screen', async () => {
     const { fake } = setup(TEXT_AXES)
-    open(fake)
-    const outline = sessionOutline(TEXT_AXES)
-    expect(host.textContent).toContain('The session has up to twelve parts and takes about 55 minutes.')
-    expect(host.textContent).toContain(welcomeIntro(outline))
+    await openAndHear(fake)
+    const first = sessionOutline(servedPartAxes([...TEXT_AXES], 0))
+    expect(longestOutline([...TEXT_AXES])).toEqual(first)
+    expect(host.textContent).toContain('The session has up to eight parts and takes about 45 minutes.')
+    expect(host.textContent).toContain(welcomeIntro(first))
     expect(host.textContent).not.toContain('six parts')
     if (app) unmount(app)
     app = undefined
     document.body.innerHTML = ''
     await toReady(fake)
-    expect(host.textContent).toContain(serverReadyText(outline))
-    expect(host.textContent).toContain('Up to twelve short parts, about 55 minutes.')
+    expect(host.textContent).toContain(serverReadyText(first))
+    expect(host.textContent).toContain('Up to eight short parts, about 45 minutes.')
   })
 
-  it('a server asked for the five text skills of phase 1: up to eleven parts, about 45 minutes (what such a session typically takes)', async () => {
+  it('a server with the five text skills of phase 1: the longest turn of the rotation is said, up to nine parts, about 35 minutes', async () => {
     const five: readonly AxisCode[] = ['LR', 'VOC', 'KST', 'KHU', 'KAP']
     const { fake } = setup(five)
-    open(fake)
-    expect(host.textContent).toContain('The session has up to eleven parts and takes about 45 minutes.')
-    expect(host.textContent).toContain(welcomeIntro(sessionOutline(five)))
+    await openAndHear(fake)
+    expect(host.textContent).toContain('The session has up to nine parts and takes about 35 minutes.')
+    expect(host.textContent).toContain(welcomeIntro(longestOutline(five)))
   })
 })
 
@@ -143,19 +153,20 @@ describe('a server with no text questions (the live site today)', () => {
     expect(host.querySelector('.checklist')?.textContent).not.toContain('Logical Reasoning')
   })
 
-  it('asked for them: the same screens follow, no text part is ever announced, and the checklist ends up as the six-part one', async () => {
+  it('listed but with nothing left for this person: the same screens follow, no text part is ever announced, and the checklist ends up as the six-part one', async () => {
     const { t, fake } = setup(TEXT_AXES)
     await toReady(fake)
     await pastMatrix()
-    // Logical Reasoning and STEM Knowledge were asked for, one call each, and neither exists: straight to Spatial.
+    // the first turn of the rotation: Logical Reasoning was asked for, one call, and had nothing: straight to Spatial.
     expect(h1()).toBe('Up next: Spatial')
-    expect(axesAsked(t)).toEqual(['MAT', 'LR', 'KST'])
+    expect(axesAsked(t)).toEqual(['MAT', 'LR'])
     expect(host.textContent).not.toContain('Logical Reasoning skipped')
     expect(host.querySelector('header .status')?.textContent ?? '').toBe('')
     const checklist = host.querySelector('.checklist')?.textContent ?? ''
     expect(checklist).not.toContain('Logical Reasoning')
     expect(checklist).not.toContain('STEM Knowledge')
-    expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toMatch(/of about 45 min$/u) // the twelve parts' typical 54 minutes less the two parts that were not there
+    // the first turn's typical 45 minutes less the part that was not there (Reading Comprehension is still to come)
+    expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuetext')).toMatch(/of about 40 min$/u)
   })
 })
 

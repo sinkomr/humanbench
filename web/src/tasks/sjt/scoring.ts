@@ -69,3 +69,16 @@ export function mostLeastScore(most: number, least: number, key: readonly number
   if (hi === lo) throw new RangeError('the key rates every response the same: no most or least')
   return (((k[m] as number) - lo) + (hi - (k[w] as number))) / (2 * (hi - lo))
 }
+
+/**
+ * The lower edges of the GRM categories of a rating score (the bank's `hb.sjt.scoring.SCORE_BINS` [SPEC]): an SJT item is
+ * a GRM over its binned score, four categories, three thresholds (the bank's `hb.sjt.record`; the server's
+ * `hb.sjt_eval`, supabase/migrations/20261015000200_continuous_items.sql).
+ */
+export const SCORE_BINS = Object.freeze([0.625, 0.75, 0.875] as const)
+
+/** The GRM category 0..3 of a {@link ratingScore}: how many of {@link SCORE_BINS} it reaches. Throws a RangeError outside [0, 1]. */
+export function scoreCategory(score: number): number {
+  if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1) throw new RangeError(`a score is a finite number in [0, 1], got ${String(score)}`)
+  return SCORE_BINS.filter((edge) => score >= edge).length
+}

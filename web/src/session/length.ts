@@ -14,7 +14,7 @@ import { aboutMinutes as aboutPlannedMinutes, sessionOutline, type SessionOutlin
  * eleven parts" and "about 45 minutes", with Reading Comprehension "up to twelve" and "about 55": "up to",
  * because a part the server has no questions for is left out.
  */
-const COUNT_WORDS: readonly string[] = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
+const COUNT_WORDS: readonly string[] = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty']
 const countWord = (n: number): string => COUNT_WORDS[n] ?? String(n)
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 

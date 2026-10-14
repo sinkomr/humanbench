@@ -49,3 +49,5 @@ export const metaDescription = (minutes: number): string =>
   `HumanBench: short tasks of reasoning, memory and speed, about ${minutes} minutes. Your results are shown as a profile with ranges, not as a single score.`
 /** The description of the six-part session, as index.html holds it; a build with served text parts (M3.11 phase 1) is given its own length by `vite.config.ts`. */
 export const META_DESCRIPTION = metaDescription(30)
+/** The description of the online version, whose length depends on the questions the server has (ROADMAP M3.11): no minutes. */
+export const META_DESCRIPTION_ONLINE = 'HumanBench: short tasks of reasoning, memory and speed. Your results are shown as a profile with ranges, not as a single score.'

@@ -7,7 +7,7 @@
    * (routes.ts).
    */
   import { untrack } from 'svelte'
-  import '../render/common/render.css'
+  // The shared renderer styles (render.css) come with the app's entry stylesheet; importing them here again splits it.
   import EmotionRenderer from '../render/emotion/EmotionRenderer.svelte'
   import { demoEmotionItem } from '../tasks/emotion/demo'
   import type { DevRouteProps } from './routes'

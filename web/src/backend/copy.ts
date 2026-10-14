@@ -25,8 +25,12 @@ export const SERVER_GATE_POINTS: readonly string[] = Object.freeze([
 ])
 
 /** Replaces `READY_TEXT` when answers go to a server; the length is the plan's (`session/copy.ts`, M3.11 phase 1). */
-export const serverReadyText = (o: SessionOutline): string =>
-  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After each answer to a question you will say how sure you are.`
+/**
+ * `unrated`: the session has a part whose answers are not rated for confidence (a Fermi range, a rating of responses, an
+ * emotion vignette; `backend/items.ts` `asksConfidence`), so the slider follows most answers, not each one.
+ */
+export const serverReadyText = (o: SessionOutline, unrated = false): string =>
+  `${lengthSentence(o)} Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After ${unrated ? 'most answers' : 'each answer'} to a question you will say how sure you are.`
 export const SERVER_READY_TEXT = serverReadyText(BASE_OUTLINE)
 
 // ----------------------------------------------------------------------------- opening

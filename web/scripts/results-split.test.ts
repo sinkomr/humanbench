@@ -27,9 +27,12 @@ import { WEB } from './css-tokens'
  * welcome-to-run code keeps room to grow. Raised from 135 KB to 140 KB with the passage screen of M3.11
  * phase 2 (about 1.5 KB gzip, measured on the default build: the passage spec, the layout and the run's set
  * rule), which took the entry of this build to 136.0 KB; a static import of the results chunk still trips the
- * bound by a wide margin.
+ * bound by a wide margin. Raised to 142 KB with the remaining families of M3.11 (2026-10-13), which took the entry from
+ * 138.1 to 140.6 KB: the served payload shapes, the logic-game setup on the passage screen, the skills the server has
+ * and the rotation of the parts. Their four renderers and the task modules behind them stay out of the entry
+ * (`src/session/served-renderers.ts`, fetched when a session with one of their parts starts).
  */
-const ENTRY_GZIP_MAX = 140_000
+const ENTRY_GZIP_MAX = 142_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [

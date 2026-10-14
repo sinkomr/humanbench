@@ -7,7 +7,7 @@
    * sent. Never in a production build (routes.ts).
    */
   import { untrack } from 'svelte'
-  import '../render/common/render.css'
+  // The shared renderer styles (render.css) come with the app's entry stylesheet; importing them here again splits it.
   import RatRenderer from '../render/rat/RatRenderer.svelte'
   import { matches } from '../tasks/rat/answers'
   import { DEMO_NOTE, demoRatItem } from '../tasks/rat/demo'

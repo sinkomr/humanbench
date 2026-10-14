@@ -109,22 +109,24 @@ export function fillShell(html: string, text: ShellText): string {
   return head + rest.replace('</body>', `${links.map((l) => `  ${l}\n`).join('')}  </body>`)
 }
 
-/** The words of a build that are not the six-part session's (served text parts, ROADMAP M3.11 phase 1). */
+/** The words of a build that are not the six-part session's (a build with a server, ROADMAP M3.11). */
 export interface LengthText {
-  /** The welcome intro with this build's parts and minutes. */
+  /** The welcome intro of this build. */
   readonly intro: string
-  /** The page description as index.html holds it, and the one with this build's minutes. */
+  /** The page description as index.html holds it, and this build's. */
   readonly meta: { readonly from: string; readonly to: string }
 }
 
 /**
  * The shell's words, read from src/session/copy.ts and src/copy.ts through Vite's module runner. `length` is set
- * for a build with a server that asks for text parts (`textAxesOfBuild`): the intro then states that session's
- * parts and minutes, from the same functions the app uses, so the first paint and the app say the same.
+ * for a build with a server (`isServerBuild`): its session's parts and minutes depend on the questions the server has,
+ * which the app asks it for when the page loads (`live_axes`, ROADMAP M3.11), so the shell says neither: the intro is
+ * the app's own words for that wait (`WELCOME_INTRO_PENDING`) and the page description has no minutes
+ * (`META_DESCRIPTION_ONLINE`). The first paint and the app say the same until the server's answer arrives.
  */
-export async function loadShellText(textAxes: readonly string[] = []): Promise<ShellText & { readonly length?: LengthText }> {
-  const [session, app, plan] = await Promise.all(
-    ['./src/session/copy.ts', './src/copy.ts', './src/engine/plan-table.ts'].map(async (f) => (await runnerImport<Record<string, unknown>>(fileURLToPath(new URL(f, import.meta.url)))).module),
+export async function loadShellText(server = false): Promise<ShellText & { readonly length?: LengthText }> {
+  const [session, app] = await Promise.all(
+    ['./src/session/copy.ts', './src/copy.ts'].map(async (f) => (await runnerImport<Record<string, unknown>>(fileURLToPath(new URL(f, import.meta.url)))).module),
   )
   const all: Record<string, unknown> = { ...app, ...session }
   const out: Record<string, string> = {}
@@ -133,23 +135,18 @@ export async function loadShellText(textAxes: readonly string[] = []): Promise<S
     if (typeof value !== 'string' || value === '') throw new Error(`static shell: ${name} is not a string in src/session/copy.ts or src/copy.ts`)
     out[name] = value
   }
-  if (textAxes.length === 0) return out as ShellText
-  const outline = (plan!.sessionOutline as (axes: readonly string[]) => { parts: number; planned_s: number; upTo: boolean })(textAxes)
-  const intro = (session!.welcomeIntro as (o: typeof outline) => string)(outline)
-  const minutes = (session!.plannedMinutes as (o: typeof outline) => number)(outline)
-  const meta = { from: String(app!.META_DESCRIPTION), to: (app!.metaDescription as (m: number) => string)(minutes) }
+  if (!server) return out as ShellText
+  const intro = String(session!.WELCOME_INTRO_PENDING)
+  const meta = { from: String(app!.META_DESCRIPTION), to: String(app!.META_DESCRIPTION_ONLINE) }
   return { ...(out as ShellText), WELCOME_INTRO: intro, length: { intro, meta } }
 }
 
 /**
- * The text skills a build asks its server for (`src/backend/config.ts`, `VITE_HB_TEXT_AXES`), for the words of
- * the static shell: none without a server, and none while the variable is unset, so that build's index.html is
- * byte for byte the six-part one. The names are checked by the app's own parser.
+ * Whether a build talks to a server (`src/backend/config.ts`: both variables set), for the words of the static shell:
+ * a static build's index.html is byte for byte the six-part one.
  */
-export async function textAxesOfBuild(env: Record<string, string>): Promise<readonly string[]> {
-  if ((env.VITE_HB_SUPABASE_URL ?? '') === '' || (env.VITE_HB_SUPABASE_ANON_KEY ?? '') === '' || (env.VITE_HB_TEXT_AXES ?? '') === '') return []
-  const config = (await runnerImport<Record<string, unknown>>(fileURLToPath(new URL('./src/backend/config.ts', import.meta.url)))).module
-  return (config.parseTextAxes as (raw: string) => { axes: readonly string[] })(env.VITE_HB_TEXT_AXES!).axes
+export function isServerBuild(env: Record<string, string>): boolean {
+  return (env.VITE_HB_SUPABASE_URL ?? '') !== '' && (env.VITE_HB_SUPABASE_ANON_KEY ?? '') !== ''
 }
 
 /**
@@ -172,14 +169,13 @@ function staticShell(env: Record<string, string> = {}): Plugin {
       async handler(html) {
         if (!html.includes(SHELL_MARK)) return html
         // Read once per server or build; a failure is not kept, so the next request tries again.
-        text ??= textAxesOfBuild(env)
-          .then((axes) => loadShellText(axes))
+        text ??= loadShellText(isServerBuild(env))
           .catch((e: unknown) => {
             text = undefined
             throw e
           })
         const words = await text
-        // A build with served text parts states its own length in the page description too (M3.11 phase 1).
+        // A build with a server says no length in the page description either (M3.11).
         const meta = words.length?.meta
         const described = meta === undefined ? html : html.replace(`content="${escapeHtml(meta.from)}"`, `content="${escapeHtml(meta.to)}"`)
         if (meta !== undefined && described === html) throw new Error('index.html: the meta description is not META_DESCRIPTION (src/copy.ts), so its length could not be set')

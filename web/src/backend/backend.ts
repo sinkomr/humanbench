@@ -17,10 +17,13 @@ export interface Backend {
   /** The project's host name, for the one place the app says where the data goes (the privacy page). */
   readonly host: string
   /**
-   * The skills whose served text parts a session asks this server for (ROADMAP M3.11 phase 1;
-   * `config.ts`, `HB_TEXT_AXES`). Empty by default: the session is then the six-part session of M1.
+   * The skills the server has live questions for (`public.live_axes`; ROADMAP M3.11), asked once per page and kept:
+   * a session plans its served parts (`engine/plan-table.ts` TEXT_PARTS) from it, and the welcome screen words the
+   * session's length from it. Null when the server could not say (a failed call, which the next call tries again):
+   * the session is then the six parts of M1 and the welcome screen says no length. No build variable names them
+   * (owner, 2026-10-13: edits go live on push, no switches of their own).
    */
-  readonly textAxes: readonly AxisCode[]
+  liveAxes(): Promise<readonly AxisCode[] | null>
   /**
    * Opens a session for a person who passed the gate. `save` (the one the session starts from, if any)
    * lets the server continue its anon_id and leave out the items it already holds (R-8.1, §7.7).
@@ -32,8 +35,20 @@ export interface BackendDeps {
   /** Replaces the supabase-js transport (tests). */
   readonly transport?: RpcTransport
   readonly api?: ApiOptions
-  /** The skills whose served text parts are on (default none). */
-  readonly textAxes?: readonly AxisCode[]
+}
+
+/** {@link Backend.liveAxes} over `api`: one call while it succeeds, a new one after a failure. */
+export function liveAxesOnce(api: Pick<BackendApi, 'liveAxes'>): () => Promise<readonly AxisCode[] | null> {
+  let kept: Promise<readonly AxisCode[]> | null = null
+  return async () => {
+    kept ??= api.liveAxes()
+    try {
+      return await kept
+    } catch {
+      kept = null
+      return null
+    }
+  }
 }
 
 export function createBackend(config: BackendConfig, deps: BackendDeps = {}): Backend {
@@ -41,14 +56,14 @@ export function createBackend(config: BackendConfig, deps: BackendDeps = {}): Ba
   return {
     api,
     host: new URL(config.url).host,
-    textAxes: Object.freeze([...(deps.textAxes ?? [])]),
+    liveAxes: liveAxesOnce(api),
     open: (device, save) => ServerSession.start(api, device, save),
   }
 }
 
 /** The backend of a selection: null for the static fallback. */
 export function backendOf(selection: BackendSelection, deps: BackendDeps = {}): Backend | null {
-  return selection.kind === 'server' ? createBackend(selection.config, { textAxes: selection.textAxes, ...deps }) : null
+  return selection.kind === 'server' ? createBackend(selection.config, deps) : null
 }
 
 /** The backend of the running page (the build's variables and, in dev and tests, `?hb_backend=`). */
