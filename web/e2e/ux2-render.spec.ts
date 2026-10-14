@@ -22,6 +22,7 @@ import { CORSI_BOARD } from '../src/tasks/span/config'
 import { button, h1 } from './flow'
 import { SEGMENT_TITLES, intoSegment } from './routes'
 import { SessionDriver, type Screen } from './session-driver'
+import { expectWideFont, useWideFont } from './wide-font'
 
 const VIEWPORTS = [
   { name: '390 x 664 (iPhone 13)', width: 390, height: 664 },
@@ -105,15 +106,19 @@ const spread = (values: readonly number[]): number => Math.max(...values) - Math
 
 // ------------------------------------------------------------------------------------ UX-023
 
-for (const size of VIEWPORTS) {
-  test.describe(`Corsi board at ${size.name} (UX-023)`, () => {
+// Each size twice: in the platform's own font, and in the wide one of `wide-font.ts`, so a status line or heading
+// that only fits macOS's narrower system font (and wraps on the Linux runners) fails on any machine.
+for (const size of VIEWPORTS) for (const wide of [false, true]) {
+  test.describe(`Corsi board at ${size.name}${wide ? ', wide font' : ''} (UX-023)`, () => {
     test.use({ viewport: { width: size.width, height: size.height } })
+    if (wide) test.beforeEach(async ({ page }) => useWideFont(page))
 
     test('Done is in the first screen from the first sequence to after Done, and the board does not move', async ({ page }) => {
       test.setTimeout(150_000)
       const touch = test.info().project.use.hasTouch === true
       const press = (target: Locator): Promise<void> => (touch ? target.tap() : target.click())
       await playInto(page, 3, 'corsi')
+      if (wide) await expectWideFont(page)
       // The same screen without the fast-mode banner (production has none), the page at its top: as the verifier measured.
       await page.addStyleTag({ content: '.banner[role=note] { display: none !important; }' })
       await page.evaluate(() => window.scrollTo(0, 0))
