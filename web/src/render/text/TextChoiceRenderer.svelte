@@ -20,6 +20,8 @@
   - The whole option row is the target (at least 44 px high); the chosen one is marked by a thicker frame
     and an inverted letter, not by colour alone. Long words and long options wrap inside the column, at
     320 px and with a wide font, and the reading column is capped at a comfortable line length.
+  - In a session the optional confidence scale (`common/answer-slot.ts`) sits between the options and Confirm,
+    inside the form: Confirm sends both with one press.
   - Nothing option-specific is in the DOM but the position (`value`, the letter) and the option's own text:
     no data attribute, class or id depends on anything else (`text.dom.test.ts`). No animation. The wording
     never says whether a choice is right (§10).
@@ -30,6 +32,7 @@
   // component is both in the entry chunk and imported by a dev demo, which made the bundler split that stylesheet
   // out and link it after the entry's (scripts/dev-routes.test.ts keeps it in the entry stylesheet).
   import { CONFIRM_LABEL, optionIndexForKey, optionLetter } from '../choice/keys'
+  import { getAnswerSlot } from '../common/answer-slot'
   import { browserTiming, type RendererProps } from '../common/props'
   import { TEXT_MC_COPY } from './copy'
   import { splitTextStem, type TextMcResponse, type TextMcSpec } from './spec'
@@ -42,13 +45,15 @@
     readonly onshown?: (onsetMs: number) => void
     /** Part of the shared renderer props (`visual.ts`); never called: text always draws. */
     readonly onunavailable?: () => void
-    /** Blocks responding (e.g. while the confidence slider is up). */
+    /** Blocks responding (e.g. while the question cannot be shown). */
     readonly disabled?: boolean
   }
 
   let { spec, onrespond, onshown, timing, disabled = false }: Props = $props()
 
   const uid = $props.id()
+  /** The session's control before Confirm (the optional confidence scale, owner decision 2026-10-13), or none. */
+  const slot = getAnswerSlot()
   const stem = $derived(splitTextStem(spec.stem))
   /** What is read before the question: the stimulus, then the stem's paragraphs before its last. */
   const reading = $derived([...spec.stimulus, ...stem.lead])
@@ -75,6 +80,12 @@
     event.preventDefault()
     submit()
   }
+
+  // The answer as it stands, for a time-out (owner decision 2026-10-13): the option chosen, until it is submitted.
+  $effect(() => {
+    const chosen = selected
+    if (!submitted) slot?.draft?.(chosen)
+  })
 
   // Character keys are handled on the form, so they act only while focus is inside it (WCAG 2.1.4).
   $effect(() => {
@@ -129,6 +140,9 @@
         {/each}
       </div>
     </fieldset>
+    {#if slot?.snippet}
+      {@render slot.snippet()}
+    {/if}
     <p class="hb-status" aria-live="polite">{submitted ? TEXT_MC_COPY.recorded : ''}</p>
     <button type="submit" class="hb-btn hb-primary" disabled={locked || selected === null}>{CONFIRM_LABEL}</button>
   </form>

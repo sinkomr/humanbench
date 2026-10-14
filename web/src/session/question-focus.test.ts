@@ -36,12 +36,12 @@ describe('QuestionFocus: where focus goes on a new screen (UX-REVIEW D21, provis
     expect(f.enter('q:c', facts('item', 1))).toEqual({ target: 'heading', number: 1 })
   })
 
-  it('the confidence slider is the screen of its question: the same key gives the same plan, whatever the phase', () => {
+  it('the same key gives the same plan, however often it is asked', () => {
     const f = new QuestionFocus()
     f.enter('q:a', facts('item', 1))
     const second = f.enter('q:b', facts('item', 1))
     expect(second.number).toBe(2)
-    expect(f.enter('q:b', facts('confidence', 1))).toBe(second)
+    expect(f.enter('q:b', facts('item', 1))).toBe(second)
     expect(f.enter('q:b', facts('item', 1))).toBe(second)
     // ... and it did not count the question twice.
     expect(f.enter('q:c', facts('item', 1)).number).toBe(3)
@@ -125,7 +125,7 @@ describe('QuestionFocus: properties over random sessions', () => {
       fc.property(
         fc.array(
           fc.oneof(
-            fc.record({ phase: fc.constantFrom<RunPhase>('item', 'confidence', 'loading'), part: fc.integer({ min: 0, max: 5 }), problem: fc.boolean() }),
+            fc.record({ phase: fc.constantFrom<RunPhase>('item', 'loading'), part: fc.integer({ min: 0, max: 5 }), problem: fc.boolean() }),
             fc.record({ phase: fc.constantFrom<RunPhase>('interstitial', 'block', 'break_offer', 'on_break', 'finished'), part: fc.integer({ min: 0, max: 5 }), problem: fc.constant(false) }),
           ),
           { maxLength: 60 },
@@ -134,7 +134,7 @@ describe('QuestionFocus: properties over random sessions', () => {
           const f = new QuestionFocus()
           screens.forEach((s, i) => {
             const plan = f.enter(`k${i}`, facts(s.phase, s.part, s.problem))
-            if (s.phase === 'item' || s.phase === 'confidence') {
+            if (s.phase === 'item') {
               expect(plan.number).toBeGreaterThanOrEqual(1)
               expect(plan.target).toBe(plan.number === 1 ? 'heading' : 'item')
             } else {
@@ -154,7 +154,7 @@ describe('QuestionFocus: properties over random sessions', () => {
         parts.forEach((part, i) => {
           const key = `q:${i}`
           const first = f.enter(key, facts('item', part))
-          expect(f.enter(key, facts('confidence', part))).toBe(first)
+          expect(f.enter(key, facts('loading', part))).toBe(first)
           expect(f.enter(key, facts('item', part + 1))).toBe(first)
         })
       }),

@@ -126,6 +126,8 @@ export async function playSession(
     /** Sends this instead of the key-derived option (any JSON, also one outside the answer space); `decide` still says whether it was meant to be right. */
     readonly respond?: (item: FixtureItem, seq: number, right: boolean) => unknown
     readonly clientFlags?: (seq: number) => Record<string, unknown> | undefined
+    /** The confidence sent with the answer (0 to 100), or null / undefined for none (the optional scale left unset). */
+    readonly confidence?: (item: FixtureItem, seq: number) => number | null | undefined
     /**
      * Restricts selection to these axes, as the client does with the current segment (M2.2 `p_axes`); a function
      * says it per item (index = how many have been answered so far), undefined = any axis.
@@ -147,12 +149,14 @@ export async function playSession(
     const response = options.respond !== undefined ? options.respond(it, next.seq, right) : right ? (it.key.index as number) : ((it.key.index as number) + 1) % it.nOptions
     await ageExposures(db, started.session_id, 20)
     const flags = options.clientFlags?.(next.seq)
+    const conf = options.confidence?.(it, next.seq)
     const out = await db.rpc<{ ack: boolean; seq: number; next?: Next }>(ctx, 'submit', {
       p_token: started.token,
       p_item_id: next.item.item_id,
       p_response: response,
       p_rt_ms: 5000,
       ...(flags === undefined ? {} : { p_client_flags: flags }),
+      ...(conf === undefined || conf === null ? {} : { p_confidence: conf }),
       ...axesFor(i + 1),
     })
     answered.push({ seq: next.seq, itemId: next.item.item_id, right })

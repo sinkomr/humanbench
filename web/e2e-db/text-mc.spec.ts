@@ -77,22 +77,22 @@ async function playTextPart(page: Page, title: string): Promise<number> {
   let n = 0
   for (;;) {
     await expect(h1(page)).toHaveText(new RegExp(`^(${title.replace(/[&]/gu, '\\&')}|Up next: .+|Time for a break\\?|Session .+)$`), { timeout: 30_000 })
-    const radios = page.locator(`${ROOT} input[type="radio"]`)
-    const slider = page.getByRole('slider')
+    const radios = page.locator(`${ROOT} .options input[type="radio"]`)
+    const points = page.locator(`${ROOT} fieldset[data-confidence] input[type="radio"]`)
     await expect(radios.first().or(h1(page).filter({ hasText: /^(Up next: |Time for a break|Session )/ }))).toBeVisible({ timeout: 30_000 })
     if ((await h1(page).textContent()) !== title) return n
     await expect(radios.first()).toBeEnabled()
-    await expect(page.locator(`${ROOT} legend`)).toContainText('Made-up test question')
+    await expect(page.locator(`${ROOT} fieldset:not([data-confidence]) > legend`)).toContainText('Made-up test question')
     await radios.nth(n % 4).check()
-    await page.locator(ROOT).getByRole('button', { name: 'Confirm', exact: true }).click()
-    await expect(slider).toBeVisible()
-    await slider.press('ArrowRight')
+    // the optional confidence scale on the question (owner decision 2026-10-13): one press sends both
+    const name = (await points.first().getAttribute('name')) ?? ''
+    await points.nth(3).check()
     const answered = page.waitForResponse((r) => r.url().endsWith('/rpc/submit'))
-    await button(page, 'Continue').click()
+    await page.locator(ROOT).getByRole('button', { name: 'Confirm', exact: true }).click()
     await answered
     n++
     // The next question, or the end of the part: wait for this question to be gone.
-    await expect(slider).toBeHidden({ timeout: 30_000 })
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0, { timeout: 30_000 })
     if (n > TEXT_PER_AXIS + 2) throw new Error(`${title} did not end`)
   }
 }
@@ -115,10 +115,10 @@ test.describe('the plain pool: no text item on the server (the live project toda
         // One real question of a part the pool does have, answered through the real server.
         await button(page, 'Start').click()
         const box = page.locator('form.entry').getByRole('textbox')
+        const name = (await page.locator('form.entry fieldset[data-confidence] input[type="radio"]').first().getAttribute('name')) ?? ''
         await box.fill('1')
-        await box.press('Enter')
-        await expect(page.getByRole('slider')).toBeVisible()
-        await button(page, 'Continue').click()
+        await box.press('Enter') // one press: the scale left unset
+        await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0, { timeout: 30_000 })
         await expect(page.locator('form.entry').getByRole('textbox')).toBeVisible()
         await button(page, 'Skip Matrix & Series').or(button(page, 'Skip')).first().click()
         await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()

@@ -7,7 +7,7 @@
  *   and a wide font (the Linux CI's), text at 200%, and the server's text shown as text, never as markup;
  * - the session with a fake project (`fake-server.ts`, which reads `p_axes` as the real server does):
  *   a pool without the text skills gives the six-part session whether or not the page asks for them, and a
- *   pool with them gives the parts, the questions, the slider, "Report a problem", and a profile with the
+ *   pool with them gives the parts, the questions, the confidence scale, "Report a problem", and a profile with the
  *   skill on it.
  *
  * `e2e-db/` runs the same session against the real local database.
@@ -90,7 +90,7 @@ test.describe('the text question screen (made-up questions)', () => {
 
   test('shows the server’s text as text: markup in it makes no element and runs nothing', async ({ page }) => {
     await openTextMc(page, 2)
-    await expect(page.locator(`${ROOT} legend`)).toContainText('<b>placeholder</b>')
+    await expect(page.locator(`${ROOT} fieldset:not([data-confidence]) > legend`)).toContainText('<b>placeholder</b>')
     await expect(page.locator(`${ROOT} .reading`)).toContainText('<script>window.__hb_text_mc_injected = true</script>')
     await expect(page.getByRole('radio').last()).toHaveAccessibleName(/<img src=x onerror=/)
     expect(await page.locator(`${ROOT} script, ${ROOT} img, ${ROOT} b, ${ROOT} i`).count()).toBe(0)
@@ -158,15 +158,16 @@ async function skipPart(page: Page): Promise<void> {
   await page.locator('section.confirm').getByRole('button', { name: /^Skip / }).click()
 }
 
-/** Answer the text question on screen with option `index` and rate the confidence. */
+/** Answer the text question on screen with option `index`, set the optional confidence scale on every other one, and confirm: one press. */
 async function answerText(page: Page, index = 0): Promise<void> {
-  const radio = page.locator(`${ROOT} input[type="radio"]`).nth(index)
+  const radio = page.locator(`${ROOT} .options input[type="radio"]`).nth(index)
   await expect(radio).toBeEnabled()
   await radio.check()
+  const points = page.locator(`${ROOT} fieldset[data-confidence] input[type="radio"]`)
+  const name = (await points.first().getAttribute('name')) ?? ''
+  if (index % 2 === 0) await points.nth(3).check()
   await page.locator(ROOT).getByRole('button', { name: 'Confirm', exact: true }).click()
-  await expect(page.getByRole('slider')).toBeVisible()
-  await page.getByRole('slider').press('ArrowRight')
-  await button(page, 'Continue').click()
+  await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
 }
 
 const axesAsked = (server: FakeServer): string[] => server.of('next_item').map((c) => (c.body.p_axes as string[]).join('+'))
@@ -197,10 +198,11 @@ test.describe('a pool without the text skills gives the six-part session', () =>
     const server = new FakeServer({ pools: { MAT: [seriesWire(1)] }, live: ALL_SERVED })
     await server.attach(page)
     await page.goto(`./${SERVER_QUERY}`)
-    // the parts take turns (plan-table.ts ROTATION): the first turn is Logical Reasoning and Reading Comprehension
-    await expect(page.locator('main')).toContainText('The session has up to eight parts and takes about 45 minutes.')
+    // the parts take turns (plan-table.ts ROTATION): the first turn is Logical Reasoning and Reading Comprehension; the words
+    // state the longest turn (Fermi, Emotion Reading, word links and Arts & Practical: ten parts)
+    await expect(page.locator('main')).toContainText('The session has up to ten parts and takes about 45 minutes.')
     await toReadyOnline(page, SERVER_QUERY)
-    await expect(page.locator('main')).toContainText('Up to eight short parts, about 45 minutes.')
+    await expect(page.locator('main')).toContainText('Up to eight short parts, about 45 minutes.') // this session's own turn
     await button(page, 'Begin').click()
     const seen: string[] = []
     for (let i = 0; i < 6; i++) {
@@ -220,7 +222,7 @@ test.describe('a pool without the text skills gives the six-part session', () =>
 })
 
 test.describe('a pool with made-up text questions', () => {
-  test('runs the part: "Up next", the question as text, the slider, a report, six answers, and the skill on the profile', async ({ page }) => {
+  test('runs the part: "Up next", the question as text, the confidence scale, a report, six answers, and the skill on the profile', async ({ page }) => {
     const server = new FakeServer({ pools: { VOC: textPool('VOC', 6) }, eap: { VOC: { mean: 0.3, sd: 0.6, n: 6 } } })
     await server.attach(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -242,7 +244,7 @@ test.describe('a pool with made-up text questions', () => {
     await button(page, 'Start').click()
 
     await expect(h1(page)).toHaveText('Vocabulary & Verbal Analogies')
-    await expect(page.locator(`${ROOT} legend`)).toHaveText(DEMO_TEXT_ITEMS[0]!.payload.stem)
+    await expect(page.locator(`${ROOT} fieldset:not([data-confidence]) > legend`)).toHaveText(DEMO_TEXT_ITEMS[0]!.payload.stem)
     await expect(page.locator(`${ROOT} .words`)).toHaveText([...DEMO_TEXT_ITEMS[0]!.payload.options])
     await expectNoSeriousAxe(page)
     expect(axesAsked(server)).toEqual(['VOC']) // the question shown is the one that was fetched
@@ -254,15 +256,17 @@ test.describe('a pool with made-up text questions', () => {
     await expect(page.locator('.report [role="status"]')).toContainText('Thank you')
     expect(server.of('report_problem')[0]!.body).toMatchObject({ p_kind: 'typo', p_item_id: 'i:tst:voc:e2e1' })
 
-    // The slider of a four-option question; the answer goes out as a position, and nothing says right or wrong.
-    await page.locator(`${ROOT} input[type="radio"]`).nth(2).check()
-    await page.locator(ROOT).getByRole('button', { name: 'Confirm', exact: true }).click()
-    await expect(page.locator('.confidence')).toContainText('With 4 options, guessing would be right about 25% of the time.')
+    // The optional scale of a four-option question, in the question, from 25% ("a guess"); one press sends the answer
+    // as a position with the confidence, and nothing says right or wrong.
+    await page.locator(`${ROOT} .options input[type="radio"]`).nth(2).check()
+    const scale = page.locator(`${ROOT} fieldset[data-confidence]`)
+    await expect(scale.getByRole('radio')).toHaveCount(5)
+    await expect(scale.getByRole('radio', { name: '25%, a guess' })).toBeVisible()
+    await scale.getByRole('radio').nth(3).check()
     await expectNoSeriousAxe(page)
-    await page.getByRole('slider').press('ArrowRight')
-    await button(page, 'Continue').click()
-    await expect(page.locator(`${ROOT} legend`)).toHaveText(DEMO_TEXT_ITEMS[1]!.payload.stem.split('\n\n')[1]!)
-    expect(server.of('submit')[0]!.body).toMatchObject({ p_item_id: 'i:tst:voc:e2e1', p_response: 2 })
+    await page.locator(ROOT).getByRole('button', { name: 'Confirm', exact: true }).click()
+    await expect(page.locator(`${ROOT} fieldset:not([data-confidence]) > legend`)).toHaveText(DEMO_TEXT_ITEMS[1]!.payload.stem.split('\n\n')[1]!)
+    expect(server.of('submit')[0]!.body).toMatchObject({ p_item_id: 'i:tst:voc:e2e1', p_response: 2, p_confidence: 81 })
     await expect(page.locator('body')).not.toContainText(/\bincorrect\b|\bcorrect\b|wrong answer/i)
 
     for (let i = 1; i < 6; i++) await answerText(page, i % 4)
@@ -283,7 +287,7 @@ test.describe('a pool with made-up text questions', () => {
     await expectNoSeriousAxe(page)
   })
 
-  test('the text part fits a phone’s width in a wide font, from "Up next" to the slider', async ({ page }) => {
+  test('the text part fits a phone’s width in a wide font, from "Up next" to the confidence scale', async ({ page }) => {
     const server = new FakeServer({ pools: { LR: [textWire(1, 'i:tst:lr:e2e1', DEMO_TEXT_ITEMS[3]!.payload), textWire(2, 'i:tst:lr:e2e2', DEMO_TEXT_ITEMS[2]!.payload)] } })
     await server.attach(page)
     await useWideFont(page)
@@ -300,15 +304,15 @@ test.describe('a pool with made-up text questions', () => {
     await expectWideFont(page)
     await expectNoSidewaysScroll(page, 'Up next: Logical Reasoning')
     await button(page, 'Start').click()
-    await expect(page.locator(`${ROOT} input[type="radio"]`).first()).toBeEnabled()
+    await expect(page.locator(`${ROOT} .options input[type="radio"]`).first()).toBeEnabled()
     await expectNoSidewaysScroll(page, 'a text question with long options')
     await expectNoClippedText(page, 'a text question with long options', ROOT)
-    await page.locator(`${ROOT} input[type="radio"]`).nth(1).check()
+    await page.locator(`${ROOT} .options input[type="radio"]`).nth(1).check()
+    await page.locator(`${ROOT} fieldset[data-confidence] input[type="radio"]`).nth(4).check()
+    await expectNoSidewaysScroll(page, 'the confidence scale under a text question')
+    await expectNoClippedText(page, 'the confidence scale under a text question', `${ROOT} fieldset[data-confidence]`)
     await page.locator(ROOT).getByRole('button', { name: 'Confirm', exact: true }).click()
-    await expect(page.getByRole('slider')).toBeVisible()
-    await expectNoSidewaysScroll(page, 'the slider under a text question')
-    await button(page, 'Continue').click()
-    await expect(page.locator(`${ROOT} input[type="radio"]`)).toHaveCount(6)
+    await expect(page.locator(`${ROOT} .options input[type="radio"]`)).toHaveCount(6)
     await expectNoSidewaysScroll(page, 'a text question with a text to read')
   })
 })

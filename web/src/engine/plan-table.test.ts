@@ -65,12 +65,14 @@ describe('the text parts table', () => {
       expect(p.share_s).toBeLessThanOrEqual(p.sets === undefined ? 360 : 540)
     }
     expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.share_s]))).toEqual({ LR: 360, KST: 130, VOC: 120, RC: 540, EMO: 240, CRE: 130, KHU: 130, KAP: 130, LG: 450, FER: 360 })
-    // what a part typically takes is its share and the step after each answer: never less than the share, never far over
+    // what a part typically takes is its share and a moment around each answer: never less than the share, never far over
     for (const p of TEXT_PARTS) {
-      expect(p.typical_s, p.id).toBeGreaterThanOrEqual(p.share_s)
+      // (a part of passages ends after its passages, which may be inside its share: Reading Comprehension, 526 of 540)
+      if (p.sets === undefined) expect(p.typical_s, p.id).toBeGreaterThanOrEqual(p.share_s)
+      else expect(p.typical_s, p.id).toBeGreaterThanOrEqual(p.share_s - 30)
       expect(p.typical_s - p.share_s, p.id).toBeLessThanOrEqual(40)
     }
-    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.typical_s]))).toEqual({ LR: 389, KST: 149, VOC: 139, RC: 549, EMO: 252, CRE: 149, KHU: 149, KAP: 149, LG: 469, FER: 372 })
+    expect(Object.fromEntries(TEXT_PARTS.map((p) => [p.axis, p.typical_s]))).toEqual({ LR: 369, KST: 151, VOC: 132, RC: 526, EMO: 243, CRE: 151, KHU: 151, KAP: 151, LG: 446, FER: 363 })
     // Reading Comprehension is counted in passages and Logic Games in games: two each
     expect(TEXT_PARTS.filter((p) => p.sets !== undefined).map((p) => [p.axis, p.sets])).toEqual([['RC', RC_PASSAGES], ['LG', LG_GAMES]])
     expect(RC_PASSAGES).toBe(2)
@@ -91,9 +93,10 @@ describe('the text parts table', () => {
   })
 
   it('says a session’s length from what it typically takes, not from the plan’s sum: "about 30" for six parts, "about 45" for eleven, "about 55" for twelve', () => {
-    // the six parts typically run about a minute over their plan (the step after each answer; re-measured 2026-10-13
-    // with the simulator calibrated to a real session, the reactive memory blocks and the minimums of six: it was 1880)
-    expect(A15_TYPICAL_S).toBe(1769)
+    // the six parts typically run about a minute over their plan (re-measured 2026-10-13 with the simulator calibrated to
+    // a real session, the reactive memory blocks and the minimums of six: it was 1880; then without the follow-up
+    // confidence step, owner decision 2026-10-13: it was 1769)
+    expect(A15_TYPICAL_S).toBe(1760)
     expect(A15_TYPICAL_OVER_S).toBe(A15_TYPICAL_S - A15_PLANNED_S)
     expect(A15_TYPICAL_OVER_S).toBeGreaterThan(0)
     const typical = (axes: readonly AxisCode[]): number => sessionOutline(axes).typical_s

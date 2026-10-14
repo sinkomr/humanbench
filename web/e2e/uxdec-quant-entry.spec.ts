@@ -20,7 +20,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { FORMAT_HINTS, FORMAT_NOTES, THOUSANDS_NOTE } from '../src/render/common/entry-copy'
 import { REVIEW_URL, devServerAbsent } from './dev-server'
-import { button, h1 } from './flow'
+import { h1 } from './flow'
 import { SEGMENT_TITLES, intoSegment } from './routes'
 
 /** Index of the Quantitative part in the session (`routes.ts` SEGMENT_TITLES). */
@@ -45,15 +45,17 @@ async function formatOnScreen(page: Page): Promise<WholeFormat | null> {
   return null
 }
 
-/** Answer the item on screen with "1", rate it, and wait for the next item of the part. */
+/** The name the confidence scale's points of the question on screen share: new with every question. */
+async function questionName(page: Page): Promise<string> {
+  return (await page.locator('form.entry fieldset[data-confidence] input[type=radio]').first().getAttribute('name')) ?? ''
+}
+
+/** Answer the item on screen with "1" (one press: the scale left unset), and wait for the next item of the part. */
 async function answerAndGoOn(page: Page): Promise<void> {
   const box = page.locator('form.entry').getByRole('textbox')
+  const name = await questionName(page)
   await enter(box, '1')
-  const slider = page.getByRole('slider')
-  await expect(slider).toBeVisible()
-  await slider.fill('60')
-  await button(page, 'Continue').click()
-  await expect(slider).toHaveCount(0)
+  await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
   await expect(h1(page), 'the Quantitative part ended before an item whose hint names whole numbers').toHaveText(SEGMENT_TITLES[QUANT]!)
   await expect(page.locator('form.entry')).toBeVisible()
 }
@@ -76,25 +78,25 @@ test.describe('quant number entry (UX-079)', () => {
 
     const box = entry.getByRole('textbox')
     const note = entry.locator('.hb-note')
+    const question = page.locator(`input[name="${await questionName(page)}"]`)
     for (const text of ['1,500', '12,345.5']) {
       await enter(box, text)
       await expect(note, text).toHaveText(THOUSANDS_NOTE)
       await expect(box, text).toHaveAttribute('aria-invalid', 'true')
       await expect(box, text).toHaveValue(text)
-      await expect(page.getByRole('slider'), `${text} was submitted`).toHaveCount(0)
+      await expect(question, `${text} was submitted`).toHaveCount(5)
     }
 
     if (format === 'integer') {
       // "3,5" is read as 3.5, which a whole-number item does not take; "35,0" is 35.
       await enter(box, '3,5')
       await expect(note).toHaveText(FORMAT_NOTES.integer)
-      await expect(page.getByRole('slider')).toHaveCount(0)
+      await expect(question).toHaveCount(5)
       await enter(box, '35,0')
     } else {
       await enter(box, '3,5')
     }
-    await expect(page.getByRole('slider')).toBeVisible()
-    await expect(note).toHaveText('')
+    await expect(question).toHaveCount(0) // accepted: the question went, in one press
   })
 
   test('on the review page (fixed items): "3,5" is accepted on a decimal or fraction item, "1,500" refused on a whole-number item', async ({ page }) => {

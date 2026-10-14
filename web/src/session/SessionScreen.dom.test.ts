@@ -1,7 +1,7 @@
 import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isOwnKey } from '../render/common/focus'
-import { buttonByText, click, fakeDisplay, press } from '../render/common/testing'
+import { buttonByText, click, fakeDisplay, press, typeInto } from '../render/common/testing'
 import { settle } from '../render/dom-testing'
 import { fakeEnv } from './dom-support'
 import SessionScreen from './SessionScreen.svelte'
@@ -11,6 +11,8 @@ import type { CatAnswer, CatNext, CatSource } from '../backend/session'
 import type { AxisCode } from '../engine/axes'
 import { Bot, TEST_DEVICE } from './bot'
 import { SessionRun } from './run'
+import { confidenceLevels } from './calibration'
+import { answerText } from './practice'
 import { BREAK_OFFER_TEXT, INTERSTITIAL_CLOCK } from './copy'
 import type { AutosaveStatus } from './persist'
 
@@ -65,48 +67,165 @@ describe('the running session screen (M1.15)', () => {
     expect(bar.getAttribute('aria-valuenow')).toBe('0')
   })
 
-  it('a counted item shows its confidence slider after the answer: range from the chance level to 100, no feedback', async () => {
-    const bot = new Bot({ sessionId: 's_UISESSION00003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
+  /** The question's own form on screen (multiple choice or typed entry). */
+  const answerForm = (): HTMLFormElement => host.querySelector<HTMLFormElement>('form.choice, form.entry')!
+  const scale = (): HTMLFieldSetElement | null => host.querySelector<HTMLFieldSetElement>('fieldset[data-confidence]')
+  const points = (): HTMLInputElement[] => [...(scale()?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [])]
+
+  /** Gives the answer in the page, without submitting: an option, or the typed value. */
+  function fillAnswer(bot: Bot): void {
+    const full = bot.fullItem(bot.view().item!.item_id)
+    const form = answerForm()
+    if (full.options_count !== undefined) click(form.querySelector('.options input[type="radio"]'))
+    else typeInto(form.querySelector('input.box'), answerText(full))
+  }
+
+  /** The question's own submit button (Confirm or Submit). */
+  const submitButton = (): HTMLButtonElement => answerForm().querySelector<HTMLButtonElement>('button[type="submit"]')!
+
+  async function firstQuestion(id: string): Promise<Bot> {
+    const bot = new Bot({ sessionId: id, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     open(bot)
     click(buttonByText(host, 'Start'))
     await settle(3)
-    const item = bot.view().item!
-    expect(host.querySelector('input[type="range"]')).toBeNull()
-    const full = bot.fullItem(item.item_id)
-    bot.run.itemResponded(full.options_count === undefined ? '1' : 0)
-    flushSync()
-    const range = host.querySelector<HTMLInputElement>('input[type="range"]')!
-    expect(range).not.toBeNull()
-    expect(range.min).toBe(String(full.options_count === undefined ? 0 : Math.ceil(100 / full.options_count)))
-    expect(range.max).toBe('100')
-    expect(host.querySelector('legend')?.textContent).toBe('How sure are you that your answer is right?')
-    expect(document.activeElement).toBe(range)
-    expect(range.getAttribute('aria-valuetext')).toMatch(/^\d+% sure$/)
+    expect(bot.view().phase).toBe('item')
+    return bot
+  }
+
+  it('a counted question carries the optional confidence scale above its submit button, unset and saying so; nothing about right or wrong (owner decision 2026-10-13)', async () => {
+    const bot = await firstQuestion('s_UISESSION00003')
+    const full = bot.fullItem(bot.view().item!.item_id)
+    const s = scale()!
+    expect(s).not.toBeNull()
+    // In the question's form, before its submit button, inside the question's region.
+    expect(s.closest('form')).toBe(answerForm())
+    expect(s.compareDocumentPosition(submitButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(host.querySelector('.item-region')!.contains(s)).toBe(true)
+    // Five points from the chance level to 100, none chosen, and the words say it is not set.
+    const floor = full.options_count === undefined ? 0 : Math.ceil(100 / full.options_count)
+    expect(points().map((p) => Number(p.value))).toEqual(confidenceLevels(floor))
+    expect(points().filter((p) => p.checked)).toHaveLength(0)
+    expect(s.querySelector('[data-confidence-unset]')?.textContent).toBe('Not set')
+    expect(s.querySelector('legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('How sure are you? Optional')
+    expect(points()[0]!.getAttribute('aria-label')).toBe(`${floor}%, a guess`)
+    expect(points().at(-1)!.getAttribute('aria-label')).toBe('100%, certain')
+    expect(s.getAttribute('aria-describedby')).toBe(s.querySelector('.hb-sr-only')?.id)
+    // The scale does not take focus: the question (its heading, as the first of the part) has it.
+    expect(document.activeElement?.tagName).toBe('H1')
     expect(host.textContent).not.toMatch(/that was correct|not correct/i)
-    // Moving the slider and continuing records that confidence.
-    range.value = '77'
-    range.dispatchEvent(new Event('input', { bubbles: true }))
-    flushSync()
-    expect(host.querySelector('output')?.textContent).toBe('77%')
-    click(buttonByText(host, 'Continue'))
-    expect(bot.run.sessionState().responses[0]![5]).toBe(77)
+    // No old slider, no Continue step.
     expect(host.querySelector('input[type="range"]')).toBeNull()
+    expect([...host.querySelectorAll('button')].map((b) => b.textContent?.trim())).not.toContain('Continue')
   })
 
-  it('Continue on a slider that was never moved records the answer as not rated, and counts it (UX-063)', async () => {
-    const bot = new Bot({ sessionId: 's_UISESSION00022', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-    open(bot)
-    click(buttonByText(host, 'Start'))
+  it('left unset, one press of the submit button sends the answer with no confidence (null), and the next question comes; no flag', async () => {
+    const bot = await firstQuestion('s_UISESSION00022')
+    const first = bot.view().item!.item_id
+    fillAnswer(bot)
+    click(submitButton())
     await settle(3)
-    const full = bot.fullItem(bot.view().item!.item_id)
-    bot.run.itemResponded(full.options_count === undefined ? '1' : 0)
-    flushSync()
-    expect(host.querySelector('input[type="range"]')).not.toBeNull()
-    click(buttonByText(host, 'Continue')) // straight away: the default is allowed, but it is no rating
     const st = bot.run.sessionState()
+    expect(st.responses).toHaveLength(1)
     expect(st.responses[0]![5]).toBeNull()
-    expect(st.flags.confidence_untouched_n).toBe(1)
-    expect(bot.run.result().calibration).toBeNull()
+    expect(st.flags.confidence_untouched_n).toBeUndefined()
+    expect(bot.view().phase).toBe('item')
+    expect(bot.view().item!.item_id).not.toBe(first)
+    // The next question's scale starts unset again.
+    expect(points().filter((p) => p.checked)).toHaveLength(0)
+  })
+
+  it('set, the same one press sends the answer and the confidence', async () => {
+    const bot = await firstQuestion('s_UISESSION00023')
+    const levels = points().map((p) => Number(p.value))
+    click(points()[3])
+    expect(scale()!.querySelector('[data-confidence-unset]')).toBeNull()
+    expect(buttonByText(scale()!, 'Clear')).toBeTruthy()
+    fillAnswer(bot)
+    click(submitButton())
+    expect(bot.run.sessionState().responses[0]![5]).toBe(levels[3])
+  })
+
+  it('can be changed and cleared before submitting: cleared, nothing is sent, and focus goes back to the scale', async () => {
+    const bot = await firstQuestion('s_UISESSION00024')
+    click(points()[1])
+    click(points()[4])
+    expect(points()[4]!.checked).toBe(true)
+    click(buttonByText(scale()!, 'Clear'))
+    expect(points().filter((p) => p.checked)).toHaveLength(0)
+    expect(scale()!.querySelector('[data-confidence-unset]')?.textContent).toBe('Not set')
+    expect(document.activeElement).toBe(points()[0])
+    expect(points()[0]!.checked).toBe(false) // focus alone sets nothing
+    fillAnswer(bot)
+    click(submitButton())
+    expect(bot.run.sessionState().responses[0]![5]).toBeNull()
+  })
+
+  it('by keyboard: a key typed on the scale is not an answer shortcut, and Enter on it submits answer and confidence in one press; a repeated Enter does not', async () => {
+    const bot = await firstQuestion('s_UISESSION00025')
+    const full = bot.fullItem(bot.view().item!.item_id)
+    fillAnswer(bot)
+    const chosen = full.options_count === undefined ? null : [...answerForm().querySelectorAll<HTMLInputElement>('.options input[type="radio"]')].findIndex((r) => r.checked)
+    const p = points()[2]!
+    p.focus()
+    click(p) // what Space or an arrow key does to a radio
+    // '2' would pick option B in the answer form; on the scale it does nothing to the answer.
+    const k = press('2', p)
+    expect(k.defaultPrevented).toBe(false)
+    if (chosen !== null) expect([...answerForm().querySelectorAll<HTMLInputElement>('.options input[type="radio"]')].findIndex((r) => r.checked)).toBe(chosen)
+    expect(bot.run.sessionState().responses).toHaveLength(0)
+    press('Enter', p, { repeat: true })
+    expect(bot.run.sessionState().responses).toHaveLength(0)
+    press('Enter', p)
+    expect(bot.run.sessionState().responses).toHaveLength(1)
+    expect(bot.run.sessionState().responses[0]![5]).toBe(Number(p.value))
+  })
+
+  it('at the time-out, the answer chosen or typed in the page, and the confidence set, are sent as they stand (owner decision 2026-10-13)', async () => {
+    const bot = await firstQuestion('s_UISESSION00027')
+    const v = bot.view()
+    fillAnswer(bot)
+    click(points()[4])
+    expect(v.phase).toBe('item')
+    bot.wait(bot.run.itemTime()!.leftS + 1) // to the question's own limit, from its first frame
+    bot.run.tick()
+    flushSync()
+    const last = bot.run.sessionState().responses.at(-1)!
+    expect(last[2]).not.toBeNull()
+    expect(last[5]).toBe(100)
+    expect(last[6]).toEqual({ submitted_at_timeout: true })
+    expect(status()).toBe('That question ran out of time. Your answer was sent as it stood.')
+  })
+
+  it('at the time-out, a typed text the question cannot read, or nothing at all, sends nothing', async () => {
+    for (const id of ['s_UISESSION00028', 's_UISESSION00029', 's_UISESSION00030']) {
+      if (app) unmount(app)
+      app = undefined
+      document.body.innerHTML = ''
+      const bot = await firstQuestion(id)
+      const v = bot.view()
+      const box = host.querySelector<HTMLInputElement>('form.entry input.box')
+      if (box !== null) typeInto(box, '#?!')
+      expect(v.phase).toBe('item')
+      bot.wait(bot.run.itemTime()!.leftS + 1)
+      bot.run.tick()
+      flushSync()
+      const last = bot.run.sessionState().responses.at(-1)!
+      expect(last[2]).toBeNull()
+      expect(last).toHaveLength(6)
+    }
+  })
+
+  it('a value set on one question is never sent with the next', async () => {
+    const bot = await firstQuestion('s_UISESSION00026')
+    click(points()[4])
+    bot.run.itemResponded(bot.fullItem(bot.view().item!.item_id).options_count === undefined ? '1' : 0) // answered elsewhere (the run directly)
+    await settle(3)
+    fillAnswer(bot)
+    click(submitButton())
+    const r = bot.run.sessionState().responses
+    expect(r).toHaveLength(2)
+    expect(r[0]![5]).toBeNull()
+    expect(r[1]![5]).toBeNull()
   })
 
   it('offers the skip for the axis on screen, and asks before skipping; keeping going returns focus', async () => {
@@ -506,13 +625,11 @@ describe('focus on a new screen (UX-REVIEW D21, a provisional default, option B;
   const region = (): HTMLElement => host.querySelector<HTMLElement>('.item-region')!
   const active = (): Element | null => document.activeElement
 
-  /** Answer the question on screen, rate it, and wait for what follows. */
+  /** Answer the question on screen (one press, the scale left unset), and wait for what follows. */
   async function answerAndRate(bot: Bot): Promise<void> {
     const full = bot.fullItem(bot.view().item!.item_id)
     bot.run.itemResponded(full.options_count === undefined ? '1' : 0)
     flushSync()
-    expect(active()).toBe(host.querySelector('input[type="range"]')) // the slider takes focus, as before
-    click(buttonByText(host, 'Continue'))
     await settle(2)
   }
 
@@ -562,22 +679,20 @@ describe('focus on a new screen (UX-REVIEW D21, a provisional default, option B;
     }
   })
 
-  it('the confidence panel keeps the question and its region: the slider has focus there, and the next question goes to its region, not back to the slider or the heading', async () => {
+  it('the scale is part of the question and its region; setting it keeps focus there, and the next question goes to its region', async () => {
     const bot = twoParts('s_UISESSION00032')
     open(bot)
     click(buttonByText(host, 'Start'))
     await settle(2)
-    const full = bot.fullItem(bot.view().item!.item_id)
     const before = region()
-    bot.run.itemResponded(full.options_count === undefined ? '1' : 0)
+    const point = host.querySelector<HTMLInputElement>('fieldset[data-confidence] input[type="radio"]')!
+    expect(before.contains(point)).toBe(true)
+    point.focus()
+    click(point)
     flushSync()
-    expect(bot.view().phase).toBe('confidence')
-    expect(region()).toBe(before) // the same screen: nothing was remounted, and the region holds the slider
-    expect(region().contains(host.querySelector('input[type="range"]'))).toBe(true)
-    expect(active()).toBe(host.querySelector('input[type="range"]'))
-    click(buttonByText(host, 'Continue'))
-    await settle(2)
-    expect(host.querySelector('input[type="range"]')).toBeNull()
+    expect(region()).toBe(before) // nothing was remounted
+    expect(active()).toBe(point)
+    await answerAndRate(bot)
     expect(active()).toBe(region())
     expect(region()).not.toBe(before)
   })
@@ -814,12 +929,11 @@ describe('focus in a served part, which waits between its questions (UX-REVIEW D
     return run
   }
 
-  /** Answer the question on screen as far as its confidence form, and press Continue: the run asks the server for the next one. */
+  /** Answer the question on screen (one press): the run asks the server for the next one. */
   async function rate(run: SessionRun): Promise<void> {
     run.itemShown(0)
     run.itemResponded('4')
     flushSync()
-    click(buttonByText(host, 'Continue'))
     await flushPromises()
   }
 

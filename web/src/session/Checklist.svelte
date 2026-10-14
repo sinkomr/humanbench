@@ -3,7 +3,7 @@
   clusters of this session in the order they are met (A7), each with a text status, so nothing
   depends on colour or a symbol. A cluster that spans two segments (Speed: reaction time first,
   processing and reading speed last) is "Partly done" in between. The Estimation cluster has no
-  part of its own (the confidence slider after each answer measures it, A15), so it has a row that
+  part of its own (the optional confidence scale on each question measures it, A15), so it has a row that
   says so instead of being listed as missing. Clusters the session does not measure yet are listed
   once, at the end. Only the cluster of the part that comes next in run order says "Up next" (the
   heading of an interstitial says it too); every other cluster still to come says "Later" (UX-007a).

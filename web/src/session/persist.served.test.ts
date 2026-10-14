@@ -62,8 +62,7 @@ async function answerOne(h: ReturnType<typeof setup>): Promise<void> {
   await tick()
   h.run.itemShown(h.t.ms)
   h.t.ms += 5000
-  h.run.itemResponded('4')
-  h.run.confirmConfidence(60)
+  h.run.itemResponded('4', 60)
   h.p.schedule()
 }
 
@@ -189,8 +188,7 @@ describe('a run with a server in the save library', () => {
     await tick()
     h.run.itemShown(h.t.ms)
     h.t.ms += 4000
-    h.run.itemResponded('9')
-    h.run.confirmConfidence(50)
+    h.run.itemResponded('9', 50)
     const save = h.p.currentSave()
     const [device, served] = [save.sessions.find((s) => s.session_id === 's_LOCALSESSION001')!, save.sessions.find((s) => s.session_id === SERVER_ID)!]
     expect(device.responses.map((t) => t[0].split(':')[1])).toEqual(['rt_simple', 'rt_choice4']) // the timed tasks, with their scorer records

@@ -385,6 +385,33 @@ describe('rescoreSessions: the calibration observation (§7.1, M1.15 review)', (
     expect(rescoreSessions(saveOf([session(S1, 1, flipped)])).theta[AXIS_INDEX.CAL]).toBeCloseTo(rescoreSessions(saveOf([session(S1, 1, tuples)])).theta[AXIS_INDEX.CAL]!, 12)
   })
 
+  it('an old save from the follow-up slider (ratings at any whole percent, the untouched counter in its flags) is valid and scores as before (owner decision 2026-10-13)', () => {
+    const tuples = answers(items).map((t, i) => (i === 3 ? ([t[0], t[1], t[2], t[3], t[4], null] as ResponseTuple) : rated(t, 51 + i)))
+    const old = session(S1, 1, tuples)
+    const save = saveOf([{ ...old, flags: { ...old.flags, confidence_untouched_n: 1 } }])
+    assertValidSave(save)
+    const r = rescoreSessions(save)
+    const cal = calibrationObservation(tuples.filter((t) => t[5] !== null).map((t) => ({ pct: t[5] as number, correct: t[3] as 0 | 1 })))!
+    expect(cal).not.toBeNull()
+    expect(r.n_scored).toBe(items.length + 1)
+    expect(r.theta[AXIS_INDEX.CAL]).toBeCloseTo(rescoreSessions(saveOf([old])).theta[AXIS_INDEX.CAL]!, 12)
+  })
+
+  it('property: unrated answers (null) anywhere among the rated ones change nothing about the calibration (only rated answers count)', () => {
+    fc.assert(
+      fc.property(fc.array(fc.boolean(), { minLength: items.length, maxLength: items.length }), (blank) => {
+        const tuples = answers(items)
+        const some = tuples.map((t, i) => (blank[i] ? ([t[0], t[1], t[2], t[3], t[4], null] as ResponseTuple) : t))
+        const ratedOnly = some.filter((t) => t[5] !== null)
+        const r = rescoreSessions(saveOf([session(S1, 1, some)]))
+        const expected = calibrationObservation(ratedOnly.map((t) => ({ pct: t[5] as number, correct: t[3] as 0 | 1 })))
+        expect(r.eap.CAL !== undefined).toBe(expected !== null)
+        expect(r.n_scored).toBe(items.length + (expected === null ? 0 : 1))
+      }),
+      { numRuns: 40 },
+    )
+  })
+
   it('is per session: two sessions of a few ratings each are two separate short sessions, not one CAL observation', () => {
     const half = Math.floor(n / 2)
     const r = rescoreSessions(saveOf([session(S1, 1, answers(items.slice(0, half))), session(S2, 8, answers(items.slice(half, 2 * half)))]))

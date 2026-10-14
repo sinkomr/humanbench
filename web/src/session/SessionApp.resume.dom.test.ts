@@ -126,8 +126,7 @@ describe('continuing an unfinished session (UX-064)', () => {
     await settle(2)
     const item = run.view().item!
     expect(run.view().unavailable).toBe(false)
-    run.itemResponded(item.options_count === undefined ? '1' : 0)
-    run.confirmConfidence(run.view().confidence!.startPct)
+    run.itemResponded(item.options_count === undefined ? '1' : 0, 50)
     run.finishEarly()
     flushSync()
     await vi.waitFor(() => expect(h1()).toBe('Session complete'))

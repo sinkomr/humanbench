@@ -106,10 +106,8 @@ async function playTextParts(api: BackendApi, answer: (itemId: string, options: 
       expect(item.family).toBe(TEXT_MC_RENDERER)
       shown.push(item.item_id)
       run.itemShown(t)
-      t += 15_000
-      run.itemResponded(answer(item.item_id, item.options_count!))
-      t += 2000
-      run.confirmConfidence(run.view().confidence!.startPct)
+      t += 15_000 + 2000 // the answer, and a tap on the optional confidence scale (one press sends both)
+      run.itemResponded(answer(item.item_id, item.options_count!), 100)
     } else throw new Error(`unexpected phase ${v.phase}`)
   }
   expect(run.phase).toBe('finished')
@@ -198,7 +196,10 @@ describe('a pool with made-up text items for three of the five skills', () => {
     const save = saveOf(server, fin.session, shown)
     expect((await api.verifySave(save)).sessions).toEqual([{ sessionId: server.sessionId, status: 'verified', reason: null }])
     const est = await api.rescore(save)
-    expect(Object.keys(est.eap).sort()).toEqual([...PRESENT].sort())
+    // every answer went with its confidence set (100%), and there are more than ten: the server publishes Calibration too
+    // (owner decision 2026-10-13; migration 20261015000100_server_calibration.sql)
+    expect(Object.keys(est.eap).sort()).toEqual([...PRESENT, 'CAL'].sort())
+    expect(est.eap.CAL!.n).toBe(shown.length)
     for (const k of PRESENT) {
       expect(est.eap[k]!.n, k).toBe(counts[k])
       expect(est.eap[k]!.sd, k).toBeGreaterThan(0)

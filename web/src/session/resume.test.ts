@@ -172,8 +172,8 @@ describe('finding the unfinished session (UX-064)', () => {
 
 describe('older autosaves without done_ flags (UX-064)', () => {
   it('a part counts as finished when a later part has answers', () => {
-    const bot = played((v) => v.phase === 'confidence' && v.segment?.id === 'spatial')
-    bot.step() // the rating: the first Spatial answer is recorded
+    const bot = played((v) => v.phase === 'item' && v.segment?.id === 'spatial')
+    bot.step() // the first Spatial answer is recorded
     const save = legacy(saveOf(bot))
     const u = findUnfinished(save, START_MS + 60_000)!
     expect(u.done).toEqual(['rt', 'matrix_series'])

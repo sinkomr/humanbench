@@ -8,7 +8,7 @@
  * - Logic Games: the setup is a region of its own beside (or above) the question, an opening and a list of rules, the
  *   same element across the questions of a game; the questions are rated for confidence.
  * - Fermi Estimation, Emotion Reading and Creative Thinking take one turn of the rotation together: the estimate goes
- *   out as {value, unit, low, high} and the ratings as four numbers, with no confidence slider after either; the word
+ *   out as {value, unit, low, high} and the ratings as four numbers, with no confidence scale on either; the word
  *   links are rated for confidence.
  * Each screen passes axe and fits a 320 px window without sideways scrolling.
  */
@@ -79,13 +79,15 @@ test.describe('Logic Games, served', () => {
       ;(el as unknown as { mark: string }).mark = 'kept'
     })
     for (let q = 0; q < 3; q++) {
-      const radios = page.locator('div.hb-render.text-mc input[type="radio"]')
+      const radios = page.locator('div.hb-render.text-mc .options input[type="radio"]')
       await expect(radios.first()).toBeEnabled()
       await radios.nth(q).check()
+      // the optional confidence scale is on the question (owner decision 2026-10-13); one press sends both
+      const points = page.locator('div.hb-render.text-mc fieldset[data-confidence] input[type="radio"]')
+      const name = (await points.first().getAttribute('name')) ?? ''
+      await points.nth(3).check()
       await page.locator('div.hb-render.text-mc').getByRole('button', { name: 'Confirm', exact: true }).click()
-      await expect(page.getByRole('slider')).toBeVisible()
-      await page.getByRole('slider').press('ArrowRight')
-      await button(page, 'Continue').click()
+      await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
       if (q < 2) {
         await expect(page.locator('[data-set-position]')).toHaveText(`Question ${q + 2} of 3 about this setup`)
         expect(await page.locator('section.passage').evaluate((el) => (el as unknown as { mark?: string }).mark)).toBe('kept')
@@ -125,7 +127,7 @@ test.describe('Fermi Estimation, Emotion Reading and Creative Thinking, served (
     await server.attach(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await toReadyOnline(page)
-    await expect(page.locator('main')).toContainText('After most answers to a question you will say how sure you are.')
+    await expect(page.locator('main')).toContainText('Most questions also have a small optional scale for how sure you are of your answer.')
     await button(page, 'Begin').click()
 
     // Emotion Reading comes after Working Memory: a vignette, then a situational judgment, in turn
@@ -150,21 +152,22 @@ test.describe('Fermi Estimation, Emotion Reading and Creative Thinking, served (
         await emo.locator('input[type="radio"]').nth(1).check()
         await emo.getByRole('button', { name: 'Confirm', exact: true }).click()
       }
-      await expect(page.getByRole('slider')).toHaveCount(0)
+      await expect(page.locator('fieldset[data-confidence]')).toHaveCount(0) // not rated: no scale
     }
 
-    // Creative Thinking (word links): a typed word, then the slider
+    // Creative Thinking (word links): a typed word, and the optional confidence scale with it
     await upTo(page, 'Creative Thinking')
     await button(page, 'Start').click()
     for (let n = 1; n <= 6; n++) {
       const rat = page.locator('section.rat')
       await expect(rat.locator('.cues li')).toHaveCount(3)
-      await rat.locator('input').fill('made-up word')
-      await rat.getByRole('button', { name: 'Confirm', exact: true }).click()
-      await expect(page.getByRole('slider')).toBeVisible()
+      await rat.locator('input[type="text"]').fill('made-up word')
+      const points = rat.locator('fieldset[data-confidence] input[type="radio"]')
+      const name = (await points.first().getAttribute('name')) ?? ''
+      await points.nth(3).check()
       if (n === 1) await expectNoSeriousAxe(page)
-      await page.getByRole('slider').press('ArrowRight')
-      await button(page, 'Continue').click()
+      await rat.getByRole('button', { name: 'Confirm', exact: true }).click()
+      await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
     }
 
     // Fermi Estimation, at the end: three numbers and a unit
@@ -182,8 +185,8 @@ test.describe('Fermi Estimation, Emotion Reading and Creative Thinking, served (
         await expectNoSeriousAxe(page)
         await expectNoSidewaysScroll(page, 'a Fermi question')
       }
+      await expect(page.locator('fieldset[data-confidence]')).toHaveCount(0) // the range is the statement: no scale
       await fermi.getByRole('button', { name: 'Submit', exact: true }).click()
-      await expect(page.getByRole('slider')).toHaveCount(0)
     }
     await expect(h1(page)).toHaveText(/^Session /, { timeout: 20_000 })
     // ("correct" alone is a word of the results' practice note: "less to correct")

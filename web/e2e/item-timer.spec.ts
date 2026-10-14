@@ -10,7 +10,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { ITEM_TIMER_LABEL, ITEM_TIMER_WARN } from '../src/session/copy'
 import { expectNoAriaAttributeIssues, expectNoSeriousAxe } from './axe'
-import { button, h1 } from './flow'
+import { answerItem, button, h1 } from './flow'
 import { SessionDriver } from './session-driver'
 
 const TIMER = '[data-item-timer]'
@@ -81,28 +81,51 @@ test.describe('the question timer', () => {
     await expect(page.locator('[data-item-timer-status]')).toHaveText('')
   })
 
-  test('is gone while the confidence slider is up (the slider is not timed) and back on the next question', async ({ page, isMobile }) => {
+  test('one press sends the answer (and the optional confidence) and the next question shows a fresh timer of its own', async ({ page, isMobile }) => {
     await toFirstQuestion(page, isMobile)
-    const choice = page.locator('form.choice')
-    const entry = page.locator('form.entry')
-    const slider = page.getByRole('slider')
-    if ((await choice.count()) > 0) {
-      await choice.getByRole('radio').first().check()
-      await button(page, 'Confirm').click()
-    } else {
-      const box = entry.getByRole('textbox')
-      await box.fill('1')
-      await box.press('Enter')
-      if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-        await box.fill('A') // a letter series
-        await box.press('Enter')
-      }
-    }
-    await expect(page.getByRole('slider')).toBeVisible()
-    await expect(page.locator(TIMER)).toHaveCount(0)
-    await slider.press('ArrowRight')
-    await button(page, 'Continue').click()
     await expect(page.locator(TIMER)).toBeVisible()
+    const first = await page.locator('fieldset[data-confidence] input[type=radio]').first().getAttribute('name')
+    await answerItem(page, 2)
+    // no step in between: the next question is up, with its own scale (unset) and its timer
+    await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
+    await expect(page.locator(`input[name="${first}"]`)).toHaveCount(0)
+    await expect(page.locator('fieldset[data-confidence] input[type=radio]:checked')).toHaveCount(0)
+    await expect(page.locator(TIMER)).toBeVisible()
+    await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'false')
+  })
+
+  test('at the time-out, what is chosen or typed is sent as the answer, with the confidence if set; with nothing chosen or typed, nothing is sent (owner decision 2026-10-13)', async ({ page, isMobile }) => {
+    await toFirstQuestion(page, isMobile)
+    const stored = (): Promise<unknown[][]> =>
+      page.evaluate(() => {
+        const key = Object.keys(localStorage).find((k) => k.startsWith('hb:save:v1:')) ?? ''
+        return (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][] }[] }).sessions?.[0]?.responses ?? []
+      })
+    // the first question: an answer given and not sent, the confidence set; then the time runs out
+    const form = page.locator('form.choice, form.entry').first()
+    const choice = (await form.getAttribute('class'))?.split(/\s+/).includes('choice') === true
+    if (choice) await form.locator('.options input[type=radio]').first().check()
+    else {
+      const box = form.getByRole('textbox')
+      await box.fill((await box.getAttribute('class'))?.split(/\s+/).includes('letter') ? 'A' : '1')
+    }
+    await form.locator('fieldset[data-confidence] input[type=radio]').nth(4).check()
+    await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'true', { timeout: 20_000 })
+    await expect(page.locator('[data-item-timer-hint]')).toHaveText('When the time is up, what you have chosen or typed is sent as your answer.')
+    await expect(page.locator('header .status').first()).toHaveText('That question ran out of time. Your answer was sent as it stood.', { timeout: 20_000 })
+    await expect.poll(async () => (await stored()).length).toBe(1)
+    const first = (await stored())[0]!
+    expect(first[2]).not.toBeNull() // the answer as it stood
+    expect(first[3] === 0 || first[3] === 1).toBe(true) // scored as any answer
+    expect(first[5]).toBe(100) // the confidence set
+    expect(first[6]).toEqual({ submitted_at_timeout: true })
+    // the next question: nothing chosen or typed, so its time-out sends nothing
+    await expect(page.locator(TIMER)).toHaveAttribute('data-warn', 'false')
+    await expect.poll(async () => (await stored()).length, { timeout: 30_000 }).toBe(2)
+    const second = (await stored())[1]!
+    expect(second[2]).toBeNull()
+    expect(second[5]).toBeNull()
+    expect(second.length).toBe(6)
   })
 
   test('nothing about it moves: no animation and no transition, with or without reduced motion', async ({ page, isMobile }) => {

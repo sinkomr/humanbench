@@ -115,10 +115,8 @@ async function playReading(api: BackendApi, answer: (itemId: string, options: nu
       expect(v.passage).not.toBeNull()
       shown.push({ id: item.item_id, passageKey: v.passage!.passageKey, position: v.passage!.position, attribution: v.passage!.attribution })
       run.itemShown(t)
-      t += 40_000
-      run.itemResponded(answer(item.item_id, item.options_count!))
-      t += 2000
-      run.confirmConfidence(run.view().confidence!.startPct)
+      t += 40_000 + 2000 // the answer, and a tap on the optional confidence scale (one press sends both)
+      run.itemResponded(answer(item.item_id, item.options_count!), 100)
     } else throw new Error(`unexpected phase ${v.phase}`)
   }
   expect(run.phase).toBe('finished')

@@ -12,7 +12,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { ROTATION_UNAVAILABLE } from '../src/render/rotation/copy'
 import { BREAK_OFFER_TEXT, INTERSTITIAL_CLOCK } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
-import { button, h1, loadSave, overflow, simulatedSave, toReady, unloadIsGuarded } from './flow'
+import { answerItem, button, h1, loadSave, overflow, simulatedSave, toReady, unloadIsGuarded } from './flow'
 
 const SE = { width: 320, height: 568 } as const
 
@@ -46,48 +46,40 @@ async function toFirstItem(page: Page): Promise<void> {
 }
 
 /**
- * Answer the question on screen, as far as the confidence slider (which is then on screen). `low`: the Confirm
- * button is at the bottom edge of the screen when it is pressed, as it is for a person who has just read a tall
- * question, so the slider and its Continue button are laid out below the fold.
+ * Give the answer to the question on screen without sending it: an option, or the typed value (a letter series wants
+ * a letter). Returns the question's own submit button and the name its confidence scale's points share (new with
+ * every question, so its absence says the question has gone).
  */
-async function answerUntilSlider(page: Page, low = false): Promise<void> {
-  const choice = page.locator('form.choice')
-  const entry = page.locator('form.entry')
-  await expect(choice.or(entry)).toBeVisible()
-  const slider = page.getByRole('slider')
-  if ((await choice.count()) > 0) {
-    await choice.getByRole('radio').first().check()
-    if (low) await button(page, 'Confirm').evaluate((el) => el.scrollIntoView({ block: 'end' }))
-    await button(page, 'Confirm').click()
-  } else {
-    const box = entry.getByRole('textbox')
-    await box.fill('1')
-    await box.press('Enter')
-    if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-      await box.fill('A') // a letter series
-      await box.press('Enter')
-    }
+async function fillAnswer(page: Page): Promise<{ submit: Locator; name: string }> {
+  const form = page.locator('form.choice, form.entry').first()
+  await expect(form).toBeVisible()
+  if ((await form.getAttribute('class'))?.split(/\s+/).includes('choice')) await form.locator('.options input[type=radio]').first().check()
+  else {
+    const box = form.getByRole('textbox')
+    await box.fill((await box.getAttribute('class'))?.split(/\s+/).includes('letter') ? 'A' : '1')
   }
-  await expect(slider).toBeVisible()
+  const name = (await form.locator('fieldset[data-confidence] input[type=radio]').first().getAttribute('name')) ?? ''
+  expect(name).not.toBe('')
+  return { submit: form.locator('button[type=submit]'), name }
 }
 
 const scrollY = (page: Page): Promise<number> => page.evaluate(() => window.scrollY)
 
 // ============================================================================ UX-001, UX-014
 
-test.describe('a new question opens at its heading, and its Continue is in reach (UX-001, UX-014)', () => {
+test.describe('a new question opens at its heading, and its button and confidence scale are in reach (UX-001, UX-014)', () => {
   for (const [name, size] of [['iPhone 13', undefined], ['iPhone SE', SE]] as const) {
     test.describe(name, () => {
       if (size !== undefined) test.use({ viewport: size })
 
-      test('after Continue on the confidence panel the next question has its heading in view, at the top of the page', async ({ page, isMobile }) => {
+      test('after the one press that sends an answer the next question has its heading in view, at the top of the page', async ({ page, isMobile }) => {
         test.skip(isMobile !== true, 'the phone engines are where a new screen kept the old scroll offset')
         await toFirstItem(page)
-        await answerUntilSlider(page)
+        const { submit, name } = await fillAnswer(page)
         // The page sits at the bottom, as it does after a tap on a button low on the screen.
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
-        await button(page, 'Continue').tap()
-        await expect(page.getByRole('slider')).toHaveCount(0)
+        await submit.tap()
+        await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
         await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
         await expect(h1(page)).toBeInViewport()
         await expect.poll(() => scrollY(page)).toBe(0)
@@ -109,63 +101,46 @@ test.describe('a new question opens at its heading, and its Continue is in reach
         await expect.poll(() => scrollY(page)).toBe(0)
       })
 
-      test('"Continue" is in the viewport as soon as the slider has focus, whatever the question', async ({ page, isMobile }) => {
-        test.skip(isMobile !== true, 'a phone is where the form fell below the fold')
+      test('the confidence scale is compact: with the submit button in view, the whole scale is in view above it, whatever the question', async ({ page, isMobile }) => {
+        test.skip(isMobile !== true, 'a phone is where a form falls below the fold')
         await toFirstItem(page)
         for (let n = 0; n < 3; n++) {
-          await answerUntilSlider(page, true)
-          // The whole button, not a corner of it.
-          await expect(button(page, 'Continue')).toBeInViewport({ ratio: 1 })
-          await expect(page.getByRole('slider')).toBeFocused()
-          await button(page, 'Continue').tap()
-          await expect(page.getByRole('slider')).toHaveCount(0)
+          const { submit, name } = await fillAnswer(page)
+          await submit.evaluate((el) => el.scrollIntoView({ block: 'end' }))
+          const scale = page.locator('fieldset[data-confidence]')
+          await expect(scale).toBeInViewport({ ratio: 1 })
+          await expect(submit).toBeInViewport({ ratio: 0.95 }) // scrolled to its own bottom edge: a sub-pixel may fall outside
+          // one row of pills, each a 44 px target; the whole scale under 150 px tall
+          const height = (await scale.boundingBox())!.height
+          expect(height).toBeLessThan(150)
+          await scale.getByRole('radio').nth(n + 1).tap()
+          await submit.tap()
+          await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
           await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
         }
-        await answerUntilSlider(page)
         await expectNoSeriousAxe(page)
       })
     })
   }
 
-  test('a held Enter does not rate the question; the slider’s track is an edge you can see', async ({ page, isMobile }) => {
+  test('Enter on the scale sends the answer; a held Enter does not; the points have an edge you can see', async ({ page, isMobile }) => {
     test.skip(isMobile === true, 'a phone has no held keys')
     await toFirstItem(page)
-    await answerUntilSlider(page)
-    const slider = page.getByRole('slider')
-    await expect(slider).toBeFocused()
-    // Auto-repeat of the key that answered the question: the rating is not submitted by it (a fresh press is).
-    const prevented = await slider.evaluate((el) => {
+    const { name } = await fillAnswer(page)
+    const point = page.locator('fieldset[data-confidence] input[type=radio]').nth(2)
+    await point.check()
+    // Auto-repeat of a key held down: nothing is sent by it (a fresh press is).
+    const prevented = await point.evaluate((el) => {
       const repeat = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
       el.dispatchEvent(repeat)
       return repeat.defaultPrevented
     })
     expect(prevented).toBe(true)
-    await expect(slider).toBeVisible()
-    // The track has a border of at least 3:1 against the page (WCAG 1.4.11). The track is a pseudo-element, and the browsers do
-    // not report its computed style (Chromium answers with its defaults: a black "none" border), so the check reads the
-    // author rule for the track from the style sheets, resolves its colour variable on the slider as the scheme has it, and
-    // compares that with the page colour behind the slider. Reading the pseudo's computed style passed by accident on macOS.
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(5)
+    // Each point's pill has a border of at least 3:1 against the page (WCAG 1.4.11), in both schemes; unset, no pill is filled.
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      const edge = await slider.evaluate((el) => {
-        const rules: CSSStyleRule[] = []
-        const visit = (list: CSSRuleList): void => {
-          for (const rule of Array.from(list)) {
-            if (rule instanceof CSSStyleRule && /slider-runnable-track/.test(rule.selectorText) && el.matches(rule.selectorText.replace(/::[\w-]+$/, ''))) rules.push(rule)
-            else if ('cssRules' in rule) visit((rule as CSSGroupingRule).cssRules)
-          }
-        }
-        for (const sheet of Array.from(document.styleSheets)) visit(sheet.cssRules)
-        const own = getComputedStyle(el)
-        const css = rules.at(-1)?.style
-        // `border: 1px solid var(--r-border)`: with a variable in it the browser keeps the shorthand whole, so read it as text.
-        const border = (css?.getPropertyValue('border') || css?.getPropertyValue('border-top') || '').trim()
-        const parts = /^(\S+)\s+(\S+)\s+(.+)$/.exec(border)
-        const width = parts?.[1] ?? css?.getPropertyValue('border-top-width') ?? ''
-        const style = parts?.[2] ?? css?.getPropertyValue('border-top-style') ?? ''
-        let color = parts?.[3] ?? css?.getPropertyValue('border-top-color') ?? ''
-        const variable = /^var\((--[\w-]+)/.exec(color)
-        if (variable !== null) color = own.getPropertyValue(variable[1]!).trim()
+      const edge = await page.locator('fieldset[data-confidence] .pill').first().evaluate((el) => {
         const canvas = document.createElement('canvas')
         canvas.width = canvas.height = 1
         const ctx = canvas.getContext('2d')!
@@ -183,20 +158,22 @@ test.describe('a new question opens at its heading, and its Continue is in reach
           })
           return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
         }
-        let behind: Element | null = el
+        let behind: Element | null = el.parentElement
         let bg = 'rgba(0, 0, 0, 0)'
         while (behind !== null && /rgba\(.*,\s*0\)$|transparent/.test(bg)) {
           bg = getComputedStyle(behind).backgroundColor
           behind = behind.parentElement
         }
-        const [a, b] = [lum(rgb(color)), lum(rgb(bg))]
-        return { found: rules.length, width, style, color, bg, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) }
+        const s = getComputedStyle(el)
+        const [a, b] = [lum(rgb(s.borderTopColor)), lum(rgb(bg))]
+        return { style: s.borderTopStyle, width: s.borderTopWidth, color: s.borderTopColor, bg, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) }
       })
-      expect(edge.found, 'the author rule for the slider track is in the style sheets').toBeGreaterThan(0)
-      expect(edge.style, 'the track has a drawn edge').toBe('solid')
-      expect(Number.parseFloat(edge.width), 'the track edge is at least 1 px').toBeGreaterThanOrEqual(1)
-      expect(edge.ratio, `track edge ${edge.color} against the page ${edge.bg} in ${scheme}`).toBeGreaterThanOrEqual(3)
+      expect(edge.style).toBe('solid')
+      expect(Number.parseFloat(edge.width)).toBeGreaterThanOrEqual(1)
+      expect(edge.ratio, `pill edge ${edge.color} against the page ${edge.bg} in ${scheme}`).toBeGreaterThanOrEqual(3)
     }
+    await point.press('Enter')
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
   })
 })
 
@@ -220,8 +197,8 @@ test.describe('the header of a running session is small, and its notices do not 
       await expect(page.getByRole('button', { name: 'Skip Matrix & Series', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Finish early', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Skip Matrix & Series', exact: true })).toHaveText(/^Skip/)
-      await answerUntilSlider(page)
-      expect(await bottom(), 'confidence').toBeLessThanOrEqual(120)
+      await page.locator('fieldset[data-confidence] input[type=radio]').nth(2).check()
+      expect(await bottom(), 'question with its confidence set').toBeLessThanOrEqual(120)
       await overflow(page, 'the header at 320 px')
     })
   })
@@ -254,8 +231,7 @@ test.describe('practice and the confirmation panels (UX-004, UX-005a)', () => {
     test.skip(isMobile === true, 'the keyboard path is the desktop engines’ (keyboard-session.spec.ts has the whole of it)')
     await toReady(page)
     await button(page, 'Try practice questions first').click()
-    await answerUntilSlider(page)
-    await button(page, 'Continue').click()
+    await answerItem(page)
     // The feedback has focus, and the hidden status line holds the verdict (which differs from the visible words).
     await expect(page.locator('section.feedback')).toBeFocused()
     await expect(page.locator('p.hb-sr-only[role="status"]')).toHaveText(/^Your answer was (not )?correct\. The right answer is /)
@@ -493,9 +469,7 @@ test.describe('leaving a session by accident (UX-011)', () => {
     await button(page, 'Start').click()
     await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
     expect(await unloadIsGuarded(page)).toBe(false)
-    await answerUntilSlider(page)
-    await button(page, 'Continue').click()
-    await expect(page.getByRole('slider')).toHaveCount(0)
+    await answerItem(page)
     expect(await unloadIsGuarded(page)).toBe(true)
     await page.reload()
     expect(dialogs).toEqual(['beforeunload'])
@@ -795,28 +769,29 @@ test.describe('the clock waits on "Up next" screens (UX-066)', () => {
 
 // ====================================================================================== UX-063
 
-test.describe('an untouched confidence slider (UX-063)', () => {
-  test('Continue without moving it is allowed, and the answer is kept as not rated; a moved slider keeps its value', async ({ page }) => {
+test.describe('the optional confidence scale (owner decision 2026-10-13; replaces UX-063)', () => {
+  test('left unset, the answer is kept with no confidence and nothing flags it; set, it keeps its value; cleared, nothing is kept', async ({ page }) => {
     await toFirstItem(page)
-    await answerUntilSlider(page)
-    await button(page, 'Continue').click() // straight away: the start value, never moved
-    await expect(page.getByRole('slider')).toHaveCount(0)
-    await answerUntilSlider(page)
-    const slider = page.getByRole('slider')
-    await slider.focus()
-    await slider.press('ArrowRight')
-    await button(page, 'Continue').click()
-    await expect(page.getByRole('slider')).toHaveCount(0)
+    await answerItem(page) // unset
+    const set = await answerItem(page, 4)
+    const third = await fillAnswer(page)
+    const scale = page.locator('fieldset[data-confidence]')
+    await scale.getByRole('radio').nth(1).check()
+    await scale.getByRole('button', { name: 'Clear' }).click()
+    await expect(scale.getByText('Not set')).toBeVisible()
+    await expect(scale.getByRole('radio').first()).toBeFocused()
+    await third.submit.click()
+    await expect(page.locator(`input[name="${third.name}"]`)).toHaveCount(0)
     const saved = (): Promise<{ conf: unknown[]; untouched: unknown }> =>
       page.evaluate(() => {
         const key = Object.keys(localStorage).find((k) => k.startsWith('hb:save:v1:')) ?? ''
         const s = (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][]; flags: Record<string, unknown> }[] }).sessions?.at(-1)
         return { conf: (s?.responses ?? []).map((t) => t[5]), untouched: s?.flags.confidence_untouched_n }
       })
-    await expect.poll(async () => (await saved()).conf.length).toBe(2)
+    await expect.poll(async () => (await saved()).conf.length).toBe(3)
     const { conf, untouched } = await saved()
-    expect(conf[0]).toBeNull()
-    expect(typeof conf[1]).toBe('number')
-    expect(untouched).toBe(1)
+    expect(conf).toEqual([null, set, null])
+    expect(set).toBe(100)
+    expect(untouched).toBeUndefined()
   })
 })

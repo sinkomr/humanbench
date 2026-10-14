@@ -127,7 +127,7 @@ export interface ServedItem {
   readonly family: string
   /** What the renderer takes (`media` without `renderer`; the text of a text item); `{}` when unsupported. */
   readonly spec: object
-  /** Number of options of a multiple-choice item (the confidence slider's chance floor), absent for typed entry. */
+  /** Number of options of a multiple-choice item (the confidence scale's chance floor), absent for typed entry. */
   readonly options_count?: number
   /** The per-item cap in seconds, or null when the server states none (the session's default applies). */
   readonly time_limit_s: number | null

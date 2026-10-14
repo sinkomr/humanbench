@@ -35,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists), then the item sets of M3.11, the start-up of the selection and the remaining families (word links, Fermi and situational judgments, live_axes), in order, one concern each', () => {
+  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists), then the item sets of M3.11, the start-up of the selection and the remaining families (word links, Fermi and situational judgments, live_axes), in order, one concern each and the Calibration of rescore', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -60,6 +60,7 @@ describe('migrations: the set', () => {
       '20261015000100_rat_answers.sql',
       '20261015000200_continuous_items.sql',
       '20261015000300_live_axes.sql',
+      '20261015000400_server_calibration.sql',
     ])
   })
 

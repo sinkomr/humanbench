@@ -95,13 +95,12 @@ class Harness {
     this.run.startSegment()
     await settle()
   }
-  /** Answer the item on screen and give the confidence. */
-  answerOnScreen(response: unknown = '4', confidence = 60, seconds = 5): void {
+  /** Answer the item on screen with the confidence (one press: both go together). */
+  answerOnScreen(response: unknown = '4', confidence: number | null = 60, seconds = 5): void {
     this.run.itemShown(this.t)
     this.t += seconds * 1000
-    this.run.itemResponded(response)
-    expect(this.v().phase).toBe('confidence')
-    this.run.confirmConfidence(confidence)
+    expect(this.v().confidence).not.toBeNull()
+    this.run.itemResponded(response, confidence)
   }
 }
 
@@ -131,7 +130,7 @@ describe('a served part', () => {
     expect(h.cat.asked).toEqual([['MAT']])
   })
 
-  it('hands an answer over after the confidence is given, then asks for the next item (answer first)', async () => {
+  it('hands an answer over with its confidence at once, then asks for the next item (answer first)', async () => {
     const h = new Harness()
     h.cat.steps = [{ kind: 'item', item: served(1) }, { kind: 'item', item: served(2) }]
     await h.toMatrix()
@@ -171,6 +170,21 @@ describe('a served part', () => {
     expect(h.cat.answers[0]).toMatchObject({ response: null, rtMs: 20_000, confidence: null })
     expect(h.run.catSessionState()?.responses[0]).toEqual(['i:series:1.0.0:1', 0, null, null, 20_000, null])
     expect(h.v().notice).toMatchObject({ kind: 'timeout', served: true }) // the server leaves it out of the scores: the notice says so
+  })
+
+  it('at the time-out, sends the answer as it stands with the confidence set, at the limit, flagged; the server holds the verdict (owner decision 2026-10-13)', async () => {
+    const h = new Harness()
+    h.cat.steps = [{ kind: 'item', item: served(1, { time_limit_s: 20 }) }]
+    await h.toMatrix()
+    h.run.itemShown(h.t)
+    h.run.itemDraft('7')
+    h.run.itemConfidence(75)
+    h.t += 21_000
+    h.run.tick()
+    await settle()
+    expect(h.cat.answers[0]).toMatchObject({ response: '7', rtMs: 20_000, confidence: 75, flags: { submitted_at_timeout: true } })
+    expect(h.run.catSessionState()?.responses[0]).toEqual(['i:series:1.0.0:1', 0, '7', null, 20_000, 75])
+    expect(h.v().notice).toMatchObject({ kind: 'timeout', served: true, submitted: true })
   })
 
   it('refuses a response a renderer could not have given', async () => {
@@ -270,7 +284,7 @@ describe('a served part', () => {
     expect(h.v().segment?.id).toBe('spatial')
   })
 
-  it('keeps the answer waiting for its confidence when the part is skipped, and lets nothing else go', async () => {
+  it('keeps an answer given just before the part is skipped (it was handed over at once), and lets nothing else go', async () => {
     const h = new Harness()
     h.cat.steps = [{ kind: 'item', item: served(1) }]
     await h.toMatrix()
@@ -343,8 +357,7 @@ describe('a served part', () => {
     h.run.noteVisibility('visible')
     h.run.notePaste('i:series:1.0.0:1')
     h.t += 1000
-    h.run.itemResponded('3')
-    h.run.confirmConfidence(50)
+    h.run.itemResponded('3', 50)
     await settle()
     expect(h.cat.answers[0]!.flags).toEqual({ visibility_hidden: true, paste: true })
     expect(h.run.serverFlags()).toMatchObject({ visibility_hidden_s: 15, paste_events: 1 })
@@ -359,8 +372,7 @@ describe('a served part', () => {
     h.t += 4000
     h.run.noteVisibility('visible')
     h.t += 1000
-    h.run.itemResponded('3')
-    h.run.confirmConfidence(50)
+    h.run.itemResponded('3', 50)
     await settle()
     expect(h.cat.answers[0]!.flags).toEqual({})
   })
@@ -439,24 +451,24 @@ describe('a served part and the clock between parts (UX-066)', () => {
     expect(h.v().elapsedS).toBe(at)
   })
 
-  it('sends an untouched confidence as no rating (null) and counts it in the flags the server takes (UX-063)', async () => {
+  it('sends an answer given with the scale unset as no rating (null), never a default, and flags nothing (owner decision 2026-10-13)', async () => {
     const h = new Harness()
     h.cat.steps = [{ kind: 'item', item: served(1) }, { kind: 'item', item: served(2) }, { kind: 'item', item: served(3) }]
     await h.toMatrix()
     h.run.itemShown(h.t)
     h.t += 4000
     h.run.itemResponded('7')
-    h.run.confirmConfidence(h.v().confidence!.startPct, false)
     await settle()
     h.run.itemShown(h.t)
     h.t += 4000
-    h.run.itemResponded('8')
-    h.run.confirmConfidence(80, true)
+    h.run.itemResponded('8', 80)
     await settle()
     expect(h.cat.answers.map((a) => a.confidence)).toEqual([null, 80])
     expect(h.run.catSessionState()?.responses.map((t) => t[5])).toEqual([null, 80])
-    expect(h.run.serverFlags().confidence_untouched_n).toBe(1)
-    expect(h.run.catSessionState()?.flags.confidence_untouched_n).toBe(1)
+    expect(h.run.serverFlags().confidence_untouched_n).toBeUndefined()
+    expect(h.run.catSessionState()?.flags.confidence_untouched_n).toBeUndefined()
+    // The online version computes no calibration here: the verdicts are the server's (R-11.1).
+    expect(h.run.result().calibration).toBeNull()
   })
 })
 
@@ -483,6 +495,7 @@ describe('the item the person may report', () => {
     expect(h.v().reportable).toBe('i:series:1.0.0:1')
     h.run.itemShown(h.t)
     h.run.itemResponded('2')
-    expect(h.v().reportable).toBe('i:series:1.0.0:1')
+    // One press and the question is gone (no step after it any more): there is nothing on screen to report.
+    expect(h.v().reportable).toBeNull()
   })
 })

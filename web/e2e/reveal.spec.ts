@@ -330,7 +330,6 @@ test.describe('coming back for more (§10, §7.6)', () => {
     await button(page, 'Start').click()
     await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
     await answerItem(page)
-    await expect(page.getByRole('slider')).toHaveCount(0)
     await button(page, 'Finish early').click()
     await button(page, 'Finish now').click()
     await expect(h1(page)).toHaveText('Session complete')

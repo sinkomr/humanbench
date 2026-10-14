@@ -4,7 +4,7 @@
  * acceptance 4). `keyboard-session.spec.ts` plays the same session with Tab, Enter and the arrow keys
  * to prove it can be done without a pointer; this driver plays it the way most people do:
  *
- * - a desktop taker clicks (choices, Submit, Continue, Done) and types the digit keys and the reaction
+ * - a desktop taker clicks (choices, the optional confidence scale, Confirm or Submit, Done) and types the digit keys and the reaction
  *   keys, with the keyboard as the response mode of the reaction tasks (the device check's default);
  * - a phone taker taps, with "Tap or click" as the response mode, and uses the on-screen keypads and
  *   boards instead of any key. Playwright's `tap()` sends touch events, so the renderers see
@@ -21,12 +21,17 @@ import { FINISHED_REASON } from '../src/session/copy'
 import { button, FINISHED_HEADINGS, h1 } from './flow'
 
 /** What is on screen, as far as the driver needs to know. */
-export type Screen = 'finished' | 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'coding' | 'reading' | 'interstitial' | 'break' | 'other'
+export type Screen = 'finished' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'coding' | 'reading' | 'interstitial' | 'break' | 'other'
+
+/**
+ * What a part played, for `parts.ts`: the screens above, and 'confidence' when an answer of the part went with the
+ * optional confidence scale set (owner decision 2026-10-13: the scale is on the question screen; one press sends both).
+ */
+export type Played = Screen | 'confidence'
 
 const SCREEN = `(() => {
   const text = ((document.querySelector('h1') || {}).textContent || '').trim()
   if (text === 'Session complete' || text === 'Session ended') return 'finished'
-  if (document.querySelector('input[type=range]')) return 'confidence'
   if (document.querySelector('form.choice:not(:has(fieldset:disabled))')) return 'choice'
   if (document.querySelector('form.entry')) return 'entry'
   for (const k of ['rt', 'span', 'corsi', 'coding', 'reading']) if (document.querySelector('section.hb-render.' + k)) return k
@@ -66,9 +71,11 @@ export class SessionDriver {
   /** The parts of the session, by the title of the interstitial that announced each, in the order they came. */
   readonly segments: string[] = []
   /** The kinds of screen played in each part, by the part's title. */
-  readonly played = new Map<string, Set<string>>()
-  /** Items answered (a choice or a typed answer, each followed by its confidence rating). */
+  readonly played = new Map<string, Set<Played>>()
+  /** Items answered (a choice or a typed answer; the first of each part, and every other one after it, with the confidence scale set). */
   answered = 0
+  /** Items answered in the part on screen. */
+  #inPart = 0
   /** Break offers met: one at most, between two parts (UX-066). The driver declines each ("Keep going"). */
   breakOffers = 0
   /** The part whose "Up next" screen came right after the break offer (the half-way part of the plan), or null. */
@@ -89,8 +96,16 @@ export class SessionDriver {
 
   /** Tick a checkbox or choose a radio button, and see that it took. */
   async tick(box: Locator): Promise<void> {
-    if (this.opts.touch) await box.tap({ timeout: ACTION_MS })
-    else await box.check({ timeout: ACTION_MS })
+    if (this.opts.touch) {
+      await box.tap({ timeout: ACTION_MS })
+      // A tap on the spot of the previous screen's tap, within its first 350 ms, is taken for the second tap of a double tap
+      // and held back (SKIM-15; one press now sends an answer, so the next question can be up that fast): tap again, as a
+      // person would.
+      if (!(await box.isChecked())) {
+        await this.page.waitForTimeout(400)
+        await box.tap({ timeout: ACTION_MS })
+      }
+    } else await box.check({ timeout: ACTION_MS })
     await expect(box).toBeChecked()
   }
 
@@ -147,7 +162,7 @@ export class SessionDriver {
 
   /**
    * From the first interstitial: skip the reaction tasks and answer one item of Matrix & Series (with its
-   * confidence rating), so the session has something to keep: a session with no answer writes no autosave.
+   * confidence set), so the session has something to keep: a session with no answer writes no autosave.
    */
   async answerOne(): Promise<void> {
     const { page } = this
@@ -155,9 +170,7 @@ export class SessionDriver {
     await expect(h1(page)).toHaveText('Up next: Matrix & Series')
     await this.press(button(page, 'Start'))
     await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
-    await this.step() // the item
-    await this.step() // its confidence
-    await expect(page.getByRole('slider')).toHaveCount(0)
+    await this.step() // the item, its confidence set, in one press
   }
 
   /**
@@ -207,6 +220,7 @@ export class SessionDriver {
       this.#segment = ((await h1(page).textContent()) ?? '').replace(/^Up next:\s*/, '').trim()
       this.segments.push(this.#segment)
       this.played.set(this.#segment, new Set())
+      this.#inPart = 0
       if (this.#afterBreak) this.breakBefore = this.#segment
       this.#afterBreak = false
     }
@@ -229,9 +243,6 @@ export class SessionDriver {
       case 'entry':
         await this.answerEntry()
         break
-      case 'confidence':
-        await this.rateConfidence()
-        break
       case 'rt':
         await this.playRt()
         break
@@ -253,33 +264,43 @@ export class SessionDriver {
     return true
   }
 
-  /** A multiple-choice item: choose an option (not always the first), then Confirm. */
+  /** A multiple-choice item: choose an option (not always the first), maybe set the confidence, then Confirm: one press. */
   private async answerChoice(): Promise<void> {
     const { page } = this
-    const options = page.locator('form.choice input[type=radio]')
+    const form = page.locator('form.choice')
+    const options = form.locator('.options input[type=radio]')
     await this.tick(options.nth(this.answered % Math.max(1, await options.count())))
-    await this.press(button(page, 'Confirm'))
-    await expect(page.getByRole('slider')).toBeVisible()
-    this.answered++
+    await this.submit(form, form.getByRole('button', { name: 'Confirm', exact: true }))
   }
 
-  /** A typed item (series or quant): a letter series wants a letter, the others a number. */
+  /** A typed item (series or quant): a letter series wants a letter, the others a number; maybe the confidence; then Submit. */
   private async answerEntry(): Promise<void> {
-    const { page } = this
-    const box = page.locator('form.entry input[type=text]')
+    const form = this.page.locator('form.entry')
+    const box = form.locator('input[type=text]')
     await box.fill((await box.evaluate((el) => el.classList.contains('letter'))) ? 'A' : '1', { timeout: ACTION_MS })
-    await this.press(page.locator('form.entry').getByRole('button', { name: 'Submit', exact: true }))
-    await expect(page.getByRole('slider')).toBeVisible()
-    this.answered++
+    await this.submit(form, form.getByRole('button', { name: 'Submit', exact: true }))
   }
 
-  /** The confidence slider: a value that varies from item to item, then Continue. */
-  private async rateConfidence(): Promise<void> {
-    const { page } = this
-    const slider = page.getByRole('slider')
-    await slider.fill(String(55 + ((this.answered * 9) % 40)), { timeout: ACTION_MS })
-    await this.press(button(page, 'Continue'))
-    await expect(slider).toHaveCount(0)
+  /**
+   * The optional confidence scale (owner decision 2026-10-13): set on the first answer of a part and on every other one
+   * after it (a point that varies), left unset on the rest; then the question's own button, once, and the question is gone.
+   */
+  private async submit(form: Locator, submit: Locator): Promise<void> {
+    const scale = form.locator('fieldset[data-confidence]')
+    await expect(scale).toBeVisible()
+    await expect(scale.locator('input[type=radio]:checked')).toHaveCount(0) // it starts unset
+    if (this.#inPart % 2 === 0) {
+      await this.tick(scale.locator('input[type=radio]').nth(this.answered % 5))
+      this.played.get(this.#segment)?.add('confidence')
+    }
+    // The scale's points share a name that is new with every question's mount.
+    const name = (await scale.locator('input[type=radio]').first().getAttribute('name')) ?? ''
+    expect(name).not.toBe('')
+    await this.press(submit)
+    // One press: this question leaves the page (the next question, the wait for it, or the next screen).
+    await expect(this.page.locator(`input[name="${name}"]`)).toHaveCount(0, { timeout: ACTION_MS })
+    this.answered++
+    this.#inPart++
   }
 
   /** A block's own id (each mount of a renderer gets a fresh `aria-labelledby`), to tell when the next block replaced it. */

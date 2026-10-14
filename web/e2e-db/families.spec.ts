@@ -85,7 +85,7 @@ const submitted = (page: Page): Promise<Response> => page.waitForResponse((r) =>
 const KEYISH = /"key"|"index"|"correct"\s*:\s*(0|1|true|false)|rationale|tolerance|option_weights|"se_b"|true_value|"accept"|"ratings"|thresholds/u
 
 test.describe('the "games" pool: made-up logic games', () => {
-  test('Logic Games: the setup beside every question of a game, two games whole, the slider, and the skill published', async ({ page }) => {
+  test('Logic Games: the setup beside every question of a game, two games whole, the confidence scale, and the skill published', async ({ page }) => {
     const calls = watch(page)
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await toReady(page, query(GAMES_PORT_OFFSET))
@@ -108,14 +108,13 @@ test.describe('the "games" pool: made-up logic games', () => {
         await expect(setup.locator('.rules li')).toHaveCount(3)
         await expect(setup).toContainText('Made-up game')
         await expect(page.locator('[data-set-position]')).toHaveText(/^Question \d of [34] about this setup$/)
-        const radios = page.locator('div.hb-render.text-mc input[type="radio"]')
+        const radios = page.locator('div.hb-render.text-mc .options input[type="radio"]')
         await expect(radios.first()).toBeEnabled()
         await radios.nth(answered % 5).check()
-        await page.locator('div.hb-render.text-mc').getByRole('button', { name: 'Confirm', exact: true }).click()
-        await expect(page.getByRole('slider')).toBeVisible()
-        await page.getByRole('slider').press('ArrowRight')
+        // the optional confidence scale on the question (owner decision 2026-10-13): one press sends both
+        await page.locator('div.hb-render.text-mc fieldset[data-confidence] input[type="radio"]').nth(3).check()
         const done = submitted(page)
-        await button(page, 'Continue').click()
+        await page.locator('div.hb-render.text-mc').getByRole('button', { name: 'Confirm', exact: true }).click()
         await done
         answered++
         if (answered > 12) throw new Error('the part did not end')
@@ -154,9 +153,9 @@ test.describe('the "estimates" pool: made-up Fermi estimates, vignettes, judgmen
           await field('High end of your 80% range').fill('9e6')
           await page.locator('section.fermi select').selectOption('count')
           const done = submitted(page)
+          await expect(page.locator('fieldset[data-confidence]')).toHaveCount(0) // not rated: no scale
           await page.locator('section.fermi').getByRole('button', { name: 'Submit', exact: true }).click()
           await done
-          await expect(page.getByRole('slider')).toHaveCount(0)
           n++
           if (n > 40) throw new Error('the Fermi part did not end') // (a part goes on while its time lasts and the pool has items)
         }
@@ -187,12 +186,10 @@ test.describe('the "estimates" pool: made-up Fermi estimates, vignettes, judgmen
         let n = 0
         while (await onQuestion(page, name, 'section.rat input')) {
           await expect(page.locator('section.rat .cues li')).toHaveCount(3)
-          await page.locator('section.rat input').fill('made up')
-          await page.locator('section.rat').getByRole('button', { name: 'Confirm', exact: true }).click()
-          await expect(page.getByRole('slider')).toBeVisible()
-          await page.getByRole('slider').press('ArrowRight')
+          await page.locator('section.rat input[type="text"]').fill('made up')
+          await page.locator('section.rat fieldset[data-confidence] input[type="radio"]').nth(3).check()
           const done = submitted(page)
-          await button(page, 'Continue').click()
+          await page.locator('section.rat').getByRole('button', { name: 'Confirm', exact: true }).click()
           await done
           n++
           if (n > 40) throw new Error('the word-links part did not end')

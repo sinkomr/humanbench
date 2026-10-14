@@ -250,7 +250,7 @@ test('skimmer: exits', async ({ page, context }, testInfo) => {
     // A handful of items of this one part (never past its end).
     for (let i = 0; i < 12; i++) {
       const kind = await driver.screen()
-      if (kind !== 'choice' && kind !== 'entry' && kind !== 'confidence') break
+      if (kind !== 'choice' && kind !== 'entry') break
       await driver.step()
     }
     await sh.all('after-some-items')

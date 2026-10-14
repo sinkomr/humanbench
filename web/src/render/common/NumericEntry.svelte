@@ -7,9 +7,12 @@
   commas (quant's `1,500`, which score() still reads in saved answers) the thousands note (UX-079). What `onsubmit` receives is the typed text with its digits
   and spacing normalised to the ASCII the parsers read (`normalize-digits.ts`). A number pad in a
   comma-decimal language has no point, so decimal entries get a point key beside the sign key.
+  In a session the optional confidence scale (`answer-slot.ts`; owner decision 2026-10-13) sits under the box and
+  its notes, and Submit moves below it, so one press sends the answer and the confidence; Enter in the box still submits.
 -->
 <script lang="ts">
   import './render.css'
+  import { getAnswerSlot } from './answer-slot'
   import type { EntryFormat } from '../../tasks/family'
   import { flushSync } from 'svelte'
   import { FORMAT_NOTES, EMPTY_NOTE, INPUT_MODES, THOUSANDS_NOTE, type EntryVerdict } from './entry-copy'
@@ -32,6 +35,8 @@
   let { format, hint, label, check, onsubmit, onpaste, disabled = false }: Props = $props()
 
   const uid = $props.id()
+  /** The session's control before Submit (the optional confidence scale, owner decision 2026-10-13), or none. */
+  const slot = getAnswerSlot()
   let text = $state('')
   let note = $state('')
   let submitted = $state(false)
@@ -58,6 +63,14 @@
     submitted = true
     onsubmit(entry)
   }
+
+  // The answer as it stands, for a time-out (owner decision 2026-10-13): the typed text when the family can read it
+  // as an answer (as Submit would send it), else none; until it is submitted.
+  $effect(() => {
+    const entry = normalizeEntry(text, format)
+    if (submitted) return
+    slot?.draft?.(entry.trim() !== '' && check(entry) === 'ok' ? entry : null)
+  })
 
   function toggleSign(): void {
     const t = text.trimStart()
@@ -107,10 +120,17 @@
     {#if pointKey}
       <button type="button" class="hb-btn" aria-label="Decimal point" translate="no" disabled={submitted || disabled} onclick={insertPoint}>.</button>
     {/if}
-    <button type="submit" class="hb-btn hb-primary" disabled={submitted || disabled}>Submit</button>
+    {#if !slot?.snippet}
+      <button type="submit" class="hb-btn hb-primary" disabled={submitted || disabled}>Submit</button>
+    {/if}
   </div>
   <p class="hint" id="{uid}-hint">{hint}</p>
   <p class="hb-note" id="{uid}-note" aria-live="polite">{note}</p>
+  {#if slot?.snippet}
+    <!-- In a session: the optional scale, then Submit on a line of its own, so Submit sends both (Enter in the box does too). -->
+    {@render slot.snippet()}
+    <button type="submit" class="hb-btn hb-primary submit-below" disabled={submitted || disabled}>Submit</button>
+  {/if}
   <p class="hb-status" aria-live="polite">{submitted ? 'Answer recorded.' : ''}</p>
 </form>
 
@@ -161,5 +181,9 @@
   .hint {
     margin: 0.5rem 0 0;
     color: var(--r-muted);
+  }
+
+  .submit-below {
+    min-width: 8rem;
   }
 </style>

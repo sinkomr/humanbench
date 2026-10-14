@@ -78,26 +78,35 @@ export async function toResults(page: Page, sessions: 1 | 2 = 1, rt?: 'touch' | 
   return sim
 }
 
-/** Answer the item on screen (any kind) and rate the confidence. */
-export async function answerItem(page: Page): Promise<void> {
-  const choice = page.locator('form.choice')
-  const entry = page.locator('form.entry')
-  const slider = page.getByRole('slider')
-  await expect(choice.or(entry)).toBeVisible()
-  if ((await choice.count()) > 0) {
-    await choice.getByRole('radio').first().check()
-    await button(page, 'Confirm').click()
-  } else {
-    const box = entry.getByRole('textbox')
-    await box.fill('1')
-    await box.press('Enter')
-    if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-      await box.fill('A') // a letter series
-      await box.press('Enter')
-    }
+/**
+ * Answer the question on screen (any kind) with one press of its own button (owner decision 2026-10-13: no step after
+ * the answer). `point`: the optional confidence scale's point to set first (0 = the lowest, "a guess"; 4 = 100%,
+ * "certain"); left out, the scale stays unset. Returns the confidence sent: the point's percent, or null. Waits until
+ * the question has left the page (the scale's points share a name that is new with every question).
+ */
+export async function answerItem(page: Page, point?: number): Promise<number | null> {
+  const form = page.locator('form.choice, form.entry').first()
+  await expect(form).toBeVisible()
+  const points = form.locator('fieldset[data-confidence] input[type=radio]')
+  await expect(points).toHaveCount(5)
+  await expect(form.locator('fieldset[data-confidence] input[type=radio]:checked')).toHaveCount(0) // it starts unset
+  const name = (await points.first().getAttribute('name')) ?? ''
+  expect(name).not.toBe('')
+  let pct: number | null = null
+  if (point !== undefined) {
+    await points.nth(point).check()
+    pct = Number(await points.nth(point).getAttribute('value'))
   }
-  await expect(slider).toBeVisible()
-  await button(page, 'Continue').click()
+  if ((await form.getAttribute('class'))?.split(/\s+/).includes('choice')) {
+    await form.locator('.options input[type=radio]').first().check()
+    await form.getByRole('button', { name: 'Confirm', exact: true }).click()
+  } else {
+    const box = form.getByRole('textbox')
+    await box.fill((await box.getAttribute('class'))?.split(/\s+/).includes('letter') ? 'A' : '1') // a letter series wants a letter
+    await box.press('Enter')
+  }
+  await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
+  return pct
 }
 
 export async function overflow(page: Page, where: string): Promise<void> {

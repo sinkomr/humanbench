@@ -1,6 +1,6 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { brierOfAnswer, confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
+import { CONFIDENCE_LEVELS, brierOfAnswer, confidenceFloorPct, confidenceLevels, isConfidencePct } from './calibration'
 
 describe('the confidence slider range (DESIGN §3 row 12, §14.6 ex. 9)', () => {
   it('floors at the chance level 1/k for multiple choice and at 0 for typed entry', () => {
@@ -21,15 +21,27 @@ describe('the confidence slider range (DESIGN §3 row 12, §14.6 ex. 9)', () => 
     )
   })
 
-  it('starts in the middle of the range, on the step', () => {
-    expect(confidenceStartPct(0)).toBe(50)
-    expect(confidenceStartPct(25)).toBe(63)
-    for (const f of [0, 17, 20, 25, 50]) {
-      const s = confidenceStartPct(f)
-      expect(s).toBeGreaterThanOrEqual(f)
-      expect(s).toBeLessThanOrEqual(100)
-      expect(Number.isInteger(s)).toBe(true)
-    }
+  it('offers five points, evenly spaced from the floor to 100 (owner decision 2026-10-13)', () => {
+    expect(CONFIDENCE_LEVELS).toBe(5)
+    expect(confidenceLevels(0)).toEqual([0, 25, 50, 75, 100])
+    expect(confidenceLevels(25)).toEqual([25, 44, 63, 81, 100])
+    expect(confidenceLevels(50)).toEqual([50, 63, 75, 88, 100])
+    expect(confidenceLevels(17)).toEqual([17, 38, 59, 79, 100])
+    for (const bad of [-1, 100, 12.5, Number.NaN]) expect(() => confidenceLevels(bad), String(bad)).toThrow(RangeError)
+  })
+
+  it('property: for every k and typed entry, the points start at the floor, end at 100, rise strictly, and are all recordable', () => {
+    fc.assert(
+      fc.property(fc.option(fc.integer({ min: 2, max: 9 }), { nil: undefined }), (k) => {
+        const floor = confidenceFloorPct(k)
+        const lv = confidenceLevels(floor)
+        expect(lv).toHaveLength(CONFIDENCE_LEVELS)
+        expect(lv[0]).toBe(floor)
+        expect(lv.at(-1)).toBe(100)
+        for (let i = 1; i < lv.length; i++) expect(lv[i]!).toBeGreaterThan(lv[i - 1]!)
+        for (const p of lv) expect(isConfidencePct(p, floor)).toBe(true)
+      }),
+    )
   })
 
   it('accepts only whole percents from the floor to 100', () => {

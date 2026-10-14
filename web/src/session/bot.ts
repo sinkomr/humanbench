@@ -11,7 +11,7 @@ import type { StorageLike } from '../save/autosave'
 import type { DeviceInfo } from '../save/types'
 import { getFamily, resolveItem } from '../tasks/registry'
 import { answerBlock, answerItem } from '../sim/responders'
-import { confidenceFloorPct } from './calibration'
+import { confidenceFloorPct, confidenceLevels } from './calibration'
 import { SessionRun, type RunConfig, type RunView } from './run'
 
 export const TEST_DEVICE: DeviceInfo = Object.freeze({
@@ -33,15 +33,20 @@ export interface BotOptions {
   readonly blockExtraS?: Readonly<Record<string, number>>
   /** Multiplier on a CAT item's time, E[T] × this (default 1). */
   readonly itemScale?: number
-  /** Seconds spent on the confidence slider (default 2). */
-  readonly confidenceS?: number
-  /** Confidence to give: 'mid' (default), 'floor' or 'max'. */
+  /**
+   * Seconds spent setting the optional confidence scale, when it is set, part of the question's time (default 2: the
+   * time the old follow-up slider took in this bot, so seeded tests keep their sessions).
+   */
+  readonly ratingS?: number
+  /** Seconds between the previous answer and the question's first frame (the screen change; default 0). */
+  readonly answerGapS?: number
+  /** Confidence to give when rating: 'mid' (default, the middle point of the scale), 'floor' or 'max'. */
   readonly confidence?: 'mid' | 'floor' | 'max'
   /**
-   * Whether the slider is moved before Continue (UX-063): 'always' (default), 'never' (confirmed where
-   * it starts, recorded as not rated) or 'random' (each rating a coin flip from the bot's RNG).
+   * Whether the optional scale is set before the answer is submitted (owner decision 2026-10-13): 'always'
+   * (default), 'never' (the answer goes without a confidence) or 'random' (a coin flip from the bot's RNG).
    */
-  readonly touch?: 'always' | 'never' | 'random'
+  readonly rate?: 'always' | 'never' | 'random'
   /** What to do when a break is offered (default 'decline'). */
   readonly onBreakOffer?: 'decline' | 'take'
   /** Seconds a break lasts when taken (default 300). */
@@ -129,19 +134,13 @@ export class Bot {
         const it = v.item!
         const item = this.fullItem(it.item_id)
         const family = getFamily(it.family)!
+        this.wait(this.opts.answerGapS ?? 0)
         this.run.itemShown(this.t)
         this.wait(item.expected_time_s * (this.opts.itemScale ?? 1))
         const a = answerItem(family, item, this.thetaOf(it.axis), this.rng.fork(`item/${it.item_id}`))
-        this.run.itemResponded(a.response)
-        return true
-      }
-      case 'confidence': {
-        const c = v.confidence!
-        this.wait(this.opts.confidenceS ?? 2)
-        const touch = this.opts.touch ?? 'always'
-        const touched = touch === 'always' || (touch === 'random' && this.rng.next() < 0.5)
-        const pct = !touched ? c.startPct : this.opts.confidence === 'floor' ? c.floorPct : this.opts.confidence === 'max' ? 100 : c.startPct
-        this.run.confirmConfidence(pct, touched)
+        const pct = this.rating(v)
+        if (pct !== null) this.wait(this.opts.ratingS ?? 2)
+        this.run.itemResponded(a.response, pct)
         return true
       }
       case 'loading':
@@ -157,6 +156,31 @@ export class Bot {
         this.run.resume()
         return true
     }
+  }
+
+  /**
+   * Answers the question on screen as {@link step} would, but with the confidence `pct` (null: the scale left
+   * unset), whatever {@link BotOptions.rate} says. Returns the response given.
+   */
+  answer(pct: number | null): unknown {
+    const v = this.run.view()
+    if (v.phase !== 'item' || v.item === null) throw new Error(`answer(): no question on screen (phase ${v.phase})`)
+    const item = this.fullItem(v.item.item_id)
+    this.run.itemShown(this.t)
+    this.wait(item.expected_time_s * (this.opts.itemScale ?? 1))
+    const a = answerItem(getFamily(v.item.family)!, item, this.thetaOf(v.item.axis), this.rng.fork(`item/${v.item.item_id}`))
+    this.run.itemResponded(a.response, pct)
+    return a.response
+  }
+
+  /** The confidence the taker sets on the question of `v` (null: left unset), per {@link BotOptions.rate}. */
+  rating(v: RunView): number | null {
+    const c = v.confidence
+    if (c === null) return null
+    const rate = this.opts.rate ?? 'always'
+    if (rate === 'never' || (rate === 'random' && this.rng.next() >= 0.5)) return null
+    const levels = confidenceLevels(c.floorPct)
+    return this.opts.confidence === 'floor' ? c.floorPct : this.opts.confidence === 'max' ? 100 : levels[Math.floor(levels.length / 2)]!
   }
 
   /** Step until the session finishes (or `maxSteps`, to fail a runaway test). */
@@ -180,7 +204,14 @@ export class Bot {
   }
 }
 
-/** The least confidence the slider offers for an item of `optionsCount` options (re-export for tests). */
+/** The middle point of the confidence scale of the question in `v` (what the bot's 'mid' gives); throws without one. */
+export function midConfidence(v: RunView): number {
+  if (v.confidence === null) throw new Error(`midConfidence(): no confidence scale on screen (phase ${v.phase})`)
+  const levels = confidenceLevels(v.confidence.floorPct)
+  return levels[Math.floor(levels.length / 2)]!
+}
+
+/** The least confidence the scale offers for an item of `optionsCount` options (re-export for tests). */
 export const floorPctOf = confidenceFloorPct
 
 /** A Web Storage that logs its calls. `writes` are the calls that change it. */

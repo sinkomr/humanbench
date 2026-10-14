@@ -116,8 +116,10 @@ class Taker {
   readonly run: SessionRun
   readonly trace: Step[] = []
   readonly rng = createRng('taker')
-  /** Seconds per served question (before the confidence). */
+  /** Seconds per served question. */
   itemS = 40
+  /** Seconds spent setting the confidence scale of a question, before its answer goes. */
+  ratingS = 2
   /** What to answer; null leaves the question to run out of time. */
   respond: (v: RunView) => unknown | null = (v) => (v.item!.options_count === undefined ? '4' : 0)
 
@@ -173,15 +175,12 @@ class Taker {
           this.t += (v.item!.time_limit_s + 1) * 1000
           this.run.tick()
         } else {
-          this.t += this.itemS * 1000
-          this.run.itemResponded(r)
+          // Setting the optional scale (owner decision 2026-10-13) is part of the question's time.
+          this.t += (this.itemS + (v.confidence === null ? 0 : this.ratingS)) * 1000
+          this.run.itemResponded(r, v.confidence === null ? null : 100)
         }
         break
       }
-      case 'confidence':
-        this.t += 2000
-        this.run.confirmConfidence(v.confidence!.startPct)
-        break
       case 'loading':
         if (v.problem !== null) throw new Error(`the wait failed: ${v.problem}`)
         break
@@ -340,7 +339,7 @@ describe('a text part the server has questions for', () => {
     expect(t.v().skippable).toBe('LR')
   })
 
-  it('takes the answer as an option position, with the confidence slider of a multiple-choice question, and never a verdict', async () => {
+  it('takes the answer as an option position, with the confidence scale of a multiple-choice question, and never a verdict', async () => {
     const server = new PoolServer(bigPool(['LR']))
     const t = new Taker(server, { textAxes: ['LR'], skipped: ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] })
     await t.until((x) => x.phase === 'interstitial')
@@ -352,10 +351,8 @@ describe('a text part the server has questions for', () => {
     expect(t.v().notice?.kind).toBe('malformed')
     t.run.itemResponded(4) // nor a position that is not there
     expect(t.v().phase).toBe('item')
-    t.run.itemResponded(2)
-    expect(t.v().phase).toBe('confidence')
-    expect(t.v().confidence).toEqual({ floorPct: 25, startPct: expect.any(Number), optionsCount: 4 })
-    t.run.confirmConfidence(80)
+    expect(t.v().confidence).toEqual({ floorPct: 25, optionsCount: 4 })
+    t.run.itemResponded(2, 80)
     await settle()
     expect(server.answers[0]).toMatchObject({ response: 2, rtMs: 30_000, confidence: 80 })
     const state = t.run.catSessionState()!
@@ -372,7 +369,7 @@ describe('a text part the server has questions for', () => {
     expect(t.run.result().segmentEnds).toEqual([{ segment: 'vocabulary', reason: 'time' }])
 
     const quick = new Taker(new PoolServer(bigPool(['VOC'])), { textAxes: ['VOC'], skipped: ['RT', 'MAT', 'SPA', 'WM', 'QR', 'PS'] })
-    quick.itemS = 10 // 12 s a question with the slider: ten fit in two minutes
+    quick.itemS = 10 // 12 s a question with the scale: ten fit in two minutes
     await quick.finish()
     expect(quick.run.result().itemsByAxis.VOC).toBe(10)
   })
@@ -538,8 +535,7 @@ describe('skipping a text part', () => {
     server.gate = new Promise<void>((resolve) => (open = resolve))
     t.run.itemShown(t.t)
     t.t += 20_000
-    t.run.itemResponded(1)
-    t.run.confirmConfidence(60)
+    t.run.itemResponded(1, 60)
     await settle()
     expect(t.v().phase).toBe('loading')
     t.run.skipAxis('LR')

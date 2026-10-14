@@ -3,7 +3,7 @@ import { A15_TARGET_S } from '../src/engine/selector'
 import { UsageError } from './dump-lib'
 import { PUBLISH_MIN_ITEMS, QUANT_MIN_ITEMS, TEXT_AXES } from '../src/engine/plan-table'
 import { HARD_STOP_S } from '../src/session/constants'
-import { BLOCK_EXTRA_S, CONFIDENCE_S, PACE_SD, PASSAGE_READING_S, parseSimSessionArgs, quantile, simPassageQuestions, simGameQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
+import { ANSWER_GAP_S, BLOCK_EXTRA_S, MEASURED_STEP_S, PACE_SD, PER_ANSWER_S, RATING_S, PASSAGE_READING_S, parseSimSessionArgs, quantile, simGameQuestions, simPassageQuestions, simulate, simulateOne, simulateOneOnline, simulateOnline } from './sim-session'
 
 describe('scripts/sim-session.ts: whole sessions of the real session machine (UX-066)', () => {
   it('parses its flags, with defaults, and refuses what it does not know', () => {
@@ -42,11 +42,15 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     expect(() => parseSimSessionArgs(['--pace-sd', '-1'], '/w')).toThrow(UsageError)
   })
 
-  it('where the time goes: the overhead is the one full session on record’s, and every active second is a timed task, a question or the step after an answer', () => {
+  it('where the time goes: the overhead is the one full session on record’s, less the step after an answer (owner decision 2026-10-13), and every active second is a timed task, a question or around an answer', () => {
     // The owner's eleven-part session of 2026-10-12: 3,254 active seconds = 1,139 in the seven timed tasks + 1,794 answering
     // 67 questions + 321 between an answer and the next question.
     expect(1139 + 1794 + 321).toBe(3254)
-    expect(CONFIDENCE_S).toBeCloseTo(321 / 67, 1)
+    expect(MEASURED_STEP_S).toBeCloseTo(321 / 67, 1)
+    // the step is gone: what is left around an answer is the screen change and a tap on the optional scale
+    expect(ANSWER_GAP_S).toBe(0.5)
+    expect(RATING_S).toBe(1)
+    expect(PER_ANSWER_S).toBeLessThan(MEASURED_STEP_S / 3)
     // what the other blocks' screens took over their time model on the same responses: 85.4 − 84.0, 121.6 − 112.7, 99.0 − 90, 109.7 − 103.2
     expect(BLOCK_EXTRA_S).toEqual({ rt_simple: 1, rt_choice4: 9, coding: 9, reading: 6 })
     expect(Object.values(BLOCK_EXTRA_S).reduce((a, b) => a + b, 0)).toBe(25)
@@ -55,17 +59,17 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     for (const i of [0, 4, 11]) {
       const s = simulateOne(i, base)
       expect(s.ended).toBe('complete')
-      expect(s.kindS.blocks + s.kindS.questions + s.kindS.confidence).toBeCloseTo(s.durationS, 6)
+      expect(s.kindS.blocks + s.kindS.questions + s.kindS.answer).toBeCloseTo(s.durationS, 6)
       expect(Object.values(s.partS).reduce((a, b) => a + b, 0)).toBeCloseTo(s.durationS, 6)
-      // the step after an answer: CONFIDENCE_S a question at the taker's own pace (within the ±15% spread, three SDs)
+      // around an answer: PER_ANSWER_S a question at the taker's own pace (within the ±15% spread, three SDs)
       const n = Object.values(s.shown).reduce((a, b) => a + b, 0)
-      expect(s.kindS.confidence / n).toBeGreaterThan(CONFIDENCE_S * Math.exp(-3 * PACE_SD))
-      expect(s.kindS.confidence / n).toBeLessThan(CONFIDENCE_S * Math.exp(3 * PACE_SD))
+      expect(s.kindS.answer / n).toBeGreaterThan(PER_ANSWER_S * Math.exp(-3 * PACE_SD))
+      expect(s.kindS.answer / n).toBeLessThan(PER_ANSWER_S * Math.exp(3 * PACE_SD))
     }
-    // at the model's pace exactly: the step is CONFIDENCE_S, and the same person is slower by the pace asked for
+    // at the model's pace exactly: PER_ANSWER_S a question, and the same person is slower by the pace asked for
     const exact = simulateOne(4, { ...base, paceSd: 0 })
     const n = Object.values(exact.shown).reduce((a, b) => a + b, 0)
-    expect(exact.kindS.confidence).toBeCloseTo(CONFIDENCE_S * n, 6)
+    expect(exact.kindS.answer).toBeCloseTo(PER_ANSWER_S * n, 6)
     const slow = simulateOne(4, { ...base, paceSd: 0, pace: 1.25 })
     expect(slow.kindS.blocks).toBeGreaterThan(exact.kindS.blocks * 1.1)
   })

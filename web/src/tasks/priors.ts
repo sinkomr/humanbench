@@ -198,7 +198,7 @@ export function stratumOfB(b: number): Stratum {
  * (`coding/prior.ts`: β = ln 40 correct/min, s = 0.25, τ_res = 0.05), PS reading
  * (`reading/prior.ts`: ln 238 wpm, Brysbaert 2019, s = 0.25, per-passage SD 0.15, τ_res = 0.05) and
  * WM span (`span/config.ts` norms: forward 6.5 ± 1.2, backward 4.8 ± 1.3, Corsi 5.5 ± 1.1). The
- * two below have no family yet (M5 Fermi items, the embedded calibration slider of M1.15), so
+ * two below have no family yet (M5 Fermi items, the embedded confidence scale of M1.15), so
  * they live here; the bank mirrors both in `hb.gen.priors`.
  */
 
@@ -259,6 +259,23 @@ export function fermiParams(delta = 0): { model: 'gaussian'; lam: number; d: num
  * and √(SE² + 0.02²) ≈ 0.038 = brier_sd·√(1 − reliability) (tested). Longer sessions measure more
  * precisely through their smaller SE. [SPEC] values: confident-but-fallible adults on
  * mixed-difficulty items score Brier ≈ 0.2 (0.25 is always-50% on a coin flip).
+ *
+ * **`min_responses` = 10 rated answers** (owner decision 2026-10-13: the confidence is optional, so a
+ * session may rate few or none of its answers; below this the skill is "not measured" for the session).
+ * From the model above, with a per-answer SD of (c − y)² ≈ 0.18 and λ = brier_sd·√reliability ≈ 0.046:
+ *
+ *     rated n | SE of B | obs. sigma | information λ²/σ² | posterior SD from N(0, 1)
+ *     5       | 0.080   | 0.083      | 0.31              | 0.87
+ *     10      | 0.057   | 0.060      | 0.59              | 0.79
+ *     20      | 0.040   | 0.045      | 1.07              | 0.69
+ *     30      | 0.033   | 0.038      | 1.46              | 0.64
+ *
+ * Ten is where one session's observation is worth about 0.6 of the prior (it moves the estimate visibly
+ * and is still well short of the reference session), and where the session's own SE, the sample SD of
+ * the terms over √n, is stable enough to use: its relative error is about 1/√(2(n − 1)), 35% at five and
+ * 24% at ten, and with few answers it is often 0 (every term alike), which would leave only τ_res and
+ * overstate the observation's weight about ninefold. A six-part session asks about 25 counted questions,
+ * so a person who rates about half of them is measured. Provisional with the rest of CAL_NORMS (M4.8).
  */
 export const CAL_NORMS = Object.freeze({
   version: 'cal-v0',

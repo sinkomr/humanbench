@@ -24,9 +24,9 @@ function functionText(sql: string, name: string): string {
 }
 
 describe('rescore facets (UX review D4)', () => {
-  it('is re-created once more since, by the remaining families (Gaussian and GRM answers, 20261015000200_continuous_items.sql), which keeps every line of it but the grid sum', () => {
+  it('is re-created twice since: by the remaining families (Gaussian and GRM answers, 20261015000200_continuous_items.sql), which keeps every line of it but the grid sum, then by the server\'s Calibration (20261015000400_server_calibration.sql, which keeps that body but for CAL)', () => {
     const recreating = migrations.filter((m) => /create\s+(?:or\s+replace\s+)?function\s+public\.rescore\s*\(/i.test(m.sql)).map((m) => m.name)
-    expect(recreating.slice(-2)).toEqual(['20261007000100_rescore_facets.sql', '20261015000200_continuous_items.sql'])
+    expect(recreating.slice(-3)).toEqual(['20261007000100_rescore_facets.sql', '20261015000200_continuous_items.sql', '20261015000400_server_calibration.sql'])
     const facets = functionText(facetsSql, 'public.rescore').split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('--'))
     const now = functionText(byName('_continuous_items.sql'), 'public.rescore').split('\n').map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('--'))
     // the lines that gained the continuous observation (cobs, the parameter row's extra) and the grid sum that became the

@@ -196,25 +196,14 @@ async function itemOnScreen(page: Page): Promise<void> {
   await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
 }
 
-/** Answer the item on screen and stop at its confidence slider. */
+/** A question on screen with its optional confidence scale set, not yet submitted (owner decision 2026-10-13). */
 async function toConfidence(page: Page): Promise<void> {
-  const choice = page.locator('form.choice')
-  const entry = page.locator('form.entry')
-  const slider = page.getByRole('slider')
-  await expect(choice.or(entry)).toBeVisible()
-  if ((await choice.count()) > 0) {
-    await choice.getByRole('radio').first().check()
-    await button(page, 'Confirm').click()
-  } else {
-    const box = entry.getByRole('textbox')
-    await box.fill('1')
-    await box.press('Enter')
-    if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-      await box.fill('A')
-      await box.press('Enter')
-    }
-  }
-  await expect(slider).toBeVisible()
+  const form = page.locator('form.choice, form.entry').first()
+  await expect(form).toBeVisible()
+  const points = form.locator('fieldset[data-confidence] input[type=radio]')
+  await expect(points).toHaveCount(5)
+  await points.nth(3).check()
+  await expect(form.getByRole('button', { name: 'Clear', exact: true })).toBeVisible()
 }
 
 /** Init script: a browser without WebGL (the renderer for the Spatial items says so and offers the skip). */
@@ -506,8 +495,8 @@ export const ROUTES: readonly Route[] = [
   {
     id: 'confidence',
     group: 'session',
-    state: 'the confidence slider after an answer',
-    covers: ['session/Confidence.svelte'],
+    state: 'a question with its optional confidence scale set, before the one press that submits both',
+    covers: ['session/ConfidenceScale.svelte'],
     open: async (page) => {
       await intoSegment(page, 1)
       await toConfidence(page)

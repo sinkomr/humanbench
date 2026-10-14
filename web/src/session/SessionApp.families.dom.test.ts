@@ -139,14 +139,15 @@ async function begin(title: string): Promise<void> {
   flushSync()
 }
 
-async function rateConfidence(): Promise<void> {
-  const slider = host.querySelector<HTMLInputElement>('.confidence input[type="range"]')
-  if (slider === null) throw new Error('no confidence slider')
-  slider.value = '70'
-  slider.dispatchEvent(new Event('input', { bubbles: true }))
+/** Sets the optional confidence scale of the question on screen (owner decision 2026-10-13: on the question, before its one press). */
+function setConfidence(point: number): void {
+  const points = host.querySelectorAll<HTMLInputElement>('fieldset[data-confidence] input[type="radio"]')
+  if (points.length === 0) throw new Error('no confidence scale')
+  click(points[point]!)
   flushSync()
-  click(buttonByText(host, 'Continue'))
 }
+
+const noScale = (): boolean => host.querySelector('fieldset[data-confidence]') === null
 
 async function next(): Promise<void> {
   await tick()
@@ -175,9 +176,10 @@ describe('the remaining families, served', () => {
     typeInto(input('Low end of your 80% range'), '1000')
     typeInto(input('High end of your 80% range'), '9000')
     flushSync()
+    expect(noScale()).toBe(true) // the range is the statement: no confidence scale
     click(buttonByText(host, 'Submit'))
     await next()
-    expect(host.querySelector('.confidence')).toBeNull()
+    expect(noScale()).toBe(true)
     const sent = t.submitted()
     expect(sent).toHaveLength(1)
     expect(sent[0]!.response).toMatchObject({ value: 3000, low: 1000, high: 9000 })
@@ -186,7 +188,7 @@ describe('the remaining families, served', () => {
     expect(host.querySelector('label')?.textContent).toBeTruthy()
   })
 
-  it('Creative Thinking (word links): the triad entry, the typed word, and the confidence slider after it (tier a)', async () => {
+  it('Creative Thinking (word links): the triad entry, the typed word, and the optional confidence scale with it (tier a)', async () => {
     const { t, fake } = setup(['CRE'])
     t.add('CRE', { p: demoRatPayload(1) }, { p: demoRatPayload(2) })
     await toReady(fake)
@@ -195,12 +197,11 @@ describe('the remaining families, served', () => {
     expect(host.querySelectorAll('.cues li')).toHaveLength(3)
     typeInto(host.querySelector<HTMLInputElement>('.rat input[type="text"], .rat input:not([type])')!, ' Word ')
     flushSync()
+    setConfidence(3) // typed entry: 0, 25, 50, 75, 100
     click(buttonByText(host, 'Confirm'))
     await next()
-    await rateConfidence()
-    await next()
     const sent = t.submitted()
-    expect(sent[0]).toMatchObject({ response: 'Word', confidence: 70 })
+    expect(sent[0]).toMatchObject({ response: 'Word', confidence: 75 })
   })
 
   it('Emotion Reading: a vignette and a situational judgment, each sent with no confidence rating; the skill tip says what the skill measures (R-5.6.2)', async () => {
@@ -212,11 +213,12 @@ describe('the remaining families, served', () => {
     expect(host.textContent).not.toMatch(/autis|adhd|alexithym|disorder|symptom/iu)
     const radios = [...host.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
     expect(radios).toHaveLength(5)
+    expect(noScale()).toBe(true) // not rated: no confidence scale
     click(radios[2]!)
     flushSync()
     click(buttonByText(host, 'Confirm'))
     await next()
-    expect(host.querySelector('.confidence')).toBeNull()
+    expect(noScale()).toBe(true)
     // the situational judgment: four responses, a rating each
     const groups = [...host.querySelectorAll('fieldset')].filter((f) => f.querySelectorAll('input[type="radio"]').length === 4)
     expect(groups.length).toBeGreaterThanOrEqual(4)
@@ -230,7 +232,7 @@ describe('the remaining families, served', () => {
     expect(sent[1]!.response).toEqual([1, 2, 3, 4])
   })
 
-  it('Logic Games: the setup beside its questions as an opening and a list of rules, kept in place across the game, "Question 2 of 3 about this setup", and the confidence slider (tier a)', async () => {
+  it('Logic Games: the setup beside its questions as an opening and a list of rules, kept in place across the game, "Question 2 of 3 about this setup", and the optional confidence scale (tier a)', async () => {
     const { t, fake } = setup(['LG'])
     t.add('LG', ...[0, 1, 2].map((q) => ({ p: demoLogicGamePayload(0, q), set: { position: q + 1, of: 3 } })), ...[0, 1, 2, 3].map((q) => ({ p: demoLogicGamePayload(1, q), set: { position: q + 1, of: 4 } })))
     await toReady(fake)
@@ -243,11 +245,11 @@ describe('the remaining families, served', () => {
     const answer = async (): Promise<void> => {
       await settle()
       flushSync()
-      click(host.querySelectorAll<HTMLInputElement>('.text-mc input[type="radio"]')[1]!)
+      click(host.querySelectorAll<HTMLInputElement>('.text-mc .options input[type="radio"]')[1]!)
       flushSync()
+      setConfidence(4) // 100%
       click(buttonByText(host, 'Confirm'))
       flushSync()
-      await rateConfidence()
       await next()
     }
     await answer()
@@ -258,7 +260,7 @@ describe('the remaining families, served', () => {
     const setup2 = host.querySelector<HTMLElement>('section.passage')!
     expect(setup2).not.toBe(setup1)
     expect(host.querySelector('[data-set-position]')?.textContent).toBe('Question 1 of 4 about this setup')
-    expect(t.submitted().map((s) => s.confidence)).toEqual([70, 70, 70])
+    expect(t.submitted().map((s) => s.confidence)).toEqual([100, 100, 100])
   })
 
   it('plans no part the server has no questions for, and says the length of the parts it plans', async () => {

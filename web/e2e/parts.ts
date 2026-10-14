@@ -7,7 +7,8 @@
  * in `src/engine/selector.ts`, M1.14), so after its first item it owes the family it has served less, whatever the
  * random session id (the seed, `src/session/run.ts`) leads to. Before that, pure information per second served series
  * (typed entry) almost always and matrices (multiple choice) in about 1 session of 30. The part is asked for one item of
- * each kind, and its confidence rating.
+ * each kind. 'confidence' is an answer given with the optional confidence scale set (owner decision 2026-10-13:
+ * the scale is on the question screen); each driver sets it on some answers of every part.
  */
 
 import { SEGMENT_TITLES } from './routes'

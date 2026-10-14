@@ -8,13 +8,13 @@ import { sameSave } from '../save/merge'
 import { arbBriefPrefs } from '../save/testing'
 import type { BriefContextV1, BriefPrefsV1, SaveFileV1 } from '../save/types'
 import { SAVE_CTX } from './constants'
-import { Bot } from './bot'
+import { Bot, midConfidence } from './bot'
 import { baseOf, defaultReadyState, replacesDeviceSettings } from './ready-state'
 
 function aSave(sessionId: string, anonId: string) {
   const bot = new Bot({ sessionId, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
-  bot.until((v) => v.phase === 'confidence')
-  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+  bot.until((v) => v.phase === 'item')
+  bot.answer(midConfidence(bot.view()))
   bot.run.finishEarly()
   return saveWithSession(null, bot.run.sessionState(), { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId })
 }

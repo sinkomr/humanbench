@@ -3,7 +3,7 @@ import { AUTOSAVE_PREFIX, autosaveKey, restoreAutosaves } from '../save/autosave
 import { sameSave } from '../save/merge'
 import { SAVE_CTX } from './constants'
 import { SessionPersister } from './persist'
-import { Bot, SpyStorage } from './bot'
+import { Bot, SpyStorage, midConfidence } from './bot'
 import { priorItemCounts } from './coverage'
 
 const WALL = 1_790_000_600_000
@@ -26,8 +26,8 @@ function persister(bot: Bot, storage: SpyStorage | null, extra: Partial<Construc
 
 /** Runs the bot to its first counted answer (Matrix & Series only), so the session holds one response. */
 function answerOne(bot: Bot): void {
-  bot.until((v) => v.phase === 'confidence')
-  bot.run.confirmConfidence(bot.view().confidence!.startPct)
+  bot.until((v) => v.phase === 'item')
+  bot.answer(midConfidence(bot.view()))
 }
 
 const MAT_ONLY = ['RT', 'WM', 'PS', 'SPA', 'QR'] as const
@@ -37,8 +37,8 @@ describe('autosave through the save library (M1.15, M1.17)', () => {
     const bot = new Bot({ sessionId: 's_PERSIST00000001', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     const s = new SpyStorage()
     const { p, t } = persister(bot, s)
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     p.schedule()
     p.schedule()
     expect(s.writes).toEqual([]) // waits for the timer
@@ -55,8 +55,8 @@ describe('autosave through the save library (M1.15, M1.17)', () => {
     const bot = new Bot({ sessionId: 's_PERSIST00000002', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     const s = new SpyStorage()
     const { p } = persister(bot, s)
-    bot.until((v) => v.phase === 'confidence')
-    bot.run.confirmConfidence(bot.view().confidence!.startPct)
+    bot.until((v) => v.phase === 'item')
+    bot.answer(midConfidence(bot.view()))
     p.schedule()
     expect(p.flush()).toBe(true)
     const restored = restoreAutosaves(SAVE_CTX, s).save!
@@ -67,16 +67,16 @@ describe('autosave through the save library (M1.15, M1.17)', () => {
     const first = new Bot({ sessionId: 's_PERSIST00000003', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     const s1 = new SpyStorage()
     const a = persister(first, s1)
-    first.until((v) => v.phase === 'confidence')
-    first.run.confirmConfidence(first.view().confidence!.startPct)
+    first.until((v) => v.phase === 'item')
+    first.answer(midConfidence(first.view()))
     first.run.finishEarly()
     const base = a.p.currentSave()
 
     const second = new Bot({ sessionId: 's_PERSIST00000004', priorItemCounts: priorItemCounts(base), seenFamilies: base.seen_families, skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     const s2 = new SpyStorage()
     const b = persister(second, s2, { base })
-    second.until((v) => v.phase === 'confidence')
-    second.run.confirmConfidence(second.view().confidence!.startPct)
+    second.until((v) => v.phase === 'item')
+    second.answer(midConfidence(second.view()))
     second.run.finishEarly()
     b.p.schedule()
     b.p.flush()
@@ -155,8 +155,8 @@ describe('autosave hygiene', () => {
     const first = new Bot({ sessionId: 's_PERSIST00000008', skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'] })
     const s = new SpyStorage()
     const a = persister(first, s)
-    first.until((v) => v.phase === 'confidence')
-    first.run.confirmConfidence(first.view().confidence!.startPct)
+    first.until((v) => v.phase === 'item')
+    first.answer(midConfidence(first.view()))
     first.run.finishEarly()
     a.p.schedule()
     a.p.flush()
@@ -165,8 +165,8 @@ describe('autosave hygiene', () => {
 
     const second = new Bot({ sessionId: 's_PERSIST00000009', priorItemCounts: priorItemCounts(base), skipped: ['RT', 'WM', 'PS', 'SPA', 'QR'], seenFamilies: base.seen_families })
     const b = persister(second, s, { base })
-    second.until((v) => v.phase === 'confidence')
-    second.run.confirmConfidence(second.view().confidence!.startPct)
+    second.until((v) => v.phase === 'item')
+    second.answer(midConfidence(second.view()))
     second.run.finishEarly()
     b.p.schedule()
     b.p.flush()

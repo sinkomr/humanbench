@@ -138,9 +138,20 @@ describe('the figures the person is told (UX-008)', () => {
 })
 
 describe('the confidence hint (UX-014)', () => {
-  it('says what guessing would give in words, then what the top of the scale means', () => {
-    expect(copy.confidenceHint(17, 6)).toBe('With 6 options, guessing would be right about 17% of the time. 100% means you are certain.')
-    expect(copy.confidenceHint(0, null)).toBe('0% means you have no idea. 100% means you are certain.')
+  it('says the scale is optional, what guessing would give in words, and what its ends mean (owner decision 2026-10-13)', () => {
+    expect(copy.confidenceHint(17, 6)).toBe('Optional. With 6 options a guess is right about 17% of the time. Choose how sure you are, from 17% to 100%, certain, or leave it unset.')
+    expect(copy.confidenceHint(0, null)).toBe('Optional. Choose how sure you are, from 0%, a guess, to 100%, certain, or leave it unset.')
+    expect(copy.confidenceEnds(25)).toEqual({ low: '25% = a guess', high: '100% = certain' })
+    expect([copy.confidencePointName(25, 25), copy.confidencePointName(63, 25), copy.confidencePointName(100, 25)]).toEqual(['25%, a guess', '63%', '100%, certain'])
+  })
+
+  it('mentions the optional scale once, plainly, in the instructions of both versions', async () => {
+    const { SERVER_READY_TEXT } = await import('../backend/copy')
+    for (const text of [copy.READY_TEXT, SERVER_READY_TEXT]) {
+      expect(text.match(/how sure/g)).toHaveLength(1)
+      expect(text).toContain(copy.CONFIDENCE_INSTRUCTION)
+    }
+    expect(copy.CONFIDENCE_INSTRUCTION).toMatch(/optional/)
   })
 })
 
@@ -226,15 +237,15 @@ describe('the words for the session’s length (A15, M3.11 phase 1)', () => {
     expect(WELCOME_INTRO).toBe(
       'The session has six parts and takes about 30 minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.',
     )
-    expect(READY_TEXT).toBe('Six short parts, about 30 minutes. Your progress is saved in this browser as you go. After each answer to a question you will say how sure you are.')
+    expect(READY_TEXT).toBe('Six short parts, about 30 minutes. Your progress is saved in this browser as you go. Each question also has a small optional scale for how sure you are of your answer. Set it before you submit if you like, or leave it.')
     expect(SERVER_READY_TEXT).toBe(
-      'Six short parts, about 30 minutes. Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. After each answer to a question you will say how sure you are.',
+      'Six short parts, about 30 minutes. Your progress is saved in this browser as you go, and your answers to the counted questions are sent to the server as you give them. Each question also has a small optional scale for how sure you are of your answer. Set it before you submit if you like, or leave it.',
     )
     expect(META_DESCRIPTION).toBe('HumanBench: short tasks of reasoning, memory and speed, about 30 minutes. Your results are shown as a profile with ranges, not as a single score.')
     expect(welcomeIntro(BASE_OUTLINE)).toBe(WELCOME_INTRO)
     expect(serverReadyText(BASE_OUTLINE)).toBe(SERVER_READY_TEXT)
-    // a session with a part whose answers are not rated (Fermi, Emotion Reading) says "most answers"
-    expect(serverReadyText(BASE_OUTLINE, true)).toContain('After most answers to a question you will say how sure you are.')
+    // a session with a part whose answers are not rated (Fermi, Emotion Reading) says "most questions"
+    expect(serverReadyText(BASE_OUTLINE, true)).toContain('Most questions also have a small optional scale for how sure you are of your answer.')
     expect(lengthSentence(BASE_OUTLINE)).toBe('Six short parts, about 30 minutes.')
   })
 

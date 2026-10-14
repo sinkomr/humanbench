@@ -2,7 +2,7 @@
   The running session (ROADMAP M1.15; DESIGN §7.4, §10, §13; A15): the time-based progress ring and
   the per-cluster checklist around whatever the run is showing: an interstitial ("Up next: Spatial.
   About 6 min.", and that the clock waits there until Start, UX-066), a fixed block, a power item with
-  its confidence slider (which reports whether it was moved, UX-063), the break suggestion at the part
+  its optional confidence scale, the break suggestion at the part
   boundary nearest half-way, or the break itself. A question that waits for its answer shows its timer (`ItemTimer.svelte`). "Skip <axis>" and "Finish early" are always at hand. This component only shows
   `SessionRun.view()` and forwards the renderers' events; the rules live in `run.ts`.
   The header is small on a phone (UX-003); "Keep going" in a confirmation hands focus back to the running
@@ -14,7 +14,7 @@
   Focus on a new screen (UX-REVIEW D21, a provisional default): the heading takes it on the first question of
   a part and on every screen that is not a question; on a later question of the same part it goes to the
   question's own region, named "Question 3" (`question-focus.ts`), so the part's name is not read again for
-  every question. The region holds the question, its confidence slider and the notes about it, so it stays
+  every question. The region holds the question (its optional confidence scale too) and the notes about it, so it stays
   on screen when the renderer is parked. The wait between two questions of a served part takes no focus of
   its own (the question that follows does); a wait that failed takes the heading, as a screen to be told about.
   Before a served text part (M3.11 phase 1) the run asks the server whether it has questions for it: that wait is
@@ -24,7 +24,7 @@
   A served passage (M3.11 phase 2; owner decision 2026-10-12: the passage stays visible while its questions are
   answered) is shown beside its question, or above it on a narrow screen (`render/text/PassageLayout.svelte`), and
   the page is not rebuilt between two questions of the same passage: the passage stays where it is, scrolled where
-  the person left it, through the question, its slider and the short wait for the next one. A new passage takes
+  the person left it, through the question and the short wait for the next one. A new passage takes
   focus (its region is named "Passage"), so a screen-reader user learns that there is something new to read; a
   later question of the same passage takes focus on its own region, as any later question does, so the passage is
   not read out again, and it says which of the passage's questions it is.
@@ -35,7 +35,8 @@
   import { LOADING_PROBLEM, LOADING_RETRY, LOADING_TEXT, PROBING_HEADING, PROBING_TEXT } from '../backend/copy'
   import ReportProblem from '../backend/ReportProblem.svelte'
   import Checklist from './Checklist.svelte'
-  import Confidence from './Confidence.svelte'
+  import ConfidenceScale from './ConfidenceScale.svelte'
+  import { setAnswerSlot } from '../render/common/answer-slot'
   import ItemTimer from './ItemTimer.svelte'
   import ConfirmPanel from './ConfirmPanel.svelte'
   import ProgressRing from './ProgressRing.svelte'
@@ -63,6 +64,7 @@
     NOTICE_MALFORMED,
     NOTICE_TIMEOUT,
     NOTICE_TIMEOUT_SERVED,
+    NOTICE_TIMEOUT_SUBMITTED,
     SKIP_CONFIRM_HEADING,
     SKIP_CONFIRM_NO,
     SKIP_CONFIRM_TEXT,
@@ -116,6 +118,27 @@
   let finishButton: HTMLButtonElement | undefined = $state()
   // svelte-ignore state_referenced_locally
   let seenFinishRequest = finishRequest
+  /**
+   * The confidence set on the question on screen (owner decision 2026-10-13), by item id so that a value set on one
+   * question can never be sent with another. Unset: null, and the answer goes without one.
+   */
+  let rating: { readonly itemId: string; readonly pct: number | null } | null = null
+
+  /** The answer, and the confidence if it was set on this question: one press sends both. */
+  function respond(response: unknown): void {
+    const id = view.item?.item_id
+    run.itemResponded(response, id !== undefined && rating?.itemId === id ? rating.pct : null)
+    rating = null
+  }
+
+  // The renderers draw the scale just above their own submit button (`answer-slot.ts`), for a question that is rated.
+  setAnswerSlot({
+    get snippet() {
+      return view.phase === 'item' && view.confidence !== null && view.item !== null ? confidenceSlot : null
+    },
+    // The answer as it stands, so a question that runs out of time sends it (owner decision 2026-10-13).
+    draft: (response) => run.itemDraft(response),
+  })
 
   $effect(() =>
     run.subscribe(() => {
@@ -168,7 +191,6 @@
       case 'block':
         return `b:${view.block?.item_id ?? ''}`
       case 'item':
-      case 'confidence':
         return `q:${view.item?.item_id ?? ''}`
       case 'loading':
         // A wait that failed is a screen of its own to be told about (focus on its heading); the wait itself is not.
@@ -180,8 +202,8 @@
   /** Where focus goes on this screen, and the number of its question: asked once per screen key. */
   const plan = $derived(questions.enter(screenKey, { phase: view.phase, segmentIndex: view.segmentIndex, problem: view.problem !== null }))
   /**
-   * What the page is rebuilt for. A passage is one page from its first question to its last (the questions, their
-   * sliders and the waits between them), so the passage stays in place; every other screen is a page of its own,
+   * What the page is rebuilt for. A passage is one page from its first question to its last (the questions and the
+   * waits between them), so the passage stays in place; every other screen is a page of its own,
    * and so is a wait that failed.
    */
   const mountKey = $derived(view.passage !== null && view.problem === null ? `p:${view.segmentIndex}:${view.passage.passageKey}` : screenKey)
@@ -194,7 +216,7 @@
     if (view.unavailable && (n.kind === 'unavailable' || n.kind === 'unsupported')) return ''
     switch (n.kind) {
       case 'timeout':
-        return n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
+        return n.submitted === true ? NOTICE_TIMEOUT_SUBMITTED : n.served === true ? NOTICE_TIMEOUT_SERVED : NOTICE_TIMEOUT
       case 'malformed':
         return NOTICE_MALFORMED
       case 'skipped':
@@ -268,6 +290,17 @@
   })
 </script>
 
+<!-- The optional confidence scale of the question on screen, drawn by its renderer before the submit button. -->
+{#snippet confidenceSlot()}
+  {#if view.confidence !== null && view.item !== null}
+    {@const itemId = view.item.item_id}
+    <ConfidenceScale floorPct={view.confidence.floorPct} optionsCount={view.confidence.optionsCount} disabled={view.unavailable} onchange={(pct) => {
+        rating = { itemId, pct }
+        run.itemConfidence(pct)
+      }} />
+  {/if}
+{/snippet}
+
 <!-- What the screen shows for the run's phase; beside a passage when the question has one. -->
 {#snippet content()}
   {#if view.phase === 'interstitial' && segment !== null}
@@ -291,7 +324,7 @@
       oninputtype={(t) => run.blockInputType(t)}
       ontimestampsource={(s, reason) => run.blockTimestampSource(s, reason)}
     />
-  {:else if (view.phase === 'item' || view.phase === 'confidence') && view.item !== null}
+  {:else if view.phase === 'item' && view.item !== null}
     <!-- The question's own region: a script target for a later question of the part (D21), not a tab stop. -->
     <div class="item-region" id={regionId} role="group" aria-label={itemRegionName(plan.number)} tabindex="-1">
       {#if view.unavailable}
@@ -306,10 +339,10 @@
       {#if view.passage?.position != null && view.passage.position.of > 1}
         <p class="set-position" data-set-position>{(view.passage.kind === 'setup' ? SETUP_COPY : PASSAGE_COPY).position(view.passage.position.index, view.passage.position.of)}</p>
       {/if}
-      {#if view.phase === 'item' && itemTime !== null}
+      {#if itemTime !== null}
         <!-- Every question that can run out of time says how long is left, and warns before it does (owner feedback 2026-10-13). -->
         {#key view.item.item_id}
-          <ItemTimer leftS={itemTime.leftS} limitS={itemTime.limitS} typed={view.item.options_count === undefined} />
+          <ItemTimer leftS={itemTime.leftS} limitS={itemTime.limitS} />
         {/key}
       {/if}
       <!-- Always this one wrapper, so the renderer is never remounted when the question turns out to be unavailable. -->
@@ -320,16 +353,13 @@
           spec={view.item.spec}
           scale={env.scale}
           timing={env.timing}
-          disabled={view.phase === 'confidence' || view.unavailable}
-          onrespond={(r) => run.itemResponded(r)}
+          disabled={view.unavailable}
+          onrespond={respond}
           onshown={(ms) => run.itemShown(ms)}
           onunavailable={() => run.itemUnavailable()}
           onpaste={(id) => run.notePaste(id)}
         />
       </div>
-      {#if view.phase === 'confidence' && view.confidence !== null}
-        <Confidence floorPct={view.confidence.floorPct} startPct={view.confidence.startPct} optionsCount={view.confidence.optionsCount} onconfirm={(pct, touched) => run.confirmConfidence(pct, touched)} />
-      {/if}
       {#if view.reportable !== null && report !== undefined}
         <ReportProblem itemId={view.reportable} {report} />
       {/if}

@@ -54,14 +54,13 @@ interface Arrival {
   tabs: number
 }
 
-type Kind = 'finished' | 'confidence' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'coding' | 'reading' | 'interstitial' | 'break' | 'other'
+type Kind = 'finished' | 'choice' | 'entry' | 'rt' | 'span' | 'corsi' | 'coding' | 'reading' | 'interstitial' | 'break' | 'other'
 
 /** What is on screen, as far as the driver needs to know. */
 const SCREEN = `(() => {
   const h1 = (document.querySelector('h1') || {}).textContent || ''
   const text = h1.trim()
   if (text === 'Session complete' || text === 'Session ended') return 'finished'
-  if (document.querySelector('input[type=range]')) return 'confidence'
   if (document.querySelector('form.choice:not(:has(fieldset:disabled))')) return 'choice'
   if (document.querySelector('form.entry')) return 'entry'
   for (const k of ['rt', 'span', 'corsi', 'coding', 'reading']) if (document.querySelector('section.hb-render.' + k)) return k
@@ -160,7 +159,7 @@ class Taker {
     await expect(heading(page)).toHaveText(/^Up next:/)
   }
 
-  /** The practice question on screen: a choice or a typed answer, by keys, as far as the confidence slider. */
+  /** The practice question on screen: a choice or a typed answer, by keys, with the confidence set on the first. */
   async answerPractice(): Promise<void> {
     // A figure question keeps its options locked until the figures are drawn (the 3D view loads first): wait until it takes an answer.
     await expect.poll(() => this.screen(), { timeout: 15_000 }).toMatch(/^(choice|entry)$/)
@@ -180,6 +179,7 @@ class Taker {
       this.segment = ((await heading(page).textContent()) ?? '').replace(/^Up next:\s*/, '').trim()
       this.segments.push(this.segment)
       this.played.set(this.segment, new Set())
+      this.inPart = 0
     }
     this.note(kind)
     // Every screen of the session, on arrival: focus is on the page and shows where it is (the results are checked below).
@@ -205,9 +205,6 @@ class Taker {
       case 'entry':
         await this.answerEntry()
         break
-      case 'confidence':
-        await this.rateConfidence()
-        break
       case 'rt':
         await this.playRt()
         break
@@ -229,46 +226,63 @@ class Taker {
     return true
   }
 
-  /** A multiple-choice item: Tab to the options, pick B with its key, Enter to answer. */
+  /** Items answered in the part on screen: the first of a part, and every other one after it, go with the confidence set. */
+  private inPart = 0
+
+  /** The points of the optional confidence scale of the question on screen (owner decision 2026-10-13). */
+  private scalePoints(): Locator {
+    return this.page.locator('fieldset[data-confidence] input[type=radio]')
+  }
+
+  /** The name the scale's points share: new with every question, so its absence says the question is gone. */
+  private async scaleName(): Promise<string> {
+    await expect(this.scalePoints().first()).toBeAttached()
+    await expect(this.page.locator('fieldset[data-confidence] input[type=radio]:checked')).toHaveCount(0) // it starts unset
+    const name = (await this.scalePoints().first().getAttribute('name')) ?? ''
+    expect(name).not.toBe('')
+    return name
+  }
+
+  /** Tab on to the scale (one stop, after the answer), set it with an arrow key, and Enter: answer and confidence go in one press. */
+  private async rateAndSubmit(where: string): Promise<void> {
+    const { page } = this
+    await this.tabTo(this.scalePoints().first())
+    await this.checkFocus(`confidence scale, ${where}`)
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('fieldset[data-confidence] input[type=radio]:checked')).toHaveCount(1)
+    this.note('confidence')
+    await page.keyboard.press('Enter')
+  }
+
+  /** A multiple-choice item: Tab to the options, pick B with its key; Enter on it, or on the confidence scale once it is set. */
   private async answerChoice(): Promise<void> {
     const { page } = this
     // The heading (first question of a part) or the question's own region (a later one) holds focus when the item appears;
     // either way one Tab reaches the options (a radio group is one stop).
-    const tabs = await this.tabTo(page.locator('form.choice input[type=radio]').first())
+    const tabs = await this.tabTo(page.locator('form.choice .options input[type=radio]').first())
     if (this.arrival !== null) this.arrival.tabs = tabs
     await this.checkFocus('multiple choice item')
+    const name = await this.scaleName()
     await page.keyboard.press('b')
-    await expect(page.locator('form.choice input[type=radio]:checked')).toHaveCount(1)
-    await page.keyboard.press('Enter')
-    await expect(page.getByRole('slider')).toBeVisible()
+    await expect(page.locator('form.choice .options input[type=radio]:checked')).toHaveCount(1)
+    if (this.inPart++ % 2 === 0) await this.rateAndSubmit('multiple choice')
+    else await page.keyboard.press('Enter')
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
   }
 
-  /** A typed item (series or quant): Tab to the box, type, Enter; a letter series wants a letter. */
+  /** A typed item (series or quant): Tab to the box, type; Enter there, or on the confidence scale once it is set. A letter series wants a letter. */
   private async answerEntry(): Promise<void> {
     const { page } = this
     const box = page.locator('form.entry input[type=text]')
     const tabs = await this.tabTo(box)
     if (this.arrival !== null) this.arrival.tabs = tabs
     await this.checkFocus('typed item')
-    await page.keyboard.type('1')
-    await page.keyboard.press('Enter')
-    if (!(await page.getByRole('slider').isVisible({ timeout: 1500 }).catch(() => false))) {
-      await page.keyboard.press('ControlOrMeta+A')
-      await page.keyboard.type('A')
-      await page.keyboard.press('Enter')
-    }
-    await expect(page.getByRole('slider')).toBeVisible()
-  }
-
-  /** The confidence slider has focus on arrival; nudge it with the arrow keys, then Tab to Continue. */
-  private async rateConfidence(): Promise<void> {
-    const { page } = this
-    await expect(page.getByRole('slider')).toBeFocused()
-    await this.checkFocus('confidence slider')
-    await page.keyboard.press('ArrowRight')
-    await page.keyboard.press('PageUp')
-    await this.activate(control(page, 'button', 'Continue'))
-    await expect(page.getByRole('slider')).toHaveCount(0)
+    const name = await this.scaleName()
+    const letter = await box.evaluate((el) => el.classList.contains('letter'))
+    await page.keyboard.type(letter ? 'A' : '1')
+    if (this.inPart++ % 2 === 0) await this.rateAndSubmit('typed answer')
+    else await page.keyboard.press('Enter')
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
   }
 
   /**
@@ -465,10 +479,7 @@ test.describe('practice by keyboard alone (UX-004, WCAG 2.4.3, 4.1.3)', () => {
       await expect(heading(page)).toBeFocused()
       await taker.checkFocus(`practice question ${n}`)
       await taker.answerPractice()
-      await expect(page.getByRole('slider')).toBeFocused()
-      await taker.checkFocus(`practice confidence ${n}`)
-      await taker.activate(control(page, 'button', 'Continue'))
-      // The feedback arrives with focus on it (and a status line tells a screen reader the verdict).
+      // One press: the feedback arrives with focus on it (and a status line tells a screen reader the verdict).
       await expect(page.locator('section.feedback')).toBeFocused()
       await expect(page.locator('p.hb-sr-only[role="status"]')).toHaveText(/^Your answer was (not )?correct\./)
       await taker.checkFocus(`practice feedback ${n}`)

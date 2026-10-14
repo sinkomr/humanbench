@@ -17,12 +17,15 @@
   import { onMount } from 'svelte'
   // No `import '../common/render.css'` here: it is in the session's entry chunk and in a dev demo, which would split that stylesheet out of the entry (scripts/dev-routes.test.ts); the screens load it.
   import { browserTiming, type EntryRendererProps } from '../common/props'
+  import { getAnswerSlot } from '../common/answer-slot'
   import { ENTRY_COPY } from '../../tasks/rat/copy'
   import { MAX_ANSWER_CHARS, isRatResponse, type RatResponse, type RatSpec } from '../../tasks/rat/spec'
 
   let { spec, onrespond, onshown, onpaste, timing, disabled = false }: EntryRendererProps<RatSpec, RatResponse> = $props()
 
   const uid = $props.id()
+  /** The session's optional confidence scale (owner decision 2026-10-13: word links are rated), or none outside a session. */
+  const slot = getAnswerSlot()
   const clock = $derived((timing ?? browserTiming()).clock)
   let text = $state('')
   let note = $state('')
@@ -44,6 +47,13 @@
     submitted = true
     onrespond(answer)
   }
+
+  // The answer as it stands, for a time-out (owner decision 2026-10-13): the typed word when it is one, until it is submitted.
+  $effect(() => {
+    const answer = text.trim()
+    if (submitted) return
+    slot?.draft?.(answer !== '' && isRatResponse(answer) ? answer : null)
+  })
 
   // The Enter that ends an IME composition (Safari reports it as keyCode 229) picks a candidate; it is not a submit.
   function onkeydown(event: KeyboardEvent): void {
@@ -93,9 +103,16 @@
         onpaste={() => onpaste?.({ t_ms: clock.now() })}
         {onkeydown}
       />
-      <button type="submit" class="hb-btn hb-primary" disabled={locked || submitted}>{ENTRY_COPY.submit}</button>
+      {#if !slot?.snippet}
+        <button type="submit" class="hb-btn hb-primary" disabled={locked || submitted}>{ENTRY_COPY.submit}</button>
+      {/if}
     </div>
     <p class="hb-note" id="{uid}-note" aria-live="polite">{note}</p>
+    {#if slot?.snippet}
+      <!-- In a session: the optional confidence scale, then the button on a line of its own; one press sends both. -->
+      {@render slot.snippet()}
+      <button type="submit" class="hb-btn hb-primary" disabled={locked || submitted}>{ENTRY_COPY.submit}</button>
+    {/if}
     <p class="hb-status" aria-live="polite">{submitted ? ENTRY_COPY.recorded : ''}</p>
   </form>
 </section>

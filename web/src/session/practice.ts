@@ -1,7 +1,8 @@
 /**
  * Practice mode (ROADMAP M1.15; DESIGN §10 "Procedural items show feedback only in an optional
  * 'practice mode' that doesn't count"): a few easy procedural power items, one per kind, each with
- * the confidence slider and then feedback on the answer. Nothing here is counted or kept: no
+ * feedback on the answer. Each shows the optional confidence scale as the counted questions do (owner
+ * decision 2026-10-13), so the scale is met first where nothing counts; what is set there is not kept. Nothing here is counted or kept: no
  * response reaches a save, an autosave, the integrity logs or the score, and the families it used
  * are only excluded from the counted session that follows (the practice items are already seen).
  * The feedback names the right answer; it is shown after the answer only, never in the item.
@@ -11,12 +12,12 @@ import type { AnyItem } from '../engine/selector'
 import { optionLetter } from '../render/choice/keys'
 import { MalformedResponseError, type AnyFamily } from '../tasks/family'
 import { getFamily } from '../tasks/registry'
-import { confidenceFloorPct, confidenceStartPct, isConfidencePct } from './calibration'
+import { confidenceFloorPct } from './calibration'
 
 /** The practice items, in order: a matrix, a series, a number problem and a rotation. */
 export const PRACTICE_FAMILIES: readonly string[] = Object.freeze(['matrices', 'series', 'quant', 'rotation'])
 
-export type PracticePhase = 'item' | 'confidence' | 'feedback' | 'done'
+export type PracticePhase = 'item' | 'feedback' | 'done'
 
 export interface PracticeFeedback {
   readonly correct: boolean
@@ -39,7 +40,8 @@ export interface PracticeView {
   readonly number: number
   readonly total: number
   readonly item: PracticeItem | null
-  readonly confidence: { readonly floorPct: number; readonly startPct: number; readonly optionsCount: number | null } | null
+  /** The optional confidence scale of the question (shown while it waits for its answer, never kept). */
+  readonly confidence: { readonly floorPct: number; readonly optionsCount: number | null } | null
   readonly feedback: PracticeFeedback | null
   readonly unavailable: boolean
 }
@@ -57,7 +59,6 @@ export class PracticeRun {
   readonly #items: AnyItem[]
   #index = 0
   #phase: PracticePhase = 'item'
-  #pending: { correct: boolean } | null = null
   #feedback: PracticeFeedback | null = null
   #unavailable = false
   readonly #listeners = new Set<() => void>()
@@ -91,10 +92,7 @@ export class PracticeRun {
   view(): PracticeView {
     const item = this.#phase === 'done' ? null : (this.#items[this.#index] ?? null)
     let confidence: PracticeView['confidence'] = null
-    if (this.#phase === 'confidence' && item !== null) {
-      const floorPct = confidenceFloorPct(item.options_count)
-      confidence = { floorPct, startPct: confidenceStartPct(floorPct), optionsCount: item.options_count ?? null }
-    }
+    if (this.#phase === 'item' && item !== null && !this.#unavailable) confidence = { floorPct: confidenceFloorPct(item.options_count), optionsCount: item.options_count ?? null }
     return {
       phase: this.#phase,
       number: Math.min(this.#index + 1, this.#items.length),
@@ -128,18 +126,7 @@ export class PracticeRun {
       if (e instanceof MalformedResponseError) return
       throw e
     }
-    this.#pending = { correct: correct === 1 }
-    this.#phase = 'confidence'
-    this.#emit()
-  }
-
-  /** The person rated their confidence; the feedback follows. */
-  confirmConfidence(pct: number): void {
-    const item = this.#items[this.#index]
-    if (this.#phase !== 'confidence' || item === undefined || this.#pending === null) return
-    if (!isConfidencePct(pct, confidenceFloorPct(item.options_count))) return
-    this.#feedback = { correct: this.#pending.correct, answer: answerText(item) }
-    this.#pending = null
+    this.#feedback = { correct: correct === 1, answer: answerText(item) }
     this.#phase = 'feedback'
     this.#emit()
   }

@@ -17,7 +17,7 @@ type Op =
   | { t: 'finish' }
   | { t: 'junk_item'; v: unknown }
   | { t: 'junk_block'; v: unknown }
-  | { t: 'conf'; pct: number }
+  | { t: 'conf'; v: unknown; pct: number }
   | { t: 'take_break' }
   | { t: 'resume' }
   | { t: 'decline' }
@@ -47,7 +47,8 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
   { weight: 1, arbitrary: fc.constant<Op>({ t: 'finish' }) },
   { weight: 2, arbitrary: junk.map((v): Op => ({ t: 'junk_item', v })) },
   { weight: 2, arbitrary: junk.map((v): Op => ({ t: 'junk_block', v })) },
-  { weight: 2, arbitrary: fc.integer({ min: -5, max: 120 }).map((pct): Op => ({ t: 'conf', pct })) },
+  // An answer (junk or a plain option) with any confidence, in range or not (owner decision 2026-10-13: it comes with the answer).
+  { weight: 2, arbitrary: fc.tuple(fc.oneof(junk, fc.constant(0), fc.constant('1')), fc.integer({ min: -5, max: 120 })).map(([v, pct]): Op => ({ t: 'conf', v, pct })) },
   { weight: 1, arbitrary: fc.constant<Op>({ t: 'take_break' }) },
   { weight: 1, arbitrary: fc.constant<Op>({ t: 'resume' }) },
   { weight: 1, arbitrary: fc.constant<Op>({ t: 'decline' }) },
@@ -85,7 +86,7 @@ function apply(bot: Bot, op: Op): void {
       r.blockResponded(op.v)
       break
     case 'conf':
-      r.confirmConfidence(op.pct)
+      r.itemResponded(op.v, op.pct)
       break
     case 'take_break':
       r.takeBreak()
@@ -143,9 +144,9 @@ describe('SessionRun under arbitrary event sequences (fuzz)', () => {
           // The UI never sees a key.
           expect(JSON.stringify(v)).not.toMatch(/"(key|params|difficulty|structural_params)"/)
           // Phases and their data agree.
-          expect(v.item !== null).toBe(v.phase === 'item' || v.phase === 'confidence')
+          expect(v.item !== null).toBe(v.phase === 'item')
           expect(v.block !== null).toBe(v.phase === 'block')
-          expect(v.confidence !== null).toBe(v.phase === 'confidence')
+          expect(v.confidence !== null).toBe(v.phase === 'item')
         }
         const st = bot.run.sessionState()
         const save = saveWithSession(null, st, { ctx: SAVE_CTX, createdMs: 1_790_000_100_000, anonId: newAnonId() })

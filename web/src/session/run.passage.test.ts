@@ -133,11 +133,7 @@ class Taker {
           this.run.tick()
         } else {
           this.t += this.itemS * 1000
-          this.run.itemResponded(act)
-          const rated = this.run.view().confidence
-          if (rated === null) continue // the hard stop came first
-          this.t += 2000
-          this.run.confirmConfidence(rated.startPct)
+          this.run.itemResponded(act, 50)
         }
       } else throw new Error(`unexpected phase ${v.phase}`)
     }
@@ -179,14 +175,14 @@ describe('a Reading Comprehension part of made-up passages', () => {
     const keyB = t.seen.find((s) => s.item === idOf(1, 0))!.passageKey
     expect(keyA).not.toBeNull()
     expect(keyB).not.toBe(keyA)
-    // from the first question of passage one to its last, every screen is the passage's: the question, its slider, the wait
+    // from the first question of passage one to its last, every screen is the passage's: the question, the wait
     const from = t.seen.findIndex((s) => s.item === idOf(0, 0))
     const to = t.seen.findLastIndex((s) => s.item === idOf(0, 2))
     const during = t.seen.slice(from, to + 1)
     expect(during.every((s) => s.passageKey === keyA)).toBe(true)
     expect(during.some((s) => s.phase === 'loading')).toBe(true)
     expect(during.filter((s) => s.phase === 'loading').every((s) => s.position === null)).toBe(true)
-    expect(during.some((s) => s.phase === 'confidence')).toBe(true)
+    expect(first.every((id) => during.some((s) => s.phase === 'item' && s.item === id))).toBe(true)
     // the place of each question among the passage's own
     expect(first.map((id) => t.seen.find((s) => s.item === id)!.position)).toEqual([1, 2, 3].map((index) => ({ index, of: 3 })))
     // between two passages nothing of the first is left on screen

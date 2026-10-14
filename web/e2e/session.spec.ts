@@ -7,7 +7,7 @@
  * the one break offer before the half-way part and the clock held on "Up next" screens (UX-066; owner
  * decision 2026-10-05, UX-REVIEW D5), the hard stop at 57, the six answered questions of the Quantitative part
  * when its time budget is gone (A15 amended 2026-10-12; before it, the ≥ 3-item coverage floor and the known QR
- * issue), the per-axis early stop, the confidence slider, autosave through the
+ * issue), the per-axis early stop, the optional confidence scale, autosave through the
  * save library, and the `?fast=1` dev flag. Rules that depend on minutes run on a fake clock
  * (`page.clock`), so the tests take seconds. Every screen is checked with axe (0 serious or critical
  * issues, WCAG 2.2 AA) and, for the main ones, the language lint (A13) and reflow at 320 px.
@@ -19,7 +19,7 @@ import { DISCLAIMER } from '../src/copy'
 import { QUANT_MIN_ITEMS } from '../src/engine/plan-table'
 import { BREAK_OFFER_TEXT } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
-import { FINISHED_HEADINGS } from './flow'
+import { FINISHED_HEADINGS, answerItem } from './flow'
 import { useWideFont } from './wide-font'
 
 const h1 = (page: Page): Locator => page.getByRole('heading', { level: 1 })
@@ -81,32 +81,9 @@ async function toFirstItem(page: Page): Promise<void> {
   await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
 }
 
-/** Answer the item on screen (any kind) and rate the confidence; `pct` fills the slider first. */
-async function answerItem(page: Page, pct?: number): Promise<void> {
-  const choice = page.locator('form.choice')
-  const entry = page.locator('form.entry')
-  const slider = page.getByRole('slider')
-  await expect(choice.or(entry)).toBeVisible()
-  if ((await choice.count()) > 0) {
-    await choice.getByRole('radio').first().check()
-    await button(page, 'Confirm').click()
-  } else {
-    const box = entry.getByRole('textbox')
-    await box.fill('1')
-    await box.press('Enter')
-    if (!(await slider.isVisible({ timeout: 1500 }).catch(() => false))) {
-      await box.fill('A') // a letter series
-      await box.press('Enter')
-    }
-  }
-  await expect(slider).toBeVisible()
-  if (pct !== undefined) await slider.fill(String(pct))
-  await button(page, 'Continue').click()
-}
-
-/** The item on screen has gone (the next screen or item is up). */
+/** The item on screen has gone (the next screen or item is up): `answerItem` already waits for that (one press). */
 async function nextScreen(page: Page): Promise<void> {
-  await expect(page.getByRole('slider')).toHaveCount(0)
+  await expect(page.locator('form.choice, form.entry').or(page.locator('h1')).first()).toBeVisible()
 }
 
 async function storage(page: Page): Promise<{ local: number; session: number; cookie: string; idb: number; caches: number }> {
@@ -327,7 +304,7 @@ test.describe('ready and practice (§10)', () => {
     await expect(page.getByText(/That was (not )?correct/)).toHaveCount(0)
     await expect(page.locator('form.choice, form.entry').first()).toBeVisible()
     await expectNoSeriousAxe(page)
-    await answerItem(page, 80)
+    await answerItem(page, 3) // the optional scale is on practice questions too; nothing of it is kept
     await expect(page.getByText(/That was (not )?correct\./)).toBeVisible()
     await expect(page.getByText(/The answer was [A-F]\./)).toBeVisible()
     await expectNoSeriousAxe(page)
@@ -366,7 +343,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     const list = page.getByRole('region', { name: 'Session checklist' })
     await expect(list.getByRole('listitem')).toHaveCount(5)
     await expect(list.getByRole('listitem').nth(1)).toContainText('Reasoning')
-    // Estimation is measured by the confidence slider, so it has a row and is not listed as missing.
+    // Estimation is measured by the optional confidence scale, so it has a row and is not listed as missing.
     await expect(list.getByRole('listitem').nth(4)).toContainText('Estimation')
     await expect(list.getByRole('listitem').nth(4)).toContainText('With each answer')
     await expect(list).toContainText('Not in this version')
@@ -400,50 +377,49 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
     await expect(page.getByRole('status').first()).toContainText('Reaction Time skipped')
   })
 
-  test('a counted item: no key and no verdict in the page, the slider comes after the answer, and axe passes throughout', async ({ page }) => {
+  test('a counted item: no key and no verdict in the page, the optional confidence scale on the question, unset, and axe passes throughout', async ({ page }) => {
     await toFirstItem(page)
     const html = await page.content()
     expect(html).not.toMatch(/data-(key|correct|answer)|is_correct|correctIndex|"key"/i)
     await expect(page.getByText(/correct|incorrect|wrong/i)).toHaveCount(0)
     await expect(page.getByRole('slider')).toHaveCount(0)
-    await expectNoSeriousAxe(page)
-    // Answer: the slider appears, keeps the item on screen, starts on the keyboard.
-    const choice = page.locator('form.choice')
-    if ((await choice.count()) > 0) {
-      await choice.getByRole('radio').first().check()
-      await button(page, 'Confirm').click()
-    } else {
-      await page.getByRole('textbox').fill('1')
-      await page.getByRole('textbox').press('Enter')
-      if (!(await page.getByRole('slider').isVisible({ timeout: 1500 }).catch(() => false))) {
-        await page.getByRole('textbox').fill('A')
-        await page.getByRole('textbox').press('Enter')
-      }
+    // The scale: a named group inside the question's form, before its submit button, unset and saying so.
+    const form = page.locator('form.choice, form.entry').first()
+    const scale = form.getByRole('group', { name: /How sure are you\? Optional/ })
+    await expect(scale).toBeVisible()
+    await expect(scale.getByRole('radio')).toHaveCount(5)
+    await expect(scale.getByRole('radio', { name: '100%, certain' })).toBeVisible()
+    await expect(scale.getByText('Not set')).toBeVisible()
+    await expect(scale.locator('input:checked')).toHaveCount(0)
+    // Every point is at least 44 by 44 px (WCAG 2.5.5 here; 2.5.8 minimum 24).
+    for (const box of await scale.locator('.pill').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ w: r.width, h: r.height })))) {
+      expect(box.w).toBeGreaterThanOrEqual(44)
+      expect(box.h).toBeGreaterThanOrEqual(44)
     }
-    const slider = page.getByRole('slider')
-    await expect(slider).toBeVisible()
-    await expect(slider).toBeFocused()
-    await expect(page.getByText('How sure are you that your answer is right?')).toBeVisible()
-    await expect(page.getByText(/correct|incorrect|wrong/i)).toHaveCount(0)
     await expectNoSeriousAxe(page)
+    await scale.getByRole('radio').nth(2).check()
+    await expect(scale.getByRole('button', { name: 'Clear' })).toBeVisible()
+    await expect(page.getByText(/correct|incorrect|wrong/i)).toHaveCount(0)
     for (const colorScheme of ['dark', 'light'] as const) {
       await scheme(page, colorScheme)
       await expectNoSeriousAxe(page)
     }
   })
 
-  test('the confidence slider can be set, and is stored with the answer (Brier input)', async ({ page }) => {
+  test('the confidence scale, when set, is stored with the answer (Brier input); left unset, the answer has none', async ({ page }) => {
     await toFirstItem(page)
-    await answerItem(page, 73)
-    await nextScreen(page)
+    const set = await answerItem(page, 3)
+    await answerItem(page)
     const stored = (): Promise<unknown[][]> =>
       page.evaluate(() => {
         const key = Object.keys(localStorage).find((k) => k.startsWith('hb:save:v1:')) ?? ''
         return (JSON.parse(localStorage.getItem(key) ?? '{}') as { sessions?: { responses: unknown[][] }[] }).sessions?.[0]?.responses ?? []
       })
-    await expect.poll(async () => (await stored()).length).toBe(1)
+    await expect.poll(async () => (await stored()).length).toBe(2)
     const responses = await stored()
-    expect(responses[0]?.[5]).toBe(73)
+    expect(set).not.toBeNull()
+    expect(responses[0]?.[5]).toBe(set)
+    expect(responses[1]?.[5]).toBeNull()
     expect(String(responses[0]?.[0])).toMatch(/^i:(matrices|series):/)
   })
 
@@ -483,7 +459,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
 
   test('finish early asks first, ends with what there is, and shows the profile with a save file to download', async ({ page }) => {
     await toFirstItem(page)
-    await answerItem(page, 60)
+    await answerItem(page, 2)
     await nextScreen(page)
     await button(page, 'Finish early').click()
     await expect(page.getByRole('heading', { level: 2, name: 'Finish now?' })).toBeVisible()
@@ -506,7 +482,7 @@ test.describe('the session: interstitials, ring, checklist, controls (§10, A15)
 
   test('a save from one session is loaded by content on the ready screen and the next session is added to it (R-8.1, M1.17 wiring)', async ({ page }) => {
     await toFirstItem(page)
-    await answerItem(page, 60)
+    await answerItem(page, 2)
     await nextScreen(page)
     await button(page, 'Finish early').click()
     await button(page, 'Finish now').click()
@@ -749,7 +725,6 @@ test.describe('per-axis early stop (SD < 0.3, §7.4)', () => {
     for (let i = 0; i < 120; i++) {
       await answerItem(page)
       answered++
-      await expect(page.getByRole('slider')).toHaveCount(0)
       if ((await h1(page).textContent())?.startsWith('Up next')) break
     }
     await expect(h1(page)).toHaveText('Up next: Spatial')

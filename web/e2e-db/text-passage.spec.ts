@@ -84,12 +84,12 @@ async function playReading(page: Page): Promise<Seen[]> {
   const seen: Seen[] = []
   for (;;) {
     await expect(h1(page)).toHaveText(/^(Reading Comprehension|Up next: .+|Time for a break\?|Session .+)$/, { timeout: 30_000 })
-    const radios = page.locator(`${QUESTION} input[type="radio"]`)
-    const slider = page.getByRole('slider')
+    const radios = page.locator(`${QUESTION} .options input[type="radio"]`)
+    const points = page.locator(`${QUESTION} fieldset[data-confidence] input[type="radio"]`)
     await expect(radios.first().or(h1(page).filter({ hasText: /^(Up next: |Time for a break|Session )/ }))).toBeVisible({ timeout: 30_000 })
     if ((await h1(page).textContent()) !== title) return seen
     await expect(radios.first()).toBeEnabled()
-    await expect(page.locator(`${QUESTION} legend`)).toContainText('Made-up test question')
+    await expect(page.locator(`${QUESTION} fieldset:not([data-confidence]) > legend`)).toContainText('Made-up test question')
     await expect(page.getByRole('region', { name: 'Passage' })).toBeVisible()
     const mark = await page.locator(PASSAGE).evaluate((el, n) => {
       const host = el as unknown as { mark?: string }
@@ -104,15 +104,14 @@ async function playReading(page: Page): Promise<Seen[]> {
       mark,
     })
     await radios.nth(seen.length % 4).check()
-    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
-    await expect(slider).toBeVisible()
-    // the slider is beside the passage, which has not gone anywhere
+    // the optional confidence scale is in the question, beside the passage, which has not gone anywhere
+    const name = (await points.first().getAttribute('name')) ?? ''
+    await points.nth(3).check()
     await expect(page.getByRole('region', { name: 'Passage' })).toBeVisible()
-    await slider.press('ArrowRight')
     const answered = page.waitForResponse((r) => r.url().endsWith('/rpc/submit'))
-    await button(page, 'Continue').click()
+    await page.locator(QUESTION).getByRole('button', { name: 'Confirm', exact: true }).click()
     await answered
-    await expect(slider).toBeHidden({ timeout: 30_000 })
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0, { timeout: 30_000 })
     if (seen.length > 12) throw new Error('Reading Comprehension did not end')
   }
 }

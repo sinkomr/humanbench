@@ -1,13 +1,18 @@
 /**
  * Calibration from rated answers (ROADMAP M1.15; DESIGN §3 row 12, §7.1 "Calibration", §14.6 ex. 9;
- * `priors.ts` CAL_NORMS). The confidence slider itself is the session flow's (`session/calibration.ts`);
+ * `priors.ts` CAL_NORMS). The optional confidence scale itself is the session flow's (`session/calibration.ts`);
  * what a set of rated answers means is here, because both the running session and the save's
  * re-score (`save/rescore.ts`) turn them into the same observation.
  *
  * The Brier score of an answer is (c − y)² with c the stated confidence in [0, 1] and y the
  * outcome; a session's calibration is the mean Brier score over its rated answers, entered as the
- * Gaussian observation x = −B on θ_CAL once at least `CAL_NORMS.min_responses` answers were rated.
+ * Gaussian observation x = −B on θ_CAL once at least `CAL_NORMS.min_responses` (10) answers were rated.
  * No score is shown for a single answer.
+ *
+ * Rating is optional (owner decision 2026-10-13): an answer given with the scale unset has a null
+ * `confidence_pct` and is not a rated answer; it is never given a default value. So the calibration is
+ * over the rated answers only, and a session with fewer than ten of them leaves Calibration "not measured"
+ * (why ten: `priors.ts` CAL_NORMS). Saves made with the earlier follow-up slider score the same way.
  */
 
 import type { Observation } from '../engine/types'

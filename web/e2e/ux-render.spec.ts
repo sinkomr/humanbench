@@ -347,7 +347,7 @@ test.describe('option groups share the session\'s primary button and focus ring 
     expect(ring).toEqual({ color: `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`, width: 3, style: 'solid' })
   })
 
-  test('the second tap of a double tap on the confidence Continue selects nothing on the next item', async ({ page, isMobile }) => {
+  test('the second tap of a double tap on a question\'s Confirm or Submit selects nothing on the next item, neither an option nor a confidence point', async ({ page, isMobile }) => {
     test.skip(!isMobile, 'a double tap is a touch gesture')
     test.setTimeout(150_000)
     // When each choice group appeared and when each press landed, on the page's own clock.
@@ -356,7 +356,8 @@ test.describe('option groups share the session\'s primary button and focus ring 
       w.__groupAt = 0
       w.__presses = []
       new MutationObserver((records) => {
-        for (const r of records) for (const n of r.addedNodes) if (n instanceof Element && (n.matches('form.choice') || n.querySelector('form.choice'))) w.__groupAt = performance.now()
+        // a choice group or a confidence scale (on every question): either can take a tap
+        for (const r of records) for (const n of r.addedNodes) if (n instanceof Element && (n.matches('form.choice, fieldset[data-confidence]') || n.querySelector('form.choice, fieldset[data-confidence]'))) w.__groupAt = performance.now()
       }).observe(document, { childList: true, subtree: true })
       document.addEventListener('pointerdown', () => w.__presses.push({ at: performance.now(), sinceGroup: performance.now() - w.__groupAt }), true)
     })
@@ -367,35 +368,77 @@ test.describe('option groups share the session\'s primary button and focus ring 
     await expect(h1(page)).toHaveText('Up next: Matrix & Series')
     await driver.press(button(page, 'Start'))
     let verified = 0
+    /** Why each item could not be checked, for the message when none could. */
+    const skipped: string[] = []
     for (let item = 0; item < 16 && verified === 0; item++) {
-      for (let guard = 0; guard < 10 && (await driver.screen()) !== 'confidence'; guard++) await driver.step()
-      await expect(page.getByRole('slider')).toBeVisible()
-      const box = (await button(page, 'Continue').boundingBox())!
+      let kind = await driver.screen()
+      for (let guard = 0; guard < 10 && kind !== 'choice' && kind !== 'entry'; guard++) {
+        await driver.step()
+        kind = await driver.screen()
+      }
+      // An answer, not yet sent; then the first tap of the double tap: on the question's own button, which sends it and brings up the next item.
+      const form = page.locator('form.choice, form.entry').first()
+      if (kind === 'choice') await form.locator('.options input[type=radio]').first().tap()
+      else await form.getByRole('textbox').fill((await form.getByRole('textbox').getAttribute('class'))?.includes('letter') ? 'A' : '1')
+      const name = (await form.locator('fieldset[data-confidence] input[type=radio]').first().getAttribute('name')) ?? ''
+      // Where something to choose sits on a question opened at the top (this one's middle confidence point): the page is made
+      // long enough to scroll (test only) and scrolled so that the button is there when it is tapped, as a person's
+      // finger could be on a page laid out so by luck (SKIM-15). The next question opens at the top, so the same spot then
+      // holds its own point or option.
+      const spot = await page.evaluate(() => {
+        document.body.style.paddingBottom = '1500px'
+        const p = document.querySelectorAll('fieldset[data-confidence] input[type=radio]')[2]!.getBoundingClientRect()
+        const b = document.querySelector('form.choice button[type=submit], form.entry button[type=submit]')!.getBoundingClientRect()
+        return { pointDoc: p.top + p.height / 2 + window.scrollY, buttonDoc: b.top + b.height / 2 + window.scrollY }
+      })
+      await page.evaluate((top) => window.scrollTo(0, top), spot.buttonDoc - spot.pointDoc)
+      const box = (await form.locator('button[type=submit]').boundingBox())!
       const x = box.x + box.width / 2
       const y = box.y + box.height / 2
-      // The first tap of the double tap: on Continue, which brings up the next item.
       await page.touchscreen.tap(x, y)
-      await expect(page.getByRole('slider')).toHaveCount(0)
-      if ((await driver.screen()) !== 'choice') continue
+      await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
+      const next = await driver.screen()
+      if (next !== 'choice' && next !== 'entry') {
+        skipped.push(`next ${next}`)
+        continue
+      }
       // The second tap, at the same spot, a moment later. Whatever the next item has under that spot is what the finger lands on, so
-      // the page is scrolled until an option is there (a person's finger would have met an item laid out so by luck: SKIM-15).
-      const option = (await page.locator('form.choice input[type=radio]').first().boundingBox())!
-      await page.evaluate((dy) => window.scrollBy(0, dy), option.y + option.height / 2 - y)
+      // the page is scrolled until something it can choose is there (a person's finger would have met an item laid out so by luck:
+      // SKIM-15): the point of the confidence scale under the finger's column (the scale sits just above the button that was
+      // tapped), else an option.
+      const target = await page.evaluate((px) => {
+        const points = [...document.querySelectorAll('fieldset[data-confidence] input[type=radio]')].map((e) => e.getBoundingClientRect())
+        const point = points.find((r) => r.left <= px && px <= r.right)
+        const option = document.querySelector('form.choice .options input[type=radio]')?.getBoundingClientRect()
+        const r = point ?? option
+        return r === undefined ? null : r.top + r.height / 2
+      }, x)
+      if (target === null) {
+        skipped.push('nothing to choose')
+        continue
+      }
+      await page.evaluate((dy) => window.scrollBy(0, dy), target - y)
       const under = await page.evaluate(([px, py]) => {
         const el = document.elementFromPoint(px!, py!)
         return el instanceof HTMLInputElement && el.type === 'radio' && el.matches(':enabled')
       }, [x, y])
-      if (!under) continue
+      if (!under) {
+        skipped.push(`not under the finger (${Math.round(target - y)} px)`)
+        continue
+      }
       await page.touchscreen.tap(x, y)
       const press = await page.evaluate(() => (window as unknown as { __presses: { sinceGroup: number }[] }).__presses.at(-1)!)
       // A machine too slow to get the second tap in within the guard's 350 ms proves nothing: try the next item.
-      if (press.sinceGroup > 300) continue
+      if (press.sinceGroup > 300) {
+        skipped.push(`late (${Math.round(press.sinceGroup)} ms)`)
+        continue
+      }
       // At once, not with a retry: under ?fast=1 the item times out in a few seconds and the next one starts with nothing chosen.
       await page.waitForTimeout(100)
-      expect(await page.locator('form.choice input[type=radio]:checked').count(), 'the second tap chose an option of the next item').toBe(0)
+      expect(await page.locator('form.choice input[type=radio]:checked, fieldset[data-confidence] input[type=radio]:checked').count(), 'the second tap chose an option or a confidence point of the next item').toBe(0)
       verified++
     }
-    expect(verified, 'no item gave a double tap to check in 16 items').toBe(1)
+    expect(verified, `no item gave a double tap to check in 16 items: ${skipped.join('; ')}`).toBe(1)
   })
 })
 
@@ -458,10 +501,11 @@ test.describe('number entry (UX-024)', () => {
     await box.fill('abc')
     await box.press('Enter')
     await expect(entry.locator('.hb-note')).toContainText(/Use (only the digits 0 to 9|a fraction such as 3\/8)/)
-    await expect(page.getByRole('slider')).toHaveCount(0)
-    // Arabic-Indic digits are the digits 35: accepted, and the slider follows.
+    const name = (await entry.locator('fieldset[data-confidence] input[type=radio]').first().getAttribute('name')) ?? ''
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(5) // not sent: the question is still there
+    // Arabic-Indic digits are the digits 35: accepted, and the question goes (one press).
     await box.fill('٣٥')
     await box.press('Enter')
-    await expect(page.getByRole('slider')).toBeVisible()
+    await expect(page.locator(`input[name="${name}"]`)).toHaveCount(0)
   })
 })
