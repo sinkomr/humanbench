@@ -182,30 +182,27 @@ describe('the shell looks like the welcome screen, light and dark (no jump when 
   })
 })
 
-describe('the shell of a build with served text parts (M3.11 phase 1)', () => {
-  it('is the six-part shell unless the build has a server and names text skills', async () => {
-    const { textAxesOfBuild } = await import('../vite.config')
+describe('the shell of a build with a server (M3.11: the parts come from the server, not from the build)', () => {
+  it('is the six-part shell for a static build, and the same words whatever the old variable says', async () => {
+    const { isServerBuild } = await import('../vite.config')
     const server = { VITE_HB_SUPABASE_URL: 'https://example.test', VITE_HB_SUPABASE_ANON_KEY: 'sb_publishable_x' }
-    expect(await textAxesOfBuild({})).toEqual([])
-    expect(await textAxesOfBuild({ ...server, VITE_HB_TEXT_AXES: '' })).toEqual([])
-    expect(await textAxesOfBuild({ VITE_HB_TEXT_AXES: 'all' })).toEqual([]) // no server: the static version has no text parts
-    expect(await textAxesOfBuild({ ...server, VITE_HB_TEXT_AXES: 'voc, LR' })).toEqual(['LR', 'VOC'])
-    const plain = await loadShellText([])
+    expect(isServerBuild({})).toBe(false)
+    expect(isServerBuild({ VITE_HB_TEXT_AXES: 'all' })).toBe(false)
+    expect(isServerBuild({ VITE_HB_SUPABASE_URL: 'https://example.test' })).toBe(false)
+    expect(isServerBuild(server)).toBe(true)
+    expect(isServerBuild({ ...server, VITE_HB_TEXT_AXES: 'all' })).toBe(true)
+    const plain = await loadShellText(false)
     expect(plain).toEqual(await loadShellText())
     expect('length' in plain).toBe(false)
   })
 
-  it('states that build’s parts and minutes, in the app’s own words, in the intro and the page description', async () => {
-    const { welcomeIntro } = await import('../src/session/copy')
-    const { sessionOutline, TEXT_AXES } = await import('../src/engine/plan-table')
-    const { META_DESCRIPTION, metaDescription } = await import('../src/copy')
-    const words = await loadShellText(TEXT_AXES)
-    expect(words.WELCOME_INTRO).toBe(welcomeIntro(sessionOutline(TEXT_AXES)))
-    expect(words.WELCOME_INTRO).toContain('up to twelve parts and takes about 55 minutes')
-    expect(words.length?.meta).toEqual({ from: META_DESCRIPTION, to: metaDescription(55) })
-    // the five text skills of phase 1 without Reading Comprehension: what such a session typically takes, 45 minutes
-    const five = await loadShellText(['LR', 'VOC', 'KST', 'KHU', 'KAP'])
-    expect(five.WELCOME_INTRO).toContain('up to eleven parts and takes about 45 minutes')
-    expect(five.length?.meta).toEqual({ from: META_DESCRIPTION, to: metaDescription(45) })
+  it('states no count and no length before the server has said which skills it has questions for, in the app’s own words', async () => {
+    const { WELCOME_INTRO_PENDING } = await import('../src/session/copy')
+    const { META_DESCRIPTION, META_DESCRIPTION_ONLINE } = await import('../src/copy')
+    const words = await loadShellText(true)
+    expect(words.WELCOME_INTRO).toBe(WELCOME_INTRO_PENDING)
+    expect(words.WELCOME_INTRO).not.toMatch(/minute|\b(six|seven|eight|nine|ten|eleven|twelve)\b/u)
+    expect(words.length?.meta).toEqual({ from: META_DESCRIPTION, to: META_DESCRIPTION_ONLINE })
+    expect(META_DESCRIPTION_ONLINE).not.toMatch(/minute/u)
   })
 })

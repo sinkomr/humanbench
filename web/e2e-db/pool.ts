@@ -16,3 +16,17 @@ export const passageCredit = (p: number): string | undefined => (p % 2 === 0 ? `
  * for other protocols; WebKit left the session at "Getting your session ready").
  */
 export const PASSAGE_PORT_OFFSET = 3
+
+/**
+ * The remaining families (2026-10-13), in two databases so that each first session has its turn of the rotation
+ * (`plan-table.ts` ROTATION): "games" at this offset from {@link DB_PORT}, with made-up logic games, and "estimates" at
+ * the next, with made-up Fermi estimates, emotion vignettes, situational judgments and word-links puzzles
+ * (`scripts/db/families-fixture.ts`). 4192 and 4193 with the default port: neither is on the browsers' list of
+ * reserved ports.
+ */
+export const GAMES_PORT_OFFSET = 4
+export const ESTIMATES_PORT_OFFSET = 5
+/** Made-up logic games in "games": 3 and 4 questions in turn. */
+export const GAMES = 3
+/** Made-up items per family in "estimates": more than a part's six. */
+export const FAMILY_ITEMS = 9

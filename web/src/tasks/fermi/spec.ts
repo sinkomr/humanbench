@@ -78,3 +78,31 @@ export function checkEntry(spec: FermiSpec, fields: EntryFields): EntryCheck {
   unitOf(fields.unit)
   return { ok: true, response: parseFermiResponse({ value, unit: fields.unit, low, high }) }
 }
+
+/** The `item_type` of a Fermi item (`hb.fermi.truth.ITEM_TYPE`). */
+export const FERMI_ITEM_TYPE = 'fermi_estimate'
+
+/** The served payload of a Fermi item, as `hb.items.rows.PublicPayload` has it. */
+export interface FermiPayload {
+  readonly stem: string | null
+  readonly media: Readonly<Record<string, unknown>> | null
+  readonly options?: readonly string[] | null
+}
+
+const FERMI_MEDIA_FIELDS: readonly string[] = ['renderer', 'dimension', 'units', 'interval_pct']
+
+/**
+ * The spec of a served payload (`{stem, media: {renderer: 'fermi_v1', dimension, units, interval_pct}}`, no options),
+ * or null if it is not a Fermi item this renderer can draw: a media field it does not know, a unit of another
+ * dimension, an interval other than 80%. The truth is never in a payload (the server keeps it in `item_keys`).
+ */
+export function specFromPayload(payload: FermiPayload): FermiSpec | null {
+  const media = payload.media
+  if (media === null || media.renderer !== FERMI_RENDERER) return null
+  if (Object.keys(media).some((k) => !FERMI_MEDIA_FIELDS.includes(k))) return null
+  if (payload.options !== undefined && payload.options !== null) return null
+  if (typeof payload.stem !== 'string' || typeof media.dimension !== 'string' || !Array.isArray(media.units) || !media.units.every((u) => typeof u === 'string')) return null
+  if (media.interval_pct !== 80) return null
+  const spec: FermiSpec = { stem: payload.stem, dimension: media.dimension, units: media.units as string[], interval_pct: 80 }
+  return specProblems(spec).length === 0 ? spec : null
+}

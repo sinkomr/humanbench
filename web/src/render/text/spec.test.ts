@@ -115,8 +115,10 @@ describe('a served text item (backend/items.ts)', () => {
     const wire = { itemId: 'i:x', itemType: 'mc', timeLimitS: null, stem: 'A made-up question?', options: OPTIONS }
     // (a passage question has a renderer of its own since phase 2: `passage.test.ts`)
     expect(toServedItem(1, { ...wire, media: { renderer: 'passage_v1', passage: ['A made-up passage.'] } })).toMatchObject({ supported: true, family: 'text_passage' })
-    expect(toServedItem(1, { ...wire, media: { renderer: 'logic_game_v1', setup: 'A made-up setup.' } })).toMatchObject({ supported: false, family: 'logic_game_v1', spec: {} })
-    expect(toServedItem(1, { ...wire, media: { renderer: 'rat_triad_v1', cues: ['a', 'b', 'c'] } })).toMatchObject({ supported: false, family: 'rat_triad_v1' })
+    // the remaining families have their own renderers since 2026-10-13 (items.families.test.ts); a renderer this build has none for is not text
+    expect(toServedItem(1, { ...wire, media: { renderer: 'logic_game_v1', setup: 'A made-up setup.' } })).toMatchObject({ supported: true, family: 'text_passage' })
+    expect(toServedItem(1, { ...wire, media: { renderer: 'rat_triad_v1', cues: ['aaa', 'bbb', 'ccc'] } })).toMatchObject({ supported: false, family: 'rat_triad_v1' }) // a triad has no options
+    expect(toServedItem(1, { ...wire, media: { renderer: 'aut_v1', object: 'a made-up object' } })).toMatchObject({ supported: false, family: 'aut_v1', spec: {} })
     expect(toServedItem(1, { ...wire, media: { renderer: 'matrices', grid: [] } })).toMatchObject({ supported: true, family: 'matrices' })
     expect(toServedItem(1, { ...wire, media: null })).toMatchObject({ supported: true, family: TEXT_MC_RENDERER })
   })

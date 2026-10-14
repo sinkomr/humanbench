@@ -81,10 +81,14 @@ describe('the session parts', () => {
       'Vocabulary & Verbal Analogies',
       'Reading Comprehension',
       'Working Memory',
+      'Emotion Reading (text scenarios)',
+      'Creative Thinking',
       'Quantitative Reasoning',
       'Humanities Knowledge',
       'Arts & Practical Knowledge',
       'Processing & Reading Speed',
+      'Logic Games',
+      'Fermi Estimation',
     ])
     expect(Object.keys(SEGMENT_INFO).sort()).toEqual(SEGMENT_INFO_IN_ORDER.map((s) => s.id).sort())
   })

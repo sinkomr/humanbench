@@ -42,7 +42,7 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { toServedItem, type ServedItem } from '../src/backend/items'
+import { asksConfidence, toServedItem, type ServedItem } from '../src/backend/items'
 import type { CatAnswer, CatNext, CatSource } from '../src/backend/session'
 import { AXIS_INDEX, N_AXES, isAxisCode, type AxisCode } from '../src/engine/axes'
 import { PUBLISH_MIN_ITEMS, SEGMENT_ORDER, TEXT_AXES, isTextAxis, type TextAxis } from '../src/engine/plan-table'
@@ -51,6 +51,7 @@ import type { Observation } from '../src/engine/types'
 import { A15_TARGET_S, answeredItems, selectNext, selectionAim, selectionRng, sessionPosterior, type AnyItem, type SegmentId } from '../src/engine/selector'
 import { demoTextItem } from '../src/render/text/demo'
 import { demoPassage, demoPassagePayload } from '../src/render/text/demo-passage'
+import { demoEmotionPayload, demoFermiPayload, demoLogicGamePayload, demoRatPayload, demoSjtPayload } from '../src/render/served-demo'
 import { Bot } from '../src/session/bot'
 import { HARD_STOP_S } from '../src/session/constants'
 import type { RunView } from '../src/session/run'
@@ -100,8 +101,30 @@ export const BLOCK_EXTRA_S: Readonly<Record<string, number>> = Object.freeze({ r
  */
 export const PACE_SD = 0.15
 
-/** Seconds a taker at the model's pace spends on a text question: the bank's expected times (`plan-table.ts`, "The shares"). For RC, on a question once the passage is read. */
-export const TEXT_ITEM_S: Readonly<Record<TextAxis, number>> = Object.freeze({ LR: 60, RC: 45, VOC: 15, KST: 20, KHU: 20, KAP: 20 })
+/**
+ * Seconds a taker at the model's pace spends on a served question: the bank's expected times (`plan-table.ts`, "The
+ * shares"). For RC, on a question once the passage is read; for LG, on a question once its setup is read (the bank's
+ * 78 to 84 s for a logic-game question includes reading the setup, `hb.gen.logic.prior`, because it was written for
+ * one question of a setup per session: {@link SETUP_READING_S} of it is the setup); for EMO, the mean of a vignette's
+ * and a situational judgment's ({@link EMO_ITEM_S} has them apart); FER and CRE, the bank's time priors (Fermi 45 to
+ * 75 s, the M5.1 dev fixtures; word links 20 s, `hb.rat.build`).
+ */
+export const TEXT_ITEM_S: Readonly<Record<TextAxis, number>> = Object.freeze({ LR: 60, LG: 55, RC: 45, VOC: 15, FER: 60, KST: 20, KHU: 20, KAP: 20, EMO: 40, CRE: 20 })
+
+/** Seconds on an emotion vignette and on a situational judgment (the bank's priors: medians 22.7 and 57.2 s, `hb.emo`, `hb.sjt`). */
+export const EMO_ITEM_S = Object.freeze({ vignette: 23, sjt: 57 })
+
+/** Seconds to read a logic game's setup before its first question (see {@link TEXT_ITEM_S}). */
+export const SETUP_READING_S = 25
+
+/**
+ * Seconds after an answer that is not rated for confidence (a Fermi range, a situational judgment, an emotion
+ * vignette; `backend/items.ts` `asksConfidence`): the hand-over to the next question, without the slider [SPEC].
+ */
+export const UNRATED_STEP_S = 2
+
+/** The questions of made-up logic game number `g` (0-based): 3 and 4 in turn, as the bank's setups have. */
+export const simGameQuestions = (g: number): number => 3 + (g % 2)
 
 /**
  * Seconds a taker at the model's pace spends reading a passage before its first question: about 325 words (the
@@ -246,6 +269,9 @@ export class SimServer implements CatSource {
   /** The passage under way: its number and how many of its questions have been served. */
   #set: { passage: number; served: number } | null = null
   #passages = 0
+  /** The logic game under way, as a passage. */
+  #game: { game: number; served: number } | null = null
+  #games = 0
 
   constructor(seed: string) {
     this.#seed = seed
@@ -258,6 +284,22 @@ export class SimServer implements CatSource {
     if (axis === undefined) return Promise.resolve({ kind: 'done', reason: 'no_items' })
     const seq = ++this.#seq
     if (axis !== 'RC') this.#set = null
+    if (axis !== 'LG') this.#game = null
+    if (axis === 'LG') {
+      if (this.#game === null || this.#game.served >= simGameQuestions(this.#game.game)) this.#game = { game: this.#games++, served: 0 }
+      const g = this.#game
+      const p = demoLogicGamePayload(g.game, g.served)
+      const served = toServedItem(seq, { itemId: `i:sim:lg:${seq}`, itemType: p.itemType, timeLimitS: 210, stem: p.stem, media: p.media, options: p.options }, { index: g.served + 1, of: simGameQuestions(g.game) })
+      g.served++
+      this.#pending = { served, item: null }
+      return Promise.resolve({ kind: 'item', item: served })
+    }
+    const family = axis === 'FER' ? demoFermiPayload(seq) : axis === 'CRE' ? demoRatPayload(seq) : axis === 'EMO' ? (seq % 2 === 0 ? demoEmotionPayload(seq) : demoSjtPayload(seq)) : null
+    if (family !== null) {
+      const served = toServedItem(seq, { itemId: `i:sim:${axis.toLowerCase()}:${seq}`, itemType: family.itemType, timeLimitS: 180, stem: family.stem, media: family.media, options: family.options })
+      this.#pending = { served, item: null }
+      return Promise.resolve({ kind: 'item', item: served })
+    }
     if (axis === 'RC') {
       if (this.#set === null || this.#set.served >= simPassageQuestions(this.#set.passage)) this.#set = { passage: this.#passages++, served: 0 }
       const set = this.#set
@@ -301,6 +343,22 @@ export class SimServer implements CatSource {
     const correct = a.response === null ? 0 : (family.score(p.item as never, a.response as never) as { correct: 0 | 1 | null }).correct
     if (correct !== null) this.#obs.push(itemObservation(p.item, correct))
     return Promise.resolve()
+  }
+}
+
+/** An answer of the right shape for a made-up served question (the stand-in server scores none of them). */
+export function simAnswer(served: { readonly family: string; readonly spec: object }): unknown {
+  switch (served.family) {
+    case 'fermi_v1': {
+      const unit = (served.spec as { units: readonly string[] }).units[0]!
+      return { value: 1000, unit, low: 100, high: 10000 }
+    }
+    case 'rat_triad_v1':
+      return 'word'
+    case 'sjt_rating_v1':
+      return [2, 3, 2, 3]
+    default:
+      return 0
   }
 }
 
@@ -360,11 +418,14 @@ class SimDriver {
     bot.run.itemShown(bot.t)
     const item = resolveItem(it.item_id)
     if (item === null) {
-      // A made-up text question: the server holds the key, so any option is an answer. The first question of a
-      // passage comes after the reading.
-      const reading = v.passage !== null && v.passage.position?.index === 1 ? PASSAGE_READING_S : 0
-      bot.wait((reading + (isTextAxis(it.axis) ? TEXT_ITEM_S[it.axis] : 40)) * this.#pace)
-      bot.run.itemResponded(0)
+      // A made-up served question: the server holds the key, so any answer of the right shape is an answer. The first
+      // question of a passage comes after the reading, a logic game's after its setup.
+      const first = v.passage !== null && v.passage.position?.index === 1
+      const reading = first ? (v.passage!.kind === 'setup' ? SETUP_READING_S : PASSAGE_READING_S) : 0
+      const own = it.axis === 'EMO' ? (it.item_type === 'sjt_rating' ? EMO_ITEM_S.sjt : EMO_ITEM_S.vignette) : isTextAxis(it.axis) ? TEXT_ITEM_S[it.axis] : 40
+      const after = asksConfidence(it) ? 0 : UNRATED_STEP_S
+      bot.wait((reading + own + after) * this.#pace)
+      bot.run.itemResponded(simAnswer(it))
       return
     }
     bot.wait(item.expected_time_s * this.#pace)

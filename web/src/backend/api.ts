@@ -22,6 +22,7 @@ import type { DeviceInfo, SaveFileV1, SessionFlags } from '../save/types'
 import { BackendError } from './errors'
 import {
   parseDelete,
+  parseLiveAxes,
   parseFinish,
   parseMirrorGet,
   parseMirrorPut,
@@ -101,6 +102,8 @@ export interface BackendApi {
   mirrorPut(token: string, save: SaveFileV1, phrase?: string): Promise<MirrorPutReply>
   mirrorGet(anonId: string, phrase: string): Promise<MirrorGetReply>
   deleteMyData(anonId: string, proof: DeleteProof): Promise<DeleteReply>
+  /** The skills the server has live questions for (no count, nothing about any item): what a session plans its served parts from. */
+  liveAxes(): Promise<readonly AxisCode[]>
 }
 
 export interface ApiOptions {
@@ -223,6 +226,10 @@ export function createBackendApi(rawTransport: RpcTransport, options: ApiOptions
       if (proof.phrase !== undefined) args.p_phrase = normalisePhrase(proof.phrase)
       if (proof.save !== undefined) args.p_save = signedSessionsOnly(proof.save)
       return parseDelete(await once('delete_my_data', args))
+    },
+
+    async liveAxes() {
+      return parseLiveAxes(await repeatable('live_axes', {}))
     },
   }
 }

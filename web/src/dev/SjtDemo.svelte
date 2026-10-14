@@ -8,7 +8,7 @@
    * response instead of a rating for each. Nothing is stored or sent. Never in a production build (routes.ts).
    */
   import { untrack } from 'svelte'
-  import '../render/common/render.css'
+  // The shared renderer styles (render.css) come with the app's entry stylesheet; importing them here again splits it.
   import { optionLetter } from '../render/choice/keys'
   import SjtRenderer from '../render/sjt/SjtRenderer.svelte'
   import { SCALE_LABELS } from '../tasks/sjt/copy'

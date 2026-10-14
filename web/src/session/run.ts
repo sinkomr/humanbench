@@ -124,7 +124,7 @@
  */
 
 import { BackendError, problemOf, type LoadProblem } from '../backend/errors'
-import type { ServedItem } from '../backend/items'
+import { asksConfidence, servedResponseFits, type ServedItem } from '../backend/items'
 import type { CatAnswer, CatNext, CatSource, Release } from '../backend/session'
 import { AXIS_CODES, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
 import {
@@ -471,15 +471,8 @@ function familyOf(name: string): AnyFamily {
   return f
 }
 
-/**
- * Whether `response` is an answer the renderer of a served item could have given: an option position
- * for a multiple-choice item, text for a typed one (the checks `mcResponseIndex` and `entryResponse` make
- * for a generated item, without the key). Anything else is not sent.
- */
-export function servedResponseFits(item: ServedItem, response: unknown): boolean {
-  if (item.options_count !== undefined) return typeof response === 'number' && Number.isInteger(response) && response >= 0 && response < item.options_count
-  return typeof response === 'string' && response.length <= 256
-}
+/** Whether `response` is an answer the renderer of a served item could have given (`backend/items.ts`). */
+export { servedResponseFits }
 
 /** Whole minutes for "About N min" (at least 1). */
 function minutesOf(seconds: number): number {
@@ -1332,6 +1325,15 @@ export class SessionRun {
       if (!servedResponseFits(cur.served, response)) {
         this.#raise({ kind: 'malformed' })
         this.#emit('phase')
+        return
+      }
+      if (!asksConfidence(cur.served)) {
+        // DESIGN §3 row 12: a Fermi range, a rating of responses or an emotion vignette is not rated for confidence.
+        this.#notice = null
+        this.#recordServed(cur, response as JsonValue, endMs - (cur.onsetMs ?? cur.startedMs), null, endMs)
+        this.#current = null
+        this.#emit('response')
+        this.#boundary(() => this.#present())
         return
       }
       cur.pending = { response: response as JsonValue, correct: null, endMs, rtMs: endMs - (cur.onsetMs ?? cur.startedMs) }

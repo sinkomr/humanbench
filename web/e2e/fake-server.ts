@@ -81,6 +81,11 @@ export interface FakeOptions {
   readonly pools?: Readonly<Record<string, readonly Wire[]>>
   /** What `rescore` publishes (default: Matrix & Series only). */
   readonly eap?: Readonly<Record<string, { mean: number; sd: number; n: number }>>
+  /**
+   * What `live_axes` names (ROADMAP M3.11: the app plans its served parts from it). Default: the skills of `pools` that
+   * hold an item, or none without `pools`.
+   */
+  readonly live?: readonly string[]
 }
 
 export class FakeServer {
@@ -90,6 +95,7 @@ export class FakeServer {
   readonly #queue: Wire[]
   readonly #pools: Map<string, Wire[]> | null
   readonly #eap: Readonly<Record<string, { mean: number; sd: number; n: number }>>
+  readonly #live: readonly string[]
   readonly #failures = new Map<string, { status: number; times: number; code?: string }>()
   /** identifier → { phrase, save } */
   readonly mirror = new Map<string, { phrase: string; save: Record<string, unknown> | null }>()
@@ -102,6 +108,7 @@ export class FakeServer {
     this.#queue = [...(opts.items ?? [])]
     this.#pools = opts.pools === undefined ? null : new Map(Object.entries(opts.pools).map(([k, v]) => [k, [...v]]))
     this.#eap = opts.eap ?? { MAT: { mean: 0.6, sd: 0.4, n: 6 } }
+    this.#live = opts.live ?? Object.entries(opts.pools ?? {}).filter(([, v]) => v.length > 0).map(([k]) => k)
     for (const [fn, f] of Object.entries(opts.failures ?? {})) this.#failures.set(fn, { ...f })
     for (const [id, phrase] of Object.entries(opts.backups ?? {})) this.mirror.set(id, { phrase, save: null })
   }
@@ -148,6 +155,8 @@ export class FakeServer {
 
   #call(fn: string, a: Record<string, unknown>): unknown {
     switch (fn) {
+      case 'live_axes':
+        return { axes: [...this.#live] }
       case 'start_session':
         this.#device = a.p_device
         return { session_id: SESSION_ID, token: TOKEN, anon_id: ANON_ID, anon_id_adopted: false, bank_version: 'e2e', param_version: 'e2e', limits: { max_items: 200 } }

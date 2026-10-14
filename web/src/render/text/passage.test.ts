@@ -132,8 +132,10 @@ describe('a served passage item (backend/items.ts)', () => {
     for (const m of [media({ figure: 'x' }), media({ passage: [] }), { renderer: PASSAGE_MEDIA_RENDERER }]) {
       expect(toServedItem(1, wire(m))).toMatchObject({ supported: false, family: PASSAGE_MEDIA_RENDERER, spec: {} })
     }
-    // a logic game is still a kind this build does not draw
-    expect(toServedItem(1, wire({ renderer: 'logic_game_v1', setup: 'made up' }, 'mc_logic_game'))).toMatchObject({ supported: false })
+    // a logic game is drawn like a passage question since 2026-10-13, its setup in the passage's place (items.families.test.ts)
+    expect(toServedItem(1, wire({ renderer: 'logic_game_v1', setup: 'Made up.' }, 'mc_logic_game'))).toMatchObject({ supported: true, family: 'text_passage' })
+    // the alternate-uses task is suspended (owner, 2026-10-13): nothing draws it for a served item
+    expect(toServedItem(1, wire({ renderer: 'aut_v1', object: 'a made-up object' }, 'aut_prompt'))).toMatchObject({ supported: false })
   })
 })
 

@@ -311,7 +311,7 @@ describe('a served part', () => {
 
   it('offers the skip for an item no renderer can draw, and releases it as unavailable', async () => {
     const h = new Harness()
-    h.cat.steps = [{ kind: 'item', item: toServedItem(1, { itemId: 'i:fin:1.0.0:x', itemType: 'mc', timeLimitS: 60, stem: 'A stem', media: { renderer: 'logic_game_v1', setup: 'A made-up setup.' }, options: ['a', 'b'] }) }]
+    h.cat.steps = [{ kind: 'item', item: toServedItem(1, { itemId: 'i:fin:1.0.0:x', itemType: 'mc', timeLimitS: 60, stem: 'A stem', media: { renderer: 'aut_v1', object: 'a made-up object' }, options: ['a', 'b'] }) }]
     await h.toMatrix()
     expect(h.v().phase).toBe('item')
     expect(h.v().unavailable).toBe(true)

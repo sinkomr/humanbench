@@ -24,6 +24,12 @@ export const WELCOME_TAGLINE = 'Short tasks of reasoning, memory and speed. Your
 export const welcomeIntro = (o: SessionOutline): string =>
   `The session has ${partsPhrase(o)} parts and takes about ${plannedMinutes(o)} minutes. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.`
 export const WELCOME_INTRO = welcomeIntro(BASE_OUTLINE)
+/**
+ * The intro of the online version before the server has said which skills it has questions for (`Backend.liveAxes`):
+ * no count and no length, because both depend on that answer, and nothing that is not true of every session.
+ */
+export const WELCOME_INTRO_PENDING =
+  'The session has a series of short parts; how many depends on the questions available. You can skip any part and finish early at any time. Nothing is scored as pass or fail. At the end you can download a save file of your answers to keep.'
 export const WELCOME_START = 'Start'
 export const PRIVACY_LINK = 'Privacy and terms'
 /**

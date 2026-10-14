@@ -295,7 +295,7 @@ describe('the served part', () => {
   it('a question of a kind this page cannot draw says so without blaming the browser, and can be skipped', async () => {
     const { t, fake } = setup()
     // A logic-game question names a renderer this build does not draw for served items (M3.11, a later phase).
-    t.script('next_item', { seq: 1, item: { item_id: 'i:fin:1.0.0:x', item_type: 'mc_logic_game', time_limit_s: 60, stem: 'Which is larger?', media: { renderer: 'logic_game_v1', setup: 'A made-up setup.' }, options: ['a', 'b', 'c'] } })
+    t.script('next_item', { seq: 1, item: { item_id: 'i:fin:1.0.0:x', item_type: 'aut_prompt', time_limit_s: 60, stem: 'Which is larger?', media: { renderer: 'aut_v1', object: 'a made-up object' }, options: ['a', 'b', 'c'] } })
     await toReady(fake)
     await toServedPart(fake)
     await tick()

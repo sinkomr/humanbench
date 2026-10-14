@@ -31,6 +31,7 @@ const ANON = from('203.0.113.9')
 const RPCS = [
   'public.delete_my_data',
   'public.finish',
+  'public.live_axes',
   'public.mirror_get',
   'public.mirror_put',
   'public.next_item',

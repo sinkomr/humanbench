@@ -10,12 +10,12 @@
  *   minimum adds ({@link A15_MINIMUMS}: a minute for the Quantitative part, below). **The text parts change
  *   nothing of them**: a session without served text parts is planned, budgeted and timed the same
  *   with or without the setting.
- * - {@link TEXT_PARTS}: the parts of served text multiple choice (M3.11 phase 1) and of served
- *   passages (phase 2: Reading Comprehension). They exist only in
- *   the online version, only for the axes the build names (`backend/config.ts`, `HB_TEXT_AXES`), and
- *   only when the server has questions for the axis: a part whose first request is answered "no
- *   items" is dropped without a word (`session/run.ts`). Each has a planned share of its own, **on
- *   top of** the six parts' time.
+ * - {@link TEXT_PARTS}: the served parts: text multiple choice (M3.11 phase 1), passages (phase 2: Reading
+ *   Comprehension), and the remaining families (2026-10-13: Logic Games, Fermi Estimation, Emotion Reading,
+ *   Creative Thinking by its word links). They exist only in the online version, only for the skills the server says
+ *   it has questions for (`public.live_axes`; no build variable names them since 2026-10-13), only in their turn of the
+ *   {@link ROTATION} ("Rotation", below), and a part whose first request is answered "no items" is still dropped
+ *   without a word (`session/run.ts`). Each has a planned share of its own, **on top of** the six parts' time.
  *
  * And one figure per part that the plan does not use: how long it **typically** takes
  * ({@link A15_TYPICAL_S}, {@link TextPart.typical_s}). The words that state a session's length, and
@@ -35,6 +35,10 @@
  * | STEM knowledge | KST | 2 min 10 s | a fact per question (20 s) |
  * | Humanities knowledge | KHU | 2 min 10 s | the same |
  * | Arts & Practical | KAP | 2 min 10 s | the same |
+ * | Emotion Reading | EMO | 4 min | six questions, vignettes (23 s) and situational judgments (57 s) in turn |
+ * | Creative Thinking | CRE | 2 min 10 s | six word-links puzzles (20 s) |
+ * | Logic Games | LG | 7 min 30 s | two games of 3 or 4 questions: the bank's 78 to 84 s for the first question of a setup, less for the others |
+ * | Fermi Estimation | FER | 6 min | six estimates (45 to 75 s) |
  *
  * The five of phase 1 together are 14.5 minutes, so a session with them is planned at 43 minutes (28.5 +
  * 14.5); with Reading Comprehension, 52. The owner's ceiling for a session is 60 minutes (2026-10-12);
@@ -45,7 +49,7 @@
  * The server serves a passage's questions together (`supabase/migrations/20261013000100_item_sets.sql`)
  * and says of each where it stands in its set. A part of passages is counted in passages: Reading
  * Comprehension reads {@link RC_PASSAGES} (two), which is 6 to 8 questions, and then ends, whatever is left
- * of its share; a passage that has been started is always finished (its time does not cut it, only the
+ * of its share (Logic Games likewise reads {@link LG_GAMES}, two games, their setups in the passage's place); a passage that has been started is always finished (its time does not cut it, only the
  * hard stop, a skip or "finish early" do); and its minimum of five answers ({@link PART_MINIMUMS}) still holds, so when fewer than
  * five questions were answered after two passages (some ran out of time) one more passage is read.
  *
@@ -71,6 +75,18 @@
  * | twelve (with Reading Comprehension) | about 55 minutes | 54.5 | 57.0 | 35% |
  *
  * Twelve parts do not fit under the hard stop with margin: ROADMAP, "Owner decisions 2026-10-13".
+ *
+ * ## Rotation ({@link ROTATION}; the remaining families, 2026-10-13)
+ *
+ * With every served part on, one session would hold sixteen parts and typically take about 75 minutes (planned 71.7),
+ * which the 57-minute hard stop cuts: simulated, every session reaches it, and Fermi Estimation, at the end, is never
+ * reached (ROADMAP M3.11, "Session length with the remaining families"). So the served parts take turns: three groups
+ * of about a quarter of an hour, one a session, chosen by the session's number among the saves of this browser (0 for
+ * a first session; `session/SessionApp.svelte`). Each group with the six parts typically takes about 45 minutes, as
+ * the eleven-part session of phase 1 did; over three sessions every served skill is asked once. The welcome screen,
+ * before it knows which turn comes, states the longest turn ({@link longestOutline}); the ready screen states the one
+ * that comes. The profile counts every served skill the server has as offered, so a skill waiting for its turn reads
+ * "not measured", not "not offered yet". An empty table puts every served part in every session.
  *
  * ## A minimum of answered questions for every question part ({@link PART_MINIMUMS}; owner decision 2026-10-13)
  *
@@ -115,8 +131,21 @@ export const A15_TARGET_S = 27.5 * 60
 /** The six parts of the M1 session (A15). */
 export type A15SegmentId = 'rt' | 'matrix_series' | 'spatial' | 'memory' | 'quant' | 'coding_reading'
 
-/** The parts of served text multiple choice (M3.11 phase 1) and of served passages (phase 2). */
-export type TextSegmentId = 'logical_reasoning' | 'reading_comprehension' | 'vocabulary' | 'knowledge_stem' | 'knowledge_humanities' | 'knowledge_arts'
+/**
+ * The served parts: text multiple choice (M3.11 phase 1), passages (phase 2), and logic games, Fermi estimates,
+ * emotion vignettes with situational judgments, and word links (the remaining families, 2026-10-13).
+ */
+export type TextSegmentId =
+  | 'logical_reasoning'
+  | 'reading_comprehension'
+  | 'vocabulary'
+  | 'knowledge_stem'
+  | 'knowledge_humanities'
+  | 'knowledge_arts'
+  | 'logic_games'
+  | 'fermi'
+  | 'emotion'
+  | 'word_links'
 
 /** Every part a session can have. */
 export type SegmentId = A15SegmentId | TextSegmentId
@@ -160,6 +189,9 @@ export const MIN_ITEMS_SLACK = 2
 /** Passages the Reading Comprehension part reads (module comment, "Passages"). */
 export const RC_PASSAGES = 2
 
+/** Games the Logic Games part plays (module comment, "Passages": a game's setup is read like a passage). */
+export const LG_GAMES = 2
+
 /** The parts that ask questions: three of the six A15 parts and every text part. */
 export type QuestionSegmentId = 'matrix_series' | 'spatial' | 'quant' | TextSegmentId
 
@@ -186,6 +218,10 @@ export const PART_MINIMUMS: Readonly<Record<QuestionSegmentId, PartMinimum>> = O
   reading_comprehension: Object.freeze({ min_items: PUBLISH_MIN_ITEMS, sets: RC_PASSAGES }),
   knowledge_humanities: Object.freeze({ min_items: PART_MIN_ITEMS }),
   knowledge_arts: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  logic_games: Object.freeze({ min_items: PUBLISH_MIN_ITEMS, sets: LG_GAMES }),
+  fermi: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  emotion: Object.freeze({ min_items: PART_MIN_ITEMS }),
+  word_links: Object.freeze({ min_items: PART_MIN_ITEMS }),
 })
 
 /** Answered questions the Quantitative part runs to ({@link PART_MINIMUMS}). */
@@ -225,8 +261,11 @@ export const A15_TYPICAL_S = 1769
 /** What the six-part session typically runs over its plan, in seconds. */
 export const A15_TYPICAL_OVER_S = A15_TYPICAL_S - A15_PLANNED_S
 
-/** The axes of the served text parts (text multiple choice and passages), in the canonical axis order. */
-export const TEXT_AXES = ['LR', 'RC', 'VOC', 'KST', 'KHU', 'KAP'] as const satisfies readonly AxisCode[]
+/**
+ * The axes of the served parts (text multiple choice, passages, logic games, Fermi estimates, emotion vignettes and
+ * situational judgments, word links), in the canonical axis order. The name is older than the last four.
+ */
+export const TEXT_AXES = ['LR', 'LG', 'RC', 'VOC', 'FER', 'KST', 'KHU', 'KAP', 'EMO', 'CRE'] as const satisfies readonly AxisCode[]
 export type TextAxis = (typeof TEXT_AXES)[number]
 
 export function isTextAxis(code: unknown): code is TextAxis {
@@ -262,9 +301,60 @@ export const TEXT_PARTS: readonly TextPart[] = Object.freeze([
   { id: 'knowledge_stem', axis: 'KST', after: 'matrix_series', share_s: 130, ...PART_MINIMUMS.knowledge_stem, typical_s: 149 },
   { id: 'vocabulary', axis: 'VOC', after: 'spatial', share_s: 120, ...PART_MINIMUMS.vocabulary, typical_s: 139 },
   { id: 'reading_comprehension', axis: 'RC', after: 'spatial', share_s: 540, ...PART_MINIMUMS.reading_comprehension, typical_s: 549 },
+  { id: 'emotion', axis: 'EMO', after: 'memory', share_s: 240, ...PART_MINIMUMS.emotion, typical_s: 252 },
+  { id: 'word_links', axis: 'CRE', after: 'memory', share_s: 130, ...PART_MINIMUMS.word_links, typical_s: 149 },
   { id: 'knowledge_humanities', axis: 'KHU', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_humanities, typical_s: 149 },
   { id: 'knowledge_arts', axis: 'KAP', after: 'quant', share_s: 130, ...PART_MINIMUMS.knowledge_arts, typical_s: 149 },
+  { id: 'logic_games', axis: 'LG', after: 'coding_reading', share_s: 450, ...PART_MINIMUMS.logic_games, typical_s: 469 },
+  { id: 'fermi', axis: 'FER', after: 'coding_reading', share_s: 360, ...PART_MINIMUMS.fermi, typical_s: 372 },
 ] as const satisfies readonly TextPart[])
+
+/**
+ * THE rotation of the served parts (owner: change it here; module comment, "Rotation"): groups of served parts that
+ * take turns, one group a session. A person's session number `n` (0 for the first) runs the group `n mod k` and every
+ * served part that is in no group. With every served part on, one session holding all of them typically takes about
+ * 80 minutes, which no session can (the hard stop is at 57); a group of about 16 minutes keeps a typical session
+ * near 46 (ROADMAP M3.11, "Session length with the remaining families"). An empty table switches the rotation off.
+ */
+export const ROTATION: readonly (readonly TextAxis[])[] = Object.freeze([
+  Object.freeze(['LR', 'RC'] as const),
+  Object.freeze(['LG', 'VOC', 'KST', 'KHU'] as const),
+  Object.freeze(['FER', 'EMO', 'CRE', 'KAP'] as const),
+])
+
+/**
+ * The served parts whose answers are not rated for confidence (DESIGN §3 row 12: a Fermi estimate states its own 80%
+ * range; Emotion Reading's vignettes are tier c and its situational judgments have no right answer;
+ * `backend/items.ts` `asksConfidence` decides it per item).
+ */
+export const UNRATED_AXES: readonly TextAxis[] = Object.freeze(['FER', 'EMO'] as const)
+
+/** The served parts the server has live questions for, whatever the rotation: what the profile counts as offered. */
+export function liveServedAxes(live: readonly AxisCode[] | null): TextAxis[] {
+  return live === null ? [] : TEXT_AXES.filter((k) => live.includes(k))
+}
+
+/**
+ * The axes of the served parts session number `ordinal` asks for (0 for a person's first; the number of sessions in
+ * the save it starts from): of the skills the server has live questions for (`public.live_axes`, `backend/backend.ts`
+ * `Backend.liveAxes`), those of its {@link ROTATION} group and those in no group, in the canonical order; none when the
+ * list is not known (null). A group whose skills have no questions is passed over, so a session asks for something
+ * whenever anything is live.
+ */
+export function servedPartAxes(live: readonly AxisCode[] | null, ordinal = 0, rotation: readonly (readonly TextAxis[])[] = ROTATION): TextAxis[] {
+  const all = liveServedAxes(live)
+  const grouped = new Set(rotation.flat())
+  const groups = rotation.map((g) => all.filter((k) => g.includes(k))).filter((g) => g.length > 0)
+  const turn = groups.length === 0 ? [] : groups[((Math.trunc(ordinal) % groups.length) + groups.length) % groups.length]!
+  return all.filter((k) => !grouped.has(k) || turn.includes(k))
+}
+
+/** The longest session the rotation can give with these skills live: what the welcome screen says before it knows which one comes. */
+export function longestOutline(live: readonly AxisCode[] | null, rotation: readonly (readonly TextAxis[])[] = ROTATION): SessionOutline {
+  const n = Math.max(1, rotation.length)
+  const outlines = Array.from({ length: n }, (_, i) => sessionOutline(servedPartAxes(live, i, rotation)))
+  return outlines.reduce((a, b) => (b.typical_s > a.typical_s ? b : a))
+}
 
 /** The text part of an axis, or undefined. */
 export function textPartOf(axis: AxisCode): TextPart | undefined {

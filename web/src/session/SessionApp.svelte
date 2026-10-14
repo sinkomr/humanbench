@@ -42,7 +42,7 @@
   import { SERVER_GATE_POINTS, serverReadyText } from '../backend/copy'
   import type { ServerSession } from '../backend/session'
   import type { AxisCode } from '../engine/axes'
-  import { sessionOutline } from '../engine/plan-table'
+  import { liveServedAxes, longestOutline, servedPartAxes, sessionOutline, UNRATED_AXES } from '../engine/plan-table'
   import { installUnloadGuard } from '../reveal/guard'
   import { FOCUS_TARGET_S } from '../reveal/next'
   import { pruneAutosaves, restoreAutosaves, type RestoreResult } from '../save/autosave'
@@ -62,7 +62,7 @@
   import { SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
   import { startRefreshProbe, type RefreshProbe } from './device'
   import { browserSessionEnv, type SessionEnv } from './env'
-  import { welcomeIntro } from './copy'
+  import { WELCOME_INTRO_PENDING, welcomeIntro } from './copy'
   import { FAST_BANNER } from './fast'
   import type { FlowPhase } from './phase'
   import { readConsent, recordConsent } from './gate'
@@ -84,6 +84,7 @@
     type ResultsLoader,
   } from './results-loader'
   import { SessionRun, type ChangeKind, type RunResult } from './run'
+  import { preloadServedRenderers } from './served-renderers'
 
   interface Props {
     /** The browser services; tests inject fakes. Default: the real browser (with the dev fast flag). */
@@ -106,12 +107,37 @@
   /** The server of this page, or null: the static fallback, which is the default build. */
   const backend = $derived(env.backend ?? null)
   /**
-   * The served text parts this page asks its server for (M3.11 phase 1; `backend/config.ts`): none by default and
-   * none without a server, and then the session, its plan and the words about its length are those of M1.
+   * The skills the server has questions for (`backend.liveAxes()`, asked when the page loads; ROADMAP M3.11): null
+   * before it has said, when it could not, and without a server. No build variable names them.
    */
-  const textAxes = $derived(backend?.textAxes ?? [])
+  let liveAxes: readonly AxisCode[] | null = $state.raw(null)
+  $effect(() => {
+    const b = backend
+    if (b === null) return
+    let current = true
+    void b.liveAxes().then((axes) => {
+      if (current && axes !== null) liveAxes = axes
+    })
+    return () => {
+      current = false
+    }
+  })
+  /**
+   * The served parts a session asks for (`engine/plan-table.ts` TEXT_PARTS): those of the skills the server has
+   * questions for, in this session's turn of the rotation (`ROTATION`; the session's number is the count of sessions in
+   * the save it starts from), none while that is not known and none without a server, and then the session, its plan
+   * and the words about its length are those of M1.
+   */
+  const textAxes = $derived.by(() => servedPartAxes(liveAxes, base?.sessions.length ?? 0))
+  /** Every served part the server has questions for, whatever the rotation: the profile counts them as offered. */
+  const offeredAxes = $derived(liveServedAxes(liveAxes))
   /** What the session is planned to be, for the screens that say so before it starts. */
   const outline = $derived(sessionOutline(textAxes))
+  /**
+   * The welcome screen's intro: the six-part words without a server, generic ones until the server has said, and then
+   * the longest session the rotation gives (which turn comes is known once the saves of this browser are read).
+   */
+  const intro = $derived(backend === null ? undefined : liveAxes === null ? WELCOME_INTRO_PENDING : welcomeIntro(longestOutline(liveAxes)))
   /** The terms the consent covers: the online version's notice says answers are sent to a server. */
   const terms = $derived(backend === null ? TERMS_VERSION : TERMS_VERSION_SERVER)
 
@@ -349,7 +375,9 @@
     openProblem = null
     phase = 'opening'
     try {
-      const s = await backend.open(device, base)
+      // The server's list of skills was asked for when the page loaded; if that failed it is asked again here.
+      const [s, live] = await Promise.all([backend.open(device, base), liveAxes === null ? backend.liveAxes() : Promise.resolve(liveAxes)])
+      if (live !== null) liveAxes = live
       if (phase === 'opening') launch(focus, s)
     } catch (e) {
       if (phase === 'opening') openProblem = problemOf(e)
@@ -378,6 +406,8 @@
       ...(s === null ? {} : { cat: s, textAxes }),
       onChange: (kind: ChangeKind) => onChange(kind),
     })
+    // the renderers of the remaining families are not in the entry chunk: fetched now, long before their first question
+    if (s !== null && textAxes.some((k) => k === 'FER' || k === 'CRE' || k === 'EMO')) preloadServedRenderers()
     run = r
     result = null
     viewing = false
@@ -413,7 +443,7 @@
     if (server === null || persister === null || backend === null) return
     closeFailed = false
     try {
-      outcome = { ...(await closeServedRun(r, server, persister, backend.api)), textAxes }
+      outcome = { ...(await closeServedRun(r, server, persister, backend.api)), textAxes: offeredAxes }
     } catch {
       if (phase === 'closing') closeFailed = true
       return
@@ -423,7 +453,7 @@
 
   /** The person goes on without the server: what it scores shows as not measured, and the save keeps the answers. */
   function continueWithoutServer(r: SessionRun): void {
-    if (server !== null) outcome = { server, estimates: null, closed: false, textAxes }
+    if (server !== null) outcome = { server, estimates: null, closed: false, textAxes: offeredAxes }
     showResults(r)
   }
 
@@ -531,7 +561,7 @@
 </script>
 
 {#if phase === 'welcome'}
-  <Welcome onstart={start} focus={visited} {returning} onresults={backend === null ? seeResults : undefined} intro={textAxes.length === 0 ? undefined : welcomeIntro(outline)} />
+  <Welcome onstart={start} focus={visited} {returning} onresults={backend === null ? seeResults : undefined} {intro} />
 {:else if phase === 'gate' || phase === 'blocked'}
   <ConsentGate blocked={phase === 'blocked'} onagree={agree} onunder18={under18} onmistake={mistake} points={backend === null ? undefined : SERVER_GATE_POINTS} />
 {:else if phase === 'honour'}
@@ -549,7 +579,7 @@
     {unfinished}
     oncontinue={backend === null ? continueRun : undefined}
     onfocus={(axes) => startRun(axes)}
-    text={backend === null ? undefined : serverReadyText(outline)}
+    text={backend === null ? undefined : serverReadyText(outline, textAxes.some((k) => UNRATED_AXES.includes(k)))}
     verify={backend === null ? undefined : (save) => backend.api.verifySave(save)}
     restore={backend === null ? undefined : (id, phrase) => backend.api.mirrorGet(id, phrase)}
   />

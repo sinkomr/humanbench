@@ -60,6 +60,11 @@ export const SEGMENT_INFO: Readonly<Record<SegmentId, SegmentInfo>> = Object.fre
   knowledge_stem: info('knowledge_stem', ['KST'], `Questions about science, mathematics and technology. Pick the answer you think is right. ${NO_LOOKUP}`),
   knowledge_humanities: info('knowledge_humanities', ['KHU'], `Questions about history, geography, literature and ideas. Pick the answer you think is right. ${NO_LOOKUP}`),
   knowledge_arts: info('knowledge_arts', ['KAP'], `Questions about the arts and about everyday practical matters. Pick the answer you think is right. ${NO_LOOKUP}`),
+  // The remaining families (2026-10-13): what the person does, in the words of each entry's own instructions (A13, R-5.6.x).
+  logic_games: info('logic_games', ['LG'], 'Read a short set of rules about how some things are ordered or grouped, then answer a few questions about it, then a second set. The rules stay on screen while you answer. Scratch paper and a pencil are fine.'),
+  fermi: info('fermi', ['FER'], `Estimate quantities that few people know exactly. Give a best guess and an 80% range around it, in the unit you prefer. ${NO_LOOKUP}`),
+  emotion: info('emotion', ['EMO'], 'Read short made-up situations. Choose the feeling a person in the story is most likely to have, or rate how well each of a few responses would work.'),
+  word_links: info('word_links', ['CRE'], 'Three words appear. Type one word that goes with each of them, before or after it, to make a common word or phrase.'),
 })
 
 /** The six A15 parts, in order. */

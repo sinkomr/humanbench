@@ -7,7 +7,7 @@
  * (R-11.1: `submit` acknowledges, `finish` carries `correct: null`).
  */
 
-import { isAxisCode, type AxisCode } from '../engine/axes'
+import { AXIS_CODES, isAxisCode, type AxisCode } from '../engine/axes'
 import type { SaveFileV1, SaveSession } from '../save/types'
 import { assertValidSave, assertValidSession } from '../save/validate'
 import { BackendError } from './errors'
@@ -71,6 +71,20 @@ export function parseStarted(raw: unknown): StartedSession {
     paramVersion: nullable(o.param_version, (x) => str(x, 'start_session.param_version', 64)),
     maxItems: int(limits.max_items, 'start_session.limits.max_items'),
   }
+}
+
+// ------------------------------------------------------------------------------ live_axes
+
+/**
+ * The skills the server has questions for (`public.live_axes`, supabase/migrations/20261015000300_live_axes.sql):
+ * axis codes, in the canonical order, without repeats. A code this build does not know is left out (a newer server
+ * may name one), never an error: the reply only decides which parts a session asks for.
+ */
+export function parseLiveAxes(raw: unknown): readonly AxisCode[] {
+  const o = obj(raw, 'live_axes')
+  if (!Array.isArray(o.axes) || o.axes.length > 64) bad('live_axes.axes', 'expected a list of axis codes')
+  const named = new Set((o.axes as unknown[]).map((a, i) => str(a, `live_axes.axes[${i}]`, 16)))
+  return Object.freeze(AXIS_CODES.filter((k) => named.has(k)))
 }
 
 // ------------------------------------------------------------------------------ next_item
