@@ -1,7 +1,7 @@
 {
-  "about": "HumanBench topic taxonomy (Phase AI, ROADMAP A23, AI.3): a controlled vocabulary of content labels for the notes builder and for the item topic tags. A label names a subject, never a level, a score or an ability. Edited in the bank repo (schema/topics-v1.json); the public repo keeps a byte-identical copy (ROADMAP A17, `uv run hb sync topics`). IDs are <axis>/<facet>/<topic> for the finite axes (KST, KHU, KAP, LR, LG, FER), quant/<group> for the six quantitative groups, and other/<topic> for subjects HumanBench does not measure, which a person can still set for themselves. A facet is also an ID (<axis>/<facet>). Retired IDs are never reused: they stay in topics-aliases.json.",
+  "about": "HumanBench topic taxonomy (Phase AI, ROADMAP A23, AI.3): a controlled vocabulary of content labels for the notes builder and for the item topic tags. A label names a subject, never a level, a score or an ability. Edited in the bank repo (schema/topics-v1.json); the public repo keeps a byte-identical copy (ROADMAP A17, `uv run hb sync topics`). IDs are <axis>/<facet>/<topic> for the finite axes (KST, KHU, KAP, LR, LG, FER), quant/<group> for the quantitative groups, and other/<topic> for subjects HumanBench does not measure, which a person can still set for themselves. A facet is also an ID (<axis>/<facet>). Retired IDs are never reused: they stay in topics-aliases.json.",
   "topics_version": "topics-v1",
-  "group_version": "g1",
+  "group_version": "g2",
   "denied_words": {
     "general_ability": ["abilities", "ability", "aptitude", "attention", "brain", "brains", "bright", "brilliant", "capacity", "clever", "cognition", "cognitive", "concentration", "genius", "gifted", "intellect", "intellectual", "intelligence", "intelligent", "mental", "reasoning", "smart", "smarter", "smartest", "talent", "talented"],
     "reading": ["comprehension", "literacy", "literate", "read", "reader", "readers", "reading", "reads", "verbal", "vocabulary"],
@@ -13,10 +13,12 @@
   "nodes": [
     {"id": "quant/arith_fractions_percent", "kind": "group", "axis": "QR", "label": "Arithmetic, fractions and percentages", "templates": ["arith", "fraction", "fraction_of", "percent"]},
     {"id": "quant/ratios_rates_averages", "kind": "group", "axis": "QR", "label": "Ratios, rates and averages", "templates": ["ratio", "rate", "mean"]},
-    {"id": "quant/linear", "kind": "group", "axis": "QR", "label": "Linear equations and systems", "templates": ["linear_eq", "system"]},
-    {"id": "quant/powers_quadratics", "kind": "group", "axis": "QR", "label": "Powers and quadratics", "templates": ["exponent", "quadratic"]},
-    {"id": "quant/probability_counting", "kind": "group", "axis": "QR", "label": "Probability and counting", "templates": ["probability", "counting"]},
-    {"id": "quant/series_number", "kind": "group", "axis": "QR", "label": "Series and number puzzles", "templates": ["arith_series", "geom_series", "modular", "recip", "symmetric"]},
+    {"id": "quant/linear", "kind": "group", "axis": "QR", "label": "Linear equations and systems", "templates": ["linear_eq", "system", "remainder", "functional", "candles", "ferries"]},
+    {"id": "quant/powers_quadratics", "kind": "group", "axis": "QR", "label": "Powers and quadratics", "templates": ["exponent", "quadratic", "vieta", "log_eq", "newton"]},
+    {"id": "quant/probability_counting", "kind": "group", "axis": "QR", "label": "Probability and counting", "templates": ["probability", "counting", "stars_bars", "grid_paths", "conditional", "meet", "digit_sum", "ap_triples", "ruin", "adjacent", "necklace"]},
+    {"id": "quant/series_number", "kind": "group", "axis": "QR", "label": "Series and number puzzles", "templates": ["arith_series", "geom_series", "modular", "recip", "symmetric", "recurrence", "divisors", "crt", "legendre", "mod100", "egyptian", "gcd_power", "tower_mod", "lattice_circle", "telescoping"]},
+    {"id": "quant/geometry_trig", "kind": "group", "axis": "QR", "label": "Geometry and trigonometry", "templates": ["heron", "chords", "coord", "solid", "trig_sin", "angle_sum", "law_cosines", "triangle", "tangent_circles", "inscribed_sphere", "tan_triangle", "sin_squares"]},
+    {"id": "quant/calculus", "kind": "group", "axis": "QR", "label": "Limits, derivatives and integrals", "templates": ["derivative", "integral", "limit", "optimise", "area_between", "beta", "revolution"]},
     {"id": "kst/math_facts", "kind": "facet", "axis": "KST", "label": "Mathematical facts"},
     {"id": "kst/math_facts/number_properties", "kind": "topic", "axis": "KST", "facet": "math_facts", "label": "Number properties"},
     {"id": "kst/math_facts/shapes_and_angles", "kind": "topic", "axis": "KST", "facet": "math_facts", "label": "Shapes and angles"},

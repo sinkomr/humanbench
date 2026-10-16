@@ -1,5 +1,6 @@
 /**
- * The six M1 quant topic groups (ROADMAP A23, AI.3; proposal §5.2). Every one of the 53 quant
+ * The quant topic groups (ROADMAP A23, AI.3; proposal §5.2; g2 adds geometry and trigonometry, and
+ * calculus, for generator 1.4.0, M3.12). Every one of the 108 quant
  * families (a family is a template variant, A11) maps to exactly one group through its template
  * facet, each group has at least 6 families, and the taxonomy file lists the same six groups. The
  * bank's `tests/gen/test_quant_topics.py` tests its twin against its own copy of the
@@ -26,13 +27,20 @@ import { GROUP_VERSION, nodesOfKind } from '../topics'
 const FAMILIES_PER_GROUP: Record<string, number> = {
   'quant/arith_fractions_percent': 10,
   'quant/ratios_rates_averages': 8,
-  'quant/linear': 6,
-  'quant/powers_quadratics': 7,
-  'quant/probability_counting': 6,
-  'quant/series_number': 16,
+  'quant/linear': 10,
+  'quant/powers_quadratics': 11,
+  'quant/probability_counting': 15,
+  'quant/series_number': 29,
+  'quant/geometry_trig': 18,
+  'quant/calculus': 7,
 }
 
-/** Proposal §5.2's "Mean b prior [SPEC v0]" column (rounded there). */
+/**
+ * Proposal §5.2's "Mean b prior [SPEC v0]" column (rounded there), over the strata 1–4 variants
+ * (the M1 table); the two g2 groups have none. With the hard strata of 1.4.0 the means of the
+ * groups they join rise (probability and counting to about 1.9, series and number puzzles to
+ * about 1.7, geometry 2.3, calculus 2.4), which the display order does not follow.
+ */
 const MEAN_B_PRIOR: Record<string, number> = {
   'quant/arith_fractions_percent': -2.0,
   'quant/ratios_rates_averages': -1.0,
@@ -48,14 +56,15 @@ const groupsOfVariant = (variantId: string): string[] => {
 }
 
 describe('quant topic groups', () => {
-  it('group_version is g1, here and in the taxonomy', () => {
-    expect(QUANT_GROUP_VERSION).toBe('g1')
+  it('group_version is g2, here and in the taxonomy', () => {
+    expect(QUANT_GROUP_VERSION).toBe('g2')
     expect(GROUP_VERSION).toBe(QUANT_GROUP_VERSION)
   })
 
-  it('there are 53 quant families (the acceptance number of AI.3)', () => {
+  it('there are 108 quant families (53 of AI.3, 55 of generator 1.4.0)', () => {
     // a change here means the groups need a review
-    expect(VARIANTS).toHaveLength(53)
+    expect(VARIANTS).toHaveLength(108)
+    expect(VARIANTS.filter((v) => v.stratum <= 4)).toHaveLength(53)
   })
 
   it('every family maps to exactly one group', () => {
@@ -81,12 +90,12 @@ describe('quant topic groups', () => {
     const counts = Object.fromEntries(QUANT_GROUPS.map((g) => [g.id, VARIANTS.filter((v) => g.templates.includes(v.template)).length]))
     for (const [id, n] of Object.entries(counts)) expect(n, id).toBeGreaterThanOrEqual(6)
     expect(counts).toEqual(FAMILIES_PER_GROUP)
-    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(53)
+    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(108)
   })
 
   it('is the proposal table, frozen, with the two floor groups first', () => {
     expect([...QUANT_GROUP_IDS]).toEqual(Object.keys(FAMILIES_PER_GROUP))
-    expect(new Set(QUANT_GROUP_IDS).size).toBe(6)
+    expect(new Set(QUANT_GROUP_IDS).size).toBe(8)
     expect([...FLOOR_GROUP_IDS]).toEqual(['quant/arith_fractions_percent', 'quant/ratios_rates_averages'])
     expect(quantGroupById('quant/linear')).toBe(QUANT_GROUPS[2])
     expect(quantGroupById('quant/nope')).toBeUndefined()
@@ -94,18 +103,25 @@ describe('quant topic groups', () => {
     expect(QUANT_GROUPS.every((g) => Object.isFrozen(g) && Object.isFrozen(g.templates))).toBe(true)
   })
 
-  it('has prior means (SPEC v0) that match the proposal table within 0.1', () => {
-    for (const g of QUANT_GROUPS) {
-      const bs = VARIANTS.filter((v) => g.templates.includes(v.template)).map((v) => quantBPrior(quantFeatures(v.template, v.variant, v.stratum, v.offset, v.format !== 'integer')))
+  it('has prior means (SPEC v0) over the M1 variants that match the proposal table within 0.1', () => {
+    for (const g of QUANT_GROUPS.filter((x) => MEAN_B_PRIOR[x.id] !== undefined)) {
+      const bs = VARIANTS.filter((v) => v.stratum <= 4 && g.templates.includes(v.template)).map((v) => quantBPrior(quantFeatures(v.template, v.variant, v.stratum, v.offset, v.format !== 'integer')))
       const mean = bs.reduce((a, b) => a + b, 0) / bs.length
       expect(Math.abs(mean - (MEAN_B_PRIOR[g.id] as number)), g.id).toBeLessThan(0.1)
     }
   })
 
-  it('orders the groups by prior mean, so the floor groups are the two lowest', () => {
-    const order = [...QUANT_GROUP_IDS].sort((a, b) => (MEAN_B_PRIOR[a] as number) - (MEAN_B_PRIOR[b] as number))
+  it('orders the six M1 groups by their M1 prior mean, then the two g2 groups; the floor groups are the two lowest', () => {
+    const m1 = QUANT_GROUP_IDS.filter((id) => MEAN_B_PRIOR[id] !== undefined)
+    const order = [...m1].sort((a, b) => (MEAN_B_PRIOR[a] as number) - (MEAN_B_PRIOR[b] as number))
     expect(order.slice(0, 2)).toEqual([...FLOOR_GROUP_IDS])
-    expect(order).toEqual([...QUANT_GROUP_IDS])
+    expect([...order, 'quant/geometry_trig', 'quant/calculus']).toEqual([...QUANT_GROUP_IDS])
+    // With every variant counted the floor groups are still the two lowest.
+    const mean = (id: string): number => {
+      const bs = VARIANTS.filter((v) => quantGroupById(id)!.templates.includes(v.template)).map((v) => quantBPrior(quantFeatures(v.template, v.variant, v.stratum, v.offset, v.format !== 'integer')))
+      return bs.reduce((a, b) => a + b, 0) / bs.length
+    }
+    expect([...QUANT_GROUP_IDS].sort((a, b) => mean(a) - mean(b)).slice(0, 2)).toEqual([...FLOOR_GROUP_IDS])
   })
 
   it('is the set of groups listed in the taxonomy file', () => {
@@ -118,8 +134,8 @@ describe('quant topic groups', () => {
     fc.assert(
       // A seed that already ends in `@s<k>` names its own stratum and throws for another one (tasks/ids.ts `resolveSeed`):
       // fast-check found ' @s1' with stratum 2 in the wf5 gates, once in a few runs.
-      fc.property(fc.string({ minLength: 1, maxLength: 12 }).filter((s) => !/@s[1-6]$/.test(s)), fc.integer({ min: 1, max: 4 }), (seed, stratum) => {
-        const item = quant.generate(seed, { stratum: stratum as 1 | 2 | 3 | 4 })
+      fc.property(fc.string({ minLength: 1, maxLength: 12 }).filter((s) => !/@s[1-6]$/.test(s)), fc.integer({ min: 1, max: 6 }), (seed, stratum) => {
+        const item = quant.generate(seed, { stratum: stratum as 1 | 2 | 3 | 4 | 5 | 6 })
         const group = quantGroupOfItem(item)
         expect(group, item.facet).toBeDefined()
         expect(QUANT_GROUP_IDS).toContain(group?.id)

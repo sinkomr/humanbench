@@ -67,7 +67,7 @@ describe('the committed files', () => {
   it('the taxonomy is valid', () => {
     expect(taxonomyProblems(RAW)).toEqual([])
     expect(TOPICS_VERSION).toBe('topics-v1')
-    expect(GROUP_VERSION).toBe('g1')
+    expect(GROUP_VERSION).toBe('g2') // g2: the geometry and calculus groups of quant 1.4.0 (M3.12)
     expect(RAW.topics_version).toBe(TOPICS_VERSION)
     expect(RAW.group_version).toBe(GROUP_VERSION)
     expect(Object.keys(DENIED_WORDS).sort()).toEqual([...DENIED_CATEGORIES].sort())
@@ -269,7 +269,7 @@ describe('structure', () => {
     },
     'an unknown kind': (r) => void (r.nodes[nodeIndex('other/statistics')]!.kind = 'leaf'),
     'a wrong topics_version': (r) => void (r.topics_version = 'topics-v2'),
-    'a wrong group_version': (r) => void (r.group_version = 'g2'),
+    'a wrong group_version': (r) => void (r.group_version = 'g1'),
     'no other/ topics': (r) => void (r.nodes = r.nodes.filter((n) => n.kind !== 'other')),
     'a three-segment other ID': (r) => void (r.nodes[nodeIndex('other/statistics')]!.id = 'other/statistics/extra'),
   }
@@ -525,7 +525,8 @@ describe('the frozen ledger of released IDs', () => {
     expect(RAW_LEDGER.topics_version).toBe(TOPICS_VERSION)
     expect(RAW_LEDGER.ids).toEqual([...new Set(RAW_LEDGER.ids)].sort())
     expect(RAW_LEDGER.ids.every((x) => RELEASED.includes(x))).toBe(true)
-    expect(new Set(RAW_LEDGER.ids)).toEqual(TOPIC_IDS) // topics-v1 as first released (AI.3): every live ID shipped
+    // topics-v1 as first released (AI.3) shipped every live ID but the two quant groups that g2 adds (M3.12)
+    expect(new Set(RAW_LEDGER.ids)).toEqual(new Set([...TOPIC_IDS].filter((x) => x !== 'quant/geometry_trig' && x !== 'quant/calculus')))
     expect(RAW_LEDGER.ids).toHaveLength(161)
   })
 

@@ -36,7 +36,7 @@ describe('taxonomy', () => {
     expect(seen).toEqual([...seen].sort((a, b) => a - b))
   })
 
-  it('uses <axis>/<facet> ids, with the six M1 quant groups of proposal 5.2 verbatim', () => {
+  it('uses <axis>/<facet> ids, with the six M1 quant groups of proposal 5.2 verbatim and the two of g2 (M3.12)', () => {
     for (const t of TOPICS) expect(t.id, t.id).toMatch(/^(?:quant|lr|kst|khu|kap|other)\/[a-z0-9_]+(?:\/[a-z0-9_]+)?$/)
     expect(TOPICS.filter((t) => t.id.startsWith('quant/')).map((t) => [t.id, t.label])).toEqual([
       ['quant/arith_fractions_percent', 'Arithmetic, fractions and percentages'],
@@ -45,6 +45,8 @@ describe('taxonomy', () => {
       ['quant/powers_quadratics', 'Powers and quadratics'],
       ['quant/probability_counting', 'Probability and counting'],
       ['quant/series_number', 'Series and number puzzles'],
+      ['quant/geometry_trig', 'Geometry and trigonometry'],
+      ['quant/calculus', 'Limits, derivatives and integrals'],
     ])
   })
 

@@ -45,12 +45,13 @@ describe('pool anchoring of the v0 priors (M1.P)', () => {
     expect(r.strata.size).toBeGreaterThanOrEqual(4) // the slopes keep the spread
   }, 120_000)
 
-  it('quant has no ICAR anchor and keeps the band centres −2 … 1 of strata 1–4 (pool mean −0.5 ± offsets)', () => {
+  it('quant has no ICAR anchor and keeps the band centres −2 … 3 of strata 1–6 (pool mean 0.5 ± offsets)', () => {
     const r = pool(FAMILIES.quant as AnyFamily)
-    // Strata uniform over 1–4 with centres −2, −1, 0, 1 (the midpoints of STRATUM_B_CUTS'
-    // bands) and small template offsets: the pool mean is near −0.5, the mean band centre.
+    // Strata uniform over 1–6 (generator 1.4.0, M3.12) with centres −2, −1, 0, 1, 2, 3 (the
+    // midpoints of STRATUM_B_CUTS' bands; stratum 6 is open above 2.5) and small template offsets:
+    // the pool mean is near 0.5, the mean band centre.
     expect(STRATUM_B_CUTS.slice(0, 3).map((c) => c + 0.5)).toEqual([-1, 0, 1])
-    expect(Math.abs(r.meanB + 0.5)).toBeLessThan(0.1)
+    expect(Math.abs(r.meanB - 0.5)).toBeLessThan(0.1)
     expect(r.bad).toEqual([])
     expect(Object.keys(ICAR_ANCHORED_FAMILIES)).not.toContain('quant')
   }, 120_000)

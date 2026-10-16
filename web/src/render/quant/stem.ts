@@ -5,17 +5,23 @@
  * screen readers. Everything else is the stem text unchanged.
  */
 
-export type StemPart = { readonly text: string } | { readonly sup: string }
+export type StemPart = { readonly text: string } | { readonly sup: string; readonly inner?: readonly StemPart[] }
 
 const POWER_RE = /\^(?:\(([^()]+)\)|([0-9A-Za-z]+))/g
 
+/**
+ * The parts of `stem`. An exponent that is itself a power (`3^(4^5)`, a tower of powers, quant
+ * 1.4.0 `tower_mod`) keeps its text in `sup` and its own parts in `inner`, so the renderer nests the
+ * superscripts (and says "to the power" twice) instead of showing a caret.
+ */
 export function stemParts(stem: string): StemPart[] {
   const out: StemPart[] = []
   let last = 0
   for (const m of stem.matchAll(POWER_RE)) {
     const at = m.index ?? 0
     if (at > last) out.push({ text: stem.slice(last, at) })
-    out.push({ sup: m[1] ?? m[2] ?? '' })
+    const sup = m[1] ?? m[2] ?? ''
+    out.push(sup.includes('^') ? { sup, inner: stemParts(sup) } : { sup })
     last = at + m[0].length
   }
   if (last < stem.length) out.push({ text: stem.slice(last) })

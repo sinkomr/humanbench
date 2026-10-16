@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { NUMERIC_ITEM_TYPE, validateItemInstance } from '../family'
 import { stratumOfB } from '../priors'
 import { KEY_ECHO_MAX_CHANCE, KEY_ECHO_MIN_SEEN, runFamilyProperties, type FamilyPropertyOptions } from '../testing'
-import { quant, quantSpecLeaksKey, type QuantItem, type QuantKey, type QuantResponse, type QuantSpec } from '.'
+import { quant, quantSpecLeaksKey, quantV130, type QuantItem, type QuantKey, type QuantResponse, type QuantSpec } from '.'
 import { Fraction } from './fraction'
 import { QUANT_PRIOR, QUANT_TIME_BASE_S, quantBPrior, quantFeatures } from './prior'
 import { HINTS, QUANT_SIBLING_SETS, QUANT_TEMPLATES, TEMPLATES_BY_STRATUM, VARIANTS, lin, listText, paren, quantSiblingGroup, ratTerm, signed, variantOf } from './templates'
@@ -54,30 +54,31 @@ const variantKey = (item: QuantItem): string => {
 }
 
 describe('quant family (M1.8)', () => {
-  it('passes runFamilyProperties at n = 10,000 across strata 1–4', () => {
+  it('passes runFamilyProperties at n = 10,000 across strata 1–6', () => {
     const echo = new QuantKeyEcho()
     const r = runFamilyProperties(quant, { ...OPTS, strata: quant.strata, specLeaksKey: echoing(echo) })
     expect(echo.problems()).toEqual([])
     expect(echo.judged().length).toBe(VARIANTS.length)
     expect(r.n).toBe(10_000)
     expect(r.distinctItemIds).toBe(10_000)
-    expect(r.strataCounts).toEqual({ 1: 2_500, 2: 2_500, 3: 2_500, 4: 2_500, 5: 0, 6: 0 })
+    expect(Object.values(r.strataCounts).every((c) => c >= 1_666 && c <= 1_667)).toBe(true)
     expect(r.distinctFamilyIds).toBe(VARIANTS.length)
-    expect(r.distinctContents).toBeGreaterThan(8_500)
+    expect(r.distinctContents).toBeGreaterThan(8_000)
     expect(r.bPrior.min).toBeGreaterThanOrEqual(-2.3)
-    expect(r.bPrior.max).toBeLessThanOrEqual(1.4)
+    expect(r.bPrior.max).toBeLessThanOrEqual(3.7)
   }, 300_000)
 
   it('passes with the family choosing the stratum', () => {
     const r = runFamilyProperties(quant, { ...OPTS, n: 2_000, seedPrefix: 'free-' })
-    for (const s of [1, 2, 3, 4] as const) expect(r.strataCounts[s]).toBeGreaterThan(400)
-    expect(r.strataCounts[5] + r.strataCounts[6]).toBe(0)
+    for (const s of [1, 2, 3, 4, 5, 6] as const) expect(r.strataCounts[s]).toBeGreaterThan(250)
   }, 120_000)
 
-  it('has ≥ 12 templates over strata 1–4, every variant generated and solvable', () => {
+  it('has ≥ 12 templates over strata 1–6, every variant generated and solvable', () => {
     const templates = new Set(VARIANTS.map((v) => v.template))
     expect(templates.size).toBeGreaterThanOrEqual(12)
-    for (const s of [1, 2, 3, 4] as const) expect(TEMPLATES_BY_STRATUM[s].length).toBeGreaterThanOrEqual(4)
+    for (const s of [1, 2, 3, 4, 5, 6] as const) expect(TEMPLATES_BY_STRATUM[s].length).toBeGreaterThanOrEqual(4)
+    // A template lives in one stratum (the generator picks a template, then one of its variants).
+    for (const t of QUANT_TEMPLATES) expect(new Set(VARIANTS.filter((v) => v.template === t).map((v) => v.stratum)).size, t).toBe(1)
     const ids = VARIANTS.map((v) => `${v.template}/${v.variant}`)
     expect(new Set(ids).size).toBe(ids.length)
     for (const v of VARIANTS) {
@@ -118,6 +119,13 @@ describe('quant family (M1.8)', () => {
       'g:quant:symmetric': ['symmetric/diff_sq', 'symmetric/sum_cube', 'symmetric/sum_sq'],
       'g:quant:arith_series_terms': ['arith_series/first_n', 'arith_series/sum'],
       'g:quant:modular_remainder': ['modular/last_digit', 'modular/power'],
+      'g:quant:heron': ['heron/area', 'heron/inradius'],
+      'g:quant:chords': ['chords/opposite', 'chords/same_side'],
+      'g:quant:trig_sin': ['trig_sin/cos_double', 'trig_sin/sin_double', 'trig_sin/tan'],
+      'g:quant:vieta': ['vieta/sum_recip', 'vieta/sum_squares'],
+      'g:quant:recurrence': ['recurrence/fib_diff', 'recurrence/lyness'],
+      'g:quant:divisors': ['divisors/count', 'divisors/squares'],
+      'g:quant:legendre': ['legendre/prime_power', 'legendre/zeros'],
     }
     const groups = new Map<string, string[]>()
     for (const v of VARIANTS) {
@@ -147,19 +155,20 @@ describe('quant family (M1.8)', () => {
   })
 
   it('every quant stratum keeps ≥ 8 exclusion units (sibling groups), so the selector\'s near strata do not run dry (M1.14)', () => {
-    for (const k of [1, 2, 3, 4] as const) {
+    for (const k of [1, 2, 3, 4, 5, 6] as const) {
       const units = new Set(VARIANTS.filter((v) => v.stratum === k).map((v) => sampleOf(v.template, v.variant).sibling_group))
       expect(units.size, `stratum ${k}`).toBeGreaterThanOrEqual(8)
     }
-    expect(new Set(VARIANTS.map((v) => sampleOf(v.template, v.variant).sibling_group)).size).toBe(39)
+    expect(new Set(VARIANTS.map((v) => sampleOf(v.template, v.variant).sibling_group)).size).toBe(86)
   })
 
-  it('targets strata through the seed and refuses 5–6', () => {
+  it('targets strata 1–6 through the seed; the kept 1.3.0 generator refuses 5–6', () => {
     const item = quant.generate('demo', { stratum: 4 })
     expect(item.seed).toBe('demo@s4')
     expect(quant.generate('demo@s4')).toEqual(item)
-    expect(() => quant.generate('demo', { stratum: 5 })).toThrow(RangeError)
-    expect(() => quant.generate('demo', { stratum: 6 })).toThrow(RangeError)
+    expect(quant.generate('demo', { stratum: 6 }).seed).toBe('demo@s6')
+    expect(() => quantV130.generate('demo', { stratum: 5 })).toThrow(RangeError)
+    expect(() => quantV130.generate('demo', { stratum: 6 })).toThrow(RangeError)
   })
 
   it('keeps the key out of the render payload', () => {
@@ -216,11 +225,12 @@ describe('quant family (M1.8)', () => {
 })
 
 describe('quant prior and time (M1.P) [SPEC v0]', () => {
-  it('centres b on the default band centres −2, −1, 0, 1 with small template offsets, inside the band', () => {
+  it('centres b on the default band centres −2 … 3 with small template offsets, inside the band', () => {
     expect(QUANT_PRIOR.anchorB).toBe(-2)
     for (const v of VARIANTS) {
-      expect(v.offset, `${v.template}/${v.variant}`).toBeGreaterThanOrEqual(-0.3)
-      expect(v.offset).toBeLessThanOrEqual(0.3)
+      // Stratum 6 is open above 2.5: its offsets run from −0.4 to +0.6 (prior.ts).
+      expect(v.offset, `${v.template}/${v.variant}`).toBeGreaterThanOrEqual(v.stratum === 6 ? -0.4 : -0.3)
+      expect(v.offset).toBeLessThanOrEqual(v.stratum === 6 ? 0.6 : 0.3)
       for (const nonInteger of [false, true]) {
         const b = quantBPrior(quantFeatures(v.template, v.variant, v.stratum, v.offset, nonInteger))
         const anchor = -2 + (v.stratum - 1)
@@ -229,19 +239,22 @@ describe('quant prior and time (M1.P) [SPEC v0]', () => {
         expect(stratumOfB(b), `${v.template}/${v.variant}`).toBe(v.stratum)
       }
     }
-    for (const s of [1, 2, 3, 4] as const) {
+    for (const s of [1, 2, 3, 4, 5, 6] as const) {
       const offsets = VARIANTS.filter((v) => v.stratum === s).map((v) => v.offset)
       expect(Math.abs(offsets.reduce((a, o) => a + o, 0) / offsets.length), `stratum ${s}`).toBeLessThanOrEqual(0.1)
     }
   })
 
-  it('expected time is 30–90 s: the stratum base plus 4 s per 50 words', () => {
-    expect(QUANT_TIME_BASE_S).toEqual({ 1: 30, 2: 45, 3: 60, 4: 75 })
+  it('expected time is the stratum base plus 4 s per 50 words: 30–90 s for strata 1–4, about 2 and 3 minutes for 5 and 6', () => {
+    expect(QUANT_TIME_BASE_S).toEqual({ 1: 30, 2: 45, 3: 60, 4: 75, 5: 120, 6: 180 })
     for (let i = 0; i < 2_000; i++) {
       const item = quant.generate(`time-${i}`)
       expect(item.expected_time_s).toBeGreaterThanOrEqual(30)
-      expect(item.expected_time_s).toBeLessThanOrEqual(90)
-      expect(item.expected_time_s).toBeGreaterThan(QUANT_TIME_BASE_S[item.stratum as 1 | 2 | 3 | 4])
+      expect(item.expected_time_s).toBeLessThanOrEqual(item.stratum <= 4 ? 90 : item.stratum === 5 ? 140 : 200)
+      expect(item.expected_time_s).toBeGreaterThan(QUANT_TIME_BASE_S[item.stratum])
+      // The shared cap max(180, ⌈2.5·E[T]⌉): 180 s up to stratum 4, then up to about 8 minutes.
+      expect(item.time_limit_s).toBe(Math.max(180, Math.ceil(2.5 * item.expected_time_s)))
+      expect(item.time_limit_s).toBeLessThanOrEqual(500)
       expect(item.difficulty.sd_prior).toBe(1)
       expect(item.difficulty.features.non_integer).toBe(item.key.value.includes('/'))
     }

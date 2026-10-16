@@ -35,6 +35,12 @@ describe('stemParts', () => {
     expect(stemParts('Compute (3^5)^2 ÷ 3^8.')).toEqual([{ text: 'Compute (3' }, { sup: '5' }, { text: ')' }, { sup: '2' }, { text: ' ÷ 3' }, { sup: '8' }, { text: '.' }])
     expect(stemParts('Compute 9^(3/2).')).toEqual([{ text: 'Compute 9' }, { sup: '3/2' }, { text: '.' }])
     expect(stemParts('Solve for x: 5^(2x) = 9765625.')).toEqual([{ text: 'Solve for x: 5' }, { sup: '2x' }, { text: ' = 9765625.' }])
+    // a tower of powers (quant 1.4.0): the exponent's own parts, nested
+    expect(stemParts('What is the remainder when 3^(4^5) is divided by 11?')).toEqual([
+      { text: 'What is the remainder when 3' },
+      { sup: '4^5', inner: [{ text: '4' }, { sup: '5' }] },
+      { text: ' is divided by 11?' },
+    ])
     expect(stemParts('No powers here.')).toEqual([{ text: 'No powers here.' }])
   })
 
@@ -58,7 +64,9 @@ describe('QuantRenderer', () => {
   })
 
   it('reads powers as " to the power " with the spaces kept (x^2, 9^(3/2), (3^5)^2 in generated stems)', () => {
-    const spoken = (stem: string): string => stem.replace(/\^\(([^()]+)\)/g, ' to the power $1').replace(/\^([0-9A-Za-z]+)/g, ' to the power $1')
+    // A tower a^(b^c) (quant 1.4.0) is read " to the power b to the power c".
+    const spoken = (stem: string): string =>
+      stem.replace(/\^\(([^()]+)\)/g, (_, e: string) => ` to the power ${e}`).replace(/\^([0-9A-Za-z]+)/g, ' to the power $1')
     const found = { plain: 0, bracketed: 0, grouped: 0 }
     for (let i = 0; i < 400; i++) {
       const item = quant.generate(`render-quant-stem-${i}`)

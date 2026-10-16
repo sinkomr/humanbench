@@ -332,7 +332,7 @@ describe('selectNext', () => {
     expect(none(state({ remainingS: 0 }))).toEqual({ kind: 'none', reason: 'time' })
     expect(none(state({ remainingS: 5 }))).toEqual({ kind: 'none', reason: 'time' })
     const allQuant = VARIANTS.map((v) => quant.familyIdOf({ template: v.template, variant: v.variant }))
-    expect(allQuant).toHaveLength(53)
+    expect(allQuant).toHaveLength(108) // quant 1.4.0: 53 + 55 hard variants (M3.12)
     expect(none(state({ seenFamilies: allQuant }), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
   })
 
