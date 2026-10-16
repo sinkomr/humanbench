@@ -37,9 +37,10 @@ const RESULTS_CHUNK = /\/assets\/Finished-[^/?]+\.(js|css)(\?.*)?$/
  * question timer, the start-up rule of the selector, the kept span generators) took this build's entry from 133.6 KB to
  * 135.6 KB (2.0 KB more). A static import of the results chunk (about 41 KB) still trips the bound by a wide margin.
  * Raised to 143 KB, the same as scripts/results-split.test.ts again, when the three branches of 2026-10-13 merged
- * together took this build's entry to 140.4 KB on CI (Node 24): see there for why the bound was raised.
+ * together took this build's entry to 140.4 KB on CI (Node 24): see there for why the bound was raised. Raised to
+ * 149 KB with the hard strata of M3.12 (2026-10-16), as there.
  */
-const ENTRY_GZIP_MAX = 143_000
+const ENTRY_GZIP_MAX = 149_000
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
 
 // -------------------------------------------------------------------------- the shell

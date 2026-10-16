@@ -19,8 +19,23 @@ import type { ItemInstance } from '../family'
 import type { Cube, Quat, Vec3 } from './geometry'
 
 export const ROTATION_OPTIONS = 4
+/** Cube counts of the classic template (the natural pool and requested strata 2–4; every stratum in 1.3.0). */
 export const MIN_CUBES = 8
 export const MAX_CUBES = 10
+/** Cube counts of the torsion template (requested strata 5 and 6, generator 1.4.0). */
+export const HARD_MIN_CUBES = 10
+export const HARD_MAX_CUBES = 14
+/**
+ * Compactness of torsion-template shapes (legibility at 320 px): every cube centre lies within
+ * √{@link HARD_MAX_CENTRE_RADIUS_SQ} ≈ 4.24 of the shape's centroid, so the shared frame
+ * (renderer `scene.ts`: circumradius + √3/2, × 1.06) stays within ≈ 5.4, the classic template's
+ * largest, and cubes are drawn no smaller than in classic items. Checked exactly in integers:
+ * max ‖n·c − Σc‖² ≤ 18·n² (geometry `centreSpreadSq`).
+ */
+export const HARD_MAX_CENTRE_RADIUS_SQ = 18
+/** Arm counts of the torsion template's target (and so of every option: a torsion keeps the arms). */
+export const HARD_MIN_ARMS = 5
+export const HARD_MAX_ARMS = 7
 /** A well-formed view has at most this many cubes (bounds the verifier's work on garbage). */
 export const MAX_VIEW_CUBES = 64
 
@@ -35,6 +50,16 @@ export const ISO_V1_VIEW_AXIS: Vec3 = Object.freeze([1 / Math.sqrt(3), 1 / Math.
  * |axis · line of sight| < cos 45°; otherwise it is mostly a picture-plane rotation (§4.2).
  */
 export const IN_DEPTH_MAX_COS = Math.SQRT1_2
+
+/**
+ * The torsion template's rotation axes are oblique: 45°–75° from the line of sight, i.e.
+ * cos(75°) ≤ |axis · line of sight| < cos(45°). Such an axis is neither near the line of sight
+ * (a picture-plane turn) nor in the picture plane (a pure turn in depth), so the turn moves
+ * every arm both across and in depth (Parsons 1987: rotations about axes aligned with neither the
+ * viewer nor the picture are the hardest to imagine).
+ */
+export const OBLIQUE_MIN_COS = Math.cos((75 * Math.PI) / 180)
+export const OBLIQUE_MAX_COS = IN_DEPTH_MAX_COS
 
 /** |‖quat‖ − 1| allowed by the verifier. */
 export const QUAT_NORM_TOL = 1e-9
@@ -55,8 +80,9 @@ export interface RotationSpec {
   readonly target: PolycubeView
   /**
    * The four options, in a seeded shuffled display order (the key is the position of the target
-   * rotated): the target rotated, its mirror image, a one-cube-moved variant and that variant's
-   * mirror image, in no fixed order.
+   * rotated): the target rotated, its mirror image, a variant (one cube moved in the classic
+   * template, one joint twisted in the torsion template) and that variant's mirror image, in no
+   * fixed order.
    */
   readonly options: readonly PolycubeView[]
   readonly camera: typeof CAMERA_ISO_V1
@@ -77,10 +103,25 @@ export interface RotationStructure {
   readonly polycube: readonly Cube[]
 }
 
-/** How a distractor differs from the target (A11: exactly one pure mirror). */
-export type DistractorKind = 'mirror' | 'moved' | 'mirror_moved'
+/**
+ * How a distractor differs from the target (A11: exactly one pure mirror). Classic template:
+ * 'moved' / 'mirror_moved' (a one-cube-moved variant of the target / of its mirror). Torsion
+ * template: 'torsion' / 'mirror_torsion' (a one-joint torsion variant of the target / of its
+ * mirror, geometry `torsionVariantChains`).
+ */
+export type DistractorKind = 'mirror' | 'moved' | 'mirror_moved' | 'torsion' | 'mirror_torsion'
 
-/** Difficulty features (§4.2 drivers; only `angle_deg` enters the v0 prior, the rest are for M4). */
+/**
+ * The item templates. 'classic' (no `template` feature recorded): 8–10 cubes, a one-cube-moved
+ * distractor pair; the natural pool and requested strata 2–4 (and every stratum of 1.3.0).
+ * 'torsion' (recorded as `template: 'torsion'`): 10–14 cubes with 5–7 arms, a one-joint torsion
+ * distractor pair that keeps every arm length, an oblique rotation axis; requested strata 5 and 6
+ * only (generator 1.4.0, ROADMAP M3.12).
+ */
+export type RotationTemplate = 'classic' | 'torsion'
+export const TORSION_TEMPLATE = 'torsion'
+
+/** Difficulty features (§4.2 drivers; only `angle_deg` enters the classic v0 prior, the rest are for M4). */
 export interface RotationFeatures {
   /** Angular disparity between the target's and the correct option's display orientations, 0–180°. */
   readonly angle_deg: number
@@ -105,4 +146,23 @@ export const FEATURE_NAMES: readonly (keyof RotationFeatures)[] = Object.freeze(
   'n_arms',
   'n_moved',
   'n_mirror_moved',
+])
+
+/** Features of a torsion-template item: the classic ones (n_moved = n_mirror_moved = 0) and these. */
+export interface HardRotationFeatures extends RotationFeatures {
+  readonly template: typeof TORSION_TEMPLATE
+  /** The correct option's axis is oblique ({@link OBLIQUE_MIN_COS} ≤ axis_view_cos < {@link OBLIQUE_MAX_COS}); always true. */
+  readonly oblique: boolean
+  /** Torsion-variant distractors of the target's handedness. */
+  readonly n_torsion: number
+  /** Distractors that are torsion variants of the target's mirror image (and not of the target). */
+  readonly n_mirror_torsion: number
+}
+
+export const HARD_FEATURE_NAMES: readonly (keyof HardRotationFeatures)[] = Object.freeze([
+  ...FEATURE_NAMES,
+  'template',
+  'oblique',
+  'n_torsion',
+  'n_mirror_torsion',
 ])

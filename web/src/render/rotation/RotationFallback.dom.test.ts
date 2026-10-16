@@ -59,6 +59,17 @@ describe('RotationRenderer without WebGL', () => {
     expect(onshown).not.toHaveBeenCalled()
   })
 
+  it('falls back the same way for a torsion-template item (1.4.0, stratum 6)', async () => {
+    const item = rotation.generate('rotation-fallback-hard@s6')
+    const onunavailable = vi.fn<() => void>()
+    mounted = mountInto(RotationRenderer, { spec: item.spec, onrespond: vi.fn(), onunavailable })
+    await vi.waitFor(() => expect(mounted?.target.textContent).toContain(ROTATION_UNAVAILABLE), { timeout: 5000 })
+    await settle()
+    expect(mounted.target.textContent?.trim()).toBe(ROTATION_UNAVAILABLE)
+    expect(optionInputs(mounted.target)).toHaveLength(0)
+    expect(onunavailable).toHaveBeenCalledTimes(1)
+  })
+
   it('the loading line is gone and the frames with it once the browser has said it cannot draw', async () => {
     const item = rotation.generate('rotation-fallback-2')
     mounted = mountInto(RotationRenderer, { spec: item.spec, onrespond: vi.fn() })

@@ -19,12 +19,12 @@
 import { coding } from './coding'
 import type { AnyFamily, ItemInstance } from './family'
 import { isPyTwinVersion, parseItemId } from './ids'
-import { matrices } from './matrices'
+import { MATRICES_LEGACY_FAMILIES, matrices } from './matrices'
 import { quant } from './quant'
 import { reading } from './reading'
-import { rotation } from './rotation'
+import { ROTATION_LEGACY_FAMILIES, rotation } from './rotation'
 import { rtChoice4, rtSimple } from './rt'
-import { series } from './series'
+import { SERIES_LEGACY_FAMILIES, series } from './series'
 import { SPAN_LEGACY_FAMILIES, corsi, spanBwd, spanFwd } from './span'
 
 /**
@@ -85,7 +85,10 @@ export function resolveItem(itemId: string): ItemInstance<object, object> | null
  */
 const LEGACY_LIST: readonly AnyFamily[] = [
   ...Object.values(SPAN_LEGACY_FAMILIES).map((f) => f as unknown as AnyFamily),
+  ...Object.values(ROTATION_LEGACY_FAMILIES).map((f) => f as unknown as AnyFamily),
   // M3.12 (harder items): one line per family whose generator was bumped, e.g. `...MATRICES_LEGACY_FAMILIES`.
+  ...Object.values(SERIES_LEGACY_FAMILIES).map((f) => f as unknown as AnyFamily),
+  ...Object.values(MATRICES_LEGACY_FAMILIES).map((f) => f as unknown as AnyFamily),
 ]
 
 const LEGACY_GENERATORS: Readonly<Record<string, AnyFamily>> = Object.freeze(

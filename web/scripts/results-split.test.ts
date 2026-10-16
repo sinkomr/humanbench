@@ -36,9 +36,12 @@ import { WEB } from './css-tokens'
  * has and the rotation, the confidence scale on the question screen), which took this entry to 142.2 KB on CI's Node 24
  * (141.7 KB on Node 26, whose gzip is tighter). All of it runs in the session the entry starts. Taking the text
  * renderer out as well saved only 0.6 KB here and nothing in the e2e build (`e2e/ux2-perf.spec.ts`, where the dev
- * routes already split it off), so the bound was raised rather than the session code split further.
+ * routes already split it off), so the bound was raised rather than the session code split further. Raised to 149 KB
+ * with the hard strata of M3.12 (2026-10-16: matrices 1.3.0, series 1.4.0, rotation 1.4.0), which took the entry
+ * from 142.2 to 147.3 KB: the three generators, their verifiers and the worked reveals are in the session the entry
+ * starts (`tasks/registry.ts`, the static path and save re-scoring), and the hard templates add about 2 KB each.
  */
-const ENTRY_GZIP_MAX = 143_000
+const ENTRY_GZIP_MAX = 149_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [

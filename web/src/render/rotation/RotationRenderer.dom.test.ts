@@ -10,6 +10,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rotation } from '../../tasks/rotation'
+import LEGACY_ITEMS from '../../tasks/rotation/__fixtures__/legacy-1.3.0.json'
+import type { RotationSpec } from '../../tasks/rotation/spec'
 import { CONFIRM_LABEL, optionLetter } from '../choice/keys'
 import { click, mountInto, optionInputs, press, settle, stableHtml, type Mounted } from '../dom-testing'
 import { ROTATION_STEM, ROTATION_UNAVAILABLE, optionAlt, targetAlt } from './copy'
@@ -142,6 +144,27 @@ describe('RotationRenderer', () => {
     expect(pass.map((c) => c.canvas)).toEqual(canvases)
     expect(pass.map((c) => c.figure)).toEqual([expected.target, ...expected.options])
     for (const c of pass) expect(c.camera).toEqual(expected.camera)
+  })
+
+  it('draws a torsion-template item (1.4.0, strata 5–6: 10–14 cubes) and a stored 1.3.0 item the same way', async () => {
+    const legacySpec = (LEGACY_ITEMS as unknown as { spec: RotationSpec; stratum: number }[]).find((it) => it.stratum === 6)!.spec
+    for (const spec of [rotation.generate('rotation-dom-hard@s6').spec, legacySpec]) {
+      const onrespond = vi.fn<(r: number) => void>()
+      mounted?.destroy()
+      painter.calls.length = 0
+      mounted = mountInto(RotationRenderer, { spec, onrespond })
+      await settle()
+      const root = mounted.target
+      const n = spec.target.cubes.length
+      expect(root.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe(targetAlt(n))
+      expect(optionInputs(root).map((x) => x.getAttribute('aria-label'))).toEqual([0, 1, 2, 3].map((i) => optionAlt(optionLetter(i), n)))
+      const expected = rotationScene(spec)
+      const pass = painter.calls.slice(-5)
+      expect(pass.map((c) => c.figure)).toEqual([expected.target, ...expected.options])
+      // One frame for all five, no larger than the classic items' largest (cubes stay legible at 320 px).
+      expect(expected.camera.halfExtent).toBeLessThan(5.45)
+    }
+    expect(rotation.generate('rotation-dom-hard@s6').spec.target.cubes.length).toBeGreaterThanOrEqual(10)
   })
 
   it('acquires the shared painter once and releases it on destroy', async () => {

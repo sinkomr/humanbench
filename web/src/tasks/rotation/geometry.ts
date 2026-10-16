@@ -11,6 +11,11 @@
  * - A *one-cube-moved variant* (§4.2 distractor) removes a terminal cube (degree 1) and puts a
  *   cube on another free face-adjacent position, such that the result is again a chain with
  *   ≥ {@link MIN_ARMS} arms ({@link movedVariants}).
+ * - A *one-joint torsion variant* (generator 1.4.0, the torsion template) turns the part of the
+ *   chain after one joint by 90°, 180° or 270° about the axis of the arm that ends at that joint,
+ *   with ≥ 2 cubes on each side of that arm ({@link torsionVariantChains}): every arm keeps its
+ *   length, only the dihedral turn about that arm changes, so cube and arm counting cannot tell
+ *   the variant from the target.
  * - Quaternions are unit Hamilton quaternions `[w, x, y, z]` rotating column vectors
  *   (v' = q v q*), the same convention as Three.js `Quaternion(x, y, z, w)`.
  */
@@ -462,6 +467,113 @@ export function movedVariantChains(cubes: readonly Cube[]): { cubes: Cube[]; inf
         const info = chainInfo(candidate)
         if (info !== null && info.arms >= MIN_ARMS) out.push({ cubes: candidate, info })
       }
+    }
+  }
+  return out
+}
+
+/**
+ * The arm lengths (cubes advanced per straight run) of a chain, read from the end that gives the
+ * lexicographically lesser sequence: a rotation- and reflection-invariant signature. Two chains
+ * with equal signatures cannot be told apart by counting cubes per arm (the torsion template's
+ * `arm_lengths_shared` rule).
+ */
+export function armLengths(info: ChainInfo): number[] {
+  const o = info.order
+  const runs: number[] = []
+  let last = -1
+  for (let i = 1; i < o.length; i++) {
+    const s = stepIndex(o[i - 1] as Cube, o[i] as Cube)
+    if (s === last) runs[runs.length - 1] = (runs[runs.length - 1] as number) + 1
+    else runs.push(1)
+    last = s
+  }
+  const rev = [...runs].reverse()
+  for (let i = 0; i < runs.length; i++) if (runs[i] !== rev[i]) return (runs[i] as number) < (rev[i] as number) ? runs : rev
+  return runs
+}
+
+/**
+ * max over cubes of ‖n·c − Σc‖² (an integer): n² times the squared largest distance of a cube
+ * centre from the shape's centroid, exact for comparisons such as the torsion template's
+ * compactness rule.
+ */
+export function centreSpreadSq(cubes: readonly Cube[]): number {
+  const n = cubes.length
+  let sx = 0
+  let sy = 0
+  let sz = 0
+  for (const [x, y, z] of cubes) {
+    sx += x
+    sy += y
+    sz += z
+  }
+  let best = 0
+  for (const [x, y, z] of cubes) {
+    const dx = n * x - sx
+    const dy = n * y - sy
+    const dz = n * z - sz
+    best = Math.max(best, dx * dx + dy * dy + dz * dz)
+  }
+  return best
+}
+
+/** A quarter turn about the coordinate axis `d` (a unit step): v → (d·v) d + d × v. */
+const quarterTurn = (d: Vec3, v: Vec3): Vec3 => {
+  const k = d[0] * v[0] + d[1] * v[1] + d[2] * v[2]
+  return [k * d[0] + d[1] * v[2] - d[2] * v[1], k * d[1] + d[2] * v[0] - d[0] * v[2], k * d[2] + d[0] * v[1] - d[1] * v[0]]
+}
+
+/**
+ * Fewest cubes on each side of a torsion's arm: with a single cube on one side, the torsion is
+ * that end cube moved (a one-cube-moved variant, the classic distractor) instead.
+ */
+export const MIN_TORSION_TAIL = 2
+
+/**
+ * Every one-joint torsion variant of a chain (the torsion template's distractors): for each
+ * interior arm (neither the first nor the last) with at least {@link MIN_TORSION_TAIL} cubes
+ * before it and after it, turn every cube after the joint where that arm ends by 90°, 180° or 270° about the arm's
+ * own axis through the joint cube, keeping the results that are again chains (no two
+ * non-consecutive cubes touching). A variant has the same cubes per
+ * arm as the source ({@link armLengths}) and the same arm count; only the dihedral turn about that
+ * one arm differs. The first and the last arm give no variant: the first is a straight run on the
+ * turning axis, so turning the rest about it is a rotation of the whole shape, and the last has no
+ * joint after it. The list may hold rotation-equivalent duplicates (callers dedupe by
+ * {@link chainKey}). The relation is symmetric: the source is a torsion variant of each variant
+ * (same arm, inverse turn).
+ */
+export function torsionVariantChains(cubes: readonly Cube[]): { cubes: Cube[]; info: ChainInfo }[] {
+  const info = chainInfo(cubes)
+  if (info === null) return []
+  const o = info.order
+  const n = o.length
+  // Joint j: the cube where the run of steps changes direction (steps j−1 → j differ).
+  const steps: Vec3[] = []
+  for (let i = 1; i < n; i++) {
+    const a = o[i - 1] as Cube
+    const b = o[i] as Cube
+    steps.push([b[0] - a[0], b[1] - a[1], b[2] - a[2]])
+  }
+  const same = (a: Vec3, b: Vec3): boolean => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+  const joints: number[] = []
+  for (let i = 1; i < steps.length; i++) if (!same(steps[i - 1] as Vec3, steps[i] as Vec3)) joints.push(i)
+  const out: { cubes: Cube[]; info: ChainInfo }[] = []
+  // joints[0] ends the first arm (no variant); joints[k] (k ≥ 1) ends the interior arm k, which
+  // starts at joints[k − 1]. Turning the part after the arm or the part before it about the arm's
+  // axis gives the same shape, so a side of a single cube makes the variant a one-cube move
+  // (classic): both sides must hold ≥ MIN_TORSION_TAIL cubes (the same rule from either end).
+  for (let k = 1; k < joints.length; k++) {
+    const j = joints[k] as number
+    if ((joints[k - 1] as number) < MIN_TORSION_TAIL || n - 1 - j < MIN_TORSION_TAIL) continue
+    const axis = steps[j - 1] as Vec3
+    const pivot = o[j] as Cube
+    let tail: Vec3[] = o.slice(j + 1).map((c) => [c[0] - pivot[0], c[1] - pivot[1], c[2] - pivot[2]])
+    for (let turn = 1; turn <= 3; turn++) {
+      tail = tail.map((v) => quarterTurn(axis, v))
+      const candidate: Cube[] = [...o.slice(0, j + 1), ...tail.map((v): Cube => [pivot[0] + v[0], pivot[1] + v[1], pivot[2] + v[2]])]
+      const ci = chainInfo(candidate)
+      if (ci !== null) out.push({ cubes: candidate, info: ci })
     }
   }
   return out
