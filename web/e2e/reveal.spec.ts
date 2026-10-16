@@ -398,9 +398,10 @@ test.describe('about these numbers (§7.3, §7.1)', () => {
       // The same axis of the same table for both input types: the estimate is 0 SD and the range overlaps it.
       // "0 SD" is to within 0.01: the estimate of one skill leans a little on the person's other skills (§7.2),
       // so the simulated person's other answers move it in the third decimal (−0.003 touch, −0.005 keyboard
-      // since the Quantitative part has six questions); a mismatch of input types would read about −3.
+      // since the Quantitative part has six questions; +0.01 keyboard since quant 1.4.0 drew other questions, M3.12);
+      // a mismatch of input types would read about −3.
       const row = page.locator('table.hb-bars tbody tr[data-row="RT"]')
-      await expect(row.locator('td.estimate')).toHaveText(/^[−-]?0\.0[01]\u00a0±/)
+      await expect(row.locator('td.estimate')).toHaveText(/^[−+-]?0\.0[01]\u00a0±/)
       await expect(row.locator('td.relation')).toHaveText(/^Overlaps the\u00a0mean$/)
       await expectNoSeriousAxe(page)
     })
