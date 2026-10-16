@@ -32,6 +32,8 @@ describe('parseSimCatArgs', () => {
     expect(a).toEqual({ part: 'b', perTheta: 200, items: 8, n: 300, seed: 's1', targetMin: 30, fixed: 25, json: '/w/out.json', strict: true })
     // part c, the start-up study (engine/startup.ts), has its own two sizes and no acceptance
     expect(parseSimCatArgs(['--part', 'c', '--per-theta', '50', '--items', '10'], '/w')).toMatchObject({ part: 'c', perTheta: 50, items: 10 })
+    // part d, the cross-skill study (engine/xskill.ts), takes the same two
+    expect(parseSimCatArgs(['--part', 'd', '--per-theta', '20', '--items', '6'], '/w')).toMatchObject({ part: 'd', perTheta: 20, items: 6 })
   })
 
   // --strict is the M1.4b certificate; its r criterion needs a run of >= 20 items/axis (DESIGN §14.3).
@@ -45,8 +47,9 @@ describe('parseSimCatArgs', () => {
   })
 
   it.each([
-    [['--part', 'd']],
+    [['--part', 'e']],
     [['--part', 'c', '--strict']],
+    [['--part', 'd', '--strict']],
     [['--per-theta', '1']],
     [['--items', '41']],
     [['--n', '1']],

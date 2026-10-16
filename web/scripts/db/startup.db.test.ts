@@ -172,8 +172,11 @@ describe('the start-up: one stratum up after each correct answer, down after eac
     await play(sc, s, 'VOC', [true, true])
     expect(await targets(sc, s.session_id)).toEqual({ VOC: 2 })
     const kst = await play(sc, s, 'KST', [false])
-    expect(kst.bs).toEqual([0]) // the first question of a part is chosen as before
-    expect(await targets(sc, s.session_id)).toEqual({ KST: -1, VOC: 2 })
+    // the first question of a part is chosen by the criterion at the aim, which since 2026-10-15 borrows from the other
+    // skills (xskill.ts): after two right on VOC, a stratum up; it is not a start-up step (no KST answer yet)
+    expect(kst.bs).toEqual([Math.round(selectionAim([0, 1].map((b): Observation => ({ kind: '2pl', axis: 'VOC', a: 1, b, y: 1 }))).KST!)])
+    expect(kst.bs).toEqual([1])
+    expect(await targets(sc, s.session_id)).toEqual({ KST: kst.bs[0]! - 1, VOC: 2 })
     const voc = await play(sc, s, 'VOC', [true])
     expect(voc.bs).toEqual([2])
   })

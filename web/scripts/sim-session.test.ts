@@ -35,6 +35,14 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     expect(() => parseSimSessionArgs(['--timeout-p', '2'], '/w')).toThrow(UsageError)
   })
 
+  it('parses the borrowing strength of the aim and correlated takers (engine/xskill.ts, 2026-10-15)', () => {
+    const base = { n: 200, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S }
+    expect(parseSimSessionArgs(['--borrow', '0', '--correlated', 'yes'], '/w')).toEqual({ ...base, borrow: 0, correlated: true })
+    expect(parseSimSessionArgs(['--correlated', 'no'], '/w')).toEqual({ ...base, correlated: false })
+    expect(() => parseSimSessionArgs(['--borrow', '2'], '/w')).toThrow(UsageError)
+    expect(() => parseSimSessionArgs(['--correlated', 'maybe'], '/w')).toThrow(UsageError)
+  })
+
   it('parses a fixed θ and the spread of pace', () => {
     const base = { n: 200, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S }
     expect(parseSimSessionArgs(['--theta', '2', '--pace-sd', '0'], '/w')).toEqual({ ...base, theta: 2, paceSd: 0 })

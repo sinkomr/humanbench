@@ -3,7 +3,7 @@
  * θ-recovery simulations on the bank's M1.4a simulees (`src/engine/__fixtures__/sim_m14a_v1.json`,
  * copied from the bank's `golden/` by `npm run sync:golden`). Runs under tsx:
  *
- *   npm run sim:cat -- [--part a|b|all|c] [--n 2000] [--seed m14b] [--target-min 27.5]
+ *   npm run sim:cat -- [--part a|b|all|c|d] [--n 2000] [--seed m14b] [--target-min 27.5]
  *                      [--fixed 20] [--json <file>] [--strict]
  *
  * - **(a)** the non-adaptive replication of M1.4a (`src/sim/m14a.ts`): the first n simulees'
@@ -29,6 +29,15 @@
  *   shown a stratum 5 or 6 item in the first five, and the recovery (r, RMSE) of the part's
  *   estimate before and after. It needs no fixture.
  *
+ * - **(d)** the cross-skill start of a part (`src/sim/xskill.ts`, `engine/xskill.ts`; owner request
+ *   2026-10-15), not part of `all`: sessions of ten question parts over stand-in pools, at borrowing
+ *   strengths 0 (before), 0.5, 0.75 and 1, for a Σ-shaped population, the owner's profile (+2.5
+ *   everywhere), profiles with one dip or one peak of 2.5, and returning takers (`--per-theta` takers
+ *   per group, default 200; `--items` questions a part, default 8): questions until one is within 0.5
+ *   of θ, the first question's distance from θ, r and RMSE of the reported scores, the error on the
+ *   spiky skill; then each part until SD < 0.5 (questions for a given precision), and the session's order of
+ *   parts against the order that learns most first. It needs no fixture.
+ *
  * Prints one table per run with its acceptance verdict (progress goes to stderr). `--json` writes
  * the numbers; a relative path resolves against the directory npm was run from. Exit codes: 0 (or
  * 1 with `--strict` when any acceptance fails, as above), 2 on a usage error (including `--strict`
@@ -44,16 +53,18 @@ import { M1_ITEMS_PER_AXIS, runCat, type CatRun } from '../src/sim/cat'
 import { m14aFixtureProblems, parity, pythonResults, runM14a, type M14aFixture } from '../src/sim/m14a'
 import { axisTable, catAcceptanceFailures, catRAxes, catVsPython, formatCat, formatParity, type CatPythonRow } from '../src/sim/report'
 import { formatStudy, startupStudy } from '../src/sim/startup'
+import { XSKILL_BORROW } from '../src/engine/xskill'
+import { SESSION_AXES, formatXskill, learnFirstOrder, xskillStudy } from '../src/sim/xskill'
 import { PUB_ROOT, UsageError } from './dump-lib'
 
-export const SIM_CAT_USAGE = 'usage: npm run sim:cat -- [--part a|b|all|c] [--n 2000] [--seed m14b] [--target-min 27.5] [--fixed 20] [--json <file>] [--strict]'
+export const SIM_CAT_USAGE = 'usage: npm run sim:cat -- [--part a|b|all|c|d] [--n 2000] [--seed m14b] [--target-min 27.5] [--fixed 20] [--json <file>] [--strict]'
 
 /** The fixture the simulations read (A17 copy of the bank's golden/sim_m14a_v1.json). */
 export const SIM_FIXTURE = join(PUB_ROOT, 'web', 'src', 'engine', '__fixtures__', 'sim_m14a_v1.json')
 
 export interface SimCatArgs {
-  readonly part: 'a' | 'b' | 'all' | 'c'
-  /** Part c: takers per θ and questions per part. */
+  readonly part: 'a' | 'b' | 'all' | 'c' | 'd'
+  /** Parts c and d: takers per θ (per group) and questions per part. */
   readonly perTheta: number
   readonly items: number
   readonly n: number
@@ -88,7 +99,7 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
     if (a === '--strict') strict = true
     else if (a === '--part') {
       const v = value(++i, a)
-      if (v !== 'a' && v !== 'b' && v !== 'all' && v !== 'c') throw new UsageError('--part must be a, b, all or c')
+      if (v !== 'a' && v !== 'b' && v !== 'all' && v !== 'c' && v !== 'd') throw new UsageError('--part must be a, b, all, c or d')
       part = v
     } else if (a === '--n') n = Number(value(++i, a))
     else if (a === '--seed') seed = value(++i, a)
@@ -105,7 +116,7 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
   // --strict is the M1.4b certificate, and its r criterion (DESIGN §14.3) is judged only at ≥ 20
   // items/axis: without such a run a strict exit 0 would certify a criterion nobody checked.
   if (!(Number.isSafeInteger(perTheta) && perTheta >= 2) || !(Number.isSafeInteger(items) && items >= 2 && items <= 40)) throw new UsageError('--per-theta is an integer ≥ 2 and --items an integer from 2 to 40')
-  if (strict && part === 'c') throw new UsageError('--strict judges parts a and b; part c reports a comparison and has no acceptance')
+  if (strict && (part === 'c' || part === 'd')) throw new UsageError(`--strict judges parts a and b; part ${part} reports a comparison and has no acceptance`)
   if (strict && part !== 'a' && fixed < M1_ITEMS_PER_AXIS) {
     throw new UsageError(`--strict judges r ≥ .85 at ${M1_ITEMS_PER_AXIS} items/axis (DESIGN §14.3), so it needs --fixed ${M1_ITEMS_PER_AXIS} or more (got ${fixed}); drop --strict to run without that check`)
   }
@@ -162,6 +173,27 @@ export function main(argv: readonly string[], cwd = process.env.INIT_CWD ?? proc
     })
     if (args.json !== undefined) {
       writeFileSync(args.json, `${JSON.stringify({ c: studies }, null, 2)}\n`)
+      console.log(`wrote ${args.json}`)
+    }
+    return 0
+  }
+  if (args.part === 'd') {
+    const n = args.perTheta
+    process.stderr.write('cross-skill study: fixed length\n')
+    const fixed = xskillStudy({ n, items: args.items })
+    console.log(formatXskill(fixed))
+    console.log('')
+    process.stderr.write('cross-skill study: each part until SD < 0.5\n')
+    const stop = xskillStudy({ n, items: 20, stopSd: 0.5, borrows: [0, XSKILL_BORROW], groups: ['population', 'owner', 'dip'] })
+    console.log(formatXskill(stop))
+    console.log('')
+    process.stderr.write('cross-skill study: the order of the parts\n')
+    const learn = learnFirstOrder()
+    const order = xskillStudy({ n, items: args.items, borrows: [XSKILL_BORROW], groups: ['population', 'owner'], order: learn })
+    console.log(`The order of the parts, borrowing at ${XSKILL_BORROW}: the session's (${SESSION_AXES.join(' ')}) above; the order that learns most first (${learn.join(' ')}):`)
+    console.log(formatXskill(order))
+    if (args.json !== undefined) {
+      writeFileSync(args.json, `${JSON.stringify({ d: { fixed, stop, order: { order: learn, study: order } } }, null, 2)}\n`)
       console.log(`wrote ${args.json}`)
     }
     return 0

@@ -67,6 +67,7 @@
   import type { FlowPhase } from './phase'
   import { readConsent, recordConsent } from './gate'
   import { priorItemCounts } from './coverage'
+  import { earlierObservations } from './earlier'
   import { SessionPersister, type AutosaveStatus } from './persist'
   import { PracticeRun } from './practice'
   import { baseOf, defaultReadyState, type ReadyState } from './ready-state'
@@ -401,6 +402,8 @@
       // The ≥ 3-item floor follows the axes the earlier sessions covered, not their number (coverage.ts).
       priorItemCounts: priorItemCounts(base),
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
+      // Where the device-made questions are aimed starts from the earlier sessions (earlier.ts); the server reads its own rows.
+      ...(s === null ? { earlierObservations: earlierObservations(base) } : {}),
       ...(focus === undefined ? {} : { focus, targetS: FOCUS_TARGET_S }),
       ...(continues === undefined ? {} : { continues: { done: continues.done, skipped: continues.skipped } }),
       ...(s === null ? {} : { cat: s, textAxes }),

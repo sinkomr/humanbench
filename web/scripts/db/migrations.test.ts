@@ -35,7 +35,7 @@ const all = migrations.map((m) => m.sql).join('\n')
 const code = (sql: string): string => sql.replace(/--[^\n]*/g, '')
 
 describe('migrations: the set', () => {
-  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists), then the item sets of M3.11, the start-up of the selection and the remaining families (word links, Fermi and situational judgments, live_axes), in order, one concern each and the Calibration of rescore', () => {
+  it('has the M2.1 to M2.5 files (and the post-merge audit fix of the seen lists), then the item sets of M3.11, the start-up of the selection and the remaining families (word links, Fermi and situational judgments, live_axes), in order, one concern each, the Calibration of rescore and the cross-skill aim', () => {
     expect(migrations.map((m) => m.name)).toEqual([
       '20261001000100_foundation.sql',
       '20261001000200_bank_tables.sql',
@@ -61,6 +61,7 @@ describe('migrations: the set', () => {
       '20261015000200_continuous_items.sql',
       '20261015000300_live_axes.sql',
       '20261015000400_server_calibration.sql',
+      '20261016000100_cross_skill_aim.sql',
     ])
   })
 
@@ -386,5 +387,41 @@ describe('the sources', () => {
       expect(m.sql, m.name).not.toMatch(/service_role_key|secret_key|api[_-]?key\s*[:=]/i)
     }
     expect(readFileSync(new URL('./bank-fixture.ts', import.meta.url), 'utf8')).toMatch(/synthetic item bank[\s\S]*made up[\s*]+at run time/)
+  })
+})
+
+describe('migrations: the cross-skill aim (owner request 2026-10-15; engine/xskill.ts)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
+  }
+  const xskill = byName('_cross_skill_aim.sql')
+
+  it('re-creates start_session with exactly one change: the new state also holds what the proved ids’ sessions say (hb.prior_state)', () => {
+    const now = functionText(xskill, 'public.start_session')
+    const then = functionText(byName('_server_seen_lists.sql'), 'public.start_session')
+    const before = "pg_catalog.jsonb_build_object('v', 1, 'seen_items', v_seen -> 'items', 'seen_families', v_seen -> 'families'));"
+    const after = "pg_catalog.jsonb_build_object('v', 1, 'seen_items', v_seen -> 'items', 'seen_families', v_seen -> 'families')\n            || hb.prior_state(v_proved));"
+    expect(then).toContain(before)
+    expect(now).toBe(then.replace(before, () => after))
+  })
+
+  it('re-creates hb.rank_live with exactly one change: it passes its axes to hb.session_aims', () => {
+    const now = functionText(xskill, 'hb.rank_live')
+    const then = functionText(byName('_continuous_items.sql'), 'hb.rank_live')
+    const before = 'left join hb.session_aims(p_s.state) am on am.axis = c.o_axis'
+    expect(then).toContain(before)
+    expect(now).toBe(then.replace(before, () => 'left join hb.session_aims(p_s.state, p_axes) am on am.axis = c.o_axis'))
+  })
+
+  it('changes no score: the earlier sessions’ `prior` is read by hb.session_aims alone, and no scoring function is re-created', () => {
+    expect(code(xskill)).not.toMatch(/function\s+(hb\.session_axis_post|hb\.session_posteriors|hb\.eap_add_response|hb\.eap_summary|public\.rescore|public\.finish|public\.submit)\b/)
+    const readers = migrations.filter((m) => /'prior'/.test(code(m.sql))).map((m) => m.name)
+    expect(readers).toEqual(['20261016000100_cross_skill_aim.sql'])
+    expect(code(functionText(xskill, 'hb.session_aims'))).toContain("v_state #> array['prior', v_codes[i]]")
+    // Σ is the scoring one, read at every call (the §3 re-estimate is a new value of the setting)
+    expect(code(functionText(xskill, 'hb.session_aims'))).toContain('hb.sigma_init()')
   })
 })

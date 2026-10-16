@@ -146,8 +146,10 @@ describe('the device selector with the start-up rule', () => {
     const aim = selectionAim(obs).SPA!
     expect(aim).toBeGreaterThan(mean + 0.4)
     expect(aim).toBeLessThan(3.5)
-    // an axis without answers is aimed at the prior mean, like its posterior
-    expect(selectionAim(obs).MAT).toBe(0)
+    // an axis without answers is aimed where the other skills say it is (xskill.ts; 2026-10-15): above the mean here,
+    // and at the prior mean without borrowing or without any answer
+    expect(selectionAim(obs).MAT).toBeGreaterThan(0.5)
+    expect(selectionAim(obs, { borrow: 0 }).MAT).toBe(0)
     expect(selectionAim([]).SPA).toBe(0)
     const mb = (p: ReturnType<typeof poolOf>): number => bs(p).slice(0, 5).reduce((a, b) => a + b, 0) / Math.min(5, bs(p).length)
     expect(mb(poolOf(history))).toBeGreaterThan(mb(poolOf(history, false)) + 0.2)
