@@ -12,6 +12,8 @@ import {
   UsageError,
   bankDumpsDir,
   buildDump,
+  dumpDrift,
+  dumpFileName,
   familiesFromModule,
   isProceduralFamily,
   main,
@@ -46,6 +48,13 @@ describe('parseDumpArgs', () => {
       all: false,
     })
     expect(parseDumpArgs(['--all', '--out-dir', 'dumps'])).toMatchObject({ all: true, outDir: 'dumps' })
+    expect(parseDumpArgs(['--family', 'rot', '--stratum', '6', '--n', '300', '--bank'])).toEqual({
+      family: 'rot',
+      n: 300,
+      stratum: 6,
+      bank: true,
+      all: false,
+    })
   })
 
   it.each([
@@ -64,6 +73,9 @@ describe('parseDumpArgs', () => {
     [['rot'], /unexpected argument/],
     [['--bank=yes', '--family', 'rot'], /takes no value/],
     [['--family', 'a', '--family', 'b', '--bank'], /given twice/],
+    [['--family', 'rot', '--stratum', '7', '--bank'], /--stratum must be 1–6/],
+    [['--family', 'rot', '--stratum', '0', '--bank'], /--stratum must be 1–6/],
+    [['--all', '--stratum', '5', '--bank'], /not with --all/],
   ])('rejects %j', (argv, re) => {
     expect(() => parseDumpArgs(argv)).toThrow(UsageError)
     expect(() => parseDumpArgs(argv)).toThrow(re)
@@ -85,6 +97,17 @@ describe('buildDump / serializeDump', () => {
     expect(Object.keys(parsed)).toEqual(['family', 'generator_version', 'count', 'items'])
     expect(parsed.items).toEqual(dump.items)
     for (const it of parsed.items) expect(validateItemInstance(it, example)).toEqual([])
+  })
+
+  it('a stratum dump (M3.12) uses the seeds dump-<i>@s<k>, its own file name, and drift-checks with the stratum', () => {
+    const dump = buildDump(example, 12, 2)
+    expect(dump.items.map((it) => it.seed)).toEqual(Array.from({ length: 12 }, (_, i) => `dump-${i}@s2`))
+    expect(dump.items.every((it) => it.stratum === 2)).toBe(true)
+    expect(dumpFileName('example', 2)).toBe('example.s2.json')
+    expect(dumpFileName('example')).toBe('example.json')
+    const text = serializeDump(dump)
+    expect(dumpDrift(text, example, 12, 2)).toEqual([])
+    expect(dumpDrift(text, example, 12)[0]).toMatch(/seed "dump-0@s2" ≠ "dump-0"/)
   })
 
   it('refuses to dump a family whose instances fail verify', () => {

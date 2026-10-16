@@ -9,6 +9,8 @@
  *   from the registry and, for families not registered yet, from every family module
  *   `src/tasks/<dir>/index.ts`, so an implementer's `--module` dump is drift-checked before
  *   integration. Every registered family (and the toy family) must have a dump.
+ * - `<family>.s<k>.json` (M3.12) are requested-stratum dumps (`--stratum k`, seeds `dump-<i>@s<k>`),
+ *   checked the same way with at least {@link MIN_STRATUM_DUMP_N} items.
  * - Parity files that are not family dumps are listed in {@link PARITY_FILES} with the test that
  *   keeps each current, and must be present. Any other file there fails: every cross-repo copy
  *   needs a check.
@@ -25,13 +27,19 @@ import type { AnyFamily } from '../src/tasks/family'
 import { FAMILIES } from '../src/tasks/registry'
 import { ENTRY_VECTORS_FILE, serializeEntryVectors } from '../src/tasks/quant/entry-vectors'
 import { serializeAnalysisFixture } from '../src/tasks/series/analysis-fixture'
-import { PUB_ROOT, UsageError, bankDumpsDir, buildDump, dumpDrift, familiesFromModule, serializeDump } from './dump-lib'
+import { MIN_STRATUM_DUMP_N, PUB_ROOT, UsageError, bankDumpsDir, buildDump, dumpDrift, familiesFromModule, serializeDump } from './dump-lib'
 
 const DIR = bankDumpsDir()
 const BANK = dirname(dirname(DIR))
 const present = existsSync(DIR)
 const NO_BANK = `no bank checkout at ${BANK} (the sibling humanbench-bank, or $HB_BANK_DIR), e.g. in CI`
 const files = present ? readdirSync(DIR).filter((f) => f.endsWith('.json')).sort() : []
+/** `<family>.s<k>.json`: a requested-stratum dump (M3.12). */
+const STRATUM_DUMP_RE = /^(.+)\.s([1-6])\.json$/
+const stratumDump = (file: string): { readonly name: string; readonly stratum: number } | null => {
+  const m = STRATUM_DUMP_RE.exec(file)
+  return m === null ? null : { name: m[1] as string, stratum: Number(m[2]) }
+}
 const WEB = join(PUB_ROOT, 'web')
 const TASKS_DIR = join(WEB, 'src', 'tasks')
 
@@ -108,7 +116,10 @@ describe('A17: bank golden/ts_dumps match what this repo produces', () => {
   it('every file there is a known family dump or a checked parity file', async ({ skip }) => {
     skip(!present, NO_BANK)
     const known = await knownFamilies()
-    const unchecked = files.filter((f) => !known.has(f.slice(0, -'.json'.length)) && !Object.hasOwn(PARITY_FILES, f))
+    const unchecked = files.filter((f) => {
+      const sd = stratumDump(f)
+      return sd === null ? !known.has(f.slice(0, -'.json'.length)) && !Object.hasOwn(PARITY_FILES, f) : !known.has(sd.name)
+    })
     expect(
       unchecked,
       `no staleness check for these files in ${DIR}: add the family (or its module) here, list a parity file in PARITY_FILES with its test, or check out matching branches of both repos`,
@@ -121,13 +132,16 @@ describe('A17: bank golden/ts_dumps match what this repo produces', () => {
     const problems: string[] = []
     let checked = 0
     for (const file of files) {
-      const k = known.get(file.slice(0, -'.json'.length))
+      const sd = stratumDump(file)
+      const k = known.get(sd === null ? file.slice(0, -'.json'.length) : sd.name)
       if (!k) continue // a parity file (checked below or by its own test; unknown files fail above)
       const text = readFileSync(join(DIR, file), 'utf8')
       const count = (JSON.parse(text) as { count?: unknown }).count
-      const refresh = `npm run dump:families -- ${k.source} --n ${typeof count === 'number' ? count : 1000} --bank`
-      for (const p of dumpDrift(text, k.family)) problems.push(`${file}: ${p}; refresh with ${refresh}`)
-      checked++
+      const flag = sd === null ? '' : ` --stratum ${sd.stratum}`
+      const refresh = `npm run dump:families -- ${k.source}${flag} --n ${typeof count === 'number' ? count : 1000} --bank`
+      const min = sd === null ? undefined : MIN_STRATUM_DUMP_N
+      for (const p of dumpDrift(text, k.family, min, sd?.stratum)) problems.push(`${file}: ${p}; refresh with ${refresh}`)
+      if (sd === null) checked++
     }
     expect(problems).toEqual([])
     expect(checked).toBeGreaterThanOrEqual(Object.keys(FAMILIES).length + 1) // never vacuous: see above

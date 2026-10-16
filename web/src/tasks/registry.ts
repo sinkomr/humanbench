@@ -76,13 +76,20 @@ export function resolveItem(itemId: string): ItemInstance<object, object> | null
 
 /**
  * Earlier generators this build still carries whole, by family name and exact version: the span
- * blocks of 1.1.0 (both trials of every length; `span/index.ts` SPAN_LEGACY_FAMILIES). They are not
+ * blocks of 1.1.0 (both trials of every length; `span/index.ts` SPAN_LEGACY_FAMILIES), and the
+ * versions of matrices, series and rotation before their hard strata (M3.12; each family's
+ * `<FAMILY>_LEGACY_FAMILIES`). They are not
  * registered, are never planned or served, and exist so that a save made before the generator
  * changed keeps its score when it is re-scored (R-8.1). Each is that version's own code path, so
  * the rule of A11 holds: an id names exactly one implementation.
  */
+const LEGACY_LIST: readonly AnyFamily[] = [
+  ...Object.values(SPAN_LEGACY_FAMILIES).map((f) => f as unknown as AnyFamily),
+  // M3.12 (harder items): one line per family whose generator was bumped, e.g. `...MATRICES_LEGACY_FAMILIES`.
+]
+
 const LEGACY_GENERATORS: Readonly<Record<string, AnyFamily>> = Object.freeze(
-  Object.fromEntries(Object.values(SPAN_LEGACY_FAMILIES).map((f) => [`${f.name}@${f.generatorVersion}`, f as unknown as AnyFamily])),
+  Object.fromEntries(LEGACY_LIST.map((f) => [`${f.name}@${f.generatorVersion}`, f])),
 )
 
 /**

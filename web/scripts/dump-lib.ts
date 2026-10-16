@@ -8,6 +8,12 @@
  *   npm run dump:families -- --family <name> [--n 1000] (--out <file> | --bank)
  *   npm run dump:families -- --module <path/to/family/index.ts> [--family <name>] [--n 1000] (--out <file> | --bank)
  *   npm run dump:families -- --all [--module <path>] [--n 1000] (--out-dir <dir> | --bank)
+ *   npm run dump:families -- --family <name> --stratum <k> [--n 300] (--out <file> | --bank)
+ *
+ * `--stratum k` (M3.12) dumps the requested-stratum seeds `dump-<i>@s<k>` instead, to
+ * `<family>.s<k>.json` with `--bank`: the hard strata of matrices, series and rotation are drawn
+ * only on request, so the natural seeds of `<family>.json` never reach them, and the bank's twin
+ * must accept these too (A1). Such a dump may hold fewer than 1,000 items (≥ {@link MIN_STRATUM_DUMP_N}).
  *
  * `--family` resolves a name in `src/tasks/registry.ts`; `--module` loads an unregistered family
  * module and picks its exported family (by `--family` name if it exports several). `--bank` writes
@@ -30,6 +36,18 @@ import { FAMILIES } from '../src/tasks/registry'
 export const DUMP_SEED_PREFIX = 'dump-'
 /** Default instance count (A1: the bank cross-checks ≥ 1,000). */
 export const DEFAULT_DUMP_N = 1000
+/** Fewest items of a requested-stratum dump (`--stratum`, M3.12). */
+export const MIN_STRATUM_DUMP_N = 100
+
+/** The seed of the i-th dumped instance: `dump-<i>`, or `dump-<i>@s<k>` for a stratum dump. */
+export function dumpSeed(i: number, stratum?: number): string {
+  return stratum === undefined ? `${DUMP_SEED_PREFIX}${i}` : `${DUMP_SEED_PREFIX}${i}@s${stratum}`
+}
+
+/** The dump file name of a family: `<name>.json`, or `<name>.s<k>.json` for a stratum dump. */
+export function dumpFileName(family: string, stratum?: number): string {
+  return stratum === undefined ? `${family}.json` : `${family}.s${stratum}.json`
+}
 
 /** The public repo root (this file is web/scripts/dump-lib.ts). */
 export const PUB_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -49,6 +67,8 @@ export interface DumpArgs {
   readonly outDir?: string
   readonly bank: boolean
   readonly all: boolean
+  /** Dump the seeds `dump-<i>@s<k>` of this stratum (M3.12). */
+  readonly stratum?: number
 }
 
 export interface FamilyDump {
@@ -61,13 +81,14 @@ export interface FamilyDump {
 export const USAGE = `usage:
   npm run dump:families -- --family <name> [--n ${DEFAULT_DUMP_N}] (--out <file> | --bank)
   npm run dump:families -- --module <family/index.ts> [--family <name>] [--n ${DEFAULT_DUMP_N}] (--out <file> | --bank)
-  npm run dump:families -- --all [--module <path>] [--n ${DEFAULT_DUMP_N}] (--out-dir <dir> | --bank)`
+  npm run dump:families -- --all [--module <path>] [--n ${DEFAULT_DUMP_N}] (--out-dir <dir> | --bank)
+  npm run dump:families -- --family <name> --stratum <k> [--n 300] (--out <file> | --bank)`
 
 /** Parse CLI arguments (`--key value` or `--key=value`); throws a {@link UsageError}. */
 export function parseDumpArgs(argv: readonly string[]): DumpArgs {
   const values = new Map<string, string>()
   const flags = new Set<string>()
-  const VALUED = new Set(['family', 'module', 'n', 'out', 'out-dir'])
+  const VALUED = new Set(['family', 'module', 'n', 'out', 'out-dir', 'stratum'])
   const FLAGS = new Set(['bank', 'all'])
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string
@@ -91,8 +112,14 @@ export function parseDumpArgs(argv: readonly string[]): DumpArgs {
   const nRaw = values.get('n')
   const n = nRaw === undefined ? DEFAULT_DUMP_N : Number(nRaw)
   if (!(Number.isSafeInteger(n) && n >= 1)) throw new UsageError(`--n must be a positive integer, got ${nRaw}`)
+  const sRaw = values.get('stratum')
+  const stratum = sRaw === undefined ? undefined : Number(sRaw)
+  if (stratum !== undefined && !(Number.isInteger(stratum) && stratum >= 1 && stratum <= 6)) {
+    throw new UsageError(`--stratum must be 1–6, got ${sRaw}`)
+  }
   const args: DumpArgs = {
     n,
+    ...(stratum === undefined ? {} : { stratum }),
     bank: flags.has('bank'),
     all: flags.has('all'),
     ...(values.has('family') ? { family: values.get('family') as string } : {}),
@@ -102,6 +129,7 @@ export function parseDumpArgs(argv: readonly string[]): DumpArgs {
   }
   const targets = [args.out !== undefined, args.outDir !== undefined, args.bank].filter(Boolean).length
   if (targets !== 1) throw new UsageError('give exactly one of --out, --out-dir, --bank')
+  if (args.stratum !== undefined && args.all) throw new UsageError('--stratum dumps one family: not with --all')
   if (args.all) {
     if (args.family !== undefined) throw new UsageError('--all and --family are exclusive')
     if (args.out !== undefined) throw new UsageError('--all writes one file per family: use --out-dir or --bank')
@@ -138,15 +166,16 @@ export async function familiesFromModule(path: string): Promise<AnyFamily[]> {
 }
 
 /**
- * Generate, validate and verify seeds `dump-0 … dump-(n−1)`; throws listing the failures. Each
- * instance must also survive the JSON round trip, so the canonical lines written by
- * {@link serializeDump} are exactly what `JSON.stringify` (and the bank's loader) see.
+ * Generate, validate and verify seeds `dump-0 … dump-(n−1)` (with `stratum`, `dump-<i>@s<k>`);
+ * throws listing the failures. Each instance must also survive the JSON round trip, so the
+ * canonical lines written by {@link serializeDump} are exactly what `JSON.stringify` (and the
+ * bank's loader) see.
  */
-export function buildDump(family: AnyFamily, n: number): FamilyDump {
+export function buildDump(family: AnyFamily, n: number, stratum?: number): FamilyDump {
   const items: ItemInstance<object, object>[] = []
   const failures: string[] = []
   for (let i = 0; i < n && failures.length < 20; i++) {
-    const seed = `${DUMP_SEED_PREFIX}${i}`
+    const seed = dumpSeed(i, stratum)
     try {
       const item = family.generate(seed)
       const problems = validateItemInstance(item, family)
@@ -182,7 +211,7 @@ export const DUMP_HEAD_KEYS = ['family', 'generator_version', 'count', 'items'] 
  * seeds `dump-0 … dump-(count−1)` in order, every item equal to `family.generate(seed)` and,
  * last, the exact bytes {@link serializeDump} writes. Only the first differing item is reported.
  */
-export function dumpDrift(text: string, family: AnyFamily, minCount: number = DEFAULT_DUMP_N): string[] {
+export function dumpDrift(text: string, family: AnyFamily, minCount: number = DEFAULT_DUMP_N, stratum?: number): string[] {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -204,9 +233,9 @@ export function dumpDrift(text: string, family: AnyFamily, minCount: number = DE
   if (items.length < minCount) problems.push(`${items.length} items < ${minCount} (A1)`)
   if (problems.length > 0) return problems
   for (const [i, it] of items.entries()) {
-    const seed = `${DUMP_SEED_PREFIX}${i}`
+    const seed = dumpSeed(i, stratum)
     const got: unknown = typeof it === 'object' && it !== null ? it.seed : undefined
-    if (got !== seed) return [`item ${i}: seed ${JSON.stringify(got)} ≠ ${JSON.stringify(seed)} (seeds run ${DUMP_SEED_PREFIX}0, ${DUMP_SEED_PREFIX}1, … in order)`]
+    if (got !== seed) return [`item ${i}: seed ${JSON.stringify(got)} ≠ ${JSON.stringify(seed)} (seeds run ${dumpSeed(0, stratum)}, ${dumpSeed(1, stratum)}, … in order)`]
     if (canonicalJson(it) !== canonicalJson(family.generate(seed))) return [`item ${i} (${seed}) differs from the generator`]
   }
   const want = serializeDump({ family: family.name, generator_version: family.generatorVersion, count: items.length, items })
@@ -282,11 +311,11 @@ export async function main(argv: readonly string[], io: MainIo = defaultIo()): P
       const out =
         args.out !== undefined
           ? abs(args.out)
-          : join(bankDir ?? abs(args.outDir as string), `${family.name}.json`)
-      const dump = buildDump(family, args.n)
+          : join(bankDir ?? abs(args.outDir as string), dumpFileName(family.name, args.stratum))
+      const dump = buildDump(family, args.n, args.stratum)
       mkdirSync(dirname(out), { recursive: true })
       writeFileSync(out, serializeDump(dump))
-      io.log(`wrote ${dump.count} ${family.name} ${family.generatorVersion} instances to ${out}`)
+      io.log(`wrote ${dump.count} ${family.name} ${family.generatorVersion} instances${args.stratum === undefined ? '' : ` of stratum ${args.stratum}`} to ${out}`)
     }
     return 0
   } catch (e) {
