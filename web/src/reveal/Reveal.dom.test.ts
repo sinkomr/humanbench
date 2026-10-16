@@ -152,10 +152,13 @@ describe('distinctive peaks', () => {
   })
 
   it('lists exactly the credible peaks, each with a range that starts above 0; never a mean or total', () => {
-    // High on three skills, low on the rest: a person with peaks.
+    // High on three skills, low on the rest: a person with peaks. Which peaks are credible depends on the bot's
+    // answers, drawn per item id: with quant 1.4.0 (M3.12) the ids, so the draws, changed, and session …042 missed its
+    // first, easy Quantitative item (a 5% chance at θ = 2), went down to easy items and showed no credible peak. Of
+    // sessions …040 to …049 at these levels it was the only one without; …045 has two (QR and MAT).
     const high = new Set<AxisCode>(['MAT', 'QR', 'VOC'])
     const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 2 : -1])) as Record<AxisCode, number>
-    const b = botSave('s_REVEALDOM0000042', { level })
+    const b = botSave('s_REVEALDOM0000045', { level })
     const { measured, results } = peaksOf(b)
     const model = distinctivePeaks(results.rescore, measured)
     expect(model.length).toBeGreaterThan(0)

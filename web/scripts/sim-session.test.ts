@@ -141,7 +141,13 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     const base = { n: 1, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S } as const
     const quick = simulateOne(2, base)
     const slow = simulateOne(2, { ...base, pace: 1.5 })
-    expect(slow.durationS).toBeGreaterThan(quick.durationS * 1.2)
+    // The timed blocks take 1.5 times as long; the question parts do not have to: their time shares and the selector's
+    // own time accounting fit the questions to the time a slow taker has. Since quant 1.4.0 (M3.12) this simulee's
+    // brisk run spends about 9.5 minutes on its six Quantitative questions (about 90 s each at the model's pace: the
+    // longer hard items) and the slow run as long on shorter ones (about 60 s each at the model's pace), so the whole
+    // session is only about 15% longer (it was 28%), and the test asks the blocks for the 1.5.
+    for (const p of ['rt', 'memory', 'coding_reading'] as const) expect(slow.partS[p]!, p).toBeGreaterThan(quick.partS[p]! * 1.4)
+    expect(slow.durationS).toBeGreaterThan(quick.durationS * 1.1)
     expect(slow.answered.QR).toBeGreaterThanOrEqual(QUANT_MIN_ITEMS)
     const outs = simulateOne(2, { ...base, timeoutP: 0.3 })
     expect(outs.shown.QR!).toBeLessThanOrEqual(QUANT_MIN_ITEMS + 2)
