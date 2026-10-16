@@ -43,7 +43,6 @@ import { WEB } from './css-tokens'
  * routes (`verify-hard*.ts`, about 7 KB), which the family carries because the device generates and keys its quant
  * items; this took the entry from about 142 to 158.8 KB. The verifiers run only in tests, the dump and the dev review
  * page; keeping them out of the entry needs a family contract whose verify() can load late (not done here).
- */
  *
  * Raised to 162 KB when merged with the cross-skill aim (2026-10-16, `engine/xskill.ts`, about 1.2 KB). The entry
  * now carries the whole session runtime and the device's item generators; moving them behind Start is the follow-up.
