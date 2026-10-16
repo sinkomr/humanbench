@@ -400,7 +400,7 @@ test.describe('about these numbers (§7.3, §7.1)', () => {
       // so the simulated person's other answers move it in the third decimal (−0.003 touch, −0.005 keyboard
       // since the Quantitative part has six questions); a mismatch of input types would read about −3.
       const row = page.locator('table.hb-bars tbody tr[data-row="RT"]')
-      await expect(row.locator('td.estimate')).toHaveText(/^[−-]?0\.0[01]\u00a0±/)
+      await expect(row.locator('td.estimate')).toHaveText(/^[+−-]?0\.0[01]\u00a0±/)
       await expect(row.locator('td.relation')).toHaveText(/^Overlaps the\u00a0mean$/)
       await expectNoSeriousAxe(page)
     })
