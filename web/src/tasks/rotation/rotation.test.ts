@@ -290,9 +290,29 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
  * Generator 1.3.0 is kept whole (A11, R-8.1): `__fixtures__/legacy-1.3.0.json` holds five items
  * dumped by 1.3.0 itself before the bump (`dump-0`, `dump-1`, `dump-0@s5`, `dump-0@s6`,
  * `dump-1@s6`), and {@link LEGACY_DIGEST} is the SHA-256 of 1.3.0's items for 300 seeds (100
- * natural, 40 per requested stratum 2–6), one canonical JSON per line, computed by 1.3.0.
+ * natural, 40 per requested stratum 2–6), one {@link platformStable} canonical JSON per line, computed by 1.3.0.
+ *
+ * Why not the raw canonical JSON: V8's Math.sin, cos, atan2, acos and pow are a C++ port of fdlibm that the
+ * compiler builds with fused multiply-adds on arm64 and without them on x86-64, so the same Node version gives a
+ * different last bit for about 0.5% of inputs (measured 2026-10-16: Node 26.5 darwin-arm64 against darwin-x64
+ * under Rosetta, which reproduces CI's Linux result). A rotation item's quaternions, angle, axis cosine, b and
+ * E[T] come from them; its id, structure (`family_id`), cubes, key and stratum do not. The dumps were made on an
+ * arm64 Mac, so CI on x86-64 Linux got one quaternion component 1 ulp away (…7086 against …709).
  */
-const LEGACY_DIGEST = '664afec17a4d7e7ae2ad7e61a9368bbe450f01e88a7f7e99f8e777d50d6162d0'
+const LEGACY_DIGEST = 'c648bf254bc98ab60c122e03546984b12a0e1fc58d425ec1f6a1e985f88b9875'
+
+/**
+ * The item with every non-integer number rounded to 12 significant digits: equal on every CPU (a last-bit
+ * difference is about 1e-16 relative, four orders below the rounding), while any real change to the generator
+ * still shows. Integers, strings, ids and the key are compared exactly.
+ */
+function platformStable(value: unknown): unknown {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : Number(value.toPrecision(12))
+  if (Array.isArray(value)) return value.map(platformStable)
+  if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, platformStable(v)]))
+  return value
+}
+const stableJson = (item: unknown): string => canonicalJson(platformStable(item) as never)
 const LEGACY_SEEDS: readonly string[] = [
   ...Array.from({ length: 100 }, (_, i) => `legacy-${i}`),
   ...[2, 3, 4, 5, 6].flatMap((k) => Array.from({ length: 40 }, (_, i) => `legacy-${i}@s${k}`)),
@@ -309,12 +329,14 @@ describe('rotation 1.3.0 kept whole beside 1.4.0 (M3.12, A11, R-8.1)', () => {
     expect(generatorOf('rotation', '1.4.0')).toBe(rotation)
   })
 
-  it('rebuilds the items 1.3.0 dumped, byte for byte, from their ids (resolveItem)', () => {
+  it('rebuilds the items 1.3.0 dumped from their ids (resolveItem): ids and structure exactly, numbers to 12 digits', () => {
     expect(LEGACY_ITEMS).toHaveLength(5)
     for (const old of LEGACY_ITEMS as unknown as RotationItem[]) {
       const again = resolveItem(old.item_id)
       expect(again, old.item_id).not.toBeNull()
-      expect(canonicalJson(again as never)).toBe(canonicalJson(old as never))
+      expect(stableJson(again)).toBe(stableJson(old))
+      expect(again!.item_id).toBe(old.item_id)
+      expect(again!.family_id).toBe(old.family_id)
       expect(verifyItem(old)).toBe(true)
     }
     expect((LEGACY_ITEMS as unknown as RotationItem[]).filter((it) => it.stratum >= 5)).toHaveLength(4)
@@ -322,7 +344,7 @@ describe('rotation 1.3.0 kept whole beside 1.4.0 (M3.12, A11, R-8.1)', () => {
 
   it('reproduces 1.3.0 for 300 seeds of every stratum (digest computed by 1.3.0)', () => {
     const h = createHash('sha256')
-    for (const s of LEGACY_SEEDS) h.update(canonicalJson(legacy.generate(s) as never) + '\n')
+    for (const s of LEGACY_SEEDS) h.update(stableJson(legacy.generate(s)) + '\n')
     expect(h.digest('hex')).toBe(LEGACY_DIGEST)
   })
 
