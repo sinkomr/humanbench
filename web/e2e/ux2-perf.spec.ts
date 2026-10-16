@@ -39,7 +39,8 @@ const RESULTS_CHUNK = /\/assets\/Finished-[^/?]+\.(js|css)(\?.*)?$/
  * Raised to 143 KB, the same as scripts/results-split.test.ts again, when the three branches of 2026-10-13 merged
  * together took this build's entry to 140.4 KB on CI (Node 24): see there for why the bound was raised.
  */
-const ENTRY_GZIP_MAX = 143_000
+// Raised to 145 KB with the cross-skill aim (2026-10-16), as in scripts/results-split.test.ts.
+const ENTRY_GZIP_MAX = 145_000
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
 
 // -------------------------------------------------------------------------- the shell

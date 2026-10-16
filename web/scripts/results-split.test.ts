@@ -36,9 +36,11 @@ import { WEB } from './css-tokens'
  * has and the rotation, the confidence scale on the question screen), which took this entry to 142.2 KB on CI's Node 24
  * (141.7 KB on Node 26, whose gzip is tighter). All of it runs in the session the entry starts. Taking the text
  * renderer out as well saved only 0.6 KB here and nothing in the e2e build (`e2e/ux2-perf.spec.ts`, where the dev
- * routes already split it off), so the bound was raised rather than the session code split further.
+ * routes already split it off), so the bound was raised rather than the session code split further. Raised to
+ * 145 KB with the cross-skill aim (2026-10-16, `engine/xskill.ts`, 143.2 KB on CI), to unblock the deploy while the
+ * session runtime is moved out of the entry chunk (follow-up, owner decision to ship on push).
  */
-const ENTRY_GZIP_MAX = 143_000
+const ENTRY_GZIP_MAX = 145_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [
