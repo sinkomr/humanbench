@@ -1025,12 +1025,29 @@ describe('the work one call can cause is bounded (the anon timeout is 3 s, and a
     responses: [['i:tst:g1:00001', 0, answer, null, 1000, null]],
   })
   // [what the answer is made of, the answer, how many sessions of it, the least units the file must have to be a fair test]
+  /** The most a worst-case call may take, as a multiple of {@link cpuBaseline} measured in the same run. */
+  const SLOWDOWN_MAX = 8
   const SHAPES: [string, unknown, number, number][] = [
     ['12,000 objects with a member', Array.from({ length: 12_000 }, () => ({ a: 1 })), 2, 60_000],
     ['12,000 arrays in arrays', Array.from({ length: 12_000 }, () => [[1]]), 2, 60_000],
     ['3,500 integers of 17 digits, the dearest number to print', Array.from({ length: 3_500 }, (_, i) => 12345678901234000 + 2 * i), 2, 60_000],
     ['11,000 numbers of 17 significant digits behind the point, as many sessions as a file holds', Array.from({ length: 11_000 }, (_, i) => 0.12345678901234567 + i / 1e10), 6, 50_000],
   ]
+
+  /**
+   * How long plain CPU-bound SQL takes on this database now: the least of three runs of a fixed query (hashing 100,000
+   * numbers, about 0.15 s on a laptop), as the owner of the test database, so with no statement timeout. The yardstick
+   * of the runner's speed.
+   */
+  const cpuBaseline = async (): Promise<number> => {
+    let best = Infinity
+    for (let i = 0; i < 3; i++) {
+      const t0 = performance.now()
+      await ctx.sudo.query(`select count(*) from generate_series(1, 100000) g where md5(g::text) like '0%'`)
+      best = Math.min(best, performance.now() - t0)
+    }
+    return best
+  }
 
   it.each(SHAPES)('finishes, and is counted against the address, when a file near the limits is made of %s', async (_label, answer, n, least) => {
     const save = emptySave(good.anonId, { sessions: Array.from({ length: n }, (_, i) => forged(answer, i + 1)) })
@@ -1045,10 +1062,15 @@ describe('the work one call can cause is bounded (the anon timeout is 3 s, and a
       const out = await verify(ctx, save, ip)
       const ms = performance.now() - t0
       expect(out.sessions.map((x) => x.reason)).toEqual(Array.from({ length: n }, () => 'bad_signature'))
-      // Headroom: the worst shapes take 0.2 to 0.6 s on a laptop (they took 0.9 to 1.6 s before the M2.3 performance fix, and
-      // ran into the timeout on a CI runner). A call that needs more than two thirds of the anon timeout, which is 3 s, is
-      // a regression even where it still finishes, and a slow runner has the room to run it.
-      expect(ms, `${_label}: ${Math.round(ms)} ms`).toBeLessThan(2000)
+      // Headroom: the worst shapes take 0.15 to 0.6 s on a laptop (they took 0.9 to 1.6 s before the M2.3 performance fix,
+      // and ran into the timeout on a CI runner); a CI runner is several times slower (2.07 and 2.27 s for the slowest
+      // shape on 2026-10-16, with the same code that took 0.59 s here, and as long here as before the migrations of
+      // 2026-10-13 to 10-16: runner variance, not a slowdown). So the guard is not a number of milliseconds: the call has
+      // finished within the anon timeout (it would reject with 57014 above), and against plain SQL on the same database
+      // in the same run (`cpuBaseline`, the runner's own speed) it is at most SLOWDOWN_MAX times as long. The slowest
+      // shape is about 4 times the baseline, so a call that got twice as dear trips it on any runner.
+      const base = await cpuBaseline()
+      expect(ms / base, `${_label}: ${Math.round(ms)} ms against a baseline of ${Math.round(base)} ms`).toBeLessThan(SLOWDOWN_MAX)
       expect(pgCode(await verify(ctx, emptySave(good.anonId), ip).catch((e: unknown) => e))).toBe('PT429')
     } finally {
       await ctx.owner.query(`update public.app_config set value = '60' where key = 'rate.verifies_per_day'`)
