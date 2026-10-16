@@ -43,6 +43,14 @@ describe('scripts/sim-session.ts: whole sessions of the real session machine (UX
     expect(() => parseSimSessionArgs(['--correlated', 'maybe'], '/w')).toThrow(UsageError)
   })
 
+  it('parses the time exponent of the selection criterion (engine/selector.ts SELECTION_TIME_EXPONENT, 2026-10-16)', () => {
+    const base = { n: 200, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S }
+    expect(parseSimSessionArgs(['--time-exponent', '1'], '/w')).toEqual({ ...base, timeExponent: 1 })
+    expect(parseSimSessionArgs(['--time-exponent', '0'], '/w')).toEqual({ ...base, timeExponent: 0 })
+    expect(() => parseSimSessionArgs(['--time-exponent', '-1'], '/w')).toThrow(UsageError)
+    expect(() => parseSimSessionArgs(['--time-exponent', 'x'], '/w')).toThrow(UsageError)
+  })
+
   it('parses a fixed θ and the spread of pace', () => {
     const base = { n: 200, offset: 0, skip: null, interstitialS: 0, targetS: A15_TARGET_S }
     expect(parseSimSessionArgs(['--theta', '2', '--pace-sd', '0'], '/w')).toEqual({ ...base, theta: 2, paceSd: 0 })

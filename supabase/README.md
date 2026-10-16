@@ -1463,6 +1463,10 @@ The same aim runs in the app's selector (`web/src/engine/xskill.ts`, `selector.t
 
 **What the accepted adaptive channel looks like now (ROADMAP A24-sec).** Which item comes next already depended on the answers so far; it now depends on them across parts, and on the person's earlier sessions (whose scores `rescore` publishes, rounded). Nothing new is in a reply, and the bounds are the ones of A24-sec.
 
+### Information alone inside a part (2026-10-16; written and tested here, **not applied to the project**)
+
+One new migration, `supabase/migrations/20261016000300_selection_information.sql`, to be applied with `npm run db:deploy` after review, **after** `20261016000200_quant_hard_facets.sql`. It adds `app_config` `selection.time_exponent` = 0 and re-creates `hb.rank_live` (from `20261016000100_cross_skill_aim.sql`) with one change: a candidate's score is information × posterior variance / E[T]^p, p the setting, so with 0 the candidates of a part are ranked by information alone (owner decision 2026-10-16, DESIGN §7.4; the app's `selector.ts` `SELECTION_TIME_EXPONENT`). `selection.time_exponent = 1` restores information per second. Nothing else changes: budgets, caps, minimums and the hard stop are the client's, as before; no reply gains a field (ROADMAP A24-sec). `web/scripts/db/selection.db.test.ts` holds the SQL to the app under both settings; `migrations.test.ts` checks the function differs from its predecessor by exactly that.
+
 ### Left for the owner
 
 - **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository

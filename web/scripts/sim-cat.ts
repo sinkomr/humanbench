@@ -3,7 +3,7 @@
  * θ-recovery simulations on the bank's M1.4a simulees (`src/engine/__fixtures__/sim_m14a_v1.json`,
  * copied from the bank's `golden/` by `npm run sync:golden`). Runs under tsx:
  *
- *   npm run sim:cat -- [--part a|b|all|c|d] [--n 2000] [--seed m14b] [--target-min 27.5]
+ *   npm run sim:cat -- [--part a|b|all|c|d|e] [--n 2000] [--seed m14b] [--target-min 27.5]
  *                      [--fixed 20] [--json <file>] [--strict]
  *
  * - **(a)** the non-adaptive replication of M1.4a (`src/sim/m14a.ts`): the first n simulees'
@@ -38,6 +38,12 @@
  *   spiky skill; then each part until SD < 0.5 (questions for a given precision), and the session's order of
  *   parts against the order that learns most first. It needs no fixture.
  *
+ * - **(e)** information alone against information per second inside a part (`src/sim/criterion.ts`,
+ *   `engine/selector.ts` SELECTION_TIME_EXPONENT; owner question 2026-10-16), not part of `all`: MAT, SPA, QR
+ *   through the real selector and a Logical Reasoning stand-in pool with the bank's expected times, at
+ *   θ = 0, 2, 2.5, 3: the difficulty at each question, the share of stratum 5–6 questions, r and RMSE, the
+ *   expected time of the part's questions, and the LR part's length under its time rule. It needs no fixture.
+ *
  * Prints one table per run with its acceptance verdict (progress goes to stderr). `--json` writes
  * the numbers; a relative path resolves against the directory npm was run from. Exit codes: 0 (or
  * 1 with `--strict` when any acceptance fails, as above), 2 on a usage error (including `--strict`
@@ -52,19 +58,20 @@ import { A15_TARGET_S } from '../src/engine/selector'
 import { M1_ITEMS_PER_AXIS, runCat, type CatRun } from '../src/sim/cat'
 import { m14aFixtureProblems, parity, pythonResults, runM14a, type M14aFixture } from '../src/sim/m14a'
 import { axisTable, catAcceptanceFailures, catRAxes, catVsPython, formatCat, formatParity, type CatPythonRow } from '../src/sim/report'
+import { criterionStudy, formatCriterion } from '../src/sim/criterion'
 import { formatStudy, startupStudy } from '../src/sim/startup'
 import { XSKILL_BORROW } from '../src/engine/xskill'
 import { SESSION_AXES, formatXskill, learnFirstOrder, xskillStudy } from '../src/sim/xskill'
 import { PUB_ROOT, UsageError } from './dump-lib'
 
-export const SIM_CAT_USAGE = 'usage: npm run sim:cat -- [--part a|b|all|c|d] [--n 2000] [--seed m14b] [--target-min 27.5] [--fixed 20] [--json <file>] [--strict]'
+export const SIM_CAT_USAGE = 'usage: npm run sim:cat -- [--part a|b|all|c|d|e] [--n 2000] [--seed m14b] [--target-min 27.5] [--fixed 20] [--json <file>] [--strict]'
 
 /** The fixture the simulations read (A17 copy of the bank's golden/sim_m14a_v1.json). */
 export const SIM_FIXTURE = join(PUB_ROOT, 'web', 'src', 'engine', '__fixtures__', 'sim_m14a_v1.json')
 
 export interface SimCatArgs {
-  readonly part: 'a' | 'b' | 'all' | 'c' | 'd'
-  /** Parts c and d: takers per θ (per group) and questions per part. */
+  readonly part: 'a' | 'b' | 'all' | 'c' | 'd' | 'e'
+  /** Parts c, d and e: takers per θ (per group) and questions per part. */
   readonly perTheta: number
   readonly items: number
   readonly n: number
@@ -99,7 +106,7 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
     if (a === '--strict') strict = true
     else if (a === '--part') {
       const v = value(++i, a)
-      if (v !== 'a' && v !== 'b' && v !== 'all' && v !== 'c' && v !== 'd') throw new UsageError('--part must be a, b, all, c or d')
+      if (v !== 'a' && v !== 'b' && v !== 'all' && v !== 'c' && v !== 'd' && v !== 'e') throw new UsageError('--part must be a, b, all, c, d or e')
       part = v
     } else if (a === '--n') n = Number(value(++i, a))
     else if (a === '--seed') seed = value(++i, a)
@@ -116,7 +123,7 @@ export function parseSimCatArgs(argv: readonly string[], cwd: string): SimCatArg
   // --strict is the M1.4b certificate, and its r criterion (DESIGN §14.3) is judged only at ≥ 20
   // items/axis: without such a run a strict exit 0 would certify a criterion nobody checked.
   if (!(Number.isSafeInteger(perTheta) && perTheta >= 2) || !(Number.isSafeInteger(items) && items >= 2 && items <= 40)) throw new UsageError('--per-theta is an integer ≥ 2 and --items an integer from 2 to 40')
-  if (strict && (part === 'c' || part === 'd')) throw new UsageError(`--strict judges parts a and b; part ${part} reports a comparison and has no acceptance`)
+  if (strict && (part === 'c' || part === 'd' || part === 'e')) throw new UsageError(`--strict judges parts a and b; part ${part} reports a comparison and has no acceptance`)
   if (strict && part !== 'a' && fixed < M1_ITEMS_PER_AXIS) {
     throw new UsageError(`--strict judges r ≥ .85 at ${M1_ITEMS_PER_AXIS} items/axis (DESIGN §14.3), so it needs --fixed ${M1_ITEMS_PER_AXIS} or more (got ${fixed}); drop --strict to run without that check`)
   }
@@ -173,6 +180,20 @@ export function main(argv: readonly string[], cwd = process.env.INIT_CWD ?? proc
     })
     if (args.json !== undefined) {
       writeFileSync(args.json, `${JSON.stringify({ c: studies }, null, 2)}\n`)
+      console.log(`wrote ${args.json}`)
+    }
+    return 0
+  }
+  if (args.part === 'e') {
+    const studies = (['MAT', 'SPA', 'QR', 'LR'] as const).map((kind) => {
+      process.stderr.write(`criterion study: ${kind}\n`)
+      const study = criterionStudy(kind, { perTheta: args.perTheta, items: args.items, population: Math.max(args.perTheta, 300) })
+      console.log(formatCriterion(study))
+      console.log('')
+      return study
+    })
+    if (args.json !== undefined) {
+      writeFileSync(args.json, `${JSON.stringify({ e: studies }, null, 2)}\n`)
       console.log(`wrote ${args.json}`)
     }
     return 0

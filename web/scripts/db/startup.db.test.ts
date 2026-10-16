@@ -11,7 +11,7 @@
 
 import fc from 'fast-check'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { selectionAim, sessionPosterior } from '../../src/engine/selector'
+import { SELECTION_TIME_EXPONENT, selectionAim, sessionPosterior } from '../../src/engine/selector'
 import { SELECTION_PRIOR_SD_FACTOR, STARTUP_MAX, STARTUP_MIN, STARTUP_STEP, STARTUP_WINDOW, startupCompetes, startupTarget, type StartupUnit } from '../../src/engine/startup'
 import type { Observation } from '../../src/engine/types'
 import { customItem, loadFixtureBank, passageItems, type FixtureItem } from './bank-fixture'
@@ -249,7 +249,7 @@ describe('after the start-up the information of a candidate is evaluated at the 
     expect(aim).toBeGreaterThan(mean + 0.3)
     const ranked = await pool(sc, s.session_id, ['VOC'])
     expect(ranked.length).toBeGreaterThan(0)
-    // information a²PQ at the aim; score = information × posterior variance / E[T] (the variance is the scoring posterior's)
+    // information a²PQ at the aim; score = information × posterior variance / E[T]^p (the variance is the scoring posterior's)
     const pq = (b: number): number => {
       const p = 1 / (1 + Math.exp(-(aim - b)))
       return p * (1 - p)
@@ -257,9 +257,9 @@ describe('after the start-up the information of a candidate is evaluated at the 
     for (const r of ranked) expect(r.info).toBeCloseTo(pq(r.b), 9)
     const ratio = ranked[0]!.score / ranked[0]!.info
     for (const r of ranked) expect(r.score / r.info).toBeCloseTo(ratio, 9)
-    // ... and that variance is the scoring posterior's: the items share one expected time, E[T] = sd² / ratio, a plausible number of seconds
-    expect((sd * sd) / ratio).toBeGreaterThan(5)
-    expect((sd * sd) / ratio).toBeLessThan(120)
+    // ... and that variance is the scoring posterior's: the ratio is sd² / E[T]^p (p = selection.time_exponent, 0: information alone)
+    const et = Number((await sc.db.owner.query<{ t: number }>(`select hb.item_expected_time_s(p.extra, i.payload) as t from public.items i join public.item_parameters p using (item_id) where i.item_id = $1`, [ranked[0]!.id])).rows[0]!.t)
+    expect(ratio).toBeCloseTo((sd * sd) / et ** SELECTION_TIME_EXPONENT, 9)
     // the best candidates are at the stratum nearest the aim
     const nearest = [...new Set([...sc.bank.values()].map((i) => i.b))].sort((x, y) => Math.abs(x - aim) - Math.abs(y - aim))[0]
     expect(ranked[0]!.b).toBe(nearest)

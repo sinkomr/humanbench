@@ -737,3 +737,51 @@ The owner: "use cross-subject correlations to start each part at a better diffic
 - *Order of the parts (3): not changed.* Sorting the ten parts by how much each says about the others (sum of squared correlations in Σ: KHU MAT LR RC LG KAP KST VOC QR SPA) against the session's order (MAT LR KST SPA VOC RC QR KHU KAP LG), at s = 0.75 with the same 400 takers: population 2.33 against 2.35 questions to within 0.5, the owner's profile 3.60 against 3.46. No gain; the session already opens with Matrix & Series, the most correlated of the six parts every session has, and the rotation groups are left as they are.
 - *Server.* New migration **`supabase/migrations/20261016000100_cross_skill_aim.sql`** (not applied; after `20261015000400_server_calibration.sql`): `hb.session_aims(state, axes)` (replaces the one-argument one; works out the aims of the axes asked for), `hb.prior_state`, `hb.rank_live` re-created with one change (passes its axes), `start_session` re-created with one change (`state.prior`), two settings (`selection.borrow_strength` 0.75, `selection.prior_sessions` 10; 0 and 0 switch it off). Cost: `hb.session_aims` for one axis of a session with answers on nine skills about 8 ms against 5 ms with borrowing off (local Postgres). Key secrecy: no reply gains a field; the adaptive channel of A24-sec now runs across parts and from earlier sessions (whose scores `rescore` publishes, rounded). `scripts/db/xskill.db.test.ts` holds the SQL to the app's aim on random answers over four skills, for a returning person, a stranger's file, the switches and a re-estimated Σ.
 - **Open, for the owner:** (1) s = 0.75, or 1 for strong takers' sake (the table); (2) whether the earlier sessions should be moved to today's practice level (§7.8 ρ, about a third of an SD at the second session) before they aim this one (not done: the aim starts that much low, and the start-up step climbs a stratum a question from there); (3) in the online version the server does not see the device's timed tasks (memory, reaction time, coding), so they lend nothing to the served parts' aim; sending their summaries would need an RPC change; (4) the stand-in pools are evenly filled to b = 3.5: with the live banks thin at the top (M3.12) a strong taker's early start is capped by what the pool holds.
+
+## Owner decisions 2026-10-16: information alone inside a part
+
+The owner asked whether "information per second" is right inside a part, since hard items take longer; the lead recommended ranking by information alone and the owner accepted it in conversation (2026-10-16). Built on local `dev` (DESIGN §7.4 "Information alone inside a part"; nothing pushed, the live project not touched).
+
+- *Why.* The §7.4 criterion divided by E[T]. Inside a part the time is already rationed by the part's budget, its minimum of six answered, the per-question caps and the hard stop, and hard items take longer (a stratum 6 matrix 70–95 s, a stratum 6 Quantitative item 120–180 s, a stratum 6 logical reasoning item about 114 s against 73 s at stratum 4), so dividing by time pulled a strong taker back to quicker, easier items once the start-up was over.
+- *Built.* `web/src/engine/selector.ts` `SELECTION_TIME_EXPONENT = 0`: score = w·I·Var / E[T]^p, p = 0 (information alone); `SelectorOptions.timeExponent`, `RunConfig.timeExponent` and `sim:session --time-exponent` for comparisons. Server: new migration **`supabase/migrations/20261016000300_selection_information.sql`** (after `20261016000200_quant_hard_facets.sql`; not applied): `app_config` `selection.time_exponent` = 0 and `hb.rank_live` re-created with that one change (both the item score and a passage set's). DB tests hold the server to the app under both settings. **To switch back:** `selection.time_exponent = 1` and `SELECTION_TIME_EXPONENT = 1`. Unchanged: the time budget of each part, E[T] in what fits in the time left, the caps, the minimum of six answered, the hard stop, the start-up, the aim, the balancing, exposure and exclusion. Key secrecy is unaffected (no new field in any reply).
+- *Simulated, a part* (`npm run sim:cat -- --part e`, new, `src/sim/criterion.ts`; 200 takers per θ, eight questions, the start-up and the aim on; "LR" is a stand-in pool with the bank's LR expected times by stratum, 41–114 s). Mean b of questions 5–8, share of stratum 5–6 questions among all eight, share correct, RMSE at θ, the eight questions' summed E[T]; before → after:
+
+  | Part | θ | mean b, q 5–8 | s5–6 | correct | RMSE | minutes of 8 |
+  |---|---|---|---|---|---|---|
+  | MAT | 0 | −0.40 → 0.05 | 2% → 6% | 58% → 50% | 0.48 → 0.46 | 5.3 → 5.9 |
+  | | +2 | 1.23 → 1.68 | 29% → 47% | 72% → 66% | 0.91 → 0.86 | 7.0 → 7.7 |
+  | | +2.5 | 1.44 → 1.85 | 34% → 51% | 76% → 70% | 1.14 → 1.11 | 7.3 → 8.0 |
+  | | +3 | 1.80 → 2.26 | 44% → 62% | 78% → 74% | 1.37 → 1.28 | 7.7 → 8.5 |
+  | SPA | 0 | −0.18 → −0.06 | 4% → 5% | 63% → 62% | 0.55 → 0.55 | 3.3 → 3.4 |
+  | | +2 | 0.90 → 1.08 | 22% → 27% | 79% → 78% | 1.21 → 1.22 | 4.3 → 4.5 |
+  | | +2.5 | 1.23 → 1.50 | 28% → 34% | 83% → 81% | 1.48 → 1.48 | 4.6 → 4.9 |
+  | | +3 | 1.60 → 1.88 | 36% → 44% | 86% → 84% | 1.79 → 1.81 | 5.0 → 5.3 |
+  | QR | 0 | −0.48 → 0.00 | 2% → 4% | 58% → 49% | 0.48 → 0.50 | 7.4 → 8.3 |
+  | | +2 | 1.07 → 1.59 | 22% → 41% | 71% → 63% | 1.00 → 0.97 | 11.0 → 13.0 |
+  | | +2.5 | 1.35 → 1.97 | 30% → 54% | 77% → 69% | 1.13 → 1.06 | 11.8 → 14.3 |
+  | | +3 | 1.75 → 2.34 | 41% → 63% | 81% → 75% | 1.30 → 1.20 | 13.3 → 15.9 |
+  | LR | 0 | −0.36 → −0.01 | 2% → 4% | 53% → 48% | 0.48 → 0.47 | 8.2 → 8.5 |
+  | | +2 | 1.14 → 1.61 | 25% → 40% | 71% → 66% | 0.89 → 0.87 | 10.3 → 10.9 |
+  | | +2.5 | 1.52 → 1.98 | 38% → 54% | 75% → 69% | 1.06 → 1.08 | 11.0 → 11.7 |
+  | | +3 | 1.76 → 2.23 | 46% → 61% | 78% → 75% | 1.32 → 1.26 | 11.4 → 12.1 |
+
+  Recovery over θ ~ N(0, 1) (300 takers, eight questions), r / RMSE before → after: MAT .760 / 0.629 → .745 / 0.648; SPA .701 / 0.679 → .694 / 0.685; QR .768 / 0.605 → .783 / 0.590; LR .774 / 0.589 → .788 / 0.573 (differences within sampling error). The difficulty no longer sags after question 4 for strong takers on MAT, QR and LR; **Spatial gains least** (+0.27 at θ = +2.5): its classic items are short whatever their stratum, so the division by time was not what held it back (the live rotation 1.3.0 items of strata 5–6 are re-banded instead, below).
+- *Simulated, a session* (`npm run sim:session -- --mode online`, 200 sessions a row, `--time-exponent 1` before; active minutes median / p95 / share at the 57-minute hard stop; the text parts of the simulator take fixed times, so the LR study's part lengths are added in the text):
+
+  | Session | Takers | before | after |
+  |---|---|---|---|
+  | six parts | typical (θ ~ N(0, I)) | 29.6 / 35.5 / 0% | 30.2 / 36.0 / 0% |
+  | | typical, 1.25× slower | 34.0 / 44.3 / 0% | 35.1 / 45.9 / 0% |
+  | | θ = +2 | 33.8 / 42.2 / 0% | 35.8 / 46.1 / 1% |
+  | | θ = +2.5 | 35.1 / 45.8 / 1% | 37.7 / 48.6 / 1% |
+  | | θ = +2.5, 1.25× slower | 41.8 / 57.0 / 7% | 45.2 / 57.0 / 10% |
+  | | θ = +3 | 35.9 / 46.1 / 1% | 39.0 / 51.1 / 2% |
+  | six + LR, RC (the longest turn) | typical | 44.9 / 53.5 / 3% | 45.5 / 54.4 / 3% |
+  | | typical, 1.25× slower | 52.6 / 57.0 / 27% | 53.6 / 57.0 / 35% |
+  | | θ = +2 | 49.3 / 57.0 / 10% | 51.3 / 57.0 / 21% |
+  | | θ = +2.5 | 50.4 / 57.0 / 20% | 52.8 / 57.0 / 34% |
+  | | θ = +2.5, 1.25× slower | 57.0 / 57.0 / 68% | 57.0 / 57.0 / 79% |
+  | | θ = +3 | 51.2 / 57.0 / 24% | 54.6 / 57.0 / 36% |
+
+  The LR part under its 6-minute share and minimum of six (the study above): median 6.6 → 6.6 min typical, 7.7 → 7.9 1.25× slower; 7.5 → 8.4 at θ = +2.5, 9.4 → 10.5 at θ = +2.5 and 1.25× slower. **Typical takers stay within the 60-minute ceiling** (the longest turn: median about 45.5 min, p95 54.4, +0.6 min); a typical taker 1.25× slower goes from 52.6 to about 53.8 min median and reaches the hard stop in 35% of sessions instead of 27%. The cost is paid by strong takers, and mostly in the Quantitative part (θ = +2.5: 9.8 → 12.2 min median), whose hard items take 2–3 minutes each and whose minimum of six answered runs past its 7-minute share; with the longest turn a third of strong takers now reach the hard stop (20% before), which cuts the last part short. Nobody's session passes 57 active minutes (the hard stop).
+- **Open, for the owner:** (1) accept the longer Quantitative part for strong takers, or keep information per second on QR alone (a per-axis exponent is a small change on both sides), or lower QR's minimum for takers already in strata 5–6; (2) whether the longest turn (LR + RC) should lose a part for slow or strong takers.

@@ -573,7 +573,7 @@ Edge cases:
   - [EST†] simple RT (lab ≈ 200–250 ms; web adds tens of ms of device lag, so show web-relative norms only).
 - Because the user population is self-selected, the tooltip says "vs other HumanBench takers (a self-selected, likely above-average group)".
 
-### 7.4 Item selection: information per second [CALC]
+### 7.4 Item selection: information (per second until 2026-10-16) [CALC]
 Criterion for candidate item j on axis k:
 
 $$\text{score}_j = w_k \cdot \frac{a_j^2 P_j(1-P_j)\,\operatorname{Var}(\theta_k)}{\mathbb E[T_j]}\,,$$
@@ -583,6 +583,8 @@ $$\text{score}_j = w_k \cdot \frac{a_j^2 P_j(1-P_j)\,\operatorname{Var}(\theta_k
 - with $w_k$ the axis weight (1.0 by default; 0 for axes the user skipped).
 
 Then apply randomesque top-5, exposure caps and family exclusion.
+
+**Information alone inside a part (amended 2026-10-16; owner question, lead's recommendation accepted).** The time term is now $\mathbb E[T_j]^p$ with $p = 0$: inside a part candidates are ranked by $w_k \cdot a_j^2P_j(1-P_j)\operatorname{Var}(\theta_k)$ alone. Hard items take longer (a stratum 6 matrix 70–95 s, a stratum 6 Quantitative item 120–180 s), so dividing by time pulled a strong taker back to quicker, easier items after the start-up; inside a part the time is already rationed by the part's budget, its minimum of six answered, the per-question caps and the hard stop, all of which still use $\mathbb E[T_j]$, as does what fits in the time left. $p$ is a setting: `SELECTION_TIME_EXPONENT` in `web/src/engine/selector.ts`, `app_config` `selection.time_exponent` on the server (`supabase/migrations/20261016000300_selection_information.sql`); 1 restores information per second. Simulated (`npm run sim:cat -- --part e`, `npm run sim:session -- --time-exponent 1` for before; figures in ROADMAP "Owner decisions 2026-10-16"): at θ = +2.5 the mean difficulty of questions 5–8 rises by about 0.4–0.6 on Matrix & Series, Quantitative and a logical-reasoning part, 0.27 on Spatial; recovery is unchanged within sampling error; typical sessions are about 0.6 min longer, strong takers' 2–3 min (mostly Quantitative), and more of them reach the hard stop.
 
 **Start-up and aim (amended 2026-10-13, after the owner's first full session: 64 of 67 right and "it seemed like it didnt [adapt]").** The criterion above places the next item at the posterior mean under the N(0, 1) prior, which ten correct answers in a row move by about one stratum, and it divides by time, which favours the quicker, easier items. Two rules sit in front of it; neither changes a score:
 1. *Start-up.* The first item of a part is chosen as above. While every scored answer on the axis in this session is correct, the next item is aimed at the difficulty of the last one plus one stratum (1.0); while every one is wrong, minus one. Only candidates within half a stratum of that target compete (or the nearest, when there are none), and among them the criterion, the floor, the balancing and the top-5 decide as before. At the first reversal the start-up is over for the axis in that session. A passage is one unit (the mean difficulty of its questions; up when all were right, down when none was, a reversal in between).

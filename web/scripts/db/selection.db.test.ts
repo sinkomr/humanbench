@@ -96,7 +96,7 @@ const paramsOf = (it: FixtureItem): Parameters<typeof itemInformation>[0] =>
   it.model === '3pl' ? { model: '3pl', a: it.a, b: it.b, c: it.c! } : it.model === '2pl_testlet' ? { model: '2pl_testlet', a: it.a, b: it.b } : { model: '2pl', a: it.a, b: it.b }
 
 // ------------------------------------------------------------------------------------ the criterion
-describe('the §7.4 criterion: information per second x posterior variance (parity with engine/selector.ts)', () => {
+describe('the §7.4 criterion: information x posterior variance, over E[T]^p (parity with engine/selector.ts)', () => {
   let sc: Scenario
   beforeAll(async () => {
     const items: FixtureItem[] = []
@@ -132,6 +132,25 @@ describe('the §7.4 criterion: information per second x posterior variance (pari
     got.forEach((g, i) => expect(Math.abs(g.score - want[i]!.score)).toBeLessThan(1e-12))
     // the information alone is that of the item's own model (a 2PL-testlet counts for 0.8 of a 2PL)
     got.forEach((g) => expect(Math.abs(g.info - itemInformation(paramsOf(sc.bank.get(g.id)!), 0))).toBeLessThan(1e-12))
+  })
+
+  it('ranks by information per second with selection.time_exponent = 1, as the app with timeExponent 1 (the setting that switches back)', async () => {
+    const sc1 = await scenario(sc.items, { 'selection.coverage_floor': 0, 'selection.time_exponent': 1 })
+    try {
+      const s = await start(sc1)
+      const got = await pool(sc1, s.session_id)
+      const want = sc1.items
+        .map((it) => ({ id: it.itemId, score: criterion({ params: paramsOf(it), expected_time_s: it.expectedTimeS! }, { mean: 0, sd: 1 }, 1, 1) }))
+        .sort((x, y) => y.score - x.score || (x.id < y.id ? -1 : 1))
+        .slice(0, 5)
+      expect(got.map((g) => g.id)).toEqual(want.map((w) => w.id))
+      got.forEach((g, i) => expect(Math.abs(g.score - want[i]!.score)).toBeLessThan(1e-12))
+      // and the two settings rank differently on this bank (E[T] 20 to 60 s), so the setting is read
+      const info = (await pool(sc, (await start(sc)).session_id)).map((g) => g.id)
+      expect(got.map((g) => g.id)).not.toEqual(info)
+    } finally {
+      await sc1.db.close()
+    }
   })
 
   it('picks one of those five at random: over 300 first items, only the top 5, and each of them', async () => {
@@ -177,7 +196,21 @@ describe('the §7.4 criterion: information per second x posterior variance (pari
     expect(rows[0]!.n).toBe(6)
   })
 
-  it('uses E[T]: the same item twice as long scores half as much; with no expected time the length of the stem sets it (25 s + 4 s per 50 words)', async () => {
+  it('scores the same item alike whatever its E[T] by default, and half for twice the time with selection.time_exponent = 1', async () => {
+    for (const [p, ratio] of [[0, 1], [1, 2]] as const) {
+      const items = [customItem(1, 'QR', { b: 0, a: 1, expectedTimeS: 30 }), customItem(2, 'QR', { b: 0, a: 1, expectedTimeS: 60 })]
+      const sx = await scenario(items, { 'selection.coverage_floor': 0, 'selection.time_exponent': p })
+      try {
+        const got = new Map((await pool(sx, (await start(sx)).session_id)).map((g) => [g.id, g.score]))
+        expect(got.size).toBe(2)
+        expect(Math.abs(got.get(items[0]!.itemId)! / got.get(items[1]!.itemId)! - ratio)).toBeLessThan(1e-12)
+      } finally {
+        await sx.db.close()
+      }
+    }
+  })
+
+  it('takes E[T] from the item; with no expected time the length of the stem sets it (25 s + 4 s per 50 words)', async () => {
     const db = await openTestDb()
     try {
       const a = customItem(1, 'QR', { expectedTimeS: 30 })
@@ -419,7 +452,8 @@ describe('coverage floor, per-axis stop and the segment\'s axes (§7.4, A15)', (
 
   it('gives every axis its first 3 items before the criterion alone decides (the cheap axis would take them all)', async () => {
     const run = async (floor: number): Promise<Map<string, number>> => {
-      const sc = await scenario(bank(), { 'selection.coverage_floor': floor, 'selection.pretest_share': 0 })
+      // information per second (selection.time_exponent 1), so that without the floor the cheap axis would win
+      const sc = await scenario(bank(), { 'selection.coverage_floor': floor, 'selection.pretest_share': 0, 'selection.time_exponent': 1 })
       try {
         const s = await start(sc)
         const counts = new Map<string, number>()
@@ -523,12 +557,12 @@ describe('coverage floor, per-axis stop and the segment\'s axes (§7.4, A15)', (
 
 // ------------------------------------------------------------------------------ content balancing
 describe('content balancing over the generator families of an axis (the app\'s balanceFamilies)', () => {
-  it('alternates the families of MAT although the criterion prefers the cheaper one, and does not let a missing family block the other', async () => {
+  it('alternates the families of MAT although the criterion (per second, selection.time_exponent 1) prefers the cheaper one, and does not let a missing family block the other', async () => {
     const items: FixtureItem[] = []
     let n = 0
     for (let k = 0; k < 30; k++) items.push(customItem(++n, 'MAT', { generator: 'matrices', expectedTimeS: 60, b: -1 + 0.07 * k }))
     for (let k = 0; k < 30; k++) items.push(customItem(++n, 'MAT', { generator: 'series', expectedTimeS: 25, b: -1 + 0.07 * k }))
-    const sc = await scenario(items, { 'selection.coverage_floor': 0, 'selection.pretest_share': 0 })
+    const sc = await scenario(items, { 'selection.coverage_floor': 0, 'selection.pretest_share': 0, 'selection.time_exponent': 1 })
     try {
       const s = await start(sc)
       const seq: string[] = []

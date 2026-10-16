@@ -69,7 +69,7 @@ describe('a device part through the real selector (Spatial)', () => {
   })
 
   it('summarise reads a run: the first question within half a stratum, and the share correct', () => {
-    const s = summarise(1, [{ theta: 1, served: [{ b: 0, stratum: 3, y: 1 }, { b: 1.2, stratum: 4, y: 0 }], estimate: [0.3, 0.2] }])
+    const s = summarise(1, [{ theta: 1, served: [{ b: 0, stratum: 3, y: 1, et: 30 }, { b: 1.2, stratum: 4, y: 0, et: 40 }], estimate: [0.3, 0.2] }])
     expect(s).toMatchObject({ medianToWithin: 2, shareWithin: 1, shareHardInFive: 0, pCorrect: 0.5 })
     expect(s.bias).toBeCloseTo(-0.8, 12)
   })

@@ -33,10 +33,13 @@
  *    best score. If fewer than top-k candidates compete, the next nearest strata are added one
  *    at a time; 'exhausted' is reported only after a {@link SWEEP_ATTEMPTS}-seed sweep of every
  *    stratum finds nothing.
- * 3. **Criterion** (§7.4 L573): score_j = w_k · I_j(θ̂_k) · Var(θ_k) / E[T_j], where I_j is the
+ * 3. **Criterion** (§7.4 L573): score_j = w_k · I_j(θ̂_k) · Var(θ_k) / E[T_j]^p, where I_j is the
  *    Fisher information of the ITEM's own model (A9: 2PL a²P(1−P), 3PL with c = 1/k, 2PL-testlet
  *    discounted by 20% per §7.1), never the axis default; θ̂_k and Var(θ_k) are the current
- *    posterior mean and variance (§7.4 L576), and E[T_j] is `expected_time_s` (§7.4 L575).
+ *    posterior mean and variance (§7.4 L576), and E[T_j] is `expected_time_s` (§7.4 L575). The
+ *    time exponent p is {@link SELECTION_TIME_EXPONENT}: 0 from 2026-10-16 (information alone inside
+ *    a part; owner question, ROADMAP "Owner decisions 2026-10-16"), 1 before (information per
+ *    second). E[T] still decides what fits in the time left, the part's budget and the caps.
  * 4. **Coverage floor** (§7.4 L584): in session 1, while any eligible axis has fewer than 3
  *    administered items, only those axes' candidates compete. `priorCounts` (items of earlier
  *    sessions) count toward the 3, so the session flow, which passes them, applies the floor per
@@ -81,7 +84,7 @@ import { FAMILIES, getFamily } from '../tasks/registry'
 
 // ---------------------------------------------------------------------------- constants
 
-/** Randomesque pool size: pick uniformly from the top 5 by information per second (§6.iii L490). */
+/** Randomesque pool size: pick uniformly from the top 5 by the criterion (§6.iii L490). */
 export const RANDOMESQUE_K = 5
 /** Coverage floor: scored items per axis in session 1 before the criterion alone decides (§7.4 L584). */
 export const COVERAGE_FLOOR = 3
@@ -99,6 +102,16 @@ export const ATTEMPTS_PER_STRATUM = 3 * CANDIDATES_PER_STRATUM
  * unseen one with p ≈ 3·10⁻⁹.
  */
 export const SWEEP_ATTEMPTS = 48 * ATTEMPTS_PER_STRATUM
+/**
+ * The exponent of E[T] in the §7.4 criterion: score = w · I · Var / E[T]^p (owner question 2026-10-16,
+ * ROADMAP "Owner decisions 2026-10-16"). 0: candidates are ranked by information alone; 1: by information
+ * per second, as from 2026-10-01 to 2026-10-16. Inside a part the time is already rationed by the part's
+ * budget, its minimum of six answers, the per-question caps and the hard stop, all of which still use E[T];
+ * dividing by it as well pulled a strong taker back to the quicker, easier items (hard items take longer),
+ * so the hard strata of M3.12 were rarely served after the start-up. The server reads
+ * `app_config` `selection.time_exponent` (`20261016000300_selection_information.sql`); keep the two equal.
+ */
+export const SELECTION_TIME_EXPONENT = 0
 /** Information multiplier of a '2pl_testlet' item: the §7.1 testlet effect γ ~ N(0, 0.3²) discounts it by ~20%. */
 export const TESTLET_INFO_FACTOR = 0.8
 export { A15_TARGET_S }
@@ -225,6 +238,8 @@ export interface SelectorOptions {
   readonly stopSd?: number
   /** False switches the start-up rule and the aim off (the selection of before 2026-10-13, for comparisons). Default true. */
   readonly startup?: boolean
+  /** The exponent of E[T] in the criterion, default {@link SELECTION_TIME_EXPONENT} (1: information per second, as before 2026-10-16). */
+  readonly timeExponent?: number
 }
 
 /** A scored candidate. */
@@ -233,7 +248,7 @@ export interface Candidate {
   readonly axis: AxisCode
   /** Fisher information of the item where the axis is aimed (θ̂, or the {@link SelectorState.aim}), by the item's model (A9). */
   readonly info: number
-  /** The §7.4 criterion w_k · I · Var(θ_k) / E[T]. */
+  /** The §7.4 criterion w_k · I · Var(θ_k) / E[T]^p ({@link SELECTION_TIME_EXPONENT}). */
   readonly score: number
 }
 
@@ -306,26 +321,34 @@ export function itemInformation(params: ItemParams, theta: number): number {
 }
 
 /**
- * The §7.4 criterion (L573): w_k · I_j(θ̂_k) · Var(θ_k) / E[T_j] with θ̂_k, Var(θ_k) the axis's
- * current posterior mean and variance and E[T_j] the item's `expected_time_s`.
+ * The §7.4 criterion (L573): w_k · I_j(θ̂_k) · Var(θ_k) / E[T_j]^p with θ̂_k, Var(θ_k) the axis's
+ * current posterior mean and variance, E[T_j] the item's `expected_time_s` and p the time exponent
+ * ({@link SELECTION_TIME_EXPONENT}: 0, information alone; 1, information per second).
  */
-export function criterion(item: Pick<AnyItem, 'params' | 'expected_time_s'>, post: AxisPosterior, weight: number): number {
+export function criterion(item: Pick<AnyItem, 'params' | 'expected_time_s'>, post: AxisPosterior, weight: number, timeExponent: number = SELECTION_TIME_EXPONENT): number {
   checkPosterior('posterior', post)
   finite('weight', weight)
   if (weight < 0) throw new RangeError(`weight must be ≥ 0, got ${weight}`)
+  checkTimeExponent(timeExponent)
   const t = item.expected_time_s
   if (!(Number.isFinite(t) && t > 0)) throw new RangeError(`expected_time_s must be finite and > 0, got ${t}`)
-  return (weight * itemInformation(item.params, post.mean) * post.sd * post.sd) / t
+  const info = weight * itemInformation(item.params, post.mean) * post.sd * post.sd
+  // p = 0 and p = 1 are exact (no pow), as on the server (power(et, 0) = 1, power(et, 1) = et).
+  return timeExponent === 0 ? info : timeExponent === 1 ? info / t : info / t ** timeExponent
+}
+
+function checkTimeExponent(p: number): void {
+  if (typeof p !== 'number' || !Number.isFinite(p) || p < 0) throw new RangeError(`timeExponent must be a finite number ≥ 0, got ${String(p)}`)
 }
 
 /**
  * Content balancing across the CAT families of one axis (MAT: matrices and series, A15 "Matrix &
- * Series"). The §7.4 criterion alone ranks by information per second; the two MAT families have the
+ * Series"). The §7.4 criterion ranked by information per second until 2026-10-16; the two MAT families have the
  * same 2PL discrimination (a = 1) but series are 25-40 % cheaper (E[T] 23-44 s vs 30-60 s), so
  * series filled the randomesque top-5 almost every time and matrices were all but never served,
  * leaving the axis measured by one family (construct under-representation). Standard CAT content
  * balancing: per axis, only the candidates of the family(ies) least served so far this session
- * compete, so the families alternate while info/second still picks the item within a family. A
+ * compete, so the families alternate while the criterion still picks the item within a family. A
  * family with no candidates (exhausted, over time) does not block the others.
  */
 function balanceFamilies(ranked: readonly Candidate[], administered: readonly AdministeredItem[]): Candidate[] {
@@ -498,6 +521,8 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
   finite('stopSd', stopSd)
   const topK = opts.topK ?? RANDOMESQUE_K
   if (!Number.isInteger(topK) || topK < 1) throw new RangeError(`topK must be an integer ≥ 1, got ${topK}`)
+  const timeExponent = opts.timeExponent ?? SELECTION_TIME_EXPONENT
+  checkTimeExponent(timeExponent)
   const families = catFamilies(opts.families ?? Object.values(FAMILIES))
   const allowed = opts.axes ?? AXIS_CODES
   for (const k of allowed) if (!isAxisCode(k)) throw new RangeError(`unknown axis ${JSON.stringify(k)}`)
@@ -568,7 +593,7 @@ export function candidatePool(state: SelectorState, opts: SelectorOptions = {}):
       }
       accepted++
       const info = itemInformation(item.params, p.at)
-      all.push({ item, axis: p.fam.axis, info, score: criterion(item, { mean: p.at, sd: p.post.sd }, p.w) })
+      all.push({ item, axis: p.fam.axis, info, score: criterion(item, { mean: p.at, sd: p.post.sd }, p.w, timeExponent) })
     }
   }
   const bOf = (c: Candidate): number => (c.item.params as { b: number }).b

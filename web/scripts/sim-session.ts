@@ -1,7 +1,7 @@
 /**
  * `npm run sim:session -- [--n 200] [--offset 0] [--skip none|MAT|SPA|…] [--interstitial-s 0]
  * [--target-min 27.5] [--mode static|online] [--text none|all|LR,VOC,…] [--pace 1] [--timeout-p 0]
- * [--theta <x>] [--pace-sd 0.15] [--borrow 1] [--correlated no] [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
+ * [--theta <x>] [--pace-sd 0.15] [--borrow 1] [--correlated no] [--time-exponent 0] [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
  * session machine (`session/run.ts`) driven by the simulated taker of `session/bot.ts`, so the
  * clock rules, the break, the part budgets, the minimums and the coverage floor are the ones the app
  * runs (the M1.4b `sim:cat` models the CAT budget on its own and does not skip). Each simulee has
@@ -89,6 +89,8 @@ export interface SimSessionArgs {
   readonly borrow?: number
   /** θ ~ N(0, Σ_init) instead of N(0, I) (default false: the draws of the recorded runs). */
   readonly correlated?: boolean
+  /** The exponent of E[T] in the selection criterion (`selector.ts` SELECTION_TIME_EXPONENT, the default; 1: before 2026-10-16). */
+  readonly timeExponent?: number
   readonly json?: string
 }
 
@@ -173,6 +175,7 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
   let paceSd: number | undefined
   let borrow: number | undefined
   let correlated: boolean | undefined
+  let timeExponent: number | undefined
   const args = argv[0] === '--' ? argv.slice(1) : argv
   for (let i = 0; i < args.length; i++) {
     const flag = args[i]
@@ -229,6 +232,9 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
         if (value !== 'yes' && value !== 'no') throw new UsageError(`--correlated: yes or no, not ${value}`)
         correlated = value === 'yes'
         break
+      case '--time-exponent':
+        timeExponent = Number(value)
+        break
       case '--json':
         json = resolve(cwd, value)
         break
@@ -243,6 +249,7 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
   if (theta !== undefined && !(Number.isFinite(theta) && Math.abs(theta) <= 4)) throw new UsageError('--theta is a number from -4 to 4')
   if (paceSd !== undefined && !(paceSd >= 0 && paceSd <= 1)) throw new UsageError('--pace-sd is between 0 and 1')
   if (borrow !== undefined && !(borrow >= 0 && borrow <= 1)) throw new UsageError('--borrow is between 0 and 1')
+  if (timeExponent !== undefined && !(timeExponent >= 0 && timeExponent <= 2)) throw new UsageError('--time-exponent is between 0 and 2')
   if (text !== undefined && text.length > 0) {
     if (mode === 'static') throw new UsageError('--text needs --mode online: the device-only version has no text parts')
     mode = 'online'
@@ -261,6 +268,7 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
     ...(paceSd === undefined ? {} : { paceSd }),
     ...(borrow === undefined ? {} : { borrow }),
     ...(correlated === undefined ? {} : { correlated }),
+    ...(timeExponent === undefined ? {} : { timeExponent }),
     ...(json === undefined ? {} : { json }),
   }
 }
@@ -309,10 +317,12 @@ export class SimServer implements CatSource {
   #games = 0
 
   readonly #borrow: number | undefined
+  readonly #timeExponent: number | undefined
 
-  constructor(seed: string, borrow?: number) {
+  constructor(seed: string, borrow?: number, timeExponent?: number) {
     this.#seed = seed
     this.#borrow = borrow
+    this.#timeExponent = timeExponent
     this.sessionId = 's_SIMSERVER0000001'
   }
 
@@ -360,7 +370,7 @@ export class SimServer implements CatSource {
     const sel = selectNext(
       { sessionSeed: this.#seed, posterior: sessionPosterior(this.#obs), administered: this.#administered, history: answeredItems(this.#obs), aim: selectionAim(this.#obs, this.#borrow === undefined ? {} : { borrow: this.#borrow }), seenFamilies: [], remainingS: 1e9 },
       selectionRng(this.#seed, this.#administered.length),
-      { axes },
+      { axes, ...(this.#timeExponent === undefined ? {} : { timeExponent: this.#timeExponent }) },
     )
     if (sel.kind === 'none') return Promise.resolve({ kind: 'done', reason: sel.reason === 'axes_done' ? 'axes_done' : 'no_items' })
     const item = sel.item
@@ -434,9 +444,9 @@ class SimDriver {
     this.#timeouts = createRng(`sim-session:timeouts:${i}`)
     this.#answers = createRng(`sim-session:answers:${i}`)
     const sessionId = `s_SIMSESS${String(i).padStart(8, '0')}`
-    const online = args.mode === 'online' ? { cat: new SimServer(sessionId, args.borrow), textAxes: args.text ?? [] } : {}
+    const online = args.mode === 'online' ? { cat: new SimServer(sessionId, args.borrow, args.timeExponent), textAxes: args.text ?? [] } : {}
     this.bot = new Bot(
-      { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online, ...(args.borrow === undefined ? {} : { borrow: args.borrow }) },
+      { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online, ...(args.borrow === undefined ? {} : { borrow: args.borrow }), ...(args.timeExponent === undefined ? {} : { timeExponent: args.timeExponent }) },
       { theta: this.#theta, blockScale: this.#pace, blockExtraS: BLOCK_EXTRA_S, itemScale: this.#pace, answerGapS: ANSWER_GAP_S * this.#pace, ratingS: RATING_S * this.#pace, interstitialS: args.interstitialS },
     )
   }

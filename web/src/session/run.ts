@@ -12,7 +12,7 @@
  * Coding/Reading. Each segment opens with an interstitial ("Up next: Spatial. About 6 min"); the
  * person can start it or skip its axis. A block segment then runs its fixed blocks one after the
  * other (a renderer each, one whole-block response, scored by the family); a CAT segment loops on
- * `selectNext` (information per second, after the start-up steps of `engine/startup.ts`) until its axes are done (posterior SD < 0.3), no candidate
+ * `selectNext` (the §7.4 criterion, after the start-up steps of `engine/startup.ts`) until its axes are done (posterior SD < 0.3), no candidate
  * is left or the segment's time is used up. Every counted power question carries an optional scale for how sure
  * the person is, on the question screen (owner decision 2026-10-13): the answer and, if it was set, the
  * confidence arrive together ({@link SessionRun.itemResponded}); unset, the answer has none (null). Calibration
@@ -368,6 +368,8 @@ export interface RunConfig {
   readonly earlierObservations?: readonly Observation[]
   /** The borrowing strength across skills of the aim (`engine/xskill.ts` XSKILL_BORROW, the default); for simulations. */
   readonly borrow?: number
+  /** The exponent of E[T] in the selection criterion (`selector.ts` SELECTION_TIME_EXPONENT, the default); for simulations. */
+  readonly timeExponent?: number
 }
 
 /** One fixed block's outcome, for tests and the results screen. */
@@ -540,6 +542,7 @@ export class SessionRun {
   readonly #standard: boolean
   readonly #hardStopS: number
   readonly #stopSd: number
+  readonly #timeExponent: number | undefined
   readonly #priorCounts: Readonly<Partial<Record<AxisCode, number>>>
   /** Where the aim starts (`RunConfig.earlierObservations`, `borrow`). */
   readonly #aimOptions: AimOptions
@@ -608,6 +611,7 @@ export class SessionRun {
     this.#baseBreakAtS = cfg.breakAtS ?? planTargetS / 2
     this.#hardStopS = cfg.hardStopS ?? HARD_STOP_S
     this.#stopSd = cfg.stopSd ?? STOP_SD
+    this.#timeExponent = cfg.timeExponent
     this.#priorCounts = cfg.priorItemCounts ?? {}
     this.#aimOptions = { ...(cfg.earlierObservations === undefined ? {} : { earlier: cfg.earlierObservations }), ...(cfg.borrow === undefined ? {} : { borrow: cfg.borrow }) }
     this.#seenBase = cfg.seenFamilies ?? []
@@ -1086,7 +1090,7 @@ export class SessionRun {
         priorCounts: this.#priorCounts,
       },
       selectionRng(this.#seed, this.#administered.length),
-      { axes, weights: this.#weights as AxisWeights, stopSd: this.#stopSd },
+      { axes, weights: this.#weights as AxisWeights, stopSd: this.#stopSd, ...(this.#timeExponent === undefined ? {} : { timeExponent: this.#timeExponent }) },
     )
     if (sel.kind === 'none') {
       this.#endSegment(sel.reason)

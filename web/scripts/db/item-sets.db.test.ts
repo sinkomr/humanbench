@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createRng } from '../../src/engine/prng'
-import { itemInformation, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
+import { itemInformation, SELECTION_TIME_EXPONENT, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
 import { customItem, loadFixtureBank, madeUpPassage, passageItems, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
 import { ageExposures, emptySave, from, isServed, startSession, type Next, type Served, type Started } from './rpc-support'
@@ -208,7 +208,7 @@ describe('a set competes for a slot as one unit (§7.4 for the unit, §7.1 for t
   const info = (it: FixtureItem, theta = 0): number =>
     itemInformation(it.model === '3pl' ? { model: '3pl', a: it.a, b: it.b, c: it.c! } : it.model === '2pl_testlet' ? { model: '2pl_testlet', a: it.a, b: it.b } : { model: '2pl', a: it.a, b: it.b }, theta)
 
-  it('ranks a set by the sum of its questions\' information over the sum of their times, each question by its own model, and names its first question', async () => {
+  it('ranks a set by the sum of its questions\' information (over the sum of their times to the power selection.time_exponent, 0 by default), each question by its own model, and names its first question', async () => {
     const s = await start(sc)
     const ranked = await pool(sc, s.session_id, ['RC'])
     expect(ranked.length).toBe(6) // three sets, three single items
@@ -218,13 +218,13 @@ describe('a set competes for a slot as one unit (§7.4 for the unit, §7.1 for t
       const sumInfo = set.reduce((t, q) => t + info(q), 0)
       const sumT = set.reduce((t, q) => t + q.expectedTimeS!, 0)
       expect(row.info).toBeCloseTo(sumInfo, 12)
-      expect(row.score).toBeCloseTo(sumInfo / sumT, 12) // Var = 1 at the prior
+      expect(row.score).toBeCloseTo(sumInfo / sumT ** SELECTION_TIME_EXPONENT, 12) // Var = 1 at the prior
     }
     // the 2PL-testlet questions carry the 0.8 of §7.1, the others their own information in full
     expect(info(testlet[0]!)).toBeCloseTo(TESTLET_INFO_FACTOR * itemInformation({ model: '2pl', a: testlet[0]!.a, b: testlet[0]!.b }, 0), 12)
     for (const single of singles) {
       const row = ranked.find((r) => r.id === single.itemId)!
-      expect(row.score).toBeCloseTo(info(single) / single.expectedTimeS!, 12)
+      expect(row.score).toBeCloseTo(info(single) / single.expectedTimeS! ** SELECTION_TIME_EXPONENT, 12)
     }
     // best first, ties by id, as before
     expect(ranked.map((r) => r.score)).toEqual([...ranked.map((r) => r.score)].sort((a, b) => b - a))
@@ -279,7 +279,7 @@ describe('a set competes for a slot as one unit (§7.4 for the unit, §7.1 for t
         checked++
         const sumInfo = set.reduce((t, q) => t + info(q, mean), 0)
         const sumT = set.reduce((t, q) => t + q.expectedTimeS!, 0)
-        expect(row.score / ((sumInfo * sd * sd) / sumT)).toBeCloseTo(1, 9)
+        expect(row.score / ((sumInfo * sd * sd) / sumT ** SELECTION_TIME_EXPONENT)).toBeCloseTo(1, 9)
       }
       expect(ranked.length).toBe(5)
       expect(checked).toBeGreaterThanOrEqual(2)

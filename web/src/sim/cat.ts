@@ -15,7 +15,7 @@
  *    The block takes the taker's own time ({@link blockTimeS}: e.g. a high-WM taker runs through
  *    more span lengths, a slow reader reads longer), not its planned E[T]; the difference moves the
  *    next CAT segment's budget, as the session clock would (M1.15).
- * 3. **CAT segments** loop (A15) on the engine's {@link selectNext} (information per second,
+ * 3. **CAT segments** loop (A15) on the engine's {@link selectNext} (the §7.4 criterion,
  *    randomesque top 5, family / sibling exclusion, coverage floor; §7.4) with the in-session
  *    per-axis EAP posterior ({@link sessionPosterior}, §11.2) and the segment's remaining time,
  *    until the selector returns nothing (axis done at SD < 0.3, or no item fits the time left).

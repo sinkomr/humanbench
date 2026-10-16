@@ -24,7 +24,7 @@
 import { type AxisCode } from '../engine/axes'
 import { info2pl, p2pl } from '../engine/irt'
 import { createRng, type Rng } from '../engine/prng'
-import { answeredItems, selectNext, selectionAim, selectionRng, sessionPosterior, type AdministeredItem } from '../engine/selector'
+import { SELECTION_TIME_EXPONENT, answeredItems, selectNext, selectionAim, selectionRng, sessionPosterior, type AdministeredItem } from '../engine/selector'
 import { startupCompetes, startupTarget } from '../engine/startup'
 import type { Observation } from '../engine/types'
 import type { AnyFamily } from '../tasks/family'
@@ -38,6 +38,8 @@ export interface Served {
   readonly b: number
   readonly stratum: number
   readonly y: 0 | 1
+  /** The question's expected time E[T] in seconds. */
+  readonly et: number
 }
 
 /** One simulated part: the questions in order and the part's estimate after each. */
@@ -55,21 +57,21 @@ function familyOf(name: string): AnyFamily {
 }
 
 /** `n` questions of a device part on `axis` for a taker at θ, through the real selector (no time limit). */
-export function simulatePart(axis: AxisCode, theta: number, seed: string, n: number, startup: boolean): PartRun {
+export function simulatePart(axis: AxisCode, theta: number, seed: string, n: number, startup: boolean, timeExponent?: number): PartRun {
   const obs: Observation[] = []
   const administered: AdministeredItem[] = []
   const served: Served[] = []
   const estimate: number[] = []
   const taker = createRng(`startup-sim:${seed}`)
   for (let i = 0; i < n; i++) {
-    const sel = selectNext({ sessionSeed: seed, posterior: sessionPosterior(obs), administered, history: answeredItems(obs), aim: selectionAim(obs) }, selectionRng(seed, i), { axes: [axis], startup })
+    const sel = selectNext({ sessionSeed: seed, posterior: sessionPosterior(obs), administered, history: answeredItems(obs), aim: selectionAim(obs) }, selectionRng(seed, i), { axes: [axis], startup, ...(timeExponent === undefined ? {} : { timeExponent }) })
     if (sel.kind === 'none') break
     const answer = answerItem(familyOf(sel.item.family), sel.item, theta, taker.fork(`item/${i}`))
     obs.push(answer.observation)
     administered.push(sel.item)
     const o = answer.observation
     if (o.kind !== '2pl' && o.kind !== '3pl') throw new Error('a CAT item gives a dichotomous observation')
-    served.push({ b: o.b, stratum: stratumOfB(o.b), y: o.y })
+    served.push({ b: o.b, stratum: stratumOfB(o.b), y: o.y, et: sel.item.expected_time_s })
     estimate.push(sessionPosterior(obs)[axis].mean)
   }
   return { theta, served, estimate }
@@ -85,16 +87,19 @@ export interface PoolItem {
 
 /**
  * A made-up finite pool in the shape of a live text bank: `perStratum` items at each stratum centre
- * b = −2 … 3 (the last `topExtra` of stratum 6 at 3.25), a = 1, one expected time.
+ * b = −2 … 3 (every fourth of stratum 6 at 3.25), a = 1, one expected time, or one per stratum (1 … 6).
  */
-export function textPool(perStratum = 40, et = 15): PoolItem[] {
+export function textPool(perStratum = 40, et: number | readonly number[] = 15): PoolItem[] {
   const out: PoolItem[] = []
-  for (let s = 1; s <= 6; s++) for (let i = 0; i < perStratum; i++) out.push({ id: out.length, a: 1, b: s - 3 + (s === 6 && i % 4 === 0 ? 0.25 : 0), et })
+  for (let s = 1; s <= 6; s++) {
+    const t = typeof et === 'number' ? et : et[s - 1]!
+    for (let i = 0; i < perStratum; i++) out.push({ id: out.length, a: 1, b: s - 3 + (s === 6 && i % 4 === 0 ? 0.25 : 0), et: t })
+  }
   return out
 }
 
 /** `n` questions of a served text part on `axis` for a taker at θ, by the server's rule over `pool` (module comment). */
-export function simulatePoolPart(pool: readonly PoolItem[], axis: AxisCode, theta: number, seed: string, n: number, startup: boolean, topK = 5): PartRun {
+export function simulatePoolPart(pool: readonly PoolItem[], axis: AxisCode, theta: number, seed: string, n: number, startup: boolean, topK = 5, timeExponent = SELECTION_TIME_EXPONENT): PartRun {
   const rng: Rng = createRng(`startup-pool:${seed}`)
   const used = new Set<number>()
   const obs: Observation[] = []
@@ -110,12 +115,12 @@ export function simulatePoolPart(pool: readonly PoolItem[], axis: AxisCode, thet
       cand = cand.filter((_, k) => keep[k])
     }
     const at = startup ? selectionAim(obs)[axis]! : post.mean
-    const ranked = cand.map((it) => ({ it, score: (info2pl(at, it.a, it.b) * post.sd * post.sd) / it.et })).sort((x, y) => y.score - x.score || x.it.id - y.it.id)
+    const ranked = cand.map((it) => ({ it, score: (info2pl(at, it.a, it.b) * post.sd * post.sd) / it.et ** timeExponent })).sort((x, y) => y.score - x.score || x.it.id - y.it.id)
     const pick = ranked[rng.int(0, Math.min(topK, ranked.length) - 1)]!.it
     used.add(pick.id)
     const y: 0 | 1 = rng.next() < p2pl(theta, pick.a, pick.b) ? 1 : 0
     obs.push({ kind: '2pl', axis, a: pick.a, b: pick.b, y })
-    served.push({ b: pick.b, stratum: stratumOfB(pick.b), y })
+    served.push({ b: pick.b, stratum: stratumOfB(pick.b), y, et: pick.et })
     estimate.push(sessionPosterior(obs)[axis].mean)
   }
   return { theta, served, estimate }

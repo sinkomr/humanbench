@@ -34,6 +34,7 @@ import {
   scheduleBlocks,
   selectNext,
   selectionRng,
+  SELECTION_TIME_EXPONENT,
   sessionPosterior,
   stratumCentre,
   type AdministeredItem,
@@ -120,16 +121,45 @@ describe('information and the §7.4 criterion', () => {
     expect(() => itemInformation({ model: '2pl', a: 1, b: 0 }, Number.NaN)).toThrow(RangeError)
   })
 
-  it('is w_k · I(θ̂) · Var(θ_k) / E[T] (DESIGN §7.4 L573)', () => {
+  it('is w_k · I(θ̂) · Var(θ_k) / E[T] with the time exponent 1 (information per second, before 2026-10-16; DESIGN §7.4 L573)', () => {
     const item = { params: { model: '2pl', a: 1.2, b: 0.5 }, expected_time_s: 40 } as const
     const post = { mean: 0.1, sd: 0.8 }
-    expect(criterion(item, post, 1.5)).toBeCloseTo((1.5 * info2pl(0.1, 1.2, 0.5) * 0.64) / 40, 15)
+    expect(criterion(item, post, 1.5, 1)).toBeCloseTo((1.5 * info2pl(0.1, 1.2, 0.5) * 0.64) / 40, 15)
     const item3 = { params: { model: '3pl', a: 1, b: -0.3, c: 0.25 }, expected_time_s: 25 } as const
-    expect(criterion(item3, post, 1)).toBeCloseTo((info3pl(0.1, 1, -0.3, 0.25) * 0.64) / 25, 15)
-    expect(criterion(item, post, 0)).toBe(0)
+    expect(criterion(item3, post, 1, 1)).toBeCloseTo((info3pl(0.1, 1, -0.3, 0.25) * 0.64) / 25, 15)
+    expect(criterion(item, post, 0, 1)).toBe(0)
     // A more uncertain axis scores higher for the same item; a slower item scores lower.
-    expect(criterion(item, { mean: 0.1, sd: 1 }, 1)).toBeGreaterThan(criterion(item, post, 1))
-    expect(criterion({ ...item, expected_time_s: 80 }, post, 1)).toBeCloseTo(criterion(item, post, 1) / 2, 15)
+    expect(criterion(item, { mean: 0.1, sd: 1 }, 1, 1)).toBeGreaterThan(criterion(item, post, 1, 1))
+    expect(criterion({ ...item, expected_time_s: 80 }, post, 1, 1)).toBeCloseTo(criterion(item, post, 1, 1) / 2, 15)
+  })
+
+  it('is w_k · I(θ̂) · Var(θ_k) by default: information alone inside a part (owner decision 2026-10-16)', () => {
+    expect(SELECTION_TIME_EXPONENT).toBe(0)
+    const item = { params: { model: '2pl', a: 1.2, b: 0.5 }, expected_time_s: 40 } as const
+    const post = { mean: 0.1, sd: 0.8 }
+    expect(criterion(item, post, 1.5)).toBe(1.5 * info2pl(0.1, 1.2, 0.5) * 0.8 * 0.8)
+    expect(criterion(item, post, 1.5)).toBe(criterion(item, post, 1.5, 0))
+    // the time no longer counts: a slower item scores the same; a harder one at a strong taker's aim scores higher
+    expect(criterion({ ...item, expected_time_s: 80 }, post, 1)).toBe(criterion(item, post, 1))
+    const strong = { mean: 2.5, sd: 0.8 }
+    const easy = { params: { model: '2pl', a: 1, b: 1 }, expected_time_s: 30 } as const
+    const hard = { params: { model: '2pl', a: 1, b: 2.5 }, expected_time_s: 90 } as const
+    expect(criterion(hard, strong, 1)).toBeGreaterThan(criterion(easy, strong, 1))
+    expect(criterion(hard, strong, 1, 1)).toBeLessThan(criterion(easy, strong, 1, 1)) // what information per second did
+    // other exponents are allowed (a setting), and must be finite and ≥ 0
+    expect(criterion(item, post, 1, 0.5)).toBeCloseTo(criterion(item, post, 1, 0) / Math.sqrt(40), 15)
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) expect(() => criterion(item, post, 1, bad)).toThrow(RangeError)
+  })
+
+  it('ranks the candidate pool by the exponent it is given', () => {
+    const state = { sessionSeed: 'crit-exp', posterior: sessionPosterior([]), administered: [], aim: { MAT: 2.5 } }
+    const at = (p: number): number[] => candidatePool(state, { axes: ['MAT'], timeExponent: p, startup: true }).ranked.map((c) => c.score)
+    const info = candidatePool(state, { axes: ['MAT'] }).ranked
+    expect(info.map((c) => c.score)).toEqual(at(0))
+    for (const c of info) expect(c.score).toBe(c.info)
+    const perS = candidatePool(state, { axes: ['MAT'], timeExponent: 1 }).ranked
+    for (const c of perS) expect(c.score).toBeCloseTo(c.info / c.item.expected_time_s, 15)
+    expect(() => candidatePool(state, { axes: ['MAT'], timeExponent: -0.5 })).toThrow(RangeError)
   })
 
   it('validates its inputs', () => {

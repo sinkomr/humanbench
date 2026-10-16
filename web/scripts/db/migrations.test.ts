@@ -24,7 +24,7 @@ import {
   UNIFORM_RT_MIN_TIME_RATIO,
 } from '../../src/engine/integrity'
 import { RHO_MAX_PRIOR } from '../../src/engine/retest'
-import { COVERAGE_FLOOR, RANDOMESQUE_K, STOP_SD, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
+import { COVERAGE_FLOOR, RANDOMESQUE_K, SELECTION_TIME_EXPONENT, STOP_SD, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
 import { BANNED_TERMS } from '../language-lint'
 import { MIGRATIONS_DIR, readMigrations, type SqlFile } from './sql'
 
@@ -63,6 +63,7 @@ describe('migrations: the set', () => {
       '20261015000400_server_calibration.sql',
       '20261016000100_cross_skill_aim.sql',
       '20261016000200_quant_hard_facets.sql',
+      '20261016000300_selection_information.sql',
     ])
   })
 
@@ -424,5 +425,36 @@ describe('migrations: the cross-skill aim (owner request 2026-10-15; engine/xski
     expect(code(functionText(xskill, 'hb.session_aims'))).toContain("v_state #> array['prior', v_codes[i]]")
     // Σ is the scoring one, read at every call (the §3 re-estimate is a new value of the setting)
     expect(code(functionText(xskill, 'hb.session_aims'))).toContain('hb.sigma_init()')
+  })
+})
+
+describe('migrations: information alone inside a part (owner decision 2026-10-16; engine/selector.ts SELECTION_TIME_EXPONENT)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
+  }
+  const info = byName('_selection_information.sql')
+
+  it('re-creates hb.rank_live with exactly one change: both scores divide by E[T]^p, p the setting selection.time_exponent', () => {
+    const now = functionText(info, 'hb.rank_live')
+    const then = functionText(byName('_cross_skill_aim.sql'), 'hb.rank_live')
+    const swaps: [string, string][] = [
+      ["  v_balance jsonb := case when pg_catalog.jsonb_typeof(hb.cfg('selection.balance_item_type_axes')) = 'array' then hb.cfg('selection.balance_item_type_axes') else '[]'::jsonb end;\n", "$&  v_p double precision := greatest(coalesce(hb.cfg_num('selection.time_exponent', 0), 0), 0::double precision);\n"],
+      ['k.info * c.o_sd * c.o_sd / c.o_et as score', 'k.info * c.o_sd * c.o_sd / pg_catalog.power(c.o_et, v_p) as score'],
+      ['g.info * g.sd * g.sd / g.et as score', 'g.info * g.sd * g.sd / pg_catalog.power(g.et, v_p) as score'],
+    ]
+    let want = then
+    for (const [before, after] of swaps) {
+      expect(want).toContain(before)
+      want = want.replace(before, after)
+    }
+    expect(now).toBe(want)
+  })
+
+  it('sets the exponent to the app\'s default and re-creates nothing else', () => {
+    expect(info).toMatch(new RegExp(`\\('selection\\.time_exponent', '${SELECTION_TIME_EXPONENT}',`))
+    expect([...code(info).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['hb.rank_live'])
   })
 })
