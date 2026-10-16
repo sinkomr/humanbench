@@ -18,8 +18,10 @@ afterEach(() => {
   mounted = undefined
 })
 
-function render(seed: string, extra: { disabled?: boolean; onshown?: (t: number) => void } = {}) {
-  const item = matrices.generate(seed)
+function render(seed: string, extra: { disabled?: boolean; onshown?: (t: number) => void; stratum?: number } = {}) {
+  const { stratum, ...props } = extra
+  const item = stratum === undefined ? matrices.generate(seed) : matrices.generate(seed, { stratum })
+  extra = props
   const onrespond = vi.fn<(r: number) => void>()
   mounted = mountInto(MatrixRenderer, { spec: item.spec, onrespond, ...extra })
   return { item, onrespond, root: mounted.target }
@@ -42,6 +44,29 @@ describe('MatrixRenderer', () => {
   it('matches the DOM snapshot of a fixed item', async () => {
     const { root } = await renderShown('snapshot-matrices-1')
     expect(stableHtml(root)).toMatchSnapshot()
+  })
+
+  it('draws a hard framed item (M3.12): a frame band in every grid cell and option, named in the text alternatives', async () => {
+    let seed = ''
+    for (let i = 0; seed === ''; i++) if (matrices.generate(`framed-dom-${i}`, { stratum: 6 }).spec.options[0]?.frame) seed = `framed-dom-${i}`
+    const r = render(seed, { stratum: 6 })
+    await settle()
+    const cells = r.root.querySelectorAll('svg.cell')
+    expect(cells).toHaveLength(9 + 6)
+    // Every cell but the missing one has one frame band.
+    expect(r.root.querySelectorAll('rect.frame')).toHaveLength(8 + 6)
+    const first = r.item.spec.grid[0]?.[0]
+    expect(first?.frame).toBeDefined()
+    expect(cells[0]?.getAttribute('aria-label')).toBe(gridCellLabel(1, 1, first as NonNullable<typeof first>))
+    expect(cells[0]?.getAttribute('aria-label')).toMatch(/frame$/)
+    const dashed = [...r.root.querySelectorAll('rect.frame')].filter((e) => e.getAttribute('stroke-dasharray') !== null)
+    const patterns = [...r.item.spec.grid.flat(), ...r.item.spec.options].map((c) => c.frame?.pattern)
+    expect(dashed).toHaveLength(patterns.filter((p) => p !== 'solid').length)
+  })
+
+  it('draws a 1.2.0 spec (no frames) exactly as before: no frame band', async () => {
+    const { root } = await renderShown('snapshot-matrices-1')
+    expect(root.querySelectorAll('rect.frame')).toHaveLength(0)
   })
 
   it('lays the options out on the same three tracks as the grid, flush, so an option is drawn at the size of a grid cell (UX-020)', async () => {

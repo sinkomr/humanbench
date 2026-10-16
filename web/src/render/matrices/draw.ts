@@ -19,10 +19,32 @@
  *   21:1, so the greys are spread evenly in contrast with dark grey at the 3:1 floor against the
  *   outline: steps ≈ 2.6, 2.6 and 3.0.) The stimulus keeps its paper-white cells in both themes.
  *
+ * **Frame** (hard template b, generator 1.3.0, M3.12): a framed cell also has a square band
+ * {@link FRAME_WIDTH} wide whose centre line is {@link FRAME_INSET} inside the cell edge, in one of
+ * three shades ({@link FRAME_GREYS}: every one ≥ 3:1 against the paper, neighbours ≈ 2.6:1 apart)
+ * and patterns (solid; dashed: 10-on 5-off with an L-shaped dash on every corner; dotted: round
+ * dots with one on every corner, both measured on a normalized `pathLength` so every side looks
+ * the same). The objects of a framed cell are drawn {@link FRAME_INNER_SCALE} times as large
+ * about the centre so they clear the band (every cell of a framed item is framed, so sizes still
+ * compare across the item). A cell without a frame is drawn exactly as before.
+ *
  * Coordinates are rounded to 0.01 so the SVG (and its snapshot) is stable.
  */
 
-import { COLORS, ORIENTATIONS, SHAPES, SIZES, type Color, type MatrixCell, type Shape, type Size } from '../../tasks/matrices/grammar'
+import {
+  COLORS,
+  FRAME_PATTERNS,
+  FRAME_SHADES,
+  ORIENTATIONS,
+  SHAPES,
+  SIZES,
+  type Color,
+  type FramePattern,
+  type FrameShade,
+  type MatrixCell,
+  type Shape,
+  type Size,
+} from '../../tasks/matrices/grammar'
 
 export const CELL = 100
 export const SLOT = CELL / 3
@@ -46,6 +68,35 @@ export const CELL_BORDER = '#767676'
 
 export const OUTLINE_WIDTH = 1.6
 export const STRIPE_WIDTH = 2.2
+
+/** Frame band: centre line inset from the cell edge, band width, and the inner objects' scale. */
+export const FRAME_INSET = 6.5
+export const FRAME_WIDTH = 4
+/**
+ * Inner scale of a framed cell: a large object in a corner slot reaches 50 − 46.83·s from the edge
+ * (slot centre 33.33 from the cell centre plus radius 13.5), which at 0.84 is 10.7, clear of the
+ * band's inner edge at 8.5. The band's outer edge (4.5) stays 2.5 inside the cell border, so a
+ * solid band never merges with the border into a double line.
+ */
+export const FRAME_INNER_SCALE = 0.84
+
+/** Frame band shades (light → dark): ≥ 3:1 against the paper, steps ≈ 2.6:1 (luminance spread evenly). */
+export const FRAME_GREYS: Readonly<Record<FrameShade, string>> = Object.freeze({
+  light_grey: '#949494',
+  dark_grey: '#515151',
+  black: '#000000',
+})
+
+/** Normalized length of the frame's outline, so a pattern repeats a whole number of times per side. */
+export const FRAME_PATH_LENGTH = 360
+
+/** Dash pattern of each frame pattern, in {@link FRAME_PATH_LENGTH} units (90 per side). */
+export const FRAME_DASHES: Readonly<Record<FramePattern, { readonly dasharray: string | null; readonly dashoffset: number; readonly linecap: 'butt' | 'round' }>> =
+  Object.freeze({
+    solid: { dasharray: null, dashoffset: 0, linecap: 'butt' },
+    dashed: { dasharray: '10 5', dashoffset: 5, linecap: 'butt' },
+    dotted: { dasharray: '0 7.5', dashoffset: 0, linecap: 'round' },
+  })
 
 /** The stripe contrasts with its fill: black on the light greys, white on the dark ones. */
 export function stripeColor(color: Color): string {
@@ -109,16 +160,18 @@ export function objectVertices(shape: Shape, cx: number, cy: number, r: number, 
   return angles === undefined ? null : angles.map((a) => polar(cx, cy, r, a + orientation))
 }
 
-/** The objects of a cell, one per occupied slot, in slot order. */
+/** The objects of a cell, one per occupied slot, in slot order (scaled about the centre in a framed cell). */
 export function cellObjects(cell: MatrixCell): CellObject[] {
   if (!SHAPES.includes(cell.shape)) throw new RangeError(`unknown shape ${String(cell.shape)}`)
   if (!SIZES.includes(cell.size)) throw new RangeError(`unknown size ${String(cell.size)}`)
   if (!COLORS.includes(cell.color)) throw new RangeError(`unknown color ${String(cell.color)}`)
   if (!ORIENTATIONS.includes(cell.orientation)) throw new RangeError(`unknown orientation ${String(cell.orientation)}`)
-  const r = SIZE_RADIUS[cell.size]
+  const k = cell.frame === undefined ? 1 : FRAME_INNER_SCALE
+  const r = SIZE_RADIUS[cell.size] * k
   const [up, down] = STRIPE_REACH[cell.shape]
   return cell.positions.map((slot) => {
-    const [cx, cy] = slotCentre(slot)
+    const [sx, sy] = slotCentre(slot)
+    const [cx, cy] = k === 1 ? [sx, sy] : [CELL / 2 + k * (sx - CELL / 2), CELL / 2 + k * (sy - CELL / 2)]
     const vertices = objectVertices(cell.shape, cx, cy, r, cell.orientation)
     const [x1, y1] = polar(cx, cy, r * up, cell.orientation)
     const [x2, y2] = polar(cx, cy, r * down, cell.orientation + 180)
@@ -131,6 +184,36 @@ export function cellObjects(cell: MatrixCell): CellObject[] {
       stripe: { x1: round2(x1), y1: round2(y1), x2: round2(x2), y2: round2(y2), stroke: stripeColor(cell.color) },
     }
   })
+}
+
+/** A cell's frame band, ready for SVG (a `rect` stroked with the band). */
+export interface CellFrame {
+  readonly x: number
+  readonly y: number
+  readonly size: number
+  readonly stroke: string
+  readonly strokeWidth: number
+  readonly pathLength: number
+  readonly dasharray: string | null
+  readonly dashoffset: number
+  readonly linecap: 'butt' | 'round'
+}
+
+/** The frame of a cell, or null for a cell without one. */
+export function cellFrame(cell: MatrixCell): CellFrame | null {
+  const f = cell.frame
+  if (f === undefined) return null
+  if (!FRAME_SHADES.includes(f.shade)) throw new RangeError(`unknown frame shade ${String(f.shade)}`)
+  if (!FRAME_PATTERNS.includes(f.pattern)) throw new RangeError(`unknown frame pattern ${String(f.pattern)}`)
+  return {
+    x: FRAME_INSET,
+    y: FRAME_INSET,
+    size: CELL - 2 * FRAME_INSET,
+    stroke: FRAME_GREYS[f.shade],
+    strokeWidth: FRAME_WIDTH,
+    pathLength: FRAME_PATH_LENGTH,
+    ...FRAME_DASHES[f.pattern],
+  }
 }
 
 // --- text alternatives ---------------------------------------------------------------------------
@@ -164,16 +247,21 @@ function listOf(items: readonly string[]): string {
   return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] as string}`
 }
 
+const FRAME_SHADE_NAMES: Readonly<Record<FrameShade, string>> = Object.freeze({ light_grey: 'light grey', dark_grey: 'dark grey', black: 'black' })
+
 /**
  * Structural text alternative of a cell: count, size, grey, shape, orientation and positions, e.g.
- * "2 large dark grey hexagons, turned 45°, at top left and centre". Every attribute the grammar
- * varies is named, in a fixed order, so two cells get the same text exactly when they look the same.
+ * "2 large dark grey hexagons, turned 45°, at top left and centre", then the frame if there is
+ * one ("…, inside a dashed black frame"). Every attribute the grammar varies is named, in a fixed
+ * order, so two cells get the same text exactly when they look the same.
  */
 export function describeCell(cell: MatrixCell): string {
   const n = cell.positions.length
   const shape = n === 1 ? cell.shape : SHAPE_PLURALS[cell.shape]
   const where = listOf(cell.positions.map((s) => SLOT_NAMES[s] ?? `slot ${s}`))
-  return `${n} ${cell.size} ${COLOR_NAMES[cell.color]} ${shape}, turned ${cell.orientation}°, at ${where}`
+  const inner = `${n} ${cell.size} ${COLOR_NAMES[cell.color]} ${shape}, turned ${cell.orientation}°, at ${where}`
+  const f = cell.frame
+  return f === undefined ? inner : `${inner}, inside a ${f.pattern} ${FRAME_SHADE_NAMES[f.shade]} frame`
 }
 
 /** Label of the grid cell in row r, column c (1-based). */

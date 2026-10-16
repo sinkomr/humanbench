@@ -1,5 +1,6 @@
 <!--
-  One matrix cell as SVG (ROADMAP M1.13; DESIGN §4.2 "Matrices"): the paper square, then per
+  One matrix cell as SVG (ROADMAP M1.13; DESIGN §4.2 "Matrices"): the paper square, the frame
+  band of a framed (hard, M3.12) cell, then per
   object its grey fill, its orientation stripe and its black outline on top (so the stripe's ends
   never cut the outline). `cell = null` is the missing ninth cell, drawn as a dashed square with a
   question mark (a path, not text, so it looks the same with every font). With a `label` the SVG is
@@ -8,7 +9,7 @@
 -->
 <script lang="ts">
   import type { MatrixCell } from '../../tasks/matrices/grammar'
-  import { CELL, CELL_BORDER, OUTLINE, OUTLINE_WIDTH, PAPER, STRIPE_WIDTH, cellObjects } from './draw'
+  import { CELL, CELL_BORDER, OUTLINE, OUTLINE_WIDTH, PAPER, STRIPE_WIDTH, cellFrame, cellObjects } from './draw'
 
   interface Props {
     /** The cell, or null for the missing ninth cell. */
@@ -20,6 +21,7 @@
   let { cell, label }: Props = $props()
 
   const objects = $derived(cell === null ? [] : cellObjects(cell))
+  const frame = $derived(cell === null ? null : cellFrame(cell))
 </script>
 
 {#if label !== undefined}
@@ -39,6 +41,22 @@
     <circle cx="50" cy="75" r="4" fill={OUTLINE} />
   {:else}
     <rect x="1" y="1" width="98" height="98" fill={PAPER} stroke={CELL_BORDER} stroke-width="2" />
+    {#if frame !== null}
+      <rect
+        class="frame"
+        x={frame.x}
+        y={frame.y}
+        width={frame.size}
+        height={frame.size}
+        fill="none"
+        stroke={frame.stroke}
+        stroke-width={frame.strokeWidth}
+        pathLength={frame.pathLength}
+        stroke-dasharray={frame.dasharray}
+        stroke-dashoffset={frame.dashoffset}
+        stroke-linecap={frame.linecap}
+      />
+    {/if}
     {#each objects as o, k (k)}
       {#if o.points !== null}
         <polygon points={o.points} fill={o.fill} />

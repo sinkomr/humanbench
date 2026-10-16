@@ -6,12 +6,18 @@
 
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { COLORS, ORIENTATIONS, SHAPES, SIZES, type MatrixCell } from '../../tasks/matrices/grammar'
+import { COLORS, FRAME_PATTERNS, FRAME_SHADES, ORIENTATIONS, SHAPES, SIZES, type FramePattern, type FrameShade, type MatrixCell } from '../../tasks/matrices/grammar'
 import { matrices } from '../../tasks/matrices'
 import { contrast, luminance } from '../color'
 import {
   CELL,
   CELL_BORDER,
+  FRAME_DASHES,
+  FRAME_GREYS,
+  FRAME_INNER_SCALE,
+  FRAME_INSET,
+  FRAME_PATH_LENGTH,
+  FRAME_WIDTH,
   GREYS,
   OUTLINE,
   OUTLINE_WIDTH,
@@ -20,6 +26,7 @@ import {
   SLOT,
   SLOT_NAMES,
   STRIPE_REACH,
+  cellFrame,
   cellObjects,
   describeCell,
   gridCellLabel,
@@ -223,6 +230,80 @@ describe('matrix cells: text alternatives', () => {
       const { spec } = matrices.generate(`draw-desc-${i}`)
       for (const cell of [...spec.grid.flat(), ...spec.options]) expect(describeCell(cell)).toMatch(/^\d .+, turned \d+°, at .+$/)
       expect(new Set(spec.options.map(describeCell)).size).toBe(spec.options.length)
+    }
+  })
+})
+
+describe('matrix cells: the frame of a hard item (M3.12)', () => {
+  const framed = (cell: MatrixCell, shade: FrameShade = 'light_grey', pattern: FramePattern = 'solid'): MatrixCell => ({ ...cell, frame: { shade, pattern } })
+
+  it('draws no frame and the objects unchanged without one', () => {
+    fc.assert(
+      fc.property(cellArb, (cell) => {
+        expect(cellFrame(cell)).toBeNull()
+        expect(cellObjects(cell)[0]?.r).toBe(SIZE_RADIUS[cell.size])
+      }),
+    )
+  })
+
+  it('draws a square band inside the cell edge and scales the objects so they clear it', () => {
+    const band = { outer: FRAME_INSET - FRAME_WIDTH / 2, inner: FRAME_INSET + FRAME_WIDTH / 2 }
+    expect(band.outer).toBeGreaterThanOrEqual(2 + 2.5) // clear of the cell border (stroke 0–2): no double line
+    fc.assert(
+      fc.property(cellArb, fc.constantFrom(...FRAME_SHADES), fc.constantFrom(...FRAME_PATTERNS), (cell, shade, pattern) => {
+        const c = framed(cell, shade, pattern)
+        const f = cellFrame(c)
+        expect(f).toMatchObject({ x: FRAME_INSET, y: FRAME_INSET, size: CELL - 2 * FRAME_INSET, stroke: FRAME_GREYS[shade], strokeWidth: FRAME_WIDTH })
+        for (const o of cellObjects(c)) {
+          expect(o.r).toBeCloseTo(SIZE_RADIUS[cell.size] * FRAME_INNER_SCALE, 1)
+          // Every point of the object (within its circumradius) is ≥ 2 units inside the band.
+          for (const v of [o.cx - o.r, o.cy - o.r]) expect(v).toBeGreaterThanOrEqual(band.inner + 2)
+          for (const v of [o.cx + o.r, o.cy + o.r]) expect(v).toBeLessThanOrEqual(CELL - band.inner - 2)
+        }
+      }),
+    )
+  })
+
+  it('makes the patterns repeat a whole number of times per side, with a mark on every corner', () => {
+    const side = FRAME_PATH_LENGTH / 4
+    for (const p of FRAME_PATTERNS) {
+      const d = FRAME_DASHES[p]
+      if (d.dasharray === null) continue
+      const period = d.dasharray.split(' ').map(Number).reduce((a, b) => a + b, 0)
+      expect(Number.isInteger(side / period), p).toBe(true)
+    }
+    expect(FRAME_DASHES.dotted.linecap).toBe('round')
+    expect(FRAME_DASHES.dashed.dashoffset).toBe(5) // a dash centred on each corner
+  })
+
+  it('draws every frame shade ≥ 3:1 against the paper, light to dark, neighbours ≥ 2.5:1 apart', () => {
+    const shades = FRAME_SHADES.map((s) => FRAME_GREYS[s])
+    for (const g of shades) expect(contrast(g, PAPER)).toBeGreaterThanOrEqual(3)
+    for (let i = 1; i < shades.length; i++) {
+      expect(luminance(shades[i] as string)).toBeLessThan(luminance(shades[i - 1] as string))
+      expect(contrast(shades[i] as string, shades[i - 1] as string)).toBeGreaterThanOrEqual(2.5)
+    }
+  })
+
+  it('names the frame in the text alternative, so framed cells differ in text exactly when they differ in looks', () => {
+    const base: MatrixCell = { shape: 'hexagon', size: 'large', color: 'dark_grey', orientation: 45, positions: [0, 4] }
+    expect(describeCell(framed(base, 'black', 'dashed'))).toBe('2 large dark grey hexagons, turned 45°, at top left and centre, inside a dashed black frame')
+    expect(describeCell(framed(base, 'light_grey', 'dotted'))).toBe('2 large dark grey hexagons, turned 45°, at top left and centre, inside a dotted light grey frame')
+    expect(describeCell(base)).toBe('2 large dark grey hexagons, turned 45°, at top left and centre')
+  })
+
+  it('rejects frame values outside the grammar', () => {
+    const base: MatrixCell = { shape: 'square', size: 'small', color: 'white', orientation: 0, positions: [4] }
+    expect(() => cellFrame({ ...base, frame: { shade: 'white' as never, pattern: 'solid' } })).toThrow(RangeError)
+    expect(() => cellFrame({ ...base, frame: { shade: 'black', pattern: 'wavy' as never } })).toThrow(RangeError)
+  })
+
+  it('describes every cell of generated hard items, and the six options of an item differently', () => {
+    for (let i = 0; i < 60; i++) {
+      const item = matrices.generate(`hard-draw-${i}`, { stratum: i % 2 === 0 ? 5 : 6 })
+      const texts = item.spec.options.map(describeCell)
+      expect(new Set(texts).size).toBe(6)
+      for (const c of [...item.spec.grid.flat(), ...item.spec.options]) expect(() => cellObjects(c)).not.toThrow()
     }
   })
 })
