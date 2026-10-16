@@ -32,6 +32,7 @@
  * the banned-name lists and thresholds below are compared with the bank's by a bank test.
  */
 
+import './verifiers'
 import { canonicalJson, parseItemId, resolveSeed, type Stratum } from './ids'
 import { checkObservation, createRng, type Observation, type Rng } from '../engine'
 import {

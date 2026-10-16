@@ -6,6 +6,8 @@
  * One production build of the real app (Vite, in memory) checks that:
  * - nothing the entry chunk loads statically (the entry and the chunks it imports) holds the results
  *   modules or D3's shapes, and the results chunk is one of the entry's dynamic imports;
+ * - the session runtime (`session/runtime.ts`: the session machine, the selector, the generators) is not reachable
+ *   from the entry without a dynamic import, and the families' verifiers are in no chunk of the build;
  * - the entry chunk stays under a gzip bound (see ENTRY_GZIP_MAX);
  * - the built index.html has the static welcome shell filled in and its stylesheets after the shell.
  * A source scan backs it up without a build: no value import of the results component in the entry's own files.
@@ -19,6 +21,8 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { DISCLAIMER } from '../src/copy'
 import { WELCOME_HEADING, WELCOME_INTRO, WELCOME_TAGLINE } from '../src/session/copy'
 import { RESULTS_CHUNK_FILE } from '../src/session/results-loader'
+import { RUNTIME_CHUNK_FILE } from '../src/session/runtime-loader'
+import { LAZY_CSS_APPEND } from '../vite.config'
 import { WEB } from './css-tokens'
 
 /**
@@ -47,9 +51,19 @@ import { WEB } from './css-tokens'
  * Raised to 162 KB when merged with the cross-skill aim (2026-10-16, `engine/xskill.ts`, about 1.2 KB). The entry
  * now carries the whole session runtime and the device's item generators; moving them behind Start is the follow-up.
  * The hard strata of matrices 1.3.0, series 1.4.0 and rotation 1.4.0 (M3.12, branch `feat/hard-mat-spa`, about
- * 5 KB on their own base) merged on top took it to 157.9 KB (Node 26; CI's Node 24 gzips a little larger): bound 166 KB until the session runtime moves behind Start.
+ * 5 KB on their own base) merged on top took it to 157.9 KB (Node 26; CI's Node 24 gzips a little larger): bound 166 KB
+ * until the session runtime moved behind Start.
+ *
+ * **Lowered to 31.5 KB (2026-10-16, ROADMAP M3.12 follow-up).** The session runtime is a chunk of its own
+ * (`src/session/runtime.ts`, fetched by `runtime-loader.ts` in idle time on the welcome screen and at Start): the
+ * session machine, the selector and the cross-skill aim, the question timer and confidence scale, the practice round,
+ * the ready screen, the scoring of earlier saves and the device's item generators. The families' verifiers are in no
+ * production chunk at all (`src/tasks/verifier-slot.ts`; only the tests, the dump and the review page install them).
+ * That took the entry from 157.9 to 29.1 KB as this test builds it (vitest runs with NODE_ENV=test, which makes the
+ * same build about 2.2 KB larger than `npm run build`'s 26.9 KB; Node 26). The bound is that plus about 2.4 KB (8%)
+ * for growth and for Node 24's gzip. The runtime may not come back: see SESSION_RUNTIME below.
  */
-const ENTRY_GZIP_MAX = 166_000
+const ENTRY_GZIP_MAX = 31_500
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [
@@ -62,6 +76,35 @@ const RESULTS_SIDE = [
   /\/src\/viz\/card\.ts$/,
   /\/node_modules\/d3-shape\//,
 ]
+
+/**
+ * Modules of the session runtime (`src/session/runtime.ts`, UX-100): none may be reachable from the entry without a
+ * dynamic import. The welcome screen, the gate, the honour code and the device check need none of them.
+ */
+const SESSION_RUNTIME = [
+  /\/src\/session\/run\.ts$/,
+  /\/src\/session\/SessionScreen\.svelte$/,
+  /\/src\/session\/Ready\.svelte$/,
+  /\/src\/session\/PracticeScreen\.svelte$/,
+  /\/src\/session\/item-timer\.ts$/,
+  /\/src\/session\/ConfidenceScale\.svelte$/,
+  /\/src\/engine\/selector\.ts$/,
+  /\/src\/engine\/xskill\.ts$/,
+  /\/src\/engine\/scorer\.ts$/,
+  /\/src\/tasks\/registry\.ts$/,
+  /\/src\/tasks\/(matrices|series|rotation|quant|span|rt|coding|reading)\/index\.ts$/,
+  /\/src\/save\/rescore\.ts$/,
+]
+
+/** Modules that hold only the families' verifiers (G2/G3, A1): in no chunk of the build. */
+const VERIFIER_ONLY = [
+  /\/src\/tasks\/verifiers\.ts$/,
+  /\/src\/tasks\/quant\/verify(-hard\d|-kit)?\.ts$/,
+  /\/src\/tasks\/(matrices|series|rotation|coding|reading)\/verify\.ts$/,
+]
+/** Verify modules that also hold helpers the generators use (`expectedKey`, the RT spec fields): only those may ship. */
+const SHARED_VERIFY = /\/src\/tasks\/(span|rt)\/verify\.ts$/
+const SHARED_VERIFY_MAX = 1_000
 
 type Chunk = Rolldown.OutputChunk
 type Asset = Rolldown.OutputAsset
@@ -112,6 +155,39 @@ describe('the results code is a chunk of its own (UX-100)', () => {
     expect(`/${results!.fileName}`).toMatch(RESULTS_CHUNK_FILE)
     // The check can see the results side where it is: the chunk holds the reveal and D3's shapes.
     for (const re of [/\/src\/reveal\/Reveal\.svelte$/, /\/node_modules\/d3-shape\//]) expect(results!.moduleIds.some((id) => re.test(id))).toBe(true)
+  })
+
+  it('the session runtime is not reachable from the entry without a dynamic import; its chunk is a dynamic import of the entry', () => {
+    const closure = staticClosure(entry())
+    const leaked = closure.flatMap((c) => c.moduleIds.filter((id) => SESSION_RUNTIME.some((re) => re.test(id.replace(/\\/g, '/')))).map((id) => `${c.fileName}: ${id.replace(WEB, '')}`))
+    expect(leaked).toEqual([])
+    const runtime = chunks.find((c) => c.moduleIds.some((id) => /\/src\/session\/runtime\.ts$/.test(id.replace(/\\/g, '/'))))
+    expect(runtime).toBeDefined()
+    expect(runtime!.isDynamicEntry).toBe(true)
+    expect(entry().dynamicImports).toContain(runtime!.fileName)
+    expect(`/${runtime!.fileName}`).toMatch(RUNTIME_CHUNK_FILE)
+    // The check sees the runtime where it is: the runtime's static closure holds the session machine and the selector.
+    const held = staticClosure(runtime!).flatMap((c) => c.moduleIds.map((id) => id.replace(/\\/g, '/')))
+    for (const re of [/\/src\/session\/run\.ts$/, /\/src\/engine\/selector\.ts$/, /\/src\/tasks\/registry\.ts$/]) expect(held.some((id) => re.test(id)), String(re)).toBe(true)
+  })
+
+  it('the families\' verifiers are in no chunk of the build: only the tests, the dump and the review page install them', () => {
+    const shipped = chunks.flatMap((c) =>
+      Object.entries(c.modules)
+        .filter(([id, m]) => m.renderedLength > 0 && VERIFIER_ONLY.some((re) => re.test(id.replace(/\\/g, '/'))))
+        .map(([id]) => `${c.fileName}: ${id.replace(WEB, '')}`),
+    )
+    expect(shipped).toEqual([])
+    for (const c of chunks)
+      for (const [id, m] of Object.entries(c.modules)) if (SHARED_VERIFY.test(id.replace(/\\/g, '/'))) expect(m.renderedLength, `${c.fileName}: ${id.replace(WEB, '')}`).toBeLessThan(SHARED_VERIFY_MAX)
+  })
+
+  it('a lazily loaded chunk\'s stylesheet is appended after the entry\'s (to the body), so the cascade is that of one stylesheet', () => {
+    // Nothing in the build appends to the head any more, and the preload helper (the code that makes stylesheet and
+    // modulepreload links for a dynamic import) appends to the body.
+    for (const c of chunks) expect(c.code, c.fileName).not.toContain('document.head.appendChild(')
+    const helpers = chunks.filter((c) => c.code.includes(LAZY_CSS_APPEND) && c.code.includes('modulepreload') && c.code.includes('stylesheet'))
+    expect(helpers.length).toBeGreaterThan(0)
   })
 
   it(`the entry chunk stays under ${ENTRY_GZIP_MAX / 1000} KB gzip`, () => {

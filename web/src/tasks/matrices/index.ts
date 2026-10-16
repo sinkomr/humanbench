@@ -28,7 +28,8 @@ import { CELL_FIELD_SETS, type MatrixKey, type MatrixResponse, type MatrixSpec }
 import { buildMatrix } from './gen'
 import { MATRIX_LEGACY_STRATA, MATRIX_STRATA } from './prior'
 import { scoreMatrix } from './score'
-import { verifyMatrix, type MatrixItem } from './verify'
+import type { MatrixItem } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export type { MatrixCell, MatrixKey, MatrixResponse, MatrixSpec } from './grammar'
 export type { MatrixItem } from './verify'
@@ -47,7 +48,7 @@ const matricesFamily = (generatorVersion: string, strata: typeof MATRIX_STRATA) 
     itemType: 'mc_matrix_spec',
     strata,
     build: buildMatrix,
-    verify: verifyMatrix,
+    verify: (item) => verifiers().matrices(item),
     score: scoreMatrix,
   })
 

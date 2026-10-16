@@ -145,19 +145,11 @@
  *   other block family ignores it, and a missing context means "not recorded".
  */
 
-import {
-  axis as axisDef,
-  createRng,
-  isAxisCode,
-  isJsonValue,
-  modelFamilyOf,
-  type AxisCode,
-  type ItemBase,
-  type ItemParams,
-  type JsonValue,
-  type Observation,
-  type Rng,
-} from '../engine'
+// The engine's modules one by one, not its barrel: the device check (RT timing) imports this module on the welcome
+// side of the app, and the barrel would bring the scorer with it (UX-100, scripts/results-split.test.ts).
+import { axis as axisDef, isAxisCode, modelFamilyOf, type AxisCode } from '../engine/axes'
+import { createRng, type Rng } from '../engine/prng'
+import { isJsonValue, type ItemBase, type ItemParams, type JsonValue, type Observation } from '../engine/types'
 import { FAMILY_ID_RE, FAMILY_NAME_RE, GENERATOR_VERSION_RE, familyId, isStratum, itemId, resolveSeed, type Stratum } from './ids'
 import { B_PRIOR_LIMIT, powerTimeLimit, stratumOfB } from './priors'
 

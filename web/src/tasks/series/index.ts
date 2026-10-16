@@ -34,7 +34,7 @@ import { buildSeries, seriesStrataOf } from './gen'
 import { scoreSeries } from './score'
 import type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec } from './types'
 import { MAX_VISIBLE, MIN_VISIBLE, type FitSet } from './rules'
-import { verifySeries } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec, SeriesStructure } from './types'
 
@@ -54,7 +54,7 @@ function seriesFamily(version: FitSet) {
     itemType: NUMERIC_ITEM_TYPE,
     strata: seriesStrataOf(version),
     build: (rng, ctx) => buildSeries(rng, ctx, version),
-    verify: (item) => verifySeries(item, version),
+    verify: (item) => verifiers().series(item, version),
     score: scoreSeries,
   })
 }

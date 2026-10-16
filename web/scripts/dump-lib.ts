@@ -25,6 +25,7 @@
  * canonical-JSON item per line (stable diffs).
  */
 
+import '../src/tasks/verifiers'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'

@@ -20,7 +20,7 @@ import { CODING_DURATION_S, CODING_SPEC_FIELDS, type CodingItem, type CodingKey,
 import { codingStructure, drawSequence, drawTable, legendOf } from './gen'
 import { codingDifficulty, codingExpectedTime, codingParams, codingStratum } from './prior'
 import { scoreCoding } from './score'
-import { verifyCoding } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export * from './config'
 export { balancedCounts, codingStructure, drawSequence, drawTable, legendOf, sequencePattern } from './gen'
@@ -70,7 +70,7 @@ export const coding = defineFamily<CodingSpec, CodingKey, CodingResponses>({
       time_limit_s: CODING_DURATION_S,
     }
   },
-  verify: (item) => verifyCoding(item),
+  verify: (item) => verifiers().coding(item),
   score: (item, responses) => scoreCoding(item, responses),
 })
 

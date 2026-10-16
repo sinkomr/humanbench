@@ -6,6 +6,7 @@
  * else none (the page shows the spec as JSON). With both maps every registered family renders.
  */
 
+import '../tasks/verifiers'
 import type { Component } from 'svelte'
 import { ENTRY_RENDERERS } from '../render/entry'
 import { VISUAL_RENDERERS } from '../render/visual'

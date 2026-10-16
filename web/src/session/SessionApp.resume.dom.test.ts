@@ -22,9 +22,12 @@ import { RESUME_WINDOW_MS } from './resume'
 import type { RunConfig, SessionRun } from './run'
 import SessionApp from './SessionApp.svelte'
 import { resultsLoader } from './results-loader'
+import { runtimeLoader } from './runtime-loader'
 
 beforeAll(async () => {
   await resultsLoader.load()
+  // The session runtime is its own chunk too (UX-100, `runtime.ts`); loaded here once, as the welcome screen would.
+  await runtimeLoader.load()
 }, 90_000)
 
 const runs = vi.hoisted(() => [] as unknown[])

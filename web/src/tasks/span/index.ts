@@ -31,7 +31,8 @@ import {
 import { corsiBoard, drawTrials } from './gen'
 import { SPAN_GRM_A, grmThresholds, spanDifficulty, spanExpectedTime, spanStratum } from './prior'
 import { scoreSpan } from './score'
-import { expectedKey, specFieldsOf, verifySpan } from './verify'
+import { expectedKey, specFieldsOf } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export * from './config'
 export * from './protocol'
@@ -97,7 +98,7 @@ export function spanFamily(cfg: SpanTaskConfig, procedure: SpanProcedure = SPAN_
         expected_time_s: spanExpectedTime(cfg, procedure),
       }
     },
-    verify: (item) => verifySpan(cfg, item, procedure),
+    verify: (item) => verifiers().span(cfg, item, procedure),
     score: (item, responses) => scoreSpan(item, responses),
   })
 }

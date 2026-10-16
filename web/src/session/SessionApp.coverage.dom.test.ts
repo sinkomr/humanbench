@@ -18,11 +18,14 @@ import { fakeEnv, SpyStorage, type FakeEnv } from './dom-support'
 import type { RunConfig, SessionRun } from './run'
 import SessionApp from './SessionApp.svelte'
 import { resultsLoader } from './results-loader'
+import { runtimeLoader } from './runtime-loader'
 
 // The results code is its own chunk (UX-100); loaded here once, so the flow shows the results at once as it does
 // when the ready screen has fetched them.
 beforeAll(async () => {
   await resultsLoader.load()
+  // The session runtime is its own chunk too (UX-100, `runtime.ts`); loaded here once, as the welcome screen would.
+  await runtimeLoader.load()
 }, 90_000)
 
 const configs = vi.hoisted(() => [] as unknown[])

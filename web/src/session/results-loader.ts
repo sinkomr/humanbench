@@ -54,23 +54,26 @@ export const resultsDownloaded = (name: string): string => `Downloaded ${name}. 
 /** Waits between attempts: four attempts over about five seconds, then the fallback. */
 export const RETRY_DELAYS_MS: readonly number[] = [500, 1500, 3500]
 
-export interface ResultsLoader {
+/** A loader of one lazily loaded chunk (the results here; the session runtime, `runtime-loader.ts`). */
+export interface ChunkLoader<M> {
   /** The module once it has loaded, else null: a screen that has it renders it at once, with no waiting state. */
-  current(): ResultsModule | null
+  current(): M | null
   /**
    * Load the module. Memoised: while an attempt is under way, and after success, every call gets the same
    * promise. An attempt retries after each delay of {@link RETRY_DELAYS_MS}; when the last retry fails the
    * promise rejects and the memo is cleared, so the next call (the "Try again" button, or the next phase that
    * prefetches) starts afresh.
    */
-  load(): Promise<ResultsModule>
+  load(): Promise<M>
 }
 
-export interface ResultsLoaderOptions {
-  /** The import of the results chunk (through Vite's preload helper in a build). */
-  readonly importer?: () => Promise<ResultsModule>
+export type ResultsLoader = ChunkLoader<ResultsModule>
+
+export interface ChunkLoaderOptions<M> {
+  /** The import of the chunk (through Vite's preload helper in a build). */
+  readonly importer?: () => Promise<M>
   /** An import by URL, for the cache-busting retry in Chromium (default: a native dynamic import). */
-  readonly importUrl?: (url: string) => Promise<ResultsModule>
+  readonly importUrl?: (url: string) => Promise<M>
   readonly delays?: readonly number[]
   readonly sleep?: (ms: number) => Promise<void>
   /** Called before each retry; default: add again the stylesheets that failed to load. */
@@ -79,9 +82,11 @@ export interface ResultsLoaderOptions {
   readonly baseUrl?: () => string
   /** Whether the browser thinks it is online (default `navigator.onLine`); no attempt is made while it is not. */
   readonly online?: () => boolean
-  /** The URL of the results chunk if its modulepreload failed, else null (default: from the watched links). */
+  /** The URL of the chunk if its modulepreload failed, else null (default: from the watched links). */
   readonly failedChunk?: () => string | null
 }
+
+export type ResultsLoaderOptions = ChunkLoaderOptions<ResultsModule>
 
 /**
  * The file name of the results chunk in a build: Rolldown names a dynamic chunk after its module
@@ -123,11 +128,11 @@ const failedSheets = new Set<HTMLLinkElement>()
 const failedPreloads = new Set<string>()
 let watching = false
 
-/** The URL (without its query) of the results chunk's modulepreload link if it failed, else null. */
-export function failedChunkPreload(): string | null {
+/** The URL (without its query) of the chunk's modulepreload link (the results chunk by default) if it failed, else null. */
+export function failedChunkPreload(chunkFile: RegExp = RESULTS_CHUNK_FILE): string | null {
   for (const href of failedPreloads) {
     const url = href.split(/[?#]/)[0] as string
-    if (RESULTS_CHUNK_FILE.test(url)) return url
+    if (chunkFile.test(url)) return url
   }
   return null
 }
@@ -177,24 +182,32 @@ export async function restyleFailed(): Promise<void> {
 
 /** A loader of the results module (see {@link ResultsLoader}). */
 export function createResultsLoader(opts: ResultsLoaderOptions = {}): ResultsLoader {
-  const importer = opts.importer ?? (() => import('./Finished.svelte'))
-  const importUrl = opts.importUrl ?? ((url: string) => import(/* @vite-ignore */ url) as Promise<ResultsModule>)
+  return createChunkLoader(RESULTS_CHUNK_FILE, () => import('./Finished.svelte'), opts)
+}
+
+/**
+ * A loader of a lazily loaded chunk (see {@link ChunkLoader} and the module comment): `chunkFile` matches the chunk's
+ * file name in a build, `defaultImporter` imports it.
+ */
+export function createChunkLoader<M>(chunkFile: RegExp, defaultImporter: () => Promise<M>, opts: ChunkLoaderOptions<M> = {}): ChunkLoader<M> {
+  const importer = opts.importer ?? defaultImporter
+  const importUrl = opts.importUrl ?? ((url: string) => import(/* @vite-ignore */ url) as Promise<M>)
   const delays = opts.delays ?? RETRY_DELAYS_MS
   const sleep = opts.sleep ?? realSleep
   const beforeRetry = opts.beforeRetry ?? restyleFailed
   const baseUrl = opts.baseUrl ?? (() => (typeof location === 'undefined' ? 'http://localhost/' : location.href))
   const online = opts.online ?? browserOnline
-  const failedChunk = opts.failedChunk ?? failedChunkPreload
+  const failedChunk = opts.failedChunk ?? (() => failedChunkPreload(chunkFile))
   if (opts.beforeRetry === undefined || opts.failedChunk === undefined) watchLinks()
 
-  let module: ResultsModule | null = null
-  let pending: Promise<ResultsModule> | null = null
+  let module: M | null = null
+  let pending: Promise<M> | null = null
   /** The chunk's URL once an error has named it, and how many retries went to it (each a fresh URL). */
   let chunkUrl: string | null = null
   let bust = 0
   let attempts = 0
 
-  const once = async (): Promise<ResultsModule> => {
+  const once = async (): Promise<M> => {
     if (!online()) throw new OfflineError()
     const first = attempts++ === 0
     if (!first) {
@@ -204,14 +217,14 @@ export function createResultsLoader(opts: ResultsLoaderOptions = {}): ResultsLoa
     try {
       return chunkUrl === null ? await importer() : await importUrl(`${chunkUrl}?retry=${++bust}`)
     } catch (error) {
-      // Only the results chunk is ever imported under a fresh URL: a name that is not its file is not used.
+      // Only the chunk itself is ever imported under a fresh URL: a name that is not its file is not used.
       const named = failedModuleUrl(error, baseUrl())
-      if (named !== null && RESULTS_CHUNK_FILE.test(named)) chunkUrl = named
+      if (named !== null && chunkFile.test(named)) chunkUrl = named
       throw error
     }
   }
 
-  const attempt = async (): Promise<ResultsModule> => {
+  const attempt = async (): Promise<M> => {
     for (let i = 0; ; i++) {
       try {
         return await once()
@@ -225,7 +238,7 @@ export function createResultsLoader(opts: ResultsLoaderOptions = {}): ResultsLoa
 
   return {
     current: () => module,
-    load(): Promise<ResultsModule> {
+    load(): Promise<M> {
       if (module !== null) return Promise.resolve(module)
       pending ??= attempt().then(
         (m) => {

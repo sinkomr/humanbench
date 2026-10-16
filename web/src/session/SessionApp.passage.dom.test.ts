@@ -15,9 +15,12 @@ import { DEMO_PASSAGES, demoPassagePayload } from '../render/text/demo-passage'
 import { fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
 import { resultsLoader } from './results-loader'
+import { runtimeLoader } from './runtime-loader'
 
 beforeAll(async () => {
   await resultsLoader.load()
+  // The session runtime is its own chunk too (UX-100, `runtime.ts`); loaded here once, as the welcome screen would.
+  await runtimeLoader.load()
 }, 90_000)
 
 let app: ReturnType<typeof mount> | undefined

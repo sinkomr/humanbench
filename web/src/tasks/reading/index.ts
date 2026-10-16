@@ -28,7 +28,7 @@ import { defineFamily, type ItemInstance } from '../family'
 import { buildReading } from './gen'
 import { readingBlockScore } from './score'
 import type { ReadingKey, ReadingResponse, ReadingSpec } from './types'
-import { verifyReading } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export type ReadingItem = ItemInstance<ReadingSpec, ReadingKey>
 
@@ -41,7 +41,7 @@ export const reading = defineFamily<ReadingSpec, ReadingKey, ReadingResponse>({
   itemType: 'reading_block',
   strata: [3],
   build: buildReading,
-  verify: verifyReading,
+  verify: (item) => verifiers().reading(item),
   score: readingBlockScore,
 })
 

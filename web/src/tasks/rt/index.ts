@@ -21,7 +21,7 @@ import { buildRt } from './gen'
 import { RT_STRATUM } from './prior'
 import { rtBlockScore } from './score'
 import { RT_FACETS, RT_MODES, rtFamilyName, type RtKey, type RtMode, type RtResponse, type RtSpec } from './types'
-import { verifyRt } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export type RtItem = ItemInstance<RtSpec, RtKey>
 
@@ -39,7 +39,7 @@ export function rtFamily(mode: RtMode): BlockFamily<RtSpec, RtKey, RtResponse> {
     itemType: 'rt_block',
     strata: [RT_STRATUM],
     build: (rng) => buildRt(rng, mode),
-    verify: (item) => verifyRt(item, mode),
+    verify: (item) => verifiers().rt(item, mode),
     score: rtBlockScore,
   })
 }

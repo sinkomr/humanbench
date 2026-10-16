@@ -1,10 +1,16 @@
 import { flushSync, mount, tick, unmount } from 'svelte'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import App from './App.svelte'
 import { HEADING } from './copy'
 import { buttonByText, click, fakeDisplay } from './render/common/testing'
 import { HONOUR_LEAD, HONOUR_TEXT, HONOUR_TOOLS, PRIVACY_SECTIONS, WELCOME_INTRO, WELCOME_TAGLINE } from './session/copy'
 import { fakeEnv } from './session/dom-support'
+import { runtimeLoader } from './session/runtime-loader'
+
+// The session runtime is its own chunk (UX-100, `session/runtime.ts`); loaded once, as the welcome screen would.
+beforeAll(async () => {
+  await runtimeLoader.load()
+}, 90_000)
 
 // Literal DESIGN §13 text, deliberately not imported from ./copy, so that a change to
 // the rendered copy fails this test. copy.test.ts checks copy.ts against docs/DESIGN.md.

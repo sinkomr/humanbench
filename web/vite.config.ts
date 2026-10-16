@@ -150,6 +150,29 @@ export function isServerBuild(env: Record<string, string>): boolean {
 }
 
 /**
+ * Stylesheets of lazily loaded chunks go after the page's own (UX-100). The build puts the entry's stylesheets at the
+ * end of the body, after the static welcome shell (`staticShell`), and Vite's preload helper appends the stylesheet of
+ * a dynamic chunk to the head, i.e. BEFORE them in the cascade. With the session runtime a chunk of its own
+ * (`src/session/runtime.ts`), that turned every tie between a shared stylesheet of the entry (`session.css`'s
+ * `.hb-screen fieldset`, `render.css`) and a renderer's own scoped rule the other way: the matrix options gained the
+ * screen's fieldset padding and the coding keypad lost its fold. Appended to the body, a chunk's stylesheet comes after
+ * the entry's, as it did when they were one file. `scripts/results-split.test.ts` checks the built helper.
+ */
+export const LAZY_CSS_APPEND = 'document.body.appendChild('
+
+function lazyCssAfterEntry(): Plugin {
+  return {
+    name: 'humanbench-lazy-css-after-entry',
+    apply: 'build',
+    renderChunk(code) {
+      // Vite's preload helper is the code that creates `modulepreload` links and appends them to the head.
+      if (!code.includes('modulepreload') || !code.includes('document.head.appendChild(')) return null
+      return { code: code.split('document.head.appendChild(').join(LAZY_CSS_APPEND), map: null }
+    },
+  }
+}
+
+/**
  * The static welcome shell of index.html (UX-100), filled in dev and build (`fillShell`). On a slow line the page
  * used to stay blank until the app's script had loaded and run; now the HTML itself shows the welcome screen's
  * heading, tagline and intro and the footer disclaimer, in the app's own words (`loadShellText`) and look (inline
@@ -210,7 +233,7 @@ export default defineConfig(({ mode }) => {
   const base = (env.VITE_BASE || '/humanbench/').replace(/\/?$/, '/')
   return {
     base,
-    plugins: [svelte(), schemaAssets(), surfacesStaleness(), staticShell(env)],
+    plugins: [svelte(), schemaAssets(), surfacesStaleness(), staticShell(env), lazyCssAfterEntry()],
     // The AUT sentence embedder (src/tasks/aut/minilm.ts, ROADMAP M6.4) runs Transformers.js on ONNX Runtime's plain
     // wasm backend only. Transformers.js imports ORT's WebGPU entry, whose bundle names a 27 MB "asyncify" wasm that
     // Vite would copy into dist/ although nothing ever loads it (the page is pointed at the 14 MB plain wasm instead).
@@ -224,6 +247,8 @@ export default defineConfig(({ mode }) => {
       // A safety net above vitest's 5 s default, so a busy machine (e.g. the bank's pytest running
       // alongside) does not fail seconds-long tests; heavy tests still set their own timeouts.
       testTimeout: 30_000,
+      // The families' verifiers are installed for the tests (`src/tasks/verifier-slot.ts`); the app's session never loads them.
+      setupFiles: ['./src/tasks/verifiers.ts'],
       // Tests named *.dom.test.ts or *.svelte.test.ts run in jsdom; all other *.test.ts (src/ and the
       // Node scripts/ tests: dump CLI, fixture sync, A17) run in node. scripts/**/*.ts are
       // type-checked by tsconfig.scripts.json.

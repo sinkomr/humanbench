@@ -27,6 +27,11 @@
   Leaving by accident (UX-011): once a run holds an answer, closing or reloading the tab asks first (the
   reveal's guard, `reveal/guard.ts`); while it runs, the browser's Back button or an edge swipe lands on a
   history entry the run pushed and opens "Finish now?" instead of leaving.
+  The session runtime (`runtime.ts`: the session machine and its selector, the screens of the ready screen, the
+  practice round and the run, the scoring of earlier saves and the device's item generators) is not in the entry chunk
+  either (UX-100): `runtime-loader.ts` fetches it in idle time on the welcome screen, and at the latest when Start (once
+  the gate's refresh-rate measurement has settled) or "See my results" is pressed; the gate, the honour code and the device check do not need it. A step that needs it
+  before it has arrived shows "Getting ready" until it does, with "Try again" if it does not.
   The results code (`Finished.svelte` with the reveal, D3 and the share card) is not in the entry chunk
   (UX-100): `results-loader.ts` fetches it from the ready screen on, so it is normally in memory when the
   session ends. If it is still on its way the results screen says so; if it does not arrive after the
@@ -54,10 +59,7 @@
   import ConsentGate from './ConsentGate.svelte'
   import DeviceCheck from './DeviceCheck.svelte'
   import Honour from './Honour.svelte'
-  import PracticeScreen from './PracticeScreen.svelte'
-  import Ready from './Ready.svelte'
   import Screen from './Screen.svelte'
-  import SessionScreen from './SessionScreen.svelte'
   import Welcome from './Welcome.svelte'
   import { SAVE_CTX, TERMS_VERSION, TERMS_VERSION_SERVER } from './constants'
   import { startRefreshProbe, type RefreshProbe } from './device'
@@ -66,13 +68,11 @@
   import { FAST_BANNER } from './fast'
   import type { FlowPhase } from './phase'
   import { readConsent, recordConsent } from './gate'
-  import { priorItemCounts } from './coverage'
-  import { earlierObservations } from './earlier'
-  import { SessionPersister, type AutosaveStatus } from './persist'
-  import { PracticeRun } from './practice'
+  import type { AutosaveStatus, SessionPersister } from './persist'
+  import type { PracticeRun } from './practice'
   import { baseOf, defaultReadyState, type ReadyState } from './ready-state'
-  import { continuationStartMs, findUnfinished, type Unfinished } from './resume'
-  import { holdsResults, readReturning, type Returning } from './returning'
+  import type { Unfinished } from './resume'
+  import { readReturning, type Returning } from './returning'
   import {
     RESULTS_DOWNLOAD,
     RESULTS_FAILED,
@@ -84,7 +84,8 @@
     type ResultsComponent,
     type ResultsLoader,
   } from './results-loader'
-  import { SessionRun, type ChangeKind, type RunResult } from './run'
+  import type { ChangeKind, RunResult, SessionRun } from './run'
+  import { RUNTIME_FAILED, RUNTIME_PENDING_HEADING, RUNTIME_PREPARING, RUNTIME_RETRY, runtimeLoader, whenIdle, type RuntimeLoader, type SessionRuntime } from './runtime-loader'
   import { preloadServedRenderers } from './served-renderers'
 
   interface Props {
@@ -96,9 +97,11 @@
     readonly results?: ResultsLoader
     /** The fallback's download of the save (tests inject a recorder). Default: `save/io.ts` downloadSave. */
     readonly download?: (save: SaveFileV1) => string
+    /** Where the session runtime comes from (UX-100); tests inject one. Default: the page's loader. */
+    readonly runtime?: RuntimeLoader
   }
 
-  let { env = browserSessionEnv(), onphase, results = resultsLoader, download = downloadSave }: Props = $props()
+  let { env = browserSessionEnv(), onphase, results = resultsLoader, download = downloadSave, runtime = runtimeLoader }: Props = $props()
 
   type Phase = FlowPhase
 
@@ -167,7 +170,8 @@
    */
   const unfinished: Unfinished | null = $derived.by(() => {
     if (backend !== null || askedConsent || restored?.save == null || restored.anonIds.length > 1 || !readyState.includeFound) return null
-    const u = findUnfinished(base, env.wallClockMs())
+    if (rt === null) return null
+    const u = rt.findUnfinished(base, env.wallClockMs())
     return u !== null && restored.save.sessions.some((s) => s.session_id === u.sessionId) ? u : null
   })
   let practice: PracticeRun | null = $state.raw(null)
@@ -201,10 +205,55 @@
   let resultsFailed = $state(false)
   /** The fallback's download went through: the file name, and the leave-guard is lifted. */
   let fallbackSaved: string | null = $state(null)
+  /** The session runtime once its chunk is in memory (UX-100, `runtime.ts`). */
+  // svelte-ignore state_referenced_locally
+  let rt: SessionRuntime | null = $state.raw(runtime.current())
+  /** The loader gave up (after its retries) while a step waited for the runtime: "Try again" is offered. */
+  let runtimeFailed = $state(false)
+  /** What to do once the runtime is in memory: the step that waits for it on the "Getting ready" screen. */
+  let afterRuntime: ((r: SessionRuntime) => void) | null = null
 
   refreshReturning()
 
   onDestroy(() => probe?.cancel())
+
+  // The session runtime is fetched in idle time on the welcome screen (UX-100), so Start is not slower for it.
+  $effect(() => {
+    if (phase !== 'welcome' || rt !== null) return
+    return whenIdle(() => void fetchRuntime())
+  })
+
+  async function fetchRuntime(): Promise<void> {
+    if (rt !== null) return
+    try {
+      const r = await runtime.load()
+      rt = r
+      runtimeFailed = false
+      const k = afterRuntime
+      afterRuntime = null
+      if (k !== null && phase === 'loading') k(r)
+    } catch {
+      if (phase === 'loading') runtimeFailed = true
+    }
+  }
+
+  /** Go on with `k` now if the runtime is in memory, else show "Getting ready" and go on with it once it is. */
+  function withRuntime(k: (r: SessionRuntime) => void): void {
+    if (rt !== null) {
+      k(rt)
+      return
+    }
+    afterRuntime = k
+    runtimeFailed = false
+    phase = 'loading'
+    void fetchRuntime()
+  }
+
+  /** "Try again" on the "Getting ready" screen. */
+  function retryRuntime(): void {
+    runtimeFailed = false
+    void fetchRuntime()
+  }
 
   $effect(() => {
     onphase?.(phase)
@@ -272,6 +321,19 @@
     // Reading is allowed; nothing is written before the gate is passed.
     phase = readConsent(env.storage(), terms) !== null ? 'honour' : 'gate'
     startProbe()
+    fetchRuntimeAfterProbe()
+  }
+
+  /**
+   * Fetch the runtime once the refresh-rate measurement that runs on the gate (D23) has settled, a second or so: the
+   * runtime's code runs in one long task, which would hold up the frames being counted (the device check would then
+   * still be measuring). The gate and the honour code need none of it.
+   */
+  function fetchRuntimeAfterProbe(): void {
+    const p = probe
+    if (rt !== null) return
+    if (p === null || p.hz !== undefined) void fetchRuntime()
+    else void p.done.then(() => fetchRuntime())
   }
 
   /**
@@ -280,6 +342,7 @@
    */
   function seeResults(): void {
     visited = true
+    void fetchRuntime()
     afterGate = 'results'
     if (readConsent(env.storage(), terms) !== null) openSaved()
     else phase = 'gate'
@@ -288,15 +351,17 @@
   /** The gate is passed for the earlier results: read the saves and show them, or go on as a session would. */
   function openSaved(): void {
     afterGate = 'session'
-    restored = restoreAutosaves(SAVE_CTX, env.storage())
-    readyState = defaultReadyState(restored)
-    if (base !== null && holdsResults(base)) {
-      showSaved()
-      return
-    }
-    // Nothing to look at after all (the saves changed since the welcome screen): the usual way in.
-    phase = 'honour'
-    startProbe()
+    withRuntime((r) => {
+      restored = restoreAutosaves(SAVE_CTX, env.storage())
+      readyState = defaultReadyState(restored)
+      if (base !== null && r.holdsResults(base)) {
+        showSaved()
+        return
+      }
+      // Nothing to look at after all (the saves changed since the welcome screen): the usual way in.
+      phase = 'honour'
+      startProbe()
+    })
   }
 
   function agree(): void {
@@ -330,16 +395,19 @@
       // A focus session asked for from the results opened on the welcome screen: its saves are the base already.
       const axes = pendingFocus
       pendingFocus = null
-      startRun(axes)
+      withRuntime(() => startRun(axes))
       return
     }
-    restored = restoreAutosaves(SAVE_CTX, env.storage())
-    readyState = defaultReadyState(restored)
-    phase = 'ready'
+    withRuntime(() => {
+      restored = restoreAutosaves(SAVE_CTX, env.storage())
+      readyState = defaultReadyState(restored)
+      phase = 'ready'
+    })
   }
 
   function startPractice(): void {
-    practice = new PracticeRun(newSessionId(env.wallClockMs()))
+    if (rt === null) return
+    practice = new rt.PracticeRun(newSessionId(env.wallClockMs()))
     // Every practice round keeps its families out of the counted session, not only the last one.
     practiceFamilies = [...new Set([...practiceFamilies, ...practice.familyIds()])]
     phase = 'practice'
@@ -386,24 +454,25 @@
   }
 
   function launch(focus: readonly AxisCode[] | undefined, s: ServerSession | null, continues?: Unfinished): void {
-    if (device === null) return
+    // Reached from the ready screen, the server's opening screen or the results, all of which come with the runtime.
+    if (device === null || rt === null) return
     server = s
     outcome = null
     closeFailed = false
     // A continuation starts after the session it continues, to the second, so it comes right after it in time order.
-    const startedMs = continues === undefined ? env.wallClockMs() : continuationStartMs(env.wallClockMs(), continues.startedUtc)
+    const startedMs = continues === undefined ? env.wallClockMs() : rt.continuationStartMs(env.wallClockMs(), continues.startedUtc)
     const sessionId = newSessionId(startedMs)
-    const r = new SessionRun({
+    const r = new rt.SessionRun({
       sessionId,
       startedMs,
       now: env.now,
       device,
       rtInput,
       // The ≥ 3-item floor follows the axes the earlier sessions covered, not their number (coverage.ts).
-      priorItemCounts: priorItemCounts(base),
+      priorItemCounts: rt.priorItemCounts(base),
       seenFamilies: [...(base?.seen_families ?? []), ...practiceFamilies],
       // Where the device-made questions are aimed starts from the earlier sessions (earlier.ts); the server reads its own rows.
-      ...(s === null ? { earlierObservations: earlierObservations(base) } : {}),
+      ...(s === null ? { earlierObservations: rt.earlierObservations(base) } : {}),
       ...(focus === undefined ? {} : { focus, targetS: FOCUS_TARGET_S }),
       ...(continues === undefined ? {} : { continues: { done: continues.done, skipped: continues.skipped } }),
       ...(s === null ? {} : { cat: s, textAxes }),
@@ -416,7 +485,7 @@
     viewing = false
     answered = false
     autosave = 'ok'
-    persister = new SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (st) => (autosave = st), ...(s === null ? {} : { anonId: s.anonId, bankVersion: s.bankVersion }) })
+    persister = new rt.SessionPersister(r, { base, storage: env.storage(), wallClockMs: env.wallClockMs, onStatus: (st) => (autosave = st), ...(s === null ? {} : { anonId: s.anonId, bankVersion: s.bankVersion }) })
     persister.schedule()
     if (r.view().ended !== null) {
       // Nothing to run (every part was skipped from the start): straight to the results.
@@ -571,8 +640,18 @@
   <Honour onagree={() => (phase = 'device')} />
 {:else if phase === 'device'}
   <DeviceCheck {env} {probe} ondone={deviceDone} />
-{:else if phase === 'ready'}
-  <Ready
+{:else if phase === 'loading' || ((phase === 'ready' || phase === 'practice' || phase === 'run') && rt === null)}
+  <!-- Rarely seen: the session code is fetched on the welcome screen. One live region, so a change is read out. -->
+  <Screen title={RUNTIME_PENDING_HEADING}>
+    <p role="status">{runtimeFailed ? RUNTIME_FAILED : RUNTIME_PREPARING}</p>
+    {#if runtimeFailed}
+      <div class="hb-actions">
+        <button type="button" class="hb-btn hb-primary" onclick={retryRuntime}>{RUNTIME_RETRY}</button>
+      </div>
+    {/if}
+  </Screen>
+{:else if phase === 'ready' && rt !== null}
+  <rt.Ready
     {restored}
     choices={readyState}
     onchoices={(c) => (readyState = c)}
@@ -586,12 +665,12 @@
     verify={backend === null ? undefined : (save) => backend.api.verifySave(save)}
     restore={backend === null ? undefined : (id, phrase) => backend.api.mirrorGet(id, phrase)}
   />
-{:else if phase === 'practice' && practice !== null}
-  <PracticeScreen {env} {practice} ondone={() => (phase = 'ready')} />
+{:else if phase === 'practice' && practice !== null && rt !== null}
+  <rt.PracticeScreen {env} {practice} ondone={() => (phase = 'ready')} />
 {:else if phase === 'opening'}
   <Opening problem={openProblem} onretry={() => void open(openFocus)} onlocal={() => launch(openFocus, null)} onback={() => (phase = 'ready')} />
-{:else if phase === 'run' && run !== null}
-  <SessionScreen {env} {run} {autosave} {banner} {finishRequest} report={server === null ? undefined : (r) => server!.reportProblem(r)} />
+{:else if phase === 'run' && run !== null && rt !== null}
+  <rt.SessionScreen {env} {run} {autosave} {banner} {finishRequest} report={server === null ? undefined : (r) => server!.reportProblem(r)} />
 {:else if phase === 'closing' && run !== null}
   <Closing failed={closeFailed} onretry={() => void close(run!)} oncontinue={() => continueWithoutServer(run!)} />
 {:else if phase === 'finished' && Results === null}

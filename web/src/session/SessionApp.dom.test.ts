@@ -12,11 +12,14 @@ import { CONSENT_KEY, SAVE_CTX, TERMS_VERSION } from './constants'
 import { DESKTOP, fakeEnv, type FakeEnv } from './dom-support'
 import SessionApp from './SessionApp.svelte'
 import { createResultsLoader, resultsLoader, type ResultsLoader, type ResultsModule } from './results-loader'
+import { runtimeLoader } from './runtime-loader'
 
 // The results code is its own chunk (UX-100); loaded here once, so the flow shows the results at once as it does
 // when the ready screen has fetched them.
 beforeAll(async () => {
   await resultsLoader.load()
+  // The session runtime is its own chunk too (UX-100, `runtime.ts`); loaded here once, as the welcome screen would.
+  await runtimeLoader.load()
 }, 90_000)
 
 let app: ReturnType<typeof mount> | undefined

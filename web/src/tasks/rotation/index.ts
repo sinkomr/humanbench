@@ -41,7 +41,7 @@ import { buildRotation, buildRotationClassic } from './gen'
 import { ROTATION_STRATA } from './prior'
 import { scoreRotation } from './score'
 import type { RotationKey, RotationResponse, RotationSpec } from './spec'
-import { verifyRotation } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export const ROTATION_GENERATOR_VERSION = '1.4.0'
 /** The generator before the torsion template (M3.12): the classic template in every stratum. */
@@ -56,7 +56,7 @@ export const rotation = defineFamily<RotationSpec, RotationKey, RotationResponse
   itemType: 'mc_image_spec',
   strata: ROTATION_STRATA,
   build: buildRotation,
-  verify: verifyRotation,
+  verify: (item) => verifiers().rotation(item),
   score: scoreRotation,
 })
 
@@ -75,7 +75,7 @@ export const ROTATION_LEGACY_FAMILIES: Readonly<Record<string, ItemFamily<Rotati
     itemType: 'mc_image_spec',
     strata: ROTATION_STRATA,
     build: buildRotationClassic,
-    verify: verifyRotation,
+    verify: (item) => verifiers().rotation(item),
     score: scoreRotation,
   }),
 })

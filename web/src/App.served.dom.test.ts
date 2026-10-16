@@ -5,13 +5,19 @@
  */
 
 import { flushSync, mount, unmount } from 'svelte'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import App from './App.svelte'
 import { SERVER_PRIVACY_SECTIONS } from './backend/copy'
 import { FakeTransport, fakeBackend } from './backend/testing'
 import { buttonByText, click, fakeDisplay } from './render/common/testing'
 import { fakeEnv } from './session/dom-support'
 import { PRIVACY_SECTIONS } from './session/copy'
+import { runtimeLoader } from './session/runtime-loader'
+
+// The session runtime is its own chunk (UX-100, `session/runtime.ts`); loaded once, as the welcome screen would.
+beforeAll(async () => {
+  await runtimeLoader.load()
+}, 90_000)
 
 let app: ReturnType<typeof mount> | undefined
 afterEach(() => {

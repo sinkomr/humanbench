@@ -27,7 +27,8 @@
  * the resolved seed; `generate("x", { stratum: 3 })` and `generate("x@s3")` are the same item.
  */
 
-import { cyrb128, type JsonValue } from '../engine'
+import { cyrb128 } from '../engine/prng'
+import type { JsonValue } from '../engine/types'
 
 /** Difficulty stratum 1–6 (DESIGN §6.ii: MS, HS, college-entry, college, graduate, olympiad). */
 export type Stratum = 1 | 2 | 3 | 4 | 5 | 6

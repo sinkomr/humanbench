@@ -41,8 +41,12 @@ const RESULTS_CHUNK = /\/assets\/Finished-[^/?]+\.(js|css)(\?.*)?$/
  *
  * Raised to 160 KB for quant generator 1.4.0 (ROADMAP M3.12), 162 KB with the cross-skill aim, and 166 KB with the
  * hard strata of matrices, series and rotation (M3.12), as in scripts/results-split.test.ts.
+ *
+ * Lowered to 35 KB (2026-10-16) when the session runtime moved behind Start (`src/session/runtime.ts`; see
+ * scripts/results-split.test.ts, now 31.5 KB). This build compiles in the server client and the dev-only routes: its
+ * entry is 32.7 KB (Node 26), and the bound is that plus about 2.3 KB (7%).
  */
-const ENTRY_GZIP_MAX = 166_000
+const ENTRY_GZIP_MAX = 35_000
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
 
 // -------------------------------------------------------------------------- the shell

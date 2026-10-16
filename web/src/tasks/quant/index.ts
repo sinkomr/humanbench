@@ -27,7 +27,7 @@ import { QUANT_PROVENANCE_V130 } from './prior'
 import { QUANT_TEMPLATES, TEMPLATES_BY_STRATUM } from './templates'
 import { scoreQuant, type QuantResponse } from './score'
 import { variantOf } from './templates'
-import { quantVerifier, verifyQuant } from './verify'
+import { verifiers } from '../verifier-slot'
 
 export type { QuantKey, QuantSpec } from './gen'
 export { QUANT_SIBLING_SETS, QUANT_TEMPLATES, quantSiblingGroup } from './templates'
@@ -43,7 +43,7 @@ export const quant = defineFamily<QuantSpec, QuantKey, QuantResponse>({
   itemType: NUMERIC_ITEM_TYPE,
   strata: QUANT_STRATA,
   build: buildQuant,
-  verify: verifyQuant,
+  verify: (item) => verifiers().quant(item),
   score: scoreQuant,
 })
 
@@ -80,7 +80,7 @@ export const quantV130 = defineFamily<QuantSpec, QuantKey, QuantResponse>({
   itemType: NUMERIC_ITEM_TYPE,
   strata: QUANT_STRATA_V130,
   build: quantBuilder(QUANT_STRATA_V130, QUANT_PROVENANCE_V130),
-  verify: quantVerifier(QUANT_STRATA_V130, QUANT_PROVENANCE_V130),
+  verify: (item) => verifiers().quantVerifier(QUANT_STRATA_V130, QUANT_PROVENANCE_V130)(item),
   score: scoreQuant,
 })
 
