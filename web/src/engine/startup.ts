@@ -22,7 +22,8 @@
  * are mixed, the next question is therefore not placed at the prior-bound estimate but one step
  * beyond the last one, the standard start of an adaptive test before the estimate exists:
  *
- * - the FIRST question of a part is chosen as before (the criterion at the current estimate);
+ * - the FIRST question of a part is chosen by the criterion at the aim (below; since 2026-10-15 the aim borrows
+ *   from the session's other skills, `xskill.ts`);
  * - while every scored answer on the skill in this session is correct, the next question is aimed
  *   at the difficulty of the last one plus {@link STARTUP_STEP} (one stratum); while every one is
  *   wrong, minus one step;
@@ -51,7 +52,9 @@
  * prior {@link SELECTION_PRIOR_SD_FACTOR} times as wide (SD 2 where the scoring prior has 1): close
  * to the maximum-likelihood estimate a classical adaptive test aims at, still finite and bounded.
  * Only the point at which information is evaluated moves; the variance in the criterion, the
- * per-skill stop and every score use the scoring posterior as before.
+ * per-skill stop and every score use the scoring posterior as before. Since 2026-10-15 that prior is the
+ * conditional prior of the skill given the session's other skills (`xskill.ts`), so the first question of a
+ * part is aimed where the rest of the session says the skill is likely to be; the start-up then steps from it.
  *
  * ## What it does not change
  *

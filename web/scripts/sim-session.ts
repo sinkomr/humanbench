@@ -1,7 +1,7 @@
 /**
  * `npm run sim:session -- [--n 200] [--offset 0] [--skip none|MAT|SPA|…] [--interstitial-s 0]
  * [--target-min 27.5] [--mode static|online] [--text none|all|LR,VOC,…] [--pace 1] [--timeout-p 0]
- * [--theta <x>] [--pace-sd 0.15] [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
+ * [--theta <x>] [--pace-sd 0.15] [--borrow 1] [--correlated no] [--json <file>]` (UX-066, DESIGN §7.4, §10, A15, M3.11): whole sessions of the real
  * session machine (`session/run.ts`) driven by the simulated taker of `session/bot.ts`, so the
  * clock rules, the break, the part budgets, the minimums and the coverage floor are the ones the app
  * runs (the M1.4b `sim:cat` models the CAT budget on its own and does not skip). Each simulee has
@@ -51,7 +51,8 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { toServedItem, type ServedItem } from '../src/backend/items'
 import type { CatAnswer, CatNext, CatSource } from '../src/backend/session'
-import { AXIS_INDEX, N_AXES, isAxisCode, type AxisCode } from '../src/engine/axes'
+import { AXIS_INDEX, N_AXES, initialSigma, isAxisCode, type AxisCode } from '../src/engine/axes'
+import { cholesky } from '../src/engine/linalg'
 import { PUBLISH_MIN_ITEMS, SEGMENT_ORDER, TEXT_AXES, isTextAxis, type TextAxis } from '../src/engine/plan-table'
 import { createRng, type Rng } from '../src/engine/prng'
 import type { Observation } from '../src/engine/types'
@@ -84,6 +85,10 @@ export interface SimSessionArgs {
   readonly theta?: number
   /** The spread of takers' pace (default {@link PACE_SD}); 0: every simulee at the model's pace. */
   readonly paceSd?: number
+  /** The borrowing strength of the aim across skills (`engine/xskill.ts`; default its XSKILL_BORROW; 0: before 2026-10-15). */
+  readonly borrow?: number
+  /** θ ~ N(0, Σ_init) instead of N(0, I) (default false: the draws of the recorded runs). */
+  readonly correlated?: boolean
   readonly json?: string
 }
 
@@ -166,6 +171,8 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
   let timeoutP: number | undefined
   let theta: number | undefined
   let paceSd: number | undefined
+  let borrow: number | undefined
+  let correlated: boolean | undefined
   const args = argv[0] === '--' ? argv.slice(1) : argv
   for (let i = 0; i < args.length; i++) {
     const flag = args[i]
@@ -215,6 +222,13 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
       case '--pace-sd':
         paceSd = Number(value)
         break
+      case '--borrow':
+        borrow = Number(value)
+        break
+      case '--correlated':
+        if (value !== 'yes' && value !== 'no') throw new UsageError(`--correlated: yes or no, not ${value}`)
+        correlated = value === 'yes'
+        break
       case '--json':
         json = resolve(cwd, value)
         break
@@ -228,6 +242,7 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
   if (timeoutP !== undefined && !(timeoutP >= 0 && timeoutP <= 1)) throw new UsageError('--timeout-p is between 0 and 1')
   if (theta !== undefined && !(Number.isFinite(theta) && Math.abs(theta) <= 4)) throw new UsageError('--theta is a number from -4 to 4')
   if (paceSd !== undefined && !(paceSd >= 0 && paceSd <= 1)) throw new UsageError('--pace-sd is between 0 and 1')
+  if (borrow !== undefined && !(borrow >= 0 && borrow <= 1)) throw new UsageError('--borrow is between 0 and 1')
   if (text !== undefined && text.length > 0) {
     if (mode === 'static') throw new UsageError('--text needs --mode online: the device-only version has no text parts')
     mode = 'online'
@@ -244,6 +259,8 @@ export function parseSimSessionArgs(argv: readonly string[], cwd: string): SimSe
     ...(timeoutP === undefined ? {} : { timeoutP }),
     ...(theta === undefined ? {} : { theta }),
     ...(paceSd === undefined ? {} : { paceSd }),
+    ...(borrow === undefined ? {} : { borrow }),
+    ...(correlated === undefined ? {} : { correlated }),
     ...(json === undefined ? {} : { json }),
   }
 }
@@ -291,8 +308,11 @@ export class SimServer implements CatSource {
   #game: { game: number; served: number } | null = null
   #games = 0
 
-  constructor(seed: string) {
+  readonly #borrow: number | undefined
+
+  constructor(seed: string, borrow?: number) {
     this.#seed = seed
+    this.#borrow = borrow
     this.sessionId = 's_SIMSERVER0000001'
   }
 
@@ -338,7 +358,7 @@ export class SimServer implements CatSource {
       return Promise.resolve({ kind: 'item', item: served })
     }
     const sel = selectNext(
-      { sessionSeed: this.#seed, posterior: sessionPosterior(this.#obs), administered: this.#administered, history: answeredItems(this.#obs), aim: selectionAim(this.#obs), seenFamilies: [], remainingS: 1e9 },
+      { sessionSeed: this.#seed, posterior: sessionPosterior(this.#obs), administered: this.#administered, history: answeredItems(this.#obs), aim: selectionAim(this.#obs, this.#borrow === undefined ? {} : { borrow: this.#borrow }), seenFamilies: [], remainingS: 1e9 },
       selectionRng(this.#seed, this.#administered.length),
       { axes },
     )
@@ -404,7 +424,9 @@ class SimDriver {
     readonly args: SimSessionArgs,
   ) {
     const rng = createRng(`sim-session:${i}`)
-    const drawn = Array.from({ length: N_AXES }, () => rng.normal())
+    const z = Array.from({ length: N_AXES }, () => rng.normal())
+    // θ ~ N(0, I), or N(0, Σ_init) with --correlated yes (the skills go together as the prior says)
+    const drawn = args.correlated === true ? SIGMA_L.map((row) => row.reduce((t, l, j) => t + l * z[j]!, 0)) : z
     this.#theta = args.theta === undefined ? drawn : drawn.map(() => args.theta as number)
     // The taker's own pace around the model's (PACE_SD), times the pace asked for.
     this.#pace = (args.pace ?? 1) * Math.exp((args.paceSd ?? PACE_SD) * rng.normal())
@@ -412,9 +434,9 @@ class SimDriver {
     this.#timeouts = createRng(`sim-session:timeouts:${i}`)
     this.#answers = createRng(`sim-session:answers:${i}`)
     const sessionId = `s_SIMSESS${String(i).padStart(8, '0')}`
-    const online = args.mode === 'online' ? { cat: new SimServer(sessionId), textAxes: args.text ?? [] } : {}
+    const online = args.mode === 'online' ? { cat: new SimServer(sessionId, args.borrow), textAxes: args.text ?? [] } : {}
     this.bot = new Bot(
-      { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online },
+      { sessionId, ...(args.targetS === A15_TARGET_S ? {} : { targetS: args.targetS }), ...online, ...(args.borrow === undefined ? {} : { borrow: args.borrow }) },
       { theta: this.#theta, blockScale: this.#pace, blockExtraS: BLOCK_EXTRA_S, itemScale: this.#pace, answerGapS: ANSWER_GAP_S * this.#pace, ratingS: RATING_S * this.#pace, interstitialS: args.interstitialS },
     )
   }
@@ -548,6 +570,9 @@ class SimDriver {
 }
 
 const MAX_STEPS = 12000
+
+/** The Cholesky factor of Σ_init, for `--correlated yes`. */
+const SIGMA_L = cholesky(initialSigma())
 
 /** One session of the device-only version. */
 export function simulateOne(i: number, args: SimSessionArgs): SimSessionOne {

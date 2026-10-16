@@ -153,6 +153,7 @@ import {
   selectionRng,
   sessionPosterior,
   type AdministeredItem,
+  type AimOptions,
   type AnyItem,
   type AxisWeights,
   type NoItemReason,
@@ -359,6 +360,14 @@ export interface RunConfig {
    * empty: the M1 plan exactly.
    */
   readonly textAxes?: readonly AxisCode[]
+  /**
+   * The observations of the person's earlier sessions (`earlier.ts`; owner request 2026-10-15): where this
+   * session's device-made questions are aimed starts from them (`selector.ts` selectionAim `earlier`). Never part of
+   * this session's posterior, its stop or a score. Default none. Unused with `cat` (the server picks the questions).
+   */
+  readonly earlierObservations?: readonly Observation[]
+  /** The borrowing strength across skills of the aim (`engine/xskill.ts` XSKILL_BORROW, the default); for simulations. */
+  readonly borrow?: number
 }
 
 /** One fixed block's outcome, for tests and the results screen. */
@@ -532,6 +541,8 @@ export class SessionRun {
   readonly #hardStopS: number
   readonly #stopSd: number
   readonly #priorCounts: Readonly<Partial<Record<AxisCode, number>>>
+  /** Where the aim starts (`RunConfig.earlierObservations`, `borrow`). */
+  readonly #aimOptions: AimOptions
   readonly #seenBase: readonly string[]
   readonly #segments: Segment[]
   readonly #weights: Partial<Record<AxisCode, number>> = {}
@@ -598,6 +609,7 @@ export class SessionRun {
     this.#hardStopS = cfg.hardStopS ?? HARD_STOP_S
     this.#stopSd = cfg.stopSd ?? STOP_SD
     this.#priorCounts = cfg.priorItemCounts ?? {}
+    this.#aimOptions = { ...(cfg.earlierObservations === undefined ? {} : { earlier: cfg.earlierObservations }), ...(cfg.borrow === undefined ? {} : { borrow: cfg.borrow }) }
     this.#seenBase = cfg.seenFamilies ?? []
     this.#device = cfg.device
     this.#rtInput = cfg.rtInput
@@ -1067,7 +1079,7 @@ export class SessionRun {
         posterior: sessionPosterior(this.#obs),
         administered: this.#administered,
         history: answeredItems(this.#obs),
-        aim: selectionAim(this.#obs),
+        aim: selectionAim(this.#obs, this.#aimOptions),
         seenFamilies: this.#seenBase,
         remainingS: this.#belowMinimum(s, axes) ? Math.max(left, toHardStop) : left,
         floorRemainingS: toHardStop,

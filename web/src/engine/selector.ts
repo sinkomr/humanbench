@@ -49,6 +49,11 @@
  *    session is correct (or every one wrong), the candidates of that axis are those within half a
  *    stratum of the last item's b plus (minus) one stratum, or the nearest to it; the criterion
  *    then ranks them as always. Over at the first reversal. Needs {@link SelectorState.history}.
+ * 4c. **Aim** (`xskill.ts`; owner request 2026-10-15): the information of the criterion is evaluated at
+ *    {@link SelectorState.aim} ({@link selectionAim}): the axis's own answers under the conditional prior of the
+ *    axis given every OTHER axis's answers (and a returning person's earlier sessions) through Σ, widened. So
+ *    the first item of a part starts where the rest of the session says the skill is likely to be. Selection
+ *    only: the posterior, its variance in the criterion, the stop and every score stay per-axis.
  * 5. **Randomesque** (§6.iii L490, §7.4 L579): a uniform pick from the top 5 (ties in score are
  *    broken by item_id, so the top 5 is a deterministic set), drawn from the injected seeded RNG.
  *
@@ -68,6 +73,7 @@ import { createRng, type Rng } from './prng'
 import { eapByAxis, mapTheta, type ReadonlyMatrix } from './scorer'
 import { SELECTION_PRIOR_SD_FACTOR, startupCompetes, startupTarget } from './startup'
 import type { ItemParams, Observation } from './types'
+import { crossSkillAimByAxis } from './xskill'
 import type { AnyFamily, ItemInstance } from '../tasks/family'
 import type { Stratum } from '../tasks/ids'
 import { STRATUM_B_CUTS } from '../tasks/priors'
@@ -174,18 +180,33 @@ export function answeredItems(obs: readonly Observation[]): AnsweredItem[] {
   return out
 }
 
+/** Options of {@link selectionAim}. */
+export interface AimOptions extends Omit<PosteriorOptions, 'estimator'> {
+  /**
+   * Observations of the person's earlier sessions (a returning person, `session/earlier.ts`): evidence for the aim
+   * only, never for this session's posterior or any score (`xskill.ts`). Default none.
+   */
+  readonly earlier?: readonly Observation[]
+  /** The borrowing strength across skills (`xskill.ts` {@link XSKILL_BORROW}; 0: each skill on its own, as before 2026-10-15). */
+  readonly borrow?: number
+}
+
 /**
- * Where each axis's items are aimed ({@link SelectorState.aim}): the per-axis EAP mean of the
- * session's observations under a prior {@link SELECTION_PRIOR_SD_FACTOR} times as wide as the
- * scoring prior. With no observation on an axis it is the prior mean, as the posterior's is.
+ * Where each axis's items are aimed ({@link SelectorState.aim}; `xskill.ts`): the EAP of the axis's own
+ * answers under the conditional prior of the axis given every other axis's answers (this session's and
+ * `earlier`), through Σ with its correlations times `borrow` and widened {@link SELECTION_PRIOR_SD_FACTOR}
+ * times. An axis with no answer is aimed at that conditional mean: where the rest of the session says it is
+ * likely to be, the population mean when nothing says anything. With `borrow` 0 it is the per-axis EAP under
+ * the wider prior, as from 2026-10-13 to 2026-10-15.
  */
-export function selectionAim(obs: readonly Observation[], opts: Omit<PosteriorOptions, 'estimator'> = {}): Partial<Record<AxisCode, number>> {
-  const sigma = opts.sigma ?? defaultSigma()
-  const k2 = SELECTION_PRIOR_SD_FACTOR * SELECTION_PRIOR_SD_FACTOR
-  const wide = sessionPosterior(obs, { ...(opts.mu === undefined ? {} : { mu: opts.mu }), sigma: sigma.map((row) => row.map((x) => x * k2)) })
-  const out: Partial<Record<AxisCode, number>> = {}
-  for (const k of AXIS_CODES) out[k] = wide[k].mean
-  return out
+export function selectionAim(obs: readonly Observation[], opts: AimOptions = {}): Partial<Record<AxisCode, number>> {
+  const all = opts.earlier === undefined || opts.earlier.length === 0 ? obs : [...opts.earlier, ...obs]
+  return crossSkillAimByAxis(all, {
+    sigma: opts.sigma ?? defaultSigma(),
+    factor: SELECTION_PRIOR_SD_FACTOR,
+    ...(opts.mu === undefined ? {} : { mu: opts.mu }),
+    ...(opts.borrow === undefined ? {} : { borrow: opts.borrow }),
+  })
 }
 
 /** Selector settings; every field has a default. */
