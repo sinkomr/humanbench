@@ -62,11 +62,12 @@ describe('migrations: the set', () => {
       '20261015000300_live_axes.sql',
       '20261015000400_server_calibration.sql',
       '20261016000100_cross_skill_aim.sql',
+      '20261016000200_quant_hard_facets.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.11 \(ROADMAP M3\.11)\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.1[12] \(ROADMAP M3\.1[12])\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 

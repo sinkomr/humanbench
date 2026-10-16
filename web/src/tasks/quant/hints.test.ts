@@ -9,7 +9,7 @@ import { FORMAT_HINTS } from '../../render/common/entry-copy'
 import type { JsonValue } from '../../engine/types'
 import { structuralHash } from '../ids'
 import { resolveItem } from '../registry'
-import { quant } from '.'
+import { quantV130, quant } from '.'
 import { HINTS } from './templates'
 
 /** The version saved quant ids carry; the content digest below is of its items. */
@@ -47,8 +47,10 @@ describe('quant entry hints', () => {
 })
 
 describe('saved quant ids (§7.8: results are re-scored from raw responses)', () => {
-  it(`ids saved by generator ${SAVED_VERSION} still regenerate, with the same content`, () => {
-    expect(quant.generatorVersion).toBe(SAVED_VERSION)
+  it(`ids saved by generator ${SAVED_VERSION} still regenerate, with the same content (the kept generator, M3.12)`, () => {
+    // 1.4.0 added strata 5–6; 1.3.0 is kept whole (QUANT_LEGACY_FAMILIES), so its ids still resolve.
+    expect(quant.generatorVersion).toBe('1.4.0')
+    expect(quantV130.generatorVersion).toBe(SAVED_VERSION)
     const items = Array.from({ length: 300 }, (_, i) => {
       const id = `i:quant:${SAVED_VERSION}:saved-${i}`
       const item = resolveItem(id)

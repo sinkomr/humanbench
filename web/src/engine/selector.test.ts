@@ -332,7 +332,7 @@ describe('selectNext', () => {
     expect(none(state({ remainingS: 0 }))).toEqual({ kind: 'none', reason: 'time' })
     expect(none(state({ remainingS: 5 }))).toEqual({ kind: 'none', reason: 'time' })
     const allQuant = VARIANTS.map((v) => quant.familyIdOf({ template: v.template, variant: v.variant }))
-    expect(allQuant).toHaveLength(53)
+    expect(allQuant).toHaveLength(108) // quant 1.4.0: 53 + 55 hard variants (M3.12)
     expect(none(state({ seenFamilies: allQuant }), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
   })
 
@@ -366,7 +366,7 @@ describe('selectNext', () => {
     ]
     const s = state({ administered, seenFamilies: all.filter((x) => x.id !== sum.id).map((x) => x.id) })
     expect(selectNext(s, createRng('x'), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
-  })
+  }, 90_000) // one selection per quant variant: 108 since quant 1.4.0 (M3.12), about 34 s under a full parallel run
 
   it('skips items that would not finish in the remaining time', () => {
     const pool = candidatePool(state({ remainingS: 35 }))

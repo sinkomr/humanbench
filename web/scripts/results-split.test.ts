@@ -36,11 +36,19 @@ import { WEB } from './css-tokens'
  * has and the rotation, the confidence scale on the question screen), which took this entry to 142.2 KB on CI's Node 24
  * (141.7 KB on Node 26, whose gzip is tighter). All of it runs in the session the entry starts. Taking the text
  * renderer out as well saved only 0.6 KB here and nothing in the e2e build (`e2e/ux2-perf.spec.ts`, where the dev
- * routes already split it off), so the bound was raised rather than the session code split further. Raised to
- * 145 KB with the cross-skill aim (2026-10-16, `engine/xskill.ts`, 143.2 KB on CI), to unblock the deploy while the
- * session runtime is moved out of the entry chunk (follow-up, owner decision to ship on push).
+ * routes already split it off), so the bound was raised rather than the session code split further.
+ *
+ * Raised to 160 KB for quant generator 1.4.0 (ROADMAP M3.12, owner 2026-10-15: harder Quantitative items): the
+ * 45 templates of strata 5 and 6 (`tasks/quant/hard1.ts` … `hard4.ts`, about 11 KB gzip) and their verifier
+ * routes (`verify-hard*.ts`, about 7 KB), which the family carries because the device generates and keys its quant
+ * items; this took the entry from about 142 to 158.8 KB. The verifiers run only in tests, the dump and the dev review
+ * page; keeping them out of the entry needs a family contract whose verify() can load late (not done here).
  */
-const ENTRY_GZIP_MAX = 145_000
+ *
+ * Raised to 162 KB when merged with the cross-skill aim (2026-10-16, `engine/xskill.ts`, about 1.2 KB). The entry
+ * now carries the whole session runtime and the device's item generators; moving them behind Start is the follow-up.
+ */
+const ENTRY_GZIP_MAX = 162_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [

@@ -80,7 +80,7 @@ export function withGiven(item: QuantItem, patch: Readonly<Record<string, JsonVa
     key: { value, tol: toleranceFor(v.format) },
     params: { model: '2pl', a: item.params.model === '2pl' ? item.params.a : 1, b },
     difficulty: { features, b_prior: b, sd_prior: QUANT_SD_PRIOR, provenance: QUANT_PROVENANCE },
-    expected_time_s: quantExpectedTime(v.stratum as 1 | 2 | 3 | 4, stem),
+    expected_time_s: quantExpectedTime(v.stratum, stem),
   })
 }
 

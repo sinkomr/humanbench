@@ -18,6 +18,16 @@
  *
  * Expected time v0: E[T] = {30, 45, 60, 75} s for strata 1–4 plus the §7.4 length term
  * 4 s per 50 words of stem, so 30–90 s.
+ *
+ * Strata 5 and 6 (generator 1.4.0, ROADMAP M3.12; [SPEC] v1, owner 2026-10-15): the same line
+ * continues, anchors 2 and 3 (§6.ii "graduate / professional" and "olympiad / expert"; for quant:
+ * competition and first-year-university problems, and multi-step olympiad-style ones, solvable
+ * without a calculator in a few minutes). Stratum 5's band is [1.5, 2.5), so its offsets stay in
+ * [−0.3, 0.3] as below; stratum 6 is open above 2.5, so its offsets run from −0.4 (b 2.6, a
+ * one-idea problem with a known formula: tan C from tan A and tan B) to +0.6 (b 3.6, a counting
+ * argument most strong takers must invent: necklaces up to rotation), the template's judged step
+ * count and the rarity of the idea it needs. E[T]: 120 s and 180 s plus the length term, so about
+ * 125–130 s and 185–195 s; the shared cap max(180, ⌈2.5·E[T]⌉) is then about 315 s and 470 s.
  */
 
 import type { Stratum } from '../ids'
@@ -34,9 +44,15 @@ export const QUANT_PRIOR: LinearPriorModel = Object.freeze({
 })
 
 /** [SPEC v0] Base expected time by stratum, in seconds, before the per-word term. */
-export const QUANT_TIME_BASE_S: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({ 1: 30, 2: 45, 3: 60, 4: 75 })
+export const QUANT_TIME_BASE_S: Readonly<Record<Stratum, number>> = Object.freeze({ 1: 30, 2: 45, 3: 60, 4: 75, 5: 120, 6: 180 })
 
 export const QUANT_PROVENANCE =
+  'quant v1 [SPEC]: b = -2 + 1.0*(stratum - 1) + template_offset + 0.1*non_integer; ' +
+  'anchors -2/-1/0/1/2/3 (the default b-band centres; stratum 6 is open above 2.5) for strata 1-6, ' +
+  'template offsets in [-0.3, 0.3] (stratum 6: [-0.4, 0.6]); uncalibrated until M4'
+
+/** The provenance of generator 1.3.0 (strata 1–4), kept for its saved items (`QUANT_LEGACY_FAMILIES`). */
+export const QUANT_PROVENANCE_V130 =
   'quant v0 [SPEC]: b = -2 + 1.0*(stratum - 1) + template_offset + 0.1*non_integer; ' +
   'anchors -2/-1/0/1 (the default b-band centres) for strata 1-4, small template offsets in [-0.3, 0.3]; uncalibrated until M4'
 
@@ -58,7 +74,7 @@ export function quantFeatures(template: string, variant: string, stratum: Stratu
 export const quantBPrior = (f: QuantFeatures): number => clampPrior(linearB(QUANT_PRIOR, f))
 
 /** E[T] in seconds: the stratum base plus 4 s per 50 words of stem (§7.4). */
-export function quantExpectedTime(stratum: 1 | 2 | 3 | 4, stem: string): number {
+export function quantExpectedTime(stratum: Stratum, stem: string): number {
   return QUANT_TIME_BASE_S[stratum] + (EXPECTED_TIME_PER_50_WORDS_S * countWords(stem)) / 50
 }
 

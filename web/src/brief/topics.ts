@@ -20,7 +20,7 @@ import type { ContextPreset } from './types'
 
 export const TOPICS_VERSION = 'topics-v1'
 /** The quant grouping version (`group_version`, proposal §5.2). */
-export const GROUPS_VERSION = 'g1'
+export const GROUPS_VERSION = 'g2'
 
 export type TopicArea = 'math' | 'logic' | 'science' | 'humanities' | 'arts' | 'other'
 /** Which wording family a topic's depth lines use (`DS` vs `DS.k`, proposal §4.2). */
@@ -54,6 +54,8 @@ export const TOPICS: readonly Topic[] = [
   { id: 'quant/powers_quadratics', label: 'Powers and quadratics', area: 'math', domain: 'method' },
   { id: 'quant/probability_counting', label: 'Probability and counting', area: 'math', domain: 'method' },
   { id: 'quant/series_number', label: 'Series and number puzzles', area: 'math', domain: 'method' },
+  { id: 'quant/geometry_trig', label: 'Geometry and trigonometry', area: 'math', domain: 'method' },
+  { id: 'quant/calculus', label: 'Limits, derivatives and integrals', area: 'math', domain: 'method' },
   { id: 'lr/notation', label: 'Logic and arguments', area: 'logic', domain: 'notation' },
   { id: 'kst/biology', label: 'Biology', area: 'science', domain: 'knowledge' },
   { id: 'kst/chemistry', label: 'Chemistry', area: 'science', domain: 'knowledge' },

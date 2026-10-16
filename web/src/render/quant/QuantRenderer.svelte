@@ -41,7 +41,9 @@
 
 <section class="hb-render quant" aria-label="Quantitative question">
   <p class="stem">
-    {#each parts as part, i (i)}{#if 'sup' in part}<span class="hb-sr-only">{SPOKEN_POWER}</span><sup>{part.sup}</sup>{:else}{part.text}{/if}{/each}
+    {#each parts as part, i (i)}{#if 'sup' in part}<span class="hb-sr-only">{SPOKEN_POWER}</span><sup
+        >{#if part.inner}{#each part.inner as q, j (j)}{#if 'sup' in q}<span class="hb-sr-only">{SPOKEN_POWER}</span><sup>{q.sup}</sup>{:else}{q.text}{/if}{/each}{:else}{part.sup}{/if}</sup
+      >{:else}{part.text}{/if}{/each}
   </p>
   <NumericEntry
     format={spec.input_format}

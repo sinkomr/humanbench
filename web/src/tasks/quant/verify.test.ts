@@ -264,11 +264,13 @@ describe('quant verify: template rules (negative)', () => {
     rejects(withGiven(sampleOf(template, variant), patch), `rule_${rule}`)
   })
 
-  it('covers every rule of every variant (keyed on the variant, not the template)', () => {
+  it('covers every rule of every strata 1–4 variant (keyed on the variant, not the template)', () => {
+    // The hard strata 5–6 (generator 1.4.0, M3.12) cover their rules in their own tables' tests
+    // (hard1.test.ts … hard4.test.ts, each with its own "every rule has a negative case" check).
     const tested = new Set(RULE_CASES.map(([t, v, , r]) => `${t}/${v}:${r}`))
     const untestable = new Set(['recip/*:real_distinct_roots', 'recip/*:irrational_roots'])
     const missing: string[] = []
-    for (const v of VARIANTS) {
+    for (const v of VARIANTS.filter((x) => x.stratum <= 4)) {
       for (const rule of Object.keys(quantRules(v, sampleOf(v.template, v.variant).spec.given))) {
         const id = `${v.template}/${v.variant}:${rule}`
         if (!tested.has(id) && !untestable.has(`${v.template}/*:${rule}`)) missing.push(id)

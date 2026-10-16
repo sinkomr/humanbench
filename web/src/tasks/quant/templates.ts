@@ -30,153 +30,20 @@
  * is not used (review fix; recorded as a followup against the spec).
  */
 
-import type { JsonValue, Rng } from '../../engine'
-import { siblingGroupId, type EntryFormat } from '../family'
+
+import type { Rng } from '../../engine'
+import { siblingGroupId } from '../family'
 import type { Stratum } from '../ids'
-import { Fraction, bigGcd, frac } from './fraction'
+import { HARD1 } from './hard1'
+import { HARD2 } from './hard2'
+import { HARD3 } from './hard3'
+import { HARD4 } from './hard4'
+import { Fraction, frac } from './fraction'
+import { COLOURS, NAMES, THINGS, TOL_DECIMAL, TOL_EXACT, V, bool, cap, gcd, hours, int, ipow, lin, listText, nonzero, num, numberWord, nums, oneOf, paren, properFraction, ratTerm, signed, str, until, type Given, type InputFormat, type VariantDef } from './kit'
 
-/** The quant entry formats: the shared {@link EntryFormat} vocabulary without letters. */
-export type InputFormat = Exclude<EntryFormat, 'letter'>
+export { COLOURS, HINTS, NAMES, THINGS, TOL_DECIMAL, TOL_EXACT, bool, lin, listText, num, numberWord, nums, paren, ratTerm, ratText, signed, str } from './kit'
+export type { FieldSpec, Given, InputFormat, VariantDef } from './kit'
 
-/** The `given` object of an item's spec: the quantities its stem shows. */
-export type Given = { readonly [k: string]: JsonValue }
-
-/** A `given` field's allowed values (checked by the verifiers before any rule). */
-export type FieldSpec =
-  | { readonly kind: 'int'; readonly lo: number; readonly hi: number; readonly nonzero?: true }
-  | { readonly kind: 'enum'; readonly values: readonly (string | number | boolean)[] }
-  | { readonly kind: 'ints'; readonly minLen: number; readonly maxLen: number; readonly lo: number; readonly hi: number }
-
-export interface VariantDef {
-  readonly template: string
-  readonly variant: string
-  readonly stratum: Stratum
-  readonly format: InputFormat
-  /** [SPEC v0] per-variant offset added to the stratum anchor of the b prior (see `prior.ts`). */
-  readonly offset: number
-  /** Every field of `given`, with its allowed values; `given` has exactly these fields. */
-  readonly fields: Readonly<Record<string, FieldSpec>>
-  /** Draw a valid `given` from `rng` only. */
-  draw(rng: Rng): Given
-  /** The stem shown to the person. */
-  render(g: Given): string
-  /** The generator's route to the answer (the verifier recomputes it by another route). */
-  compute(g: Given): Fraction
-}
-
-export const TOL_EXACT = Object.freeze({ abs: 0 })
-/** Half a hundredth: the key has ≤ 2 decimal places, so this accepts the entries that round to it. */
-export const TOL_DECIMAL = Object.freeze({ abs: 0.005 })
-
-/**
- * Input hints shown under the entry box, by format, in the words of every entry box ("whole
- * number", as series says; UX-079). Display copy only: the stem, given, key, params and every other
- * field of an item stay the same for each seed, so a wording change here keeps the generator
- * version, and saved `i:quant:<version>:<seed>` ids still regenerate and re-score (`resolveItem`
- * needs the exact version; §7.8). The bank twin `hb.gen.quant.spec.HINTS` has the same strings
- * (its verifier checks them on the TS dump).
- */
-export const HINTS: Readonly<Record<InputFormat, string>> = Object.freeze({
-  integer: 'Enter a whole number, such as 42 or -7.',
-  decimal: 'Enter a number; decimals are fine, such as 12.5.',
-  fraction: 'Enter a fraction such as 3/8, or a whole number.',
-})
-
-export const THINGS = Object.freeze(['jacket', 'lamp', 'backpack', 'board game', 'toaster', 'desk chair', 'kettle', 'tent'])
-export const NAMES = Object.freeze(['Maya', 'Sam', 'Priya', 'Leo', 'Ana', 'Kenji', 'Zoe', 'Omar'])
-export const COLOURS = Object.freeze(['red', 'blue', 'green', 'yellow', 'white', 'black'])
-const NUMBER_WORDS: Readonly<Record<number, string>> = { 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 7: 'seven' }
-
-// --- field access (the verifier has checked the shape before any of these run) ----------------
-
-export const num = (g: Given, k: string): number => {
-  const v = g[k]
-  if (typeof v !== 'number') throw new TypeError(`given.${k} is not a number`)
-  return v
-}
-export const str = (g: Given, k: string): string => {
-  const v = g[k]
-  if (typeof v !== 'string') throw new TypeError(`given.${k} is not a string`)
-  return v
-}
-export const bool = (g: Given, k: string): boolean => {
-  const v = g[k]
-  if (typeof v !== 'boolean') throw new TypeError(`given.${k} is not a boolean`)
-  return v
-}
-export const nums = (g: Given, k: string): number[] => {
-  const v = g[k]
-  if (!Array.isArray(v) || !v.every((x) => typeof x === 'number')) throw new TypeError(`given.${k} is not a number list`)
-  return v as number[]
-}
-
-// --- rendering ---------------------------------------------------------------------------------
-
-/** An integer with "−" (U+2212) for negatives. */
-export const signed = (x: number): string => (x < 0 ? `−${-x}` : `${x}`)
-/** A series term: negatives in parentheses, "(−6)". */
-export const paren = (x: number): string => (x < 0 ? `(${signed(x)})` : `${x}`)
-/** A rational: "p/q" or "p", "−" for negatives. */
-export const ratText = (f: Fraction): string => (f.sign() < 0 ? `−${f.neg().toString()}` : f.toString())
-/** A rational series term: negatives in parentheses. */
-export const ratTerm = (f: Fraction): string => (f.sign() < 0 ? `(${ratText(f)})` : ratText(f))
-
-/**
- * A linear combination Σ cᵢ·symᵢ (sym "" for the constant): zero terms are skipped; the first
- * term carries "−" directly ("−3x"), later ones " + " / " − "; a unit coefficient is dropped
- * before a symbol ("x", "− y"); all-zero renders "0".
- */
-export function lin(terms: readonly (readonly [number, string])[]): string {
-  let out = ''
-  for (const [c, sym] of terms) {
-    if (c === 0) continue
-    const mag = Math.abs(c) === 1 && sym !== '' ? sym : `${Math.abs(c)}${sym}`
-    out += out === '' ? (c < 0 ? `−${mag}` : mag) : c < 0 ? ` − ${mag}` : ` + ${mag}`
-  }
-  return out === '' ? '0' : out
-}
-
-/** "a, b, c and d". */
-export function listText(items: readonly string[]): string {
-  if (items.length <= 1) return items.join('')
-  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] as string}`
-}
-
-export const numberWord = (k: number): string => {
-  const w = NUMBER_WORDS[k]
-  if (w === undefined) throw new RangeError(`no number word for ${k}`)
-  return w
-}
-const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
-const hours = (t: number): string => (t === 1 ? '1 hour' : `${t} hours`)
-
-// --- drawing helpers ---------------------------------------------------------------------------
-
-/** Draw until `ok` (rejection sampling); throws if a template's constraints are unsatisfiable. */
-function until<T>(draw: () => T, ok: (v: T) => boolean, what: string): T {
-  for (let i = 0; i < 10_000; i++) {
-    const v = draw()
-    if (ok(v)) return v
-  }
-  throw new Error(`quant: could not draw ${what}`)
-}
-const nonzero = (rng: Rng, lo: number, hi: number): number => until(() => rng.int(lo, hi), (v) => v !== 0, 'a non-zero integer')
-const gcd = (a: number, b: number): number => Number(bigGcd(BigInt(a), BigInt(b)))
-/** A proper fraction a/b in lowest terms with b in [bLo, bHi]. */
-const properFraction = (rng: Rng, bLo: number, bHi: number): [number, number] => {
-  const b = rng.int(bLo, bHi)
-  const a = until(() => rng.int(1, b - 1), (x) => gcd(x, b) === 1, 'a reduced numerator')
-  return [a, b]
-}
-/** Integer power as a Fraction. */
-const ipow = (b: number, e: number): Fraction => frac(BigInt(b) ** BigInt(e))
-
-const int = (lo: number, hi: number, nz = false): FieldSpec => (nz ? { kind: 'int', lo, hi, nonzero: true } : { kind: 'int', lo, hi })
-const oneOf = (...values: (string | number | boolean)[]): FieldSpec => ({ kind: 'enum', values })
-
-// --- the templates -----------------------------------------------------------------------------
-
-const V = (d: VariantDef): VariantDef => Object.freeze(d)
 
 const S1: VariantDef[] = [
   // (1) multi-step arithmetic
@@ -990,8 +857,18 @@ function cyclePowMod(base: number, exp: number, m: number): number {
   }
 }
 
+/**
+ * The hard strata 5 and 6 (generator 1.4.0, ROADMAP M3.12): geometry, trigonometry, algebra beyond
+ * the basics, counting and probability, number theory, calculus and multi-step word problems, each
+ * solvable without a calculator and keyed exactly. The four tables are `hard1.ts` … `hard4.ts`;
+ * their variants are taken in that order and split by stratum.
+ */
+const HARD: readonly VariantDef[] = [...HARD1, ...HARD2, ...HARD3, ...HARD4]
+const S5: VariantDef[] = HARD.filter((v) => v.stratum === 5)
+const S6: VariantDef[] = HARD.filter((v) => v.stratum === 6)
+
 /** Every variant, in a fixed order (the generator's draw order depends on it). */
-export const VARIANTS: readonly VariantDef[] = Object.freeze([...S1, ...S2, ...S3, ...S4])
+export const VARIANTS: readonly VariantDef[] = Object.freeze([...S1, ...S2, ...S3, ...S4, ...S5, ...S6])
 
 /** Every template id, in table order: the family's facets (M1.F2: an item's facet is its template). */
 export const QUANT_TEMPLATES: readonly string[] = Object.freeze([...new Set(VARIANTS.map((v) => v.template))])
@@ -1024,6 +901,21 @@ export const QUANT_SIBLING_SETS: Readonly<Record<string, readonly string[]>> = O
   arith_series_terms: ['arith_series/sum', 'arith_series/first_n'],
   // base^exp mod m; the last digit is the remainder mod 10
   modular_remainder: ['modular/power', 'modular/last_digit'],
+  // generator 1.4.0 (M3.12), stratum 5: the same givens, a different quantity asked
+  // the same Heron triangle; the inradius is its area over the half-perimeter
+  heron: ['heron/area', 'heron/inradius'],
+  // two parallel chords and their distance; only which side of the centre differs
+  chords: ['chords/same_side', 'chords/opposite'],
+  // sin θ in the second quadrant; tan θ, cos 2θ or sin 2θ asked
+  trig_sin: ['trig_sin/tan', 'trig_sin/cos_double', 'trig_sin/sin_double'],
+  // a cubic's roots by Vieta: the sum of their squares or of their reciprocals
+  vieta: ['vieta/sum_squares', 'vieta/sum_recip'],
+  // a periodic recurrence far out: period 6 (differences) or 5 (Lyness)
+  recurrence: ['recurrence/fib_diff', 'recurrence/lyness'],
+  // the divisors of one smooth number: all of them or the square ones
+  divisors: ['divisors/count', 'divisors/squares'],
+  // Legendre's formula: the 5s in n! (trailing zeros) or the powers of p
+  legendre: ['legendre/zeros', 'legendre/prime_power'],
 })
 
 const SIBLING_LABEL_OF: ReadonlyMap<string, string> = new Map(
@@ -1041,11 +933,13 @@ export function quantSiblingGroup(template: string, variant: string): string | u
 }
 
 /** Template ids by stratum, in table order. */
-export const TEMPLATES_BY_STRATUM: Readonly<Record<1 | 2 | 3 | 4, readonly string[]>> = Object.freeze({
+export const TEMPLATES_BY_STRATUM: Readonly<Record<Stratum, readonly string[]>> = Object.freeze({
   1: [...new Set(S1.map((v) => v.template))],
   2: [...new Set(S2.map((v) => v.template))],
   3: [...new Set(S3.map((v) => v.template))],
   4: [...new Set(S4.map((v) => v.template))],
+  5: [...new Set(S5.map((v) => v.template))],
+  6: [...new Set(S6.map((v) => v.template))],
 })
 
 const BY_ID = new Map(VARIANTS.map((v) => [`${v.template}/${v.variant}`, v]))
