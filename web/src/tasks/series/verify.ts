@@ -12,9 +12,20 @@ import { verdict, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
 import { SIGMA_B_DEFAULT, powerTimeLimit, stratumOfB } from '../priors'
 import { SERIES_PROVENANCE, seriesB, seriesExpectedTime, seriesFeatures } from './prior'
-import { MAX_VISIBLE, MIN_VISIBLE, TERM_BOUND, analyse, inRuleDomain, isRuleName, letterPosition, uniquenessChecks } from './rules'
+import {
+  CURRENT_FIT_SET,
+  MAX_VISIBLE,
+  MIN_VISIBLE,
+  TERM_BOUND,
+  analyse,
+  inRuleDomain,
+  isRuleName,
+  letterPosition,
+  uniquenessChecks,
+  type FitSet,
+} from './rules'
 import type { SeriesItem } from './types'
-import { SERIES_STRATA } from './gen'
+import { seriesStrataOf } from './gen'
 
 /** |b_prior − recomputed b| allowed (the anchor is a logarithm; TS and Python may differ by an ulp). */
 export const PRIOR_TOLERANCE = 1e-9
@@ -32,7 +43,11 @@ const keyInteger = (v: unknown): number | undefined =>
 /** The exact tolerance `{ abs: 0 }`. */
 const isExactTol = (t: unknown): boolean => isPlainObject(t) && canonicalJson(Object.keys(t)) === '["abs"]' && t.abs === 0
 
-export function verifySeries(item: SeriesItem): VerifyResult {
+/**
+ * Verify a series item of the generator version whose fit set is `fitSet` (the current one by
+ * default; the kept 1.3.0 generator verifies its items with the 1.3.0 fit set, rule names and strata).
+ */
+export function verifySeries(item: SeriesItem, fitSet: FitSet = CURRENT_FIT_SET): VerifyResult {
   try {
     const spec = item.spec as unknown
     const key = item.key as unknown
@@ -68,7 +83,7 @@ export function verifySeries(item: SeriesItem): VerifyResult {
     const coefficients = structure.coefficients
     const structureOk =
       canonicalJson(Object.keys(structure).sort()) === '["coefficients","rule"]' &&
-      isRuleName(rule) &&
+      isRuleName(rule, fitSet) &&
       isPlainObject(coefficients) &&
       Object.values(coefficients).every((c) => typeof c === 'number' || typeof c === 'string')
     const domainOk = structureOk && inRuleDomain(rule, coefficients as Record<string, number | string>)
@@ -80,10 +95,10 @@ export function verifySeries(item: SeriesItem): VerifyResult {
       coefficients_in_domain: domainOk,
       format_matches_rule: formatMatchesRule,
     }
-    if (!Object.values(base).every(Boolean) || next === undefined || !isRuleName(rule)) return verdict(base)
+    if (!Object.values(base).every(Boolean) || next === undefined || !isRuleName(rule, fitSet)) return verdict(base)
 
     const keyRule = { rule, coefficients: coefficients as Record<string, number | string> }
-    const uniqueness = uniquenessChecks(analyse(visible, letter), keyRule, next)
+    const uniqueness = uniquenessChecks(analyse(visible, letter, fitSet), keyRule, next)
 
     const values = [...visible, next]
     const features = seriesFeatures(rule, keyRule.coefficients, values)
@@ -95,7 +110,7 @@ export function verifySeries(item: SeriesItem): VerifyResult {
       prior_matches: typeof b === 'number' && Math.abs(b - seriesB(features)) <= PRIOR_TOLERANCE,
       prior_sd_matches: item.difficulty.sd_prior === SIGMA_B_DEFAULT,
       provenance_matches: item.difficulty.provenance === SERIES_PROVENANCE,
-      stratum_matches: typeof b === 'number' && Number.isFinite(b) && item.stratum === stratumOfB(b) && SERIES_STRATA.includes(item.stratum),
+      stratum_matches: typeof b === 'number' && Number.isFinite(b) && item.stratum === stratumOfB(b) && seriesStrataOf(fitSet).includes(item.stratum),
       expected_time_matches: item.expected_time_s === seriesExpectedTime(features),
       time_limit_matches: item.time_limit_s === powerTimeLimit(item.expected_time_s),
       no_options: item.options_count === undefined,

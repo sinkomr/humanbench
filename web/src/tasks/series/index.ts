@@ -16,6 +16,13 @@
  * (contract v2, M1.F2): `sibling_group` and the shared power-item cap `time_limit_s` (§13).
  * Version 1.3.0 (M1.P): the natural pool draws rule families from `NATURAL_MENU` (not stratum
  * first) and the prior is centred at its feature means, so its mean b is the ICAR anchor.
+ * Version 1.4.0 (M3.12, harder items at the upper end): six hard rule families (`rules.ts`
+ * `HARD_RULE_NAMES`: three-term Fibonacci, Fibonacci differences, strands with their own ops,
+ * weighted two-term recurrences, index-dependent affine steps, cycles of three ops), drawn only
+ * for requested strata 5 and 6 (stratum 6 is new), and fitted as competitors on every 1.4.0 item.
+ * The natural pool and strata 1–4 draw as 1.3.0, and the prior is unchanged (the new families
+ * enter it through their family cost). The 1.3.0 generator is kept whole as
+ * {@link SERIES_LEGACY_FAMILIES} for saved items.
  *
  * Rules, DL and uniqueness: `rules.ts`; generator: `gen.ts`; verifier: `verify.ts`; scoring:
  * `score.ts`; the TS → bank analysis fixture: `analysis-fixture.ts`. Python twin: the bank's
@@ -23,26 +30,43 @@
  */
 
 import { NUMERIC_ITEM_TYPE, defineFamily } from '../family'
-import { SERIES_STRATA, buildSeries } from './gen'
+import { buildSeries, seriesStrataOf } from './gen'
 import { scoreSeries } from './score'
 import type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec } from './types'
-import { MAX_VISIBLE, MIN_VISIBLE } from './rules'
+import { MAX_VISIBLE, MIN_VISIBLE, type FitSet } from './rules'
 import { verifySeries } from './verify'
 
 export type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec, SeriesStructure } from './types'
 
-export const series = defineFamily<SeriesSpec, SeriesKey, SeriesResponse>({
-  name: 'series',
-  kind: 'item',
-  axis: 'MAT',
-  facets: ['series'],
-  generatorVersion: '1.3.0',
-  itemType: NUMERIC_ITEM_TYPE,
-  strata: SERIES_STRATA,
-  build: buildSeries,
-  verify: verifySeries,
-  score: scoreSeries,
-})
+/** Current generator version (M3.12: the hard rule families, strata 5 and 6). */
+export const SERIES_GENERATOR_VERSION = '1.4.0'
+/** The version before the hard families; saves made before M3.12 hold items of it. */
+export const SERIES_LEGACY_GENERATOR_VERSION = '1.3.0'
+
+/** The series family of one generator version (its version string is its fit set, `rules.ts` FIT_SETS). */
+function seriesFamily(version: FitSet) {
+  return defineFamily<SeriesSpec, SeriesKey, SeriesResponse>({
+    name: 'series',
+    kind: 'item',
+    axis: 'MAT',
+    facets: ['series'],
+    generatorVersion: version,
+    itemType: NUMERIC_ITEM_TYPE,
+    strata: seriesStrataOf(version),
+    build: (rng, ctx) => buildSeries(rng, ctx, version),
+    verify: (item) => verifySeries(item, version),
+    score: scoreSeries,
+  })
+}
+
+export const series = seriesFamily(SERIES_GENERATOR_VERSION)
+
+/**
+ * The 1.3.0 generator, by family name: strata 1–5, the eight 1.3.0 rule families and their fit
+ * set. Not registered and never served: `registry.ts` `resolveItem` rebuilds a saved 1.3.0 item
+ * with it (A11, R-8.1), byte for byte (the live pool of 2026-10-12 is 1.3.0).
+ */
+export const SERIES_LEGACY_FAMILIES = Object.freeze({ series: seriesFamily(SERIES_LEGACY_GENERATOR_VERSION) })
 
 /**
  * The family's leak check for `runFamilyProperties`: the spec holds only `input_format` and the

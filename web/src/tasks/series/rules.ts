@@ -24,6 +24,27 @@
  * | `composite_aff` | 6    | t0, m, c             | t_{i+1} = m·t_i + c ("×m then +c" each step)  |
  * | `letter`        | 2    | p0, d                | p_i = p0 + i·d (mod 26); letter series only   |
  *
+ * Generator 1.4.0 (M3.12) adds six hard families, fitted for every 1.4.0 item (the fit set
+ * {@link FIT_SETS}; a 1.3.0 item is analysed with the eight families above only):
+ *
+ * | family            | cost | DL coefficients      | rule                                                  |
+ * |-------------------|------|----------------------|-------------------------------------------------------|
+ * | `tribonacci`      | 6    | t0, t1, t2, c        | t_i = t_{i−1} + t_{i−2} + t_{i−3} + c                  |
+ * | `diff_fibonacci`  | 7    | t0, Δ0, Δ1, c        | differences Δ_i = Δ_{i−1} + Δ_{i−2} + c                |
+ * | `interleaved_ops` | 7    | t0, x_a, t1, x_b     | t_{i+2} = op_{i mod 2}(t_i), op = +x or ×x, one ×x    |
+ * | `linear_rec`      | 8    | t0, t1, a, b         | t_i = a·t_{i−1} + b·t_{i−2}                            |
+ * | `affine_index`    | 8    | t0, m, c, d          | t_{i+1} = m·t_i + c + d·i ("×m, then add c, c + d, …") |
+ * | `cycle3`          | 9    | t0, x_a, x_b, x_c    | t_{i+1} = op_{i mod 3}(t_i), op = +x or ×x            |
+ *
+ * The cost of a family is the fixed part of its description: the number and kind of relations a
+ * solver must find and hold (Simon & Kotovsky 1963; Holzman, Pellegrino & Glaser 1983), one or two
+ * bits above the 1.3.0 family each one extends (Fibonacci-type → three terms; a rule on the
+ * differences; a strand with its own op; weights on both earlier terms; a step that changes with
+ * the index; a cycle of three ops). `linear_rec` fits a in −10 … 10 and b in −10 … 10 except 0
+ * ({@link REC_WEIGHT_BOUND}); `affine_index` m in {@link MULTIPLIERS}; the ops of
+ * `interleaved_ops` (strand a holds the even places; two +x strands are `interleaved`, so at least
+ * one op is ×x) and `cycle3` range as the composite ops do.
+ *
  * Polynomials are one family in Newton form: degree k has the coefficients t0, Δt0, …, Δ^k t0 and
  * cost 2k. Only the minimal fitting degree (≥ 1, so a constant run is arithmetic with d = 0) is a
  * candidate: a higher degree through the same points is the same function with more bits. The
@@ -45,8 +66,9 @@
  * - the key rule (`structural_params`) fits the terms, has DL = min and predicts the key;
  * - the part of the key rule that produces t_m is confirmed: it reproduces at least one visible
  *   term (or step) beyond those that determine it ({@link keyConfirmations}). This only bites
- *   for `interleaved` with m = 5, where t_5 would rest on the two-term subsequence t_1, t_3
- *   (any step fits two terms), so interleaved items show 6 or 7 terms;
+ *   for `interleaved` and `interleaved_ops` with m = 5, where t_5 would rest on the two-term
+ *   subsequence t_1, t_3 (any step fits two terms), so their items show 6 or 7 terms, and for
+ *   `cycle3`, whose items show 7 terms (each of the three ops is seen twice);
  * - DL(key rule) < DL of the degree-(n − 2) interpolating polynomial through the visible terms,
  *   where n = m + 1 is the series length counting the blank, so the degree is m − 1 and it
  *   always fits (cost 2(m − 1), coefficients t0, Δt0, …, Δ^{m−1} t0).
@@ -70,8 +92,8 @@ export const ALPHABET = 26
 /** The multipliers a composite ×x step may use (fitting and domain). */
 export const MULTIPLIERS: readonly number[] = Object.freeze([-10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-/** The rule families an item's key rule may come from. */
-export const RULE_NAMES = [
+/** The rule families of generator 1.3.0 (and of the natural pool and strata 1–4 since). */
+export const LEGACY_RULE_NAMES = [
   'arithmetic',
   'geometric',
   'quadratic',
@@ -81,9 +103,24 @@ export const RULE_NAMES = [
   'composite_aff',
   'letter',
 ] as const
+/** The hard rule families of generator 1.4.0 (M3.12), drawn only for requested strata 5 and 6. */
+export const HARD_RULE_NAMES = ['tribonacci', 'diff_fibonacci', 'interleaved_ops', 'linear_rec', 'affine_index', 'cycle3'] as const
+/** The rule families an item's key rule may come from (generator 1.4.0). */
+export const RULE_NAMES = [...LEGACY_RULE_NAMES, ...HARD_RULE_NAMES] as const
 export type RuleName = (typeof RULE_NAMES)[number]
 /** Every fitted family: the key rule families plus the cubic competitor. */
 export type FitName = RuleName | 'cubic'
+
+/**
+ * The fit set of a generator version: the key rule families its analysis fits (with the cubic
+ * competitor). Generator 1.3.0 fits the eight families of its time; 1.4.0 adds the hard families,
+ * which then compete on every item of 1.4.0. A 1.3.0 item is analysed with the 1.3.0 set, so the
+ * kept 1.3.0 generator rebuilds its items byte for byte (A11, R-8.1).
+ */
+export const FIT_SETS = Object.freeze({ '1.3.0': LEGACY_RULE_NAMES, '1.4.0': RULE_NAMES } as const)
+export type FitSet = keyof typeof FIT_SETS
+/** The fit set of the current generator. */
+export const CURRENT_FIT_SET: FitSet = '1.4.0'
 
 /** Fixed DL cost of each family in bits ([SPEC] v0, see the module table). */
 export const FAMILY_COST: Readonly<Record<FitName, number>> = Object.freeze({
@@ -96,7 +133,16 @@ export const FAMILY_COST: Readonly<Record<FitName, number>> = Object.freeze({
   cubic: 6,
   composite_alt: 6,
   composite_aff: 6,
+  tribonacci: 6,
+  diff_fibonacci: 7,
+  interleaved_ops: 7,
+  linear_rec: 8,
+  affine_index: 8,
+  cycle3: 9,
 })
+
+/** Bound of the weights a, b of `linear_rec` (fitting and domain): |a| ≤ 10, 1 ≤ |b| ≤ 10. */
+export const REC_WEIGHT_BOUND = 10
 
 export type Op = 'add' | 'mul'
 
@@ -276,17 +322,22 @@ export function fitFibonacci(v: readonly number[]): Fit | null {
 
 const applyOp = (op: Op, x: number, t: number): number => z(op === 'add' ? t + x : t * x)
 
-/** Every op (+x for any integer x, ×x for x in {@link MULTIPLIERS}) fitting the steps t_i → t_{i+1}, i ≡ phase (mod 2). */
-function phaseOps(v: readonly number[], phase: 0 | 1): [Op, number][] {
-  const steps: [number, number][] = []
-  for (let i = phase; i + 1 < v.length; i += 2) steps.push([v[i] as number, v[i + 1] as number])
+/** Every op that maps each pair: +x for any integer x, ×x for x in {@link MULTIPLIERS}. */
+function pairOps(steps: readonly (readonly [number, number])[]): [Op, number][] {
   if (steps.length === 0) return []
   const out: [Op, number][] = []
-  const [a0, b0] = steps[0] as [number, number]
+  const [a0, b0] = steps[0] as readonly [number, number]
   const x = b0 - a0
   if (steps.every(([a, b]) => b - a === x)) out.push(['add', x])
   for (const k of MULTIPLIERS) if (steps.every(([a, b]) => b === k * a)) out.push(['mul', k])
   return out
+}
+
+/** Every op fitting the steps t_i → t_{i+lag}, i ≡ phase (mod period). */
+function phaseOps(v: readonly number[], phase: number, period = 2, lag = 1): [Op, number][] {
+  const steps: [number, number][] = []
+  for (let i = phase; i + lag < v.length; i += period) steps.push([v[i] as number, v[i + lag] as number])
+  return pairOps(steps)
 }
 
 export function fitCompositeAlt(v: readonly number[]): Fit[] {
@@ -325,8 +376,140 @@ export function fitLetter(p: readonly number[]): Fit | null {
   return { rule: 'letter', coefficients: { d }, dl: descriptionLength(FAMILY_COST.letter, [p[0] as number, d]), next: toPosition(last(p) + d) }
 }
 
-/** Every fitting rule of every family (for letters, fitted to the positions, predictions mod 26). */
-export function fitAll(values: readonly number[], letter: boolean): Fit[] {
+/** `tribonacci`: t_i = t_{i−1} + t_{i−2} + t_{i−3} + c (c fixed by t_3). */
+export function fitTribonacci(v: readonly number[]): Fit | null {
+  if (v.length < 4) return null
+  const at = (i: number): number => v[i] as number
+  const c = at(3) - at(2) - at(1) - at(0)
+  for (let i = 3; i < v.length; i++) if (at(i) !== at(i - 1) + at(i - 2) + at(i - 3) + c) return null
+  const m = v.length
+  return {
+    rule: 'tribonacci',
+    coefficients: { c },
+    dl: descriptionLength(FAMILY_COST.tribonacci, [at(0), at(1), at(2), c]),
+    next: z(at(m - 1) + at(m - 2) + at(m - 3) + c),
+  }
+}
+
+/** `diff_fibonacci`: the differences Δ_i = t_{i+1} − t_i satisfy Δ_i = Δ_{i−1} + Δ_{i−2} + c. */
+export function fitDiffFibonacci(v: readonly number[]): Fit | null {
+  const d = differences(v)
+  if (d.length < 3) return null
+  const at = (i: number): number => d[i] as number
+  const c = at(2) - at(1) - at(0)
+  for (let i = 2; i < d.length; i++) if (at(i) !== at(i - 1) + at(i - 2) + c) return null
+  const k = d.length
+  return {
+    rule: 'diff_fibonacci',
+    coefficients: { c },
+    dl: descriptionLength(FAMILY_COST.diff_fibonacci, [v[0] as number, at(0), at(1), c]),
+    next: z(last(v) + at(k - 1) + at(k - 2) + c),
+  }
+}
+
+/**
+ * `interleaved_ops`: two interleaved strands, each with its own op, t_{i+2} = op_{i mod 2}(t_i)
+ * (+x or ×x; strand a holds the even places), at least one of them ×x (two +x strands are
+ * `interleaved`).
+ */
+export function fitInterleavedOps(v: readonly number[]): Fit[] {
+  const out: Fit[] = []
+  const m = v.length
+  if (m < 4) return out
+  for (const [opA, xA] of phaseOps(v, 0, 2, 2)) {
+    for (const [opB, xB] of phaseOps(v, 1, 2, 2)) {
+      if (opA === 'add' && opB === 'add') continue
+      const [op, x] = m % 2 === 0 ? [opA, xA] : [opB, xB]
+      out.push({
+        rule: 'interleaved_ops',
+        coefficients: { op_a: opA, by_a: xA, op_b: opB, by_b: xB },
+        dl: descriptionLength(FAMILY_COST.interleaved_ops, [v[0] as number, xA, v[1] as number, xB]),
+        next: applyOp(op, x, v[m - 2] as number),
+      })
+    }
+  }
+  return out
+}
+
+/** `linear_rec`: t_i = a·t_{i−1} + b·t_{i−2} for every a in −10 … 10 and b in −10 … 10 except 0. */
+export function fitLinearRec(v: readonly number[]): Fit[] {
+  const out: Fit[] = []
+  const m = v.length
+  if (m < 3) return out
+  const at = (i: number): number => v[i] as number
+  for (let a = -REC_WEIGHT_BOUND; a <= REC_WEIGHT_BOUND; a++) {
+    for (let b = -REC_WEIGHT_BOUND; b <= REC_WEIGHT_BOUND; b++) {
+      if (b === 0) continue
+      let ok = true
+      for (let i = 2; ok && i < m; i++) ok = at(i) === a * at(i - 1) + b * at(i - 2)
+      if (ok) {
+        out.push({
+          rule: 'linear_rec',
+          coefficients: { a, b },
+          dl: descriptionLength(FAMILY_COST.linear_rec, [at(0), at(1), a, b]),
+          next: z(a * at(m - 1) + b * at(m - 2)),
+        })
+      }
+    }
+  }
+  return out
+}
+
+/** `affine_index`: t_{i+1} = m·t_i + c + d·i (×m, then add a step that grows by d), m in {@link MULTIPLIERS}. */
+export function fitAffineIndex(v: readonly number[]): Fit[] {
+  const out: Fit[] = []
+  const n = v.length
+  if (n < 3) return out
+  const t0 = v[0] as number
+  for (const k of MULTIPLIERS) {
+    const u: number[] = []
+    for (let i = 0; i + 1 < n; i++) u.push((v[i + 1] as number) - k * (v[i] as number))
+    const c = z(u[0] as number)
+    const d = z((u[1] as number) - c)
+    if (!u.every((x, i) => x === c + d * i)) continue
+    out.push({
+      rule: 'affine_index',
+      coefficients: { m: k, c, d },
+      dl: descriptionLength(FAMILY_COST.affine_index, [t0, k, c, d]),
+      next: z(k * last(v) + c + d * (n - 1)),
+    })
+  }
+  return out
+}
+
+/** `cycle3`: three ops (+x or ×x) applied in turn, t_{i+1} = op_{i mod 3}(t_i). */
+export function fitCycle3(v: readonly number[]): Fit[] {
+  const out: Fit[] = []
+  const m = v.length
+  if (m < 4) return out
+  const nextPhase = (m - 1) % 3
+  const phases = [phaseOps(v, 0, 3), phaseOps(v, 1, 3), phaseOps(v, 2, 3)]
+  for (const [opA, xA] of phases[0] as [Op, number][]) {
+    for (const [opB, xB] of phases[1] as [Op, number][]) {
+      for (const [opC, xC] of phases[2] as [Op, number][]) {
+        const ops: [Op, number][] = [
+          [opA, xA],
+          [opB, xB],
+          [opC, xC],
+        ]
+        const [op, x] = ops[nextPhase] as [Op, number]
+        out.push({
+          rule: 'cycle3',
+          coefficients: { op_a: opA, by_a: xA, op_b: opB, by_b: xB, op_c: opC, by_c: xC },
+          dl: descriptionLength(FAMILY_COST.cycle3, [v[0] as number, xA, xB, xC]),
+          next: applyOp(op, x, last(v)),
+        })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Every fitting rule of every family of `fitSet` (for letters, fitted to the positions,
+ * predictions mod 26).
+ */
+export function fitAll(values: readonly number[], letter: boolean, fitSet: FitSet = CURRENT_FIT_SET): Fit[] {
   const fits: Fit[] = []
   const push = (f: Fit | null): void => {
     if (f) fits.push(letter ? { ...f, next: toPosition(f.next) } : f)
@@ -337,13 +520,21 @@ export function fitAll(values: readonly number[], letter: boolean): Fit[] {
   push(fitFibonacci(values))
   for (const f of fitCompositeAlt(values)) push(f)
   for (const f of fitCompositeAff(values)) push(f)
+  if (fitSet !== '1.3.0') {
+    push(fitTribonacci(values))
+    push(fitDiffFibonacci(values))
+    for (const f of fitInterleavedOps(values)) push(f)
+    for (const f of fitLinearRec(values)) push(f)
+    for (const f of fitAffineIndex(values)) push(f)
+    for (const f of fitCycle3(values)) push(f)
+  }
   if (letter) push(fitLetter(values))
   return fits
 }
 
-/** Fit every family and form the minimum-DL set (see the module comment). */
-export function analyse(values: readonly number[], letter: boolean): Analysis {
-  const fits = fitAll(values, letter)
+/** Fit every family of `fitSet` and form the minimum-DL set (see the module comment). */
+export function analyse(values: readonly number[], letter: boolean, fitSet: FitSet = CURRENT_FIT_SET): Analysis {
+  const fits = fitAll(values, letter, fitSet)
   const interpolant = interpolantDl(values)
   let min: Dl | undefined
   for (const f of fits) if (min === undefined || compareDl(f.dl, min) < 0) min = f.dl
@@ -355,14 +546,18 @@ export function analyse(values: readonly number[], letter: boolean): Analysis {
   return { terms, fits, min, minSet, predictions, interpolant }
 }
 
-/** Visible values that determine a rule's coefficients and start terms (interleaved and composite_alt: see below). */
-const DETERMINING_TERMS: Readonly<Record<Exclude<RuleName, 'interleaved' | 'composite_alt'>, number>> = Object.freeze({
+/** Visible values that determine a rule's coefficients and start terms (the strand and cycle rules: see below). */
+const DETERMINING_TERMS: Readonly<Record<Exclude<RuleName, 'interleaved' | 'interleaved_ops' | 'composite_alt' | 'cycle3'>, number>> = Object.freeze({
   arithmetic: 2, // t0, d
   letter: 2, // p0, d
   geometric: 2, // t0, r
   quadratic: 3, // t0, Δt0, s
   fibonacci: 3, // t0, t1, c
   composite_aff: 3, // t0, m, c (two steps fix m and c)
+  tribonacci: 4, // t0, t1, t2, c
+  diff_fibonacci: 4, // t0, Δ0, Δ1, c
+  linear_rec: 4, // t0, t1, a, b (two steps fix a and b)
+  affine_index: 4, // t0, m, c, d (three steps fix them)
 })
 
 /**
@@ -370,11 +565,18 @@ const DETERMINING_TERMS: Readonly<Record<Exclude<RuleName, 'interleaved' | 'comp
  * those that determine it, with m visible terms. `interleaved`: t_m continues the subsequence of
  * its own parity, which shows ⌊m/2⌋ terms, two of which fix its start and step. `composite_alt`:
  * t_m comes from op_{(m−1) mod 2}, seen on ⌊(m−1)/2⌋ visible steps, one of which fixes it. Every
- * other family: m minus its determining terms. An item needs ≥ 1 (§4.2, [SPEC] v0).
+ * other family: m minus its determining terms. `interleaved_ops` as `interleaved` (one step of
+ * each strand fixes its op). `cycle3`: t_m comes from op_{(m−1) mod 3}, seen on the visible steps
+ * of that phase, one of which fixes it, so of 5–7 terms only m = 7 confirms it. An item needs ≥ 1
+ * (§4.2, [SPEC] v0).
  */
 export function keyConfirmations(rule: RuleName, m: number): number {
-  if (rule === 'interleaved') return Math.floor(m / 2) - 2
+  if (rule === 'interleaved' || rule === 'interleaved_ops') return Math.floor(m / 2) - 2
   if (rule === 'composite_alt') return Math.floor((m - 1) / 2) - 1
+  if (rule === 'cycle3') {
+    const phase = (m - 1) % 3
+    return phase > m - 2 ? -1 : Math.floor((m - 2 - phase) / 3)
+  }
   return m - DETERMINING_TERMS[rule]
 }
 
@@ -413,7 +615,9 @@ const isOp = (op: unknown, x: unknown): boolean =>
 
 /**
  * Whether `coefficients` are a valid key rule of `rule` (the generator's domain): no zero steps,
- * |r| ≥ 2, letter steps 1 ≤ |d| ≤ 12, composite ops +x (x ≠ 0) or ×x (x in {@link MULTIPLIERS}).
+ * |r| ≥ 2, letter steps 1 ≤ |d| ≤ 12, composite ops +x (x ≠ 0) or ×x (x in {@link MULTIPLIERS});
+ * `interleaved_ops` has at least one ×x strand, `cycle3` at least one +x and one ×x op,
+ * `linear_rec` |a| ≤ 10 and 1 ≤ |b| ≤ 10, `affine_index` d ≠ 0 (d = 0 is `composite_aff`).
  */
 export function inRuleDomain(rule: RuleName, c: Coefficients): boolean {
   switch (rule) {
@@ -433,9 +637,37 @@ export function inRuleDomain(rule: RuleName, c: Coefficients): boolean {
       return hasExactly(c, ['m', 'c']) && isInt(c.m) && MULTIPLIERS.includes(c.m) && isInt(c.c) && c.c !== 0
     case 'letter':
       return hasExactly(c, ['d']) && isInt(c.d) && Math.abs(c.d) >= 1 && Math.abs(c.d) <= 12
+    case 'tribonacci':
+    case 'diff_fibonacci':
+      return hasExactly(c, ['c']) && isInt(c.c)
+    case 'interleaved_ops':
+      return hasExactly(c, ['op_a', 'by_a', 'op_b', 'by_b']) && isOp(c.op_a, c.by_a) && isOp(c.op_b, c.by_b) && (c.op_a === 'mul' || c.op_b === 'mul')
+    case 'linear_rec':
+      return (
+        hasExactly(c, ['a', 'b']) &&
+        isInt(c.a) &&
+        isInt(c.b) &&
+        Math.abs(c.a) <= REC_WEIGHT_BOUND &&
+        Math.abs(c.b) >= 1 &&
+        Math.abs(c.b) <= REC_WEIGHT_BOUND
+      )
+    case 'affine_index':
+      return hasExactly(c, ['m', 'c', 'd']) && isInt(c.m) && MULTIPLIERS.includes(c.m) && isInt(c.c) && isInt(c.d) && c.d !== 0
+    case 'cycle3': {
+      const ops = [c.op_a, c.op_b, c.op_c]
+      return (
+        hasExactly(c, ['op_a', 'by_a', 'op_b', 'by_b', 'op_c', 'by_c']) &&
+        isOp(c.op_a, c.by_a) &&
+        isOp(c.op_b, c.by_b) &&
+        isOp(c.op_c, c.by_c) &&
+        ops.includes('add') &&
+        ops.includes('mul')
+      )
+    }
   }
 }
 
-export function isRuleName(v: unknown): v is RuleName {
-  return typeof v === 'string' && (RULE_NAMES as readonly string[]).includes(v)
+/** Whether `v` names a key rule family of `fitSet`. */
+export function isRuleName(v: unknown, fitSet: FitSet = CURRENT_FIT_SET): v is RuleName {
+  return typeof v === 'string' && (FIT_SETS[fitSet] as readonly string[]).includes(v)
 }

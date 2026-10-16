@@ -22,15 +22,37 @@
  * unchanged: one-part rules (arithmetic, constant-step letters, geometric) come out easier and
  * composites harder.
  *
- * The stratum is the §6.ii default b band of b (`stratumOfB`); the family generates strata 1–5
+ * The stratum is the §6.ii default b band of b (`stratumOfB`); the family generates strata 1–6
  * (arithmetic and letters ≈ 1–2, geometric ≈ 2–3, quadratic, interleaved and Fibonacci-type
- * ≈ 3, composite ≈ 4–5); a requested stratum draws from that stratum's rule menu until b lands in
- * its band.
+ * ≈ 3, composite ≈ 4–5, the hard families of generator 1.4.0 ≈ 5–6); a requested stratum draws
+ * from that stratum's rule menu until b lands in its band.
  *
- * Expected time (§7.4 E[T], [SPEC] v0, range 20–44 s; series stems are too short for the
- * length-based 25 s + 4 s/50 words prior to separate them):
+ * Generator 1.4.0 (M3.12): the regression, its centres and its provenance are unchanged. The hard
+ * families enter it through their family cost, the fixed part of their description length
+ * (`rules.ts`): three-term Fibonacci 6, Fibonacci differences 7, strands with their own ops 7,
+ * weighted two-term recurrences 8, index-dependent affine steps 8, cycles of three ops 9. That is
+ * the v0 reading of Simon & Kotovsky (1963), whose pattern descriptions grow with the relations a
+ * series needs, and of Holzman, Pellegrino & Glaser (1983), where series difficulty grows with the
+ * number of relations to find and the working-memory load of holding them (period length, earlier
+ * terms an operation uses): each hard family adds one or more relations to the 1.3.0 family it
+ * extends, at 0.7 logits per bit. Over the generator's draws that puts `tribonacci` at b ≈ 0.2–1.8
+ * (only its rare stratum-5 draws are kept), `diff_fibonacci` and `interleaved_ops` ≈ 1.1–2.5 (stratum
+ * 5), `linear_rec` and `affine_index` ≈ 1.8–3.4 (strata 5 and 6) and `cycle3` ≈ 2.2–3.7 (always 7
+ * terms; mostly stratum 6). A stratum-6 item
+ * is e.g. a weighted recurrence t_i = 2·t_{i−1} + 3·t_{i−2} with signs changing, or three ops in
+ * turn (×3, −7, ×−2) on 7 terms of 3–4 digits, which a strong adult often misses even with time.
+ * The 1.3.0 natural pool never draws them, so the pool means and its anchor are unchanged.
  *
- *   E[T] = 20 + 4 · (family_cost − 2) + 2 · (max_digits − 1) + 3 · is_letter   seconds.
+ * Expected time (§7.4 E[T], [SPEC] v0; series stems are too short for the length-based 25 s +
+ * 4 s/50 words prior to separate them):
+ *
+ *   E[T] = 20 + 4 · (family_cost − 2) + 6 · max(0, family_cost − 6) + 2 · (max_digits − 1)
+ *          + 3 · is_letter   seconds,
+ *
+ * 20–44 s for the 1.3.0 families and `tribonacci` (cost ≤ 6, so the third term is 0 and the E[T]
+ * of a 1.3.0 item is unchanged), 46–52 s at cost 7, 56–62 s at cost 8 and 66–72 s for `cycle3`:
+ * the extra 6 s per bit above 6 is the search for a second or third relation, which Holzman et al.
+ * found dominates solution time. The cap is the shared max(180, ⌈2.5·E[T]⌉) = 180 s.
  *
  * Every feature is an integer, boolean or string, so the TS and Python twins recompute them
  * exactly; b itself is compared with a 1e-9 tolerance (the anchor involves a logarithm).
@@ -119,7 +141,8 @@ export function seriesDifficulty(features: SeriesFeatures): DifficultyPrior {
   return { features: { ...features }, b_prior: seriesB(features), sd_prior: SIGMA_B_DEFAULT, provenance: SERIES_PROVENANCE }
 }
 
-/** E[T] in seconds (module comment): 20–44 s. */
+/** E[T] in seconds (module comment): 20–44 s for the 1.3.0 families, up to 72 s for the hard ones. */
 export function seriesExpectedTime(features: SeriesFeatures): number {
-  return 20 + 4 * (features.family_cost - 2) + 2 * (features.max_digits - 1) + (features.is_letter ? 3 : 0)
+  const cost = features.family_cost
+  return 20 + 4 * (cost - 2) + 6 * Math.max(0, cost - 6) + 2 * (features.max_digits - 1) + (features.is_letter ? 3 : 0)
 }
