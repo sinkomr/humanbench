@@ -23,30 +23,17 @@
 
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { powerTimeLimit, stratumOfB } from '../priors'
-import { Fraction, Surd, exactRoot, frac } from './fraction'
+import { Fraction, Surd, exactRoot } from './fraction'
+import { CHECKS_HARD1 } from './verify-hard1'
+import { CHECKS_HARD2 } from './verify-hard2'
+import { CHECKS_HARD3 } from './verify-hard3'
+import { CHECKS_HARD4 } from './verify-hard4'
+import { f, gcd, inRange, isIntIn, powMod, sum, type Check, type Rules } from './verify-kit'
 import { evaluate } from './expr'
 import { HINTS, quantSiblingGroup, variantOf, toleranceFor, num, nums, str, bool, type FieldSpec, type Given, type VariantDef } from './templates'
 import { QUANT_PROVENANCE, QUANT_SD_PRIOR, quantBPrior, quantExpectedTime, quantFeatures } from './prior'
-import type { QuantKey, QuantSpec } from './gen'
-
-type Rules = Record<string, boolean>
-interface Check {
-  /** Template rules beyond the field ranges. */
-  rules(g: Given): Rules
-  /** The answer by the verifier's own route (may throw on a broken item). */
-  solve(g: Given, stem: string): Fraction
-}
-
-const f = (n: number, d = 1): Fraction => frac(n, d)
-const gcd = (a: number, b: number): number => {
-  a = Math.abs(a)
-  b = Math.abs(b)
-  while (b) [a, b] = [b, a % b]
-  return a
-}
-const inRange = (x: Fraction, lo: number, hi: number): boolean => x.cmp(f(lo)) >= 0 && x.cmp(f(hi)) <= 0
-const isIntIn = (x: Fraction, lo: number, hi: number): boolean => x.isInteger() && inRange(x, lo, hi)
-const sum = (xs: readonly number[]): number => xs.reduce((s, v) => s + v, 0)
+import { QUANT_STRATA, type QuantKey, type QuantSpec } from './gen'
+import type { Stratum } from '../ids'
 
 /** The expression of a "Compute …." stem. */
 function computeExpr(stem: string): Fraction {
@@ -91,20 +78,6 @@ function drawTwo(counts: readonly number[], favourable: (i: number, j: number) =
     }
   }
   return f(fav, all)
-}
-
-/** base^exp mod m by square-and-multiply (BigInt). */
-function powMod(base: number, exp: number, m: number): number {
-  let r = 1n
-  let b = BigInt(base) % BigInt(m)
-  let e = BigInt(exp)
-  const M = BigInt(m)
-  while (e > 0n) {
-    if (e & 1n) r = (r * b) % M
-    b = (b * b) % M
-    e >>= 1n
-  }
-  return Number(r)
 }
 
 /** Pascal's triangle row n (BigInt), then entry k. */
@@ -169,7 +142,7 @@ function symmetricValue(s: number, p: number, e: (a: Surd, b: Surd) => Surd): Fr
   return v1.isRational() && v2.isRational() && v1.a.eq(v2.a) ? v1.a : null
 }
 
-const CHECKS: Readonly<Record<string, Check>> = {
+const CHECKS_S1_4: Readonly<Record<string, Check>> = {
   'arith/mul_sub_div': {
     rules: (g) => ({ divides: num(g, 'c') % num(g, 'd') === 0, quotient_range: isIntIn(f(num(g, 'c'), num(g, 'd')), 4, 19) }),
     solve: (_g, stem) => computeExpr(stem),
@@ -605,6 +578,9 @@ const CHECKS: Readonly<Record<string, Check>> = {
   },
 }
 
+/** Every variant's check: strata 1–4 here, the hard strata 5–6 in `verify-hard*.ts` (M3.12). */
+const CHECKS: Readonly<Record<string, Check>> = { ...CHECKS_S1_4, ...CHECKS_HARD1, ...CHECKS_HARD2, ...CHECKS_HARD3, ...CHECKS_HARD4 }
+
 function fractionOfRules(g: Given, spent: boolean): Rules {
   const [t, a, b, c, d] = ['total', 'a', 'b', 'c', 'd'].map((k) => num(g, k)) as [number, number, number, number, number]
   return {
@@ -722,7 +698,18 @@ export function quantSolve(variant: VariantDef, given: Given): Fraction | null {
   }
 }
 
-export function verifyQuant(item: ItemInstance<QuantSpec, QuantKey>): VerifyResult {
+/**
+ * The verifier of one generator version: its strata (a variant of another stratum is not that
+ * version's) and its prior's provenance text. 1.4.0 is {@link verifyQuant}; 1.3.0 (strata 1–4) is
+ * the kept generator's (`QUANT_LEGACY_FAMILIES`).
+ */
+export function quantVerifier(strata: readonly Stratum[], provenance: string): (item: ItemInstance<QuantSpec, QuantKey>) => VerifyResult {
+  return (item) => verifyWith(item, strata, provenance)
+}
+
+export const verifyQuant = quantVerifier(QUANT_STRATA, QUANT_PROVENANCE)
+
+function verifyWith(item: ItemInstance<QuantSpec, QuantKey>, strata: readonly Stratum[], provenance: string): VerifyResult {
   try {
     const sp = item.structural_params as { template?: unknown; variant?: unknown } | null
     const variant =
@@ -756,7 +743,7 @@ export function verifyQuant(item: ItemInstance<QuantSpec, QuantKey>): VerifyResu
       structure_known: true,
       spec_fields: true,
       given_fields: true,
-      stratum_matches: item.stratum === variant.stratum && Number.isFinite(d.b_prior) && stratumOfB(d.b_prior) === item.stratum,
+      stratum_matches: item.stratum === variant.stratum && strata.includes(variant.stratum) && Number.isFinite(d.b_prior) && stratumOfB(d.b_prior) === item.stratum,
       input_format_matches: format === variant.format,
       hint_matches: hint === HINTS[variant.format],
       ...rules,
@@ -769,10 +756,10 @@ export function verifyQuant(item: ItemInstance<QuantSpec, QuantKey>): VerifyResu
       answer_magnitude: answer !== null && answer.abs().cmp(Fraction.of(MAX_ABS_ANSWER)) <= 0,
       features_match: featuresOk,
       prior_matches:
-        featuresOk && Math.abs(d.b_prior - quantBPrior(feats)) <= 1e-12 && d.sd_prior === QUANT_SD_PRIOR && d.provenance === QUANT_PROVENANCE,
+        featuresOk && Math.abs(d.b_prior - quantBPrior(feats)) <= 1e-12 && d.sd_prior === QUANT_SD_PRIOR && d.provenance === provenance,
       time_matches:
         stemOk &&
-        Math.abs(item.expected_time_s - quantExpectedTime(variant.stratum as 1 | 2 | 3 | 4, stem)) <= 1e-9 &&
+        Math.abs(item.expected_time_s - quantExpectedTime(variant.stratum, stem)) <= 1e-9 &&
         item.time_limit_s === powerTimeLimit(item.expected_time_s),
       facet_matches: item.facet === variant.template,
       sibling_group_matches: item.sibling_group === (quantSiblingGroup(variant.template, variant.variant) ?? item.family_id),

@@ -14,14 +14,20 @@
  * Version 1.2.0: facet by template, `sibling_group` (then per template), and the shared
  * power-item cap `time_limit_s` (§13). 1.3.0: sibling groups are the near-isomorph sets, not
  * whole templates, so each quant stratum keeps ≥ 8 exclusion units (M1.14 review).
+ * 1.4.0 (ROADMAP M3.12, owner 2026-10-15): strata 5 and 6, hard templates (geometry,
+ * trigonometry, polynomials and logarithms, recurrences, counting and probability, number theory,
+ * calculus, multi-step word problems; `hard1.ts` … `hard4.ts`), b up to about 3.7. Strata 1–4
+ * draw exactly as in 1.3.0; the 1.3.0 generator is kept whole ({@link QUANT_LEGACY_FAMILIES}) so
+ * that a saved 1.3.0 item regenerates and re-scores (R-8.1).
  */
 
 import { NUMERIC_ITEM_TYPE, defineFamily, type ItemInstance } from '../family'
-import { QUANT_STRATA, buildQuant, type QuantKey, type QuantSpec } from './gen'
-import { QUANT_TEMPLATES } from './templates'
+import { QUANT_STRATA, QUANT_STRATA_V130, buildQuant, quantBuilder, type QuantKey, type QuantSpec } from './gen'
+import { QUANT_PROVENANCE_V130 } from './prior'
+import { QUANT_TEMPLATES, TEMPLATES_BY_STRATUM } from './templates'
 import { scoreQuant, type QuantResponse } from './score'
 import { variantOf } from './templates'
-import { verifyQuant } from './verify'
+import { quantVerifier, verifyQuant } from './verify'
 
 export type { QuantKey, QuantSpec } from './gen'
 export { QUANT_SIBLING_SETS, QUANT_TEMPLATES, quantSiblingGroup } from './templates'
@@ -33,7 +39,7 @@ export const quant = defineFamily<QuantSpec, QuantKey, QuantResponse>({
   kind: 'item',
   axis: 'QR',
   facets: QUANT_TEMPLATES,
-  generatorVersion: '1.3.0',
+  generatorVersion: '1.4.0',
   itemType: NUMERIC_ITEM_TYPE,
   strata: QUANT_STRATA,
   build: buildQuant,
@@ -58,5 +64,26 @@ export function quantSpecLeaksKey(item: QuantItem): string | null {
   const got = Object.keys(item.spec.given).sort().join(',')
   return got === want ? null : `given fields are ${got}, not ${want}`
 }
+
+/**
+ * The 1.3.0 generator (strata 1–4, the 1.3.0 prior text), by family name. Not registered and never
+ * served: `registry.ts` `resolveItem` regenerates a saved `i:quant:1.3.0:<seed>` item with it, so a
+ * save made before strata 5–6 keeps its Quantitative score when it is re-scored (R-8.1), as the
+ * span 1.1.0 blocks are kept.
+ */
+export const quantV130 = defineFamily<QuantSpec, QuantKey, QuantResponse>({
+  name: 'quant',
+  kind: 'item',
+  axis: 'QR',
+  facets: Object.freeze(QUANT_STRATA_V130.flatMap((s) => TEMPLATES_BY_STRATUM[s])),
+  generatorVersion: '1.3.0',
+  itemType: NUMERIC_ITEM_TYPE,
+  strata: QUANT_STRATA_V130,
+  build: quantBuilder(QUANT_STRATA_V130, QUANT_PROVENANCE_V130),
+  verify: quantVerifier(QUANT_STRATA_V130, QUANT_PROVENANCE_V130),
+  score: scoreQuant,
+})
+
+export const QUANT_LEGACY_FAMILIES: Readonly<Record<string, typeof quantV130>> = Object.freeze({ [quantV130.generatorVersion]: quantV130 })
 
 export default quant
