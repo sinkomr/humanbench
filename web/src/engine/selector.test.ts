@@ -366,7 +366,7 @@ describe('selectNext', () => {
     ]
     const s = state({ administered, seenFamilies: all.filter((x) => x.id !== sum.id).map((x) => x.id) })
     expect(selectNext(s, createRng('x'), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
-  })
+  }, 90_000) // one selection per quant variant: 108 since quant 1.4.0 (M3.12), about 34 s under a full parallel run
 
   it('skips items that would not finish in the remaining time', () => {
     const pool = candidatePool(state({ remainingS: 35 }))

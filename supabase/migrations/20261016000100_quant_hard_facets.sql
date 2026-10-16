@@ -1,4 +1,4 @@
--- Quant generator 1.4.0 (ROADMAP M3.12; DESIGN §3 row 6, §9.6; owner 2026-10-15): strata 5 and 6 add
+-- M3.12 (ROADMAP M3.12; DESIGN §3 row 6, §9.6; owner 2026-10-15): quant generator 1.4.0, whose strata 5 and 6 add
 -- 45 templates (geometry and trigonometry, polynomials and logarithms, recurrences, counting and
 -- probability, number theory, calculus, multi-step word problems), and the topic grouping becomes
 -- g2 (`web/src/tasks/quant/topics.ts`, `topics-v1.json`): the M1 groups take the hard templates that
@@ -11,6 +11,8 @@
 -- function stays closed to every role whatever ran before); only the table grows. Nothing else
 -- changes: the scoring of a numeric answer is the same entry grammar and tolerance as before
 -- (every hard key is an exact integer or fraction, `{abs: 0}`), so no scoring function changes.
+
+set local role hb_definer;
 
 create or replace function hb.drill_facet(p_axis text, p_facet text)
 returns text
@@ -89,4 +91,7 @@ as $$
            else p_facet
          end
 $$;
+
+reset role;
+
 revoke all on function hb.drill_facet(text, text) from public, anon, authenticated, service_role;
