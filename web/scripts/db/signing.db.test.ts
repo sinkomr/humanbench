@@ -1025,8 +1025,25 @@ describe('the work one call can cause is bounded (the anon timeout is 3 s, and a
     responses: [['i:tst:g1:00001', 0, answer, null, 1000, null]],
   })
   // [what the answer is made of, the answer, how many sessions of it, the least units the file must have to be a fair test]
-  /** The most a worst-case call may take, as a multiple of {@link cpuBaseline} measured in the same run. */
-  const SLOWDOWN_MAX = 8
+  /**
+   * Two guards on a worst-case call, neither of which depends on how fast the runner is compared with this laptop
+   * (measured 2026-10-16: the four shapes take 150 / 350 / 470 / 590 ms here and 1,051 / 1,430 / 1,710 ms for three of
+   * them on GitHub's ubuntu runner, about 3 times as long, while a plain-SQL md5 yardstick took 145 ms here and 66 to
+   * 116 ms there: CPU speed ratios between kinds of work do not carry over between machines, so a guard built on one
+   * failed on CI with ratios of 12 to 26):
+   * - TIMEOUT_MARGIN_MS: the call ends at least 300 ms (a tenth) before the anon statement timeout of 3 s. At the
+   *   timeout it would fail with 57014 and its rate-limit count would be rolled back, which is what the bound is for;
+   *   the slowest run seen on CI is 2.27 s.
+   * - SCALING_MAX: the same file at an eighth of the size (the same kind of work: the same shape, the same function,
+   *   the same database, in the same run) is timed right before a full call, three times, and in the best of those
+   *   pairs the full call takes at most SCALING_MAX times as long as the ratio of their work units (`hb.json_work`)
+   *   predicts (a single small timing against a single full one gave 3.5 here with the db suite running in parallel). Linear work gives a ratio at or below 1 (the small call
+   *   carries the same fixed costs); the regression M2.3 fixed (repeated re-serialisation, quadratic in the answer)
+   *   gives about 8. A uniform slowdown of every call is not this guard's to catch: the timeout margin is.
+   */
+  const TIMEOUT_MARGIN_MS = 300
+  const SCALING_MAX = 3
+  const SMALLER = 8
   const SHAPES: [string, unknown, number, number][] = [
     ['12,000 objects with a member', Array.from({ length: 12_000 }, () => ({ a: 1 })), 2, 60_000],
     ['12,000 arrays in arrays', Array.from({ length: 12_000 }, () => [[1]]), 2, 60_000],
@@ -1034,26 +1051,16 @@ describe('the work one call can cause is bounded (the anon timeout is 3 s, and a
     ['11,000 numbers of 17 significant digits behind the point, as many sessions as a file holds', Array.from({ length: 11_000 }, (_, i) => 0.12345678901234567 + i / 1e10), 6, 50_000],
   ]
 
-  /**
-   * How long plain CPU-bound SQL takes on this database now: the least of three runs of a fixed query (hashing 100,000
-   * numbers, about 0.15 s on a laptop), as the owner of the test database, so with no statement timeout. The yardstick
-   * of the runner's speed.
-   */
-  const cpuBaseline = async (): Promise<number> => {
-    let best = Infinity
-    for (let i = 0; i < 3; i++) {
-      const t0 = performance.now()
-      await ctx.sudo.query(`select count(*) from generate_series(1, 100000) g where md5(g::text) like '0%'`)
-      best = Math.min(best, performance.now() - t0)
-    }
-    return best
-  }
-
   it.each(SHAPES)('finishes, and is counted against the address, when a file near the limits is made of %s', async (_label, answer, n, least) => {
-    const save = emptySave(good.anonId, { sessions: Array.from({ length: n }, (_, i) => forged(answer, i + 1)) })
-    const w = (await ctx.sudo.query<{ w: number }>(`select hb.json_work(($1::jsonb -> 'sessions')::text) as w`, [JSON.stringify(save)])).rows[0]!.w
+    const fileOf = (a: unknown): ReturnType<typeof emptySave> => emptySave(good.anonId, { sessions: Array.from({ length: n }, (_, i) => forged(a, i + 1)) })
+    const workOf = async (f: ReturnType<typeof emptySave>): Promise<number> => (await ctx.sudo.query<{ w: number }>(`select hb.json_work(($1::jsonb -> 'sessions')::text) as w`, [JSON.stringify(f)])).rows[0]!.w
+    const save = fileOf(answer)
+    const w = await workOf(save)
     expect(w).toBeGreaterThan(least)
     expect(w).toBeLessThanOrEqual(DEFAULT_WORK)
+    // the same file at an eighth of the size (SCALING_MAX)
+    const small = fileOf((answer as unknown[]).slice(0, Math.floor((answer as unknown[]).length / SMALLER)))
+    const wSmall = await workOf(small)
     const ip = freshIp()
     await ctx.owner.query(`update public.app_config set value = '1' where key = 'rate.verifies_per_day'`)
     try {
@@ -1062,15 +1069,24 @@ describe('the work one call can cause is bounded (the anon timeout is 3 s, and a
       const out = await verify(ctx, save, ip)
       const ms = performance.now() - t0
       expect(out.sessions.map((x) => x.reason)).toEqual(Array.from({ length: n }, () => 'bad_signature'))
-      // Headroom: the worst shapes take 0.15 to 0.6 s on a laptop (they took 0.9 to 1.6 s before the M2.3 performance fix,
-      // and ran into the timeout on a CI runner); a CI runner is several times slower (2.07 and 2.27 s for the slowest
-      // shape on 2026-10-16, with the same code that took 0.59 s here, and as long here as before the migrations of
-      // 2026-10-13 to 10-16: runner variance, not a slowdown). So the guard is not a number of milliseconds: the call has
-      // finished within the anon timeout (it would reject with 57014 above), and against plain SQL on the same database
-      // in the same run (`cpuBaseline`, the runner's own speed) it is at most SLOWDOWN_MAX times as long. The slowest
-      // shape is about 4 times the baseline, so a call that got twice as dear trips it on any runner.
-      const base = await cpuBaseline()
-      expect(ms / base, `${_label}: ${Math.round(ms)} ms against a baseline of ${Math.round(base)} ms`).toBeLessThan(SLOWDOWN_MAX)
+      expect(ms, `${_label}: ${Math.round(ms)} ms`).toBeLessThan(3000 - TIMEOUT_MARGIN_MS)
+      // Scaling: pairs of an eighth-size call and a full call, each pair back to back so both see the same load (the
+      // db suite runs files side by side); the least ratio of the pairs is the one with the least noise.
+      const timed = async (f: ReturnType<typeof emptySave>): Promise<number> => {
+        const t = performance.now()
+        await verify(ctx, f, freshIp())
+        return performance.now() - t
+      }
+      const ratios: string[] = []
+      let best = Infinity
+      for (let i = 0; i < 3; i++) {
+        const a = await timed(small)
+        const b = await timed(save)
+        const r = b / a / (w / wSmall)
+        ratios.push(`${Math.round(b)}/${Math.round(a)} ms → ${r.toFixed(2)}`)
+        best = Math.min(best, r)
+      }
+      expect(best, `${_label}: ${w} and ${wSmall} units; ${ratios.join(', ')}`).toBeLessThan(SCALING_MAX)
       expect(pgCode(await verify(ctx, emptySave(good.anonId), ip).catch((e: unknown) => e))).toBe('PT429')
     } finally {
       await ctx.owner.query(`update public.app_config set value = '60' where key = 'rate.verifies_per_day'`)
