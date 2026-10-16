@@ -21,10 +21,17 @@
  * - over 10k items, the hit rate under either reading is ≤ 1.5 × chance = 25% (property test).
  */
 
-import { popcount, type Cell } from './grammar'
+import { differingComponents, frameValue, hasFrame, popcount, type Cell } from './grammar'
 
 export const PICKER_ATTRS = Object.freeze(['shape', 'count', 'size', 'color', 'orientation', 'position'] as const)
-export type PickerAttr = (typeof PICKER_ATTRS)[number]
+/** With framed options (hard template b, M3.12) the picker also scores the two frame attributes. */
+export const FRAMED_PICKER_ATTRS = Object.freeze([...PICKER_ATTRS, 'frame_shade', 'frame_pattern'] as const)
+export type PickerAttr = (typeof FRAMED_PICKER_ATTRS)[number]
+
+/** The attributes the picker scores for these options. */
+function attrsFor(options: readonly Cell[]): readonly PickerAttr[] {
+  return options.length > 0 && options.every(hasFrame) ? FRAMED_PICKER_ATTRS : PICKER_ATTRS
+}
 
 /** The M1.6 reading of mode ties, recorded in the verification checks (`modal_tie_reading`). */
 export const MODAL_TIE_READING = 'all_ties'
@@ -32,12 +39,14 @@ export const MODAL_TIE_READING = 'all_ties'
 function valueOf(c: Cell, attr: PickerAttr): number {
   if (attr === 'count') return popcount(c.positions)
   if (attr === 'position') return c.positions
+  if (attr === 'frame_shade') return frameValue(c, 'frameShade')
+  if (attr === 'frame_pattern') return frameValue(c, 'framePattern')
   return c[attr]
 }
 
-/** Per attribute (in {@link PICKER_ATTRS} order), the values tied for the mode among the options, ascending. */
+/** Per attribute (in {@link PICKER_ATTRS} order, then the frame's), the values tied for the mode among the options, ascending. */
 export function modalValues(options: readonly Cell[]): number[][] {
-  return PICKER_ATTRS.map((attr) => {
+  return attrsFor(options).map((attr) => {
     const counts = new Map<number, number>()
     for (const o of options) counts.set(valueOf(o, attr), (counts.get(valueOf(o, attr)) ?? 0) + 1)
     const top = Math.max(0, ...counts.values())
@@ -47,9 +56,8 @@ export function modalValues(options: readonly Cell[]): number[][] {
 
 /** Per option, the number of attributes whose value is in `modes` (the accepted values per attribute). */
 function scoresFor(options: readonly Cell[], modes: readonly (readonly number[])[]): number[] {
-  return options.map((o) =>
-    PICKER_ATTRS.reduce((s, attr, k) => s + ((modes[k] as readonly number[]).includes(valueOf(o, attr)) ? 1 : 0), 0),
-  )
+  const attrs = attrsFor(options)
+  return options.map((o) => attrs.reduce((s, attr, k) => s + ((modes[k] as readonly number[]).includes(valueOf(o, attr)) ? 1 : 0), 0))
 }
 
 function argmax(scores: readonly number[]): number[] {
@@ -114,4 +122,30 @@ export function oneModeHitProbability(options: readonly Cell[], key: number): nu
 export function oneModeCertain(options: readonly Cell[], key: number): boolean {
   const tops = oneModeTops(options)
   return tops.length > 0 && tops.every((top) => top.length === 1 && top[0] === key)
+}
+
+/**
+ * The hub picker (M3.12, hard templates): another option-only strategy. Distractors made by
+ * changing one attribute of the key tend to sit one change away from it, so the picker chooses
+ * among the options with the most one-change neighbours. Per option, that neighbour count.
+ */
+export function hubDegrees(options: readonly Cell[]): number[] {
+  return options.map((o, i) => options.reduce((n, p, j) => n + (i !== j && differingComponents(o, p).length === 1 ? 1 : 0), 0))
+}
+
+/** Indices of the options the hub picker may choose (most one-change neighbours), ascending. */
+export function hubArgmax(options: readonly Cell[]): number[] {
+  return argmax(hubDegrees(options))
+}
+
+/** P(the hub picker chooses option `key`) with uniform tie-breaking. */
+export function hubHitProbability(options: readonly Cell[], key: number): number {
+  const top = hubArgmax(options)
+  return top.includes(key) ? 1 / top.length : 0
+}
+
+/** True if the hub picker identifies `key` with certainty (the unique best-connected option). */
+export function hubPicksKeyUniquely(options: readonly Cell[], key: number): boolean {
+  const top = hubArgmax(options)
+  return top.length === 1 && top[0] === key
 }

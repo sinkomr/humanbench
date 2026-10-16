@@ -21,7 +21,11 @@ import {
 import { drawTarget, isTargetLike, movedDistractorPairs } from './gen'
 import { ANGLE_BINS, ANGLE_CENTRE_DEG, ANGLE_RANGE, ROTATION_PRIOR, ROTATION_STRATA, angleOfB, rotationBPrior, rotationExpectedTime } from './prior'
 import { analyseRotation, rotationSpecLeaksKey } from './verify'
-import { rotation, type RotationFeatures, type RotationItem } from '.'
+import { ROTATION_LEGACY_FAMILIES, rotation, type RotationFeatures, type RotationItem } from '.'
+import { createHash } from 'node:crypto'
+import { canonicalJson } from '../ids'
+import { generatorOf, resolveItem } from '../registry'
+import LEGACY_ITEMS from './__fixtures__/legacy-1.3.0.json'
 
 /**
  * A11: the family is the target polycube up to rotation and reflection. Chiral, asymmetric
@@ -75,7 +79,8 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     expect(r.distinctFamilyIds).toBeGreaterThan(1_000)
     expect(r.strataCounts).toEqual({ 1: 0, 2: 2_000, 3: 2_000, 4: 2_000, 5: 2_000, 6: 2_000 })
     expect(r.bPrior.min).toBeGreaterThanOrEqual(-0.56)
-    expect(r.bPrior.max).toBeLessThan(3.46)
+    // Strata 5–6 are the torsion template (1.4.0): b up to ≈ 3.7 (classic items stop at 3.45).
+    expect(r.bPrior.max).toBeLessThan(3.7)
   }, 600_000)
 
   it('passes runFamilyProperties when the family picks the stratum (the natural pool, M1.P)', () => {
@@ -104,17 +109,20 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     )
   })
 
-  it('targets strata through angle bins and refuses stratum 1', () => {
+  it('targets strata through angle bins (classic strata 2–4; 5–6 in 1.3.0) and refuses stratum 1', () => {
     expect(ROTATION_STRATA).toEqual([2, 3, 4, 5, 6])
-    for (const k of ROTATION_STRATA) {
-      const item = rotation.generate('bins', { stratum: k })
-      expect(item.seed).toBe(`bins@s${k}`)
-      expect(rotation.generate(`bins@s${k}`)).toEqual(item)
-      const [lo, hi] = ANGLE_BINS[k] as readonly [number, number]
-      expect(features(item).angle_deg).toBeGreaterThanOrEqual(lo)
-      expect(features(item).angle_deg).toBeLessThan(hi)
+    for (const family of [rotation, ROTATION_LEGACY_FAMILIES.rotation!]) {
+      for (const k of ROTATION_STRATA) {
+        const item = family.generate('bins', { stratum: k })
+        expect(item.seed).toBe(`bins@s${k}`)
+        expect(family.generate(`bins@s${k}`)).toEqual(item)
+        if (family === rotation && k >= 5) continue // the torsion template (torsion.test.ts)
+        const [lo, hi] = ANGLE_BINS[k] as readonly [number, number]
+        expect(features(item).angle_deg).toBeGreaterThanOrEqual(lo)
+        expect(features(item).angle_deg).toBeLessThan(hi)
+      }
+      expect(() => family.generate('bins', { stratum: 1 })).toThrow(RangeError)
     }
-    expect(() => rotation.generate('bins', { stratum: 1 })).toThrow(RangeError)
   })
 
   it('uses the [SPEC] v0 prior: ICAR anchor at the pool mean angle 100°, +0.025 per degree, bins = default b bands (M1.P)', () => {
@@ -277,3 +285,61 @@ describe('rotation family (M1.5, DESIGN §4.2)', () => {
     for (const bad of [k + 0.5, Number.NaN, -1, 4, '0', null]) expect(() => rotation.score(item, bad as number), String(bad)).toThrow(MalformedResponseError)
   })
 })
+
+/**
+ * Generator 1.3.0 is kept whole (A11, R-8.1): `__fixtures__/legacy-1.3.0.json` holds five items
+ * dumped by 1.3.0 itself before the bump (`dump-0`, `dump-1`, `dump-0@s5`, `dump-0@s6`,
+ * `dump-1@s6`), and {@link LEGACY_DIGEST} is the SHA-256 of 1.3.0's items for 300 seeds (100
+ * natural, 40 per requested stratum 2–6), one canonical JSON per line, computed by 1.3.0.
+ */
+const LEGACY_DIGEST = '664afec17a4d7e7ae2ad7e61a9368bbe450f01e88a7f7e99f8e777d50d6162d0'
+const LEGACY_SEEDS: readonly string[] = [
+  ...Array.from({ length: 100 }, (_, i) => `legacy-${i}`),
+  ...[2, 3, 4, 5, 6].flatMap((k) => Array.from({ length: 40 }, (_, i) => `legacy-${i}@s${k}`)),
+]
+
+describe('rotation 1.3.0 kept whole beside 1.4.0 (M3.12, A11, R-8.1)', () => {
+  const legacy = ROTATION_LEGACY_FAMILIES.rotation!
+
+  it('versions: 1.4.0 is registered, 1.3.0 is the kept classic generator', () => {
+    expect(rotation.generatorVersion).toBe('1.4.0')
+    expect(legacy.generatorVersion).toBe('1.3.0')
+    expect(legacy.strata).toEqual(rotation.strata)
+    expect(generatorOf('rotation', '1.3.0')).toBe(legacy)
+    expect(generatorOf('rotation', '1.4.0')).toBe(rotation)
+  })
+
+  it('rebuilds the items 1.3.0 dumped, byte for byte, from their ids (resolveItem)', () => {
+    expect(LEGACY_ITEMS).toHaveLength(5)
+    for (const old of LEGACY_ITEMS as unknown as RotationItem[]) {
+      const again = resolveItem(old.item_id)
+      expect(again, old.item_id).not.toBeNull()
+      expect(canonicalJson(again as never)).toBe(canonicalJson(old as never))
+      expect(verifyItem(old)).toBe(true)
+    }
+    expect((LEGACY_ITEMS as unknown as RotationItem[]).filter((it) => it.stratum >= 5)).toHaveLength(4)
+  })
+
+  it('reproduces 1.3.0 for 300 seeds of every stratum (digest computed by 1.3.0)', () => {
+    const h = createHash('sha256')
+    for (const s of LEGACY_SEEDS) h.update(canonicalJson(legacy.generate(s) as never) + '\n')
+    expect(h.digest('hex')).toBe(LEGACY_DIGEST)
+  })
+
+  it('1.4.0 is 1.3.0 for the natural pool and strata 2–4, and the torsion template for 5–6', () => {
+    const asOld = (it: RotationItem): string =>
+      canonicalJson({ ...it, item_id: it.item_id.replace(':1.4.0:', ':1.3.0:'), generator_version: '1.3.0' } as never)
+    for (const s of LEGACY_SEEDS) {
+      const now = rotation.generate(s)
+      const old = legacy.generate(s)
+      if (now.stratum >= 5 && s.includes('@s')) {
+        expect((now.difficulty.features as Record<string, unknown>).template).toBe('torsion')
+        expect((old.difficulty.features as Record<string, unknown>).template).toBeUndefined()
+      } else {
+        expect(asOld(now)).toBe(canonicalJson(old as never))
+      }
+    }
+  })
+})
+
+const verifyItem = (it: RotationItem): boolean => rotation.verify(it).ok

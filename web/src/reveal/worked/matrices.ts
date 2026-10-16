@@ -10,13 +10,17 @@
  * ordered values, or distribution (each row holds the same three values once each). Layout: in
  * count mode the number of objects follows constant / progression ±1 / arithmetic ± / distribution
  * and the objects sit in the standard places for that number; in position mode the places follow
- * xor / or / distribution and the number is whatever that gives.
+ * xor / or / distribution and the number is whatever that gives. A framed item (hard strata,
+ * generator 1.3.0) also has a frame around every cell whose shade (light grey → dark grey → black)
+ * and pattern follow their own rules, derived the same way.
  */
 
 import { optionLetter } from '../../render/choice/keys'
 import { SLOT_NAMES, describeCell } from '../../render/matrices/draw'
 import {
   COLORS,
+  FRAME_PATTERNS,
+  FRAME_SHADES,
   ORIENTATIONS,
   SCALAR_ATTRS,
   SHAPES,
@@ -26,7 +30,10 @@ import {
   parseRuleSet,
   popcount,
   positionsOf,
+  type FramePattern,
+  type FrameShade,
   type MatrixCell,
+  type MatrixFrame,
   type RuleSet,
   type ScalarAttr,
 } from '../../tasks/matrices/grammar'
@@ -168,18 +175,65 @@ function derive(grid: readonly (readonly MatrixCell[])[], rules: RuleSet): Deriv
     steps.push(`Applying that to row 3 puts objects at ${list(positions.map((s) => SLOT_NAMES[s] ?? `slot ${s}`))}.`)
   }
 
-  const cell: MatrixCell = {
+  const inner: MatrixCell = {
     shape: out.shape as MatrixCell['shape'],
     size: out.size as MatrixCell['size'],
     color: out.color as MatrixCell['color'],
     orientation: out.orientation as MatrixCell['orientation'],
     positions,
   }
-  return { cell, steps }
+  if (rules.frame_shade === undefined || rules.frame_pattern === undefined) return { cell: inner, steps }
+  const frame: MatrixFrame = {
+    shade: frameFeature(grid, 'shade', rules.frame_shade, FRAME_SHADES, steps) as FrameShade,
+    pattern: frameFeature(grid, 'pattern', rules.frame_pattern, FRAME_PATTERNS, steps) as FramePattern,
+  }
+  return { cell: { ...inner, frame }, steps }
 }
 
+/** One frame feature of the missing cell from its rule; pushes the step that explains it. */
+function frameFeature(
+  grid: readonly (readonly MatrixCell[])[],
+  feature: 'shade' | 'pattern',
+  rule: string,
+  dom: readonly string[],
+  steps: string[],
+): string {
+  const at = (r: number, c: number): string => {
+    const f = (grid[r] as readonly MatrixCell[])[c]?.frame
+    if (f === undefined) throw new RangeError('a framed item has a cell without a frame')
+    return f[feature]
+  }
+  const show = (v: string): string => v.replace('_', ' ')
+  const shown = (r: number): string => [0, 1, 2].map((c) => show(at(r, c))).join(', ')
+  const [va, vb] = [at(2, 0), at(2, 1)]
+  const name = `Frame ${feature}`
+  if (rule === 'constant') {
+    steps.push(`${name}: it is the same in every cell of a row, so the missing cell has ${show(va)}.`)
+    return va
+  }
+  if (rule === 'distribution') {
+    const v = missingFrom([0, 1, 2].map((c) => at(0, c)), [va, vb])
+    steps.push(`${name}: every row has the same three, once each (row 1: ${shown(0)}; row 2: ${shown(1)}). Row 3 already has ${show(va)} and ${show(vb)}, so the missing cell has ${show(v)}.`)
+    return v
+  }
+  const delta = rule === 'progression+1' ? 1 : -1
+  const v = dom[dom.indexOf(vb) + delta]
+  if (v === undefined) throw new RangeError(`a frame ${feature} progression left its values`)
+  const ordered = (delta > 0 ? [...dom] : [...dom].reverse()).map(show).join(' → ')
+  steps.push(`${name}: it moves one step along ${ordered} at each cell to the right (row 1: ${shown(0)}; row 2: ${shown(1)}). Row 3 has ${show(va)}, ${show(vb)}, so the missing cell has ${show(v)}.`)
+  return v
+}
+
+const framesEqual = (x: MatrixFrame | undefined, y: MatrixFrame | undefined): boolean =>
+  x === undefined || y === undefined ? x === y : x.shade === y.shade && x.pattern === y.pattern
+
 const cellsEqual = (x: MatrixCell, y: MatrixCell): boolean =>
-  x.shape === y.shape && x.size === y.size && x.color === y.color && x.orientation === y.orientation && same(x.positions, y.positions)
+  x.shape === y.shape &&
+  x.size === y.size &&
+  x.color === y.color &&
+  x.orientation === y.orientation &&
+  same(x.positions, y.positions) &&
+  framesEqual(x.frame, y.frame)
 
 /**
  * The worked solution of a matrix item. Throws a RangeError when the structure is not a rule set
@@ -193,7 +247,9 @@ export function matrixSolution(item: MatrixItem): WorkedSolution {
   if (index < 0) throw new RangeError('the derived cell is none of the options')
   return {
     steps: [
-      'Read each row from left to right and ask how every feature changes: the shape, the size, the shade, the turn and the number and places of the objects.',
+      item.spec.grid[0]?.[0]?.frame === undefined
+        ? 'Read each row from left to right and ask how every feature changes: the shape, the size, the shade, the turn and the number and places of the objects.'
+        : 'Read each row from left to right and ask how every feature changes: the shape, the size, the shade, the turn and the number and places of the objects, and, separately, the shade and pattern of the frame.',
       ...steps,
       `So the missing cell is ${describeCell(cell)}, which is option ${optionLetter(index)}.`,
     ],

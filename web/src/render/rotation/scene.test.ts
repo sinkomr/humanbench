@@ -144,6 +144,15 @@ describe('rotation scene: figures', () => {
     }
   })
 
+  it('frames torsion-template items (10–14 cubes, strata 5–6) no larger than classic ones: cubes stay legible', () => {
+    const extent = (specs: readonly RotationSpec[]): number => Math.max(...specs.map((s) => rotationScene(s).camera.halfExtent))
+    const classic = extent(items(500, 'scene-extent'))
+    const hard = extent(Array.from({ length: 500 }, (_, i) => rotation.generate(`scene-extent-${i}@s${5 + (i % 2)}`).spec))
+    // Compactness rule of the torsion template: centres within √18 of the centroid → (√18 + √3/2) × 1.06.
+    expect(hard).toBeLessThanOrEqual((Math.sqrt(18) + Math.sqrt(3) / 2) * 1.06 + 1e-9)
+    expect(hard).toBeLessThan(classic * 1.05)
+  })
+
   it('each figure depends on its own view only: option order and position never change a figure', () => {
     for (const spec of items(40, 'scene-order')) {
       const sc = rotationScene(spec)

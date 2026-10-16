@@ -39,14 +39,10 @@ const RESULTS_CHUNK = /\/assets\/Finished-[^/?]+\.(js|css)(\?.*)?$/
  * Raised to 143 KB, the same as scripts/results-split.test.ts again, when the three branches of 2026-10-13 merged
  * together took this build's entry to 140.4 KB on CI (Node 24): see there for why the bound was raised.
  *
- * Raised to 160 KB for quant generator 1.4.0 (ROADMAP M3.12, owner 2026-10-15: harder Quantitative items): the
- * 45 templates of strata 5 and 6 (`tasks/quant/hard1.ts` … `hard4.ts`, about 11 KB gzip) and their verifier
- * routes (`verify-hard*.ts`, about 7 KB), which the family carries because the device generates and keys its quant
- * items; this took the entry from about 142 to 158.8 KB. The verifiers run only in tests, the dump and the dev review
- * page; keeping them out of the entry needs a family contract whose verify() can load late (not done here).
+ * Raised to 160 KB for quant generator 1.4.0 (ROADMAP M3.12), 162 KB with the cross-skill aim, and 166 KB with the
+ * hard strata of matrices, series and rotation (M3.12), as in scripts/results-split.test.ts.
  */
-// 162 KB with the cross-skill aim merged in, as in scripts/results-split.test.ts.
-const ENTRY_GZIP_MAX = 162_000
+const ENTRY_GZIP_MAX = 166_000
 const FILE_NAME = /^humanbench-[0-9A-Za-z]{6}-\d{4}-\d{2}-\d{2}\.hbsave\.json$/
 
 // -------------------------------------------------------------------------- the shell

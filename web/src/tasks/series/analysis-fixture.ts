@@ -9,9 +9,13 @@
  * the review's examples); a mix of generator drafts of every rule and length 5–7 (interleaved
  * m = 5 included), near misses (one visible term moved by ±1 or ±2), random short runs and random
  * letter runs; and sequences from the same mix plus tiny five-term runs that lie near the decision
- * boundary (fits within ε + 2 bits of the least DL that predict different next terms). The bank test `tests/gen/test_series.py` requires `hb.gen.series.rules.analyse` to
- * agree on every case: the fits (rule, coefficients, DL, prediction, minimum-DL set membership),
- * the least DL, the predictions and the interpolant's DL.
+ * boundary (fits within ε + 2 bits of the least DL that predict different next terms). Generator
+ * 1.4.0 (M3.12): every case records its fit set (`fit_set`); the cases above use the current one
+ * (the hard families included, with hand-picked cases of each), and a last block repeats the
+ * hand-picked cases and adds mix cases under the 1.3.0 fit set of the kept 1.3.0 generator. The
+ * bank test `tests/gen/test_series.py` requires `hb.gen.series.rules.analyse` to agree on every
+ * case: the fits (rule, coefficients, DL, prediction, minimum-DL set membership), the least DL,
+ * the predictions and the interpolant's DL.
  *
  * Refresh it in the bank (run from web/), then update `ANALYSIS_FIXTURE_DIGEST` in series.test.ts:
  *
@@ -26,6 +30,7 @@ import { canonicalJson } from '../ids'
 import { sampleDraft } from './gen'
 import {
   ALPHABET,
+  CURRENT_FIT_SET,
   EPSILON_BITS,
   MAX_VISIBLE,
   MIN_VISIBLE,
@@ -37,14 +42,17 @@ import {
   type Coefficients,
   type Dl,
   type FitName,
+  type FitSet,
 } from './rules'
 
 /** Seed of the fixture's sequence stream. */
-export const ANALYSIS_FIXTURE_SEED = 'series-analysis-fixture-v1'
+export const ANALYSIS_FIXTURE_SEED = 'series-analysis-fixture-v2'
 /** Seeded cases from the mix, after the hand-picked ones. */
 export const ANALYSIS_FIXTURE_N = 1_500
-/** Seeded cases near the decision boundary, last. */
+/** Seeded cases near the decision boundary, after the mix. */
 export const ANALYSIS_FIXTURE_BOUNDARY_N = 700
+/** Seeded mix cases analysed with the 1.3.0 fit set, last (after the hand-picked ones again). */
+export const ANALYSIS_FIXTURE_LEGACY_N = 300
 
 /** An exact DL on the wire: `prod` as a decimal string (it can exceed 2^53). */
 export interface WireDl {
@@ -60,10 +68,11 @@ export interface WireFit {
   readonly in_min_set: boolean
 }
 
-/** One analysed sequence (letters as positions 1–26). */
+/** One analysed sequence (letters as positions 1–26) under the fit set of one generator version. */
 export interface AnalysisCase {
   readonly terms: readonly number[]
   readonly letter: boolean
+  readonly fit_set: FitSet
   /** Sorted by canonical JSON, so the order carries no meaning. */
   readonly fits: readonly WireFit[]
   readonly min_dl: WireDl | null
@@ -103,6 +112,18 @@ const EDGE_CASES: readonly (readonly [readonly number[], boolean])[] = [
   [[1, 2, 4, 8, 16], true], // A B D H P
   [[5, 5, 5, 5, 5], true],
   [[26, 1, 26, 1, 26, 1], true],
+  // generator 1.4.0 (M3.12): the hard families, their ties and the ambiguities they add
+  [[1, 1, 2, 4, 7, 13], false], // three-term Fibonacci
+  [[3, 4, 6, 9, 14, 22], false], // Fibonacci differences
+  [[1, 70, 3, 78, 9, 86], false], // ×3 strand and +8 strand
+  [[1, 2, 7, 20, 61, 182], false], // t = 2·t' + 3·t''
+  [[3, 6, 12, 24, 48], false], // geometric: many weight pairs, one prediction
+  [[-9, 9, -2, 16, 5], false], // −t + 7i
+  [[1, -2, -6, -13, -29], false], // ×3 − 5 + 5i
+  [[5, 17, 7, 14, 26, 16, 32], false], // +12, −10, ×2 in turn
+  [[5, 17, 7, 14, 26, 16], false], // the same cycle on 6 terms: its third op is seen once
+  [[4, 0, 0, -4, -12], false], // composite_alt → −16 vs three-term Fibonacci → −24
+  [[22, -20, 28, -14, 34, -8], false], // interleaved da = db vs −t + c + d·i
 ]
 
 const bounded = (v: readonly number[]): boolean => v.every((x) => Number.isSafeInteger(x) && Math.abs(x) <= TERM_BOUND)
@@ -151,9 +172,9 @@ function boundaryTerms(rng: Rng): [number[], boolean] {
 
 const wireDl = (dl: Dl): WireDl => ({ bits: dl.bits, prod: dl.prod.toString() })
 
-/** The fixture record of `analyse(terms, letter)`. */
-export function analysisCase(terms: readonly number[], letter: boolean): AnalysisCase {
-  const a = analyse(terms, letter)
+/** The fixture record of `analyse(terms, letter, fitSet)`. */
+export function analysisCase(terms: readonly number[], letter: boolean, fitSet: FitSet = CURRENT_FIT_SET): AnalysisCase {
+  const a = analyse(terms, letter, fitSet)
   const inMin = new Set(a.minSet)
   const fits = a.fits
     .map((f) => ({ rule: f.rule, coefficients: f.coefficients, dl: wireDl(f.dl), next: f.next, in_min_set: inMin.has(f) }))
@@ -163,6 +184,7 @@ export function analysisCase(terms: readonly number[], letter: boolean): Analysi
   return {
     terms: [...terms],
     letter,
+    fit_set: fitSet,
     fits,
     min_dl: a.min === undefined ? null : wireDl(a.min),
     predictions: a.predictions,
@@ -170,8 +192,12 @@ export function analysisCase(terms: readonly number[], letter: boolean): Analysi
   }
 }
 
-/** The hand-picked cases, then {@link ANALYSIS_FIXTURE_N} mix and {@link ANALYSIS_FIXTURE_BOUNDARY_N} boundary ones. */
-export function analysisFixture(n = ANALYSIS_FIXTURE_N, boundaryN = ANALYSIS_FIXTURE_BOUNDARY_N): AnalysisFixture {
+/**
+ * The hand-picked cases, then {@link ANALYSIS_FIXTURE_N} mix and {@link ANALYSIS_FIXTURE_BOUNDARY_N}
+ * boundary ones, all under the current fit set; then the hand-picked cases and
+ * {@link ANALYSIS_FIXTURE_LEGACY_N} mix ones under the 1.3.0 fit set (the kept 1.3.0 generator).
+ */
+export function analysisFixture(n = ANALYSIS_FIXTURE_N, boundaryN = ANALYSIS_FIXTURE_BOUNDARY_N, legacyN = ANALYSIS_FIXTURE_LEGACY_N): AnalysisFixture {
   const rng = createRng(ANALYSIS_FIXTURE_SEED)
   const cases = EDGE_CASES.map(([t, letter]) => analysisCase(t, letter))
   for (let i = 0; i < n; i++) {
@@ -181,6 +207,11 @@ export function analysisFixture(n = ANALYSIS_FIXTURE_N, boundaryN = ANALYSIS_FIX
   for (let i = 0; i < boundaryN; i++) {
     const [terms, letter] = boundaryTerms(rng)
     cases.push(analysisCase(terms, letter))
+  }
+  for (const [t, letter] of EDGE_CASES) cases.push(analysisCase(t, letter, '1.3.0'))
+  for (let i = 0; i < legacyN; i++) {
+    const [terms, letter] = seededTerms(rng)
+    cases.push(analysisCase(terms, letter, '1.3.0'))
   }
   return { fixture: 'series.analysis', seed: ANALYSIS_FIXTURE_SEED, count: cases.length, cases }
 }

@@ -27,6 +27,25 @@
  *   a translation, {@link indexAligned}: shuffled lists); `unit_quaternions` (|‖q‖ − 1| ≤ 1e-9);
  * - bookkeeping: `structure_matches` (A11 polycube), `features_complete`, `angle_matches`,
  *   `depth_matches`, `counts_match`, `prior_matches`, `stratum_matches`, `time_matches`.
+ *
+ * Those are the checks of the classic template (no `template` feature: 1.3.0, and 1.4.0's natural
+ * pool and strata 2–4). An item recording `template: "torsion"` (1.4.0, requested strata 5–6) is
+ * checked against the torsion template instead, with these differences:
+ *
+ * - `cube_count`: 10–14 cubes; `compact`: every shape's cube centres within √18 of its centroid
+ *   (spec.ts `HARD_MAX_CENTRE_RADIUS_SQ`, legibility); `arm_count`: the target has 5–7 arms and every option as many;
+ *   `arm_lengths_shared`: every option has exactly the target's cubes per arm (geometry
+ *   `armLengths`), so counting tells no option apart;
+ * - `torsion_distractors` (in place of `moved_distractors`): the two non-mirror distractors are
+ *   one-joint torsion variants of the target ("torsion") or of its mirror ("mirror_torsion"),
+ *   neither rotation-equivalent to the target; `distractors_paired`: they are mirror images of each
+ *   other. With `unique_rotation_match`, `one_mirror` and `options_pairwise_distinct` this proves
+ *   the key (G2) and that each distractor fails for its documented reason (G3);
+ * - `axis_oblique`: the key's rotation axis is oblique (cos 75° ≤ |axis · view| < cos 45°) and
+ *   `oblique` records it;
+ * - `counts_match` also checks `n_torsion` / `n_mirror_torsion` (and `n_moved` = `n_mirror_moved` = 0);
+ *   `prior_matches`, `time_matches`: the torsion prior and E[T] (`prior.ts`); `stratum_matches`:
+ *   stratum 5 or 6, the band of b, and the angle in 70–140°.
  */
 
 import { verdict, type VerifyResult } from '../family'
@@ -55,22 +74,38 @@ import {
   quatMul,
   quatNorm,
   sortedKey,
+  armLengths,
+  centreSpreadSq,
+  torsionVariantChains,
   type Cube,
   type Quat,
 } from './geometry'
 import {
   ANGLE_BINS,
+  HARD_ANGLE_RANGE,
+  HARD_STRATA,
   ROTATION_SD_PRIOR,
   ROTATION_STRATA,
   rotationBPrior,
   rotationExpectedTime,
+  rotationHardBPrior,
+  rotationHardExpectedTime,
 } from './prior'
 import {
   ANGLE_TOL_DEG,
   CAMERA_ISO_V1,
   COS_TOL,
   FEATURE_NAMES,
+  HARD_FEATURE_NAMES,
+  HARD_MAX_ARMS,
+  HARD_MAX_CENTRE_RADIUS_SQ,
+  HARD_MAX_CUBES,
+  HARD_MIN_ARMS,
+  HARD_MIN_CUBES,
   IN_DEPTH_MAX_COS,
+  OBLIQUE_MAX_COS,
+  OBLIQUE_MIN_COS,
+  TORSION_TEMPLATE,
   ISO_V1_VIEW_AXIS,
   MAX_CUBES,
   MAX_VIEW_CUBES,
@@ -81,6 +116,7 @@ import {
   TIME_TOL,
   type DistractorKind,
   type RotationItem,
+  type RotationTemplate,
 } from './spec'
 
 const GROUP_QUATS: readonly Quat[] = ROTATION_GROUP.map(quatFromMat3)
@@ -128,6 +164,8 @@ const unitQuat = (q: Quat): Quat => {
 
 /** What the verifier recomputes from an item (null fields when they cannot be computed). */
 export interface RotationAnalysis {
+  /** The template the item records (`features.template`), whose distractor kinds `kinds` uses. */
+  readonly template: RotationTemplate
   /** Per option: 'correct' for the key option, otherwise its distractor kind ('other' if none fits). */
   readonly kinds: readonly (DistractorKind | 'correct' | 'other')[]
   /** Angle (degrees) and |axis · line of sight| of the rotation from the target's display to the key option's. */
@@ -163,26 +201,34 @@ interface Analysis extends RotationAnalysis {
   readonly optionCanons: readonly string[]
 }
 
-function analyse(target: View, options: readonly View[], keyIndex: unknown): Analysis {
+/** The template an item records: torsion iff `features.template` is "torsion". */
+const templateOf = (features: unknown): RotationTemplate =>
+  isPlainObject(features) && features.template === TORSION_TEMPLATE ? 'torsion' : 'classic'
+
+function analyse(target: View, options: readonly View[], keyIndex: unknown, template: RotationTemplate): Analysis {
   const T = target.cubes
   const keyOk = isInt(keyIndex) && keyIndex >= 0 && keyIndex < options.length
   const canonTarget = canonKey(T)
   const canonMirror = canonKey(mirror(T))
   const optionCanons = options.map((o) => canonKey(o.cubes))
   const matches = optionCanons.flatMap((k, i) => (k === canonTarget ? [i] : []))
-  // Moved-variant classes by chain key (a complete rotation invariant of chains, = canon equality).
-  const movedT = new Set(movedVariantChains(T).map((v) => chainKeyOf(v.info)))
-  const movedM = new Set(movedVariantChains(mirror(T)).map((v) => chainKeyOf(v.info)))
+  // Variant classes by chain key (a complete rotation invariant of chains, = canon equality):
+  // one-cube-moved variants (classic) or one-joint torsion variants (torsion template).
+  const variants = template === 'torsion' ? torsionVariantChains : movedVariantChains
+  const [own, ofMirror] = template === 'torsion' ? (['torsion', 'mirror_torsion'] as const) : (['moved', 'mirror_moved'] as const)
+  const fromT = new Set(variants(T).map((v) => chainKeyOf(v.info)))
+  const fromM = new Set(variants(mirror(T)).map((v) => chainKeyOf(v.info)))
   const kinds = options.map((o, i): RotationAnalysis['kinds'][number] => {
     if (keyOk && i === keyIndex) return 'correct'
     if (optionCanons[i] === canonTarget) return 'other' // a second rotation of the target is no distractor
     if (optionCanons[i] === canonMirror) return 'mirror'
     const k = chainKey(o.cubes)
-    if (k !== null && movedT.has(k)) return 'moved'
-    return k !== null && movedM.has(k) ? 'mirror_moved' : 'other'
+    if (k !== null && fromT.has(k)) return own
+    return k !== null && fromM.has(k) ? ofMirror : 'other'
   })
   const rel = keyOk && matches.includes(keyIndex) ? relativeRotation(target, options[keyIndex] as View) : null
   return {
+    template,
     kinds,
     angleDeg: rel?.angleDeg ?? null,
     axisViewCos: rel?.axisViewCos ?? null,
@@ -199,8 +245,8 @@ function analyse(target: View, options: readonly View[], keyIndex: unknown): Ana
 export function analyseRotation(item: RotationItem): RotationAnalysis | null {
   const parsed = parseSpec(item.spec)
   if (parsed === null) return null
-  const { kinds, angleDeg, axisViewCos, arms } = analyse(parsed.target, parsed.options, item.key.index)
-  return { kinds, angleDeg, axisViewCos, arms }
+  const { template, kinds, angleDeg, axisViewCos, arms } = analyse(parsed.target, parsed.options, item.key.index, templateOf(item.difficulty?.features))
+  return { template, kinds, angleDeg, axisViewCos, arms }
 }
 
 /** Verify a rotation item; never throws. */
@@ -221,36 +267,56 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
   const shapes = [T, ...opts]
   const n = T.length
   const keyIndex = (item.key as { index?: unknown }).index
-  const a = analyse(target, options, keyIndex)
+  // The recorded template picks the rules (module comment): classic, or torsion (1.4.0, strata 5–6).
+  const torsion = templateOf(item.difficulty?.features) === 'torsion'
+  const a = analyse(target, options, keyIndex, torsion ? 'torsion' : 'classic')
+  const [own, ofMirror] = torsion ? (['torsion', 'mirror_torsion'] as const) : (['moved', 'mirror_moved'] as const)
   const tInfo = chainInfo(T)
   const oInfos = opts.map(chainInfo)
   const distractorKinds = a.kinds.filter((k) => k !== 'correct')
-  const movedIdx = a.kinds.flatMap((k, i) => (k === 'moved' || k === 'mirror_moved' ? [i] : []))
+  const variantIdx = a.kinds.flatMap((k, i) => (k === own || k === ofMirror ? [i] : []))
+  const count = (kind: string): number => a.kinds.filter((k) => k === kind).length
 
   const f: Readonly<Record<string, unknown>> = isPlainObject(item.difficulty?.features) ? item.difficulty.features : {}
   const featuresComplete =
-    hasExactly(f, FEATURE_NAMES) &&
+    hasExactly(f, torsion ? HARD_FEATURE_NAMES : FEATURE_NAMES) &&
     isFiniteNumber(f.angle_deg) &&
     isFiniteNumber(f.axis_view_cos) &&
     typeof f.in_depth === 'boolean' &&
-    [f.n_cubes, f.n_arms, f.n_moved, f.n_mirror_moved].every(isInt)
+    [f.n_cubes, f.n_arms, f.n_moved, f.n_mirror_moved].every(isInt) &&
+    (!torsion || (typeof f.oblique === 'boolean' && [f.n_torsion, f.n_mirror_torsion].every(isInt)))
   const angle = featuresComplete ? (f.angle_deg as number) : NaN
   const cos = featuresComplete ? (f.axis_view_cos as number) : NaN
+  const nCubes = f.n_cubes as number
   const bPrior = item.difficulty?.b_prior
   const stratum = item.stratum
-  const bin = ANGLE_BINS[stratum] as readonly [number, number] | undefined
+  const bin = torsion ? HARD_ANGLE_RANGE : (ANGLE_BINS[stratum] as readonly [number, number] | undefined)
+  const wantB = !featuresComplete
+    ? NaN
+    : torsion
+      ? rotationHardBPrior({ angle_deg: angle, oblique: f.oblique as boolean, n_cubes: nCubes, n_arms: f.n_arms as number })
+      : rotationBPrior({ angle_deg: angle })
+  const wantT = torsion ? rotationHardExpectedTime(angle, nCubes) : rotationExpectedTime(angle)
+  const tLengths = tInfo === null ? null : armLengths(tInfo).join(',')
+  const [minCubes, maxCubes] = torsion ? [HARD_MIN_CUBES, HARD_MAX_CUBES] : [MIN_CUBES, MAX_CUBES]
 
   return verdict({
     well_formed: true,
     four_options: options.length === ROTATION_OPTIONS && item.options_count === ROTATION_OPTIONS,
     key_in_range: a.keyOk,
-    cube_count: n >= MIN_CUBES && n <= MAX_CUBES && opts.every((o) => o.length === n),
+    cube_count: n >= minCubes && n <= maxCubes && opts.every((o) => o.length === n),
     cubes_distinct: shapes.every(allDistinct),
     shapes_at_origin: shapes.every(atOrigin),
     connected: shapes.every(isConnected),
     target_is_chain: tInfo !== null,
     options_are_chains: oInfos.every((i) => i !== null),
-    arm_count: [tInfo, ...oInfos].every((i) => (i?.arms ?? 0) >= MIN_ARMS),
+    arm_count: torsion
+      ? tInfo !== null && tInfo.arms >= HARD_MIN_ARMS && tInfo.arms <= HARD_MAX_ARMS && oInfos.every((i) => i?.arms === tInfo.arms)
+      : [tInfo, ...oInfos].every((i) => (i?.arms ?? 0) >= MIN_ARMS),
+    ...(torsion && {
+      compact: shapes.every((sh) => centreSpreadSq(sh) <= HARD_MAX_CENTRE_RADIUS_SQ * sh.length * sh.length),
+      arm_lengths_shared: tLengths !== null && oInfos.every((i) => i !== null && armLengths(i).join(',') === tLengths),
+    }),
     // §4.2 verify_rotation_item
     unique_rotation_match: a.keyOk && a.matches.length === 1 && a.matches[0] === keyIndex,
     target_chiral: a.canonMirror !== a.canonTarget,
@@ -258,11 +324,10 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
     // A11
     options_pairwise_distinct: new Set(a.optionCanons).size === a.optionCanons.length,
     one_mirror: a.optionCanons.filter((k) => k === a.canonMirror).length === 1,
-    moved_distractors:
-      distractorKinds.length === ROTATION_OPTIONS - 1 &&
-      distractorKinds.filter((k) => k === 'moved' || k === 'mirror_moved').length === ROTATION_OPTIONS - 2,
+    [torsion ? 'torsion_distractors' : 'moved_distractors']:
+      distractorKinds.length === ROTATION_OPTIONS - 1 && variantIdx.length === ROTATION_OPTIONS - 2,
     distractors_paired:
-      movedIdx.length === 2 && canonKey(mirror(opts[movedIdx[0] as number] as Cube[])) === a.optionCanons[movedIdx[1] as number],
+      variantIdx.length === 2 && canonKey(mirror(opts[variantIdx[0] as number] as Cube[])) === a.optionCanons[variantIdx[1] as number],
     no_verbatim_target: opts.every((o) => sortedKey(o) !== sortedKey(T)),
     order_hidden: opts.every((o) => !indexAligned(T, o)),
     unit_quaternions: [target, ...options].every((v) => Math.abs(quatNorm(v.quat) - 1) <= QUAT_NORM_TOL),
@@ -272,28 +337,25 @@ function verifyUnsafe(item: RotationItem): VerifyResult {
     angle_matches: a.angleDeg !== null && Math.abs(angle - a.angleDeg) <= ANGLE_TOL_DEG,
     depth_matches:
       a.axisViewCos !== null && Math.abs(cos - a.axisViewCos) <= COS_TOL && f.in_depth === (cos < IN_DEPTH_MAX_COS),
+    ...(torsion && { axis_oblique: featuresComplete && f.oblique === true && cos >= OBLIQUE_MIN_COS && cos < OBLIQUE_MAX_COS }),
     counts_match:
       featuresComplete &&
       f.n_cubes === n &&
       f.n_arms === a.arms &&
-      f.n_moved === a.kinds.filter((k) => k === 'moved').length &&
-      f.n_mirror_moved === a.kinds.filter((k) => k === 'mirror_moved').length,
+      f.n_moved === count('moved') &&
+      f.n_mirror_moved === count('mirror_moved') &&
+      (!torsion || (f.n_torsion === count('torsion') && f.n_mirror_torsion === count('mirror_torsion'))),
     prior_matches:
-      featuresComplete &&
-      isFiniteNumber(bPrior) &&
-      Math.abs(bPrior - rotationBPrior({ angle_deg: angle })) <= PRIOR_TOL &&
-      item.difficulty.sd_prior === ROTATION_SD_PRIOR,
+      featuresComplete && isFiniteNumber(bPrior) && Math.abs(bPrior - wantB) <= PRIOR_TOL && item.difficulty.sd_prior === ROTATION_SD_PRIOR,
     stratum_matches:
-      ROTATION_STRATA.includes(stratum) &&
+      (torsion ? HARD_STRATA : ROTATION_STRATA).includes(stratum) &&
       isFiniteNumber(bPrior) &&
       stratumOfB(bPrior) === stratum &&
       bin !== undefined &&
       angle >= bin[0] &&
       angle < bin[1],
     time_matches:
-      featuresComplete &&
-      Math.abs(item.expected_time_s - rotationExpectedTime(angle)) <= TIME_TOL &&
-      item.time_limit_s === powerTimeLimit(item.expected_time_s),
+      featuresComplete && Math.abs(item.expected_time_s - wantT) <= TIME_TOL && item.time_limit_s === powerTimeLimit(item.expected_time_s),
     distractors: distractorKinds,
   })
 }

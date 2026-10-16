@@ -26,18 +26,43 @@
  *    is shuffled too, and an option list that happens to be index-aligned with it
  *    ({@link indexAligned}, p ≈ 1/n!) is reshuffled.
  * 4. The key index is uniform over 0–3 (the four options are shuffled).
+ *
+ * Steps 1–4 are the classic template ({@link buildRotationClassic}): generator 1.3.0 for every
+ * stratum, and 1.4.0 for the natural pool and requested strata 2–4 (the same code path, so those
+ * items equal 1.3.0's up to the version). Generator 1.4.0 draws requested strata 5 and 6 from the
+ * torsion template ({@link buildRotationTorsion}; ROADMAP M3.12, the owner found the classic items
+ * easy even at 180°: the moved pair falls to counting cubes per arm, which leaves a two-way
+ * mirror judgement):
+ *
+ * 1. Target: a chain of 10–14 cubes with 5–min(7, ⌈n/2⌉) arms (so arms average ≥ 1.6 steps),
+ *    compact (every cube centre within √18 of the centroid, so the figures are drawn no smaller
+ *    than classic ones), chiral and asymmetric ({@link drawHardTarget}).
+ * 2. Distractors: the pure mirror (A11: exactly one) and a one-joint torsion variant W of the
+ *    target with W's mirror image ({@link torsionDistractorPairs}; geometry `torsionVariantChains`):
+ *    the part after one joint turned 90°, 180° or 270° about the arm ending there. All four options
+ *    then have exactly the target's cubes per arm, so counting removes none of them; only
+ *    carrying the handedness of every joint through the turn separates them. W is chiral and
+ *    asymmetric with the target's cube and arm counts (it could have been drawn as a target), the
+ *    target is a torsion variant of W, and a fair coin swaps their roles, so the pairs
+ *    {target, mirror} and {W, mirror(W)} are exchangeable (no option-only cue, as in 1.3.0).
+ * 3. Display as in the classic step 3, but every option's rotation axis is oblique (45°–75° from
+ *    the line of sight) and its angle uniform in {@link hardAngleBin}: the part of 70–140° whose
+ *    torsion b (`prior.ts`) is in the requested band, given this target's cube and arm counts.
  */
 
 import type { JsonValue, Rng } from '../../engine'
 import type { BuildContext, BuiltItem } from '../family'
 import type { Stratum } from '../ids'
+import { stratumOfB } from '../priors'
 import {
   AXIS_STEPS,
   ROTATION_GROUP,
   achiralCanon,
   applyMat,
   canonKey,
+  centreSpreadSq,
   chainInfo,
+  torsionVariantChains,
   chainKey,
   chainKeyOf,
   dot,
@@ -62,14 +87,29 @@ import {
 import {
   ANGLE_BINS,
   ANGLE_RANGE,
+  HARD_STRATA,
+  ROTATION_HARD_PROVENANCE,
   ROTATION_PROVENANCE,
   ROTATION_SD_PRIOR,
+  hardAngleBin,
+  hardBonus,
   rotationBPrior,
   rotationExpectedTime,
+  rotationHardBPrior,
+  rotationHardExpectedTime,
   rotationStratumOf,
 } from './prior'
 import {
+  HARD_MAX_ARMS,
+  HARD_MAX_CENTRE_RADIUS_SQ,
+  HARD_MAX_CUBES,
+  HARD_MIN_ARMS,
+  HARD_MIN_CUBES,
   IN_DEPTH_MAX_COS,
+  OBLIQUE_MAX_COS,
+  OBLIQUE_MIN_COS,
+  TORSION_TEMPLATE,
+  type HardRotationFeatures,
   ISO_V1_VIEW_AXIS,
   MAX_CUBES,
   MIN_CUBES,
@@ -210,11 +250,23 @@ interface Display {
   readonly axis: Vec3
 }
 
+/** A random rotation axis in the oblique band: cos 75° ≤ |axis · view| < cos 45° (torsion template). */
+function drawObliqueAxis(rng: Rng): Vec3 {
+  for (;;) {
+    const u = randomUnitVector(rng)
+    const c = Math.abs(dot(u, ISO_V1_VIEW_AXIS))
+    if (c >= OBLIQUE_MIN_COS && c < OBLIQUE_MAX_COS) return u
+  }
+}
+
+/** The classic axis: in depth or in the picture plane with probability ½ each. */
+const classicAxis = (rng: Rng): Vec3 => drawAxis(rng, rng.next() < 0.5)
+
 /** Show `base` (in the target's frame) as R · q_T · base, re-expressed under a random h ≠ identity. */
-function display(rng: Rng, base: readonly Cube[], qT: Quat, angleDeg: number): Display {
+function display(rng: Rng, base: readonly Cube[], qT: Quat, angleDeg: number, axisOf: (rng: Rng) => Vec3 = classicAxis): Display {
   const h = rng.int(1, ROTATION_GROUP.length - 1) // index 0 is the identity
   const cubes = rng.shuffle(normalise(base.map((c) => applyMat(ROTATION_GROUP[h] as Mat3, c))))
-  const axis = drawAxis(rng, rng.next() < 0.5)
+  const axis = axisOf(rng)
   const qRel = quatFromAxisAngle(axis, angleDeg)
   const quat = quatNormalize(quatMul(quatMul(qRel, qT), quatConj(GROUP_QUATS[h] as Quat)))
   return { view: { cubes, quat }, angleDeg, axis }
@@ -222,7 +274,17 @@ function display(rng: Rng, base: readonly Cube[], qT: Quat, angleDeg: number): D
 
 const drawAngle = (rng: Rng, [lo, hi]: readonly [number, number]): number => lo + (hi - lo) * rng.next()
 
+/**
+ * Generator 1.4.0: requested strata 5 and 6 from the torsion template, everything else (the
+ * natural pool, requested strata 2–4) from the classic template exactly as in 1.3.0.
+ */
 export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSpec, RotationKey> {
+  if (ctx.stratum !== undefined && HARD_STRATA.includes(ctx.stratum)) return buildRotationTorsion(rng, ctx.stratum)
+  return buildRotationClassic(rng, ctx)
+}
+
+/** The classic template: generator 1.3.0 for every stratum (kept whole for its saved ids, R-8.1). */
+export function buildRotationClassic(rng: Rng, ctx: BuildContext): BuiltItem<RotationSpec, RotationKey> {
   if (ctx.stratum !== undefined && ANGLE_BINS[ctx.stratum] === undefined) throw new RangeError(`rotation cannot generate stratum ${ctx.stratum}`)
 
   let target: Cube[] = []
@@ -290,5 +352,124 @@ export function buildRotation(rng: Rng, ctx: BuildContext): BuiltItem<RotationSp
     options_count: ROTATION_OPTIONS,
     difficulty: { features: { ...features }, b_prior: bPrior, sd_prior: ROTATION_SD_PRIOR, provenance: ROTATION_PROVENANCE },
     expected_time_s: rotationExpectedTime(features.angle_deg),
+  }
+}
+
+// --- the torsion template (generator 1.4.0, requested strata 5 and 6) ---------------------------
+
+/** Most arms of a torsion target of `n` cubes: ⌈n/2⌉ capped at 7, so arms average ≥ 1.6 steps. */
+export const hardMaxArms = (n: number): number => Math.min(HARD_MAX_ARMS, Math.ceil(n / 2))
+
+/** A torsion-template target (min corner): 10–14 cubes, 5–{@link hardMaxArms} arms, compact, chiral, asymmetric. */
+export function drawHardTarget(rng: Rng): Cube[] {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const n = rng.int(HARD_MIN_CUBES, HARD_MAX_CUBES)
+    const arms = rng.int(HARD_MIN_ARMS, hardMaxArms(n))
+    const cubes = drawChain(rng, n, arms)
+    if (cubes === null || !isCompact(cubes)) continue
+    if (canonKey(mirror(cubes)) === canonKey(cubes)) continue
+    if (symmetryOrder(cubes) !== 1) continue
+    return normalise(cubes)
+  }
+  throw new Error('rotation: no valid torsion target after many attempts')
+}
+
+/** The torsion template's compactness rule (spec.ts {@link HARD_MAX_CENTRE_RADIUS_SQ}). */
+export const isCompact = (cubes: readonly Cube[]): boolean => centreSpreadSq(cubes) <= HARD_MAX_CENTRE_RADIUS_SQ * cubes.length * cubes.length
+
+/** True if the shape could have been drawn by {@link drawHardTarget}. */
+export function isHardTargetLike(cubes: readonly Cube[]): boolean {
+  const n = cubes.length
+  if (n < HARD_MIN_CUBES || n > HARD_MAX_CUBES || !isCompact(cubes)) return false
+  const info = chainInfo(cubes)
+  if (info === null || info.arms < HARD_MIN_ARMS || info.arms > hardMaxArms(n)) return false
+  return chainKey(mirror(cubes)) !== chainKeyOf(info) && symmetryOrder(cubes) === 1
+}
+
+/**
+ * The torsion distractors W the generator draws from, one per class up to reflection: the
+ * target's one-joint torsion variants that are hard-target-like and in neither the target's class
+ * nor its mirror's. W is shown with mirror(W), so the four classes target, mirror, W, mirror(W)
+ * are pairwise distinct (W is chiral and not the target's mirror).
+ */
+export function torsionDistractorPairs(target: readonly Cube[]): Cube[][] {
+  const excluded = new Set([chainKey(target), chainKey(mirror(target))])
+  const seen = new Set<string>()
+  const out: Cube[][] = []
+  for (const v of torsionVariantChains(target)) {
+    const k = chainKeyOf(v.info)
+    if (excluded.has(k) || seen.has(k) || !isHardTargetLike(v.cubes)) continue
+    seen.add(k)
+    seen.add(chainKey(mirror(v.cubes)) as string)
+    out.push(normalise(v.cubes))
+  }
+  return out
+}
+
+/** Generator 1.4.0's torsion template for a requested stratum 5 or 6 (see the module comment). */
+export function buildRotationTorsion(rng: Rng, stratum: Stratum): BuiltItem<RotationSpec, RotationKey> {
+  let target: Cube[] = []
+  let pairs: Cube[][] = []
+  let bin: readonly [number, number] | null = null
+  let bonus = 0
+  for (let attempt = 0; pairs.length === 0 || bin === null; attempt++) {
+    if (attempt >= MAX_ATTEMPTS) throw new Error('rotation: no torsion target with a distractor pair')
+    target = drawHardTarget(rng)
+    pairs = torsionDistractorPairs(target)
+    bonus = hardBonus({ oblique: true, n_cubes: target.length, n_arms: chainInfo(target)?.arms ?? 0 })
+    bin = hardAngleBin(stratum, bonus)
+  }
+  const [lo, hi] = bin
+  let other = rng.pick(pairs)
+  // W is hard-target-like and the target is a torsion variant of W: swap them half the time.
+  if (rng.next() < 0.5) [target, other] = [other, target]
+  const otherMirror = normalise(mirror(other))
+  const torsionKeys = new Set(torsionVariantChains(target).map((v) => chainKeyOf(v.info)))
+  const nMirrorTorsion = [other, otherMirror].filter((d) => !torsionKeys.has(chainKey(d) as string)).length
+  const nArms = chainInfo(target)?.arms ?? 0
+
+  const draw = (): number => lo + (hi - lo) * rng.next()
+  const bOf = (angle: number): number => rotationHardBPrior({ angle_deg: angle, oblique: true, n_cubes: target.length, n_arms: nArms })
+  let angle = draw()
+  while (stratumOfB(bOf(angle)) !== stratum) angle = draw() // a float bin edge
+
+  const qT = randomQuat(rng)
+  const bases: readonly (readonly Cube[])[] = [target, normalise(mirror(target)), other, otherMirror]
+  const shown = bases.map((b, i) => display(rng, b, qT, i === 0 ? angle : draw(), drawObliqueAxis))
+  const order = rng.shuffle([0, 1, 2, 3])
+  const targetCubes = rng.shuffle(target)
+  const options = order.map((i): PolycubeView => {
+    const { cubes, quat } = (shown[i] as Display).view
+    let list = cubes
+    while (indexAligned(targetCubes, list)) list = rng.shuffle(list)
+    return { cubes: list, quat }
+  })
+
+  const correct = shown[0] as Display
+  const axisViewCos = Math.abs(dot(correct.axis, ISO_V1_VIEW_AXIS))
+  const features: HardRotationFeatures = {
+    angle_deg: correct.angleDeg,
+    axis_view_cos: axisViewCos,
+    in_depth: axisViewCos < IN_DEPTH_MAX_COS,
+    n_cubes: target.length,
+    n_arms: nArms,
+    n_moved: 0,
+    n_mirror_moved: 0,
+    template: TORSION_TEMPLATE,
+    oblique: axisViewCos >= OBLIQUE_MIN_COS && axisViewCos < OBLIQUE_MAX_COS,
+    n_torsion: 2 - nMirrorTorsion,
+    n_mirror_torsion: nMirrorTorsion,
+  }
+  const bPrior = rotationHardBPrior(features)
+  const structure: RotationStructure = { polycube: achiralCanon(target) }
+  const structuralParams: JsonValue = { polycube: structure.polycube.map(([x, y, z]) => [x, y, z]) }
+  return {
+    stratum,
+    spec: { target: { cubes: targetCubes, quat: qT }, options, camera: CAMERA_ISO_V1 },
+    key: { index: order.indexOf(0) },
+    structural_params: structuralParams,
+    options_count: ROTATION_OPTIONS,
+    difficulty: { features: { ...features }, b_prior: bPrior, sd_prior: ROTATION_SD_PRIOR, provenance: ROTATION_HARD_PROVENANCE },
+    expected_time_s: rotationHardExpectedTime(features.angle_deg, features.n_cubes),
   }
 }

@@ -27,15 +27,17 @@ const CHANCE = 1 / 6
 const MAX_HIT_RATE = 1.5 * CHANCE
 
 describe('matrices family (M1.6)', () => {
-  it('passes runFamilyProperties at n = 10,000 across strata 1–4', () => {
+  it('passes runFamilyProperties at n = 10,000 across strata 1–6', () => {
     const r = runFamilyProperties(matrices, { ...OPTS, strata: matrices.strata })
     expect(r.n).toBe(VERIFY_INSTANCES)
     expect(r.distinctItemIds).toBe(VERIFY_INSTANCES)
     expect(r.distinctContents).toBe(VERIFY_INSTANCES)
-    expect(r.strataCounts).toEqual({ 1: 2_500, 2: 2_500, 3: 2_500, 4: 2_500, 5: 0, 6: 0 })
-    expect(r.distinctFamilyIds).toBeGreaterThan(900)
+    expect(r.strataCounts).toEqual({ 1: 1_667, 2: 1_667, 3: 1_667, 4: 1_667, 5: 1_666, 6: 1_666 })
+    // 1.2.0 sets in strata 1–4 (≤ 1,655), plus thousands of hard sets in 5–6 (M3.12).
+    expect(r.distinctFamilyIds).toBeGreaterThan(3_500)
     expect(r.bPrior.min).toBeCloseTo(-1.76, 2)
-    expect(r.bPrior.max).toBeCloseTo(1.09, 2)
+    expect(r.bPrior.max).toBeGreaterThan(3.5)
+    expect(r.bPrior.max).toBeLessThanOrEqual(3.89 + 1e-9)
   }, 300_000)
 
   it('passes runFamilyProperties when the family picks the rule set (the natural pool, M1.P)', () => {
@@ -99,14 +101,14 @@ describe('matrices family (M1.6)', () => {
     }
   }, 60_000)
 
-  it('has the A9 item model, identity fields and targetable strata 1–4', () => {
+  it('has the A9 item model, identity fields and targetable strata 1–6', () => {
     const item = matrices.generate('meta', { stratum: 3 })
     expect(item).toMatchObject({ family: 'matrices', axis: 'MAT', facet: 'matrix', item_type: 'mc_matrix_spec', options_count: 6 })
     expect(item.params).toEqual({ model: '2pl', a: 1, b: item.difficulty.b_prior })
     expect(item.seed).toBe('meta@s3')
     expect(matrices.generate('meta@s3')).toEqual(item)
-    expect(matrices.strata).toEqual([1, 2, 3, 4])
-    expect(() => matrices.generate('meta', { stratum: 5 })).toThrow(RangeError)
+    expect(matrices.strata).toEqual([1, 2, 3, 4, 5, 6])
+    expect(matrices.generatorVersion).toBe('1.3.0')
     expect(item.spec.grid.map((r) => r.length)).toEqual([3, 3, 2])
     expect(item.spec.options).toHaveLength(6)
   })
@@ -140,14 +142,14 @@ describe('matrices prior (M1.P, [SPEC] v0)', () => {
     expect(stratumOfB(bPriorOf(featuresOf(EXAMPLE1_RULES)))).toBe(2)
   })
 
-  it('groups all 1,655 rule sets into strata 1–4', () => {
+  it('groups all 1,655 rule sets into strata 1–4, and the hard rule sets into 5–6 (M3.12)', () => {
     expect(allRuleSets()).toHaveLength(1_655)
-    expect(MATRIX_STRATA).toEqual([1, 2, 3, 4])
+    expect(MATRIX_STRATA).toEqual([1, 2, 3, 4, 5, 6])
     const sizes = MATRIX_STRATA.map((s) => RULE_SETS_BY_STRATUM.get(s)?.length)
-    expect(sizes).toEqual([10, 368, 1_156, 121])
+    expect(sizes).toEqual([10, 368, 1_156, 121, 6_184, 3_995])
   })
 
   it('expects 30–60 s', () => {
-    expect([1, 2, 3, 4].map(expectedTimeOf)).toEqual([30, 40, 50, 60])
+    expect([1, 2, 3, 4].map((n) => expectedTimeOf(n))).toEqual([30, 40, 50, 60])
   })
 })

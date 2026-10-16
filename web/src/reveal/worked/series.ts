@@ -166,6 +166,113 @@ export function seriesSolution(item: SeriesItem): WorkedSolution {
         exact: String(next),
       }
     }
+    case 'tribonacci': {
+      const k = c.c as number
+      const plusK = k === 0 ? '' : ` ${k < 0 ? '−' : '+'} ${Math.abs(k)}`
+      const sum3 = (i: number): string => `${num(t[i] as number)} + ${paren(t[i + 1] as number)} + ${paren(t[i + 2] as number)}${plusK}`
+      const next = (t[m - 3] as number) + (t[m - 2] as number) + last + k
+      return {
+        steps: [
+          `Try adding the three terms before each one: ${sum3(0)} = ${num(t[3] as number)}, and ${sum3(1)} = ${num(t[4] as number)}.`,
+          `The rule is: each term is the three before it added together${k === 0 ? '' : `, then ${addPhrase(k)}`}.`,
+          `Apply it to the last three terms: ${sum3(m - 3)} = ${num(next)}.`,
+        ],
+        answer: num(next),
+        exact: String(next),
+      }
+    }
+    case 'diff_fibonacci': {
+      const k = c.c as number
+      const plusK = k === 0 ? '' : ` ${k < 0 ? '−' : '+'} ${Math.abs(k)}`
+      const n1 = d1.length
+      const a = d1[n1 - 2] as number
+      const b = d1[n1 - 1] as number
+      const nextDiff = a + b + k
+      return {
+        steps: [
+          `Look at the change from each term to the next: ${shown(d1)}.`,
+          `Each change is the two changes before it added together${k === 0 ? '' : `, then ${addPhrase(k)}`}: ${num(d1[0] as number)} + ${paren(d1[1] as number)}${plusK} = ${num(d1[2] as number)}.`,
+          `The next change is ${num(a)} + ${paren(b)}${plusK} = ${num(nextDiff)}, so the next term is ${plus(last, nextDiff, last + nextDiff)}.`,
+        ],
+        answer: num(last + nextDiff),
+        exact: String(last + nextDiff),
+      }
+    }
+    case 'interleaved_ops': {
+      const a: AltOp = { op: c.op_a as 'add' | 'mul', by: c.by_a as number }
+      const b: AltOp = { op: c.op_b as 'add' | 'mul', by: c.by_b as number }
+      const first = t.filter((_, i) => i % 2 === 0)
+      const second = t.filter((_, i) => i % 2 === 1)
+      const places = (start: number): string => list(t.flatMap((_, i) => (i % 2 === start ? [String(i + 1)] : [])))
+      const usesFirst = m % 2 === 0
+      const o = usesFirst ? a : b
+      const prev = t[m - 2] as number
+      const next = applyOp(o, prev)
+      return {
+        steps: [
+          `Two sequences are mixed together, each with its own rule. Terms ${places(0)} go ${list(first.map(num))}: ${opPhrase(a)} each time. Terms ${places(1)} go ${list(second.map(num))}: ${opPhrase(b)} each time.`,
+          `The blank is term ${m + 1}, so it continues the ${usesFirst ? 'first' : 'second'} sequence. The term before it in that sequence is ${num(prev)}.`,
+          `Apply that sequence's rule: ${opArrow(o, prev, next)}.`,
+        ],
+        answer: num(next),
+        exact: String(next),
+      }
+    }
+    case 'linear_rec': {
+      const a = c.a as number
+      const b = c.b as number
+      const combo = (i: number): string => `${paren(a)} × ${paren(t[i + 1] as number)} + ${paren(b)} × ${paren(t[i] as number)}`
+      const next = a * last + b * (t[m - 2] as number)
+      return {
+        steps: [
+          `Each term is made from the two before it: ${paren(a)} times the term just before plus ${paren(b)} times the one before that. For example ${combo(0)} = ${num(t[2] as number)}, and ${combo(1)} = ${num(t[3] as number)}.`,
+          `It holds for the later terms too: ${list(t.slice(4).map((x, i) => `${combo(i + 2)} = ${num(x)}`))}.`,
+          `Apply it to the last two terms: ${combo(m - 2)} = ${num(next)}.`,
+        ],
+        answer: num(next),
+        exact: String(next),
+      }
+    }
+    case 'affine_index': {
+      const mult = c.m as number
+      const k = c.c as number
+      const d = c.d as number
+      const added = t.slice(1).map((x, i) => x - mult * (t[i] as number))
+      const lastAdded = added[added.length - 1] as number
+      const nextAdded = lastAdded + d
+      const next = mult * last + nextAdded
+      const then = (x: number): string => (x < 0 ? `− ${-x}` : `+ ${x}`)
+      return {
+        steps: [
+          `Multiply each term by ${paren(mult)} and see what is added to reach the next one: ${num(t[0] as number)} × ${paren(mult)} ${then(added[0] as number)} = ${num(t[1] as number)}, and ${num(t[1] as number)} × ${paren(mult)} ${then(added[1] as number)} = ${num(t[2] as number)}.`,
+          `The amounts added go ${list(added.map(num))}: they start at ${num(k)} and change by ${signedNum(d)} each time. The next amount is ${plus(lastAdded, d, nextAdded)}.`,
+          `Apply it to the last term: ${num(last)} × ${paren(mult)} ${then(nextAdded)} = ${num(next)}.`,
+        ],
+        answer: num(next),
+        exact: String(next),
+      }
+    }
+    case 'cycle3': {
+      const ops: AltOp[] = [
+        { op: c.op_a as 'add' | 'mul', by: c.by_a as number },
+        { op: c.op_b as 'add' | 'mul', by: c.by_b as number },
+        { op: c.op_c as 'add' | 'mul', by: c.by_c as number },
+      ]
+      const phase = (m - 1) % 3
+      const o = ops[phase] as AltOp
+      const next = applyOp(o, last)
+      const nth = ['first', 'second', 'third'][phase] as string
+      const shownOp = (i: number): string => `${opPhrase(ops[i] as AltOp)} (${opArrow(ops[i] as AltOp, t[i] as number, t[i + 1] as number)})`
+      return {
+        steps: [
+          `Three different steps take turns. From term 1 to term 2: ${shownOp(0)}. From term 2 to term 3: ${shownOp(1)}. From term 3 to term 4: ${shownOp(2)}.`,
+          `They repeat in that order: from term 4 the first step comes again (${opArrow(ops[0] as AltOp, t[3] as number, t[4] as number)}). The step from term ${m} to the blank is the ${nth} kind: ${opPhrase(o)}.`,
+          `Apply it to the last term: ${opArrow(o, last, next)}.`,
+        ],
+        answer: num(next),
+        exact: String(next),
+      }
+    }
     case 'letter':
       throw new RangeError('the rule "letter" belongs to a letter series')
   }

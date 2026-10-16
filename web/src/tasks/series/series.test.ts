@@ -4,23 +4,34 @@ import { itemId, structuralHash } from '../ids'
 import { ICAR_ANCHOR_B, powerTimeLimit, stratumOfB } from '../priors'
 import { runFamilyProperties } from '../testing'
 import { ANALYSIS_FIXTURE_N, analysisCase, analysisFixture, serializeAnalysisFixture } from './analysis-fixture'
-import { SERIES_STRATA, acceptDraft, minVisibleFor, renderDraft, type Draft } from './gen'
-import { series, seriesSpecLeaksKey, type SeriesItem, type SeriesKey, type SeriesSpec } from '.'
+import { LEGACY_SERIES_STRATA, SERIES_STRATA, acceptDraft, minVisibleFor, renderDraft, type Draft } from './gen'
+import { SERIES_GENERATOR_VERSION, SERIES_LEGACY_FAMILIES, series, seriesSpecLeaksKey, type SeriesItem, type SeriesKey, type SeriesSpec } from '.'
+import { canonicalJson } from '../ids'
+import { generatorOf, resolveItem } from '../registry'
+import legacyDump from './__fixtures__/legacy-1.3.0.json'
 import { POOL_FEATURE_MEANS, SERIES_PRIOR, SERIES_PROVENANCE, seriesB, seriesDifficulty, seriesExpectedTime, seriesFeatures } from './prior'
 import {
   EPSILON_BITS,
+  HARD_RULE_NAMES,
+  LEGACY_RULE_NAMES,
   RULE_NAMES,
   analyse,
   compareDl,
   descriptionLength,
+  fitAffineIndex,
   fitAll,
   fitCompositeAff,
   fitCompositeAlt,
+  fitCycle3,
+  fitDiffFibonacci,
   fitFibonacci,
   fitGeometric,
   fitInterleaved,
+  fitInterleavedOps,
   fitLetter,
+  fitLinearRec,
   fitPolynomial,
+  fitTribonacci,
   inRuleDomain,
   interpolantDl,
   keyConfirmations,
@@ -36,7 +47,7 @@ import { parseIntegerResponse, parseLetterResponse, stripSpace } from './score'
  * bank's `golden/ts_dumps/series.analysis.json`. When `analyse()` or the fixture changes, refresh
  * the bank file with the command in `analysis-fixture.ts` and update this digest.
  */
-const ANALYSIS_FIXTURE_DIGEST = '4842d55c344c'
+const ANALYSIS_FIXTURE_DIGEST = '8ed03013d811'
 
 /** A11 isomorph classes: family_id = rule + non-start coefficients, so ~1,700 families per 10k items. */
 const FAMILY_ID_RATIO = {
@@ -72,7 +83,7 @@ const OPTS = {
 type Mutable = { -readonly [K in keyof SeriesItem]: unknown }
 
 /** A full item for a hand-built series (visible terms + key as `values`; letters as positions). */
-function makeItem(rule: RuleName, coefficients: Record<string, number | string>, values: readonly number[]): SeriesItem {
+function makeItem(rule: RuleName, coefficients: Record<string, number | string>, values: readonly number[], version: string = series.generatorVersion): SeriesItem {
   const draft: Draft = { rule, coefficients, values }
   const features = seriesFeatures(rule, coefficients, values)
   const difficulty = seriesDifficulty(features)
@@ -80,11 +91,11 @@ function makeItem(rule: RuleName, coefficients: Record<string, number | string>,
   const seed = `hand-${rule}-${values.join('_')}`
   const { spec, key } = renderDraft(draft)
   return {
-    item_id: itemId('series', series.generatorVersion, seed),
+    item_id: itemId('series', version, seed),
     family_id: series.familyIdOf({ rule, coefficients }),
     sibling_group: series.familyIdOf({ rule, coefficients }),
     family: 'series',
-    generator_version: series.generatorVersion,
+    generator_version: version,
     seed,
     axis: 'MAT',
     facet: 'series',
@@ -113,17 +124,30 @@ const failed = (item: SeriesItem): string => {
 }
 
 describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => {
-  it('passes runFamilyProperties at n = 10,000 spread over strata 1–5', () => {
+  it('passes runFamilyProperties at n = 10,000 spread over strata 1–6', () => {
     const r = runFamilyProperties(series, { ...OPTS, strata: SERIES_STRATA, seedPrefix: 'strata-' })
     expect(r.n).toBe(10_000)
     expect(r.distinctItemIds).toBe(10_000)
-    expect(r.strataCounts).toEqual({ 1: 2_000, 2: 2_000, 3: 2_000, 4: 2_000, 5: 2_000, 6: 0 })
+    expect(r.strataCounts).toEqual({ 1: 1_667, 2: 1_667, 3: 1_667, 4: 1_667, 5: 1_666, 6: 1_666 })
   }, 180_000)
+
+  it('passes runFamilyProperties at n = 10,000 over the hard strata 5 and 6 (M3.12)', () => {
+    const r = runFamilyProperties(series, { ...OPTS, strata: [5, 6], seedPrefix: 'hard-' })
+    expect(r.n).toBe(10_000)
+    expect(r.strataCounts).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 5_000, 6: 5_000 })
+    expect(r.bPrior.min).toBeGreaterThanOrEqual(1.5)
+  }, 180_000)
+
+  it('the kept 1.3.0 generator passes runFamilyProperties over its strata 1–5', () => {
+    const legacy = SERIES_LEGACY_FAMILIES.series
+    const r = runFamilyProperties(legacy, { ...OPTS, n: 2_000, strata: legacy.strata, seedPrefix: 'legacy-' })
+    expect(r.strataCounts).toEqual({ 1: 400, 2: 400, 3: 400, 4: 400, 5: 400, 6: 0 })
+  }, 120_000)
 
   it('passes runFamilyProperties at n = 10,000 over the natural pool (M1.P)', () => {
     const r = runFamilyProperties(series, OPTS)
     expect(r.n).toBe(10_000)
-    for (const s of SERIES_STRATA) expect(r.strataCounts[s]).toBeGreaterThan(500)
+    for (const s of LEGACY_SERIES_STRATA) expect(r.strataCounts[s]).toBeGreaterThan(500)
     expect(r.strataCounts[6]).toBe(0)
     expect(r.bPrior.min).toBeLessThan(-1.5)
     expect(r.bPrior.max).toBeGreaterThan(1.5)
@@ -131,7 +155,7 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
     expect(Math.abs(r.bPrior.mean - ICAR_ANCHOR_B.series)).toBeLessThan(0.1)
   }, 180_000)
 
-  it('generates every rule family, numbers and letters, with 5–7 terms (interleaved 6–7)', () => {
+  it('generates every 1.3.0 rule family in the natural pool, numbers and letters, with 5–7 terms (interleaved 6–7)', () => {
     const rules = new Set<string>()
     const lengths = new Set<number>()
     const formats = new Set<string>()
@@ -145,29 +169,57 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
       expect(item.expected_time_s).toBeGreaterThanOrEqual(20)
       expect(item.expected_time_s).toBeLessThanOrEqual(45)
     }
-    expect([...rules].sort()).toEqual([...RULE_NAMES].sort())
+    // The hard families of 1.4.0 are drawn only for requested strata 5 and 6.
+    expect([...rules].sort()).toEqual([...LEGACY_RULE_NAMES].sort())
     expect([...lengths].sort()).toEqual([5, 6, 7])
     expect([...formats].sort()).toEqual(['integer', 'letter'])
+  }, 60_000)
+
+  it('generates every hard family in strata 5 and 6, with many structures and E[T] ≤ 72 s (M3.12)', () => {
+    const rules: Record<number, Set<string>> = { 5: new Set(), 6: new Set() }
+    const families: Record<number, Set<string>> = { 5: new Set(), 6: new Set() }
+    for (const s of [5, 6] as const) {
+      for (let i = 0; i < 1_000; i++) {
+        const item = series.generate(`hard-mix-${i}`, { stratum: s })
+        const rule = (item.structural_params as { rule: RuleName }).rule
+        rules[s]!.add(rule)
+        families[s]!.add(item.family_id)
+        expect(item.spec.terms.length).toBeGreaterThanOrEqual(minVisibleFor(rule))
+        expect(item.spec.input_format).toBe('integer')
+        expect(item.expected_time_s).toBeLessThanOrEqual(72)
+        expect(item.time_limit_s).toBe(180)
+      }
+    }
+    expect([...rules[5]!, ...rules[6]!].filter((r) => (HARD_RULE_NAMES as readonly string[]).includes(r)).sort()).toEqual(
+      expect.arrayContaining([...HARD_RULE_NAMES].sort()),
+    )
+    expect([...rules[6]!].sort()).toEqual(['affine_index', 'cycle3', 'linear_rec'])
+    // §7.7: one candidate per structure per session, so many structures per hard stratum.
+    expect(families[5]!.size).toBeGreaterThan(300)
+    expect(families[6]!.size).toBeGreaterThan(300)
   }, 60_000)
 })
 
 describe('series family: identity, strata and params', () => {
-  it('is axis MAT, facet series, the shared entry item type "numeric" (as quant), strata 1–5', () => {
+  it('is axis MAT, facet series, the shared entry item type "numeric" (as quant), strata 1–6', () => {
     expect(series.name).toBe('series')
     expect(series.axis).toBe('MAT')
     expect(series.kind).toBe('item')
     expect(series.facets).toEqual(['series'])
     expect(series.itemType).toBe('numeric')
     expect(series.itemType).toBe(NUMERIC_ITEM_TYPE)
-    expect(series.strata).toEqual([1, 2, 3, 4, 5])
+    expect(series.strata).toEqual([1, 2, 3, 4, 5, 6])
+    expect(series.generatorVersion).toBe('1.4.0')
+    expect(SERIES_GENERATOR_VERSION).toBe('1.4.0')
   })
 
-  it('targets strata through the seed and refuses stratum 6', () => {
+  it('targets strata through the seed, stratum 6 included; the kept 1.3.0 generator refuses stratum 6', () => {
     const item = series.generate('demo', { stratum: 3 })
     expect(item.seed).toBe('demo@s3')
     expect(item.stratum).toBe(3)
     expect(series.generate('demo@s3')).toEqual(item)
-    expect(() => series.generate('demo', { stratum: 6 })).toThrow(RangeError)
+    expect(series.generate('demo', { stratum: 6 }).stratum).toBe(6)
+    expect(() => SERIES_LEGACY_FAMILIES.series.generate('demo', { stratum: 6 })).toThrow(RangeError)
   })
 
   it('uses 2PL with b = b_prior and no options (A9: entry items)', () => {
@@ -305,8 +357,9 @@ describe('series rule fitting', () => {
     const cubic = a.minSet.find((f) => f.rule === 'cubic')!
     expect(compareDl(cubic.dl, a.min!)).toBe(1)
     expect(compareDl(cubic.dl, a.min!, 1)).toBe(0)
-    // cubic → 43 (24.22 bits) and interleaved → 75 (24.73 bits)
-    expect(analyse([58, 55, 60, 65, 62], false).predictions).toEqual([43, 75])
+    // cubic → 43 (24.22 bits) and interleaved → 75 (24.73 bits); 1.4.0 adds a hard competitor → 67
+    expect(analyse([58, 55, 60, 65, 62], false, '1.3.0').predictions).toEqual([43, 75])
+    expect(analyse([58, 55, 60, 65, 62], false).predictions).toEqual([43, 67, 75])
   })
 
   it('counts the visible terms that confirm the part of the key rule producing t_m', () => {
@@ -316,7 +369,11 @@ describe('series rule fitting', () => {
     expect(keyConfirmations('quadratic', 5)).toBe(2)
     expect(keyConfirmations('fibonacci', 5)).toBe(2)
     expect(keyConfirmations('composite_aff', 5)).toBe(2)
-    for (const rule of RULE_NAMES) expect(minVisibleFor(rule)).toBe(rule === 'interleaved' ? 6 : 5)
+    expect([5, 6, 7].map((m) => keyConfirmations('interleaved_ops', m))).toEqual([0, 1, 1])
+    expect([5, 6, 7].map((m) => keyConfirmations('cycle3', m))).toEqual([0, 0, 1])
+    for (const rule of ['tribonacci', 'diff_fibonacci', 'linear_rec', 'affine_index'] as const) expect(keyConfirmations(rule, 5)).toBe(1)
+    const want: Partial<Record<RuleName, number>> = { interleaved: 6, interleaved_ops: 6, cycle3: 7 }
+    for (const rule of RULE_NAMES) expect(minVisibleFor(rule), rule).toBe(want[rule] ?? 5)
   })
 
   it('checks key-rule domains', () => {
@@ -340,6 +397,141 @@ describe('series rule fitting', () => {
     expect(acceptDraft({ rule: 'interleaved', coefficients: { da: -8, db: -8 }, values: [43, 4, 35, -4, 27, -12] })).toBe(false)
     expect(acceptDraft({ rule: 'interleaved', coefficients: { da: 2, db: 3 }, values: [3, 10, 5, 13, 7, 16, 9] })).toBe(true)
   })
+})
+
+describe('series hard rule families (generator 1.4.0, M3.12)', () => {
+  it('fits three-term Fibonacci and Fibonacci differences with a constant', () => {
+    expect(fitTribonacci([1, 1, 2, 4, 7, 13])).toMatchObject({ rule: 'tribonacci', coefficients: { c: 0 }, next: 24 })
+    expect(fitTribonacci([-2, -7, -6, -18, -34, -61])).toMatchObject({ coefficients: { c: -3 }, next: -116 })
+    expect(fitTribonacci([1, 1, 2, 4, 7, 14])).toBeNull()
+    // changes 1, 2, 3, 5, 8: each the two before added
+    expect(fitDiffFibonacci([3, 4, 6, 9, 14, 22])).toMatchObject({ rule: 'diff_fibonacci', coefficients: { c: 0 }, next: 35 })
+    expect(fitDiffFibonacci([14, 11, 3, -10, -33, -71])).toMatchObject({ coefficients: { c: -2 }, next: -134 })
+    expect(fitDiffFibonacci([3, 4, 6, 9, 14, 23])).toBeNull()
+  })
+
+  it('fits two strands with their own ops, at least one a multiplication', () => {
+    const fits = fitInterleavedOps([1, 70, 3, 78, 9, 86])
+    expect(fits.map((f) => [f.coefficients, f.next])).toEqual([[{ op_a: 'mul', by_a: 3, op_b: 'add', by_b: 8 }, 27]])
+    // two +x strands are `interleaved`, not interleaved_ops
+    expect(fitInterleavedOps([3, 10, 5, 13, 7, 16])).toEqual([])
+    expect(fitInterleaved([3, 10, 5, 13, 7, 16])).not.toBeNull()
+  })
+
+  it('fits weighted two-term recurrences over every weight pair in range', () => {
+    const fits = fitLinearRec([1, 2, 7, 20, 61, 182])
+    expect(fits.map((f) => [f.coefficients, f.next])).toEqual([[{ a: 2, b: 3 }, 547]])
+    // a geometric run fits every (a, b) with r² = a·r + b: all predict the same next term
+    const geo = fitLinearRec([3, 6, 12, 24, 48])
+    expect(geo.length).toBeGreaterThan(3)
+    expect(new Set(geo.map((f) => f.next))).toEqual(new Set([96]))
+    expect(fitLinearRec([1, 2, 7, 20, 62])).toEqual([])
+  })
+
+  it('fits ×m with an added amount that changes by d each step', () => {
+    expect(fitAffineIndex([1, -2, -6, -13, -29]).map((f) => [f.coefficients, f.next])).toEqual([[{ m: 3, c: -5, d: 5 }, -72]])
+    // −t + 7i: −9, 9, −2, 16, 5 → 23
+    expect(fitAffineIndex([-9, 9, -2, 16, 5]).find((f) => f.coefficients.m === -1)).toMatchObject({ coefficients: { m: -1, c: 0, d: 7 }, next: 23 })
+  })
+
+  it('fits cycles of three ops and predicts with the op of the blank’s phase', () => {
+    const fits = fitCycle3([5, 17, 7, 14, 26, 16, 32])
+    expect(fits.map((f) => [f.coefficients, f.next])).toEqual([[{ op_a: 'add', by_a: 12, op_b: 'add', by_b: -10, op_c: 'mul', by_c: 2 }, 44]])
+    expect(fitCycle3([5, 17, 7, 14, 26, 16, 33])).toEqual([])
+  })
+
+  it('fits the hard families only in the 1.4.0 fit set', () => {
+    const v = [1, 2, 7, 20, 61, 182]
+    expect(fitAll(v, false).some((f) => f.rule === 'linear_rec')).toBe(true)
+    expect(fitAll(v, false, '1.3.0').some((f) => (HARD_RULE_NAMES as readonly string[]).includes(f.rule))).toBe(false)
+    expect(analyse(v, false, '1.3.0').predictions).not.toEqual([547])
+    expect(analyse(v, false).predictions).toEqual([547])
+  })
+
+  it('a hard competitor can make a 1.3.0 item ambiguous in 1.4.0', () => {
+    // 4, 0, 0, −4, −12: +(−4), ×3 in turn → −16, but three-term Fibonacci (c = −8) → −24 is as short
+    const v = [4, 0, 0, -4, -12]
+    expect(acceptDraft({ rule: 'composite_alt', coefficients: { op_a: 'add', by_a: -4, op_b: 'mul', by_b: 3 }, values: [...v, -16] }, '1.3.0')).toBe(true)
+    expect(analyse(v, false).predictions).toEqual([-24, -16])
+    expect(acceptDraft({ rule: 'composite_alt', coefficients: { op_a: 'add', by_a: -4, op_b: 'mul', by_b: 3 }, values: [...v, -16] })).toBe(false)
+  })
+
+  it('checks the hard families’ domains', () => {
+    expect(inRuleDomain('interleaved_ops', { op_a: 'add', by_a: 2, op_b: 'add', by_b: 3 })).toBe(false)
+    expect(inRuleDomain('interleaved_ops', { op_a: 'mul', by_a: 2, op_b: 'add', by_b: 3 })).toBe(true)
+    expect(inRuleDomain('cycle3', { op_a: 'add', by_a: 2, op_b: 'add', by_b: 3, op_c: 'add', by_c: 1 })).toBe(false)
+    expect(inRuleDomain('cycle3', { op_a: 'mul', by_a: 2, op_b: 'mul', by_b: 3, op_c: 'mul', by_c: -1 })).toBe(false)
+    expect(inRuleDomain('cycle3', { op_a: 'mul', by_a: 2, op_b: 'add', by_b: 3, op_c: 'mul', by_c: -1 })).toBe(true)
+    expect(inRuleDomain('linear_rec', { a: 2, b: 0 })).toBe(false)
+    expect(inRuleDomain('linear_rec', { a: 11, b: 1 })).toBe(false)
+    expect(inRuleDomain('linear_rec', { a: 0, b: -10 })).toBe(true)
+    expect(inRuleDomain('affine_index', { m: 2, c: 3, d: 0 })).toBe(false)
+    expect(inRuleDomain('affine_index', { m: 1, c: 3, d: 2 })).toBe(false)
+    expect(inRuleDomain('affine_index', { m: -1, c: 0, d: 7 })).toBe(true)
+    expect(inRuleDomain('tribonacci', { c: 0 })).toBe(true)
+    expect(inRuleDomain('diff_fibonacci', { c: 0, d: 1 })).toBe(false)
+  })
+
+  it('verifies hand-built hard items and rejects their unconfirmed or tampered forms', () => {
+    const items = [
+      makeItem('linear_rec', { a: 2, b: 3 }, [1, 2, 7, 20, 61, 182, 547]),
+      makeItem('affine_index', { m: -1, c: 0, d: 7 }, [-9, 9, -2, 16, 5, 23]),
+      makeItem('interleaved_ops', { op_a: 'mul', by_a: 3, op_b: 'add', by_b: 8 }, [1, 70, 3, 78, 9, 86, 27]),
+      makeItem('cycle3', { op_a: 'add', by_a: 12, op_b: 'add', by_b: -10, op_c: 'mul', by_c: 2 }, [5, 17, 7, 14, 26, 16, 32, 44]),
+      makeItem('diff_fibonacci', { c: -2 }, [14, 11, 3, -10, -33, -71, -134]),
+    ]
+    for (const item of items) {
+      expect(series.verify(item), item.seed).toMatchObject({ ok: true })
+      expect(failed(tamper(item, (x) => (x.key = { value: String(Number((item.key as { value: string }).value) + 1), tol: { abs: 0 } })))).toMatch(/key_is_rule_prediction/)
+    }
+    // cycle3 on 6 terms: the blank's op (the third) is seen once, which only fixes it
+    expect(failed(makeItem('cycle3', { op_a: 'add', by_a: 12, op_b: 'add', by_b: -10, op_c: 'mul', by_c: 2 }, [5, 17, 7, 14, 26, 16, 32]))).toMatch(/key_rule_confirmed/)
+  })
+})
+
+describe('series: the kept 1.3.0 generator (A11, R-8.1)', () => {
+  const legacy = SERIES_LEGACY_FAMILIES.series
+
+  it('is the 1.3.0 version with strata 1–5 and the eight 1.3.0 rule families, reached through generatorOf', () => {
+    expect(legacy.generatorVersion).toBe('1.3.0')
+    expect(legacy.strata).toEqual(LEGACY_SERIES_STRATA)
+    expect(generatorOf('series', '1.3.0')).toBe(legacy)
+    expect(generatorOf('series', '1.4.0')).toBe(series)
+  })
+
+  it('rebuilds the 1,000 items of the 1.3.0 dump byte for byte through resolveItem', () => {
+    const lines: string[] = []
+    for (let i = 0; i < legacyDump.count; i++) {
+      const item = resolveItem(`i:series:1.3.0:dump-${i}`)
+      expect(item).not.toBeNull()
+      lines.push(canonicalJson(item))
+    }
+    expect(lines.slice(0, 3)).toEqual(legacyDump.items.map((x) => canonicalJson(x)))
+    expect(structuralHash(lines.join('\n'))).toBe(legacyDump.digest)
+    for (const x of legacyDump.items) expect(legacy.verify(x as unknown as SeriesItem).ok).toBe(true)
+  }, 60_000)
+
+  it('rebuilds 1.3.0 strata 1–5 as the 1.3.0 code did (pinned digest of 50 items per stratum and of the natural pool)', () => {
+    // Digest computed with the 1.3.0 source of this directory (git HEAD before M3.12).
+    const lines: string[] = []
+    for (const suffix of ['', '@s1', '@s2', '@s3', '@s4', '@s5']) {
+      for (let i = 0; i < 50; i++) lines.push(canonicalJson(resolveItem(`i:series:1.3.0:legacy-${i}${suffix}`)))
+    }
+    expect(structuralHash(lines.join('\n'))).toBe('28212b7a2884')
+  })
+
+  it('draws the 1.4.0 natural pool and strata 1–4 as 1.3.0, but for the rare draws a hard competitor rejects', () => {
+    let differ = 0
+    for (let i = 0; i < 2_000; i++) {
+      for (const suffix of ['', '@s1', '@s2', '@s3', '@s4']) {
+        const a = series.generate(`same-${i}${suffix}`)
+        const b = legacy.generate(`same-${i}${suffix}`)
+        const strip = (x: SeriesItem): string => canonicalJson({ ...x, item_id: '', generator_version: '' })
+        if (strip(a) !== strip(b)) differ++
+      }
+    }
+    expect(differ).toBeLessThan(10) // ~0.03% of draws (measured over 100,000)
+  }, 60_000)
 })
 
 describe('series verify: hand-built items', () => {
@@ -442,8 +634,8 @@ describe('series verify: hand-built items', () => {
 
   it('rejects an interleaved key resting on a two-term subsequence (m = 5)', () => {
     // t_5 continues 4, −4 (t_1, t_3) only: any step fits two terms, and "flip the sign" gives 4
-    expect(series.verify(makeItem('interleaved', { da: -8, db: -8 }, [43, 4, 35, -4, 27, -12])).reason).toBe('failed: key_rule_confirmed')
-    expect(series.verify(makeItem('interleaved', { da: -6, db: -6 }, [13, -3, 7, -9, 1, -15])).reason).toBe('failed: key_rule_confirmed')
+    expect(series.verify(makeItem('interleaved', { da: -8, db: -8 }, [43, 4, 35, -4, 27, -12])).reason).toMatch(/key_rule_confirmed/)
+    expect(series.verify(makeItem('interleaved', { da: -6, db: -6 }, [13, -3, 7, -9, 1, -15])).reason).toMatch(/key_rule_confirmed/)
   })
 
   it('rejects a key rule that is not of minimal DL', () => {
@@ -487,12 +679,19 @@ describe('series verify: hand-built items', () => {
     expect(failed(tamper(good, (x) => (x.options_count = 6)))).toMatch(/no_options/)
   })
 
-  it('rejects stratum-6 priors (the family generates strata 1–5)', () => {
+  it('rejects a stratum that is not the band of b, and stratum 6 in the kept 1.3.0 generator', () => {
     const x = tamper(good, (y) => {
       ;(y.difficulty as { b_prior: number }).b_prior = 2.7
       y.stratum = 6
     })
-    expect(series.verify(x).checks.stratum_matches).toBe(false)
+    expect(series.verify(x).checks.stratum_matches).toBe(true)
+    expect(series.verify(x).checks.prior_matches).toBe(false)
+    const hard = makeItem('cycle3', { op_a: 'mul', by_a: 2, op_b: 'mul', by_b: -2, op_c: 'add', by_c: -6 }, [8, 16, -32, -38, -76, 152, 146, 292])
+    expect(hard.stratum).toBe(6)
+    expect(series.verify(hard)).toMatchObject({ ok: true })
+    const old = { ...hard, generator_version: '1.3.0' }
+    expect(SERIES_LEGACY_FAMILIES.series.verify(old).ok).toBe(false)
+    expect(SERIES_LEGACY_FAMILIES.series.verify(old).checks.structure_well_formed).toBe(false)
   })
 })
 
@@ -595,11 +794,27 @@ describe('series prior (M1.P v0)', () => {
     expect(f('arithmetic', { d: 3 }, [12, 15, 18, 21, 24])).toBeGreaterThan(arith)
   })
 
-  it('gives expected times of 20–45 s growing with complexity', () => {
+  it('gives expected times of 20–45 s (1.3.0 families) and up to 72 s (hard families), growing with complexity', () => {
     const t = (rule: RuleName, c: Record<string, number | string>, v: number[]) => seriesExpectedTime(seriesFeatures(rule, c, v))
     expect(t('arithmetic', { d: 1 }, [1, 2, 3, 4, 5, 6])).toBe(20)
     expect(t('composite_aff', { m: 2, c: 1 }, [1, 3, 7, 15, 31, 63])).toBe(38)
     expect(t('letter', { d: 1 }, [1, 2, 3, 4, 5, 6])).toBe(23)
+    // cost 6: no extra; cost 7, 8, 9: + 6 s per bit above 6
+    expect(t('tribonacci', { c: 0 }, [1, 1, 2, 4, 7, 13])).toBe(38)
+    expect(t('interleaved_ops', { op_a: 'mul', by_a: 3, op_b: 'add', by_b: 8 }, [1, 70, 3, 78, 9, 86, 27])).toBe(48)
+    expect(t('linear_rec', { a: 2, b: 3 }, [1, 2, 7, 20, 61, 182])).toBe(60)
+    expect(t('cycle3', { op_a: 'add', by_a: 12, op_b: 'add', by_b: -10, op_c: 'mul', by_c: 2 }, [5, 17, 7, 14, 26, 16, 32, 44])).toBe(68)
+  })
+
+  it('puts the hard families in strata 5 and 6 through their family cost, the prior otherwise unchanged (M3.12)', () => {
+    const f = (rule: RuleName, c: Record<string, number | string>, v: number[]) => seriesDifficulty(seriesFeatures(rule, c, v)).b_prior
+    const comp = f('composite_alt', { op_a: 'mul', by_a: 2, op_b: 'add', by_b: 3 }, [12, 24, 27, 54, 57, 114])
+    const rec = f('linear_rec', { a: 2, b: 3 }, [12, 24, 84, 240, 732, 2184])
+    const cyc = f('cycle3', { op_a: 'mul', by_a: 2, op_b: 'mul', by_b: -2, op_c: 'add', by_c: -6 }, [8, 16, -32, -38, -76, 152, 146, 292])
+    expect(comp).toBeLessThan(rec)
+    expect(stratumOfB(cyc)).toBe(6)
+    // The regression and its provenance are those of 1.3.0.
+    expect(legacyDump.items[0]!.difficulty.provenance).toBe(SERIES_PROVENANCE)
   })
 
   it('keeps the spec to input_format and the visible terms', () => {

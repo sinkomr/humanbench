@@ -28,8 +28,9 @@ import { DAY_MS, T0_MS, botSave } from '../src/reveal/test-support'
 const sessions = process.argv.includes('--sessions') ? Number(process.argv[process.argv.indexOf('--sessions') + 1]) : 1
 if (sessions !== 1 && sessions !== 2) throw new Error('--sessions must be 1 or 2')
 
-// A jagged simulated person: strong on matrices, spatial well above the rest, a little below elsewhere.
-const level = { MAT: 3, SPA: 0.2, QR: -0.5, WM: -0.4, RT: -0.3, PS: -0.3, CAL: 0 } as const
+// A jagged simulated person: strong on matrices, spatial well above the rest, a little below elsewhere. MAT 3.5
+// (was 3 before the hard strata of M3.12: at 3 the hard matrices and series leave no credible peak after one session).
+const level = { MAT: 3.5, SPA: 0.2, QR: -0.5, WM: -0.4, RT: -0.3, PS: -0.3, CAL: 0 } as const
 const first = botSave('s_E2ERICH00000001', { level, seed: 'e2e-rich-1' })
 const last = sessions === 1 ? first : botSave('s_E2ERICH00000002', { level, seed: 'e2e-rich-2', base: first.save, startedMs: T0_MS + 8 * DAY_MS })
 

@@ -21,6 +21,11 @@
  *   solver only); distribution; and canonical: every visible cell uses the canonical layout of
  *   its count and a count rule predicts n ≤ 4, which predicts the canonical layout of n.
  *
+ * - frame shade (hard template b, M3.12): the scalar rules over its 3 shades; frame pattern:
+ *   constant and distribution (the generator's rules), plus progression ±1 in the order solid,
+ *   dashed, dotted (never generated: a viewer might still read one, so it only rejects more).
+ *   Framed cells are solved exactly when all 8 visible cells have a frame; a mix is inconsistent.
+ *
  * The 9th cell is unique iff every scalar attribute has exactly one predicted value, the position
  * rules predict exactly one set P*, and every consistent count rule predicts |P*| (so a count
  * pattern cannot lure a viewer to another number of objects). Rules are independent per
@@ -29,6 +34,9 @@
 
 import {
   DOMAIN_SIZE,
+  FRAME_ATTRS,
+  FRAME_DOMAIN_SIZE,
+  hasFrame,
   MAX_COUNT,
   SCALAR_ATTRS,
   SLOT_COUNT,
@@ -36,9 +44,10 @@ import {
   isCanonical,
   popcount,
   type Cell,
+  type AnyRuleAttr,
   type CountRule,
+  type FrameAttr,
   type PositionRule,
-  type RuleAttr,
   type RuleSet,
   type ScalarAttr,
   type ScalarRule,
@@ -152,6 +161,12 @@ export const SCALAR_SOLVER_RULES: Readonly<Record<ScalarAttr, readonly SolverRul
   orientation: [...scalarRules(DOMAIN_SIZE.orientation), cyclic(1, DOMAIN_SIZE.orientation), cyclic(-1, DOMAIN_SIZE.orientation)],
 })
 
+/** The solver's rule set per frame attribute (hard template b; see the module comment). */
+export const FRAME_SOLVER_RULES: Readonly<Record<FrameAttr, readonly SolverRule[]>> = Object.freeze({
+  frameShade: scalarRules(FRAME_DOMAIN_SIZE.frameShade),
+  framePattern: scalarRules(FRAME_DOMAIN_SIZE.framePattern),
+})
+
 /** The solver's count rules (domain 1–9, any number of objects a sub-grid can hold; see the module comment). */
 export const COUNT_SOLVER_RULES: readonly SolverRule[] = Object.freeze([
   constant,
@@ -205,6 +220,9 @@ export interface Solution {
   readonly count: AttributeSolution
   /** Set rules plus canonical layouts. */
   readonly positions: AttributeSolution
+  /** Frame attributes, when all 8 visible cells have a frame (else absent). */
+  readonly frameShade?: AttributeSolution
+  readonly framePattern?: AttributeSolution
   /** Every scalar attribute and the positions have at least one consistent rule. */
   readonly consistent: boolean
   /** Every consistent rule assignment predicts the same 9th cell. */
@@ -252,8 +270,18 @@ export function solve(visible: readonly Cell[]): Solution {
     fits: posFits,
     predictions: [...new Set(posFits.map((f) => f.value))].sort((x, y) => x - y),
   }
-  const scalars = [shape, size, color, orientation]
-  const consistent = scalars.every((s) => s.predictions.length > 0) && positions.predictions.length > 0
+  const framed = visible.filter(hasFrame).length
+  const frames =
+    framed === 8
+      ? (FRAME_ATTRS.map((attr) =>
+          fitAll(
+            visible.map((c) => c[attr] as number),
+            FRAME_SOLVER_RULES[attr],
+          ),
+        ) as [AttributeSolution, AttributeSolution])
+      : null
+  const scalars = [shape, size, color, orientation, ...(frames ?? [])]
+  const consistent = (framed === 0 || framed === 8) && scalars.every((s) => s.predictions.length > 0) && positions.predictions.length > 0
   const onlyP = positions.predictions.length === 1 ? (positions.predictions[0] as number) : null
   const noCountLure = onlyP !== null && count.predictions.every((n) => n === popcount(onlyP))
   const unique = consistent && scalars.every((s) => s.predictions.length === 1) && onlyP !== null && noCountLure
@@ -264,11 +292,15 @@ export function solve(visible: readonly Cell[]): Solution {
         color: color.predictions[0] as number,
         orientation: orientation.predictions[0] as number,
         positions: onlyP as number,
+        ...(frames
+          ? { frameShade: frames[0].predictions[0] as number, framePattern: frames[1].predictions[0] as number }
+          : {}),
       }
     : null
   const consistentRuleFits = [...scalars, positions].reduce((p, s) => p * s.fits.length, 1)
   const predictedCells = [...scalars, positions].reduce((p, s) => p * s.predictions.length, 1)
-  return { shape, size, color, orientation, count, positions, consistent, unique, noCountLure, cell, consistentRuleFits, predictedCells }
+  const frameSol = frames ? { frameShade: frames[0], framePattern: frames[1] } : {}
+  return { shape, size, color, orientation, count, positions, ...frameSol, consistent, unique, noCountLure, cell, consistentRuleFits, predictedCells }
 }
 
 // --- declared (generator) rules -------------------------------------------------------------------
@@ -302,9 +334,9 @@ const holdsAlongRows = (rule: SolverRule, values: readonly number[]): boolean =>
  * The attributes whose declared rule does NOT hold along the rows of a complete 9-cell grid
  * (row-major). Empty for the keyed grid; non-empty for a grid completed by a distractor.
  */
-export function violatedRules(grid: readonly Cell[], rules: RuleSet): RuleAttr[] {
+export function violatedRules(grid: readonly Cell[], rules: RuleSet): AnyRuleAttr[] {
   if (grid.length !== 9) throw new RangeError(`violatedRules needs 9 cells, got ${grid.length}`)
-  const out: RuleAttr[] = []
+  const out: AnyRuleAttr[] = []
   for (const attr of SCALAR_ATTRS) {
     const rule = GEN_SCALAR[rules[attr]](DOMAIN_SIZE[attr])
     if (!holdsAlongRows(rule, grid.map((c) => c[attr]))) out.push(attr)
@@ -316,6 +348,16 @@ export function violatedRules(grid: readonly Cell[], rules: RuleSet): RuleAttr[]
     if (!grid.every((c) => isCanonical(c.positions))) out.push('position')
   } else if (!holdsAlongRows(GEN_POSITION[rules.position], grid.map((c) => c.positions))) {
     out.push('position')
+  }
+  // Frame rules (hard template b): a cell without a frame breaks them; a frame on an unframed set breaks nothing here
+  // (verify's spec and structure checks catch it).
+  if (rules.frame_shade !== undefined) {
+    const shade = grid.map((c) => c.frameShade ?? -1)
+    if (shade.includes(-1) || !holdsAlongRows(GEN_SCALAR[rules.frame_shade](FRAME_DOMAIN_SIZE.frameShade), shade)) out.push('frame_shade')
+  }
+  if (rules.frame_pattern !== undefined) {
+    const pattern = grid.map((c) => c.framePattern ?? -1)
+    if (pattern.includes(-1) || !holdsAlongRows(GEN_SCALAR[rules.frame_pattern](FRAME_DOMAIN_SIZE.framePattern), pattern)) out.push('frame_pattern')
   }
   return out
 }

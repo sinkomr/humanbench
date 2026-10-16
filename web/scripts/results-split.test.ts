@@ -46,8 +46,10 @@ import { WEB } from './css-tokens'
  *
  * Raised to 162 KB when merged with the cross-skill aim (2026-10-16, `engine/xskill.ts`, about 1.2 KB). The entry
  * now carries the whole session runtime and the device's item generators; moving them behind Start is the follow-up.
+ * The hard strata of matrices 1.3.0, series 1.4.0 and rotation 1.4.0 (M3.12, branch `feat/hard-mat-spa`, about
+ * 5 KB on their own base) merged on top took it to 157.9 KB (Node 26; CI's Node 24 gzips a little larger): bound 166 KB until the session runtime moves behind Start.
  */
-const ENTRY_GZIP_MAX = 162_000
+const ENTRY_GZIP_MAX = 166_000
 
 /** Modules of the results side: none may be reachable from the entry without a dynamic import. */
 const RESULTS_SIDE = [

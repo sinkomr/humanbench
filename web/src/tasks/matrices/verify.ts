@@ -16,7 +16,16 @@
  *   `heuristic.ts`) does not single out the key;
  * - `structure_matches`: `structural_params` is a rule set with 1–4 non-constant rules, and each
  *   declared rule holds along the rows of the grid completed by the keyed option;
- * - `features_match`, `prior_matches`, `stratum_matches`, `time_matches` (`prior.ts`).
+ * - `features_match`, `prior_matches`, `stratum_matches`, `time_matches` (`prior.ts`);
+ * - `frames_consistent`: every cell (grid and options) has a frame, or none does, and the cells
+ *   are framed exactly when the rule set has frame rules (M3.12).
+ *
+ * Hard items (rule sets of the M3.12 templates, `isHardRuleSet`; strata 5–6) also need:
+ * - `structure_matches` with a hard rule set whose prior is in stratum 5 or 6;
+ * - `distractors_are_lures`: every distractor differs from the key in 1–3 ruled
+ *   components, each set to one of the key's lure values (`gen.ts` `lureValues`);
+ * - `hub_heuristic_not_unique`: the option-only hub picker (`heuristic.ts`) does not single out
+ *   the key. Informational: `hub_argmax`.
  *
  * Informational: `predicted_cells` (distinct 9th cells the consistent rule assignments predict;
  * 1 for a unique item, the §14.6 `consistent_rule_sets: 1`), `consistent_rule_fits` (all
@@ -29,22 +38,28 @@ import type { JsonValue } from '../../engine'
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
 import { powerTimeLimit, stratumOfB } from '../priors'
+import { MAX_LURE_CHANGES, lureValues, ruledComponents } from './gen'
 import {
   MAX_RULES,
   MIN_RULES,
   OPTIONS_COUNT,
   cellEquals,
+  componentValue,
   countInRange,
   differingComponents,
+  hasFrame,
+  isFramed,
+  isHardRuleSet,
   nonConstantRules,
   parseCell,
   parseRuleSet,
   type Cell,
   type MatrixKey,
   type MatrixSpec,
+  type RuleSet,
 } from './grammar'
-import { MODAL_TIE_READING, modalArgmax, modalPicksKeyUniquely } from './heuristic'
-import { SIGMA_B_DEFAULT, bPriorOf, expectedTimeOf, featuresOf } from './prior'
+import { MODAL_TIE_READING, hubArgmax, hubPicksKeyUniquely, modalArgmax, modalPicksKeyUniquely } from './heuristic'
+import { HARD_MIN_STRATUM, SIGMA_B_DEFAULT, bPriorOf, expectedTimeOfFeatures, featuresOf, provenanceOf } from './prior'
 import { solve, violatedRules } from './solver'
 
 export type MatrixItem = ItemInstance<MatrixSpec, MatrixKey>
@@ -95,6 +110,26 @@ export function formsOneChangeTree(options: readonly Cell[]): boolean {
 
 const sameJson = (a: unknown, b: unknown): boolean => canonicalJson(a) === canonicalJson(b)
 
+/**
+ * True if every distractor differs from `key` in 1–{@link MAX_LURE_CHANGES} ruled components, each
+ * holding one of the key's lure values (M3.12 hard items).
+ */
+export function distractorsAreLures(options: readonly Cell[], index: number, key: Cell, visible: readonly Cell[], rules: RuleSet): boolean {
+  const ruled = ruledComponents(rules)
+  return options.every((o, i) => {
+    if (i === index) return true
+    const diff = differingComponents(key, o)
+    if (diff.length < 1 || diff.length > MAX_LURE_CHANGES) return false
+    return diff.every((c) => ruled.includes(c) && lureValues(c, key, visible, rules).includes(componentValue(o, c)))
+  })
+}
+
+/** The rule count bounds of a rule set: 1.2.0 sets 1–4 rules; hard sets as `isHardRuleSet` says. */
+function structureOk(rules: RuleSet, nRules: number): boolean {
+  if (isHardRuleSet(rules)) return true
+  return !isFramed(rules) && nRules >= MIN_RULES && nRules <= MAX_RULES
+}
+
 export function verifyMatrix(item: MatrixItem): VerifyResult {
   try {
     const parsed = parseSpec(item.spec)
@@ -120,8 +155,21 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
     const features = rules ? featuresOf(rules) : null
     const bPrior = features ? bPriorOf(features) : Number.NaN
     const argmax = modalArgmax(options)
+    const cells = [...visible, ...options]
+    const framedCells = cells.filter(hasFrame).length
+    const framesConsistent = (framedCells === 0 || framedCells === cells.length) && rules !== null && isFramed(rules) === framedCells > 0
+    const hard = rules !== null && isHardRuleSet(rules)
+    const hardChecks: Record<string, JsonValue> = hard
+      ? {
+          distractors_are_lures: keyed !== null && predicted !== null && distractorsAreLures(options, index, keyed, visible, rules),
+          hub_heuristic_not_unique: keyInRange && !hubPicksKeyUniquely(options, index),
+        }
+      : {}
     const inferred: Record<string, JsonValue> = Object.fromEntries(
-      (['shape', 'size', 'color', 'orientation', 'count', 'positions'] as const).map((a) => [a, sol[a].fits.map((f) => f.rule)]),
+      (['shape', 'size', 'color', 'orientation', 'count', 'positions', 'frameShade', 'framePattern'] as const).flatMap((a) => {
+        const fits = sol[a]?.fits
+        return fits === undefined ? [] : [[a, fits.map((f) => f.rule)]]
+      }),
     )
     return verdict({
       spec_well_formed: true,
@@ -137,11 +185,18 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
       options_form_tree: formsOneChangeTree(options),
       modal_heuristic_not_unique: keyInRange && !modalPicksKeyUniquely(options, index),
       structure_matches:
-        rules !== null && nRules >= MIN_RULES && nRules <= MAX_RULES && keyed !== null && violatedRules([...visible, keyed], rules).length === 0,
+        rules !== null &&
+        structureOk(rules, nRules) &&
+        (!hard || stratumOfB(bPrior) >= HARD_MIN_STRATUM) &&
+        keyed !== null &&
+        violatedRules([...visible, keyed], rules).length === 0,
+      frames_consistent: framesConsistent,
+      ...hardChecks,
       features_match: features !== null && sameJson(d.features, features),
-      prior_matches: features !== null && d.b_prior === bPrior && d.sd_prior === SIGMA_B_DEFAULT,
+      prior_matches: features !== null && d.b_prior === bPrior && d.sd_prior === SIGMA_B_DEFAULT && d.provenance === provenanceOf(features),
       stratum_matches: features !== null && item.stratum === stratumOfB(bPrior),
-      time_matches: features !== null && item.expected_time_s === expectedTimeOf(nRules) && item.time_limit_s === powerTimeLimit(item.expected_time_s),
+      time_matches:
+        features !== null && item.expected_time_s === expectedTimeOfFeatures(features) && item.time_limit_s === powerTimeLimit(item.expected_time_s),
       method: 'rule_enumeration',
       predicted_cells: sol.predictedCells,
       consistent_rule_fits: sol.consistentRuleFits,
@@ -149,6 +204,7 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
       distractor_violations: violations.filter((_, i) => i !== index),
       modal_argmax: argmax,
       modal_tie_reading: MODAL_TIE_READING,
+      ...(hard ? { hub_argmax: hubArgmax(options) } : {}),
     })
   } catch (e) {
     return { ok: false, reason: `malformed item: ${String(e)}`, checks: {} }
