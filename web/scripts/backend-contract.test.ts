@@ -50,7 +50,7 @@ describe('the RPCs the API wraps', () => {
   const sqlRpcs = rpcs()
 
   it('are exactly the ones the migrations expose to the API roles', () => {
-    expect([...sqlRpcs.keys()].sort()).toEqual(['delete_my_data', 'finish', 'live_axes', 'mirror_get', 'mirror_put', 'next_item', 'report_problem', 'rescore', 'start_session', 'submit', 'submit_survey', 'verify_save'])
+    expect([...sqlRpcs.keys()].sort()).toEqual(['delete_my_data', 'device_estimates', 'finish', 'live_axes', 'mirror_get', 'mirror_put', 'next_item', 'report_problem', 'rescore', 'start_session', 'submit', 'submit_survey', 'verify_save'])
   })
 
   it('send arguments the functions have, and every argument they require', async () => {
@@ -79,6 +79,7 @@ describe('the RPCs the API wraps', () => {
     await api.deleteMyData('hb_ServerIssuedId1X', { phrase: 'p', save })
     await api.deleteMyData('hb_ServerIssuedId1X', { phrase: 'p' })
     await api.liveAxes()
+    await api.deviceEstimates(TOKEN, [{ axis: 'WM', mean: 0.4, sd: 0.6 }])
     const seen = new Set<string>()
     for (const c of t.calls) {
       const rpc = sqlRpcs.get(c.fn)

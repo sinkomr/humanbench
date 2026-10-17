@@ -1467,13 +1467,26 @@ The same aim runs in the app's selector (`web/src/engine/xskill.ts`, `selector.t
 
 One new migration, `supabase/migrations/20261016000300_selection_information.sql`, to be applied with `npm run db:deploy` after review, **after** `20261016000200_quant_hard_facets.sql`. It adds `app_config` `selection.time_exponent` = 0 and re-creates `hb.rank_live` (from `20261016000100_cross_skill_aim.sql`) with one change: a candidate's score is information × posterior variance / E[T]^p, p the setting, so with 0 the candidates of a part are ranked by information alone (owner decision 2026-10-16, DESIGN §7.4; the app's `selector.ts` `SELECTION_TIME_EXPONENT`). `selection.time_exponent = 1` restores information per second. Nothing else changes: budgets, caps, minimums and the hard stop are the client's, as before; no reply gains a field (ROADMAP A24-sec). `web/scripts/db/selection.db.test.ts` holds the SQL to the app under both settings; `migrations.test.ts` checks the function differs from its predecessor by exactly that.
 
+### Device-task estimates in the aim (2026-10-17; written and tested here, **not applied to the project**)
+
+One new migration, `supabase/migrations/20261017000300_device_estimates.sql`, to be applied with `npm run db:deploy` after review, **after** `20261016000300_selection_information.sql` (and the other migrations of 2026-10-17 numbered before it). The server never sees the timed blocks (reaction time, the memory spans, coding, reading), so the cross-skill aim borrowed nothing from them. Now:
+
+| | What |
+|---|---|
+| `public.device_estimates(p_token, p_estimates)` | A new RPC (anon, authenticated; thirteen RPCs now). An open session's app sends, after each timed block, `[{axis, mean, sd}]`: that skill's posterior under its N(0, 1) prior, never a trial. Checked: 1 to 3 entries of exactly those keys, each axis once and in `selection.device_axes` (`["WM","RT","PS"]`), numbers, sd > 0 (else 400 `invalid_estimates`); at most `selection.device_max_calls` (20) calls a session (429 `too_many_estimates`). Bounded: mean clamped to ±4, sd raised to `selection.device_sd_min` (0.3); the Gaussian message of `hb.prior_state` (λ, x), with λ at most 1/0.3² − 1/v0 and x clamped to ±4; an sd at or above the prior's says nothing and removes the axis. Stored in `state.device[axis] = {mean, sd, lam, x}` (a later call replaces it). Reply `{"recorded": [axes]}`. |
+| `hb.session_aims` | Re-created with one change: `state.device` adds its term to the axis's grid as `state.prior` does, so a WM estimate sends WM's message through Σ to the reasoning parts. |
+| Unchanged | Every score: `state.device` is read by `hb.session_aims` alone (finish, the MAP, `hb.session_posteriors`, the stop and `rescore` never read it; `web/scripts/db/device.db.test.ts` shows them equal with and without it). The device's own scores of these skills stay the device's (A16). |
+| Off | `selection.device_axes = []` (every call is then 400; the app lets a failure go) or `selection.borrow_strength = 0`. |
+
+The app's twin is `web/src/engine/xskill.ts` (`deviceEstimate`, `boundedDeviceTerm`, `deviceEvidence`); the online session sends after each timed block (`session/run.ts`) and the next served part waits for the call (a failure is let go). `device.db.test.ts` holds the stored terms and the aims to the app to 1e-9 on fuzzed estimates and answers. **What a client can do with it (ROADMAP A24-sec):** aim its own session's first questions where it likes; the start-up step corrects a bad aim within a question or two, and nothing it sends reaches a score or a reply.
+
 ### Left for the owner
 
 - **To put the online version on the site:** merge the change to `.github/workflows/pages.yml` to `main`. The repository
   variables `HB_SUPABASE_URL` and `HB_SUPABASE_ANON_KEY` are set (2026-10-12; public values), so the first Pages build after
   the merge is the online version. Deleting either variable and re-running the workflow goes back to static.
 - **Dashboard, Authentication:** turn sign-ups off. The public settings endpoint says `disable_signup: false` with the
-  email provider on. A signed-up user would have `authenticated`'s reach, which is `anon`'s (the same RPCs, twelve since `live_axes`, no
+  email provider on. A signed-up user would have `authenticated`'s reach, which is `anon`'s (the same RPCs, twelve since `live_axes` and thirteen since `device_estimates`, no
   table), with an 8 s timeout instead of 3 s.
 - **Dashboard, API settings:** confirm the exposed schemas. PostgREST reports `public` and `graphql_public`; removing
   `graphql_public` makes it `public` alone, as the design says.

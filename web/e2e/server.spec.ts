@@ -103,6 +103,8 @@ test.describe('the flow with a server', () => {
 
     // The close: the last answer, the flags, the signed session, the scores.
     expect(server.of('submit')).toHaveLength(2)
+    // no timed block ran (RT was skipped, the session ended early): no device estimate was sent
+    expect(server.of('device_estimates')).toHaveLength(0)
     expect(server.of('finish')[0]!.body).toMatchObject({ p_flags: { skipped_rt: true, finished_early: true, paste_events: 0, visibility_hidden_s: 0 } })
     const asked = server.of('rescore')[0]!.body.p_save as { sessions: { session_id: string }[] }
     expect(asked.sessions.map((s) => s.session_id)).toEqual(['s_E2EFAKESERV0001'])

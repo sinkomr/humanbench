@@ -9,7 +9,8 @@
  * - **Retries.** A call that can be repeated without harm is repeated after a network failure or a
  *   5xx (twice, after 0.5 s and 1.5 s): `next_item` (a pending item is served again), `submit` (an
  *   answered item is acknowledged and changes nothing, so a lost reply is safe to retry),
- *   `finish`, `report_problem`, `submit_survey`, `verify_save`, `rescore`, `mirror_get`.
+ *   `finish`, `report_problem`, `submit_survey`, `verify_save`, `rescore`, `mirror_get`,
+ *   `device_estimates` (a later call replaces an axis's entry).
  *   Never repeated: `start_session` (each call counts against the 5 a day), `mirror_put` (the first
  *   reply carries the recovery phrase, which the server shows once), `delete_my_data`.
  * - **No token in a URL or a log.** The session token is an argument of the call, in the request
@@ -17,11 +18,13 @@
  */
 
 import type { AxisCode } from '../engine/axes'
+import type { DeviceEstimate } from '../engine/xskill'
 import type { JsonValue } from '../engine/types'
 import type { DeviceInfo, SaveFileV1, SessionFlags } from '../save/types'
 import { BackendError } from './errors'
 import {
   parseDelete,
+  parseDeviceRecorded,
   parseLiveAxes,
   parseFinish,
   parseMirrorGet,
@@ -104,6 +107,11 @@ export interface BackendApi {
   deleteMyData(anonId: string, proof: DeleteProof): Promise<DeleteReply>
   /** The skills the server has live questions for (no count, nothing about any item): what a session plans its served parts from. */
   liveAxes(): Promise<readonly AxisCode[]>
+  /**
+   * Hands the device's estimates of its timed skills (axis, mean, sd: never a trial) to the server, for the aim of the
+   * served parts only (DESIGN §7.4 "Cross-skill aim", 2026-10-17; `public.device_estimates`). No score reads them.
+   */
+  deviceEstimates(token: string, estimates: readonly DeviceEstimate[]): Promise<readonly AxisCode[]>
 }
 
 export interface ApiOptions {
@@ -230,6 +238,11 @@ export function createBackendApi(rawTransport: RpcTransport, options: ApiOptions
 
     async liveAxes() {
       return parseLiveAxes(await repeatable('live_axes', {}))
+    },
+
+    async deviceEstimates(token, estimates) {
+      const list = estimates.map((e) => ({ axis: e.axis, mean: e.mean, sd: e.sd }))
+      return parseDeviceRecorded(await repeatable('device_estimates', { p_token: token, p_estimates: list }))
     },
   }
 }

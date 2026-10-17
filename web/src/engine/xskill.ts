@@ -240,3 +240,78 @@ export function crossSkillAimByAxis(obs: readonly Observation[], opts: CrossSkil
   })
   return out
 }
+
+// ------------------------------------------------------------------------------------- device estimates
+
+/**
+ * The skills the device scores and the server never serves (the timed blocks: reaction time, the memory spans,
+ * coding and reading). In the online version their estimates are sent to the server for the aim of the served
+ * parts (`public.device_estimates`, `supabase/migrations/20261017000300_device_estimates.sql`, `app_config`
+ * `selection.device_axes`): selection only, never a score (DESIGN §7.4 "Cross-skill aim", amended 2026-10-17).
+ */
+export const DEVICE_AXES: readonly AxisCode[] = Object.freeze(['WM', 'RT', 'PS'] as AxisCode[])
+
+/** A device estimate's sd is raised to this (`selection.device_sd_min`): no estimate claims more precision than a block gives. */
+export const DEVICE_SD_MIN = 0.3
+
+/** Largest |mean| (and |x|) of a device estimate: the grid's edge. */
+export const DEVICE_MEAN_BOUND = EAP_HI
+
+/** Largest sd the server reads before raising nothing (it caps a sent sd here before anything else). */
+export const DEVICE_SD_CAP = 1_000_000
+
+/** `device_estimates` calls a session may make (`selection.device_max_calls`). */
+export const DEVICE_MAX_CALLS = 20
+
+/** What the app sends of one timed skill: its posterior mean and sd, nothing else (never a trial). */
+export interface DeviceEstimate {
+  readonly axis: AxisCode
+  readonly mean: number
+  readonly sd: number
+}
+
+/**
+ * The estimate of one device skill from the session's observations of it (its blocks): the grid posterior of their
+ * summed log-likelihood under the skill's scoring prior N(μ_k, Σ_kk), the summary the server keeps of its own skills
+ * at finish. Null when the observations hold none of `axis`.
+ */
+export function deviceEstimate(axis: AxisCode, obs: readonly Observation[], opts: Pick<CrossSkillOptions, 'mu' | 'sigma'>): DeviceEstimate | null {
+  const k = AXIS_CODES.indexOf(axis)
+  if (k < 0) throw new RangeError(`deviceEstimate(): unknown axis ${axis}`)
+  const ll = gridLoglik(obs.filter((o) => o.axis === axis)).get(k)
+  if (ll === undefined) return null
+  const mu = opts.mu?.[k] ?? 0
+  const post = gridPosterior(ll, mu, opts.sigma[k]![k]!)
+  return { axis, mean: post.mean, sd: post.sd }
+}
+
+const clamp = (x: number, lo: number, hi: number): number => Math.min(Math.max(x, lo), hi)
+
+/**
+ * A device estimate as the server bounds and stores it (`public.device_estimates`): mean clamped to ±4, sd raised to
+ * {@link DEVICE_SD_MIN}; the {@link message} of (mean, sd) under the skill's scoring prior with its grid moments
+ * divided out; an sd at or above the prior's grid sd says nothing (null); λ at most 1/sd_min² − 1/v0, x clamped to ±4.
+ */
+export function boundedDeviceTerm(est: DeviceEstimate, opts: Pick<CrossSkillOptions, 'mu'> & { readonly v?: number } = {}): { mean: number; sd: number; lam: number; x: number } | null {
+  const k = AXIS_CODES.indexOf(est.axis)
+  if (k < 0) throw new RangeError(`unknown axis ${est.axis}`)
+  if (!Number.isFinite(est.mean) || !Number.isFinite(est.sd) || !(est.sd > 0)) throw new RangeError('a device estimate needs a finite mean and a positive finite sd')
+  const mu = opts.mu?.[k] ?? 0
+  const v = opts.v ?? 1
+  const mean = clamp(est.mean, -DEVICE_MEAN_BOUND, DEVICE_MEAN_BOUND)
+  const sd = Math.max(Math.min(est.sd, DEVICE_SD_CAP), DEVICE_SD_MIN)
+  const prior = gridPosterior(null, mu, v)
+  const v0 = prior.sd * prior.sd
+  if (!(v0 > 0)) return null
+  const lam0 = 1 / (sd * sd) - 1 / v0
+  if (!(lam0 > MESSAGE_MIN_PRECISION)) return null
+  const x = clamp((mean / (sd * sd) - prior.mean / v0) / lam0, -DEVICE_MEAN_BOUND, DEVICE_MEAN_BOUND)
+  const lam = Math.min(lam0, 1 / (DEVICE_SD_MIN * DEVICE_SD_MIN) - 1 / v0)
+  return { mean, sd, lam, x }
+}
+
+/** {@link boundedDeviceTerm} as the Gaussian observation the aim takes (x ~ N(θ, 1/λ)): what the server adds to the skill's grid. */
+export function deviceEvidence(est: DeviceEstimate, opts: Pick<CrossSkillOptions, 'mu'> & { readonly v?: number } = {}): Observation[] {
+  const t = boundedDeviceTerm(est, opts)
+  return t === null ? [] : [{ kind: 'gaussian', axis: est.axis, lam: 1, d: 0, sigma: 1 / Math.sqrt(t.lam), x: t.x }]
+}

@@ -24,6 +24,7 @@ import {
   UNIFORM_RT_MIN_TIME_RATIO,
 } from '../../src/engine/integrity'
 import { RHO_MAX_PRIOR } from '../../src/engine/retest'
+import { DEVICE_AXES, DEVICE_MAX_CALLS, DEVICE_SD_MIN } from '../../src/engine/xskill'
 import { COVERAGE_FLOOR, RANDOMESQUE_K, SELECTION_TIME_EXPONENT, STOP_SD, TESTLET_INFO_FACTOR } from '../../src/engine/selector'
 import { BANNED_TERMS } from '../language-lint'
 import { MIGRATIONS_DIR, readMigrations, type SqlFile } from './sql'
@@ -66,6 +67,7 @@ describe('migrations: the set', () => {
       '20261016000300_selection_information.sql',
       '20261017000100_fermi_intervals.sql',
       '20261017000200_param_publish.sql',
+      '20261017000300_device_estimates.sql',
     ])
   })
 
@@ -84,8 +86,8 @@ describe('migrations: functions', () => {
     expect(functions.length).toBeGreaterThan(90)
     expect(code(all).match(/create\s+(?:or\s+replace\s+)?function\b/gi)!.length, 'every function is seen by the pattern').toBe(functions.length)
     // rescore is created in M2.1 and re-created by M2.5, start_session by the seen-list fix (create or replace): 11 different RPCs,
-    // and live_axes of the remaining families (M3.11, 2026-10-13): 12
-    expect(new Set(functions.filter((f) => f.name.startsWith('public.')).map((f) => f.name)).size).toBe(12)
+    // and live_axes of the remaining families (M3.11, 2026-10-13): 12; device_estimates (2026-10-17): 13
+    expect(new Set(functions.filter((f) => f.name.startsWith('public.')).map((f) => f.name)).size).toBe(13)
   })
 
   it('builds no SQL from its arguments: no dynamic EXECUTE (supabase/README.md, pitfall 5)', () => {
@@ -424,7 +426,7 @@ describe('migrations: the cross-skill aim (owner request 2026-10-15; engine/xski
   it('changes no score: the earlier sessions’ `prior` is read by hb.session_aims alone, and no scoring function is re-created', () => {
     expect(code(xskill)).not.toMatch(/function\s+(hb\.session_axis_post|hb\.session_posteriors|hb\.eap_add_response|hb\.eap_summary|public\.rescore|public\.finish|public\.submit)\b/)
     const readers = migrations.filter((m) => /'prior'/.test(code(m.sql))).map((m) => m.name)
-    expect(readers).toEqual(['20261016000100_cross_skill_aim.sql'])
+    expect(readers).toEqual(['20261016000100_cross_skill_aim.sql', '20261017000300_device_estimates.sql'])
     expect(code(functionText(xskill, 'hb.session_aims'))).toContain("v_state #> array['prior', v_codes[i]]")
     // Σ is the scoring one, read at every call (the §3 re-estimate is a new value of the setting)
     expect(code(functionText(xskill, 'hb.session_aims'))).toContain('hb.sigma_init()')
@@ -459,6 +461,49 @@ describe('migrations: information alone inside a part (owner decision 2026-10-16
   it('sets the exponent to the app\'s default and re-creates nothing else', () => {
     expect(info).toMatch(new RegExp(`\\('selection\\.time_exponent', '${SELECTION_TIME_EXPONENT}',`))
     expect([...code(info).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['hb.rank_live'])
+  })
+})
+
+describe('migrations: the device estimates for the aim (2026-10-17; engine/xskill.ts deviceEvidence)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
+  }
+  const device = byName('_device_estimates.sql')
+
+  it('re-creates hb.session_aims with exactly one change: `device` adds its Gaussian term to the grid as `prior` does', () => {
+    const now = functionText(device, 'hb.session_aims')
+    const then = functionText(byName('_cross_skill_aim.sql'), 'hb.session_aims')
+    const before = '      v_has[i] := true;\n    end if;\n    -- 1. its message'
+    const term = [
+      "    v_node := v_state #> array['device', v_codes[i]];",
+      "    if pg_catalog.jsonb_typeof(v_node -> 'lam') = 'number' and pg_catalog.jsonb_typeof(v_node -> 'x') = 'number' and (v_node ->> 'lam')::double precision > 0 then",
+      '      for g in 1..61 loop',
+      "        v_ll[(i - 1) * 61 + g] := v_ll[(i - 1) * 61 + g] - 0.5 * (v_node ->> 'lam')::double precision * ((v_node ->> 'x')::double precision - v_grid[g]) ^ 2;",
+      '      end loop;',
+      '      v_has[i] := true;',
+      '    end if;',
+    ].join('\n')
+    expect(then.split(before)).toHaveLength(2)
+    const want = then.replace(before, () => `      v_has[i] := true;\n    end if;\n${term}\n    -- 1. its message`).replace('create function hb.session_aims', 'create or replace function hb.session_aims')
+    expect(now).toBe(want)
+  })
+
+  it('changes no score: state.device is read by hb.session_aims alone, and only it and the RPC are created', () => {
+    expect([...code(device).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['public.device_estimates', 'hb.session_aims'])
+    // the state's key (not the sessions.device column of the save's session object)
+    const readers = migrations.filter((m) => /state\s*->>?\s*'device'|array\['device'/.test(code(m.sql))).map((m) => m.name)
+    expect(readers).toEqual(['20261017000300_device_estimates.sql'])
+    expect(code(functionText(device, 'hb.session_aims'))).toContain("v_state #> array['device', v_codes[i]]")
+  })
+
+  it('seeds the app\'s bounds: the device axes, the sd floor and the call cap', () => {
+    const row = (key: string): string => new RegExp(`\\('${key.replace('.', '\\.')}',\\s*'([^']*)'`).exec(device)?.[1] ?? ''
+    expect(JSON.parse(row('selection.device_axes'))).toEqual([...DEVICE_AXES])
+    expect(Number(row('selection.device_sd_min'))).toBe(DEVICE_SD_MIN)
+    expect(Number(row('selection.device_max_calls'))).toBe(DEVICE_MAX_CALLS)
   })
 })
 
