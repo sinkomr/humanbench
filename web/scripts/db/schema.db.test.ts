@@ -30,6 +30,7 @@ const ANON = from('203.0.113.9')
 /** The only functions an API role may call (ROADMAP M2.1; M2.4 repeats this as its own acceptance). */
 const RPCS = [
   'public.delete_my_data',
+  'public.device_estimates',
   'public.finish',
   'public.live_axes',
   'public.mirror_get',

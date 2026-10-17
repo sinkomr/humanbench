@@ -100,6 +100,8 @@ export class FakeServer {
   /** identifier → { phrase, save } */
   readonly mirror = new Map<string, { phrase: string; save: Record<string, unknown> | null }>()
   readonly deleted: string[] = []
+  /** What `device_estimates` was handed, in order (axis, mean, sd). */
+  readonly deviceEstimates: { axis: string; mean: number; sd: number }[] = []
   #device: unknown = null
   #flags: unknown = {}
   readonly #tuples: unknown[][] = []
@@ -189,6 +191,14 @@ export class FakeServer {
         if (a.p_token !== TOKEN) return new Failure(401, 'invalid_session')
         this.#flags = a.p_flags ?? {}
         return { session: this.#session(), anon_id: ANON_ID, n_responses: this.#tuples.length }
+      case 'device_estimates': {
+        if (a.p_token !== TOKEN) return new Failure(401, 'invalid_session')
+        const list = (a.p_estimates ?? []) as { axis?: unknown; mean?: unknown; sd?: unknown }[]
+        // only the axis, the mean and the sd ever cross the wire (never a trial)
+        if (!Array.isArray(list) || list.length < 1 || list.length > 3 || list.some((e) => Object.keys(e).sort().join() !== 'axis,mean,sd')) return new Failure(400, 'invalid_estimates')
+        this.deviceEstimates.push(...list.map((e) => ({ axis: String(e.axis), mean: Number(e.mean), sd: Number(e.sd) })))
+        return { recorded: list.map((e) => String(e.axis)) }
+      }
       case 'report_problem':
       case 'submit_survey':
         return a.p_token === TOKEN ? { recorded: true } : new Failure(401, 'invalid_session')

@@ -13,7 +13,8 @@
  *   whether an answer was right;
  * - it does not take the timed tasks (reaction time, memory, coding, reading), which stay on the
  *   device as they were in the static version and are saved as a session of their own, without a
- *   signature (A16: only a session the server built from its own rows is signed).
+ *   signature (A16: only a session the server built from its own rows is signed). Only their estimates
+ *   (axis, mean, sd) are handed over, for where the served parts start (`deviceEstimates`; selection only).
  *
  * What it does not hide (ROADMAP A24-sec, owner decision 2026-10-02): the next item the server picks follows
  * from whether the last answer was right (the adaptive step of §7.4), so a deliberate script over many sessions
@@ -24,6 +25,7 @@
 
 import type { AxisCode } from '../engine/axes'
 import type { JsonValue } from '../engine/types'
+import type { DeviceEstimate } from '../engine/xskill'
 import type { DeviceInfo, SaveFileV1, SessionFlags } from '../save/types'
 import type { BackendApi, ProblemReport, Survey } from './api'
 import { toServedItem, type ServedItem } from './items'
@@ -55,6 +57,11 @@ export interface CatSource {
   next(axes: readonly AxisCode[]): Promise<CatNext>
   /** Hands an answer over. Resolves when the server has it (a repeat is harmless). */
   answer(a: CatAnswer): Promise<void>
+  /**
+   * Hands the device's estimate of a timed skill to the server, for the aim of the served parts only (DESIGN §7.4
+   * "Cross-skill aim", 2026-10-17). Optional: a source without it takes none.
+   */
+  deviceEstimates?(estimates: readonly DeviceEstimate[]): Promise<void>
 }
 
 export class ServerSession implements CatSource {
@@ -92,6 +99,10 @@ export class ServerSession implements CatSource {
     const flags: Record<string, number | boolean | null> = { ...a.flags }
     if (a.release !== undefined) flags[a.release] = true
     await this.#api.submit(this.#token, { itemId: a.item.item_id, response: a.response, rtMs: a.rtMs, confidence: a.confidence, clientFlags: flags, next: false })
+  }
+
+  async deviceEstimates(estimates: readonly DeviceEstimate[]): Promise<void> {
+    await this.#api.deviceEstimates(this.#token, estimates)
   }
 
   /** Closes the session and returns it as the server built and signed it. Repeating it returns the same session. */

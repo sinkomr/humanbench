@@ -87,6 +87,19 @@ export function parseLiveAxes(raw: unknown): readonly AxisCode[] {
   return Object.freeze(AXIS_CODES.filter((k) => named.has(k)))
 }
 
+// ---------------------------------------------------------------------- device_estimates
+
+/**
+ * The reply of `public.device_estimates` (supabase/migrations/20261017000300_device_estimates.sql): the axes of the
+ * call, nothing else (no score, nothing derived). A code this build does not know is left out.
+ */
+export function parseDeviceRecorded(raw: unknown): readonly AxisCode[] {
+  const o = obj(raw, 'device_estimates')
+  if (!Array.isArray(o.recorded) || o.recorded.length > 3) bad('device_estimates.recorded', 'expected a list of at most 3 axis codes')
+  const named = new Set((o.recorded as unknown[]).map((a, i) => str(a, `device_estimates.recorded[${i}]`, 16)))
+  return Object.freeze(AXIS_CODES.filter((k) => named.has(k)))
+}
+
 // ------------------------------------------------------------------------------ next_item
 
 /** An item as the server hands it over (`hb.item_view`): ids, type, time limit and the render payload. */
