@@ -64,11 +64,12 @@ describe('migrations: the set', () => {
       '20261016000100_cross_skill_aim.sql',
       '20261016000200_quant_hard_facets.sql',
       '20261016000300_selection_information.sql',
+      '20261017000100_fermi_intervals.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.1[12] \(ROADMAP M3\.1[12])\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.1[12] \(ROADMAP M3\.1[12]|M4\.10 \(ROADMAP M4\.10|M5\.1 \(ROADMAP M5\.1)\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 
@@ -150,12 +151,13 @@ describe('migrations: the readers of old answers (M2.5)', () => {
     expect(eligibleNow).toBe(eligibleThen.replace('    from public.responses r\n   where r.session_id = p_session_id;', '    from hb.responses_of(p_session_id) r;'))
   })
 
-  it('is read by exactly rescore and hb.is_eligible, the two readers of a session that may be old', () => {
+  it('is read by exactly rescore, hb.is_eligible and the Fermi interval summary, the readers of a session that may be old', () => {
     const users = migrations
       .flatMap((m) => [...code(m.sql).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)[\s\S]*?\n\$\$;/g)].filter((x) => /\bhb\.responses_of\(/.test(x[0])).map((x) => x[1]!))
       .filter((name) => name !== 'hb.responses_of')
-    // (rescore is re-created again by 20261007000100_rescore_facets.sql, still a reader of old answers)
-    expect([...new Set(users)].sort()).toEqual(['hb.is_eligible', 'public.rescore'])
+    // (rescore is re-created again by 20261007000100_rescore_facets.sql, still a reader of old answers; the Fermi interval
+    // summary of M5.1 reads a session's answers live or archived too, server-side only)
+    expect([...new Set(users)].sort()).toEqual(['hb.fermi_session_summary', 'hb.is_eligible', 'public.rescore'])
   })
 })
 
@@ -457,4 +459,39 @@ describe('migrations: information alone inside a part (owner decision 2026-10-16
     expect(info).toMatch(new RegExp(`\\('selection\\.time_exponent', '${SELECTION_TIME_EXPONENT}',`))
     expect([...code(info).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['hb.rank_live'])
   })
+})
+
+describe('migrations: the Fermi intervals (M5.1) and the parameter publication (M4.10)', () => {
+  const byName = (suffix: string): string => migrations.find((m) => m.name.endsWith(suffix))!.sql
+  const functionText = (sql: string, name: string): string => {
+    const start = sql.search(new RegExp(`create\\s+(?:or\\s+replace\\s+)?function\\s+${name.replace('.', '\\.')}\\s*\\(`))
+    expect(start, name).toBeGreaterThanOrEqual(0)
+    return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
+  }
+  const fermi = byName('_fermi_intervals.sql')
+
+  it('re-creates finish with exactly one change: the new state also holds the session’s Fermi interval summary', () => {
+    const now = functionText(fermi, 'public.finish')
+    const then = functionText(byName('_rpc_session.sql'), 'public.finish').replace('create function', 'create or replace function')
+    const swaps: [string, string][] = [
+      ['  v_state jsonb;\n', '$&  v_fermi jsonb;\n'],
+      [
+        "    v_state := v_state || pg_catalog.jsonb_build_object('posterior', hb.session_posterior(s.session_id), 'integrity', hb.session_integrity(s.session_id));\n",
+        "$&    v_fermi := hb.fermi_session_summary(s.session_id);\n    if v_fermi is not null then\n      v_state := v_state || pg_catalog.jsonb_build_object('fermi_intervals', v_fermi);\n    end if;\n",
+      ],
+    ]
+    let want = then
+    for (const [before, after] of swaps) {
+      expect(want).toContain(before)
+      want = want.replace(before, after)
+    }
+    expect(now).toBe(want)
+  })
+
+  it('scores nothing with the intervals: only finish reads hb.fermi_session_summary, and no reader of the score is re-created', () => {
+    const readers = migrations.filter((m) => /hb\.fermi_session_summary\(/.test(code(m.sql))).map((m) => m.name)
+    expect(readers).toEqual(['20261017000100_fermi_intervals.sql'])
+    expect([...code(fermi).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['hb.fermi_summary', 'hb.fermi_session_summary', 'public.finish'])
+  })
+
 })
