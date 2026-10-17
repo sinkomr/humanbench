@@ -258,7 +258,7 @@ export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.fre
   {
     heading: 'How long it is kept, and your rights',
     paragraphs: [
-      'Your answers are kept because you agreed to it on the first screen: your consent is the basis. The aim is to keep them for at most 24 months, but nothing deletes them automatically yet, so for now they stay until you delete them. They are held by a database hosting provider in the European Union or the United States.',
+      'Your answers are kept because you agreed to it on the first screen: your consent is the basis. The aim is to keep them for at most 24 months, but nothing deletes them automatically yet, so for now they stay until you delete them. They are held by a database hosting provider in the United States.',
       'You can delete everything stored on the server for your identifier at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. It is removed from the database at once, and from the encrypted weekly backups within eight weeks. Answers of sessions older than 30 days are also copied into an encrypted archive, used to improve the questions, that only the site’s owner can open. That copy is stored under each session’s own code, not under your identifier, and deleting does not reach it. Deleting from the server does not touch the save files you downloaded or what this browser holds.',
     ],
   },
