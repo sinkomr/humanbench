@@ -126,7 +126,7 @@ describe('finish records the session’s intervals; nothing scores with them', (
     expect(stored!.hits).toBeGreaterThan(0)
     expect(stored!.hits).toBeLessThan(7)
     // the same function on demand
-    expectSummary((await db.owner.query<{ v: FermiSummary }>(`select hb.fermi_session_summary($1) as v`, [s.session_id])).rows[0]!.v, want, 'on demand')
+    expectSummary((await db.owner.query<{ v: FermiSummary }>(`select hb.fermi_session_summary($1) as v`, [s.session_id])).rows[0]!.v as FermiSummary & { hits: number }, want, 'on demand')
   })
 
   it('keeps none for a session without a Fermi answer', async () => {
