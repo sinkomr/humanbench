@@ -12,7 +12,8 @@ export const HARD_STOP_S = 57 * 60
 /**
  * Version of the terms and privacy notice that the consent covers. Bump it when `PRIVACY_SECTIONS`
  * (`copy.ts`) changes in substance: a stored consent for another version is not honoured.
- * 2026-10-05: the notice without placeholders (UX-REVIEW D1); was 'terms-2026-09-draft'.
+ * 2026-10-05: the notice without placeholders (UX-REVIEW D1); was 'terms-2026-09-draft'. Not bumped on
+ * 2026-10-16: the static notice only lost the word "anonymous" (nothing it says is kept or sent changed).
  */
 export const TERMS_VERSION = 'terms-2026-10-05'
 
@@ -21,8 +22,13 @@ export const TERMS_VERSION = 'terms-2026-10-05'
  * server, so a consent given to the static notice does not cover it (and the other way round).
  * 2026-10-05: the notice without placeholders (UX-REVIEW D1); was 'terms-2026-10-draft-server'. No SQL
  * names a terms version (supabase/), so nothing on the server needs the old value.
+ * 2026-10-16: the notice checked against the server as built (no "anonymous"; the session times, page
+ * checks and scores kept, the Calibration use of the confidence, the survey and reports kept with the
+ * session, the archive under each session's code, no automatic 24-month deletion yet, a per-skill summary of the timed tasks that may be sent for
+ * selection); was
+ * 'terms-2026-10-05-server'. A consent to the earlier notice is not honoured, so the gate asks again.
  */
-export const TERMS_VERSION_SERVER = 'terms-2026-10-05-server'
+export const TERMS_VERSION_SERVER = 'terms-2026-10-16-server'
 
 /** localStorage key of the stored consent (written only after the 18+ gate is passed, §13). */
 export const CONSENT_KEY = 'hb:consent:v1'

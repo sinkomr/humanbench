@@ -1,7 +1,6 @@
 <!--
-  Privacy and terms (ROADMAP M1.15; DESIGN §13 "GDPR/CCPA basics"). The notice says that no personally
-  identifiable information is collected and that all responses are anonymous, and names no controller
-  and no contact (owner decision 2026-10-05, UX-REVIEW D1); the text describes exactly what this
+  Privacy and terms (ROADMAP M1.15; DESIGN §13 "GDPR/CCPA basics"). The notice says that nothing that
+  says who the person is gets collected, and names no controller and no contact (owner decision 2026-10-05, UX-REVIEW D1); the text describes exactly what this
   version does (the static one: everything stays in the browser). The button removes what this site
   keeps in this browser (the stored consent and every autosave).
 -->

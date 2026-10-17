@@ -174,7 +174,7 @@ describe('ReportProblem', () => {
     flushSync()
     click(root.querySelector<HTMLInputElement>('input[value="notes_requested"]')!)
     expect(root.querySelector('textarea')).toBeNull() // no text box: nothing but the fact is kept
-    expect(root.textContent).toContain('We keep no details with it')
+    expect(root.textContent).toContain('It is stored with this session, and we keep no other details with it')
     root.querySelector<HTMLFormElement>('form')!.requestSubmit()
     await tick()
     expect(report).toHaveBeenCalledTimes(1)
@@ -210,7 +210,7 @@ describe('Survey', () => {
     const send = vi.fn(async (_s: SurveyAnswers) => true)
     mounted = mountInto(Survey, { send })
     const root = mounted.target
-    expect(root.textContent).toContain('optional, kept apart from your answers, and never shown with your results')
+    expect(root.textContent).toContain('optional, stored with this session but apart from your answers, and never shown with your results')
     expect([...root.querySelectorAll<HTMLInputElement>('input[name$="-age"]')].map((i) => i.value)).toEqual(['18-24', '25-34', '35-44', '45-54', '55-64', '65+', ''])
     click(root.querySelector<HTMLInputElement>('input[value="no"]')!)
     root.querySelector<HTMLFormElement>('form')!.requestSubmit()

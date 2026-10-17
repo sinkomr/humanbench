@@ -18,9 +18,10 @@ describe('session copy (M1.15; DESIGN §13)', () => {
     expect(copy.GATE_AGREE).toContain('18 or older')
     expect(copy.GATE_POINTS).toHaveLength(3) // "a terms/privacy summary (3 bullets + link)"
     const notice = copy.PRIVACY_SECTIONS.flatMap((s) => [s.heading, ...s.paragraphs]).join('\n')
-    // Owner decision 2026-10-05 (UX-REVIEW D1): no personally identifiable information, all responses anonymous,
-    // no controller or contact named, and no placeholder left.
-    expect(notice).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    // Owner decision 2026-10-05 (UX-REVIEW D1): nothing that says who the person is, no controller or contact named,
+    // and no placeholder left; since 2026-10-16 the word "anonymous" is not used (the save holds a random identifier).
+    expect(notice).toContain('HumanBench does not collect your name, your email address or anything else that says who you are, and there are no accounts.')
+    expect(notice).not.toMatch(/anonymous|personally identifiable/i)
     expect(notice).not.toMatch(/TODO|Controller:|Contact:|to be confirmed|draft/i)
     expect(notice).toMatch(/24 months/) // the retention of DESIGN §13 (purpose, retention and consent; the controller is left out by the owner)
     expect(notice).toMatch(/consent/)
@@ -286,5 +287,25 @@ describe('the words for the session’s length (A15, M3.11 phase 1)', () => {
       expect(SEGMENT_INFO[p.id].axes).toEqual([p.axis])
     }
     for (const id of ['knowledge_stem', 'knowledge_humanities', 'knowledge_arts'] as const) expect(SEGMENT_INFO[id].blurb).toContain('without looking anything up')
+  })
+})
+
+describe('the online notice and the screens that summarise it are true of the server as built (2026-10-16)', () => {
+  it('no "anonymous" claim; the gate, the data page and the reports say what is stored with the session', async () => {
+    const server = await import('../backend/copy')
+    const all = [
+      ...server.SERVER_PRIVACY_SECTIONS.flatMap((s) => [s.heading, ...s.paragraphs]),
+      ...server.SERVER_GATE_POINTS,
+      server.DATA_INTRO,
+      server.DATA_DELETE_TEXT,
+      server.SURVEY_LEAD,
+      server.REPORT_ITEM_NOTE,
+      server.REPORT_NOTES_NOTE,
+    ].join('\n')
+    expect(all).not.toMatch(/all responses are anonymous|personally identifiable|nothing else about you|We keep no details|kept apart from your answers/i)
+    expect(server.SERVER_GATE_POINTS[1]).toContain('how sure you said you were')
+    expect(server.SERVER_GATE_POINTS[1]).toContain('the privacy notice says what that does not reach')
+    expect(server.DATA_DELETE_TEXT).toContain('under each session’s own code rather than your identifier')
+    expect(server.REPORT_ITEM_NOTE).toContain('stored with this session')
   })
 })

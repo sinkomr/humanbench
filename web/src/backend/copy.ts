@@ -5,9 +5,10 @@
  * words (`session/copy.ts`) say that nothing is uploaded, which is false here, so the screens that
  * say it take their words from this file when the app has a server.
  *
- * The privacy notice below says that no personally identifiable information is collected and that
- * responses are anonymous (owner decision 2026-10-05, UX-REVIEW D1), and names no controller and no
- * contact, as the static notice does.
+ * The privacy notice below says that nothing that says who the person is gets collected (owner decision
+ * 2026-10-05, UX-REVIEW D1), and names no controller and no contact, as the static notice does. Since
+ * 2026-10-16 it no longer calls the answers "anonymous": they are stored under a random identifier the
+ * person holds (pseudonymous, DESIGN §13), and every sentence is checked against the SQL and the jobs.
  */
 
 import type { SessionOutline } from '../engine/plan-table'
@@ -20,7 +21,7 @@ import type { LoadProblem } from './errors'
 /** The three points of the consent gate when answers go to a server (replaces `GATE_POINTS`). */
 export const SERVER_GATE_POINTS: readonly string[] = Object.freeze([
   'You must be 18 or older to take part.',
-  'Your answers to the counted questions, your response times and coarse details of your device are sent to a server while you take part, so that your answers can be scored there and the questions can be improved. They are linked to a random identifier, not to your name, your email address or your network address. You can ask for them to be deleted at any time.',
+  'Your answers to the counted questions, your response times, how sure you said you were and coarse details of your device are sent to a server while you take part, so that your answers can be scored there and the questions can be improved. They are stored under a random code, not under your name, your email address or your network address. You can delete them from the server at any time; the privacy notice says what that does not reach.',
   'This is for curiosity and self-reflection. It is not a basis for decisions about school, work or health.',
 ])
 
@@ -102,13 +103,13 @@ export const REPORT_KINDS: Readonly<Record<'wrong_key' | 'ambiguous' | 'typo' | 
   notes_requested: 'Someone asked me for my notes',
 })
 /** Shown when "Someone asked me for my notes" is chosen: it is not about a question, and nothing is kept with it. */
-export const REPORT_NOTES_NOTE = 'This is not about a question. It tells us that someone asked you for your notes. We keep no details with it.'
+export const REPORT_NOTES_NOTE = 'This is not about a question. It tells us that someone asked you for your notes. It is stored with this session, and we keep no other details with it.'
 export const REPORT_DETAIL_LABEL = 'Tell us more (optional, up to 500 characters). Please do not include personal details.'
 export const REPORT_SEND = 'Send report'
 export const REPORT_CANCEL = 'Cancel'
 export const REPORT_DONE = 'Thank you. The report was sent.'
 export const REPORT_FAILED = 'The report could not be sent. Please try again.'
-export const REPORT_ITEM_NOTE = 'The report names this question and nothing else about you.'
+export const REPORT_ITEM_NOTE = 'The report is stored with this session and names this question.'
 export const REPORT_RESULTS_HEADING = 'Something else?'
 export const REPORT_RESULTS_TEXT = 'If someone asked you for your notes, or for your save file, you can tell us here. You never have to share either.'
 
@@ -116,7 +117,7 @@ export const REPORT_RESULTS_TEXT = 'If someone asked you for your notes, or for 
 
 export const SURVEY_HEADING = 'Two optional questions'
 export const SURVEY_LEAD =
-  'These help us check that the questions are fair to people of different backgrounds. They are optional, kept apart from your answers, and never shown with your results.'
+  'These help us check that the questions are fair to people of different backgrounds. They are optional, stored with this session but apart from your answers, and never shown with your results.'
 export const SURVEY_AGE_LEGEND = 'Your age group'
 export const SURVEY_ENGLISH_LEGEND = 'Is English your first language?'
 export const SURVEY_NO_ANSWER = 'Prefer not to say'
@@ -174,9 +175,13 @@ export const DATA_RESTORE_FOUND = 'Found your backup. Download it, then press St
 export const DATA_RESTORE_DOWNLOAD = 'Download the backup'
 export const DATA_RESTORE_NONE = 'Nothing matched that identifier and phrase.'
 export const DATA_DELETE_HEADING = 'Delete my data from the server'
-/** As the server privacy notice says (UX-REVIEW D1): the database at once, the weekly backups within eight weeks, never the archive. */
+/**
+ * As the server privacy notice says (UX-REVIEW D1): the database at once (`delete_my_data` deletes the sessions, whose
+ * responses, exposures, reports, survey and compacted archive rows cascade, and the mirror), the weekly backups within
+ * eight weeks (`backup.yml` keeps the newest 8), never the archive files (Parquet keyed by session_id, no anon_id).
+ */
 export const DATA_DELETE_TEXT =
-  'This deletes every session and the backup stored for an identifier from the database. It cannot be undone. Copies in the encrypted weekly backups are gone within eight weeks. Answers already copied, without your identifier, into the encrypted archive are not deleted. Save files you downloaded stay with you, and so does anything in this browser.'
+  'This deletes every session and the backup stored for an identifier from the database. It cannot be undone. Copies in the encrypted weekly backups are gone within eight weeks. Answers of sessions older than 30 days, already copied into the encrypted archive under each session’s own code rather than your identifier, are not deleted. Save files you downloaded stay with you, and so does anything in this browser.'
 export const DATA_DELETE_WITH_PHRASE = 'With my identifier and recovery phrase'
 export const DATA_DELETE_WITH_FILE = 'With a save file'
 export const DATA_FILE_LABEL = 'Save file'
@@ -202,32 +207,38 @@ export interface PrivacySectionText {
 /**
  * The privacy notice and terms of the online version (DESIGN §13 "GDPR/CCPA basics"). It replaces
  * the static notice's "In short / What this version keeps / Where it stays / When there is an online
- * version". It says plainly that HumanBench collects no personally identifiable information and that
- * responses are anonymous (owner decision 2026-10-05, UX-REVIEW D1), and keeps every sentence true of
- * the server as built (supabase/migrations, supabase/README.md): what the hosting provider sees, the
- * hashed address of the rate limits, the backups and the archive that deleting does not reach at once.
- * A change of substance here bumps `TERMS_VERSION_SERVER` (`session/constants.ts`).
+ * version". It says plainly that HumanBench collects nothing that says who the person is (owner decision
+ * 2026-10-05, UX-REVIEW D1) and, since 2026-10-16, that the answers are stored under a random identifier
+ * rather than calling them anonymous (DESIGN §13: a random ID linked to responses is pseudonymous). Every
+ * sentence is true of the server as built (supabase/migrations, supabase/README.md, the bank's jobs):
+ * what is sent and kept (`sessions`, `exposure_log`, `responses` with `confidence` and `client_flags`),
+ * the hashed address of the rate limits (salted per UTC day, purged after the next day), the survey and
+ * reports keyed by session, the mirror, the weekly backups (newest 8 kept), the archive of sessions older
+ * than 30 days (Parquet keyed by session_id, never expired unless the owner turns it on) and that no
+ * 24-month deletion runs yet. A change of substance here bumps `TERMS_VERSION_SERVER` (`session/constants.ts`).
  */
 export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.freeze([
   {
     heading: 'In short',
     paragraphs: [
-      'HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts. Your answers are stored under a random identifier, not under who you are.',
+      'HumanBench does not collect your name, your email address or anything else that says who you are, and there are no accounts. Your answers are not stored under who you are, but they are not fully anonymous either: they are stored under a random code that starts with hb_ (your save identifier, which is in your save file), so that you can get them back or delete them.',
     ],
   },
   {
     heading: 'What this version keeps',
     paragraphs: [
       'While you take part, HumanBench keeps your answers, how long each took, how sure you said you were when you set the optional scale, and coarse details of your device: its class (desktop, tablet or phone), the type of input you used, the family of your system and browser (with no version numbers), your window size, your screen refresh rate and your timer precision.',
-      'It also keeps a random identifier that starts with hb_. It is not linked to your name, your email address or your network address, and this site does not ask for any of them. The server’s hosting provider sees network addresses in its own logs, as every web host does; HumanBench does not store them with your answers. To limit abuse, the server keeps a scrambled (hashed) form of your network address, apart from your answers, for about two days.',
+      'It also keeps when each session started and ended, which questions you were shown and when, the scores the server works out from your answers, and a few checks on how the page was used: for example how long it was out of view, whether text was pasted, which parts you skipped, and whether answers came very quickly.',
+      'All of this is kept under your random identifier. It is not linked to your name, your email address or your network address, and this site does not ask for any of them. The server’s hosting provider sees network addresses in its own logs, as every web host does; HumanBench does not store them with your answers. To limit abuse, the server counts requests from each network address. It keeps only a scrambled (hashed) form of the address, mixed with a random value that changes every day, apart from your answers, and deletes the counts and those values after about two days.',
     ],
   },
   {
     heading: 'What is sent to the server',
     paragraphs: [
-      'Your answers to the counted questions of the parts Matrix & Series, Spatial and Quantitative Reasoning are sent to the server as you give them, with your response times, how sure you said you were (when you set it), and the device details above. The server scores them where the answers are kept, so your browser never learns whether a counted answer was right.',
-      'The timed tasks of the parts Reaction Time, Working Memory and Processing & Reading Speed stay on your device. They are in your save file and are not sent unless you choose to keep a backup of that file on the server.',
-      'If you report a problem, the report names the question and, if you write it, the text you add. Please do not include personal details. If you answer the two optional questions at the end, the answers are kept apart from your other data and are used only to check that the questions are fair.',
+      'Your answers to the counted questions of every part except the timed tasks below are sent to the server as you give them, with your response times, how sure you said you were (when you set it), the checks above and the device details above. The server scores them where the answers are kept, so your browser never learns whether a counted answer was right.',
+      'How sure you said you were is used for the Calibration part of your profile, which compares it with how you did. Your answers are also kept, together with everyone else’s, to improve the questions: for example to see how hard each one is and to find ones that do not work well.',
+      'Your answers to the timed tasks of the parts Reaction Time, Working Memory and Processing & Reading Speed stay on your device. They are in your save file and are not sent unless you choose to keep a backup of that file on the server. A short summary of how you did on them, one estimate per skill with its margin of uncertainty, may be sent and kept with your session, only to choose questions that suit you.',
+      'If you report a problem, the report is stored with your session and names the question and, if you write it, the text you add. Please do not include personal details. If you answer the two optional questions at the end, the answers are stored with that session but apart from your answers, and are used only to check that the questions are fair.',
     ],
   },
   {
@@ -239,16 +250,16 @@ export const SERVER_PRIVACY_SECTIONS: readonly PrivacySectionText[] = Object.fre
   {
     heading: 'Your save file and the server backup',
     paragraphs: [
-      'The server signs each session it records, so a save file can show that a session is as the server saved it. A session that is not signed, or was changed, still counts in your own results, but it is never used to improve the test.',
-      'You can keep a backup of your save file on the server. You get a recovery phrase of 12 words, shown once. The server keeps only a one-way fingerprint of the phrase, so it cannot give the phrase back. There are no accounts and no email.',
+      'The server signs each session it records, so a save file can show that a session is as the server saved it. A session that is not signed, or was changed, still counts in your own results. To improve the test, the server uses only its own record of each session, never the copy in your file.',
+      'You can keep a backup of your save file on the server. It holds the whole file, the timed tasks included, but not your notes settings, and it stays there until you delete it. You get a recovery phrase of 12 words, shown once. The server keeps only a one-way fingerprint of the phrase, so it cannot give the phrase back. There are no accounts and no email.',
       'Nobody should ask you for your save file or your notes, and they are not valid for decisions about hiring, admissions, grades or anything like them.',
     ],
   },
   {
     heading: 'How long it is kept, and your rights',
     paragraphs: [
-      'Your answers are kept because you agreed to it on the first screen: your consent is the basis. The plan is to keep them for at most 24 months and then delete them. They are held by a database hosting provider in the European Union or the United States.',
-      'You can delete everything stored on the server for your identifier at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. It is removed from the database at once, and from the encrypted weekly backups within eight weeks. Answers of sessions older than 30 days are also copied, without your identifier, into an encrypted archive used to improve the questions, and deleting does not reach that archive. Deleting from the server does not touch the save files you downloaded or what this browser holds.',
+      'Your answers are kept because you agreed to it on the first screen: your consent is the basis. The aim is to keep them for at most 24 months, but nothing deletes them automatically yet, so for now they stay until you delete them. They are held by a database hosting provider in the European Union or the United States.',
+      'You can delete everything stored on the server for your identifier at any time, on the page “Your data on the server”, with your recovery phrase or a save file the server issued. It is removed from the database at once, and from the encrypted weekly backups within eight weeks. Answers of sessions older than 30 days are also copied into an encrypted archive, used to improve the questions, that only the site’s owner can open. That copy is stored under each session’s own code, not under your identifier, and deleting does not reach it. Deleting from the server does not touch the save files you downloaded or what this browser holds.',
     ],
   },
   {

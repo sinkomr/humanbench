@@ -490,7 +490,8 @@ describe('Privacy: delete what is kept in this browser', () => {
   it('is the whole notice: no personally identifiable information, no placeholder, 18+ only, in-browser storage, a way back (UX-REVIEW D1)', () => {
     const c = mountIt(Privacy, { storage: () => new SpyStorage() })
     const text = c.textContent ?? ''
-    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(text).toContain('HumanBench does not collect your name, your email address or anything else that says who you are, and there are no accounts.')
+    expect(text).not.toMatch(/anonymous/i)
     expect(text).not.toMatch(/TODO|Controller:|Contact:/)
     expect(text).toContain('18 or older')
     expect(text).toContain('Nothing is sent to a server')
@@ -502,7 +503,8 @@ describe('Privacy: delete what is kept in this browser', () => {
     const { SERVER_PRIVACY_SECTIONS } = await import('../backend/copy')
     const c = mountIt(Privacy, { storage: () => new SpyStorage(), sections: SERVER_PRIVACY_SECTIONS, dataLink: true })
     const text = c.textContent ?? ''
-    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(text).toContain('HumanBench does not collect your name, your email address or anything else that says who you are')
+    expect(text).toContain('they are not fully anonymous either: they are stored under a random code that starts with hb_')
     expect(text).not.toMatch(/TODO|Controller:|Contact:/)
     expect(c.querySelector('a[href="#/data"]')).not.toBeNull()
   })
