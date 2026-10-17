@@ -39,6 +39,7 @@ export const CANNED: Readonly<Record<string, unknown>> = {
   mirror_get: { found: false },
   delete_my_data: { deleted: false },
   live_axes: { axes: [] },
+  device_estimates: { recorded: [] },
 }
 
 export interface Call {

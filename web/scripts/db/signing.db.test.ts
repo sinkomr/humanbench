@@ -694,9 +694,9 @@ describe('what the server does with an unverified save (DESIGN §8: displayed, n
         )
       ).rows.map((r) => r.f)
     expect(await writers('responses')).toEqual(['public.submit'])
-    // sessions are created by start_session and updated by the session's own calls (serve_next counts the items served);
-    // delete_my_data removes them
-    expect(await writers('sessions')).toEqual(['hb.serve_next', 'public.delete_my_data', 'public.finish', 'public.start_session', 'public.submit'])
+    // sessions are created by start_session and updated by the session's own calls (serve_next counts the items served;
+    // device_estimates keeps the timed blocks' estimates for the aim, never a response); delete_my_data removes them
+    expect(await writers('sessions')).toEqual(['hb.serve_next', 'public.delete_my_data', 'public.device_estimates', 'public.finish', 'public.start_session', 'public.submit'])
   })
 
   it('signs nothing but the session it built itself: the signer is reachable from finish only, and no RPC signs what it is sent', async () => {

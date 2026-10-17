@@ -130,7 +130,8 @@
 import { BackendError, problemOf, type LoadProblem } from '../backend/errors'
 import { asksConfidence, servedResponseFits, type ServedItem } from '../backend/items'
 import type { CatAnswer, CatNext, CatSource, Release } from '../backend/session'
-import { AXIS_CODES, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
+import { AXIS_CODES, initialSigma, isAxisCode, type AxisCode, type Cluster } from '../engine/axes'
+import { DEVICE_AXES, deviceEstimate } from '../engine/xskill'
 import {
   HIDDEN_MAX_S,
   hiddenIntervals,
@@ -536,6 +537,14 @@ export class SessionRun {
   #held: { segment: Segment; item: ServedItem } | null = null
   /** A request abandoned by a skip whose answer is still to come: the next request waits for it (module comment). */
   #stray: Promise<void> | null = null
+  /**
+   * The device's estimates of its timed skills on their way to the server (online only; DESIGN §7.4 "Cross-skill aim",
+   * 2026-10-17), one after another. Never rejects: a failure is let go (selection only, nothing is lost), and the next
+   * request for a served item waits for it, so the part after a timed block starts from that block's estimate.
+   */
+  #deviceSend: Promise<void> = Promise.resolve()
+  /** The last {@link #deviceSend} a request waited for: with nothing new on its way a request adds no wait. */
+  #deviceSent: Promise<void> = this.#deviceSend
   /** The passage under way (M3.11 phase 2): its text, the part it belongs to, and whether the server has more questions of it. */
   #passage: { readonly text: PassageText; readonly segment: Segment; readonly position: { readonly index: number; readonly of: number } | null; readonly more: boolean } | null = null
   /** The session is the standard one (no focus, no continuation, no target of its own): its typical length is known (`plan-table.ts`). */
@@ -1165,6 +1174,11 @@ export class SessionRun {
       // A request a skip abandoned may still bring an item: it is let go before this part asks (module comment).
       if (this.#stray !== null) await this.#stray
       await this.#flushOutbox()
+      // the estimates of the timed blocks so far reach the server before it picks (a no-op when none is on its way)
+      if (this.#deviceSent !== this.#deviceSend) {
+        this.#deviceSent = this.#deviceSend
+        await this.#deviceSend
+      }
       for (let attempt = 0; attempt < MAX_FOREIGN_RELEASES; attempt++) {
         if (!live()) return
         const asked = this.#cat!.next(l.axes)
@@ -1581,10 +1595,23 @@ export class SessionRun {
     this.#seenItems.push(item.item_id)
     this.#seenFamilies.push(item.family_id)
     this.#blockRecords.push({ item_id: item.item_id, family: step.family, axis: step.axis, observed: observation !== undefined, flags, reasons })
+    if (observation !== undefined) this.#sendDeviceEstimate(step.axis)
     this.#currentBlock = null
     this.#blockIdx++
     this.#emit('response')
     this.#boundary(() => this.#present())
+  }
+
+  /**
+   * Online only: hands the server this session's estimate of a timed skill (all its blocks so far: axis, mean, sd,
+   * never a trial) for the aim of the served parts. Queued behind the previous one; a failure is let go.
+   */
+  #sendDeviceEstimate(axis: AxisCode): void {
+    const cat = this.#cat
+    if (cat?.deviceEstimates === undefined || !DEVICE_AXES.includes(axis)) return
+    const est = deviceEstimate(axis, this.#obs, { sigma: initialSigma() })
+    if (est === null) return
+    this.#deviceSend = this.#deviceSend.then(() => cat.deviceEstimates!([est])).catch(() => undefined)
   }
 
   // ------------------------------------------------------------------------- skip / finish

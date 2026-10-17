@@ -169,9 +169,10 @@ describe('(1) anon cannot select any table', () => {
 
 // ================================================================================ (2) functions
 
-/** The RPCs of the API (ROADMAP M2.1, M2.3; live_axes since M3.11, 2026-10-13), with their argument lists as the catalog prints them. */
+/** The RPCs of the API (ROADMAP M2.1, M2.3; live_axes since M3.11, 2026-10-13; device_estimates since 2026-10-17), with their argument lists as the catalog prints them. */
 const RPCS: readonly string[] = [
   'public.delete_my_data(p_anon_id text, p_phrase text, p_save jsonb)',
+  'public.device_estimates(p_token text, p_estimates jsonb)',
   'public.finish(p_token text, p_flags jsonb)',
   'public.live_axes()',
   'public.mirror_get(p_anon_id text, p_phrase text)',
@@ -196,7 +197,7 @@ describe('(2) anon can EXECUTE only the whitelisted RPCs', () => {
 
   const withArgs = (f: { schema: string; name: string; args: string }): string => `${f.schema}.${f.name}(${f.args})`
 
-  it('executes exactly the twelve RPCs of the API in public: the same for anon and authenticated, none for service_role', async () => {
+  it('executes exactly the thirteen RPCs of the API in public: the same for anon and authenticated, none for service_role', async () => {
     for (const role of ['anon', 'authenticated'] as const) {
       const surface = await exposedSurface(db, role)
       expect(surface.functions.map(withArgs), role).toEqual([...RPCS].sort())
