@@ -96,6 +96,15 @@ describe('an adult record under any terms (the welcome row, provisional default,
     expect(readAdultConsent(s)).toBeNull()
   })
 
+  it('a consent to the online notice before its 2026-10-16 correction is asked again, and the welcome row still shows', () => {
+    expect(TERMS_VERSION_SERVER).not.toBe('terms-2026-10-05-server')
+    const s = new SpyStorage()
+    s.data.set(CONSENT_KEY, JSON.stringify({ v: 1, terms: 'terms-2026-10-05-server', adult: true }))
+    expect(readConsent(s, TERMS_VERSION_SERVER)).toBeNull()
+    expect(readAdultConsent(s)).toBeNull()
+    expect(hasAdultRecord(s)).toBe(true)
+  })
+
   it('is false for a malformed record, another record version, a record that is not adult or has no terms', () => {
     for (const bad of ['{', 'null', '[]', '"x"', '{"v":2,"terms":"t","adult":true}', '{"v":1,"terms":"t","adult":false}', '{"v":1,"terms":"t"}', '{"v":1,"adult":true}', '{"v":1,"terms":7,"adult":true}']) {
       const s = new SpyStorage()

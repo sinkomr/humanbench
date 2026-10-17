@@ -1,9 +1,10 @@
 <!--
   The optional two-question survey (ROADMAP M2.7; DESIGN §13 "Fairness/DIF without demographics"):
   an age group and whether English is the first language. Both are voluntary, either may be left
-  out, and "No thanks" sends nothing. The answers are kept apart from the session by the server
-  (`submit_survey`) and are used only to check that the questions are fair across groups; they are
-  never shown with the results. Nothing is asked of a person who has not finished a session.
+  out, and "No thanks" sends nothing. The server keeps the answers in a table of their own, keyed by
+  the session (`submit_survey`, `public.survey`; no `anon_id` column, deleted with the session),
+  and they are used only to check that the questions are fair across groups; they are never shown
+  with the results. Nothing is asked of a person who has not finished a session.
 -->
 <script lang="ts">
   import { AGE_BANDS, type AgeBand, type Survey } from './api'

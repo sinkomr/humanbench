@@ -114,7 +114,7 @@ describe('App (jsdom)', () => {
     expect(document.querySelector('.flow')?.hasAttribute('hidden')).toBe(true)
     const text = notice?.textContent ?? ''
     // Owner decision 2026-10-05 (UX-REVIEW D1): the notice says it plainly and names no controller or contact.
-    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    expect(text).toContain('HumanBench does not collect your name, your email address or anything else that says who you are, and there are no accounts.')
     expect(text).not.toContain('TODO')
     expect(text).not.toContain('Controller:')
     for (const s of PRIVACY_SECTIONS) expect(text).toContain(s.heading)

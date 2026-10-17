@@ -46,10 +46,21 @@ describe('the privacy notice with a server', () => {
     for (const s of SERVER_PRIVACY_SECTIONS) expect(text).toContain(s.heading)
     expect(text).toContain('Your notes settings stay on your device')
     expect(text).toContain('They are never sent to the server, they are left out of the server backup')
-    // Owner decision 2026-10-05 (UX-REVIEW D1), worded so that every sentence is true of the server as built.
-    expect(text).toContain('HumanBench collects no personally identifiable information, and all responses are anonymous.')
+    // Owner decision 2026-10-05 (UX-REVIEW D1), worded so that every sentence is true of the server as built
+    // (2026-10-16): stored under a random code, so not called anonymous; no automatic 24-month deletion yet.
+    expect(text).toContain('HumanBench does not collect your name, your email address or anything else that says who you are')
+    expect(text).toContain('they are not fully anonymous either')
+    expect(text).not.toMatch(/all responses are anonymous|personally identifiable/i)
     expect(text).toContain('hashed')
-    expect(text).toContain('at most 24 months')
+    expect(text).toContain('mixed with a random value that changes every day')
+    expect(text).toContain('at most 24 months, but nothing deletes them automatically yet')
+    expect(text).toContain('within eight weeks')
+    expect(text).toContain('older than 30 days')
+    expect(text).toContain('stored under each session’s own code, not under your identifier, and deleting does not reach it')
+    expect(text).toContain('used for the Calibration part of your profile')
+    expect(text).toContain('to improve the questions')
+    // True before and after the device's per-skill estimates are sent for selection (ROADMAP M4.10 device estimates).
+    expect(text).toContain('one estimate per skill with its margin of uncertainty, may be sent and kept with your session, only to choose questions')
     expect(text).toContain('consent')
     expect(text).not.toMatch(/TODO|Controller:|Contact:|to be confirmed|draft/i)
     expect(text).not.toContain('Nothing is sent to a server.')

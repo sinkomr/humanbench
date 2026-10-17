@@ -334,6 +334,8 @@ test.describe('the privacy notice and the footer with a server', () => {
     await expect(page.getByRole('heading', { name: 'What is sent to the server' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Your notes settings stay on your device' })).toBeVisible()
     await expect(page.locator('.flow + main')).toContainText('They are never sent to the server')
+    await expect(page.locator('.flow + main')).toContainText('they are not fully anonymous either: they are stored under a random code that starts with hb_')
+    await expect(page.locator('.flow + main')).not.toContainText('all responses are anonymous')
     await expectNoSeriousAxe(page)
     await overflow(page, 'the privacy notice')
     await languageClean(page)

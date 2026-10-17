@@ -370,9 +370,10 @@ export const CREDITS_SECTION: PrivacySection = Object.freeze({
 })
 
 /**
- * The M1 privacy notice and terms (DESIGN §13). It says plainly that no personally identifiable
- * information is collected and that all responses are anonymous (owner decision 2026-10-05, UX-REVIEW
- * D1); by the owner's choice it names no controller and no contact. In this static version nothing
+ * The M1 privacy notice and terms (DESIGN §13). It says plainly that nothing that says who the person
+ * is gets collected (owner decision 2026-10-05, UX-REVIEW D1; since 2026-10-16 without the word
+ * "anonymous", as the save file holds a random identifier); by the owner's choice it names no controller
+ * and no contact. In this static version nothing
  * leaves the device unless the person shares their own save file, and the text says exactly that.
  * A change of substance here bumps `TERMS_VERSION` (`constants.ts`), so consent is asked again.
  * The credits are the last section.
@@ -381,7 +382,7 @@ export const PRIVACY_SECTIONS: readonly PrivacySection[] = Object.freeze([
   {
     heading: 'In short',
     paragraphs: [
-      'HumanBench collects no personally identifiable information, and all responses are anonymous. It never asks for your name, your email address or anything else that identifies you, and there are no accounts.',
+      'HumanBench does not collect your name, your email address or anything else that says who you are, and there are no accounts.',
       'In this version your answers stay on your device. They leave it only if you share them yourself, for example by sending someone your save file.',
     ],
   },

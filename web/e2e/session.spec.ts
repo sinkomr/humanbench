@@ -211,7 +211,7 @@ test.describe('consent and the 18+ gate (§13)', () => {
 })
 
 test.describe('privacy and terms (§13)', () => {
-  test('the notice says no personally identifiable information is collected, has no placeholder, passes axe and the language lint', async ({ page }) => {
+  test('the notice says nothing that says who you are is collected, has no placeholder, passes axe and the language lint', async ({ page }) => {
     for (const colorScheme of ['light', 'dark'] as const) {
       await scheme(page, colorScheme)
       await page.goto('./#/privacy')
@@ -219,7 +219,8 @@ test.describe('privacy and terms (§13)', () => {
       await expectNoSeriousAxe(page)
     }
     // Owner decision 2026-10-05 (UX-REVIEW D1): said plainly, with no controller or contact named and no "TODO" anywhere.
-    await expect(page.getByText('HumanBench collects no personally identifiable information, and all responses are anonymous.')).toBeVisible()
+    await expect(page.getByText('HumanBench does not collect your name, your email address or anything else that says who you are, and there are no accounts.')).toBeVisible()
+    await expect(page.locator('body')).not.toContainText('anonymous')
     await expect(page.locator('body')).not.toContainText('TODO')
     await expect(page.locator('body')).not.toContainText('Controller:')
     await expect(page.getByText('Nothing is sent to a server')).toBeVisible()
