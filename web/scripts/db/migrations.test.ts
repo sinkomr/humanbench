@@ -65,6 +65,7 @@ describe('migrations: the set', () => {
       '20261016000200_quant_hard_facets.sql',
       '20261016000300_selection_information.sql',
       '20261017000100_fermi_intervals.sql',
+      '20261017000200_param_publish.sql',
     ])
   })
 
@@ -469,6 +470,7 @@ describe('migrations: the Fermi intervals (M5.1) and the parameter publication (
     return sql.slice(start, sql.indexOf('\n$$;', start) + 4)
   }
   const fermi = byName('_fermi_intervals.sql')
+  const publish = byName('_param_publish.sql')
 
   it('re-creates finish with exactly one change: the new state also holds the session’s Fermi interval summary', () => {
     const now = functionText(fermi, 'public.finish')
@@ -488,10 +490,17 @@ describe('migrations: the Fermi intervals (M5.1) and the parameter publication (
     expect(now).toBe(want)
   })
 
-  it('scores nothing with the intervals: only finish reads hb.fermi_session_summary, and no reader of the score is re-created', () => {
+  it('scores nothing with the intervals: only finish and hb.rescore_session read hb.fermi_session_summary, and no reader of the score is re-created', () => {
     const readers = migrations.filter((m) => /hb\.fermi_session_summary\(/.test(code(m.sql))).map((m) => m.name)
-    expect(readers).toEqual(['20261017000100_fermi_intervals.sql'])
+    expect(readers).toEqual(['20261017000100_fermi_intervals.sql', '20261017000200_param_publish.sql'])
     expect([...code(fermi).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['hb.fermi_summary', 'hb.fermi_session_summary', 'public.finish'])
   })
 
+  it('re-scores a session with the functions submit and finish use, and creates nothing else', () => {
+    expect([...code(publish).matchAll(/create\s+(?:or\s+replace\s+)?function\s+([\w.]+)/g)].map((m) => m[1])).toEqual(['hb.rescore_session'])
+    const body = code(functionText(publish, 'hb.rescore_session'))
+    for (const fn of ['hb.eap_add_response(', 'hb.eap_summary(', 'hb.session_posterior(', 'hb.session_integrity(', 'hb.is_eligible(', "hb.cfg_text('param_version'"]) expect(body).toContain(fn)
+    expect(body).not.toMatch(/security\s+definer/i)
+    expect(code(publish)).toMatch(/revoke all on function hb\.rescore_session\(text\) from public, anon, authenticated, service_role;/)
+  })
 })
