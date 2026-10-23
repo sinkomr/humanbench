@@ -43,6 +43,19 @@
  * turn (×3, −7, ×−2) on 7 terms of 3–4 digits, which a strong adult often misses even with time.
  * The 1.3.0 natural pool never draws them, so the pool means and its anchor are unchanged.
  *
+ * Generator 1.5.0 (letter series of any family): the letter terms (`is_letter`, `max_digits` = 1,
+ * no negatives) apply to every letter series, not only to the rule `letter`; `descending` is the
+ * key's position below the last term's and `wraps` stays false (only `letter` counts mod 26). A
+ * 1.4.0 or 1.3.0 item has a letter series exactly when its rule is `letter`, so its features and
+ * b are unchanged. With the family cost as for numbers, the kept letter templates sit at
+ * b ≈ −1.35 (`letter` with steps of 5–12, descending and wrapping: stratum 2), −1.05 … −0.55
+ * (`interleaved`, `fibonacci`: stratum 2), −1.05 … −0.35 (`quadratic`: strata 2–3), 0.35 … 1.05
+ * (`composite_alt` with +x ops: strata 3–4) and 2.45 / 2.75 (`cycle3`, 7 terms, the blank
+ * after an addition, ascending / descending: strata 5 / 6); a letter series of b ≥ 2.5 is a cycle
+ * of three ops (one ×2 or ×3) on letters, such as I C F L F L R → L. The pool means are those of
+ * the natural pool,
+ * which draws no letter template, so they and the anchor are unchanged.
+ *
  * Expected time (§7.4 E[T], [SPEC] v0; series stems are too short for the length-based 25 s +
  * 4 s/50 words prior to separate them):
  *
@@ -109,26 +122,29 @@ export interface SeriesFeatures {
 
 /**
  * Features of a series from its key rule and `values` = t_0 … t_m (visible terms, then the key;
- * letter series as positions 1–26).
+ * letter series as positions 1–26). `letter` is whether the item is a letter series: up to 1.4.0
+ * exactly the rule `letter`; generator 1.5.0 also has letter series of the integer families
+ * (module comment), which count as letters (`is_letter`, one symbol, no negatives) and descend
+ * when the key's position is below the last term's (`wraps` is false: only the rule `letter` wraps).
  */
-export function seriesFeatures(rule: RuleName, coefficients: Coefficients, values: readonly number[]): SeriesFeatures {
+export function seriesFeatures(rule: RuleName, coefficients: Coefficients, values: readonly number[], letter: boolean = rule === 'letter'): SeriesFeatures {
   const m = values.length - 1
   const key = values[m] as number
-  const isLetter = rule === 'letter'
-  const d = typeof coefficients.d === 'number' ? coefficients.d : 0
+  const letterRule = rule === 'letter'
+  const d = letterRule && typeof coefficients.d === 'number' ? coefficients.d : 0
   const p0 = values[0] as number
   let wraps = false
-  if (isLetter) for (let i = 0; i <= m; i++) if (p0 + i * d < 1 || p0 + i * d > ALPHABET) wraps = true
+  if (letterRule) for (let i = 0; i <= m; i++) if (p0 + i * d < 1 || p0 + i * d > ALPHABET) wraps = true
   const maxAbs = Math.max(...values.map((x) => Math.abs(x)))
   return {
     rule,
     family_cost: FAMILY_COST[rule],
     visible_terms: m,
-    max_digits: isLetter ? 1 : String(maxAbs).length,
-    has_negative: !isLetter && values.some((x) => x < 0),
-    descending: isLetter ? d < 0 : key < (values[m - 1] as number),
+    max_digits: letter ? 1 : String(maxAbs).length,
+    has_negative: !letter && values.some((x) => x < 0),
+    descending: letterRule ? d < 0 : key < (values[m - 1] as number),
     wraps,
-    is_letter: isLetter,
+    is_letter: letter,
   }
 }
 

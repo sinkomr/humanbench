@@ -26,6 +26,19 @@
  *   dashed, dotted (never generated: a viewer might still read one, so it only rejects more).
  *   Framed cells are solved exactly when all 8 visible cells have a frame; a mix is inconsistent.
  *
+ * - diagonal (generator 1.4.0 analysis only, {@link solve}'s `diagonal`): on the four inner scalar
+ *   attributes, `diagonal_constant@diag`: the value is the same along each top-left → bottom-right
+ *   diagonal (cells (0,0) = (1,1), (0,1) = (1,2), (1,0) = (2,1)); it predicts cell (0,0). It is
+ *   tried on every 1.4.0 item, whatever its template, so a row or column item whose grid also
+ *   reads diagonally with another completion is rejected; 1.2.0/1.3.0 items are analysed without
+ *   it (their own rule set), as series analyses each version with its own fit set. Not on count,
+ *   positions or the frame: no 1.4.0 template rules them diagonally, and a count diagonal would
+ *   reject some row-arithmetic grids of the natural pool, which 1.4.0 keeps byte-identical. On a
+ *   scalar grid drawn by the line rules (constant, progression, the cyclic Latin square of
+ *   distribution, in either direction) a diagonal fit always predicts the drawn value, so adding
+ *   it changes no acceptance of the 1.3.0 draw paths. A diagonal progression is NOT tried: it
+ *   reads a Latin square (v, v − d, v + d) as a lure and would change the natural pool.
+ *
  * The 9th cell is unique iff every scalar attribute has exactly one predicted value, the position
  * rules predict exactly one set P*, and every consistent count rule predicts |P*| (so a count
  * pattern cannot lure a viewer to another number of objects). Rules are independent per
@@ -33,6 +46,7 @@
  */
 
 import {
+  DIAGONAL_RULE,
   DOMAIN_SIZE,
   FRAME_ATTRS,
   FRAME_DOMAIN_SIZE,
@@ -51,9 +65,12 @@ import {
   type RuleSet,
   type ScalarAttr,
   type ScalarRule,
+  directionOf,
+  groupOf,
+  type LineDirection,
 } from './grammar'
 
-export type Direction = 'row' | 'col'
+export type Direction = LineDirection
 export const DIRECTIONS: readonly Direction[] = Object.freeze(['row', 'col'] as const)
 
 type Triple = readonly [number, number, number]
@@ -199,7 +216,19 @@ export interface AttributeSolution {
   readonly predictions: readonly number[]
 }
 
-function fitAll(values: readonly number[], rules: readonly SolverRule[]): AttributeSolution {
+/** The fit name of the diagonal rule (generator 1.4.0 analysis). */
+export const DIAGONAL_FIT = `${DIAGONAL_RULE}@diag`
+
+/**
+ * The diagonal rule on 8 visible values (row-major): cells (0,0) = (1,1), (0,1) = (1,2) and
+ * (1,0) = (2,1); it predicts the value of cell (0,0). Null if it does not fit.
+ */
+export function predictDiagonal(values: readonly number[]): number | null {
+  const v = (i: number): number => values[i] as number
+  return v(0) === v(4) && v(1) === v(5) && v(3) === v(7) ? v(0) : null
+}
+
+function fitAll(values: readonly number[], rules: readonly SolverRule[], diagonal = false): AttributeSolution {
   const fits: Fit[] = []
   for (const dir of DIRECTIONS) {
     const lines = linesOf(values, dir)
@@ -207,6 +236,10 @@ function fitAll(values: readonly number[], rules: readonly SolverRule[]): Attrib
       const p = r.predict(lines)
       if (p !== null) fits.push({ rule: `${r.name}@${dir}`, value: p })
     }
+  }
+  if (diagonal) {
+    const p = predictDiagonal(values)
+    if (p !== null) fits.push({ rule: DIAGONAL_FIT, value: p })
   }
   return { fits, predictions: [...new Set(fits.map((f) => f.value))].sort((x, y) => x - y) }
 }
@@ -245,13 +278,18 @@ export interface Solution {
   readonly predictedCells: number
 }
 
-/** Enumerate every rule assignment consistent with the 8 visible cells (row-major). */
-export function solve(visible: readonly Cell[]): Solution {
+/**
+ * Enumerate every rule assignment consistent with the 8 visible cells (row-major). `diagonal`:
+ * also try the diagonal rule on the scalar attributes (the generator 1.4.0 analysis; false = the
+ * 1.2.0/1.3.0 rule set, see the module comment).
+ */
+export function solve(visible: readonly Cell[], diagonal = false): Solution {
   if (visible.length !== 8) throw new RangeError(`solve needs the 8 visible cells, got ${visible.length}`)
   const [shape, size, color, orientation] = SCALAR_ATTRS.map((attr) =>
     fitAll(
       visible.map((c) => c[attr]),
       SCALAR_SOLVER_RULES[attr],
+      diagonal,
     ),
   ) as [AttributeSolution, AttributeSolution, AttributeSolution, AttributeSolution]
   const count = fitAll(
@@ -327,37 +365,46 @@ const GEN_POSITION: Readonly<Record<Exclude<PositionRule, 'canonical'>, SolverRu
   distribution,
 }
 
-const holdsAlongRows = (rule: SolverRule, values: readonly number[]): boolean =>
-  rule.predict(linesOf(values.slice(0, 8), 'row')) === values[8]
+const holdsAlong = (rule: SolverRule, values: readonly number[], dir: LineDirection): boolean =>
+  rule.predict(linesOf(values.slice(0, 8), dir)) === values[8]
+
+/** True if the diagonal rule holds on a complete 9-value grid (row-major). */
+export function holdsDiagonally(values: readonly number[]): boolean {
+  return predictDiagonal(values.slice(0, 8)) === values[8]
+}
 
 /**
- * The attributes whose declared rule does NOT hold along the rows of a complete 9-cell grid
- * (row-major). Empty for the keyed grid; non-empty for a grid completed by a distractor.
+ * The attributes whose declared rule does NOT hold on a complete 9-cell grid (row-major), each
+ * along its declared direction (rows unless `rules.directions` says columns; the diagonal rule on
+ * the diagonals). Empty for the keyed grid; non-empty for a grid completed by a distractor.
  */
 export function violatedRules(grid: readonly Cell[], rules: RuleSet): AnyRuleAttr[] {
   if (grid.length !== 9) throw new RangeError(`violatedRules needs 9 cells, got ${grid.length}`)
+  const dir = (attr: string): LineDirection => directionOf(rules, groupOf(attr))
   const out: AnyRuleAttr[] = []
   for (const attr of SCALAR_ATTRS) {
-    const rule = GEN_SCALAR[rules[attr]](DOMAIN_SIZE[attr])
-    if (!holdsAlongRows(rule, grid.map((c) => c[attr]))) out.push(attr)
+    const values = grid.map((c) => c[attr])
+    const r = rules[attr]
+    const ok = r === DIAGONAL_RULE ? holdsDiagonally(values) : holdsAlong(GEN_SCALAR[r](DOMAIN_SIZE[attr]), values, dir(attr))
+    if (!ok) out.push(attr)
   }
   if (rules.count !== 'derived') {
-    if (!holdsAlongRows(GEN_COUNT[rules.count], grid.map((c) => popcount(c.positions)))) out.push('count')
+    if (!holdsAlong(GEN_COUNT[rules.count], grid.map((c) => popcount(c.positions)), dir('count'))) out.push('count')
   }
   if (rules.position === 'canonical') {
     if (!grid.every((c) => isCanonical(c.positions))) out.push('position')
-  } else if (!holdsAlongRows(GEN_POSITION[rules.position], grid.map((c) => c.positions))) {
+  } else if (!holdsAlong(GEN_POSITION[rules.position], grid.map((c) => c.positions), dir('position'))) {
     out.push('position')
   }
   // Frame rules (hard template b): a cell without a frame breaks them; a frame on an unframed set breaks nothing here
   // (verify's spec and structure checks catch it).
   if (rules.frame_shade !== undefined) {
     const shade = grid.map((c) => c.frameShade ?? -1)
-    if (shade.includes(-1) || !holdsAlongRows(GEN_SCALAR[rules.frame_shade](FRAME_DOMAIN_SIZE.frameShade), shade)) out.push('frame_shade')
+    if (shade.includes(-1) || !holdsAlong(GEN_SCALAR[rules.frame_shade](FRAME_DOMAIN_SIZE.frameShade), shade, dir('frame_shade'))) out.push('frame_shade')
   }
   if (rules.frame_pattern !== undefined) {
     const pattern = grid.map((c) => c.framePattern ?? -1)
-    if (pattern.includes(-1) || !holdsAlongRows(GEN_SCALAR[rules.frame_pattern](FRAME_DOMAIN_SIZE.framePattern), pattern)) out.push('frame_pattern')
+    if (pattern.includes(-1) || !holdsAlong(GEN_SCALAR[rules.frame_pattern](FRAME_DOMAIN_SIZE.framePattern), pattern, dir('frame_pattern'))) out.push('frame_pattern')
   }
   return out
 }

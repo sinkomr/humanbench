@@ -19,6 +19,7 @@ import type { Observation } from '../../src/engine/types'
 import { createRng, type Rng } from '../../src/engine/prng'
 import { QUANT_GROUP_IDS } from '../../src/tasks/quant/topics'
 import { QUANT_TEMPLATES } from '../../src/tasks/quant/templates'
+import { QDATA_TEMPLATES } from '../../src/tasks/qdata/templates'
 import { drillFacet } from '../../src/viz/facets'
 import { fixtureBank, loadFixtureBank, type FixtureItem } from './bank-fixture'
 import type { TestDb } from './harness'
@@ -1004,6 +1005,8 @@ describe('rescore: facets by drill-down facet, on the leave-facet-out prior (UX 
   it('has hb.drill_facet map exactly as the app does: a quant template to its topic group, everything else to itself', async () => {
     expect(QUANT_TEMPLATES.length).toBeGreaterThanOrEqual(18)
     for (const t of QUANT_TEMPLATES) expect(await q('hb.drill_facet($1, $2)', ['QR', t]), t).toBe(drillFacet('QR', t))
+    // the qdata templates (M3.13, 20261023000100_variety_facets.sql) under the groups of their computations
+    for (const t of QDATA_TEMPLATES) expect(await q('hb.drill_facet($1, $2)', ['QR', t]), t).toBe(drillFacet('QR', t))
     for (const g of QUANT_GROUP_IDS) expect(await q('hb.drill_facet($1, $2)', ['QR', g]), g).toBe(g)
     expect(await q('hb.drill_facet($1, $2)', ['QR', 'qr_f0'])).toBe('qr_f0')
     expect(await q('hb.drill_facet($1, $2)', ['KST', 'percent'])).toBe('percent')

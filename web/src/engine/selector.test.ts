@@ -239,6 +239,11 @@ describe('family roles (A10, A15)', () => {
       matrices: true,
       series: true,
       quant: true,
+      qdata: true,
+      figure2d: true,
+      cubenet: true,
+      folding: true,
+      syllogism: true,
       span_fwd: false,
       span_bwd: false,
       corsi: false,
@@ -247,7 +252,7 @@ describe('family roles (A10, A15)', () => {
       coding: false,
       reading: false,
     })
-    expect(catFamilies().map((f) => f.name)).toEqual(['rotation', 'matrices', 'series', 'quant'])
+    expect(catFamilies().map((f) => f.name)).toEqual(['rotation', 'matrices', 'series', 'quant', 'qdata', 'figure2d', 'cubenet', 'folding'])
   })
 
   it('every registered family is either CAT or scheduled as an A15 block, and every block is registered', () => {
@@ -259,6 +264,9 @@ describe('family roles (A10, A15)', () => {
     const segmentAxes = A15_SEGMENTS.flatMap((s) => (s.kind === 'cat' ? s.axes : []))
     expect([...segmentAxes].sort()).toEqual(catAxes().sort())
     expect(catAxes()).toEqual(CAT_AXES)
+    // Logical Reasoning has a keyed family (syllogism, M3.13) but no device part: it is served only, never selected here.
+    expect(isCatFamily(getFamily('syllogism')!)).toBe(true)
+    expect(catFamilies().map((f) => f.name)).not.toContain('syllogism')
   })
 
   it('an unscheduled family with block (GRM) items is still not a CAT family', () => {
@@ -337,12 +345,17 @@ describe('selectNext', () => {
   })
 
   it('draws candidates from the strata nearest θ̂', () => {
-    const high = candidatePool(state({ posterior: posteriorWith({ SPA: { mean: 2.2, sd: 0.8 } }) }), { axes: ['SPA'] })
-    const low = candidatePool(state({ posterior: posteriorWith({ SPA: { mean: -1.5, sd: 0.8 } }) }), { axes: ['SPA'] })
+    // the rotation family alone (strata 2–6); every Spatial family draws from its own nearest strata (below)
+    const high = candidatePool(state({ posterior: posteriorWith({ SPA: { mean: 2.2, sd: 0.8 } }) }), { axes: ['SPA'], families: [rotation] })
+    const low = candidatePool(state({ posterior: posteriorWith({ SPA: { mean: -1.5, sd: 0.8 } }) }), { axes: ['SPA'], families: [rotation] })
     for (const c of high.ranked) expect([4, 5, 6]).toContain(c.item.stratum)
     for (const c of low.ranked) expect([2, 3, 4]).toContain(c.item.stratum)
     const meanB = (xs: readonly { item: AnyItem }[]): number => xs.reduce((s, c) => s + bOf(c.item), 0) / xs.length
     expect(meanB(high.ranked)).toBeGreaterThan(meanB(low.ranked) + 0.5)
+    // with every Spatial family (M3.13): each candidate is in one of the three strata of its family nearest θ̂
+    const all = candidatePool(state({ posterior: posteriorWith({ SPA: { mean: 2.2, sd: 0.8 } }) }), { axes: ['SPA'] })
+    expect(new Set(all.ranked.map((c) => c.item.family)).size).toBeGreaterThan(1)
+    for (const c of all.ranked) expect(nearestStrata(getFamily(c.item.family)!.strata, 2.2), c.item.item_id).toContain(c.item.stratum)
   })
 
   it('restricts to the segment axes (A15)', () => {
@@ -363,19 +376,19 @@ describe('selectNext', () => {
     expect(none(state({ remainingS: 5 }))).toEqual({ kind: 'none', reason: 'time' })
     const allQuant = VARIANTS.map((v) => quant.familyIdOf({ template: v.template, variant: v.variant }))
     expect(allQuant).toHaveLength(108) // quant 1.4.0: 53 + 55 hard variants (M3.12)
-    expect(none(state({ seenFamilies: allQuant }), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
+    expect(none(state({ seenFamilies: allQuant }), { axes: ['QR'], families: [quant] })).toEqual({ kind: 'none', reason: 'exhausted' })
   })
 
   it('widens to farther strata when the near strata run dry, instead of reporting exhausted', () => {
     const familyOf = (v: (typeof VARIANTS)[number]) => quant.familyIdOf({ template: v.template, variant: v.variant })
     // θ̂ = 0: the near quant strata are 3, 2, 4. All of 2–4 seen: only stratum 1 is left.
     const s = state({ posterior: posteriorWith({ QR: { mean: 0, sd: 0.5 } }), seenFamilies: VARIANTS.filter((v) => v.stratum > 1).map(familyOf) })
-    const pool = candidatePool(s, { axes: ['QR'] })
+    const pool = candidatePool(s, { axes: ['QR'], families: [quant] })
     expect(pool.reason).toBeUndefined()
     expect(pool.ranked.length).toBeGreaterThan(0)
     for (const c of pool.ranked) expect(c.item.stratum).toBe(1)
     // Only strata 2 and 3 seen: stratum 4 alone gives < 5 candidates, so stratum 1 joins the pool.
-    const short = candidatePool(state({ ...s, seenFamilies: VARIANTS.filter((v) => v.stratum === 2 || v.stratum === 3).map(familyOf) }), { axes: ['QR'] })
+    const short = candidatePool(state({ ...s, seenFamilies: VARIANTS.filter((v) => v.stratum === 2 || v.stratum === 3).map(familyOf) }), { axes: ['QR'], families: [quant] })
     expect(short.ranked.length).toBeGreaterThanOrEqual(RANDOMESQUE_K)
     expect(new Set(short.ranked.map((c) => c.item.stratum))).toEqual(new Set([1, 4]))
   })
@@ -386,7 +399,7 @@ describe('selectNext', () => {
     for (const { v, id } of all) {
       const mean = v.stratum <= 2 ? 3 : -3
       const s = state({ posterior: posteriorWith({ QR: { mean, sd: 0.5 } }), seenFamilies: all.filter((x) => x.id !== id).map((x) => x.id) })
-      const sel = selectNext(s, createRng('x'), { axes: ['QR'] })
+      const sel = selectNext(s, createRng('x'), { axes: ['QR'], families: [quant] })
       expect(sel.kind === 'item' && sel.item.family_id, `${v.template}/${v.variant}`).toBe(id)
     }
     // The one left is a sibling of an item administered this session: nothing is left.
@@ -395,7 +408,7 @@ describe('selectNext', () => {
       { item_id: 'i:quant:1.3.0:x', family_id: 'f:quant:elsewhere', family: 'quant', axis: 'QR', sibling_group: 'g:quant:system' },
     ]
     const s = state({ administered, seenFamilies: all.filter((x) => x.id !== sum.id).map((x) => x.id) })
-    expect(selectNext(s, createRng('x'), { axes: ['QR'] })).toEqual({ kind: 'none', reason: 'exhausted' })
+    expect(selectNext(s, createRng('x'), { axes: ['QR'], families: [quant] })).toEqual({ kind: 'none', reason: 'exhausted' })
   }, 90_000) // one selection per quant variant: 108 since quant 1.4.0 (M3.12), about 34 s under a full parallel run
 
   it('skips items that would not finish in the remaining time', () => {

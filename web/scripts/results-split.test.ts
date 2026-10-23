@@ -92,15 +92,19 @@ const SESSION_RUNTIME = [
   /\/src\/engine\/xskill\.ts$/,
   /\/src\/engine\/scorer\.ts$/,
   /\/src\/tasks\/registry\.ts$/,
-  /\/src\/tasks\/(matrices|series|rotation|quant|span|rt|coding|reading)\/index\.ts$/,
+  /\/src\/tasks\/(matrices|series|rotation|quant|span|rt|coding|reading|figure2d|cubenet|folding|qdata|syllogism)\/index\.ts$/,
   /\/src\/save\/rescore\.ts$/,
 ]
+
+/** The scope-variety renderers (M3.13, `src/session/served-renderers.ts`): each a lazy chunk of its own. */
+const VARIETY_RENDERER_FILES = ['/src/render/figure2d/Figure2dRenderer.svelte', '/src/render/cubenet/CubenetRenderer.svelte', '/src/render/folding/FoldingRenderer.svelte', '/src/render/qdata/QdataRenderer.svelte', '/src/render/syllogism/SyllogismRenderer.svelte']
+const VARIETY_RENDERERS_RE = /\/src\/render\/(figure2d|cubenet|folding|qdata|syllogism)\//
 
 /** Modules that hold only the families' verifiers (G2/G3, A1): in no chunk of the build. */
 const VERIFIER_ONLY = [
   /\/src\/tasks\/verifiers\.ts$/,
   /\/src\/tasks\/quant\/verify(-hard\d|-kit)?\.ts$/,
-  /\/src\/tasks\/(matrices|series|rotation|coding|reading)\/verify\.ts$/,
+  /\/src\/tasks\/(matrices|series|rotation|coding|reading|figure2d|cubenet|folding|qdata|syllogism)\/verify\.ts$/,
 ]
 /** Verify modules that also hold helpers the generators use (`expectedKey`, the RT spec fields): only those may ship. */
 const SHARED_VERIFY = /\/src\/tasks\/(span|rt)\/verify\.ts$/
@@ -169,6 +173,19 @@ describe('the results code is a chunk of its own (UX-100)', () => {
     // The check sees the runtime where it is: the runtime's static closure holds the session machine and the selector.
     const held = staticClosure(runtime!).flatMap((c) => c.moduleIds.map((id) => id.replace(/\\/g, '/')))
     for (const re of [/\/src\/session\/run\.ts$/, /\/src\/engine\/selector\.ts$/, /\/src\/tasks\/registry\.ts$/]) expect(held.some((id) => re.test(id)), String(re)).toBe(true)
+  })
+
+  it('the scope-variety renderers (M3.13) are lazy chunks of their own: neither the entry nor the session runtime holds one statically', () => {
+    const runtime = chunks.find((c) => c.moduleIds.some((id) => /\/src\/session\/runtime\.ts$/.test(id.replace(/\\/g, '/'))))!
+    const statics = [...staticClosure(entry()), ...staticClosure(runtime)].flatMap((c) => c.moduleIds.map((id) => `${c.fileName}: ${id.replace(/\\/g, '/')}`))
+    const leaked = statics.filter((id) => VARIETY_RENDERERS_RE.test(id))
+    expect(leaked).toEqual([])
+    // and each is in the build, as a dynamic import (the check sees them where they are)
+    for (const name of VARIETY_RENDERER_FILES) {
+      const holder = chunks.find((c) => c.moduleIds.some((id) => id.replace(/\\/g, '/').endsWith(name)))
+      expect(holder, name).toBeDefined()
+      expect(holder!.isDynamicEntry, name).toBe(true)
+    }
   })
 
   it('the families\' verifiers are in no chunk of the build: only the tests, the dump and the review page install them', () => {

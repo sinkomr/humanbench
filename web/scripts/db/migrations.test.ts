@@ -68,11 +68,12 @@ describe('migrations: the set', () => {
       '20261017000100_fermi_intervals.sql',
       '20261017000200_param_publish.sql',
       '20261017000300_device_estimates.sql',
+      '20261023000100_variety_facets.sql',
     ])
   })
 
   it('opens each file with a comment that cites the task and the requirements', () => {
-    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.1[12] \(ROADMAP M3\.1[12]|M4\.10 \(ROADMAP M4\.10|M5\.1 \(ROADMAP M5\.1)\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
+    for (const m of migrations) expect(m.sql, m.name).toMatch(/^-- (M2\.[1-5] \(ROADMAP M2\.[1-5]|M3\.1[123] \(ROADMAP M3\.1[123]|M4\.10 \(ROADMAP M4\.10|M5\.1 \(ROADMAP M5\.1)\b[^\n]*(\n--[^\n]*)*?(DESIGN|R-1[12]\.1)/)
   })
 })
 

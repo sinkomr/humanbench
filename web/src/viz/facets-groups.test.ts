@@ -7,7 +7,8 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { scoreAll } from '../engine/scorer'
 import type { Observation } from '../engine/types'
-import { QUANT_GROUPS, QUANT_GROUP_IDS, quantGroupOfTemplate } from '../tasks/quant/topics'
+import { QDATA_TEMPLATE_GROUPS, QUANT_GROUPS, QUANT_GROUP_IDS, quantGroupOfTemplate } from '../tasks/quant/topics'
+import { QDATA_TEMPLATES } from '../tasks/qdata'
 import { QUANT_TEMPLATES } from '../tasks/quant/templates'
 import { FAMILIES } from '../tasks/registry'
 import { clusterFacets, drillFacet, FACET_LABELS, FACET_MIN_ITEMS, facetLabel, facetLabelLines, FACET_LINE_CHARS, type FacetObservation } from './facets'
@@ -27,6 +28,14 @@ describe('the quant template → topic group mapping (D4, DATA-14)', () => {
     for (const f of qr) for (const t of f.facets) expect(QUANT_GROUP_IDS, `${f.name}: ${t}`).toContain(drillFacet('QR', t))
     // Every group is reached by some template.
     expect(new Set(QUANT_TEMPLATES.map((t) => drillFacet('QR', t)))).toEqual(new Set(QUANT_GROUP_IDS))
+  })
+
+  it('maps every qdata template (M3.13) to a group, and names no other template', () => {
+    expect(Object.keys(QDATA_TEMPLATE_GROUPS).sort()).toEqual([...QDATA_TEMPLATES].sort())
+    for (const t of QDATA_TEMPLATES) {
+      expect(QUANT_GROUP_IDS).toContain(drillFacet('QR', t))
+      expect(QUANT_TEMPLATES as readonly string[]).not.toContain(t)
+    }
   })
 
   it('maps a group to itself and leaves the facets of other axes alone', () => {

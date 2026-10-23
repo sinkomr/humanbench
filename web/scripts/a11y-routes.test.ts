@@ -106,6 +106,9 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
       'session/Stage.svelte': 'hosts the renderers',
       'render/coding/Glyph.svelte': 'a symbol inside the coding renderer',
       'render/matrices/MatrixCellSvg.svelte': 'a cell inside the matrix renderer',
+      'render/cubenet/NetSvg.svelte': 'the flat pattern inside the cube-net renderer',
+      'render/cubenet/CubeSvg.svelte': 'an option cube inside the cube-net renderer',
+      'render/cubenet/MarkShape.svelte': 'a face mark inside the cube-net renderer',
     }
     const dirs = ['session', 'reveal', 'render', 'dev', 'selftest', 'review', 'viz', 'brief']
     const missing = dirs.flatMap((d) => svelteFiles(join(SRC, d)).map((f) => `${d}/${f.slice(d.length + 1)}`)).concat(['App.svelte']).filter((f) => !isCovered(f) && PARTS[f] === undefined)

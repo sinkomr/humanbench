@@ -75,6 +75,22 @@
  *
  * The key rule's coefficients (its `structural_params`, which A11 hashes into the family_id)
  * exclude the start terms, so items differing only in where the series starts are isomorphs.
+ *
+ * ## Letter series of any family (generator 1.5.0)
+ *
+ * Up to 1.4.0 a letter series has the key rule `letter`. Generator 1.5.0 also draws letter series
+ * whose key rule is one of the integer families above, fitted to the positions: growing skips
+ * (`quadratic`: A B D G K P → V), two strands (`interleaved`: A Z B Y C X → D), two alternating
+ * steps (`composite_alt` with +x ops: A C B D C E → D), Fibonacci-type, and cycles of three ops
+ * (`cycle3`). Such an item marks its structure with
+ * `letters: true` (`{ rule, coefficients, letters: true }`, so a letter series and a number series
+ * of one rule are different families), and every visible position and the key rule's own
+ * prediction lie in 1–26 without wrapping: only the rule `letter` counts mod 26. The analysis is
+ * the one above (letters compared as letters, every prediction read mod 26), so a competitor that
+ * wraps still counts. No new rule family is fitted: the 1.5.0 fit set is that of 1.4.0, so a
+ * 1.4.0 item analyses the same under both (FIT_SETS); only 1.5.0 accepts `letters`
+ * ({@link allowsLetterRules}).
+ *
  * All constants here are [SPEC] v0.
  */
 
@@ -117,10 +133,18 @@ export type FitName = RuleName | 'cubic'
  * which then compete on every item of 1.4.0. A 1.3.0 item is analysed with the 1.3.0 set, so the
  * kept 1.3.0 generator rebuilds its items byte for byte (A11, R-8.1).
  */
-export const FIT_SETS = Object.freeze({ '1.3.0': LEGACY_RULE_NAMES, '1.4.0': RULE_NAMES } as const)
+export const FIT_SETS = Object.freeze({ '1.3.0': LEGACY_RULE_NAMES, '1.4.0': RULE_NAMES, '1.5.0': RULE_NAMES } as const)
 export type FitSet = keyof typeof FIT_SETS
-/** The fit set of the current generator. */
-export const CURRENT_FIT_SET: FitSet = '1.4.0'
+/** The fit set of the current generator (1.5.0 fits the families of 1.4.0; it adds letter series of any family). */
+export const CURRENT_FIT_SET: FitSet = '1.5.0'
+
+/**
+ * Whether generator `fitSet` has letter series of any rule family (`structural_params.letters`,
+ * see the module comment): 1.5.0 on; 1.3.0 and 1.4.0 know only the rule `letter`.
+ */
+export function allowsLetterRules(fitSet: FitSet): boolean {
+  return fitSet !== '1.3.0' && fitSet !== '1.4.0'
+}
 
 /** Fixed DL cost of each family in bits ([SPEC] v0, see the module table). */
 export const FAMILY_COST: Readonly<Record<FitName, number>> = Object.freeze({
@@ -578,6 +602,15 @@ export function keyConfirmations(rule: RuleName, m: number): number {
     return phase > m - 2 ? -1 : Math.floor((m - 2 - phase) / 3)
   }
   return m - DETERMINING_TERMS[rule]
+}
+
+/**
+ * The key rule's own fit to `values` read as plain integers (no mod-26 reading), if it fits: for a
+ * letter series of an integer family (1.5.0) its prediction must be the key without wrapping.
+ */
+export function unwrappedKeyFit(values: readonly number[], keyRule: KeyRule, fitSet: FitSet = CURRENT_FIT_SET): Fit | undefined {
+  const want = canonicalJson(keyRule.coefficients)
+  return fitAll(values, false, fitSet).find((f) => f.rule === keyRule.rule && canonicalJson(f.coefficients) === want)
 }
 
 /** The fit of the key rule (same family and structural coefficients), if it fits. */

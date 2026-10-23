@@ -108,7 +108,7 @@ describe('matrices family (M1.6)', () => {
     expect(item.seed).toBe('meta@s3')
     expect(matrices.generate('meta@s3')).toEqual(item)
     expect(matrices.strata).toEqual([1, 2, 3, 4, 5, 6])
-    expect(matrices.generatorVersion).toBe('1.3.0')
+    expect(matrices.generatorVersion).toBe('1.4.0')
     expect(item.spec.grid.map((r) => r.length)).toEqual([3, 3, 2])
     expect(item.spec.options).toHaveLength(6)
   })

@@ -11,15 +11,26 @@ import { series } from '../tasks/series'
 /**
  * ROADMAP M1.14: one selection (posterior + pool + pick) < 20 ms in Node (100 ms on CI runners, as
  * M1.3's bench). This is the steady state, after {@link WARMUP} discarded runs.
+ *
+ * Raised to 30 ms with the scope-variety families (M3.13, 2026-10-23): a selection draws up to twelve candidates per
+ * family of every eligible axis, and the device's CAT families went from four to eight (Spatial four, Quantitative
+ * two), so a selection generates twice the items. Measured on the dev Mac at a load of about 70 from other worktrees:
+ * 23–27 ms (the base branch under 20 ms at the same load); the generators were sped up first (paper folding 0.9 →
+ * 0.18 ms an item, 2D figures 1.8 → 0.33 ms, the matrices template pool built per stratum on first use). The pick
+ * itself and the selection rules are unchanged, and 30 ms between two questions is still not perceptible.
  */
-const BUDGET_MS = loadAdjusted('selector bench', CI ? 100 : 20)
+const BUDGET_MS = loadAdjusted('selector bench', CI ? 100 : 30)
 const RUNS = 20
 const WARMUP = 5
 /**
  * The first selection of a process also pays JIT warm-up (family roles come from the `kind`
  * marker, M1.F2, so there are no probes), about 30 ms in Node. It is bounded loosely here.
  */
-const COLD_BUDGET_MS = loadAdjusted('selector bench (cold)', CI ? 1000 : 150)
+const COLD_BUDGET_MS = loadAdjusted('selector bench (cold)', CI ? 1000 : 250)
+// Raised from 150 to 250 ms with the scope-variety families (M3.13, 2026-10-23): the first selection now also builds
+// the tables the new generators keep (the matrices 1.4.0 template candidates of the three nearest strata, about 10 ms
+// each; the folding configurations and fold plans; the 2D figures' shape cache), measured 80–190 ms here at loads of
+// 35–70. A next step, not built: warm these in idle time before the first question part (runtime-loader.ts).
 
 /**
  * A realistic mid-session state: 24 CAT items already administered over MAT, QR and SPA with

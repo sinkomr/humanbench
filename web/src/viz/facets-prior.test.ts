@@ -204,7 +204,7 @@ describe('the UX review evidence profiles (DATA-02)', () => {
     ['dev profile "full"', { input: full.input, facetObservations: full.facetObservations }],
   ] as const
 
-  it.each(cases)('%s: a one-facet skill repeats its axis, and every facet sits on its axis with about its width', (_, r) => {
+  it.each(cases)('%s: a one-facet skill repeats its axis, and every facet sits on its axis with about its width', (name, r) => {
     const est = axisEstimates(r.input)
     let measured = 0
     for (const cluster of new Set(est.map((e) => e.cluster))) {
@@ -221,6 +221,8 @@ describe('the UX review evidence profiles (DATA-02)', () => {
         }
       }
     }
-    expect(measured).toBeGreaterThan(0)
+    // Since the scope-variety families (M3.13) share the Spatial and Quantitative parts out over more facets, one
+    // session's six questions of a part rarely reach the five a facet needs (A12); two sessions do.
+    if (name !== 'one session') expect(measured).toBeGreaterThan(0)
   })
 })

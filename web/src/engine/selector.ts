@@ -436,9 +436,16 @@ export function isCatFamily(f: AnyFamily): boolean {
   return f.kind === 'item'
 }
 
-/** The CAT families of `families` (default: the registry), in the given order. */
+/**
+ * The axes of the device's CAT parts (A15 CAT segments: Matrix & Series, Spatial, Quantitative). A keyed family on
+ * another axis (the formal-deduction family `syllogism` on Logical Reasoning, M3.13) is served only, in the online
+ * version's text part from the server's pool; the device never selects it.
+ */
+const DEVICE_CAT_AXES: ReadonlySet<AxisCode> = new Set(A15_SEGMENTS.flatMap((s) => (s.kind === 'cat' ? s.axes : [])))
+
+/** The CAT families of `families` (default: the registry) on the device's CAT axes, in the given order. */
 export function catFamilies(families: readonly AnyFamily[] = Object.values(FAMILIES)): AnyFamily[] {
-  return families.filter(isCatFamily)
+  return families.filter((f) => isCatFamily(f) && DEVICE_CAT_AXES.has(f.axis))
 }
 
 /** The axes that have at least one CAT family, in canonical axis order. */

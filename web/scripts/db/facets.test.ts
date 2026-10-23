@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import { QUANT_GROUPS } from '../../src/tasks/quant/topics'
 import { QUANT_TEMPLATES } from '../../src/tasks/quant/templates'
+import { QDATA_TEMPLATES } from '../../src/tasks/qdata/templates'
 import { drillFacet } from '../../src/viz/facets'
 import { MIGRATIONS_DIR, readMigrations } from './sql'
 
@@ -67,13 +68,13 @@ describe('rescore facets (UX review D4)', () => {
     expect(now.replace(obsNow, '<obs>').replace(facetsNow, '<facets>')).toBe(before.replace(obsBefore, '<obs>').replace(facetsBefore, '<facets>'))
   })
 
-  it('maps every quant template to its topic group in hb.drill_facet, once each, and names no other', () => {
-    // The latest migration that (re)defines it: 20261016000200_quant_hard_facets.sql for quant 1.4.0 (M3.12).
+  it('maps every quant and qdata template to its topic group in hb.drill_facet, once each, and names no other', () => {
+    // The latest migration that (re)defines it: 20261023000100_variety_facets.sql for the qdata templates (M3.13).
     const defining = migrations.filter((m) => /create\s+(?:or\s+replace\s+)?function\s+hb\.drill_facet\s*\(/i.test(m.sql))
-    expect(defining.map((m) => m.name)).toEqual(['20261007000100_rescore_facets.sql', '20261016000200_quant_hard_facets.sql'])
+    expect(defining.map((m) => m.name)).toEqual(['20261007000100_rescore_facets.sql', '20261016000200_quant_hard_facets.sql', '20261023000100_variety_facets.sql'])
     const body = functionText(defining[defining.length - 1]!.sql, 'hb.drill_facet')
     const pairs = [...body.matchAll(/\('([a-z0-9_]+)', '(quant\/[a-z_]+)'\)/g)].map((m) => [m[1]!, m[2]!] as const)
-    expect(pairs.map(([t]) => t).sort()).toEqual([...QUANT_TEMPLATES].sort())
+    expect(pairs.map(([t]) => t).sort()).toEqual([...QUANT_TEMPLATES, ...QDATA_TEMPLATES].sort())
     for (const [t, g] of pairs) expect(g, t).toBe(drillFacet('QR', t))
     expect(new Set(pairs.map(([, g]) => g))).toEqual(new Set(QUANT_GROUPS.map((g) => g.id)))
     expect(body).toMatch(/when p_axis = 'QR' then/)

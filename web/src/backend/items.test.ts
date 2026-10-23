@@ -1,3 +1,4 @@
+import { isLazyRenderer } from '../session/served-renderers'
 import { describe, expect, it } from 'vitest'
 import { ENTRY_RENDERERS } from '../render/entry'
 import { VISUAL_RENDERERS } from '../render/visual'
@@ -18,7 +19,8 @@ function wireOf(name: string, seed: string): ReturnType<typeof parseNext> {
 describe('the served families (M2.7)', () => {
   it('each has a renderer in the app, and is a family the registry knows', () => {
     for (const name of SUPPORTED_RENDERERS) {
-      const hasRenderer = Object.hasOwn(VISUAL_RENDERERS, name) || Object.hasOwn(ENTRY_RENDERERS, name)
+      // the scope-variety families (M3.13) are drawn by lazy renderers of their own chunks
+      const hasRenderer = Object.hasOwn(VISUAL_RENDERERS, name) || Object.hasOwn(ENTRY_RENDERERS, name) || isLazyRenderer(name)
       expect(hasRenderer, name).toBe(true)
       expect(getFamily(name), name).toBeDefined()
       expect(getFamily(name)!.kind, name).toBe('item')

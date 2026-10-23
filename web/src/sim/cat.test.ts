@@ -95,7 +95,7 @@ describe('simulateSession', () => {
     const families = s.itemIds.map((id) => {
       const item = resolveItem(id)
       expect(item, id).not.toBeNull()
-      expect(['matrices', 'series', 'rotation', 'quant']).toContain(item!.family)
+      expect(['matrices', 'series', 'rotation', 'quant', 'qdata', 'figure2d', 'cubenet', 'folding']).toContain(item!.family)
       return item!.family_id
     })
     expect(new Set(families).size).toBe(families.length) // §7.7 family exclusion

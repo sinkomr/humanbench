@@ -16,6 +16,9 @@ import { answerText } from './practice'
 import { BREAK_OFFER_TEXT, INTERSTITIAL_CLOCK } from './copy'
 import type { AutosaveStatus } from './persist'
 
+/** The root of whichever Spatial renderer draws the part's first question (rotation, or a scope-variety family, M3.13). */
+const SPATIAL_ROOT = '.rotation, .folding, .figure2d, .cubenet'
+
 let app: ReturnType<typeof mount> | undefined
 let host: HTMLElement
 
@@ -255,6 +258,7 @@ describe('the running session screen (M1.15)', () => {
     click(buttonByText(host, 'Start'))
     await settle(2)
     expect(bot.view().item?.axis).toBe('SPA')
+    await vi.waitFor(() => expect(host.querySelector(SPATIAL_ROOT)).not.toBeNull())
     bot.run.itemUnavailable()
     flushSync()
     const panel = host.querySelector('.unavailable')!
@@ -263,7 +267,7 @@ describe('the running session screen (M1.15)', () => {
     // The panel says it once, under the heading and before the (parked) renderer; the header does not say it again (UX-017a).
     expect(status()).toBe('')
     expect(host.querySelector('h1')!.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(panel.compareDocumentPosition(host.querySelector('.rotation')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(panel.compareDocumentPosition(host.querySelector(SPATIAL_ROOT)!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // ... and offers the way out of the whole session as well as the skip.
     expect(buttonByText(panel as HTMLElement, 'Finish early')).toBeTruthy()
     click(buttonByText(panel as HTMLElement, 'Skip Spatial'))
@@ -297,7 +301,8 @@ describe('the running session screen (M1.15)', () => {
     it('the renderer stays mounted but parked out of sight and out of the accessibility tree; only the panel shows the message', async () => {
       const bot = openSpatial()
       await settle(2)
-      const before = host.querySelector('.rotation')
+      await vi.waitFor(() => expect(host.querySelector(SPATIAL_ROOT)).not.toBeNull())
+      const before = host.querySelector(SPATIAL_ROOT)
       expect(before).not.toBeNull()
       const parkedBefore = host.querySelector('.stage-host')!
       // (jsdom has no WebGL, so the renderer may already have reported it; saying it again changes nothing.)
@@ -306,7 +311,7 @@ describe('the running session screen (M1.15)', () => {
       const parked = host.querySelector('.stage-host')!
       expect(parked).toBe(parkedBefore)
       expect(parked.hasAttribute('hidden')).toBe(true)
-      expect(host.querySelector('.rotation')).toBe(before) // never remounted: it reported the condition and stays alive
+      expect(host.querySelector(SPATIAL_ROOT)).toBe(before) // never remounted: it reported the condition and stays alive
       expect(parked.contains(before)).toBe(true)
       const text = shownText(host)
       expect(count(text, 'cannot be shown in your browser')).toBe(1)
@@ -718,6 +723,7 @@ describe('focus on a new screen (UX-REVIEW D21, a provisional default, option B;
     click(buttonByText(host, 'Start'))
     await settle(2)
     expect(bot.view().item?.axis).toBe('SPA')
+    await vi.waitFor(() => expect(host.querySelector(SPATIAL_ROOT)).not.toBeNull())
     expect(h1()).toBe('Spatial')
     expect(active()).toBe(host.querySelector('h1'))
     expect(region().getAttribute('aria-label')).toBe('Question 1')

@@ -8,18 +8,27 @@
  */
 
 import type { verifyCoding } from './coding/verify'
+import type { verifyCubenet } from './cubenet/verify'
+import type { verifyFigure2d } from './figure2d/verify'
+import type { verifyFolding } from './folding/verify'
 import type { verifyMatrix } from './matrices/verify'
+import type { verifyQdata } from './qdata/verify'
 import type { quantVerifier, verifyQuant } from './quant/verify'
 import type { verifyReading } from './reading/verify'
 import type { verifyRotation } from './rotation/verify'
 import type { verifyRt } from './rt/verify'
 import type { verifySeries } from './series/verify'
 import type { verifySpan } from './span/verify'
+import type { verifySyllogism } from './syllogism/verify'
 
 /** The verifier functions of the families, by family. */
 export interface Verifiers {
   readonly coding: typeof verifyCoding
+  readonly cubenet: typeof verifyCubenet
+  readonly figure2d: typeof verifyFigure2d
+  readonly folding: typeof verifyFolding
   readonly matrices: typeof verifyMatrix
+  readonly qdata: typeof verifyQdata
   readonly quant: typeof verifyQuant
   readonly quantVerifier: typeof quantVerifier
   readonly reading: typeof verifyReading
@@ -27,6 +36,7 @@ export interface Verifiers {
   readonly rt: typeof verifyRt
   readonly series: typeof verifySeries
   readonly span: typeof verifySpan
+  readonly syllogism: typeof verifySyllogism
 }
 
 let installed: Verifiers | null = null

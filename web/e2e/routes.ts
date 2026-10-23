@@ -68,9 +68,13 @@ export interface Route {
 export const RENDERER_ROOTS: Readonly<Record<string, string>> = {
   'render/aut/AutRenderer.svelte': 'section.hb-render.aut',
   'render/coding/CodingRenderer.svelte': 'section.hb-render.coding',
+  'render/cubenet/CubenetRenderer.svelte': 'div.cubenet',
   'render/emotion/EmotionRenderer.svelte': 'section.hb-render.emotion',
   'render/fermi/FermiRenderer.svelte': 'section.hb-render.fermi',
+  'render/figure2d/Figure2dRenderer.svelte': 'div.figure2d',
+  'render/folding/FoldingRenderer.svelte': 'section.hb-render.folding',
   'render/matrices/MatrixRenderer.svelte': 'div.matrix',
+  'render/qdata/QdataRenderer.svelte': 'section.hb-render.qdata',
   'render/quant/QuantRenderer.svelte': 'section.hb-render.quant',
   'render/rat/RatRenderer.svelte': 'section.hb-render.rat',
   'render/reading/ReadingRenderer.svelte': 'section.hb-render.reading',
@@ -81,6 +85,7 @@ export const RENDERER_ROOTS: Readonly<Record<string, string>> = {
   'render/text/TextChoiceRenderer.svelte': 'div.hb-render.text-mc',
   'render/span/CorsiRenderer.svelte': 'section.hb-render.corsi',
   'render/span/DigitSpanRenderer.svelte': 'section.hb-render.span',
+  'render/syllogism/SyllogismRenderer.svelte': 'div.syllogism',
   // The two parts that draw a multiple-choice item and a typed one.
   'render/choice/OptionGroup.svelte': 'form.choice',
   'render/common/NumericEntry.svelte': 'form.entry',
@@ -1154,6 +1159,71 @@ export const ROUTES: readonly Route[] = [
     open: async (page) => {
       await page.goto(`${REVIEW_URL}?family=matrices&page=1&per=1`)
       await expect(page.getByRole('heading', { level: 2, name: /^matrices\b/ })).toBeVisible({ timeout: 30_000 })
+    },
+  },
+  {
+    // A scope-variety renderer (M3.13): drawn here by family; a person meets it on a phone (`phone`).
+    id: 'dev-review-figure2d',
+    group: 'dev',
+    phone: true,
+    state: 'review.html: a 2D figure item (turning or mirror image) with its options (dev server)',
+    devServer: true,
+    covers: ['render/figure2d/Figure2dRenderer.svelte', 'render/choice/OptionGroup.svelte'],
+    open: async (page) => {
+      await page.goto(`${REVIEW_URL}?family=figure2d&page=1&per=1`)
+      await expect(page.getByRole('heading', { level: 2, name: /^figure2d\b/ })).toBeVisible({ timeout: 30_000 })
+    },
+  },
+  {
+    // A scope-variety renderer (M3.13): drawn here by family; a person meets it on a phone (`phone`).
+    id: 'dev-review-syllogism',
+    group: 'dev',
+    phone: true,
+    state: 'review.html: a formal-deduction question with its statements and five options (dev server)',
+    devServer: true,
+    covers: ['render/syllogism/SyllogismRenderer.svelte', 'render/choice/OptionGroup.svelte'],
+    open: async (page) => {
+      await page.goto(`${REVIEW_URL}?family=syllogism&page=1&per=1`)
+      await expect(page.getByRole('heading', { level: 2, name: /^syllogism\b/ })).toBeVisible({ timeout: 30_000 })
+    },
+  },
+  {
+    // A scope-variety renderer (M3.13): drawn here by family; a person meets it on a phone (`phone`).
+    id: 'dev-review-qdata',
+    group: 'dev',
+    phone: true,
+    state: 'review.html: a table, chart or everyday word problem with its typed answer (dev server)',
+    devServer: true,
+    covers: ['render/qdata/QdataRenderer.svelte', 'render/qdata/QdataChart.svelte', 'render/qdata/QdataTable.svelte', 'render/common/NumericEntry.svelte'],
+    open: async (page) => {
+      await page.goto(`${REVIEW_URL}?family=qdata&page=1&per=1`)
+      await expect(page.getByRole('heading', { level: 2, name: /^qdata\b/ })).toBeVisible({ timeout: 30_000 })
+    },
+  },
+  {
+    // A scope-variety renderer (M3.13): drawn here by family; a person meets it on a phone (`phone`).
+    id: 'dev-review-folding',
+    group: 'dev',
+    phone: true,
+    state: 'review.html: a paper-folding item with its five sheets (dev server)',
+    devServer: true,
+    covers: ['render/folding/FoldingRenderer.svelte', 'render/choice/OptionGroup.svelte'],
+    open: async (page) => {
+      await page.goto(`${REVIEW_URL}?family=folding&page=1&per=1`)
+      await expect(page.getByRole('heading', { level: 2, name: /^folding\b/ })).toBeVisible({ timeout: 30_000 })
+    },
+  },
+  {
+    // A scope-variety renderer (M3.13): drawn here by family; a person meets it on a phone (`phone`).
+    id: 'dev-review-cubenet',
+    group: 'dev',
+    phone: true,
+    state: 'review.html: a cube-net item with its four cubes (dev server)',
+    devServer: true,
+    covers: ['render/cubenet/CubenetRenderer.svelte', 'render/choice/OptionGroup.svelte'],
+    open: async (page) => {
+      await page.goto(`${REVIEW_URL}?family=cubenet&page=1&per=1`)
+      await expect(page.getByRole('heading', { level: 2, name: /^cubenet\b/ })).toBeVisible({ timeout: 30_000 })
     },
   },
 ]

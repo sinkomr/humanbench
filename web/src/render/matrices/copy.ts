@@ -9,8 +9,12 @@ import { describeCell } from './draw'
 
 export const MATRIX_STEM = 'Which option completes the pattern? Pick the cell that belongs in the empty space at the bottom right.'
 
-/** Accessible name of the 3 × 3 grid. */
-export const MATRIX_GRID_LABEL = 'Pattern: 3 rows of 3 cells, read left to right and top to bottom. The last cell is empty.'
+/**
+ * Accessible name of the 3 × 3 grid. It names only the listing order of the cells, never a reading
+ * direction: since generator 1.4.0 a rule may run along the rows, down the columns or along the
+ * diagonals, and the label must not hint which.
+ */
+export const MATRIX_GRID_LABEL = 'Pattern: a grid of 3 rows and 3 columns, its cells listed left to right and top to bottom. The cells follow rules. The last cell is empty.'
 
 /** Text alternative of the missing ninth cell. */
 export const MATRIX_MISSING_LABEL = 'Row 3, column 3: empty, the cell to complete'

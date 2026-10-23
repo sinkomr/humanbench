@@ -16,6 +16,7 @@ import {
   xorTree,
   xorVisible,
 } from './fixtures'
+import { verifyMatrix } from './verify'
 import { matrices, type MatrixItem } from '.'
 
 /** Example 1 with a RAVEN-FAIR chain of options, the key at index 2. */
@@ -37,7 +38,9 @@ describe('matrices verify: a hand-built §14.6 example 1', () => {
     // §14.6 "consistent_rule_sets: 1" is the number of distinct predicted cells; the (rule,
     // direction) fits are many more (e.g. shape: constant@row and distribution@col).
     expect(v.checks.predicted_cells).toBe(1)
-    expect(v.checks.consistent_rule_fits).toBe(192)
+    // 1.4.0 also tries the diagonal rule: the constant attributes fit it too (same prediction).
+    expect(v.checks.consistent_rule_fits).toBe(432)
+    expect(verifyMatrix(GOOD, '1.3.0').checks.consistent_rule_fits).toBe(192)
     expect(v.checks.modal_argmax).toEqual([0, 4]) // chain nodes 3 and 2 (square, small, 2 and 3 objects)
     expect(v.checks.modal_tie_reading).toBe('all_ties')
     expect(v.checks.distractor_violations).toEqual([

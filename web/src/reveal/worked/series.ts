@@ -46,12 +46,35 @@ function letterSolution(letters: readonly string[], d: number): WorkedSolution {
   }
 }
 
+/**
+ * A letter series of an integer family (series generator 1.5.0, `letters: true`): read the letters
+ * as places, solve the number series of places, and read the answer back as a letter.
+ */
+function letterRuleSolution(item: SeriesItem, sp: SeriesStructure, letters: readonly string[]): WorkedSolution {
+  const pos = letters.map((l) => letterPosition(l))
+  if (pos.some((x) => x === undefined)) throw new RangeError('a letter series holds letters A–Z')
+  const places = pos as number[]
+  const numeric = seriesSolution({ ...item, spec: { input_format: 'integer', terms: places }, structural_params: { rule: sp.rule, coefficients: sp.coefficients } } as unknown as SeriesItem)
+  const next = Number(numeric.exact)
+  if (!Number.isInteger(next) || next < 1 || next > ALPHABET) throw new RangeError(`a letter series ends inside the alphabet, not at place ${numeric.exact}`)
+  return {
+    steps: [
+      `Read each letter as its place in the alphabet (A = 1, B = 2, … Z = ${ALPHABET}): ${letters.join(', ')} is ${list(places.map(String))}.`,
+      ...numeric.steps,
+      `Place ${next} is the letter ${positionLetter(next)}.`,
+    ],
+    answer: positionLetter(next),
+    exact: positionLetter(next),
+  }
+}
+
 /** The worked solution of a series item. Throws a RangeError when the item's structure is not a known rule. */
 export function seriesSolution(item: SeriesItem): WorkedSolution {
   const sp = item.structural_params as unknown as SeriesStructure
   const rule: RuleName = sp.rule
   const c = sp.coefficients as Readonly<Record<string, number | string>>
   if (item.spec.input_format === 'letter') {
+    if (sp.letters === true && rule !== 'letter') return letterRuleSolution(item, sp, item.spec.terms)
     if (rule !== 'letter') throw new RangeError(`a letter series has the rule "letter", not ${rule}`)
     return letterSolution(item.spec.terms, c.d as number)
   }

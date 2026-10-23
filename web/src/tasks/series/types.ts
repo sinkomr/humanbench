@@ -17,10 +17,15 @@ export type SeriesKey = (NumericKey & { readonly tol: { readonly abs: 0 } }) | {
 /** A typed integer, or text such as "42", "−7" or "k" (letters are case-insensitive). */
 export type SeriesResponse = number | string
 
-/** `structural_params`: the key rule family and its coefficients without start terms (A11). */
+/**
+ * `structural_params`: the key rule family and its coefficients without start terms (A11), and
+ * `letters: true` on a letter series whose rule is an integer family (generator 1.5.0; a series
+ * of the rule `letter` is a letter series by definition and carries no flag).
+ */
 export interface SeriesStructure {
   readonly rule: RuleName
   readonly coefficients: Coefficients
+  readonly letters?: true
 }
 
 export type SeriesItem = ItemInstance<SeriesSpec, SeriesKey>

@@ -64,7 +64,44 @@ export const QUANT_GROUP_IDS: readonly string[] = Object.freeze(QUANT_GROUPS.map
 /** The two lowest quant groups: no results-derived build-up line there (floor rule, R-17.7). */
 export const FLOOR_GROUP_IDS: readonly string[] = Object.freeze(QUANT_GROUP_IDS.slice(0, 2))
 
-const GROUP_OF_TEMPLATE: ReadonlyMap<string, QuantGroup> = new Map(QUANT_GROUPS.flatMap((g) => g.templates.map((t) => [t, g] as const)))
+/**
+ * The templates of the Quantitative family `qdata` (tables, charts and everyday word problems, M3.13; facet = template,
+ * `tasks/qdata/templates.ts`) under the group of the computation each asks for. They join the groups for the drill-down
+ * and the notes like any quant template, but are not quant templates: the groups' own `templates` lists (and
+ * `topics-v1.json`, the twin of the bank) stay quant's, so no group changes and the group version stays g2 (a template
+ * joining a group keeps the version). `facets-groups.test.ts` holds this table to qdata's facets; the server maps the
+ * same in `hb.drill_facet` (migration `20261023000100_variety_facets.sql`).
+ */
+export const QDATA_TEMPLATE_GROUPS: Readonly<Record<string, string>> = Object.freeze({
+  dt_bar_read: 'quant/arith_fractions_percent',
+  dt_table_sum: 'quant/arith_fractions_percent',
+  wp_change: 'quant/arith_fractions_percent',
+  dt_line_temp: 'quant/arith_fractions_percent',
+  dt_table_mean: 'quant/ratios_rates_averages',
+  wp_timetable: 'quant/arith_fractions_percent',
+  dt_bar_share: 'quant/arith_fractions_percent',
+  wp_bill_split: 'quant/arith_fractions_percent',
+  wp_unit_price: 'quant/ratios_rates_averages',
+  wp_recipe: 'quant/ratios_rates_averages',
+  dt_line_pct_change: 'quant/arith_fractions_percent',
+  dt_freq_mean: 'quant/ratios_rates_averages',
+  dt_twoway_share: 'quant/probability_counting',
+  wp_fuel: 'quant/ratios_rates_averages',
+  wp_discount_tax: 'quant/arith_fractions_percent',
+  dt_freq_median: 'quant/ratios_rates_averages',
+  dt_missing_mean: 'quant/ratios_rates_averages',
+  dt_two_series: 'quant/arith_fractions_percent',
+  wp_work_together: 'quant/ratios_rates_averages',
+  wp_mixture: 'quant/ratios_rates_averages',
+  dt_compound_change: 'quant/arith_fractions_percent',
+  dt_share_change: 'quant/arith_fractions_percent',
+  wp_reverse_pct: 'quant/arith_fractions_percent',
+})
+
+const GROUP_OF_TEMPLATE: ReadonlyMap<string, QuantGroup> = new Map([
+  ...QUANT_GROUPS.flatMap((g) => g.templates.map((t) => [t, g] as const)),
+  ...Object.entries(QDATA_TEMPLATE_GROUPS).map(([t, id]) => [t, QUANT_GROUPS.find((g) => g.id === id)!] as const),
+])
 
 /** The group of a quant template facet (`percent` → arithmetic, fractions and percentages), or undefined. */
 export function quantGroupOfTemplate(template: string): QuantGroup | undefined {

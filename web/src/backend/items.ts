@@ -111,7 +111,7 @@ export function asksConfidence(item: Pick<ServedItem, 'family'>): boolean {
 }
 
 /** The families the server may serve in M2 (the M1 procedural pool) and a client can draw. */
-export const SUPPORTED_RENDERERS = ['rotation', 'matrices', 'series', 'quant'] as const
+export const SUPPORTED_RENDERERS = ['rotation', 'matrices', 'series', 'quant', 'cubenet', 'figure2d', 'folding', 'qdata', 'syllogism'] as const
 export type SupportedRenderer = (typeof SUPPORTED_RENDERERS)[number]
 
 export function isSupportedRenderer(name: unknown): name is SupportedRenderer {

@@ -1558,7 +1558,7 @@ describe('focus session (DESIGN §10 "focus sessions of 20 minutes"; ROADMAP M1.
     expect(Object.keys(flags).some((k) => k.startsWith('skipped_'))).toBe(false)
     // Only the chosen skills were asked, and no block ran.
     const axes = new Set(bot.run.sessionState().responses.map((t) => parseItemId(t[0])!.family))
-    expect([...axes].every((f) => f === 'rotation' || f === 'quant')).toBe(true)
+    expect([...axes].every((f) => ['rotation', 'figure2d', 'cubenet', 'folding', 'quant', 'qdata'].includes(f))).toBe(true)
     expect(r.blocks).toHaveLength(0)
   })
 

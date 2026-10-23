@@ -12,13 +12,16 @@
  * and the objects sit in the standard places for that number; in position mode the places follow
  * xor / or / distribution and the number is whatever that gives. A framed item (hard strata,
  * generator 1.3.0) also has a frame around every cell whose shade (light grey → dark grey → black)
- * and pattern follow their own rules, derived the same way.
+ * and pattern follow their own rules, derived the same way. Generator 1.4.0: a feature's rule may
+ * run down the columns (`structural_params.directions`), read then column by column, or hold along
+ * the diagonals (`diagonal_constant`: the missing cell repeats the top-left and centre cells).
  */
 
 import { optionLetter } from '../../render/choice/keys'
 import { SLOT_NAMES, describeCell } from '../../render/matrices/draw'
 import {
   COLORS,
+  DIAGONAL_RULE,
   FRAME_PATTERNS,
   FRAME_SHADES,
   ORIENTATIONS,
@@ -36,6 +39,11 @@ import {
   type MatrixFrame,
   type RuleSet,
   type ScalarAttr,
+  diagonalAttrs,
+  directionOf,
+  groupOf,
+  groupsOf,
+  type LineDirection,
 } from '../../tasks/matrices/grammar'
 import type { MatrixItem } from '../../tasks/matrices'
 import type { WorkedSolution } from './types'
@@ -77,31 +85,57 @@ interface Derived {
   readonly steps: string[]
 }
 
+/** How a feature's lines are read: along the rows or down the columns (generator 1.4.0). */
+interface Reading {
+  /** The cells of line k (0–2) of the grid as indices into the row-major list; line 2 has the missing 9th last. */
+  readonly line: (k: number) => readonly [number, number, number]
+  /** "row" / "column". */
+  readonly noun: string
+  /** The direction a progression moves in: "to the right" / "downward". */
+  readonly onward: string
+}
+
+const READINGS: Readonly<Record<LineDirection, Reading>> = {
+  row: { line: (k) => [3 * k, 3 * k + 1, 3 * k + 2], noun: 'row', onward: 'to the right' },
+  col: { line: (k) => [k, k + 3, k + 6], noun: 'column', onward: 'downward' },
+}
+
 /** Derive the missing cell from the grid and the rule set (module comment). */
 function derive(grid: readonly (readonly MatrixCell[])[], rules: RuleSet): Derived {
-  const row = (r: number): readonly MatrixCell[] => grid[r] as readonly MatrixCell[]
-  const [a, b] = [row(2)[0] as MatrixCell, row(2)[1] as MatrixCell]
+  const cells = grid.flat()
+  const cellAt = (i: number): MatrixCell => cells[i] as MatrixCell
   const steps: string[] = []
   const fixed: string[] = []
   const out: Partial<Record<ScalarAttr, Value>> = {}
+  const readingOf = (attr: string): Reading => READINGS[directionOf(rules, groupOf(attr))]
 
   for (const attr of SCALAR_ATTRS) {
     const dom = DOMAINS[attr]
     const rule = rules[attr]
-    const vals = (r: number): Value[] => row(r).map((c) => c[attr])
-    const shown = (r: number): string => vals(r).map((v) => label(attr, v)).join(', ')
-    const [va, vb] = [a[attr], b[attr]]
+    const rd = readingOf(attr)
+    const N = rd.noun
+    const vals = (k: number): Value[] => rd.line(k).slice(0, k === 2 ? 2 : 3).map((i) => cellAt(i)[attr])
+    const shown = (k: number): string => vals(k).map((v) => label(attr, v)).join(', ')
+    const [va, vb] = vals(2) as [Value, Value]
     const name = ATTR_NAME[attr]
+    if (rule === DIAGONAL_RULE) {
+      const v = cellAt(0)[attr]
+      out[attr] = v
+      steps.push(
+        `${cap(name)}: it is the same along each diagonal from top left to bottom right (top left and centre: ${label(attr, v)}; top middle and middle right: ${label(attr, cellAt(1)[attr])}; middle left and bottom middle: ${label(attr, cellAt(3)[attr])}). The missing cell is on the long diagonal, so it has ${label(attr, v)}.`,
+      )
+      continue
+    }
     if (rule === 'constant') {
-      out[attr] = va
-      fixed.push(`the ${name} (${label(attr, va)})`)
+      out[attr] = vb
+      fixed.push(`the ${name} (${label(attr, vb)})`)
       continue
     }
     if (rule === 'distribution') {
       const v = missingFrom(vals(0), [va, vb])
       out[attr] = v
       steps.push(
-        `${cap(name)}: every row has the same three values, once each (row 1: ${shown(0)}; row 2: ${shown(1)}). Row 3 already has ${label(attr, va)} and ${label(attr, vb)}, so the missing cell has ${label(attr, v)}.`,
+        `${cap(name)}: every ${N} has the same three values, once each (${N} 1: ${shown(0)}; ${N} 2: ${shown(1)}). ${cap(N)} 3 already has ${label(attr, va)} and ${label(attr, vb)}, so the missing cell has ${label(attr, v)}.`,
       )
       continue
     }
@@ -112,29 +146,41 @@ function derive(grid: readonly (readonly MatrixCell[])[], rules: RuleSet): Deriv
     out[attr] = v
     const ordered = (delta > 0 ? [...dom] : [...dom].reverse()).map((x) => label(attr, x)).join(' → ')
     steps.push(
-      `${cap(name)}: it moves one step along ${ordered} at each cell to the right (row 1: ${shown(0)}; row 2: ${shown(1)}). Row 3 has ${label(attr, va)}, ${label(attr, vb)}, so the missing cell has ${label(attr, v)}.`,
+      `${cap(name)}: it moves one step along ${ordered} at each cell ${rd.onward} (${N} 1: ${shown(0)}; ${N} 2: ${shown(1)}). ${cap(N)} 3 has ${label(attr, va)}, ${label(attr, vb)}, so the missing cell has ${label(attr, v)}.`,
     )
   }
-  if (fixed.length > 0) steps.unshift(`Some features never change, in any cell: ${list(fixed)}.`)
+  if (fixed.length > 0) {
+    const rowsFixed = SCALAR_ATTRS.filter((a) => rules[a] === 'constant')
+    const how = rowsFixed.every((a) => directionOf(rules, groupOf(a)) === 'row')
+      ? 'is the same across each row'
+      : rowsFixed.every((a) => directionOf(rules, groupOf(a)) === 'col')
+        ? 'is the same down each column'
+        : 'is the same along its line (across a row or down a column)'
+    steps.unshift(`Each of these ${how}: ${list(fixed)}.`)
+  }
 
   // Layout: the number of objects and where they are.
-  const counts = (r: number): number[] => row(r).map((c) => c.positions.length)
-  const where = (r: number): string => list(row(r).map((c) => String(c.positions.length)))
+  const lay = readingOf('layout')
+  const LN = lay.noun
+  const layCells = (k: number): MatrixCell[] => lay.line(k).slice(0, k === 2 ? 2 : 3).map(cellAt)
+  const counts = (k: number): number[] => layCells(k).map((c) => c.positions.length)
+  const where = (k: number): string => list(counts(k).map(String))
+  const [a, b] = layCells(2) as [MatrixCell, MatrixCell]
   const [na, nb] = [a.positions.length, b.positions.length]
   let positions: number[]
   if (rules.position === 'canonical') {
     let n: number
     switch (rules.count) {
       case 'constant':
-        n = na
-        steps.push(`Number of objects: it is ${na} in every cell.`)
+        n = nb
+        steps.push(`Number of objects: it is the same across each ${LN} (${LN} 3 has ${nb}).`)
         break
       case 'progression+1':
       case 'progression-1': {
         const delta = rules.count === 'progression+1' ? 1 : -1
         n = nb + delta
         steps.push(
-          `Number of objects: it goes ${delta > 0 ? 'up' : 'down'} by one at each cell to the right (row 1: ${where(0)}; row 2: ${where(1)}). Row 3 has ${na}, ${nb}, so the missing cell has ${n}.`,
+          `Number of objects: it goes ${delta > 0 ? 'up' : 'down'} by one at each cell ${lay.onward} (${LN} 1: ${where(0)}; ${LN} 2: ${where(1)}). ${cap(LN)} 3 has ${na}, ${nb}, so the missing cell has ${n}.`,
         )
         break
       }
@@ -143,36 +189,36 @@ function derive(grid: readonly (readonly MatrixCell[])[], rules: RuleSet): Deriv
         const add = rules.count === 'arithmetic+'
         n = add ? na + nb : na - nb
         steps.push(
-          `Number of objects: in each row the third cell has ${add ? 'the first two counts added' : 'the first count minus the second'} (row 1: ${where(0)}; row 2: ${where(1)}). Row 3: ${na} ${add ? '+' : '−'} ${nb} = ${n}.`,
+          `Number of objects: in each ${LN} the third cell has ${add ? 'the first two counts added' : 'the first count minus the second'} (${LN} 1: ${where(0)}; ${LN} 2: ${where(1)}). ${cap(LN)} 3: ${na} ${add ? '+' : '−'} ${nb} = ${n}.`,
         )
         break
       }
       case 'distribution':
         n = missingFrom(counts(0), [na, nb])
-        steps.push(`Number of objects: every row has the same three counts, once each (row 1: ${where(0)}; row 2: ${where(1)}). Row 3 has ${na} and ${nb}, so the missing cell has ${n}.`)
+        steps.push(`Number of objects: every ${LN} has the same three counts, once each (${LN} 1: ${where(0)}; ${LN} 2: ${where(1)}). ${cap(LN)} 3 has ${na} and ${nb}, so the missing cell has ${n}.`)
         break
       default:
         throw new RangeError(`a canonical layout has no count rule "${rules.count}"`)
     }
     positions = positionsOf(canonicalMask(n))
   } else {
-    const masks = (r: number): number[] => row(r).map((c) => maskOf(c.positions))
+    const masks = (k: number): number[] => layCells(k).map((c) => maskOf(c.positions))
     const [ma, mb] = [maskOf(a.positions), maskOf(b.positions)]
     let mask: number
     if (rules.position === 'xor') {
       mask = ma ^ mb
-      steps.push('Places of the objects: the third cell has an object in a place exactly when one, and only one, of the first two cells has an object there.')
+      steps.push(`Places of the objects: in each ${LN}, the third cell has an object in a place exactly when one, and only one, of the first two cells has an object there.`)
     } else if (rules.position === 'or') {
       mask = ma | mb
-      steps.push('Places of the objects: the third cell has an object in a place when either of the first two cells has one there.')
+      steps.push(`Places of the objects: in each ${LN}, the third cell has an object in a place when either of the first two cells has one there.`)
     } else {
       const m0 = masks(0)
       mask = missingFrom(m0, [ma, mb])
-      steps.push('Places of the objects: every row uses the same three arrangements, once each.')
+      steps.push(`Places of the objects: every ${LN} uses the same three arrangements, once each.`)
     }
     if (popcount(mask) === 0) throw new RangeError('a derived layout has no objects')
     positions = positionsOf(mask)
-    steps.push(`Applying that to row 3 puts objects at ${list(positions.map((s) => SLOT_NAMES[s] ?? `slot ${s}`))}.`)
+    steps.push(`Applying that to ${LN} 3 puts objects at ${list(positions.map((s) => SLOT_NAMES[s] ?? `slot ${s}`))}.`)
   }
 
   const inner: MatrixCell = {
@@ -183,44 +229,48 @@ function derive(grid: readonly (readonly MatrixCell[])[], rules: RuleSet): Deriv
     positions,
   }
   if (rules.frame_shade === undefined || rules.frame_pattern === undefined) return { cell: inner, steps }
+  const fr = readingOf('frame')
   const frame: MatrixFrame = {
-    shade: frameFeature(grid, 'shade', rules.frame_shade, FRAME_SHADES, steps) as FrameShade,
-    pattern: frameFeature(grid, 'pattern', rules.frame_pattern, FRAME_PATTERNS, steps) as FramePattern,
+    shade: frameFeature(cells, fr, 'shade', rules.frame_shade, FRAME_SHADES, steps) as FrameShade,
+    pattern: frameFeature(cells, fr, 'pattern', rules.frame_pattern, FRAME_PATTERNS, steps) as FramePattern,
   }
   return { cell: { ...inner, frame }, steps }
 }
 
 /** One frame feature of the missing cell from its rule; pushes the step that explains it. */
 function frameFeature(
-  grid: readonly (readonly MatrixCell[])[],
+  cells: readonly MatrixCell[],
+  rd: Reading,
   feature: 'shade' | 'pattern',
   rule: string,
   dom: readonly string[],
   steps: string[],
 ): string {
-  const at = (r: number, c: number): string => {
-    const f = (grid[r] as readonly MatrixCell[])[c]?.frame
+  const at = (i: number): string => {
+    const f = cells[i]?.frame
     if (f === undefined) throw new RangeError('a framed item has a cell without a frame')
     return f[feature]
   }
+  const N = rd.noun
   const show = (v: string): string => v.replace('_', ' ')
-  const shown = (r: number): string => [0, 1, 2].map((c) => show(at(r, c))).join(', ')
-  const [va, vb] = [at(2, 0), at(2, 1)]
+  const vals = (k: number): string[] => rd.line(k).slice(0, k === 2 ? 2 : 3).map(at)
+  const shown = (k: number): string => vals(k).map(show).join(', ')
+  const [va, vb] = vals(2) as [string, string]
   const name = `Frame ${feature}`
   if (rule === 'constant') {
-    steps.push(`${name}: it is the same in every cell of a row, so the missing cell has ${show(va)}.`)
-    return va
+    steps.push(`${name}: it is the same in every cell of a ${N}, so the missing cell has ${show(vb)}.`)
+    return vb
   }
   if (rule === 'distribution') {
-    const v = missingFrom([0, 1, 2].map((c) => at(0, c)), [va, vb])
-    steps.push(`${name}: every row has the same three, once each (row 1: ${shown(0)}; row 2: ${shown(1)}). Row 3 already has ${show(va)} and ${show(vb)}, so the missing cell has ${show(v)}.`)
+    const v = missingFrom(vals(0), [va, vb])
+    steps.push(`${name}: every ${N} has the same three, once each (${N} 1: ${shown(0)}; ${N} 2: ${shown(1)}). ${cap(N)} 3 already has ${show(va)} and ${show(vb)}, so the missing cell has ${show(v)}.`)
     return v
   }
   const delta = rule === 'progression+1' ? 1 : -1
   const v = dom[dom.indexOf(vb) + delta]
   if (v === undefined) throw new RangeError(`a frame ${feature} progression left its values`)
   const ordered = (delta > 0 ? [...dom] : [...dom].reverse()).map(show).join(' → ')
-  steps.push(`${name}: it moves one step along ${ordered} at each cell to the right (row 1: ${shown(0)}; row 2: ${shown(1)}). Row 3 has ${show(va)}, ${show(vb)}, so the missing cell has ${show(v)}.`)
+  steps.push(`${name}: it moves one step along ${ordered} at each cell ${rd.onward} (${N} 1: ${shown(0)}; ${N} 2: ${shown(1)}). ${cap(N)} 3 has ${show(va)}, ${show(vb)}, so the missing cell has ${show(v)}.`)
   return v
 }
 
@@ -235,6 +285,17 @@ const cellsEqual = (x: MatrixCell, y: MatrixCell): boolean =>
   same(x.positions, y.positions) &&
   framesEqual(x.frame, y.frame)
 
+/** The opening hint: which way to read the grid (rows, columns, both, or the diagonals too). */
+function readingHint(rules: RuleSet): string {
+  const dirs = groupsOf(rules).map((g) => directionOf(rules, g))
+  const lines = dirs.every((d) => d === 'row')
+    ? 'Read each row from left to right'
+    : dirs.every((d) => d === 'col')
+      ? 'Read each column from top to bottom'
+      : 'Read the rows from left to right and the columns from top to bottom'
+  return diagonalAttrs(rules).length > 0 ? `${lines}, look along the diagonals too,` : lines
+}
+
 /**
  * The worked solution of a matrix item. Throws a RangeError when the structure is not a rule set
  * or when the derived cell equals none of the options (which would be a generator bug).
@@ -247,9 +308,9 @@ export function matrixSolution(item: MatrixItem): WorkedSolution {
   if (index < 0) throw new RangeError('the derived cell is none of the options')
   return {
     steps: [
-      item.spec.grid[0]?.[0]?.frame === undefined
-        ? 'Read each row from left to right and ask how every feature changes: the shape, the size, the shade, the turn and the number and places of the objects.'
-        : 'Read each row from left to right and ask how every feature changes: the shape, the size, the shade, the turn and the number and places of the objects, and, separately, the shade and pattern of the frame.',
+      `${readingHint(rs)} and ask how every feature changes: the shape, the size, the shade, the turn and the number and places of the objects${
+        item.spec.grid[0]?.[0]?.frame === undefined ? '' : ', and, separately, the shade and pattern of the frame'
+      }.`,
       ...steps,
       `So the missing cell is ${describeCell(cell)}, which is option ${optionLetter(index)}.`,
     ],
