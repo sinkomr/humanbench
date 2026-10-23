@@ -381,7 +381,17 @@ test.describe('a question the browser cannot draw says so once (UX-017a)', () =>
     test.skip(isMobile === true, 'a touch screen has no Tab key to walk with')
     test.skip(browserName === 'webkit', 'Safari’s Tab skips buttons and links unless a system setting is on (the keyboard suite runs on Chromium)')
     await noWebGlSpatial(page)
-    await expect(h1(page)).toBeFocused()
+    // The focus is where a question's screen puts it: on the part's heading for the part's first question, on the question's
+    // own region for a later one (in the pinned session the rotation question comes second, M3.13). The panel is in it.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const active = document.activeElement
+          const panel = document.querySelector('.unavailable')
+          return active !== null && (active.tagName === 'H1' || (panel !== null && active.contains(panel)))
+        }),
+      )
+      .toBe(true)
     const names: string[] = []
     for (let i = 0; i < 8; i++) {
       await page.keyboard.press('Tab')

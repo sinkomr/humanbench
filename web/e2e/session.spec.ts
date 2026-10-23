@@ -20,6 +20,7 @@ import { QUANT_MIN_ITEMS } from '../src/engine/plan-table'
 import { BREAK_OFFER_TEXT } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { FINISHED_HEADINGS, answerItem } from './flow'
+import { PART_FAMILIES, pinSession, toFamily } from './routes'
 import { useWideFont } from './wide-font'
 
 const h1 = (page: Page): Locator => page.getByRole('heading', { level: 1 })
@@ -669,9 +670,15 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     return families
   }
 
+  /** QUANT_SHOWN questions, every one of a Quantitative family (quant and, since M3.13, qdata: the part alternates them). */
+  function expectQuantitative(families: readonly string[]): void {
+    expect(families).toHaveLength(QUANT_SHOWN)
+    expect(families.filter((f) => !Object.hasOwn(PART_FAMILIES.QR, f)), 'questions of another part').toEqual([])
+  }
+
   test('QR runs to six answered questions when its time budget is gone (one more for the one that ran out of time), and gets no more', async ({ page }) => {
     await begin(page)
-    expect(await quantWithoutBudget(page)).toEqual(Array.from({ length: QUANT_SHOWN }, () => 'quant'))
+    expectQuantitative(await quantWithoutBudget(page))
   })
 
   test('a start that was abandoned before any answer is not an earlier session: after a reload QR still gets its questions (M1.15 review, §7.4)', async ({ page }) => {
@@ -695,7 +702,7 @@ test.describe('the time rules, on a fake clock (§7.4, §10, A15)', () => {
     await button(page, 'Begin').click()
     await expect(h1(page)).toHaveText('Up next: Reaction Time')
     // Counted as session 2, QR would have had no floor (0 items after long span blocks, before its six questions).
-    expect(await quantWithoutBudget(page)).toEqual(Array.from({ length: QUANT_SHOWN }, () => 'quant'))
+    expectQuantitative(await quantWithoutBudget(page))
   })
 
   test('the ring follows session time once a part runs', async ({ page }) => {
@@ -738,6 +745,7 @@ test.describe('per-axis early stop (SD < 0.3, §7.4)', () => {
 
 test.describe('an item the browser cannot draw (§13)', () => {
   test('without WebGL the Spatial item offers the skip right there, and skipping is safe', async ({ page }) => {
+    await pinSession(page)
     await page.addInitScript(() => {
       const orig = HTMLCanvasElement.prototype.getContext
       HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
@@ -751,6 +759,8 @@ test.describe('an item the browser cannot draw (§13)', () => {
       await expect(h1(page)).toHaveText(next)
     }
     await button(page, 'Start').click()
+    // Only the rotation questions need WebGL: on past the part's other families (M3.13) to the first of them.
+    await toFamily(page, 'SPA', 'rotation', page.locator('.unavailable'))
     await expect(page.getByText('cannot be shown in your browser').first()).toBeVisible({ timeout: 20_000 })
     await expectNoSeriousAxe(page)
     await page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' }).click()

@@ -18,11 +18,13 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEV_ROUTES } from '../src/dev/routes'
-import { A15_SEGMENTS } from '../src/engine/selector'
+import { A15_SEGMENTS, catFamilies } from '../src/engine/selector'
 import { ENTRY_RENDERERS } from '../src/render/entry'
+import { newSessionId } from '../src/save/ids'
+import { Bot } from '../src/session/bot'
 import { SEGMENT_INFO } from '../src/session/segments'
 import { DEV_ONLY_PAGES, PAGES } from '../vite.config'
-import { DEV_SERVER_ROUTES, PREVIEW_ROUTES, RENDERER_ROOTS, ROUTES, SEGMENT_TITLES } from '../e2e/routes'
+import { DEV_SERVER_ROUTES, PART_FAMILIES, PINNED_SESSION, PREVIEW_ROUTES, RENDERER_ROOTS, ROUTES, SEGMENT_TITLES, TO_FAMILY_MAX } from '../e2e/routes'
 import { AUT_PINNED_STATES } from '../e2e/routes-aut'
 import { RAT_PINNED_STATES } from '../e2e/routes-rat'
 import { SJT_PINNED_STATES } from '../e2e/routes-sjt'
@@ -210,6 +212,42 @@ describe('the accessibility sweep covers every route (M1.21)', () => {
       for (const c of classes) expect(source, `${file} does not draw ${selector}`).toMatch(new RegExp(`class="[^"]*\\b${c}\\b`))
     }
   })
+
+  it('knows every CAT family of the Spatial and Quantitative parts, by its renderer (toFamily plays on past the others)', () => {
+    for (const [axis, families] of Object.entries(PART_FAMILIES)) {
+      const registered = catFamilies().filter((f) => f.axis === axis).map((f) => f.name)
+      expect(Object.keys(families).sort(), `${axis}: e2e/routes.ts PART_FAMILIES`).toEqual(registered.sort())
+      for (const file of Object.values(families)) expect(RENDERER_ROOTS[file], file).toBeDefined()
+    }
+  })
+
+  it('the pinned session (pinSession) reaches rotation and quant within TO_FAMILY_MAX questions of their parts', () => {
+    // Replayed with the bot as the e2e tests play it: the parts before skipped, every question answered with its first
+    // option or 1 (answerItem). A change to a generator or to the selection can move the families; then re-pin.
+    const sessionId = newSessionId(PINNED_SESSION.wallMs, (n) => new Uint8Array(n).fill(PINNED_SESSION.byte))
+    const families = (title: (typeof SEGMENT_TITLES)[number], axis: string): string[] => {
+      const bot = new Bot({ sessionId, startedMs: PINNED_SESSION.wallMs })
+      const index = SEGMENT_TITLES.indexOf(title)
+      const seen: string[] = []
+      for (let step = 0; step < 200 && seen.length < TO_FAMILY_MAX; step++) {
+        const v = bot.view()
+        if (v.phase === 'finished') break
+        if (v.phase === 'interstitial') {
+          if (v.segmentIndex < index) bot.run.skipAxis()
+          else bot.run.startSegment()
+        } else if (v.phase === 'item') {
+          if (v.item!.axis !== axis) break
+          seen.push(v.item!.family)
+          bot.run.itemShown(bot.t)
+          bot.wait(5)
+          bot.run.itemResponded(axis === 'QR' ? '1' : 0, null)
+        } else bot.step()
+      }
+      return seen
+    }
+    expect(families('Spatial', 'SPA'), `the Spatial questions of ${sessionId}`).toContain('rotation')
+    expect(families('Quantitative Reasoning', 'QR'), `the Quantitative questions of ${sessionId}`).toContain('quant')
+  }, 120_000)
 
   it('claims no renderer on a route that can only draw it by chance (the session serves its items at random)', () => {
     for (const r of ROUTES.filter((x) => x.group === 'session' && x.covers.some((c) => c.startsWith('session/Stage')))) {

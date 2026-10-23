@@ -13,7 +13,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { ROTATION_UNAVAILABLE } from '../src/render/rotation/copy'
 import { button, h1, toReady } from './flow'
-import { SEGMENT_TITLES, intoSegment } from './routes'
+import { SEGMENT_TITLES, intoSegment, pinSession, toFamily } from './routes'
 import { SessionDriver, type Screen } from './session-driver'
 
 const PHONES = [
@@ -446,6 +446,7 @@ test.describe('option groups share the session\'s primary button and focus ring 
 
 test.describe('rotation without WebGL (UX-017b)', () => {
   test('nothing is drawn but the one-line note: no empty frames, no options, no Confirm', async ({ page }) => {
+    await pinSession(page)
     await page.addInitScript(() => {
       const orig = HTMLCanvasElement.prototype.getContext
       HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
@@ -454,6 +455,7 @@ test.describe('rotation without WebGL (UX-017b)', () => {
       } as typeof orig
     })
     await intoSegment(page, 2)
+    await toFamily(page, 'SPA', 'rotation', page.locator('.unavailable'))
     const rotation = page.locator('div.rotation')
     // The renderer's note is still written, but the session parks the renderer (hidden) and says it on its own panel (UX-017a).
     await expect(rotation.getByRole('status', { includeHidden: true })).toHaveText(ROTATION_UNAVAILABLE, { timeout: 30_000 })
@@ -468,6 +470,7 @@ test.describe('rotation without WebGL (UX-017b)', () => {
 
 test.describe('rotation while the figures load (UX-017b)', () => {
   test('the target box says so while the three-view chunk is on its way, and the line is gone once it has arrived', async ({ page }) => {
+    await pinSession(page)
     let release: () => void = () => undefined
     const arrived = new Promise<void>((resolve) => (release = resolve))
     await page.route(/\/assets\/three-view-[^/]+\.js$/, async (route) => {
@@ -476,6 +479,7 @@ test.describe('rotation while the figures load (UX-017b)', () => {
     })
     try {
       await intoSegment(page, 2)
+      await toFamily(page, 'SPA', 'rotation')
       const rotation = page.locator('div.rotation')
       await expect(rotation.locator('.frame').getByText('Loading figures…')).toBeVisible()
       await expect(rotation.getByRole('radio').first()).toBeDisabled()

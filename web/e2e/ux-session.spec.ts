@@ -13,6 +13,7 @@ import { ROTATION_UNAVAILABLE } from '../src/render/rotation/copy'
 import { BREAK_OFFER_TEXT, INTERSTITIAL_CLOCK } from '../src/session/copy'
 import { expectNoSeriousAxe } from './axe'
 import { answerItem, button, h1, loadSave, overflow, simulatedSave, toReady, unloadIsGuarded } from './flow'
+import { pinSession, toFamily } from './routes'
 
 const SE = { width: 320, height: 568 } as const
 
@@ -685,6 +686,7 @@ test.describe('a question the browser cannot draw (UX-017a)', () => {
 
     test('its message and its way out are the first things on a 320 x 568 screen, said once', async ({ page, isMobile }) => {
       test.skip(isMobile !== true, 'the phone is where the way out was out of reach')
+      await pinSession(page)
       await page.addInitScript(() => {
         const orig = HTMLCanvasElement.prototype.getContext
         HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
@@ -699,6 +701,8 @@ test.describe('a question the browser cannot draw (UX-017a)', () => {
       }
       await button(page, 'Start').click()
       const panel = page.locator('.unavailable')
+      // Only the rotation questions need WebGL: on past the part's other families (M3.13) to the first of them.
+      await toFamily(page, 'SPA', 'rotation', panel)
       await expect(panel).toBeVisible({ timeout: 20_000 })
       await expect(panel.getByRole('button', { name: 'Skip Spatial' })).toBeInViewport()
       // The header does not say it a second time, and nor does the renderer that reported it: it stays mounted, but parked

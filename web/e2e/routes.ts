@@ -16,7 +16,7 @@
  * has a route of its own that draws it by family (the review page, `family=...`).
  */
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { COPY as NOTES_COPY } from '../src/brief/copy'
 import { ENTRY_COPY as FERMI_COPY, MAGNITUDE_NOTES } from '../src/tasks/fermi/copy'
 import { ENTRY_COPY as EMOTION_COPY } from '../src/tasks/emotion/copy'
@@ -103,6 +103,72 @@ export async function openRoute(page: Page, route: Route, claimTimeout = 10_000)
     const root = RENDERER_ROOTS[claim]
     if (root !== undefined) await expect(page.locator(root).first(), `${route.id} claims ${claim}, which draws ${root}`).toBeVisible({ timeout: claimTimeout })
   }
+}
+
+/**
+ * The device's CAT families of the Spatial and Quantitative parts, each by the renderer file that draws it. Since M3.13 these
+ * parts draw from several families, so the first question of the part is not always the one a route or a test needs
+ * ({@link toFamily}). `scripts/a11y-routes.test.ts` keeps this equal to the registry's CAT families on each axis.
+ */
+export const PART_FAMILIES: Readonly<Record<'SPA' | 'QR', Readonly<Record<string, string>>>> = {
+  SPA: {
+    rotation: 'render/rotation/RotationRenderer.svelte',
+    figure2d: 'render/figure2d/Figure2dRenderer.svelte',
+    cubenet: 'render/cubenet/CubenetRenderer.svelte',
+    folding: 'render/folding/FoldingRenderer.svelte',
+  },
+  QR: {
+    quant: 'render/quant/QuantRenderer.svelte',
+    qdata: 'render/qdata/QdataRenderer.svelte',
+  },
+}
+
+/**
+ * The session a test can count on. The session id seeds the plan and the selection (`SessionRun`), and it is a ULID of the
+ * wall clock and random bytes (`save/ids.ts`), so a test that needs one family's question in a part that draws from several
+ * (M3.13) pins both before the first navigation: the clock at {@link PINNED_SESSION}.wallMs (`page.clock.setFixedTime`:
+ * `Date` only, the timers and `performance.now()` run on), and `crypto.getRandomValues` to fill with one byte. The same
+ * questions then come in the same order on every run; `scripts/a11y-routes.test.ts` replays this session with the bot and
+ * checks that {@link toFamily} reaches rotation and quant in it.
+ */
+export const PINNED_SESSION = { wallMs: Date.UTC(2026, 0, 1, 12, 0, 0), byte: 5 } as const
+
+/** Pins the session id ({@link PINNED_SESSION}); call it before the first navigation. */
+export async function pinSession(page: Page): Promise<void> {
+  await page.clock.setFixedTime(PINNED_SESSION.wallMs)
+  await page.addInitScript((byte: number) => {
+    Object.defineProperty(crypto, 'getRandomValues', {
+      configurable: true,
+      value: <T extends ArrayBufferView | null>(a: T): T => {
+        if (a !== null) new Uint8Array(a.buffer, a.byteOffset, a.byteLength).fill(byte)
+        return a
+      },
+    })
+  }, PINNED_SESSION.byte)
+}
+
+/** How many questions {@link toFamily} plays on at most before it gives up. */
+export const TO_FAMILY_MAX = 8
+
+/**
+ * In the part just started, on until a question of `family` is up and `target` is visible (default: what the family's
+ * renderer draws; a browser without WebGL shows the `.unavailable` panel instead), answering each question of the part's
+ * other families on the way ({@link answerItem}: the first option, or 1). Which family comes first depends on the session
+ * (the start-up step and the information of each candidate), so a caller pins it with {@link pinSession}.
+ */
+export async function toFamily(page: Page, axis: keyof typeof PART_FAMILIES, family: string, target?: Locator): Promise<void> {
+  const families = PART_FAMILIES[axis]
+  const own = families[family]
+  if (own === undefined) throw new RangeError(`${family} is not a ${axis} family`)
+  const wanted = (target ?? page.locator(RENDERER_ROOTS[own]!)).filter({ visible: true })
+  const others = Object.entries(families).filter(([f]) => f !== family).map(([, file]) => RENDERER_ROOTS[file]!)
+  const other = page.locator(others.join(', ')).filter({ visible: true })
+  for (let i = 0; i < TO_FAMILY_MAX; i++) {
+    await expect(wanted.or(other).first(), `a ${axis} question (${family} wanted)`).toBeVisible({ timeout: 30_000 })
+    if ((await wanted.count()) > 0) return
+    await answerItem(page)
+  }
+  await expect(wanted.first(), `no ${family} question among the first ${TO_FAMILY_MAX} of the part (is the session pinned? pinSession)`).toBeVisible()
 }
 
 // ----------------------------------------------------------------------------------- helpers
@@ -536,8 +602,11 @@ export const ROUTES: readonly Route[] = [
     group: 'session',
     state: 'a spatial item (the figures, or the skip offer in a browser without WebGL)',
     covers: ['render/rotation/RotationRenderer.svelte', 'render/rotation/three-view.ts', 'render/choice/OptionGroup.svelte'],
+    prepare: pinSession,
     open: async (page) => {
       await intoSegment(page, 2)
+      // The part draws from several families (M3.13): on to the pinned session's first rotation question.
+      await toFamily(page, 'SPA', 'rotation', page.locator('div.rotation').or(page.locator('.unavailable')))
       await expect(page.locator('form.choice').or(page.locator('.unavailable'))).toBeVisible({ timeout: 30_000 })
     },
   },
@@ -548,10 +617,13 @@ export const ROUTES: readonly Route[] = [
     // The renderer stays mounted but is parked out of sight on purpose (UX-017a): the claim is the screen whose panel speaks.
     covers: ['session/SessionScreen.svelte'],
     prepare: async (page) => {
+      await pinSession(page)
       await page.addInitScript(NO_WEBGL)
     },
     open: async (page) => {
       await intoSegment(page, 2)
+      // Only the rotation questions need WebGL: on past the part's other families (M3.13) to the first of them.
+      await toFamily(page, 'SPA', 'rotation', page.locator('.unavailable'))
       await expect(page.locator('.unavailable')).toBeVisible({ timeout: 30_000 })
       await expect(page.locator('.unavailable').getByRole('button', { name: 'Skip Spatial' })).toBeVisible()
     },
@@ -594,8 +666,11 @@ export const ROUTES: readonly Route[] = [
     group: 'session',
     state: 'a quantitative item (typed entry)',
     covers: ['render/quant/QuantRenderer.svelte', 'render/common/NumericEntry.svelte'],
+    prepare: pinSession,
     open: async (page) => {
       await intoSegment(page, 4)
+      // The part draws from quant and qdata (M3.13): on to the pinned session's first quant question.
+      await toFamily(page, 'QR', 'quant')
       await expect(page.locator('form.entry')).toBeVisible()
     },
   },

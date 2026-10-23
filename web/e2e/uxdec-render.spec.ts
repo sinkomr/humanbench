@@ -23,7 +23,7 @@ import { expectNoSeriousAxe } from './axe'
 import { REVIEW_URL, devServerAbsent } from './dev-server'
 import { button } from './flow'
 import { useTextZoom } from './layout'
-import { intoSegment } from './routes'
+import { intoSegment, pinSession, toFamily } from './routes'
 
 interface Box {
   readonly top: number
@@ -282,9 +282,11 @@ test.describe('the reaction-time fixation cross is drawn in the pad (D12, UX-084
 test.describe('the Spatial stem (D28, UX-085)', () => {
   test('the item says "A mirror image does not count." in a sentence of its own', async ({ page }) => {
     expect(ROTATION_STEM).toBe('Which option shows the same object as the target, rotated? A mirror image does not count.')
+    await pinSession(page)
     await intoSegment(page, 2)
     const stem = page.locator('div.rotation .stem')
     const note = page.locator('.unavailable')
+    await toFamily(page, 'SPA', 'rotation', stem.or(note))
     await expect(stem.or(note).first()).toBeVisible({ timeout: 30_000 })
     test.skip(await note.isVisible(), 'this browser cannot draw the 3D figures, so the stem is not on screen')
     await expect(stem).toHaveText(ROTATION_STEM)

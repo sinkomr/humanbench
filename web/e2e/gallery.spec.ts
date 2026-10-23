@@ -9,9 +9,20 @@
  * legend) render the same pixels on every load (and, on macOS Chromium, match a stored baseline).
  */
 
+import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { expectNoSeriousAxe } from './axe'
 import { REVIEW_URL } from './dev-server'
+
+/**
+ * The registered families: the `FAMILY_NAMES` literal of src/tasks/registry.ts, read as text (as the bank's registry test
+ * reads it, A17), since importing the registry here would load modules Playwright's loader cannot (a JSON import).
+ */
+const FAMILY_NAMES: readonly string[] = (() => {
+  const m = /export const FAMILY_NAMES = \[([^\]]*)\] as const/.exec(readFileSync(new URL('../src/tasks/registry.ts', import.meta.url), 'utf8'))
+  if (m === null) throw new Error('FAMILY_NAMES not found in src/tasks/registry.ts')
+  return [...m[1]!.matchAll(/'([a-z0-9_]+)'/g)].map((x) => x[1]!)
+})()
 
 /** Families with an entry/block renderer, and how to drive each into its main phase. */
 const DRIVERS: Readonly<Record<string, (page: Page) => Promise<void>>> = {
@@ -65,7 +76,7 @@ test.describe('renderer gallery (dev server)', () => {
   test('lists every registered family, 30 instances each, with key, checks and difficulty', async ({ page }) => {
     await openFamily(page, 'series', 5)
     const families = page.getByRole('navigation', { name: 'Families' }).getByRole('link')
-    await expect(families).toHaveCount(11)
+    await expect(families).toHaveCount(FAMILY_NAMES.length)
     await expect(page.getByRole('navigation', { name: 'Instances of series' }).getByRole('link')).toHaveCount(30)
     await expect(page.locator('article')).toHaveCount(5)
     const first = page.locator('article').first()
