@@ -12,7 +12,10 @@
  * boundary (fits within ε + 2 bits of the least DL that predict different next terms). Generator
  * 1.4.0 (M3.12): every case records its fit set (`fit_set`); the cases above use the current one
  * (the hard families included, with hand-picked cases of each), and a last block repeats the
- * hand-picked cases and adds mix cases under the 1.3.0 fit set of the kept 1.3.0 generator. The
+ * hand-picked cases and adds mix cases under the 1.3.0 fit set of the kept 1.3.0 generator.
+ * Generator 1.5.0 (letter series of any family): the fit set of 1.4.0 under the name 1.5.0, and a
+ * final block of hand-picked letter series and drafts of every letter template (`gen.ts`
+ * LETTER_TEMPLATES), with near misses, analysed as letters. The
  * bank test `tests/gen/test_series.py` requires `hb.gen.series.rules.analyse` to agree on every
  * case: the fits (rule, coefficients, DL, prediction, minimum-DL set membership), the least DL,
  * the predictions and the interpolant's DL.
@@ -27,7 +30,7 @@
 
 import { createRng, type Rng } from '../../engine'
 import { canonicalJson } from '../ids'
-import { sampleDraft } from './gen'
+import { LETTER_TEMPLATES, sampleDraft, sampleTemplate } from './gen'
 import {
   ALPHABET,
   CURRENT_FIT_SET,
@@ -51,8 +54,23 @@ export const ANALYSIS_FIXTURE_SEED = 'series-analysis-fixture-v2'
 export const ANALYSIS_FIXTURE_N = 1_500
 /** Seeded cases near the decision boundary, after the mix. */
 export const ANALYSIS_FIXTURE_BOUNDARY_N = 700
-/** Seeded mix cases analysed with the 1.3.0 fit set, last (after the hand-picked ones again). */
+/** Seeded mix cases analysed with the 1.3.0 fit set (after the hand-picked ones again). */
 export const ANALYSIS_FIXTURE_LEGACY_N = 300
+/** Seeded letter-template cases (1.5.0), last (after the hand-picked letter ones). */
+export const ANALYSIS_FIXTURE_LETTER_N = 300
+
+/** Hand-picked letter series of integer families (generator 1.5.0), as positions. */
+const LETTER_EDGE_CASES: readonly (readonly number[])[] = [
+  [1, 2, 4, 7, 11, 16], // A B D G K P → V (growing skips)
+  [1, 26, 2, 25, 3, 24], // A Z B Y C X → D (two strands)
+  [2, 4, 5, 7, 8, 10], // B D E G H J → K (+2, +1 in turn)
+  [1, 3, 2, 4, 3, 5], // A C B D C E → D (+2, −1 in turn)
+  [1, 2, 3, 5, 8, 13], // A B C E H M → U (Fibonacci-type)
+  [25, 2, 5, 8, 11], // Y B E H K: the rule letter wraps (+3)
+  [1, 5, 2, 8, 4, 11], // ×2 strand and +3 strand
+  [1, 3, 6, 2, 4, 8, 4], // +2, ×2, −4 in turn
+  [20, 22, 25, 23, 26, 24], // a strand that would run past Z
+]
 
 /** An exact DL on the wire: `prod` as a decimal string (it can exceed 2^53). */
 export interface WireDl {
@@ -195,9 +213,16 @@ export function analysisCase(terms: readonly number[], letter: boolean, fitSet: 
 /**
  * The hand-picked cases, then {@link ANALYSIS_FIXTURE_N} mix and {@link ANALYSIS_FIXTURE_BOUNDARY_N}
  * boundary ones, all under the current fit set; then the hand-picked cases and
- * {@link ANALYSIS_FIXTURE_LEGACY_N} mix ones under the 1.3.0 fit set (the kept 1.3.0 generator).
+ * {@link ANALYSIS_FIXTURE_LEGACY_N} mix ones under the 1.3.0 fit set (the kept 1.3.0 generator);
+ * then hand-picked letter series and {@link ANALYSIS_FIXTURE_LETTER_N} letter-template drafts (some
+ * with one letter moved) under the current fit set.
  */
-export function analysisFixture(n = ANALYSIS_FIXTURE_N, boundaryN = ANALYSIS_FIXTURE_BOUNDARY_N, legacyN = ANALYSIS_FIXTURE_LEGACY_N): AnalysisFixture {
+export function analysisFixture(
+  n = ANALYSIS_FIXTURE_N,
+  boundaryN = ANALYSIS_FIXTURE_BOUNDARY_N,
+  legacyN = ANALYSIS_FIXTURE_LEGACY_N,
+  letterN = ANALYSIS_FIXTURE_LETTER_N,
+): AnalysisFixture {
   const rng = createRng(ANALYSIS_FIXTURE_SEED)
   const cases = EDGE_CASES.map(([t, letter]) => analysisCase(t, letter))
   for (let i = 0; i < n; i++) {
@@ -212,6 +237,16 @@ export function analysisFixture(n = ANALYSIS_FIXTURE_N, boundaryN = ANALYSIS_FIX
   for (let i = 0; i < legacyN; i++) {
     const [terms, letter] = seededTerms(rng)
     cases.push(analysisCase(terms, letter, '1.3.0'))
+  }
+  for (const t of LETTER_EDGE_CASES) cases.push(analysisCase(t, true))
+  for (let i = 0; i < letterN; i++) {
+    const draft = sampleTemplate(rng, rng.pick(LETTER_TEMPLATES))
+    const terms = draft.values.slice(0, -1).map((p) => toPosition(p))
+    if (rng.next() < 0.3) {
+      const j = rng.int(0, terms.length - 1)
+      terms[j] = toPosition((terms[j] as number) + rng.pick([-2, -1, 1, 2]))
+    }
+    cases.push(analysisCase(terms, true))
   }
   return { fixture: 'series.analysis', seed: ANALYSIS_FIXTURE_SEED, count: cases.length, cases }
 }

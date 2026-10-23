@@ -47,7 +47,7 @@ import { parseIntegerResponse, parseLetterResponse, stripSpace } from './score'
  * bank's `golden/ts_dumps/series.analysis.json`. When `analyse()` or the fixture changes, refresh
  * the bank file with the command in `analysis-fixture.ts` and update this digest.
  */
-const ANALYSIS_FIXTURE_DIGEST = '8ed03013d811'
+const ANALYSIS_FIXTURE_DIGEST = '7d9b9dba0a72'
 
 /** A11 isomorph classes: family_id = rule + non-start coefficients, so ~1,700 families per 10k items. */
 const FAMILY_ID_RATIO = {
@@ -132,14 +132,16 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
   }, 180_000)
 
   it('passes runFamilyProperties at n = 10,000 over the hard strata 5 and 6 (M3.12)', () => {
-    const r = runFamilyProperties(series, { ...OPTS, strata: [5, 6], seedPrefix: 'hard-' })
+    // 1.5.0: a quarter of these are letter templates (cycles of three ops on 26 positions),
+    // whose content spaces are a few hundred to ~1,000 each: ~88% distinct contents
+    const r = runFamilyProperties(series, { ...OPTS, contentRatio: { min: 0.85, reason: 'letter templates on positions 1–26 have small content spaces' }, strata: [5, 6], seedPrefix: 'hard-' })
     expect(r.n).toBe(10_000)
     expect(r.strataCounts).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 5_000, 6: 5_000 })
     expect(r.bPrior.min).toBeGreaterThanOrEqual(1.5)
   }, 180_000)
 
   it('the kept 1.3.0 generator passes runFamilyProperties over its strata 1–5', () => {
-    const legacy = SERIES_LEGACY_FAMILIES.series
+    const legacy = SERIES_LEGACY_FAMILIES['1.3.0']
     const r = runFamilyProperties(legacy, { ...OPTS, n: 2_000, strata: legacy.strata, seedPrefix: 'legacy-' })
     expect(r.strataCounts).toEqual({ 1: 400, 2: 400, 3: 400, 4: 400, 5: 400, 6: 0 })
   }, 120_000)
@@ -185,7 +187,8 @@ describe('series family: property suite (DESIGN §14.3 M1 acceptance 1)', () => 
         rules[s]!.add(rule)
         families[s]!.add(item.family_id)
         expect(item.spec.terms.length).toBeGreaterThanOrEqual(minVisibleFor(rule))
-        expect(item.spec.input_format).toBe('integer')
+        // 1.5.0: a quarter of them are letter templates (cycles of three ops)
+        expect(item.spec.input_format === 'letter').toBe((item.structural_params as { letters?: true }).letters === true)
         expect(item.expected_time_s).toBeLessThanOrEqual(72)
         expect(item.time_limit_s).toBe(180)
       }
@@ -209,8 +212,8 @@ describe('series family: identity, strata and params', () => {
     expect(series.itemType).toBe('numeric')
     expect(series.itemType).toBe(NUMERIC_ITEM_TYPE)
     expect(series.strata).toEqual([1, 2, 3, 4, 5, 6])
-    expect(series.generatorVersion).toBe('1.4.0')
-    expect(SERIES_GENERATOR_VERSION).toBe('1.4.0')
+    expect(series.generatorVersion).toBe('1.5.0')
+    expect(SERIES_GENERATOR_VERSION).toBe('1.5.0')
   })
 
   it('targets strata through the seed, stratum 6 included; the kept 1.3.0 generator refuses stratum 6', () => {
@@ -219,7 +222,7 @@ describe('series family: identity, strata and params', () => {
     expect(item.stratum).toBe(3)
     expect(series.generate('demo@s3')).toEqual(item)
     expect(series.generate('demo', { stratum: 6 }).stratum).toBe(6)
-    expect(() => SERIES_LEGACY_FAMILIES.series.generate('demo', { stratum: 6 })).toThrow(RangeError)
+    expect(() => SERIES_LEGACY_FAMILIES['1.3.0'].generate('demo', { stratum: 6 })).toThrow(RangeError)
   })
 
   it('uses 2PL with b = b_prior and no options (A9: entry items)', () => {
@@ -490,13 +493,14 @@ describe('series hard rule families (generator 1.4.0, M3.12)', () => {
 })
 
 describe('series: the kept 1.3.0 generator (A11, R-8.1)', () => {
-  const legacy = SERIES_LEGACY_FAMILIES.series
+  const legacy = SERIES_LEGACY_FAMILIES['1.3.0']
 
   it('is the 1.3.0 version with strata 1–5 and the eight 1.3.0 rule families, reached through generatorOf', () => {
     expect(legacy.generatorVersion).toBe('1.3.0')
     expect(legacy.strata).toEqual(LEGACY_SERIES_STRATA)
     expect(generatorOf('series', '1.3.0')).toBe(legacy)
-    expect(generatorOf('series', '1.4.0')).toBe(series)
+    expect(generatorOf('series', '1.4.0')).toBe(SERIES_LEGACY_FAMILIES['1.4.0'])
+    expect(generatorOf('series', '1.5.0')).toBe(series)
   })
 
   it('rebuilds the 1,000 items of the 1.3.0 dump byte for byte through resolveItem', () => {
@@ -524,7 +528,7 @@ describe('series: the kept 1.3.0 generator (A11, R-8.1)', () => {
     let differ = 0
     for (let i = 0; i < 2_000; i++) {
       for (const suffix of ['', '@s1', '@s2', '@s3', '@s4']) {
-        const a = series.generate(`same-${i}${suffix}`)
+        const a = SERIES_LEGACY_FAMILIES['1.4.0'].generate(`same-${i}${suffix}`)
         const b = legacy.generate(`same-${i}${suffix}`)
         const strip = (x: SeriesItem): string => canonicalJson({ ...x, item_id: '', generator_version: '' })
         if (strip(a) !== strip(b)) differ++
@@ -690,8 +694,8 @@ describe('series verify: hand-built items', () => {
     expect(hard.stratum).toBe(6)
     expect(series.verify(hard)).toMatchObject({ ok: true })
     const old = { ...hard, generator_version: '1.3.0' }
-    expect(SERIES_LEGACY_FAMILIES.series.verify(old).ok).toBe(false)
-    expect(SERIES_LEGACY_FAMILIES.series.verify(old).checks.structure_well_formed).toBe(false)
+    expect(SERIES_LEGACY_FAMILIES['1.3.0'].verify(old).ok).toBe(false)
+    expect(SERIES_LEGACY_FAMILIES['1.3.0'].verify(old).checks.structure_well_formed).toBe(false)
   })
 })
 

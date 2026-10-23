@@ -9,6 +9,7 @@
 import '../tasks/verifiers'
 import type { Component } from 'svelte'
 import { ENTRY_RENDERERS } from '../render/entry'
+import { VARIETY_RENDERERS } from '../render/variety'
 import { VISUAL_RENDERERS } from '../render/visual'
 import type { AnyFamily, ItemInstance, VerifyResult } from '../tasks/family'
 import { FAMILY_NAMES, getFamily } from '../tasks/registry'
@@ -79,7 +80,7 @@ export function rendererMapsOf(modules: readonly RendererModule[]): Record<strin
 }
 
 /** The visual renderers (rotation, matrices), by family name. Three.js stays lazy (`render/visual.ts`). */
-export const VISUAL_MAP: Readonly<Record<string, AnyRenderer>> = Object.freeze(rendererMapsOf([{ VISUAL_RENDERERS }]))
+export const VISUAL_MAP: Readonly<Record<string, AnyRenderer>> = Object.freeze(rendererMapsOf([{ VISUAL_RENDERERS }, { VISUAL_RENDERERS: VARIETY_RENDERERS }]))
 
 /** The renderer of a family and where it comes from, or null (the page shows a JSON view). */
 export function rendererFor(family: string): { readonly component: AnyRenderer; readonly source: 'entry' | 'visual' } | null {

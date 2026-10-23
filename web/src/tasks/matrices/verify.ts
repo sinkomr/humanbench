@@ -27,6 +27,21 @@
  * - `hub_heuristic_not_unique`: the option-only hub picker (`heuristic.ts`) does not single out
  *   the key. Informational: `hub_argmax`.
  *
+ * Generator 1.4.0 (directions and diagonals). Every 1.4.0 item is solved with the diagonal rule
+ * too (`solve(visible, true)`); 1.2.0/1.3.0 items without it (the version comes from the item,
+ * or the family passes its own). Template items (`isTemplateRuleSet`: `directions` or a
+ * diagonal rule) also need:
+ * - `structure_matches` with a template shape (`prior.ts` `isTemplateShape`), stratum 2–6, every
+ *   declared rule holding in its declared direction (or on the diagonals) on the keyed grid; a
+ *   template set on a 1.2.0/1.3.0 item fails it;
+ * - `directions_needed`: the declared direction is needed (`gen.ts` `directionsNeeded`);
+ * - `no_second_reading`: no simple line rule (or copy) holds on two complete lines of a ruled
+ *   attribute, either way, and is broken or completed otherwise by the third (`gen.ts` `noSecondReading`);
+ * - `distractors_are_lures` and `hub_heuristic_not_unique` when the set takes lures (hard-sized or
+ *   diagonal, `takesLures`).
+ * Informational: `declared_directions` (each group's `row` / `col`, a diagonal attribute's
+ * `diagonal`) and `analysis` (`rows_columns`, or `rows_columns_diagonals` for 1.4.0).
+ *
  * Informational: `predicted_cells` (distinct 9th cells the consistent rule assignments predict;
  * 1 for a unique item, the §14.6 `consistent_rule_sets: 1`), `consistent_rule_fits` (all
  * consistent (rule, direction) assignments, row and column fits counted separately),
@@ -38,7 +53,7 @@ import type { JsonValue } from '../../engine'
 import { verdict, type ItemInstance, type VerifyResult } from '../family'
 import { canonicalJson } from '../ids'
 import { powerTimeLimit, stratumOfB } from '../priors'
-import { MAX_LURE_CHANGES, lureValues, ruledComponents } from './gen'
+import { MAX_LURE_CHANGES, directionsNeeded, lureValues, noSecondReading, ruledComponents, takesLures, usesDiagonalAnalysis } from './gen'
 import {
   MAX_RULES,
   MIN_RULES,
@@ -50,6 +65,10 @@ import {
   hasFrame,
   isFramed,
   isHardRuleSet,
+  isTemplateRuleSet,
+  diagonalAttrs,
+  directionOf,
+  groupsOf,
   nonConstantRules,
   parseCell,
   parseRuleSet,
@@ -59,7 +78,16 @@ import {
   type RuleSet,
 } from './grammar'
 import { MODAL_TIE_READING, hubArgmax, hubPicksKeyUniquely, modalArgmax, modalPicksKeyUniquely } from './heuristic'
-import { HARD_MIN_STRATUM, SIGMA_B_DEFAULT, bPriorOf, expectedTimeOfFeatures, featuresOf, provenanceOf } from './prior'
+import {
+  HARD_MIN_STRATUM,
+  SIGMA_B_DEFAULT,
+  TEMPLATE_STRATA,
+  bPriorOf,
+  expectedTimeOfFeatures,
+  featuresOf,
+  isTemplateShape,
+  provenanceOf,
+} from './prior'
 import { solve, violatedRules } from './solver'
 
 export type MatrixItem = ItemInstance<MatrixSpec, MatrixKey>
@@ -124,21 +152,36 @@ export function distractorsAreLures(options: readonly Cell[], index: number, key
   })
 }
 
-/** The rule count bounds of a rule set: 1.2.0 sets 1–4 rules; hard sets as `isHardRuleSet` says. */
-function structureOk(rules: RuleSet, nRules: number): boolean {
-  if (isHardRuleSet(rules)) return true
+/**
+ * The rule set's shape and stratum: 1.2.0 sets 1–4 rules; hard sets as `isHardRuleSet` says, in
+ * stratum 5–6; 1.4.0 templates (`diagonal` analysis only) as `isTemplateShape` says, in 2–6.
+ */
+function structureOk(rules: RuleSet, nRules: number, stratum: number, diagonal: boolean): boolean {
+  if (isTemplateRuleSet(rules)) return diagonal && isTemplateShape(rules) && (TEMPLATE_STRATA as readonly number[]).includes(stratum)
+  if (isHardRuleSet(rules)) return stratum >= HARD_MIN_STRATUM
   return !isFramed(rules) && nRules >= MIN_RULES && nRules <= MAX_RULES
 }
 
-export function verifyMatrix(item: MatrixItem): VerifyResult {
+/** Each group's declared direction, and `diagonal` for a diagonal attribute (informational). */
+function declaredDirections(rules: RuleSet): Record<string, JsonValue> {
+  const diag = diagonalAttrs(rules) as string[]
+  return Object.fromEntries(groupsOf(rules).map((g) => [g, diag.includes(g) ? 'diagonal' : directionOf(rules, g)]))
+}
+
+/**
+ * Verify a matrices item. `version`: the generator version whose analysis applies (the item's own
+ * by default): 1.4.0 and later solve with the diagonal rule too, 1.2.0/1.3.0 without it.
+ */
+export function verifyMatrix(item: MatrixItem, version: string = item.generator_version): VerifyResult {
   try {
+    const diagonal = usesDiagonalAnalysis(version)
     const parsed = parseSpec(item.spec)
     if (typeof parsed === 'string') return verdict({ spec_well_formed: false, problem: parsed })
     const { visible, options } = parsed
     const index = item.key.index
     const keyInRange = Number.isInteger(index) && index >= 0 && index < options.length
     const keyed = keyInRange ? (options[index] as Cell) : null
-    const sol = solve(visible)
+    const sol = solve(visible, diagonal)
     const predicted = sol.cell
     const correct = predicted ? options.filter((o) => cellEquals(o, predicted)).length : 0
     const distinct = options.every((o, i) => options.every((p, j) => j <= i || !cellEquals(o, p)))
@@ -158,12 +201,16 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
     const cells = [...visible, ...options]
     const framedCells = cells.filter(hasFrame).length
     const framesConsistent = (framedCells === 0 || framedCells === cells.length) && rules !== null && isFramed(rules) === framedCells > 0
-    const hard = rules !== null && isHardRuleSet(rules)
+    const template = rules !== null && isTemplateRuleSet(rules)
+    const hard = rules !== null && (template ? takesLures(rules) : isHardRuleSet(rules))
     const hardChecks: Record<string, JsonValue> = hard
       ? {
           distractors_are_lures: keyed !== null && predicted !== null && distractorsAreLures(options, index, keyed, visible, rules),
           hub_heuristic_not_unique: keyInRange && !hubPicksKeyUniquely(options, index),
         }
+      : {}
+    const templateChecks: Record<string, JsonValue> = template
+      ? { directions_needed: directionsNeeded(sol, rules), no_second_reading: keyed !== null && noSecondReading(visible, keyed, rules) }
       : {}
     const inferred: Record<string, JsonValue> = Object.fromEntries(
       (['shape', 'size', 'color', 'orientation', 'count', 'positions', 'frameShade', 'framePattern'] as const).flatMap((a) => {
@@ -186,18 +233,21 @@ export function verifyMatrix(item: MatrixItem): VerifyResult {
       modal_heuristic_not_unique: keyInRange && !modalPicksKeyUniquely(options, index),
       structure_matches:
         rules !== null &&
-        structureOk(rules, nRules) &&
-        (!hard || stratumOfB(bPrior) >= HARD_MIN_STRATUM) &&
+        features !== null &&
+        structureOk(rules, nRules, stratumOfB(bPrior), diagonal) &&
         keyed !== null &&
         violatedRules([...visible, keyed], rules).length === 0,
       frames_consistent: framesConsistent,
       ...hardChecks,
+      ...templateChecks,
       features_match: features !== null && sameJson(d.features, features),
       prior_matches: features !== null && d.b_prior === bPrior && d.sd_prior === SIGMA_B_DEFAULT && d.provenance === provenanceOf(features),
       stratum_matches: features !== null && item.stratum === stratumOfB(bPrior),
       time_matches:
         features !== null && item.expected_time_s === expectedTimeOfFeatures(features) && item.time_limit_s === powerTimeLimit(item.expected_time_s),
       method: 'rule_enumeration',
+      analysis: diagonal ? 'rows_columns_diagonals' : 'rows_columns',
+      ...(rules !== null ? { declared_directions: declaredDirections(rules) } : {}),
       predicted_cells: sol.predictedCells,
       consistent_rule_fits: sol.consistentRuleFits,
       inferred_rules: inferred,

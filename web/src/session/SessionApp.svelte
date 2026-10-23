@@ -86,7 +86,7 @@
   } from './results-loader'
   import type { ChangeKind, RunResult, SessionRun } from './run'
   import { RUNTIME_FAILED, RUNTIME_PENDING_HEADING, RUNTIME_PREPARING, RUNTIME_RETRY, runtimeLoader, whenIdle, type RuntimeLoader, type SessionRuntime } from './runtime-loader'
-  import { preloadServedRenderers } from './served-renderers'
+  import { preloadServedRenderers, preloadVarietyRenderers } from './served-renderers'
 
   interface Props {
     /** The browser services; tests inject fakes. Default: the real browser (with the dev fast flag). */
@@ -479,7 +479,9 @@
       onChange: (kind: ChangeKind) => onChange(kind),
     })
     // the renderers of the remaining families are not in the entry chunk: fetched now, long before their first question
-    if (s !== null && textAxes.some((k) => k === 'FER' || k === 'CRE' || k === 'EMO')) preloadServedRenderers()
+    if (s !== null && textAxes.some((k) => k === 'FER' || k === 'CRE' || k === 'EMO' || k === 'LR')) preloadServedRenderers()
+    // the scope-variety renderers (paper folding, 2D figures, cube nets, tables and charts): questions of every session's parts
+    preloadVarietyRenderers()
     run = r
     result = null
     viewing = false

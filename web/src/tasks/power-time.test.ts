@@ -42,7 +42,7 @@ describe('power-item time caps (§13, M1.F2)', () => {
   })
 
   it('finds the item families among the registered ones', () => {
-    expect(ITEMS.map(([name]) => name)).toEqual(['rotation', 'matrices', 'series', 'quant'])
+    expect(ITEMS.map(([name]) => name)).toEqual(['rotation', 'matrices', 'series', 'quant', 'qdata', 'figure2d', 'cubenet', 'folding', 'syllogism'])
   })
 
   it.each(ITEMS)('%s: every item is capped by the one shared rule', (_, family) => {

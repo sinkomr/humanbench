@@ -4,7 +4,9 @@
  * `structural_params` is in its domain and fits, the uniqueness analysis of `rules.ts` holds
  * (one next term across the minimum-DL set, key rule of minimal DL and confirmed by the terms,
  * strictly simpler than the interpolating polynomial), and the features, b prior, provenance,
- * stratum and expected time match the v0 prior. The bank's `hb.gen.series.verify_series`
+ * stratum and expected time match the v0 prior. Generator 1.5.0: a letter series of an integer
+ * family carries `letters: true` in its structure, and its key rule must reach the key without
+ * wrapping (every position in 1–26, `key_unwrapped`). The bank's `hb.gen.series.verify_series`
  * implements the same checks independently.
  */
 
@@ -17,11 +19,13 @@ import {
   MAX_VISIBLE,
   MIN_VISIBLE,
   TERM_BOUND,
+  allowsLetterRules,
   analyse,
   inRuleDomain,
   isRuleName,
   letterPosition,
   uniquenessChecks,
+  unwrappedKeyFit,
   type FitSet,
 } from './rules'
 import type { SeriesItem } from './types'
@@ -81,13 +85,16 @@ export function verifySeries(item: SeriesItem, fitSet: FitSet = CURRENT_FIT_SET)
     }
     const rule = structure.rule
     const coefficients = structure.coefficients
+    const structureKeys = canonicalJson(Object.keys(structure).sort())
+    // 1.5.0: `letters: true` marks a letter series of an integer family (never of the rule `letter`).
+    const lettersFlag = structureKeys === '["coefficients","letters","rule"]'
     const structureOk =
-      canonicalJson(Object.keys(structure).sort()) === '["coefficients","rule"]' &&
+      (structureKeys === '["coefficients","rule"]' || (lettersFlag && structure.letters === true && allowsLetterRules(fitSet) && rule !== 'letter')) &&
       isRuleName(rule, fitSet) &&
       isPlainObject(coefficients) &&
       Object.values(coefficients).every((c) => typeof c === 'number' || typeof c === 'string')
     const domainOk = structureOk && inRuleDomain(rule, coefficients as Record<string, number | string>)
-    const formatMatchesRule = structureOk && (rule === 'letter') === letter
+    const formatMatchesRule = structureOk && (rule === 'letter' || lettersFlag) === letter
     const base = {
       spec_well_formed: specFieldsOk && formatOk && countOk && termsOk,
       key_well_formed: keyOk,
@@ -99,13 +106,16 @@ export function verifySeries(item: SeriesItem, fitSet: FitSet = CURRENT_FIT_SET)
 
     const keyRule = { rule, coefficients: coefficients as Record<string, number | string> }
     const uniqueness = uniquenessChecks(analyse(visible, letter, fitSet), keyRule, next)
+    // A letter series of an integer family: the key rule itself predicts the key's position, unwrapped.
+    const keyUnwrapped = !lettersFlag || unwrappedKeyFit(visible, keyRule, fitSet)?.next === next
 
     const values = [...visible, next]
-    const features = seriesFeatures(rule, keyRule.coefficients, values)
+    const features = seriesFeatures(rule, keyRule.coefficients, values, letter)
     const b = item.difficulty.b_prior
     return verdict({
       ...base,
       ...uniqueness,
+      key_unwrapped: keyUnwrapped,
       features_match: canonicalJson(item.difficulty.features) === canonicalJson(features),
       prior_matches: typeof b === 'number' && Math.abs(b - seriesB(features)) <= PRIOR_TOLERANCE,
       prior_sd_matches: item.difficulty.sd_prior === SIGMA_B_DEFAULT,

@@ -48,7 +48,7 @@ function sd(xs: readonly number[]): number {
 
 describe('keyed items (A9)', () => {
   it('covers every registered item family and every block family by response format', () => {
-    expect(ITEM_FAMILIES.map((f) => f.name).sort()).toEqual(['matrices', 'quant', 'rotation', 'series'])
+    expect(ITEM_FAMILIES.map((f) => f.name).sort()).toEqual(['cubenet', 'figure2d', 'folding', 'matrices', 'qdata', 'quant', 'rotation', 'series', 'syllogism'])
     for (const f of BLOCK_FAMILIES) expect(SPAN_FAMILIES.has(f.name) || RT_FAMILIES.has(f.name) || f.name === 'coding' || f.name === 'reading', f.name).toBe(true)
   })
 

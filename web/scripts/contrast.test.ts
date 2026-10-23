@@ -230,6 +230,8 @@ describe('colours written straight into declarations are reviewed', () => {
   /** `prop value` of each literal, per file; the pairs they take part in are in `LITERAL_PAIRS`. */
   const LITERALS: Readonly<Record<string, readonly string[]>> = {
     'src/render/rotation/RotationRenderer.svelte': ['background #ffffff', 'border #767676'],
+    // the cube-net pattern sits on white paper in both themes, like the rotation canvas; its marks are black (21:1)
+    'src/render/cubenet/CubenetRenderer.svelte': ['background #ffffff'],
     'src/review/InstanceCard.svelte': ['border-color #b42318', 'border-color #ff9b91', 'color #0a6b2f', 'color #b42318', 'color #8a4b00', 'color #6ee7a0', 'color #ff9b91', 'color #fbbf24', 'color #b42318', 'color #ff9b91'],
     'src/review/Review.svelte': [
       'outline #b45309',

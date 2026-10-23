@@ -585,7 +585,7 @@ describe('the share card in the reveal (M1.18)', () => {
   it('is the card of the person\'s own results: their measured skills, their credible peaks, the sessions that counted', () => {
     const high = new Set<AxisCode>(['MAT', 'QR', 'VOC'])
     const level = Object.fromEntries(AXIS_CODES.map((k) => [k, high.has(k) ? 2 : -1])) as Record<AxisCode, number>
-    const b = botSave('s_REVEALDOM0000101', { level })
+    const b = botSave('s_REVEALDOM0000100', { level })
     const m = mountFinished(b, { card: cardProps })
     click(buttonByText(m.c, 'Download save file'))
     const { measured } = peaksOf(b)

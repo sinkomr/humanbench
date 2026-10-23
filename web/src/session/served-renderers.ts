@@ -33,6 +33,27 @@ const LOADERS: Readonly<Record<string, Loader>> = Object.freeze({
     const [c, spec] = await Promise.all([import('../render/emotion/EmotionRenderer.svelte'), import('../tasks/emotion/spec')])
     return { component: c.default, fits: (s: object) => spec.specProblems(s as never).length === 0 }
   },
+  // The scope-variety families (M3.13): device-made and served alike, drawn by renderers of their own chunks.
+  cubenet: async () => {
+    const [c, spec] = await Promise.all([import('../render/cubenet/CubenetRenderer.svelte'), import('../tasks/cubenet/spec')])
+    return { component: c.default, fits: (s: object) => spec.specProblems(s).length === 0 }
+  },
+  figure2d: async () => {
+    const [c, spec] = await Promise.all([import('../render/figure2d/Figure2dRenderer.svelte'), import('../tasks/figure2d/spec')])
+    return { component: c.default, fits: (s: object) => spec.specProblems(s).length === 0 }
+  },
+  folding: async () => {
+    const [c, spec] = await Promise.all([import('../render/folding/FoldingRenderer.svelte'), import('../tasks/folding/spec')])
+    return { component: c.default, fits: (s: object) => spec.specProblems(s).length === 0 }
+  },
+  qdata: async () => {
+    const [c, spec] = await Promise.all([import('../render/qdata/QdataRenderer.svelte'), import('../tasks/qdata/spec')])
+    return { component: c.default, fits: (s: object) => spec.specProblems(s).length === 0 }
+  },
+  syllogism: async () => {
+    const [c, spec] = await Promise.all([import('../render/syllogism/SyllogismRenderer.svelte'), import('../tasks/syllogism/spec')])
+    return { component: c.default, fits: (s: object) => spec.specProblems(s).length === 0 }
+  },
   sjt_rating_v1: async () => {
     const [c, spec] = await Promise.all([import('../render/sjt/SjtRenderer.svelte'), import('../tasks/sjt/spec')])
     return { component: c.default, fits: (s: object) => spec.specProblems(s as never).length === 0 }
@@ -79,4 +100,15 @@ export function loadRenderer(family: string): Promise<LazyRenderer> {
 /** Starts fetching every renderer of this module (a session with one of their parts calls it when it starts). Never rejects. */
 export function preloadServedRenderers(): void {
   for (const family of Object.keys(LOADERS)) void loadRenderer(family).catch(() => undefined)
+}
+
+/**
+ * The families of the scope-variety work (M3.13) whose renderers are lazy: they are questions of the Matrix & Series,
+ * Spatial and Quantitative parts, which every session has, so a session fetches them when it starts.
+ */
+export const VARIETY_FAMILIES: readonly string[] = Object.freeze(['cubenet', 'figure2d', 'folding', 'qdata'])
+
+/** Starts fetching the scope-variety renderers ({@link VARIETY_FAMILIES}). Never rejects. */
+export function preloadVarietyRenderers(): void {
+  for (const family of VARIETY_FAMILIES) void loadRenderer(family).catch(() => undefined)
 }

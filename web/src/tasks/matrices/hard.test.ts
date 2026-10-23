@@ -2,7 +2,9 @@
  * Hard strata 5 and 6 of matrices (generator 1.3.0; ROADMAP M3.12, A11, R-8.1; DESIGN §4.2
  * "Matrices"): the two hard templates (5 rules; an outer frame with its own rules), the frame in
  * the grammar, solver and verifier, the single-rule lure distractors and both option-only
- * pickers, the extended prior, and generator 1.2.0 kept whole.
+ * pickers, the extended prior, and generator 1.2.0 kept whole. Since generator 1.4.0 (which may
+ * draw a direction or diagonal template in strata 2–6, `dir.test.ts`) these tests run on the kept
+ * 1.3.0 family, whose strata 5 and 6 are exactly the hard templates.
  */
 
 import { createHash } from 'node:crypto'
@@ -47,6 +49,8 @@ import { EXAMPLE1_CHAIN, EXAMPLE1_STAR } from './fixtures'
 import { MATRICES_LEGACY_FAMILIES, matrices, matricesSpecLeaksKey, type MatrixItem } from '.'
 
 const HARD: readonly Stratum[] = [5, 6]
+/** Generator 1.3.0, kept whole (A11): its strata 5–6 are the hard templates only. */
+const v130 = MATRICES_LEGACY_FAMILIES['1.3.0']
 const CHANCE = 1 / 6
 
 const OPTS = {
@@ -57,7 +61,7 @@ const OPTS = {
   malformedResponses: () => [-1, 6, 2.5, '1', [1]],
 } as const
 
-const hardItem = (seed: string, stratum: Stratum): MatrixItem => matrices.generate(seed, { stratum }) as MatrixItem
+const hardItem = (seed: string, stratum: Stratum): MatrixItem => v130.generate(seed, { stratum }) as MatrixItem
 
 /** A copy of an item with its spec edited (the spec is plain JSON). */
 function edited(item: MatrixItem, edit: (spec: { grid: MatrixCell[][]; options: MatrixCell[] }) => void): MatrixItem {
@@ -235,7 +239,7 @@ describe('single-rule lure distractors and the option-only pickers', () => {
 
 describe('matrices hard strata as a family (M3.12)', () => {
   it('passes runFamilyProperties on strata 5 and 6', () => {
-    const r = runFamilyProperties(matrices, { ...OPTS, n: 2_000, strata: HARD, seedPrefix: 'hard-' })
+    const r = runFamilyProperties(v130, { ...OPTS, n: 2_000, strata: HARD, seedPrefix: 'hard-' })
     expect(r.strataCounts).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 1_000, 6: 1_000 })
     expect(r.distinctFamilyIds).toBeGreaterThan(1_800)
     expect(r.bPrior.min).toBeGreaterThanOrEqual(1.5)
@@ -329,7 +333,8 @@ describe('generator 1.2.0 kept whole (A11, R-8.1)', () => {
     expect(legacy.strata).toEqual([1, 2, 3, 4])
     expect(() => legacy.generate('x', { stratum: 5 })).toThrow(RangeError)
     expect(generatorOf('matrices', '1.2.0')).toBe(legacy)
-    expect(generatorOf('matrices', '1.3.0')).toBe(matrices)
+    expect(generatorOf('matrices', '1.3.0')).toBe(v130)
+    expect(generatorOf('matrices', '1.4.0')).toBe(matrices)
     expect(resolveItem('i:matrices:1.2.0:x@s5')).toBeNull()
   })
 
@@ -349,7 +354,7 @@ describe('generator 1.2.0 kept whole (A11, R-8.1)', () => {
     }
   })
 
-  it('1.3.0 makes the same content as 1.2.0 for the natural pool and strata 1–4', () => {
+  it('1.3.0 makes the same content as 1.2.0 for the natural pool and strata 1–4 (and 1.4.0 for the natural pool, dir.test.ts)', () => {
     const digest = (fam: typeof matrices): string => {
       const h = createHash('sha256')
       for (let i = 0; i < 400; i++) {
@@ -360,6 +365,6 @@ describe('generator 1.2.0 kept whole (A11, R-8.1)', () => {
     }
     const want = 'fb7e7accfe507f7a5abd9a62fd4ffe2febb12c738c6665149f335e8098b1cbcf' // recorded from the 1.2.0 build
     expect(digest(legacy)).toBe(want)
-    expect(digest(matrices)).toBe(want)
+    expect(digest(v130)).toBe(want)
   })
 })

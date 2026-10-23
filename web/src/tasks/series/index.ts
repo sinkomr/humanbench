@@ -23,6 +23,13 @@
  * The natural pool and strata 1–4 draw as 1.3.0, and the prior is unchanged (the new families
  * enter it through their family cost). The 1.3.0 generator is kept whole as
  * {@link SERIES_LEGACY_FAMILIES} for saved items.
+ * Version 1.5.0 (letter series of any family): letter templates (`gen.ts` LETTER_TEMPLATES) draw
+ * letter series whose key rule is an integer family on positions 1–26 (growing skips, two
+ * strands, alternating steps, Fibonacci-type, a cycle of three ops; structure
+ * `letters: true`) and the rule `letter` with steps of 5–12, only for requested strata 2–6 (a
+ * quarter of those items). The natural pool and stratum 1 draw as 1.4.0 (the fit set is
+ * unchanged), and the prior's letter terms apply to every letter series. 1.4.0 is kept whole in
+ * {@link SERIES_LEGACY_FAMILIES} too.
  *
  * Rules, DL and uniqueness: `rules.ts`; generator: `gen.ts`; verifier: `verify.ts`; scoring:
  * `score.ts`; the TS → bank analysis fixture: `analysis-fixture.ts`. Python twin: the bank's
@@ -38,8 +45,10 @@ import { verifiers } from '../verifier-slot'
 
 export type { SeriesItem, SeriesKey, SeriesResponse, SeriesSpec, SeriesStructure } from './types'
 
-/** Current generator version (M3.12: the hard rule families, strata 5 and 6). */
-export const SERIES_GENERATOR_VERSION = '1.4.0'
+/** Current generator version (letter series of any family in requested strata 2–6). */
+export const SERIES_GENERATOR_VERSION = '1.5.0'
+/** The version of M3.12 (the hard rule families, strata 5 and 6), before the letter templates. */
+export const SERIES_HARD_GENERATOR_VERSION = '1.4.0'
 /** The version before the hard families; saves made before M3.12 hold items of it. */
 export const SERIES_LEGACY_GENERATOR_VERSION = '1.3.0'
 
@@ -62,11 +71,15 @@ function seriesFamily(version: FitSet) {
 export const series = seriesFamily(SERIES_GENERATOR_VERSION)
 
 /**
- * The 1.3.0 generator, by family name: strata 1–5, the eight 1.3.0 rule families and their fit
- * set. Not registered and never served: `registry.ts` `resolveItem` rebuilds a saved 1.3.0 item
- * with it (A11, R-8.1), byte for byte (the live pool of 2026-10-12 is 1.3.0).
+ * The earlier generators, by version: 1.4.0 (strata 1–6, the hard families, no letter templates)
+ * and 1.3.0 (strata 1–5, the eight 1.3.0 rule families and their fit set). Not registered and
+ * never served: `registry.ts` `resolveItem` rebuilds a saved item with its own version (A11,
+ * R-8.1), byte for byte (the live pool of 2026-10-12 is 1.3.0, the hard pool of 2026-10-16 1.4.0).
  */
-export const SERIES_LEGACY_FAMILIES = Object.freeze({ series: seriesFamily(SERIES_LEGACY_GENERATOR_VERSION) })
+export const SERIES_LEGACY_FAMILIES = Object.freeze({
+  [SERIES_HARD_GENERATOR_VERSION]: seriesFamily(SERIES_HARD_GENERATOR_VERSION),
+  [SERIES_LEGACY_GENERATOR_VERSION]: seriesFamily(SERIES_LEGACY_GENERATOR_VERSION),
+})
 
 /**
  * The family's leak check for `runFamilyProperties`: the spec holds only `input_format` and the

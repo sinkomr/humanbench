@@ -1,7 +1,7 @@
 <!--
   Dev-only gallery of the visual renderers (ROADMAP M1.13): shows generated items of one family
   through its renderer, for the e2e suite (axe, keyboard, layout, drawing) and for eyeballing.
-  Query: `family` (rotation | matrices, default rotation), `seed` (default gallery-1), `count`
+  Query: `family` (rotation | matrices | series | a scope-variety family of `../variety.ts`, default rotation), `seed` (default gallery-1), `count`
   (items shown at once, 1–4, default 1). Only each item's `spec` reaches a renderer; the gallery
   shows the emitted response, never the key, and each item's state: Drawing, Shown (`onshown`) or
   Unavailable (`onunavailable`, e.g. no WebGL). The "Remove items" button unmounts the renderers
@@ -10,24 +10,29 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { getFamily } from '../../tasks/registry'
+  import SeriesRenderer from '../series/SeriesRenderer.svelte'
+  import { VARIETY_RENDERERS } from '../variety'
   import { VISUAL_RENDERERS, type FamilyName } from '../visual'
 
   const params = new URLSearchParams(window.location.search)
-  const names = Object.keys(VISUAL_RENDERERS) as FamilyName[]
+  // The visual renderers and the scope-variety ones (M3.13; lazy in the session, static on this dev page).
+  // `series` (typed entry) too, so an e2e spec can open a series item of a requested stratum by seed (`seed=x@s4`).
+  const RENDERERS: Readonly<Record<string, Component<any>>> = { ...VISUAL_RENDERERS, ...VARIETY_RENDERERS, series: SeriesRenderer }
+  const names = Object.keys(RENDERERS) as FamilyName[]
   const requested = params.get('family') ?? 'rotation'
   const family: FamilyName = (names as string[]).includes(requested) ? (requested as FamilyName) : 'rotation'
   const seed = params.get('seed') ?? 'gallery-1'
   const count = Math.min(4, Math.max(1, Number.parseInt(params.get('count') ?? '1', 10) || 1))
 
   // The map holds components of different prop types (see visual.ts); items match by family.
-  const Renderer = VISUAL_RENDERERS[family] as Component<any>
+  const Renderer = RENDERERS[family] as Component<any>
   const items = Array.from({ length: count }, (_, i) => {
     const f = getFamily(family)
     if (!f) throw new Error(`no family ${family}`)
     return f.generate(count === 1 ? seed : `${seed}-${i + 1}`)
   })
 
-  const responses: (number | null)[] = $state(items.map(() => null))
+  const responses: (number | string | null)[] = $state(items.map(() => null))
   const states: ('Drawing' | 'Shown' | 'Unavailable')[] = $state(items.map(() => 'Drawing'))
   let present = $state(true)
 
@@ -52,7 +57,7 @@
         <h2 id="item-{i}">{family}, seed {item.seed}</h2>
         <Renderer
           spec={item.spec}
-          onrespond={(r: number) => (responses[i] = r)}
+          onrespond={(r: number | string) => (responses[i] = r)}
           onshown={() => (states[i] = 'Shown')}
           onunavailable={() => (states[i] = 'Unavailable')}
         />

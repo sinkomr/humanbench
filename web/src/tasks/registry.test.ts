@@ -1,10 +1,14 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { coding, codingSpecLeaksKey } from './coding'
+import { cubenet, cubenetSpecLeaksKey } from './cubenet'
 import { codingInvalidResponse, codingMalformedResponses, codingValidResponse } from './coding/synthetic'
 import { NUMERIC_ITEM_TYPE, kindOfModel, validateItemInstance, type AnyFamily, type ProceduralFamily } from './family'
 import { FAMILY_NAME_RE, GENERATOR_VERSION_RE, STRATA, isPyTwinVersion, parseItemId } from './ids'
+import { figure2d, figure2dSpecLeaksKey } from './figure2d'
+import { folding, foldingSpecLeaksKey } from './folding'
 import { matrices, matricesSpecLeaksKey } from './matrices'
+import { qdata, qdataSpecLeaksKey } from './qdata'
 import { stratumOfB } from './priors'
 import { QUANT_TEMPLATES, quant, quantSpecLeaksKey } from './quant'
 import { reading, type ReadingKey, type ReadingSpec } from './reading'
@@ -16,6 +20,7 @@ import { rotationSpecLeaksKey } from './rotation/verify'
 import { RT_SPEC_FIELDS, rtChoice4, rtSimple, type RtKey, type RtSpec } from './rt'
 import { rtInvalidResponse, rtMalformedResponses, rtValidResponse } from './rt/synthetic'
 import { series, seriesSpecLeaksKey, type SeriesItem } from './series'
+import { syllogism, syllogismSpecLeaksKey } from './syllogism'
 import { SPAN_BWD, SPAN_CORSI, SPAN_FWD, corsi, spanBwd, spanFwd, spanSpecLeaksKey } from './span'
 import { spanInvalidResponse, spanMalformedResponses, spanValidResponse } from './span/synthetic'
 import { onlySpecFields, runFamilyProperties, type FamilyPropertyOptions, type FamilyPropertyReport } from './testing'
@@ -80,6 +85,35 @@ const CHECKS: Readonly<Record<string, Check>> = {
     correctResponse: (item) => item.key.value,
     incorrectResponse: (item) => (Fraction.parseCanonical(item.key.value) as Fraction).add(Fraction.ONE).toString(),
   }),
+  qdata: check(qdata, {
+    specLeaksKey: qdataSpecLeaksKey,
+    familyIdRatio: { min: 0.005, reason: 'family_id = the qdata template variant (A11): 30 variants' },
+    correctResponse: (item) => item.key.value,
+    incorrectResponse: (item) => (Fraction.parseCanonical(item.key.value) as Fraction).add(Fraction.ONE).toString(),
+  }),
+  figure2d: check(figure2d, {
+    specLeaksKey: figure2dSpecLeaksKey,
+    familyIdRatio: { min: 0.3, reason: 'family_id = the figure class, task and design point (A11): few small asymmetric figures qualify' },
+    correctResponse: (item) => item.key.index,
+    incorrectResponse: (item) => (item.key.index + 1) % 4,
+  }),
+  cubenet: check(cubenet, {
+    specLeaksKey: cubenetSpecLeaksKey,
+    familyIdRatio: { min: 0.3, reason: 'family_id = the canonical net with the key and distractor corner sets (A11)' },
+    correctResponse: (item) => item.key.index,
+    incorrectResponse: (item) => (item.key.index + 1) % 4,
+  }),
+  folding: check(folding, {
+    specLeaksKey: foldingSpecLeaksKey,
+    correctResponse: (item) => item.key.index,
+    incorrectResponse: (item) => (item.key.index + 1) % 5,
+  }),
+  syllogism: check(syllogism, {
+    specLeaksKey: syllogismSpecLeaksKey,
+    familyIdRatio: { min: 0.25, reason: 'family_id = the canonical statement structure and question (A11): few two-statement syllogisms' },
+    correctResponse: (item) => item.key.index,
+    incorrectResponse: (item) => (item.key.index + 1) % 5,
+  }),
   span_fwd: check(spanFwd, { allowKeyInSpec: SPAN_KEY_IN_SPEC, specLeaksKey: spanSpecLeaksKey(SPAN_FWD), ...SPAN_RESPONSES }),
   span_bwd: check(spanBwd, { allowKeyInSpec: SPAN_KEY_IN_SPEC, specLeaksKey: spanSpecLeaksKey(SPAN_BWD), ...SPAN_RESPONSES }),
   corsi: check(corsi, { allowKeyInSpec: SPAN_KEY_IN_SPEC, specLeaksKey: spanSpecLeaksKey(SPAN_CORSI), ...SPAN_RESPONSES }),
@@ -117,7 +151,7 @@ describe('family registry (M1.F)', () => {
   })
 
   it('registers every M1 family, each with a registration check here', () => {
-    expect(Object.keys(FAMILIES).sort()).toEqual(['coding', 'corsi', 'matrices', 'quant', 'reading', 'rotation', 'rt_choice4', 'rt_simple', 'series', 'span_bwd', 'span_fwd'])
+    expect(Object.keys(FAMILIES).sort()).toEqual(['coding', 'corsi', 'cubenet', 'figure2d', 'folding', 'matrices', 'qdata', 'quant', 'reading', 'rotation', 'rt_choice4', 'rt_simple', 'series', 'span_bwd', 'span_fwd', 'syllogism'])
     // FAMILY_NAMES is the literal the bank registry test reads (A17); it must match the registry.
     expect(Object.keys(FAMILIES)).toEqual([...FAMILY_NAMES])
     expect(Object.keys(CHECKS).sort()).toEqual(Object.keys(FAMILIES).sort())
@@ -130,6 +164,11 @@ describe('family registry (M1.F)', () => {
       matrices: 'item',
       series: 'item',
       quant: 'item',
+      qdata: 'item',
+      figure2d: 'item',
+      cubenet: 'item',
+      folding: 'item',
+      syllogism: 'item',
       span_fwd: 'block',
       span_bwd: 'block',
       corsi: 'block',
@@ -181,7 +220,7 @@ describe('family registry (M1.F)', () => {
 
   it('numeric-entry families share one item_type and the NumericKey shape (family.ts)', () => {
     const entry = entries.filter(([, fam]) => fam.itemType === NUMERIC_ITEM_TYPE).map(([name]) => name)
-    expect(entry.sort()).toEqual(['quant', 'series'])
+    expect(entry.sort()).toEqual(['qdata', 'quant', 'series'])
     for (const name of entry) {
       for (let i = 0; i < 100; i++) {
         const key = (getFamily(name) as AnyFamily).generate(`registry-key-${i}`).key as Record<string, unknown>

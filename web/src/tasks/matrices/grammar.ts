@@ -32,6 +32,18 @@
  * inner rules, 4–6 rules in all. Every cell of a framed item (grid and options) has a frame; no
  * cell of any other item has one, so a 1.2.0 spec is a valid 1.3.0 spec unchanged.
  *
+ * Directions and diagonals (generator 1.4.0, scope variety): three more templates, drawn only for
+ * requested strata 2–6 ({@link isTemplateRuleSet}). The rules of a 1.2.0/1.3.0 set act along the
+ * rows; a template set may instead rule an attribute group (shape, size, color, orientation, the
+ * layout, the frame) **down the columns** ({@link RuleSet.directions}: every group `col` in the
+ * column template; some ruled groups `row` and some `col` in the mixed template), or rule a scalar
+ * attribute by **`diagonal_constant`**: its value is the same along each top-left → bottom-right
+ * diagonal (the five diagonals, not wrapped), so the missing cell repeats cells (0,0) and (1,1)
+ * (the diagonal template, 1–2 such attributes, every other rule along the rows). The direction is
+ * structure, not render data: it lives in `structural_params` (`directions`) and the features,
+ * never in the spec, so a 1.3.0 spec is a valid 1.4.0 spec unchanged; an all-rows set has no
+ * `directions`, so its `structural_params` (and family_id) are those of 1.3.0.
+ *
  * Render contract (M1.13): orientation rotates the whole object, which is drawn with an
  * orientation stripe through its centre, so all four orientations are visible for every shape
  * (a bare circle or square would hide them, and the verifier treats every value as visible).
@@ -288,6 +300,11 @@ export const COUNT_RULES = Object.freeze([
 export const POSITION_RULES = Object.freeze(['canonical', 'xor', 'or', 'distribution'] as const)
 
 export type ScalarRule = (typeof SCALAR_RULES)[number]
+/** The diagonal rule of a scalar attribute (generator 1.4.0, diagonal template; see the module comment). */
+export const DIAGONAL_RULE = 'diagonal_constant'
+export type DiagonalRule = typeof DIAGONAL_RULE
+/** The rule of a scalar attribute in a rule set: a line rule, or (1.4.0 diagonal template) the diagonal rule. */
+export type ScalarAttrRule = ScalarRule | DiagonalRule
 export type CountRule = (typeof COUNT_RULES)[number]
 export type PositionRule = (typeof POSITION_RULES)[number]
 /** Rules of the frame shade (ordinal, like the inner scalars). */
@@ -296,17 +313,68 @@ export const FRAME_SHADE_RULES = SCALAR_RULES
 export const FRAME_PATTERN_RULES = Object.freeze(['constant', 'distribution'] as const)
 export type FramePatternRule = (typeof FRAME_PATTERN_RULES)[number]
 
-/** The rule of every attribute along the rows: the item's structure (A11). */
+/** The direction a line rule acts in: along the rows or down the columns (generator 1.4.0). */
+export type LineDirection = 'row' | 'col'
+export const LINE_DIRECTIONS: readonly LineDirection[] = Object.freeze(['row', 'col'] as const)
+/** The attribute groups that take one direction each: the four scalars, the layout (count and positions), the frame. */
+export const DIRECTION_GROUPS = Object.freeze(['shape', 'size', 'color', 'orientation', 'layout', 'frame'] as const)
+export type DirectionGroup = (typeof DIRECTION_GROUPS)[number]
+export type Directions = Readonly<Partial<Record<DirectionGroup, LineDirection>>>
+
+/** The rule of every attribute (along the rows unless `directions` says otherwise): the item's structure (A11). */
 export interface RuleSet {
-  readonly shape: ScalarRule
-  readonly size: ScalarRule
-  readonly color: ScalarRule
-  readonly orientation: ScalarRule
+  readonly shape: ScalarAttrRule
+  readonly size: ScalarAttrRule
+  readonly color: ScalarAttrRule
+  readonly orientation: ScalarAttrRule
   readonly count: CountRule
   readonly position: PositionRule
   /** Frame rules: both present on a framed (hard template b) rule set, both absent otherwise. */
   readonly frame_shade?: ScalarRule
   readonly frame_pattern?: FramePatternRule
+  /**
+   * Generator 1.4.0 column and mixed templates: the direction of every group of the set
+   * ({@link groupsOf}); absent = every rule along the rows (all 1.2.0/1.3.0 sets, and the
+   * diagonal template, whose line rules run along the rows).
+   */
+  readonly directions?: Directions
+}
+
+/** The direction groups of a rule set: the four scalars and the layout, and the frame when framed. */
+export function groupsOf(rules: RuleSet): DirectionGroup[] {
+  return DIRECTION_GROUPS.filter((g) => g !== 'frame' || isFramed(rules))
+}
+
+/** The group whose direction an attribute or component follows. */
+export function groupOf(attr: string): DirectionGroup {
+  if (attr === 'count' || attr === 'position' || attr === 'positions') return 'layout'
+  if (attr === 'frame_shade' || attr === 'frame_pattern' || attr === 'frameShade' || attr === 'framePattern') return 'frame'
+  return attr as DirectionGroup
+}
+
+/** The direction of a group's line rules ('row' without `directions`). */
+export function directionOf(rules: RuleSet, group: DirectionGroup): LineDirection {
+  return rules.directions?.[group] ?? 'row'
+}
+
+/** The scalar attributes ruled by {@link DIAGONAL_RULE}. */
+export function diagonalAttrs(rules: RuleSet): ScalarAttr[] {
+  return SCALAR_ATTRS.filter((a) => rules[a] === DIAGONAL_RULE)
+}
+
+/** True for a generator 1.4.0 template set: it has `directions` (column / mixed) or a diagonal rule. */
+export function isTemplateRuleSet(rules: RuleSet): boolean {
+  return rules.directions !== undefined || diagonalAttrs(rules).length > 0
+}
+
+/** The row-major index of the cell at the mirror position across the main diagonal (the 9th maps to itself). */
+export function transposeIndex(i: number): number {
+  return (i % 3) * 3 + Math.floor(i / 3)
+}
+
+/** The diagonal of a cell, column − row: −2 … 2 (0 is the long diagonal through the missing cell). */
+export function diagonalOf(i: number): number {
+  return (i % 3) - Math.floor(i / 3)
 }
 
 export const RULE_ATTRS = Object.freeze(['shape', 'size', 'color', 'orientation', 'count', 'position'] as const)
@@ -322,7 +390,7 @@ export function isFramed(rules: RuleSet): boolean {
 }
 
 /** Rule types of the v0 difficulty prior (Carpenter, Just & Shell 1990 rule taxonomy). */
-export type RuleType = 'progression' | 'distribution' | 'arithmetic' | 'logic'
+export type RuleType = 'progression' | 'distribution' | 'arithmetic' | 'logic' | 'diagonal'
 
 /** The type of a non-constant rule, or null for constant / canonical / derived. */
 export function ruleType(rule: string): RuleType | null {
@@ -330,6 +398,7 @@ export function ruleType(rule: string): RuleType | null {
   if (rule === 'distribution') return 'distribution'
   if (rule === 'arithmetic+' || rule === 'arithmetic-') return 'arithmetic'
   if (rule === 'xor' || rule === 'or') return 'logic'
+  if (rule === DIAGONAL_RULE) return 'diagonal'
   return null
 }
 
@@ -411,27 +480,43 @@ export function allHardRuleSets(): RuleSet[] {
   return out
 }
 
-/** Parse `structural_params` (`{ rules: RuleSet }`) strictly; null if it is not a valid rule set. */
+/**
+ * Parse `structural_params` (`{ rules }`, or `{ rules, directions }` for a 1.4.0 column / mixed
+ * template) strictly; null if it is not a valid rule set. A scalar attribute may carry
+ * {@link DIAGONAL_RULE}; `directions` must name exactly the set's groups ({@link groupsOf}), each
+ * `row` or `col`. Which shapes a generator version may use is the verifier's check.
+ */
 export function parseRuleSet(sp: JsonValue): RuleSet | null {
   if (typeof sp !== 'object' || sp === null || Array.isArray(sp)) return null
-  if (Object.keys(sp).join(',') !== 'rules') return null
+  const top = Object.keys(sp).sort().join(',')
+  if (top !== 'rules' && top !== 'directions,rules') return null
   const r = sp.rules
   if (typeof r !== 'object' || r === null || Array.isArray(r)) return null
   const keys = Object.keys(r).sort().join(',')
   const framed = keys === [...RULE_ATTRS, ...FRAME_RULE_ATTRS].sort().join(',')
   if (keys !== [...RULE_ATTRS].sort().join(',') && !framed) return null
-  const scalarOk = SCALAR_ATTRS.every((a) => (SCALAR_RULES as readonly unknown[]).includes(r[a]))
+  const scalarOk = SCALAR_ATTRS.every((a) => (SCALAR_RULES as readonly unknown[]).includes(r[a]) || r[a] === DIAGONAL_RULE)
   const layoutOk = LAYOUT_RULES.some((l) => l.count === r.count && l.position === r.position)
   const frameOk =
     !framed ||
     ((FRAME_SHADE_RULES as readonly unknown[]).includes(r.frame_shade) && (FRAME_PATTERN_RULES as readonly unknown[]).includes(r.frame_pattern))
   if (!scalarOk || !layoutOk || !frameOk) return null
-  return r as unknown as RuleSet
+  const rules = r as unknown as RuleSet
+  if (top === 'rules') return rules
+  const d = sp.directions
+  if (typeof d !== 'object' || d === null || Array.isArray(d)) return null
+  const groups = groupsOf(rules)
+  if (Object.keys(d).sort().join(',') !== [...groups].sort().join(',')) return null
+  if (!groups.every((g) => d[g] === 'row' || d[g] === 'col')) return null
+  return { ...rules, directions: Object.fromEntries(groups.map((g) => [g, d[g] as LineDirection])) }
 }
 
-/** `structural_params` of a rule set (A11: the matrix rule set is the family). */
-export function structuralParamsOf(rules: RuleSet): { rules: { [attr: string]: string } } {
-  return {
+/**
+ * `structural_params` of a rule set (A11: the matrix rule set is the family): `{ rules }`, plus
+ * `directions` (every group, `row` or `col`) for a 1.4.0 column / mixed template.
+ */
+export function structuralParamsOf(rules: RuleSet): { rules: { [attr: string]: string }; directions?: { [group: string]: string } } {
+  const sp = {
     rules: {
       shape: rules.shape,
       size: rules.size,
@@ -444,4 +529,15 @@ export function structuralParamsOf(rules: RuleSet): { rules: { [attr: string]: s
         : {}),
     },
   }
+  const d = rules.directions
+  if (d === undefined) return sp
+  return { ...sp, directions: Object.fromEntries(groupsOf(rules).map((g) => [g, d[g] ?? 'row'])) }
+}
+
+/** The rule set with every diagonal rule read as `constant` and no directions: what the 1.3.0 grid sampler draws. */
+export function baseRuleSet(rules: RuleSet): RuleSet {
+  const { directions: _d, ...rest } = rules
+  const out: { -readonly [K in keyof RuleSet]: RuleSet[K] } = { ...rest }
+  for (const a of SCALAR_ATTRS) if (out[a] === DIAGONAL_RULE) out[a] = 'constant'
+  return out
 }
